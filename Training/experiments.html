@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Experiment Hub · Bees</title>
+<title>Experiment Hub</title>
 <style>
 :root {
     color-scheme: light;
@@ -194,7 +194,39 @@ input:focus, textarea:focus, select:focus, button:focus-visible, summary:focus-v
     outline: 2px solid var(--ink);
     outline-offset: 2px;
 }
-input[type=checkbox] { accent-color: var(--ink); }
+/* Consistent square checkboxes in the metric picker and the rest of Hub. */
+input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    box-sizing: border-box;
+    width: 19px;
+    height: 19px;
+    min-width: 19px;
+    min-height: 19px;
+    flex: 0 0 19px;
+    margin: 0;
+    padding: 0;
+    border: 1.5px solid var(--ink);
+    border-radius: 0;
+    background: var(--paper);
+    vertical-align: middle;
+    cursor: pointer;
+}
+input[type="checkbox"]:checked { background: var(--ink); }
+input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 5px;
+    height: 10px;
+    border: solid var(--paper);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
+input[type="checkbox"]:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 label {
     display: block;
     font-size: 12px;
@@ -339,7 +371,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     gap: 8px; cursor: pointer;
 }
 #benchmark-target-controls .benchmark-target-toggle input[type="checkbox"] {
-    flex: 0 0 16px; width: 16px; height: 16px; margin: 2px 0 0;
+    flex: 0 0 19px; width: 19px; height: 19px; margin: 2px 0 0;
 }
 #hub-automation-machines label {
     display: flex;
@@ -349,9 +381,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     cursor: pointer;
 }
 #hub-automation-machines input[type="checkbox"] {
-    flex: 0 0 16px;
-    width: 16px;
-    height: 16px;
+    flex: 0 0 19px;
+    width: 19px;
+    height: 19px;
     margin: 0;
     padding: 0;
     cursor: pointer;
@@ -396,9 +428,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     font-size: 12px;
 }
 #hub-compare-actions input[type="checkbox"] {
-    flex: 0 0 16px;
-    width: 16px;
-    height: 16px;
+    flex: 0 0 19px;
+    width: 19px;
+    height: 19px;
     margin: 0;
     padding: 0;
 }
@@ -425,9 +457,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     font-size: 12px;
 }
 .hub-plot-average-toggle input[type="checkbox"] {
-    flex: 0 0 17px;
-    width: 17px;
-    height: 17px;
+    flex: 0 0 19px;
+    width: 19px;
+    height: 19px;
     padding: 0;
     margin: 0;
 }
@@ -463,7 +495,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </style>
 </head>
 <body>
-<header><div><h1>Experiment Hub</h1><small>Independent projects · unified training management · Bees integration</small></div>
+<header><div><h1>Experiment Hub</h1><small>Independent projects · unified training management</small></div>
 <div class="bar" id="bees-controls"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="rebuild-unity" hidden>Rebuild Unity (experimental)</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
 
 <nav class="hub-tabs" role="tablist" aria-label="Experiment Hub navigation">
@@ -722,8 +754,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <button type="button" id="hub-compare-export-csv" disabled>Export selected CSV</button>
     <button type="button" id="hub-compare-export-json" disabled>Export selected JSON</button>
     <button type="button" id="hub-compare-export-full" disabled>Export complete job diagnostics (500 MB ZIP parts)</button>
-    <label><input id="hub-compare-export-replays" type="checkbox"> Include raw game replays (may be very large)</label>
+    <label title="Include locally available replay files only when you run Export complete job diagnostics. Selecting this checkbox does not start an export or generate new replays."><input id="hub-compare-export-replays" type="checkbox"> Include available raw game replays in complete ZIP export</label>
   </div>
+  <p id="hub-compare-replays-note" class="muted" role="status">Raw replays are excluded by default. This option only applies when you click Export complete job diagnostics; it cannot create missing replays.</p>
   <p class="muted">Complete diagnostics include original project logs and selected chart metrics. Native jobs also include every locally received Hub observation and a selected-metric CSV at that higher resolution. The Hub cannot reconstruct updates it never received; all large archives are split into individual ZIP parts.</p>
   <p id="hub-compare-export-message" class="muted" role="status"></p>
   <h3>Selected training metric charts</h3>
