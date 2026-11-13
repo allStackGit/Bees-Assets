@@ -543,6 +543,8 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
     ]
     if args.learner_slot is not None:
         train_command += ["--learner-slot", str(args.learner_slot)]
+    if args.refresh_opponent_slot is not None:
+        train_command += ["--refresh-opponent-slot", str(args.refresh_opponent_slot)]
     run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
     next_checkpoint = learner_dir / "checkpoint.pt"
     next_manifest = learner_dir / "manifest.json"
@@ -564,6 +566,7 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
             metrics.get("next_checkpoint_sha256") != checkpoint_sha or
             metrics.get("next_manifest_sha256") != manifest_sha or
             metrics.get("learner_slot") != args.learner_slot or
+            metrics.get("refreshed_opponent_slot") != args.refresh_opponent_slot or
             type(metrics.get("optimizer_input_steps")) is not int or
             metrics["optimizer_input_steps"] < 1 or
             type(metrics.get("episodes")) is not int or metrics["episodes"] < 1):
@@ -589,6 +592,8 @@ def main() -> None:
     parser.add_argument("--model-manifest", type=Path,
                         help="override the run configuration's manifest for the next round")
     parser.add_argument("--learner-slot", type=int)
+    parser.add_argument("--refresh-opponent-slot", type=int,
+                        help="also publish this opponent slot using the successful learner checkpoint")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--torch-threads", type=int,
                         help="fixed optimizer intra-op threads, not rollout parallelism")
@@ -665,6 +670,17 @@ def main() -> None:
         manifest = run_path.parent / manifest
     manifest = manifest.resolve(strict=True)
     input_checkpoint_sha = check_learner(manifest, checkpoint, args.learner_slot)
+    if args.refresh_opponent_slot is not None:
+        if (args.learner_slot is None or
+                args.refresh_opponent_slot == args.learner_slot or
+                not 0 <= args.refresh_opponent_slot < (1 << 32)):
+            parser.error("opponent refresh requires distinct explicit learner and uint32 opponent slots")
+        prior_models = json.loads(manifest.read_text(encoding="utf-8"))["models"]
+        if not any(
+            entry.get("slot") == args.refresh_opponent_slot and entry.get("backend") == "mlagents"
+            for entry in prior_models
+        ):
+            parser.error("opponent refresh requires an existing native MA-POCA opponent slot")
     input_manifest_sha = file_sha256(manifest)
     output = args.output_dir.resolve()
     result = {
