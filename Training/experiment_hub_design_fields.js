@@ -99,7 +99,7 @@ function validateCatalog(raw,installed=[],approved={}) {
     if(raw==null)return {};
     if(!raw||typeof raw!=='object'||Array.isArray(raw)||
         Object.keys(raw).some(key=>!['courier','tinybrains'].includes(key))||
-        JSON.stringify(raw).length>262144)
+        JSON.stringify(raw).length>32768)
         throw Error('Invalid bounded project Design catalogue.');
     const validateFields=entry=>{
         if(!entry||entry.version!==1||!Array.isArray(entry.fields)||
@@ -120,11 +120,11 @@ function validateCatalog(raw,installed=[],approved={}) {
             typeof profiles!=='object'||Array.isArray(profiles)||
             Object.keys(profiles).length>32||
             Object.entries(profiles).some(([id,entry])=>!Object.hasOwn(approved,id)||
-                entry.profile_sha256!==approved[id]))
+                entry?.profile_sha256!==approved[id]))
             throw Error('TinyBrains Design defaults require approved profile identities.');
-        result.tinybrains={profiles:Object.fromEntries(
-            Object.entries(profiles).map(([id,entry])=>
-                [id,{...validateFields(entry),profile_sha256:entry.profile_sha256}]))};
+        result.tinybrains={...validateFields(raw.tinybrains),profiles:
+            Object.fromEntries(Object.entries(profiles).map(([id,entry])=>
+                [id,{profile_sha256:entry.profile_sha256}]))};
     }
     return result;
 }
@@ -138,7 +138,7 @@ function supportsDesign(catalog,project,parameters) {
             ?catalog?.tinybrains?.profiles?.[parameters.profile]:null;
     if(!entry||project==='tinybrains'&&entry.profile_sha256!==parameters.profile_sha256)
         return false;
-    const known=new Map(entry.fields.map(field=>[field.key,field]));
+    const known=new Map((entry.fields||catalog?.tinybrains?.fields||[]).map(field=>[field.key,field]));
     return Object.entries(changes).every(([key,value])=>{
         const field=known.get(key);
         return field&&(field.type==='boolean'?typeof value==='boolean':
