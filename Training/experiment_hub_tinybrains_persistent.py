@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--live-matches", type=int, required=True)
     parser.add_argument("--waves", type=int, required=True)
     parser.add_argument("--actions", type=int, required=True)
+    parser.add_argument("--hub-design-overrides")
     parser.add_argument("--device", choices=("cpu", "cuda", "dual"), default="cuda")
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
@@ -42,6 +43,11 @@ def main():
             len(args.remote_rollout_weight) != len(args.remote_rollout_endpoint) + 1 or
             any(not 1 <= w <= 1024 for w in args.remote_rollout_weight)):
         parser.error("Fixed rollout weights require one positive weight for the learner and each remote worker.")
+    if args.hub_design_overrides is not None:
+        import json
+        overrides = json.loads(args.hub_design_overrides)
+        if not isinstance(overrides, dict) or len(overrides) > 128:
+            parser.error("Invalid frozen project Design overrides.")
     if args.gpu_vram_mb is not None and (args.device != "cuda" or args.gpu_vram_mb < 1):
         parser.error("A positive GPU memory ceiling requires the ROCm device.")
     run = args.run.resolve(strict=True)
@@ -91,6 +97,8 @@ def main():
         "--waves", str(args.waves),
         "--rollout-actions", str(args.actions),
         "--max-ppo-updates", str(args.updates),
+        *(["--hub-design-overrides", args.hub_design_overrides]
+          if args.hub_design_overrides is not None else []),
         *[arg for endpoint in args.remote_rollout_endpoint
           for arg in ("--remote-rollout-endpoint", endpoint)],
         *[arg for weight in args.remote_rollout_weight
