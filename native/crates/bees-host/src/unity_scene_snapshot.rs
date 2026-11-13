@@ -632,6 +632,8 @@ pub struct NativeLevelLayout {
     pub translate_squads: Vec<NativeSquadTranslation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub clone_squads: Vec<NativeSquadClone>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remove_squads: Vec<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -896,7 +898,7 @@ impl NativePhysicalScene {
         let invalid = NativeSnapshotError::InvalidNativeLayout;
         if layout.remove_static_ids.is_empty() && layout.add_static_boxes.is_empty() &&
             layout.add_static_polygons.is_empty() && layout.translate_squads.is_empty() &&
-            layout.clone_squads.is_empty()
+            layout.clone_squads.is_empty() && layout.remove_squads.is_empty()
         {
             return Ok(());
         }
@@ -1123,6 +1125,51 @@ impl NativePhysicalScene {
             cloned_squads.push((squad, ships));
         }
 
+        // Whole-squad removal is a setup-time operation. Never leave a
+        // source ship's independent perception/fleet/formation history
+        // resident after its squad has disappeared. Reject missing source
+        // ownership and any surviving carrier-child references up front.
+        let mut omitted_squads = HashSet::new();
+        let mut omitted_ship_ids = HashSet::new();
+        for &id in &layout.remove_squads {
+            if id <= 0 || !omitted_squads.insert(id) {
+                return Err(invalid("duplicate or invalid native squad removal identity"));
+            }
+            let source = self.source_squads.iter().find(|squad|
+                squad.item_id == id
+            ).ok_or(invalid("native squad removal references an unknown source squad"))?;
+            for &ship_id in &source.members {
+                let ship = self.entities.iter().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id => Some(ship),
+                    _ => None,
+                }).ok_or(invalid("removed native squad has an unknown ship"))?;
+                // A source-only capability may own a live child, emitter or
+                // other relationship outside the actual squad. Keep the
+                // initial editor contract small and safe, not an orphaned
+                // half-deleted special ship.
+                if ship.policy.is_some() || ship.special.is_some() ||
+                    ship.special_weapon.is_some() || ship.drone_carrier_id.is_some()
+                {
+                    return Err(invalid("native squad removal supports ordinary game ships only"));
+                }
+                if !omitted_ship_ids.insert(ship_id) {
+                    return Err(invalid("native squad removal shares a source ship"));
+                }
+            }
+        }
+        if omitted_squads.len() == self.source_squads.len() && cloned_squads.is_empty() {
+            return Err(invalid("native layout would remove every playable squad"));
+        }
+        if self.entities.iter().any(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if !omitted_ship_ids.contains(&ship.entity_id) =>
+                ship.drone_carrier_id.is_some_and(|id| omitted_ship_ids.contains(&id)) ||
+                matches!(&ship.special, Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
+                    if omitted_ship_ids.contains(&carrier.carrier_id)),
+            _ => false,
+        }) {
+            return Err(invalid("native squad removal would orphan a surviving carrier child"));
+        }
+
         if !removed.is_empty() {
             self.entities.retain(|entity| !removed.contains(&entity.entity_id()));
             self.source_static_discovery_values.retain(|id, _| !removed.contains(id));
@@ -1165,6 +1212,18 @@ impl NativePhysicalScene {
         }
         if !layout.add_static_boxes.is_empty() || !layout.add_static_polygons.is_empty() {
             self.has_obstacles = true;
+        }
+        if !omitted_ship_ids.is_empty() {
+            self.entities.retain(|entity|
+                !omitted_ship_ids.contains(&entity.entity_id()));
+            self.source_squads.retain(|squad|
+                !omitted_squads.contains(&squad.item_id));
+            for id in omitted_ship_ids {
+                self.authored_ship_perceptions.remove(&id);
+                self.source_vision.remove(&id);
+                self.source_formation.remove(&id);
+                self.fleet.omit_initial_ship(id);
+            }
         }
         for (squad, ships) in cloned_squads {
             for (ship, perception, vision, formation) in ships {
