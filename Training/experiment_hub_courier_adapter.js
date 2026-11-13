@@ -71,15 +71,41 @@ function courierMetrics(source) {
     const workerField=/^worker_([0-9]{1,2})_(.+)$/;
     const core=new Set(['collection_seconds','optimization_seconds',
         'simulation_seconds','inference_seconds','ingestion_seconds']);
+    // Preserve every lineage's core timing first. Next retain the actual
+    // measured owner of each worst stage, including any owner near slot 63;
+    // otherwise insertion-order truncation hides precisely the source of a
+    // slowdown in a full 64-lineage population.
+    const focused=new Set();
+    const ownerKeys=[
+        'training_parallel_dispatch_slowest',
+        'training_shared_copy_slowest_worker',
+        'training_shared_gather_slowest_worker',
+        'training_simulation_slowest_worker',
+        'training_inference_slowest_worker',
+        'training_ppo_data_slowest_worker',
+    ];
+    const detail=[
+        'sim_shard_wall_seconds','sim_dispatch_seconds',
+        'sim_shared_copy_seconds','sim_shared_gather_seconds',
+        'sim_shared_transfer_mb','sim_child_cpu_seconds',
+        'sim_active_shards','sim_next_shards',
+    ];
+    for(const key of ownerKeys) {
+        const i=stats[key];
+        if(!Number.isSafeInteger(i)||i<0||i>=64)continue;
+        for(const suffix of detail)
+            focused.add('worker_'+i+'_'+suffix);
+    }
     const ordered=[
         ...fields.filter(([name])=>!workerField.test(name)),
         ...fields.filter(([name])=>{
             const m=workerField.exec(name);
             return m&&core.has(m[2]);
         }),
+        ...fields.filter(([name])=>focused.has(name)),
         ...fields.filter(([name])=>{
             const m=workerField.exec(name);
-            return m&&!core.has(m[2]);
+            return m&&!core.has(m[2])&&!focused.has(name);
         }),
     ];
     let retained=0;
