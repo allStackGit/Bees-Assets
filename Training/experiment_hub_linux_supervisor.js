@@ -65,17 +65,21 @@ function gpuRuntimeProof(adapter,parameters,context) {
     const dual=Array.isArray(ids)&&ids.length===2&&
         new Set(ids).size===2&&ids.every(p=>pci.test(String(p)))&&
         adapter?.gpu_dual_execution==='split-ppo';
-    const multi=Array.isArray(ids)&&ids.length>=2&&ids.length<=8&&
+    const linuxMulti=Array.isArray(ids)&&ids.length>=2&&ids.length<=8&&
         new Set(ids).size===ids.length&&ids.every(p=>pci.test(String(p)))&&
         adapter?.gpu_multi_execution==='independent-ppo';
+    const dockerMulti=Array.isArray(ids)&&ids.length>=3&&ids.length<=8&&
+        new Set(ids).size===ids.length&&ids.every(p=>pci.test(String(p)))&&
+        adapter?.gpu_multi_execution==='ppo-local-collectors';
+    const multi=linuxMulti||dockerMulti;
     const single=!ids&&pci.test(String(context?.gpu_pci_address||''));
     if(!adapter||typeof adapter.executable!=='string'||
         !path.isAbsolute(adapter.executable)||
         !SAFE_ARG.test(adapter.executable)||
         !(dual||multi||single))
         throw Error('Invalid local ROCm runtime or leased PCI identity.');
-    const rocrUuid=multi?ids.map(p=>adapter.rocr_gpu_uuids?.[p])
-        :dual?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
+    const rocrUuid=linuxMulti?ids.map(p=>adapter.rocr_gpu_uuids?.[p])
+        :dual||dockerMulti?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
             ?adapter.rocr_gpu_uuids[context.gpu_pci_address]:null;
     if(rocrUuid!==null&&
         (Array.isArray(rocrUuid)
@@ -98,7 +102,7 @@ function gpuRuntimeProof(adapter,parameters,context) {
     // Every selected GPU is qualified alone while the other GPUs must be
     // denied by the kernel device filter. Only then may the trusted native
     // service use the union of the leased render nodes.
-    const singleProofs=multi?ids.map(p=>gpuRuntimeProof(adapter,parameters,{
+    const singleProofs=linuxMulti?ids.map(p=>gpuRuntimeProof(adapter,parameters,{
         ...verifierContext,gpu_pci_addresses:undefined,gpu_pci_address:p
     })):null;
     return {executable:adapter.executable,

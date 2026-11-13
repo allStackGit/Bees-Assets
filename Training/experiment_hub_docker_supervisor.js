@@ -373,9 +373,11 @@ class DockerSupervisor {
     }
     async qualifyGpuDeviceAccess(bindings,proof) {
         if(!this.qualifiedAt||!this.gpuEnabled||!proof||
-            !Array.isArray(bindings)||![1,2].includes(bindings.length)||
+            !Array.isArray(bindings)||bindings.length<1||bindings.length>8||
             (bindings.length===2&&
                 this.adapters.tinybrains?.gpu_dual_execution!=='split-ppo')||
+            (bindings.length>2&&
+                this.adapters.tinybrains?.gpu_multi_execution!=='ppo-local-collectors')||
             this.gpuProbeCleanupPending())
             throw Error('Approved Docker one- or two-GPU proof is unavailable.');
         const plan=resolveRocmDevices(bindings);
@@ -476,7 +478,7 @@ class DockerSupervisor {
                     project_id:job.project_id,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     continuation_of_job_id:job.continuation_of_job_id||null,
-                    ...(bindings.length===2
+                    ...(bindings.length>=2
                         ?{gpu_pci_addresses:bindings.map(b=>b.pci_address)}
                         :{gpu_pci_address:bindings[0].pci_address})});
             await this.qualifyGpuDeviceAccess(bindings,proof);

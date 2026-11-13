@@ -99,6 +99,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'remote_policy_shared_collectors',
             'remote_policy_shared_encode_seconds',
             'remote_policy_shared_bytes',
+            'local_gpu_collectors_pending_at_local_end',
+            'collector_join_wait_seconds','local_gpu_join_wait_seconds',
             'rollout_onnx_batch_share','rollout_onnx_calls',
             'rollout_onnx_batches','rollout_onnx_states',
             'rollout_opponent_forward_chunks'])
@@ -138,6 +140,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
             'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
             'pipeline_remote_wait_dominant',
+            'pipeline_local_gpu_wait_dominant',
+            'pipeline_local_gpu_wait_work_share',
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
             'training_queue_work_share','training_reply_gap_work_share',
@@ -162,6 +166,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         }
         // Show per-collector batching coverage without treating a static
         // ONNX model or many narrow boards as a hardware bottleneck.
+        for(let i=0;i<17;i++) {
+            retain('collector_'+i+'_is_local_gpu',
+                reported['collector_'+i+'_is_local_gpu']);
+            retain('collector_'+i+'_gpu_ordinal',
+                reported['collector_'+i+'_gpu_ordinal']);
+        }
         for(let i=0;i<17;i++)
             retain('collector_'+i+'_onnx_batch_share',
                 reported['collector_'+i+'_onnx_batch_share']);
@@ -255,12 +265,17 @@ class BottleneckEvidence {
             // Worker straggler waits and learner-side merge are distinct
             // measured subsets of collection, not new hardware diagnoses.
             const joinWait=seconds('remote_collector_join_wait_seconds');
+            const localGpuWait=seconds('local_gpu_join_wait_seconds');
             const merge=seconds('collection_merge_seconds');
             const waitShare=collection>0&&joinWait!==null&&joinWait<=collection
                 ?joinWait/collection:null;
             const mergeShare=collection>0&&merge!==null&&merge<=collection
                 ?merge/collection:null;
+            const localShare=collection>0&&localGpuWait!==null&&
+                localGpuWait<=collection?localGpuWait/collection:null;
             if(waitShare!==null)add('pipeline_remote_wait_work_share',waitShare);
+            if(localShare!==null)
+                add('pipeline_local_gpu_wait_work_share',localShare);
             if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
             // Bounded observational state is neither a scheduler input
             // nor evidence that any particular device is saturated.
@@ -374,7 +389,7 @@ class BottleneckEvidence {
                     stageHints[i]=stage;
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,fraction,waitShare,mergeShare,stageHints,simHints,
+                prior.samples.push({at,fraction,waitShare,localShare,mergeShare,stageHints,simHints,
                     joinHints,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
@@ -391,6 +406,8 @@ class BottleneckEvidence {
                     add('pipeline_optimization_dominant',1,'count');
                 if(recent.filter(x=>x.waitShare!==null&&x.waitShare>=0.5).length>=5)
                     add('pipeline_remote_wait_dominant',1,'count');
+                if(recent.filter(x=>x.localShare!==null&&x.localShare>=0.5).length>=5)
+                    add('pipeline_local_gpu_wait_dominant',1,'count');
                 if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
                     add('pipeline_merge_dominant',1,'count');
                 // Cross-stage capacity evidence requires *sustained* host

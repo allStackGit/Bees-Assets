@@ -77,6 +77,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_prefetch_overlap_seconds',
         'optimization_seconds','checkpoint_seconds',
         'remote_collector_join_wait_seconds','remote_collector_wait_after_local_max_seconds',
+        'collector_join_wait_seconds','local_gpu_join_wait_seconds',
+        'local_gpu_wait_after_local_max_seconds',
         'collection_merge_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
         'remote_policy_shared_encode_seconds',
@@ -123,12 +125,16 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_onnx_batched_states','rollout_onnx_states',
         'remote_collectors_ready_at_local_end',
         'remote_collectors_pending_at_local_end',
+        'local_gpu_collectors_ready_at_local_end',
+        
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_next_update',
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target'])
         add(name,row[name],'count');
+    add('local_gpu_collectors_pending',
+        row.local_gpu_collectors_pending_at_local_end,'count');
     if(Number.isSafeInteger(row.rollout_onnx_states)&&row.rollout_onnx_states>0&&
         Number.isSafeInteger(row.rollout_onnx_batched_states)&&
         row.rollout_onnx_batched_states>=0&&
@@ -238,6 +244,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     for(const [i,worker] of (Array.isArray(row.collector_samples)
         ?row.collector_samples:[]).slice(0,17).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
+        if(worker.mode==='local_gpu')
+            add('collector_'+i+'_is_local_gpu',1,'count');
+        add('collector_'+i+'_gpu_ordinal',worker.gpu_ordinal,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_simulation_match_steps',
             worker.simulation_match_steps,'count');
@@ -437,6 +446,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             'join_exposed_seconds','simulation_match_steps',
             'match_steps_per_second','sim_matches','sim_target',
             'sim_ram_headroom_mb','gpu_allocated_mb','gpu_vram_lease_mb',
+            'is_local_gpu','gpu_ordinal',
             'rollout_engine_step_seconds','learner_inference_seconds',
             'roundtrip_seconds','service_seconds',
             'sim_dispatch_queue_seconds','sim_last_child_gap_seconds',
@@ -515,15 +525,15 @@ function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
-    enableDualGpu=false,remoteCollectors=null,profilePpo=false,
+    enableDualGpu=false,enableMultiGpu=false,remoteCollectors=null,profilePpo=false,
     cpuParallelism='allocation',
 }) {
     if(!['profile','allocation'].includes(cpuParallelism))
         throw Error('TinyBrains CPU concurrency must be pinned to its profile or allocated CPU budget.');
     if(typeof profilePpo!=='boolean')
         throw Error('PPO profiling requires an explicit local boolean opt-in.');
-    if(typeof enableDualGpu!=='boolean')
-        throw Error('Dual GPU enablement requires an explicit local boolean opt-in.');
+    if(typeof enableDualGpu!=='boolean'||typeof enableMultiGpu!=='boolean')
+        throw Error('Multiple GPU enablement requires explicit local boolean opt-in.');
     let remote=null;
     if(remoteCollectors!==null) {
         if(!remoteCollectors||typeof remoteCollectors!=='object'||
@@ -677,11 +687,13 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_cpu_fallback_profiles:[...approved.keys()],
         tinybrains_required_import_profiles:[...approved.keys()],
         tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
+        tinybrains_multi_gpu_profiles:enableMultiGpu?[...approved.keys()]:[],
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
         tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
         tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
         tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
+        ...(enableMultiGpu?{gpu_multi_execution:'ppo-local-collectors'}:{}),
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
         ])),
@@ -689,10 +701,13 @@ function createTinyBrainsPersistentDockerAdapter({
         gpu_verify_args(parameters,context){
             const item=approved.get(parameters?.profile);
             const dual=parameters?.device==='dual';
-            const ids=dual?context.gpu_pci_addresses:[context.gpu_pci_address];
+            const multi=parameters?.device==='multi';
+            const ids=dual||multi?context.gpu_pci_addresses:[context.gpu_pci_address];
             if(!item||item.sha256!==parameters.profile_sha256||
-                (parameters?.device!==undefined&&parameters.device!=='dual')||
-                !Array.isArray(ids)||ids.length!==(dual?2:1)||
+                (parameters?.device!==undefined&&!['dual','multi'].includes(parameters.device))||
+                (dual&&!enableDualGpu)||(multi&&!enableMultiGpu)||
+                !Array.isArray(ids)||
+                !(dual?ids.length===2:multi?ids.length>=3&&ids.length<=8:ids.length===1)||
                 ids.some(pci=>!PCI.test(String(pci||'')))||
                 new Set(ids).size!==ids.length)
                 throw Error('Invalid approved TinyBrains ROCm proof.');
@@ -715,17 +730,22 @@ function createTinyBrainsPersistentDockerAdapter({
                      rollout_action_weights.length!==remote.endpoints.length+1||
                      rollout_action_weights.some(w=>
                          !Number.isSafeInteger(w)||w<1||w>1024)))||
-                (device!==undefined&&!['cpu','dual'].includes(device))||
+                (device!==undefined&&!['cpu','dual','multi'].includes(device))||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
                 (device==='cpu'?Boolean(context.gpu_pci_address||
                     context.gpu_pci_addresses||context.gpu_cuda_uuid):
-                    device==='dual'
+                    device==='dual'||device==='multi'
                         ?context.gpu_mode!=='exclusive'||
+                            (device==='dual'&&!enableDualGpu)||
+                            (device==='multi'&&!enableMultiGpu)||
                             !Array.isArray(context.gpu_pci_addresses)||
-                            context.gpu_pci_addresses.length!==2||
+                            (device==='dual'
+                                ?context.gpu_pci_addresses.length!==2
+                                :context.gpu_pci_addresses.length<3||
+                                 context.gpu_pci_addresses.length>8)||
                             context.gpu_pci_addresses.some(pci=>!PCI.test(String(pci||'')))||
-                            new Set(context.gpu_pci_addresses).size!==2
+                            new Set(context.gpu_pci_addresses).size!==context.gpu_pci_addresses.length
                         :!PCI.test(String(context.gpu_pci_address||''))||
                             context.gpu_pci_addresses!==undefined)||
                 (device!=='cpu'&&context.gpu_mode==='shared'&&
@@ -794,8 +814,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 ...(rollout_action_weights?rollout_action_weights.flatMap(w=>
                     ['--remote-rollout-weight',String(w)]):[]),
                 ...(device==='cpu'?['--device','cpu']:
-                    device==='dual'
-                        ?['--device','dual',...context.gpu_pci_addresses.flatMap(pci=>
+                    device==='dual'||device==='multi'
+                        ?['--device',device,...context.gpu_pci_addresses.flatMap(pci=>
                             ['--rocm-pci',pci])]
                         :['--rocm-pci',context.gpu_pci_address,
                             ...(context.gpu_mode==='shared'?
