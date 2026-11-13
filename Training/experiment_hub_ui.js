@@ -2331,7 +2331,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 for(const point of item.points||[])
                     for(const name of Object.keys(point.metrics||{}))observed.add(name);
         const all=[...new Set([...knownLearningMetrics,...knownPerformanceMetrics,
-            ...observed])].filter(key=>/^[a-z][a-z0-9_]{0,39}$/.test(key))
+            ...observed])].filter(key=>/^[a-z][a-z0-9_]{0,63}$/.test(key))
             .sort();
         select.replaceChildren(...all.map(key=>{
             const option=new Option(key+(observed.has(key)
