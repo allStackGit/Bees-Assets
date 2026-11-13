@@ -37,6 +37,7 @@ use crate::scene_assets::NativeSceneAssets;
 /// Exactly the values obtained from a live authored ship. The original
 /// health can differ from a training-adjusted MaxHealth. A controller
 /// and its frame are registered ONLY if the source supplies the binding.
+#[derive(Clone)]
 pub struct NativeAuthoredShip {
     pub combat_activity: Option<bees_sim::combat_world::NativeCombatActivity>,
     pub special_weapon: Option<bees_sim::combat_world::NativeSpecialWeaponSpec>,
@@ -85,6 +86,7 @@ pub struct NativeAuthoredPolicyCapabilities {
 /// Exact source SquadLifetime. A pooled Squad ID alone is not sufficient.
 /// Complete, real native rotating-turret configuration supplied by the
 /// original Unity weapon instances, never guessed from ship class.
+#[derive(Clone)]
 pub struct NativeAuthoredTurret {
     pub aim_at_front_of_ship: Option<bool>,
     pub range_collider: Option<NativeTurretRangeSpec>,
@@ -94,6 +96,7 @@ pub struct NativeAuthoredTurret {
 
 /// Genuine Level/agent binding. Physical mounts and cease-fire remain on
 /// NativeAuthoredShip, so ordinary ships need no fabricated policy controller.
+#[derive(Clone, Copy)]
 pub struct NativeAuthoredPolicy {
     pub frame: PolicyFrame,
     pub movement_disabled: bool,
