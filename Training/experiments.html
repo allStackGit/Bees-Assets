@@ -475,7 +475,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
         <select id="hub-job-metrics" class="hub-metric-source" multiple size="12" aria-label="Metrics to retain in Hub comparison history"></select>
         <div id="hub-job-metric-picker" class="hub-metric-picker" aria-label="Search and select job metrics"></div>
-        <small>Leave all unchecked to prioritize observed host CPU/GPU measurements, followed by project metrics within the shared 96-field chart limit. Checked metrics take priority. Device busy and VRAM are host-wide measurements, not individual shared-GPU usage. Full project histories are unaffected; selecting a metric cannot install missing instrumentation.</small>
+        <small>New jobs start with a project-specific set of learning-quality and training-speed metrics. Adjust them for this job or use <strong>Use project defaults</strong> to restore the preset. Leave all unchecked to prioritize observed host CPU/GPU measurements, followed by project metrics within the 96-field chart limit. Metrics not reported by the trainer remain unavailable; device busy and VRAM are host-wide. The underlying project history is unaffected.</small>
       </div>
       <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
       <fieldset class="wide">
