@@ -9,6 +9,8 @@
 //! CombatWorld runtime state; remaining metadata is supplied by the adapter.
 //! Never fill them from defaults, hull guesses or a training-only simulator.
 
+use std::collections::{BinaryHeap, HashMap};
+
 use crate::collision::Aabb;
 use crate::combat_world::{CombatShip, CombatWorld};
 use crate::episode_ship_identity::{EpisodeShipIdentities, ShipIdentityError};
@@ -424,6 +426,23 @@ struct ShipCandidateKey {
     fleet_id: i64,
 }
 
+impl PartialEq for ShipCandidateKey {
+    fn eq(&self, other: &Self) -> bool {
+        compare_ship_candidates(self, other).is_eq()
+    }
+}
+impl Eq for ShipCandidateKey {}
+impl PartialOrd for ShipCandidateKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for ShipCandidateKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        compare_ship_candidates(self, other)
+    }
+}
+
 /// Exactly Unity SortShipsForObservation's total ordering. Shared by
 /// top-K selection and final sorting so ties cannot change which ship
 /// gets a finite policy observation slot.
@@ -647,13 +666,139 @@ pub fn collect_learned_map_objects(
 /// assigning episode identity scalars preserves Unity's source order:
 /// squared distance, ship type, fleet ID, runtime ID. The buffer retains
 /// capacity across policy decisions; no per-ship allocation is needed.
+/// One live entity in a fixed-tick, world-local friendly-roster snapshot.
+/// Its identity and position are authoritative at the decision boundary.
+#[derive(Clone, Copy)]
+struct LiveShipCandidateSource {
+    id: i64,
+    position: Vec2,
+    ship_type: u8,
+    fleet_id: i64,
+}
+
 #[derive(Default)]
 pub struct LiveShipCandidateCollector {
     candidates: Vec<ShipCandidateKey>,
+    /// X-sorted, per-side live roster, built once per world/episode/tick by
+    /// NativeWorldPerceptionAssembler instead of scanned for every agent.
+    live_by_side: HashMap<i32, Vec<LiveShipCandidateSource>>,
+    /// A bounded max-heap of the nearest 64. The root is always the worst
+    /// selected ship according to Unity's complete distance/type/fleet/ID
+    /// comparator, so equal-distance tie behavior is retained exactly.
+    nearest: BinaryHeap<ShipCandidateKey>,
 }
 
 impl LiveShipCandidateCollector {
     pub fn new() -> Self { Self::default() }
+
+    /// Snapshot the authoritative living source roster at one immutable
+    /// policy decision boundary. This is shared by all observers in that
+    /// world and invalidated by the owning assembler on episode/tick change
+    /// or explicitly when a Level mutates between fixed ticks.
+    pub fn prepare_live_roster(
+        &mut self, world: &CombatWorld,
+    ) -> Result<(), CombatPerceptionError> {
+        for side in self.live_by_side.values_mut() { side.clear(); }
+        if world.ships().len() != world.physics().ships().len() {
+            return Err(CombatPerceptionError::MismatchedWorldStorage);
+        }
+        for (ship, body) in world.ships().iter().zip(world.physics().ships()) {
+            if ship.entity_id != body.id {
+                return Err(CombatPerceptionError::MismatchedWorldStorage);
+            }
+            if !body.active || ship.vitals.is_dead() { continue; }
+            if !body.motion.position.is_finite() {
+                return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+            }
+            self.live_by_side.entry(ship.side).or_default().push(
+                LiveShipCandidateSource {
+                    id: ship.entity_id,
+                    position: body.motion.position,
+                    ship_type: ship.ship_type,
+                    fleet_id: world.ship_fleet_identity(ship.entity_id)
+                        .unwrap_or(i64::MAX),
+                },
+            );
+        }
+        for entries in self.live_by_side.values_mut() {
+            entries.sort_unstable_by(|a, b| {
+                a.position.x.total_cmp(&b.position.x)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+        Ok(())
+    }
+
+    /// Query the prepared friendly roster by x-distance lower bounds. Once
+    /// the 64 nearest slots are filled, any farther x-slab whose minimum
+    /// possible squared distance exceeds the worst selected full-distance
+    /// candidate cannot affect the result. Only the candidate heap (not
+    /// the full world roster) is visited for most large, spatially spread
+    /// battles. Final projection and episode identity assignment retain
+    /// the exact source comparator and ordering.
+    pub fn collect_prepared_allies(
+        &mut self,
+        world: &CombatWorld,
+        observer_id: i64,
+        identities: &mut EpisodeShipIdentities,
+        metadata_for: impl FnMut(i64) -> Option<AuthoredShipPerception>,
+        output: &mut Vec<ObservedShip>,
+    ) -> Result<usize, CombatPerceptionError> {
+        const LIMIT: usize = 64;
+        let (observer, observer_body) = live_ship(world, observer_id)?;
+        let origin = observer_body.motion.position;
+        let entries = self.live_by_side.get(&observer.side)
+            .ok_or(CombatPerceptionError::MismatchedWorldStorage)?;
+        let mut left = entries.partition_point(|entry|
+            entry.position.x.total_cmp(&origin.x).is_lt()
+        );
+        let mut right = left;
+        self.nearest.clear();
+
+        while left > 0 || right < entries.len() {
+            let left_sq = if left > 0 {
+                let dx = origin.x - entries[left - 1].position.x;
+                dx * dx
+            } else { f32::INFINITY };
+            let right_sq = if right < entries.len() {
+                let dx = entries[right].position.x - origin.x;
+                dx * dx
+            } else { f32::INFINITY };
+            if self.nearest.len() == LIMIT &&
+                left_sq.min(right_sq) > self.nearest.peek()
+                    .expect("full heap").distance_squared {
+                break;
+            }
+            let entry = if left_sq <= right_sq {
+                left -= 1;
+                entries[left]
+            } else {
+                let entry = entries[right];
+                right += 1;
+                entry
+            };
+            if entry.id == observer_id { continue; }
+            let distance_squared = (entry.position - origin).length_squared();
+            if !distance_squared.is_finite() {
+                return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+            }
+            let candidate = ShipCandidateKey {
+                id: entry.id, distance_squared,
+                ship_type: entry.ship_type, fleet_id: entry.fleet_id,
+            };
+            if self.nearest.len() < LIMIT {
+                self.nearest.push(candidate);
+            } else if candidate < *self.nearest.peek().expect("full heap") {
+                self.nearest.pop();
+                self.nearest.push(candidate);
+            }
+        }
+        self.candidates.clear();
+        while let Some(candidate) = self.nearest.pop() {
+            self.candidates.push(candidate);
+        }
+        self.sort_and_project(world, identities, metadata_for, output)
+    }
 
     fn add_candidate(
         &mut self,
