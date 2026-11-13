@@ -460,8 +460,17 @@ across M native rollout processes, with a compiled `--rollout-binary` for
 parallel processes. Shards balance Level counts and spread repeated
 source Levels across workers to reduce scene-dependent stragglers.
 Both counts remain operator-owned; the wrapper does
-not claim to auto-tune CPU/RAM or distributed placement. The native
-launcher remaps duplicate squad pool identities inside each process.
+not claim to auto-tune CPU/RAM or distributed placement. Completed
+multi-process receipts include per-worker execution SPS for measured
+capacity assignment. Every rollout process is supervised with its
+resident inference child: a failed worker or invalid completion stops
+other workers, retains their diagnostic files, and prevents publication
+of a successful collection receipt.
+The native launcher remaps duplicate squad pool identities inside each process.
+When importing distributed collections, the optimizer rejects
+overlapping world-index ranges from the same source run. Earlier bundle
+receipts without partition metadata cannot be checked for such overlaps
+and still rely on their original episode-identity validation.
 Use `--learner-slot N` for mixed-checkpoint opponents, `--device cuda`
 for a supported GPU optimizer, `--seed-offset N` to vary source episode
 seeds reproducibly, and `--rollout-binary PATH` if the Rust runner is
