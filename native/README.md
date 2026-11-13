@@ -593,7 +593,12 @@ allocated, pinned bundle windows, not a repeated stale capture.
 To measure learning separately from training episodes, add
 `--evaluation-run-config fixed-holdout.json --evaluation-side 1` to
 the session command. The holdout config supplies explicit, unchanging
-seeds, authentic source scenes and model-only Levels. Each completed
+environment seeds, authentic source scenes and model-only Levels. By
+default the native policy worker also seeds its stochastic action sampler
+to zero **after model loading**; `--evaluation-policy-seed N` pins a
+different value for the whole session. A standalone evaluation accepts
+`--policy-seed N`. This controls the action-sampling random stream, not
+GPU kernel determinism or a promise of bit-for-bit cross-platform parity. Each completed
 checkpoint is run through the same native headless game and durable
 episode outcome sink, without optimizer updates or training captures.
 The session records side-specific victory/draw rates, physical episode
