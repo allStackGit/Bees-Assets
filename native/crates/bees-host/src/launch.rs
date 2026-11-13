@@ -126,6 +126,7 @@ enum ScriptedActivationConfig {
     Immediate,
     AfterSeconds { seconds: f32 },
     OnDeployment,
+    OnCampaignCue { cue: bees_host::policy_only_metadata::NativeScriptedCue },
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -432,6 +433,8 @@ fn make_setup(
                         bees_host::policy_only_metadata::NativeScriptedActivation::AfterSeconds(seconds),
                     ScriptedActivationConfig::OnDeployment =>
                         bees_host::policy_only_metadata::NativeScriptedActivation::OnDeployment,
+                    ScriptedActivationConfig::OnCampaignCue { cue } =>
+                        bees_host::policy_only_metadata::NativeScriptedActivation::OnCampaignCue(cue),
                 },
                 orders: queue.orders.iter().map(|order| match *order {
                     ScriptedOrderConfig::MoveToPoint { destination } =>

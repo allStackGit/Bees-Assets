@@ -11,7 +11,13 @@ use bees_gameplay::commands::{
     Activation, GameCommandError, NativeLocalCommandAction,
     NativeLocalCommandSource,
 };
-use bees_gameplay::level_events::{NativeLevelEventError, NativeLevelEventProcessor};
+use bees_gameplay::level_events::{
+    NativeLevelEventError, NativeLevelEventProcessor, NativeLevelNotificationKind,
+};
+use bees_gameplay::campaign_dialogue::{
+    CampaignCue, CampaignDialogueSpec, UploadMilestone,
+};
+use serde::{Deserialize, Serialize};
 use bees_gameplay::level_inputs::native_squad_order_from_catalog;
 use bees_gameplay::squads::NativeSquadRoster;
 use bees_hivemind::session::SquadLifetime;
@@ -55,6 +61,56 @@ impl NativeScriptedOrder {
 /// recycled hotkey number. The initial order starts on the first completed
 /// fixed step; delayed/cutscene-triggered orders require their actual Level
 /// trigger to enqueue this plan at that boundary.
+/// The actual kind of source campaign event. Fire Tank identity and
+/// upload progress are checked by the canonical event emitter; mission
+/// queues subscribe to a kind, not a copied object-ID or timer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeScriptedCue {
+    FireTankSpotted,
+    FireTankDestroyed,
+    MinesweeperVictory,
+    MinesweeperDefeat,
+    UploadTen,
+    UploadTwentyFour,
+    UploadFifty,
+    UploadSeventyFive,
+    UploadNinety,
+    BeenocularsVictory,
+    BeenocularsDefeat,
+}
+
+impl NativeScriptedCue {
+    fn matches(self, cue: CampaignCue) -> bool {
+        matches!((self, cue),
+            (Self::FireTankSpotted, CampaignCue::FireTankSpotted { .. }) |
+            (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
+            (Self::MinesweeperVictory, CampaignCue::MinesweeperVictory) |
+            (Self::MinesweeperDefeat, CampaignCue::MinesweeperDefeat) |
+            (Self::UploadTen, CampaignCue::BeenocularsUpload(UploadMilestone::Ten)) |
+            (Self::UploadTwentyFour, CampaignCue::BeenocularsUpload(UploadMilestone::TwentyFour)) |
+            (Self::UploadFifty, CampaignCue::BeenocularsUpload(UploadMilestone::Fifty)) |
+            (Self::UploadSeventyFive, CampaignCue::BeenocularsUpload(UploadMilestone::SeventyFive)) |
+            (Self::UploadNinety, CampaignCue::BeenocularsUpload(UploadMilestone::Ninety)) |
+            (Self::BeenocularsVictory, CampaignCue::BeenocularsVictory) |
+            (Self::BeenocularsDefeat, CampaignCue::BeenocularsDefeat)
+        )
+    }
+
+    fn valid_for(self, spec: Option<CampaignDialogueSpec>) -> bool {
+        match spec {
+            Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) =>
+                matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed |
+                    Self::MinesweeperVictory | Self::MinesweeperDefeat),
+            Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
+                matches!(self, Self::UploadTen | Self::UploadTwentyFour |
+                    Self::UploadFifty | Self::UploadSeventyFive | Self::UploadNinety |
+                    Self::BeenocularsVictory | Self::BeenocularsDefeat),
+            None => false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NativeScriptedActivation {
     /// Source Squad.RunCommandQueue called at Level start.
@@ -63,6 +119,9 @@ pub enum NativeScriptedActivation {
     AfterSeconds(f32),
     /// Run as soon as the specified deferred source squad enters the roster.
     OnDeployment,
+    /// Subscribe to the same-tick authored campaign notification.
+    /// A cue is latched once even if the intended squad deploys later.
+    OnCampaignCue(NativeScriptedCue),
 }
 
 pub struct NativeScriptedQueuePlan {
@@ -79,6 +138,8 @@ pub(super) struct NativeScriptedQueueState {
     repeat: bool,
     ready_tick: u64,
     on_deployment: bool,
+    required_cue: Option<NativeScriptedCue>,
+    cue_armed: bool,
 }
 
 impl NativePolicyOnlyMetadata {
@@ -92,6 +153,7 @@ impl NativePolicyOnlyMetadata {
         plans: Vec<NativeScriptedQueuePlan>,
         deferred: &HashSet<i64>,
         dt_seconds: f32,
+        campaign: Option<CampaignDialogueSpec>,
     ) -> Result<(), &'static str> {
         if !dt_seconds.is_finite() || dt_seconds <= 0.0 {
             return Err("scripted queue requires the source Level fixed-step duration");
@@ -128,12 +190,24 @@ impl NativePolicyOnlyMetadata {
                 }
             }
             let is_deferred = deferred.contains(&plan.squad_item_id);
-            if is_deferred != matches!(plan.activation, NativeScriptedActivation::OnDeployment) {
-                return Err("deferred scripted squads require on_deployment; initial squads cannot use it");
+            if (is_deferred && !matches!(plan.activation,
+                    NativeScriptedActivation::OnDeployment |
+                    NativeScriptedActivation::OnCampaignCue(_))) ||
+                (!is_deferred && matches!(plan.activation,
+                    NativeScriptedActivation::OnDeployment)) {
+                return Err("deferred scripted squads require on_deployment or on_campaign_cue");
             }
+            let required_cue = match plan.activation {
+                NativeScriptedActivation::OnCampaignCue(cue) if cue.valid_for(campaign) =>
+                    Some(cue),
+                NativeScriptedActivation::OnCampaignCue(_) =>
+                    return Err("scripted campaign cue is not available in this Level"),
+                _ => None,
+            };
             let ready_tick = match plan.activation {
                 NativeScriptedActivation::Immediate |
-                NativeScriptedActivation::OnDeployment => 1,
+                NativeScriptedActivation::OnDeployment |
+                NativeScriptedActivation::OnCampaignCue(_) => 1,
                 NativeScriptedActivation::AfterSeconds(seconds) => {
                     let tick = (f64::from(seconds) / f64::from(dt_seconds)).floor() + 1.0;
                     if !seconds.is_finite() || seconds <= 0.0 ||
@@ -147,6 +221,7 @@ impl NativePolicyOnlyMetadata {
                 owner: squad.owner, orders: plan.orders,
                 cursor: 0, repeat: plan.repeat, ready_tick,
                 on_deployment: is_deferred,
+                required_cue, cue_armed: required_cue.is_none(),
             });
         }
         // NativeAuthoredLevel.squads is the source's actual Level.State.Squads
@@ -212,6 +287,7 @@ impl NativePolicyOnlyMetadata {
         self.scripted_queues.insert(insert_at, NativeScriptedQueueState {
             owner, orders: plan.orders, cursor: 0, repeat: plan.repeat,
             ready_tick: 1, on_deployment: false,
+            required_cue: None, cue_armed: true,
         });
         Ok(())
     }
@@ -237,6 +313,25 @@ impl NativePolicyOnlyMetadata {
         let mut index = 0;
         while index < self.scripted_queues.len() {
             let owner = self.scripted_queues[index].owner;
+            if !self.scripted_queues[index].cue_armed {
+                let expected = self.scripted_queues[index].required_cue
+                    .expect("unarmed queues always wait for a source cue");
+                if events.pending_notifications().iter().any(|entry|
+                    entry.tick == completed_tick &&
+                    match &entry.kind {
+                        NativeLevelNotificationKind::CampaignDialogue(cue) =>
+                            expected.matches(*cue),
+                        _ => false,
+                    }
+                ) {
+                    // Latch an authentic event before checking deployment:
+                    // a mission's cue may precede the arrival of its squad.
+                    self.scripted_queues[index].cue_armed = true;
+                } else {
+                    index += 1;
+                    continue;
+                }
+            }
             if events.roster().get(owner).is_none() {
                 if self.scripted_queues[index].on_deployment {
                     // The source squad is still in a pending wave; no
