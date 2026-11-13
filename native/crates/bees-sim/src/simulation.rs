@@ -145,6 +145,27 @@ pub enum StepError<E> {
     Rules { id: WorldId, source: E },
 }
 
+/// Work assigned to one CPU worker in an independent simulation window.
+/// Counters are aggregated after the worker finishes, without per-tick locks
+/// or per-step trace allocations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ParallelWorkerMeasurements {
+    pub arenas: usize,
+    pub ticks: u64,
+    pub integrated_bodies: u64,
+    pub narrowphase_tests: u64,
+}
+
+impl ParallelWorkerMeasurements {
+    fn from_report(arenas: usize, measurements: &Measurements) -> Self {
+        Self {
+            arenas, ticks: measurements.ticks,
+            integrated_bodies: measurements.integrated_bodies,
+            narrowphase_tests: measurements.narrowphase_tests,
+        }
+    }
+}
+
 /// Results for a bounded independent rollout window. A failed world is
 /// marked failed by the same step implementation used in serial mode; other
 /// worlds continue. The caller must reset failed worlds explicitly.
@@ -160,12 +181,9 @@ pub struct ParallelWindow<E> {
     /// generation. Unlike summed per-step timings, this measures observed
     /// multi-core throughput for this specific window.
     pub wall_elapsed: Duration,
-    /// Number of arenas claimed by each CPU worker in this window.
-    /// Shows load balancing without recording per-tick traces.
-    pub worker_arenas: Vec<usize>,
-    /// Actual successful physics ticks executed by each worker.
-    /// Compare with worker_arenas to identify uneven arena costs.
-    pub worker_ticks: Vec<u64>,
+    /// Work completed by each worker, in worker-creation order; includes
+    /// completed or already-failed arenas with zero successful ticks.
+    pub worker_loads: Vec<ParallelWorkerMeasurements>,
 }
 
 impl<E> ParallelWindow<E> {
@@ -184,8 +202,7 @@ impl<E> Default for ParallelWindow<E> {
             skipped_failed_worlds: 0,
             completed_worlds: 0,
             wall_elapsed: Duration::ZERO,
-            worker_arenas: Vec::new(),
-            worker_ticks: Vec::new(),
+            worker_loads: Vec::new(),
         }
     }
 }
@@ -340,8 +357,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             let mut part = run_partition(
                 rules, dt, sample, &mut self.worlds, steps, decide, &mut decisions,
             );
-            part.worker_arenas.push(self.worlds.len());
-            part.worker_ticks.push(part.measurements.ticks);
+            part.worker_loads.push(ParallelWorkerMeasurements::from_report(
+                self.worlds.len(), &part.measurements,
+            ));
             self.measurements.merge(&part.measurements);
             part.wall_elapsed = started.elapsed();
             return part;
@@ -415,8 +433,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         for outcome in outcomes {
             match outcome {
                 Ok((part, assigned)) => {
-                    result.worker_arenas.push(assigned);
-                    result.worker_ticks.push(part.measurements.ticks);
+                    result.worker_loads.push(ParallelWorkerMeasurements::from_report(
+                        assigned, &part.measurements,
+                    ));
                     self.measurements.merge(&part.measurements);
                     result.measurements.merge(&part.measurements);
                     result.skipped_failed_worlds += part.skipped_failed_worlds;
