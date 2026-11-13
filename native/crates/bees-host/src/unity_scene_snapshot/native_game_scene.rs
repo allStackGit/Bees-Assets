@@ -613,9 +613,11 @@ impl NativePhysicalScene {
             }
             ship_types.insert(id, ship.ship_type);
 
-            let support_zone = ship.support_zone
-                .map(GameCollider::into_native).transpose_option()
-                .ok_or(invalid("native support collider has invalid authored geometry"))?;
+            let support_zone = match ship.support_zone {
+                Some(zone) => Some(zone.into_native()
+                    .ok_or(invalid("native support collider has invalid authored geometry"))?),
+                None => None,
+            };
             if support_zone.is_some() != matches!(ship.ship_type, 2 | 20) {
                 return Err(invalid("only Beehives and Warp Gates take exact support trigger colliders"));
             }
