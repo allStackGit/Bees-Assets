@@ -156,6 +156,38 @@ weapon and squad attributes must come from the authentic scene capture,
 not synthesized from ship type. The battle journal records their arrival
 tick and counts.
 
+A fresh authored Level can also carry `scripted_queues` to drive initial
+mission orders through the same CombatWorld, movement and command timers
+used by AI and player squads. These queues do **not** restore an already
+running Unity command or infer mission triggers from a scene export.
+For example, one initially deployed squad can move to a point, then
+perform source-range random patrols, repeating until a real player order
+cancels its queue:
+
+```json
+"scripted_queues": [{
+  "squad_item_id": 51,
+  "repeat": true,
+  "orders": [
+    {"kind": "move_to_point", "destination": [70, -30]},
+    {"kind": "move_to_random", "range": 16}
+  ]
+}]
+```
+
+An explicit opposing target also permits
+`{"kind":"aggressive","enemy_squad_item_id":52}` in the orders.
+The enemy must be an actual initially deployed opposing squad; no
+nearest-enemy guess substitutes for the source Command.EnemySquad.
+The first scripted command starts on the first completed fixed tick.
+Subsequent orders start after the prior native command finishes, including
+its normal timed completion, and source HiveMind requests are suppressed
+while the scripted queue is active. Player command replacement cancels
+remaining orders. The source's complex dialogue/mission-triggered queue
+arming and deferred-reinforcement queue enrollment require separately
+authored activation boundaries and are **not** implied by this static plan.
+
+
 For Titania II's *obstacle-free* mission, the authored approach lanes
 can be generated instead of transcribed. Unity selects reinforcement squads
 from the saved fleet *when the timer fires*: they are normally absent from
@@ -804,6 +836,8 @@ Schema 19 adds exact squad user-control/input/lock permissions, stored formation
 offsets, path clearances and Level.HasObstacles. Survivor offsets update after
 casualties through the shared Level rules. The fresh-scene exporter rejects
 existing commands and scripted queues; this format does not restore that history.
+Fresh scripted plans in the native run configuration are separate authored
+inputs, not replay of the rejected live Unity queue state.
 
 Schema 20 adds the loaded command timing/distance settings and each squad's
 actual chosen shooting strategy. `NativeHostRuntime::player_command` accepts
@@ -1251,8 +1285,11 @@ and scripted Hold use the same director as before. Local replacement finalizes
 the old command first, including when the new target is unavailable. Local Guard,
 Patrol, Mining and Heal omit the source's AI-only timeout. Friendly projections
 use the canonical roster's registration order and director state for every origin.
-Host/player routing supports movement, chosen support actions and ranged Attack;
-complete scripted queues remain unfinished.
+Host/player routing supports movement, chosen support actions and ranged Attack.
+Fresh authored scripted MoveToPoint, MoveToRandom and targeted Aggressive
+queues execute through the same canonical director; dialogue-triggered
+queue enrollment and arbitrary prepared Unity command histories remain
+outside the static Level-config contract.
 
 **Aggressive** uses the shared ranked target queue and authoritative
 tracked ship orders, but unlike Swipe or InAndOut advances its attack
