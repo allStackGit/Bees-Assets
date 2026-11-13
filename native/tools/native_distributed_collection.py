@@ -30,10 +30,11 @@ def read_plan(path):
     seen = set()
     ranges = []
     for item in collectors:
-        if not isinstance(item, dict) or set(item) != {
-            "id", "world_start", "world_count", "rollout_workers",
-        }:
-            raise ValueError("collector needs id, world_start, world_count and rollout_workers")
+        required = {"id", "world_start", "world_count", "rollout_workers"}
+        if (not isinstance(item, dict) or
+                not required.issubset(item) or
+                set(item) - required - {"physics_workers"}):
+            raise ValueError("collector needs id, world_start, world_count, rollout_workers and optional physics_workers")
         name, start, count, workers = (item[key] for key in (
             "id", "world_start", "world_count", "rollout_workers",
         ))
@@ -41,7 +42,10 @@ def read_plan(path):
                 name in seen or type(start) is not int or
                 type(count) is not int or type(workers) is not int or
                 start < 0 or start + count > (1 << 63) or
-                not 1 <= count <= 1024 or not 1 <= workers <= min(count, 256)):
+                not 1 <= count <= 1024 or not 1 <= workers <= min(count, 256) or
+                ("physics_workers" in item and
+                 (type(item["physics_workers"]) is not int or
+                  not 1 <= item["physics_workers"] <= 128))):
             raise ValueError(f"invalid or duplicate collector allocation: {name!r}")
         seen.add(name)
         ranges.append((start, start + count, name))
@@ -108,6 +112,9 @@ def make_orders(root, round_number, seed_offset, plan, run, checkpoint, manifest
                 "--rollout-world-start", str(item["world_start"]),
                 "--rollout-worlds", str(item["world_count"]),
                 "--rollout-workers", str(item["rollout_workers"]),
+                *([] if "physics_workers" not in item else [
+                    "--physics-workers", str(item["physics_workers"]),
+                ]),
             ],
         })
     path = root / f"collection-round-{round_number:05d}.json"
@@ -134,6 +141,10 @@ def verify_bundle(path, job, orders):
         receipt.get("learner_slot") == orders["learner_slot"] and
         receipt.get("rollout_worlds") == job["world_count"] and
         receipt.get("rollout_processes") == job["rollout_workers"] and
+        # Resource constraints belong to the signed work order. Verify
+        # explicit allocations rather than trusting collector assertions.
+        ("physics_workers" not in job or
+         receipt.get("physics_workers_per_process") == job["physics_workers"]) and
         isinstance(partition, dict) and
         partition.get("source_run_id") == orders["source_run_id"] and
         partition.get("world_start") == job["world_start"] and
@@ -163,6 +174,7 @@ def verify_bundle(path, job, orders):
         "collector_id": job["id"],
         "partition": partition,
         "rollout_processes": receipt["rollout_processes"],
+        "physics_workers_per_process": receipt.get("physics_workers_per_process", 1),
         "native_runner_sha256": receipt["native_runner_sha256"],
         "policy_worker_sha256": receipt["policy_worker_sha256"],
         "metrics": metrics,
