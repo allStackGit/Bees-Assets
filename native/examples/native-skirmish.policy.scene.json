@@ -993,7 +993,7 @@
   "policy_episode": {
     "episode_number": 1,
     "bee_starting_tsv": 550,
-    "human_starting_tsv": 1200,
+    "human_starting_tsv": 1000,
     "timeout_seconds": 120,
     "discovery_baselines": [
       [

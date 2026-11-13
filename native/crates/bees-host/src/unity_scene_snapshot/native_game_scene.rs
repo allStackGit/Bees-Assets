@@ -1234,6 +1234,17 @@ impl NativePhysicalScene {
                         "native static obstacle discovery TSV overflow",
                     ))
                 )?;
+            // Unity LevelConstructor captures InitialTsv from ordinary
+            // squads BEFORE it spawns CarrierShip children. Temporary
+            // Drones/Strikers must not enlarge either side's starting
+            // health/economic reward denominator. This is the same
+            // persistent fleet used for enemy-discovery normalization.
+            if episode.bee_starting_tsv != fleet_tsv[0] ||
+                episode.human_starting_tsv != fleet_tsv[1] {
+                return Err(invalid(
+                    "native policy starting TSV must equal each side's initial persistent fleet",
+                ));
+            }
             let expected = [
                 [fleet_tsv[1], mining, statics, map_objects],
                 [fleet_tsv[0], mining, statics, map_objects],
