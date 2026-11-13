@@ -17,6 +17,7 @@ use bees_gameplay::level_rules::{
     NativeLevelRewardMetadata, NativeLevelRules, NativeLevelState,
 };
 use bees_gameplay::squads::SquadRosterError;
+use bees_gameplay::squad_targeting::{NativeSourceTargetingBatch, NativeTargetingSourceError};
 use bees_hivemind::outcomes::OutcomeBatch;
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, StoreCommandsRequest,
@@ -124,6 +125,9 @@ pub struct NativeSourceCommandPulse {
     pub home_moves: usize,
     pub home_unreachable: usize,
     pub unauthored_minions: usize,
+    /// Rebuild each side's live ship-type mask once per due World/side.
+    pub enemy_type_scans: usize,
+    pub enemy_type_scan_reuses: usize,
 }
 
 #[derive(Debug)]
@@ -139,6 +143,7 @@ pub enum HostSourceCommandError {
         owner: SquadLifetime,
         error: bees_gameplay::commands::GameCommandError,
     },
+    TargetingSource { owner: SquadLifetime, error: NativeTargetingSourceError },
     Connection(DurableConnectionError),
     Driver(NativeLevelRoutingError),
 }
@@ -1010,7 +1015,7 @@ where
                     let enemy_side = if squad.side == bee_side { human_side }
                         else if squad.side == human_side { bee_side }
                         else { return Err(HostSourceCommandError::InvalidSquadSide(owner)); };
-                    issue.push((owner, source.opponent_id, enemy_side));
+                    issue.push((index, owner, source.opponent_id, enemy_side));
                 }
             }
         }
@@ -1024,10 +1029,42 @@ where
                 counts.home_unreachable += 1;
             }
         }
-        for (owner, opponent_id, enemy_side) in issue {
-            self.request_source_targeting(owner, opponent_id, enemy_side)
-                .map_err(HostSourceCommandError::Connection)?;
-            counts.issued += 1;
+        // Complete source validation once per World and target-side type
+        // mask. Process Worlds and squads in canonical request order;
+        // only the existing connection allocates/persists hashes.
+        let mut staged = Vec::new();
+        let mut cursor = 0;
+        while cursor < issue.len() {
+            let index = issue[cursor].0;
+            let mut end = cursor + 1;
+            while end < issue.len() && issue[end].0 == index { end += 1; }
+            staged.clear();
+            {
+                let world = self.simulation.world(index)
+                    .expect("validated registered source World");
+                let mut batch = NativeSourceTargetingBatch::new(
+                    &world.state.combat, world.state.events.roster(),
+                ).map_err(|error| HostSourceCommandError::TargetingSource {
+                    owner: issue[cursor].1, error,
+                })?;
+                for &(_, owner, opponent_id, enemy_side) in &issue[cursor..end] {
+                    let inputs = batch.build(owner, enemy_side)
+                        .map_err(|error| HostSourceCommandError::TargetingSource {
+                            owner, error,
+                        })?;
+                    staged.push((owner, opponent_id, inputs));
+                }
+                counts.enemy_type_scans += batch.enemy_type_scans();
+                counts.enemy_type_scan_reuses +=
+                    (end - cursor).saturating_sub(batch.enemy_type_scans());
+            }
+            for (owner, opponent_id, inputs) in staged.drain(..) {
+                self.connection.request_targeting(
+                    owner, inputs.ships, opponent_id, inputs.banned,
+                ).map_err(HostSourceCommandError::Connection)?;
+                counts.issued += 1;
+            }
+            cursor = end;
         }
         Ok(counts)
     }

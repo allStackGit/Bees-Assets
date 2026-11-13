@@ -2144,6 +2144,8 @@ fn run_battle(
                 "home_moves": network.scheduler.measurements().home_moves,
                 "home_unreachable": network.scheduler.measurements().home_unreachable,
                 "unauthored_minions": network.scheduler.measurements().unauthored_minions,
+                "enemy_type_scans": network.scheduler.measurements().enemy_type_scans,
+                "enemy_type_scan_reuses": network.scheduler.measurements().enemy_type_scan_reuses,
             },
             "source_command_timer": network.scheduler.schedule_measurements(),
         })),

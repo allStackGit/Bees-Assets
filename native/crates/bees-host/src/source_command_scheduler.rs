@@ -247,6 +247,8 @@ impl NativeSourceCommandScheduler {
         self.measurements.home_moves += result.home_moves;
         self.measurements.home_unreachable += result.home_unreachable;
         self.measurements.unauthored_minions += result.unauthored_minions;
+        self.measurements.enemy_type_scans += result.enemy_type_scans;
+        self.measurements.enemy_type_scan_reuses += result.enemy_type_scan_reuses;
         Ok(())
     }
 
