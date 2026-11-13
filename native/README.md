@@ -208,8 +208,12 @@ An explicit opposing target permits
 Other source-authored orders include `{"kind":"hold"}`,
 `{"kind":"patrol","top_left":[-20,20],"bottom_right":[20,-20]}`,
 `{"kind":"guard","friendly_squad_item_id":53}`,
+`{"kind":"closest_friendly"}`,
+`{"kind":"scouting","max_sight":40,"human_side":1}`,
 `{"kind":"mining","asteroid_id":100}` and
 `{"kind":"full_retreat","warp_gate_id":101}`.
+Scouting requires the real source squad maximum sight and human side,
+not an inferred or zero-filled default.
 The enemy/guard references must identify actual opposite/allied
 source squads, respectively. No nearest-enemy or arbitrary friendly
 substitution is used. Invalid references fail scene setup; targets retired
