@@ -14,6 +14,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_simulated_steps','training_useful_steps',
     'training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
+    'training_environment_version',
     'training_tuner_adjustments','training_tuner_accepted',
     'training_tuner_settled']);
 const WINDOWS_ENTRY=[
