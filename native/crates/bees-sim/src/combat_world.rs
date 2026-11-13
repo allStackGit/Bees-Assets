@@ -876,6 +876,11 @@ pub struct CombatWorld {
     /// repeated route invalidation for multiple overlapping sensors.
     asteroid_navigation_refresh: HashMap<i64, ScaledTimer>,
     obstacle_by_id: HashMap<i64, usize>,
+    /// Source of truth for static pathfinding geometry invalidation. Only
+    /// actual StaticObstacle admission increments this revision. Animation
+    /// is separately recorded because its pose advances in physics.step.
+    static_navigation_revision: u64,
+    moving_static_navigation_obstacles: bool,
     asteroid_border_states: HashMap<i64, AsteroidBorderState>,
     /// Directional child-proximity contacts; a primary collider entry only
     /// becomes a collision after the owning asteroid detects its neighbor.
@@ -1010,6 +1015,8 @@ impl CombatWorld {
             nearby_asteroids_by_ship: HashMap::new(),
             asteroid_navigation_refresh: HashMap::new(),
             obstacle_by_id: HashMap::new(),
+            static_navigation_revision: 0,
+            moving_static_navigation_obstacles: false,
             asteroid_border_states: HashMap::new(),
             nearby_asteroid_pairs: HashSet::new(),
             asteroid_shard_family: HashMap::new(),
@@ -1448,6 +1455,17 @@ impl CombatWorld {
                 }
             },
         )
+    }
+
+    /// Revisions track actual additions to the world-owned static collider
+    /// registry. The physics core has no external mutable obstacle access;
+    /// animated static obstacles must still refresh each completed tick.
+    pub fn static_navigation_revision(&self) -> u64 {
+        self.static_navigation_revision
+    }
+
+    pub fn has_moving_static_navigation_obstacles(&self) -> bool {
+        self.moving_static_navigation_obstacles
     }
 
     /// Only StaticObstacle participates in Unity's baked static clearance.
@@ -2614,6 +2632,9 @@ impl CombatWorld {
         let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
         let is_asteroid = obstacle.kind == ObstacleKind::CollisionAsteroid;
         let obstacle_kind = obstacle.kind;
+        let moving_static = obstacle_kind == ObstacleKind::StaticObstacle &&
+            (body.linear_velocity.length_squared() > 0.0 ||
+             body.angular_velocity_degrees != 0.0);
         let entity_id = obstacle.entity_id;
         body.tracks_body_contacts = is_asteroid;
         // MapBorder.OnTriggerEnter2D needs only ship entries. Keep the
@@ -2634,6 +2655,11 @@ impl CombatWorld {
             self.obstacles.push(obstacle);
         }
         self.next_entity_id = next_id;
+        if obstacle_kind == ObstacleKind::StaticObstacle {
+            self.static_navigation_revision =
+                self.static_navigation_revision.wrapping_add(1);
+            self.moving_static_navigation_obstacles |= moving_static;
+        }
         if is_asteroid {
             self.asteroid_border_states.insert(entity_id, AsteroidBorderState::default());
         }
