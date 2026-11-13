@@ -1468,6 +1468,13 @@ impl CombatWorld {
         self.moving_static_navigation_obstacles
     }
 
+    /// One shared cache-validity contract for game orders, automatic chase,
+    /// scripted queues and synchronous training route searches.
+    pub fn static_navigation_needs_refresh(&self, runtime: &NavigationRuntime) -> bool {
+        self.moving_static_navigation_obstacles ||
+            runtime.world_static_revision() != Some(self.static_navigation_revision)
+    }
+
     /// Only StaticObstacle participates in Unity's baked static clearance.
     /// MapBorder is excluded: pathfinder grid edges supply the border
     /// clearance cap. Geometry uses the same live ObstacleBody storage as
