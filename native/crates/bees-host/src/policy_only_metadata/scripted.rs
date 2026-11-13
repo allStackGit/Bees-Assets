@@ -435,25 +435,39 @@ impl NativePolicyOnlyMetadata {
             let order = self.scripted_queues[index].orders[self.scripted_queues[index].cursor];
             let source = *self.player.commands.get(&owner)
                 .ok_or(NativeLevelEventError::Commands(GameCommandError::MissingCombatSnapshot))?;
-            let enemy = if let NativeScriptedOrder::Aggressive { enemy_squad_item_id } = order {
-                let enemy_owner = events.roster().source_order().iter()
-                    .copied().find(|candidate|
-                        candidate.squad_id == enemy_squad_item_id
-                    );
-                let Some(enemy_owner) = enemy_owner else {
-                    // Unity Aggressive's first timer would finish when
-                    // EnemySquad has already been killed. Skip its now
-                    // unavailable prepared order without credit or a
-                    // second physical action.
+            // Every prepared target is re-resolved against the current
+            // roster lifetime. A destroyed squad cannot be replaced by an
+            // unrelated new squad with the same hotkey or source item ID.
+            let linked_target = if let Some((item_id, enemy_side)) = order.target_squad() {
+                let own_side = events.roster().get(owner)
+                    .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?
+                    .side;
+                let target = events.roster().source_order().iter().copied()
+                    .find(|candidate| candidate.squad_id == item_id &&
+                        candidate.level_id == owner.level_id &&
+                        (enemy_side || *candidate != owner) &&
+                        events.roster().get(*candidate).is_some_and(|entry|
+                            (entry.side != own_side) == enemy_side &&
+                            !entry.members.is_empty()));
+                let Some(target) = target else {
+                    // A prepared Guard or enemy order whose actual target
+                    // retired completes without inventing a substitute.
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.orders_skipped_target_gone += 1;
                     index += 1;
                     continue;
                 };
-                let enemy = self.live_enemy(world, events.roster(), owner, enemy_owner)
+                Some(target)
+            } else { None };
+            let enemy = if matches!(order,
+                NativeScriptedOrder::Aggressive { .. } |
+                NativeScriptedOrder::TargetEnemy { .. }
+            ) {
+                let target = linked_target.expect("validated enemy target");
+                let enemy = self.live_enemy(world, events.roster(), owner, target)
                     .map_err(NativeLevelEventError::Commands)?;
                 self.live_aggressive_snapshot(
-                    world, events.roster(), owner, enemy_owner, false,
+                    world, events.roster(), owner, target, false,
                 ).map_err(NativeLevelEventError::Commands)?;
                 Some(enemy)
             } else { None };
@@ -483,10 +497,25 @@ impl NativePolicyOnlyMetadata {
                     GameCommandError::World(error),
                 ))?;
             }
+            // Guard's explicit target must be located in the current
+            // Level.State.Squads order with its real command/guard relation,
+            // exactly as the ordinary player/HiveMind Guard implementation.
+            // Non-Guard scripted commands skip this projection entirely.
+            self.scripted_friendlies.clear();
+            if matches!(order, NativeScriptedOrder::Guard { .. }) {
+                collect_live_friendlies_from_catalog(
+                    world, events.roster(), &self.ship_catalog,
+                    events.roster().source_order(),
+                    |candidate| Ok(events.commands()
+                        .current_kind_and_guarded_target(candidate)),
+                    &mut self.scripted_friendlies,
+                ).map_err(NativeLevelEventError::Commands)?;
+            }
             let result = events.activate_local_command(
-                completed_tick, world, &self.navigation, random, order_view, &[],
+                completed_tick, world, &self.navigation, random, order_view,
+                &self.scripted_friendlies,
                 source.settings, NativeLocalCommandSource::Scripted,
-                order.action(), source.shooting, None,
+                order.action(linked_target), source.shooting, None,
             )?;
             if !matches!(result, Activation::Applied { .. }) {
                 return Err(NativeLevelEventError::Commands(GameCommandError::MissingCombatSnapshot));
