@@ -223,7 +223,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['sim_target','simulation_target_matches'],
             ['sim_changes','simulation_concurrency_adjustments'],
             ['sim_accepted','simulation_tuner_accepted'],
-            ['sim_settled','simulation_tuner_settled']])
+            ['sim_settled','simulation_tuner_settled'],
+            ['sim_restored','simulation_target_restored'],
+            ['sim_proven','simulation_proven_target']])
             add('collector_'+i+'_'+suffix,worker[name],'count');
         add('collector_'+i+'_sim_rss_mb',
             worker.simulation_engine_memory_mb,'mb');
@@ -315,6 +317,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['gpu_batch_adjustments','rollout_gpu_batch_adjustments'],
             ['gpu_batch_accepted','rollout_gpu_batch_accepted'],
             ['gpu_batch_settled','rollout_gpu_batch_settled'],
+            ['gpu_batch_restored','rollout_gpu_batch_restored'],
             ['gpu_batch_changed_next','rollout_gpu_batch_changed_next'],
             ['gpu_batch_proven_target','rollout_gpu_batch_proven_target']])
             add('collector_'+i+'_'+suffix,worker[name],'count');
