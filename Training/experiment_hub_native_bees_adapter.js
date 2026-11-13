@@ -346,15 +346,16 @@ function createNativeBeesAdapter({
             ))
                 throw Error('Native distributed work order needs an exact ID, bounded World window and safe inbox name.');
             const activeWorlds = collectOnly && rollout_worlds !== undefined
-                ? rollout_worlds : config.levels?.length;
-            if (rollout_workers !== undefined &&
-                (bundleRound || inboxLearner || !Number.isSafeInteger(rollout_workers) ||
-                    rollout_workers < 1 || rollout_workers > 256 ||
+                ? rollout_worlds : config.rollout_worlds ?? config.levels?.length;
+            const activeWorkers = rollout_workers ?? config.rollout_workers ?? 1;
+            if (!bundleRound && !inboxLearner &&
+                (!Number.isSafeInteger(activeWorkers) ||
+                    activeWorkers < 1 || activeWorkers > 256 ||
                     !Number.isSafeInteger(context.cpu_quota) ||
-                    rollout_workers > context.cpu_quota ||
+                    activeWorkers > context.cpu_quota ||
                     !Number.isSafeInteger(activeWorlds) ||
-                    rollout_workers > activeWorlds))
-                throw Error('Rollout workers must fit the fixed Hub CPU quota and allocated World count.');
+                    activeWorkers < 1 || activeWorkers > activeWorlds))
+                throw Error('Effective rollout workers must fit the fixed Hub CPU quota and allocated World count.');
             for (const [file, digest] of pins) {
                 if (sha256(fs.readFileSync(file)) !== digest)
                     throw Error('Native Bees pinned input changed after adapter installation.');
