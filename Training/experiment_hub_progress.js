@@ -160,7 +160,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         // With many independent recurrent PPO lineages, retain sustained
         // limiting stages rather than the first dozens of raw counters.
         for(let i=0;i<64;i++)
-            for(const stage of ['collection','optimization',
+            for(const stage of ['collection','optimization','ppo_data',
                 'simulation','observation','inference','ingestion',
                 'collection_other'])
                 retain('worker_'+i+'_'+stage+'_dominant',
@@ -445,6 +445,15 @@ class BottleneckEvidence {
             if(queueShare!==null)add('training_queue_work_share',queueShare);
             if(gapShare!==null)add('training_reply_gap_work_share',gapShare);
             const stageHints=[];
+            // The backend reports its measured worst recurrent-minibatch
+            // preparation alongside the *owning* lineage index. Comparing
+            // unrelated maxima from different workers is not causal evidence.
+            const dataOwner=metrics.training_ppo_data_slowest_worker;
+            const dataOwnerIndex=(dataOwner?.unit==='count'&&
+                Number.isSafeInteger(dataOwner.value)&&
+                dataOwner.value>=0&&dataOwner.value<count)
+                ?dataOwner.value:null;
+            const dataWorst=seconds('training_ppo_data_max_seconds');
             for(let i=0;i<count;i++) {
                 const collect=seconds('worker_'+i+'_collection_seconds');
                 const optimize=seconds('worker_'+i+'_optimization_seconds');
@@ -458,6 +467,9 @@ class BottleneckEvidence {
                 const inference=seconds('worker_'+i+'_inference_seconds');
                 const ingestion=seconds('worker_'+i+'_ingestion_seconds');
                 const fraction=collect/(collect+optimize);
+                const dataShare=(i===dataOwnerIndex&&dataWorst!==null&&
+                    optimize>0&&dataWorst<=optimize*1.02)
+                    ?dataWorst/optimize:null;
                 const simShare=(collect>0&&simulation!==null&&
                     simulation<=collect)?simulation/collect:null;
                 const obsShare=(simulation>0&&observation!==null&&
@@ -501,6 +513,7 @@ class BottleneckEvidence {
                 stageHints[i]={
                     collection:fraction>=0.70,
                     optimization:fraction<=0.30,
+                    ppo_data:fraction<=0.30&&dataShare!==null&&dataShare>=0.50,
                     simulation:cause==='simulation',
                     observation:cause==='observation',
                     inference:cause==='inference',
@@ -538,7 +551,7 @@ class BottleneckEvidence {
                     sustained(x=>x.courierQueue))
                     add('training_parallelism_underuse_evidence',1,'count');
                 for(let i=0;i<count;i++)
-                    for(const stage of ['collection','optimization',
+                    for(const stage of ['collection','optimization','ppo_data',
                         'simulation','observation','inference','ingestion',
                         'collection_other'])
                         if(sustained(x=>x.stageHints?.[i]?.[stage]))
