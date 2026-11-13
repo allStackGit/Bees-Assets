@@ -168,6 +168,37 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     return result
 
 
+def run_training_session(output: Path, rounds: int, learner_slot: int | None,
+                         rollout_worlds: int | None, rollout_workers: int | None,
+                         physics_workers: int | None, torch_threads: int | None,
+                         optimizer_device: str, rollout_binary: Path | None) -> None:
+    """Hand freshly verified artifacts to the one existing native trainer.
+
+    The session has its own immutable recipe, model lineage, round receipts
+    and restartable attempts. No second learner, scheduler or checkpoint
+    publication path is introduced by the bootstrapper.
+    """
+    command = [
+        sys.executable, str(Path(__file__).with_name("train_policy_session.py")),
+        str(output / "run.json"), str(output / "checkpoint.pt"),
+        str(output / "trainer-config.yaml"), str(output / "session"),
+        "--rounds", str(rounds), "--device", optimizer_device,
+    ]
+    if learner_slot is not None:
+        command.extend(["--learner-slot", str(learner_slot)])
+    for option, value in (
+        ("--rollout-worlds", rollout_worlds),
+        ("--rollout-workers", rollout_workers),
+        ("--physics-workers", physics_workers),
+        ("--torch-threads", torch_threads),
+    ):
+        if value is not None:
+            command.extend([option, str(value)])
+    if rollout_binary is not None:
+        command.extend(["--rollout-binary", str(rollout_binary.resolve(strict=True))])
+    subprocess.run(command, cwd=ROOT, check=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="new directory; existing paths are never overwritten")
@@ -181,11 +212,58 @@ def main() -> None:
                         help="copy a full native policy scene/run template into the bootstrap")
     parser.add_argument("--cargo", default="cargo",
                         help="Rust cargo executable used to generate the canonical ABI manifest")
+    parser.add_argument("--train-rounds", type=int,
+                        help="also execute this many native MA-POCA rounds via the existing resumable session")
+    parser.add_argument("--learner-slot", type=int,
+                        help="model slot to optimize; defaults to the first slot for multi-slot sessions")
+    parser.add_argument("--rollout-worlds", type=int,
+                        help="number of independent native simulation arenas per training round")
+    parser.add_argument("--rollout-workers", type=int,
+                        help="number of concurrent native rollout processes")
+    parser.add_argument("--physics-workers", type=int,
+                        help="CPU physics workers per rollout process")
+    parser.add_argument("--torch-threads", type=int,
+                        help="optimizer CPU intra-op worker threads")
+    parser.add_argument("--optimizer-device", default="cpu",
+                        help="MA-POCA optimizer device (cpu, cuda, cuda:0 on ROCm/CUDA)")
+    parser.add_argument("--rollout-binary", type=Path,
+                        help="prebuilt policy_rollout executable for Windows/Linux or multi-process rolls")
     args = parser.parse_args()
+    if args.train_rounds is not None and not 1 <= args.train_rounds <= 99999:
+        parser.error("--train-rounds must be between 1 and 99999")
+    if args.learner_slot is not None and args.learner_slot not in args.slots:
+        parser.error("--learner-slot must identify one of the configured model slots")
+    for name, value, limit in (
+        ("--rollout-worlds", args.rollout_worlds, 1024),
+        ("--rollout-workers", args.rollout_workers, 256),
+        ("--physics-workers", args.physics_workers, 128),
+        ("--torch-threads", args.torch_threads, 256),
+    ):
+        if value is not None and not 1 <= value <= limit:
+            parser.error(f"{name} must be between 1 and {limit}")
+    if (args.train_rounds is None and
+            any(value is not None for value in (
+                args.learner_slot, args.rollout_worlds, args.rollout_workers,
+                args.physics_workers, args.torch_threads, args.rollout_binary,
+            ))):
+        parser.error("training allocation and learner options require --train-rounds")
+    if args.train_rounds is not None and args.rollout_workers is not None:
+        worlds = args.rollout_worlds or 1
+        if args.rollout_workers > worlds:
+            parser.error("--rollout-workers cannot exceed --rollout-worlds")
     result = bootstrap(args.output.resolve(), args.trainer_config,
                        args.seed, args.slots, args.inference_device, args.cargo,
                        args.scenario)
-    print(json.dumps(result, sort_keys=True))
+    print(json.dumps(result, sort_keys=True), flush=True)
+    if args.train_rounds is not None:
+        learner_slot = (args.learner_slot if args.learner_slot is not None
+                        else args.slots[0] if len(args.slots) > 1 else None)
+        run_training_session(
+            args.output.resolve(), args.train_rounds, learner_slot,
+            args.rollout_worlds, args.rollout_workers,
+            args.physics_workers, args.torch_threads,
+            args.optimizer_device, args.rollout_binary,
+        )
 
 
 if __name__ == "__main__":
