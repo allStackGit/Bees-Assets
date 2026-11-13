@@ -2697,17 +2697,21 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const [sourceId,sourceDigest]=tinyBrainsImport.value.split(':');
+        const current=JSON.parse($('hub-config-json').value);
         $('hub-config-json').value=JSON.stringify({
             profile,profile_sha256:digest,updates,
             ...(hasThreads?{threads}:{}),
             ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
             ...(remoteRollouts?{remote_rollouts:true}:{}),
             ...(weights.length?{rollout_action_weights:weights}:{}),
+            ...(current.profile===profile&&current.profile_sha256===digest&&
+                current.design_overrides?{design_overrides:current.design_overrides}:{}),
             ...(sourceId&&sourceDigest?{
                 import_checkpoint:sourceId,
                 import_checkpoint_sha256:sourceDigest,
             }:{}),
         },null,2);
+        renderDesignEditor();
         const selected=approvedTinyBrainsProfiles(state?.machines||[])
             .find(([key])=>key===tinyBrainsSelect.value)?.[1];
         feedback('hub-config-message','Profile and update count copied to the draft. '+
@@ -2770,14 +2774,166 @@ document.addEventListener('DOMContentLoaded', () => {
         tinyBrainsSelect.disabled=tinyBrainsUse.disabled=!options.length;
         displayTinyBrainsImports();
     }
+    // A worker supplies the defaults from its actual installed trainer;
+    // the dashboard never invents hyperparameter values or environment rules.
+    function designDefinition(parameters={}) {
+        const machines=(state?.machines||[]).filter(machine=>
+            machine.status==='connected'&&machine.local_executor_enabled===true&&
+            machine.installed_projects?.includes(project));
+        for(const machine of machines) {
+            if(project==='courier') {
+                const entry=machine.design_catalog?.courier;
+                if(entry&&(!parameters.config_sha256||
+                    entry.config_sha256===parameters.config_sha256))
+                    return {entry,machine};
+            }else if(project==='tinybrains') {
+                const profiles=machine.design_catalog?.tinybrains?.profiles||{};
+                for(const [profile,entry] of Object.entries(profiles))
+                    if((!parameters.profile||parameters.profile===profile)&&
+                        (!parameters.profile_sha256||
+                            parameters.profile_sha256===entry.profile_sha256))
+                        return {entry,machine,profile};
+            }
+        }
+        return null;
+    }
+    function projectDefaultParameters() {
+        const choice=designDefinition();
+        if(!choice)return {};
+        if(project==='courier')return {
+            config_sha256:choice.entry.config_sha256,
+            seed:42,workers:1,max_rounds:1000,checkpoint_rounds:250,
+        };
+        if(project==='tinybrains') {
+            const {profile,entry,machine}=choice;
+            const found=Object.entries(machine.tinybrains_imports||{}).find(
+                ([,item])=>item.profile===profile&&item.sha256);
+            return {
+                profile,profile_sha256:entry.profile_sha256,updates:1000,
+                ...(found?{import_checkpoint:found[0],
+                    import_checkpoint_sha256:found[1].sha256}:{}),
+            };
+        }
+        return {};
+    }
+    function syncTinyBrainsEditor(parameters) {
+        if(project!=='tinybrains')return;
+        const selection=parameters.profile&&parameters.profile_sha256
+            ?parameters.profile+':'+parameters.profile_sha256:null;
+        if(selection&&[...tinyBrainsSelect.options].some(option=>option.value===selection))
+            tinyBrainsSelect.value=selection;
+        tinyBrainsUpdates.value=parameters.updates??1000;
+        tinyBrainsThreads.value=parameters.threads??'';
+        tinyBrainsDevice.value=parameters.device||'';
+        tinyBrainsRemote.checked=parameters.remote_rollouts===true;
+        tinyBrainsWeights.value=(parameters.rollout_action_weights||[]).join(',');
+        displayTinyBrainsImports();
+        const key=parameters.import_checkpoint&&parameters.import_checkpoint_sha256
+            ?parameters.import_checkpoint+':'+parameters.import_checkpoint_sha256:null;
+        if(key&&[...tinyBrainsImport.options].some(option=>option.value===key))
+            tinyBrainsImport.value=key;
+    }
+    function readDesignControls() {
+        const controls=[...$('hub-design-editor').querySelectorAll('[data-design-key]')];
+        if(!controls.length)return JSON.parse($('hub-config-json').value);
+        const parameters=JSON.parse($('hub-config-json').value);
+        const choice=designDefinition(parameters);
+        if(!choice)throw Error('Matching approved project defaults are unavailable. Reconnect the worker or edit Advanced JSON.');
+        const overrides={...parameters.design_overrides};
+        for(const field of choice.entry.fields) {
+            const input=controls.find(el=>el.dataset.designKey===field.key);
+            if(!input)throw Error('Reload Design: a project parameter field is missing.');
+            let value;
+            if(field.type==='boolean')value=input.checked;
+            else {
+                if(!input.value.trim())throw Error(field.label+' requires a number.');
+                value=Number(input.value);
+                if(!Number.isFinite(value)||value<field.min||value>field.max||
+                    field.type==='integer'&&!Number.isSafeInteger(value))
+                    throw Error(field.label+' must be within the approved range.');
+            }
+            if(value===field.default)delete overrides[field.key];
+            else overrides[field.key]=value;
+        }
+        if(Object.keys(overrides).length)parameters.design_overrides=overrides;
+        else delete parameters.design_overrides;
+        $('hub-config-json').value=JSON.stringify(parameters,null,2);
+        return parameters;
+    }
+    function renderDesignEditor() {
+        let parameters;
+        try {parameters=JSON.parse($('hub-config-json').value);}
+        catch {return;}
+        const chosen=designDefinition(parameters);
+        const editor=$('hub-design-editor');
+        editor.hidden=!chosen;
+        $('hub-design-training').replaceChildren();
+        $('hub-design-environment').replaceChildren();
+        if(!chosen)return;
+        const {entry,machine}=chosen;
+        $('hub-design-source').textContent='Defaults from '+machine.id+
+            ' · approved '+(project==='courier'?'environment':'profile')+
+            ' '+(entry.config_sha256||entry.profile_sha256).slice(0,12)+
+            '. Overrides are frozen in each saved draft and verified by the worker at Start.';
+        for(const field of entry.fields) {
+            const label=document.createElement('label');
+            label.append(document.createTextNode(field.label));
+            const input=document.createElement('input');
+            input.dataset.designKey=field.key;
+            if(field.type==='boolean') {
+                input.type='checkbox';
+                input.checked=parameters.design_overrides?.[field.key]??
+                    field.default;
+            }else{
+                input.type='number';
+                input.step=field.type==='integer'?'1':'any';
+                input.min=String(field.min);input.max=String(field.max);
+                input.value=String(parameters.design_overrides?.[field.key]??
+                    field.default);
+            }
+            const hint=document.createElement('small');
+            hint.textContent=field.key+' · default '+String(field.default);
+            label.append(input,hint);
+            input.addEventListener('change',()=>{
+                try{readDesignControls();feedback('hub-config-message','');}
+                catch(error){feedback('hub-config-message',error.message);}
+            });
+            $(field.section==='training'?'hub-design-training':
+                'hub-design-environment').append(label);
+        }
+        for(const section of ['training','environment']) {
+            const target=$('hub-design-'+section);
+            if(!target.children.length) {
+                const note=document.createElement('p');
+                note.className='muted';
+                note.textContent=section==='training'
+                    ?'This installed adapter has no independently editable hyperparameters. Its approved training profile remains pinned.'
+                    :'This installed adapter has no independently editable simulation controls.';
+                target.append(note);
+            }
+        }
+    }
+    $('hub-design-reset').addEventListener('click',()=>{
+        try {
+            const parameters=JSON.parse($('hub-config-json').value);
+            const chosen=designDefinition(parameters);
+            if(!chosen)throw Error('No matching approved project defaults.');
+            delete parameters.design_overrides;
+            $('hub-config-json').value=JSON.stringify(parameters,null,2);
+            renderDesignEditor();
+        }catch(error){feedback('hub-config-message',error.message);}
+    });
+    $('hub-config-json').addEventListener('change',renderDesignEditor);
     function resetEditor() {
         editing=null;
         $('hub-config-name').value='';
-        $('hub-config-json').value='{}';
-        tinyBrainsUpdates.value='1';
+        $('hub-config-json').value=JSON.stringify(projectDefaultParameters(),null,2);
+        tinyBrainsUpdates.value='1000';
         tinyBrainsThreads.value='';
         tinyBrainsDevice.value='';
         setEvaluationEditor();
+        syncTinyBrainsEditor(JSON.parse($('hub-config-json').value));
+        renderDesignEditor();
         $('hub-config-save').textContent='Save draft';
         feedback('hub-config-message','');
     }
@@ -3006,6 +3162,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-copy-bees-form').hidden=project!=='bees';
         $('hub-config-evaluation').hidden=project==='bees';
         displayTinyBrainsProfiles();
+        renderDesignEditor();
         $('hub-config-rows').replaceChildren();
         const configs=state.configurations.filter(c=>c.project_id===project);
         for(const c of configs.slice().reverse()) {
@@ -3022,6 +3179,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
                     ?c.parameters.device:'';
                 setEvaluationEditor(c.evaluation_stop);
+                syncTinyBrainsEditor(c.parameters);
+                renderDesignEditor();
                 $('hub-config-save').textContent='Save revision';
                 feedback('hub-config-message','Editing revision '+c.revision);
             }));
@@ -3033,6 +3192,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
                     ?c.parameters.device:'';
                 setEvaluationEditor(c.evaluation_stop);
+                syncTinyBrainsEditor(c.parameters);
+                renderDesignEditor();
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
             }));
             if(project==='bees') {
@@ -4370,6 +4531,7 @@ document.addEventListener('DOMContentLoaded', () => {
             resetEditor();
             $('hub-config-name').value=payload.name||'Bees draft';
             $('hub-config-json').value=JSON.stringify(payload,null,2);
+            renderDesignEditor();
             feedback('hub-config-message','Copied current Bees training form. Save draft to retain it.');
         }catch(e){feedback('hub-config-message',e.message);}
     });
@@ -4380,7 +4542,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...(editing||{}),
                 project_id:project,
                 name:$('hub-config-name').value,
-                parameters:JSON.parse($('hub-config-json').value),
+                parameters:readDesignControls(),
                 ...(project!=='bees'?{evaluation_stop:evaluationFromEditor()}:{}),
             });
             editing={id:saved.id,revision:saved.revision};
