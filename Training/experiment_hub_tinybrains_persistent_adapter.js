@@ -83,6 +83,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_ordering_seconds','ppo_zero_grad_seconds',
         'ppo_grouping_seconds','ppo_data_preparation_seconds',
         'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
+        'ppo_finite_gradient_check_seconds',
         'ppo_backward_seconds','ppo_metric_readback_seconds',
         'ppo_diagnostic_aggregation_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
