@@ -877,6 +877,11 @@ impl NativePhysicalScene {
     ) -> Result<(), NativeSnapshotError> {
         use bees_sim::obstacle::ObstacleKind;
         let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if layout.remove_static_ids.is_empty() && layout.add_static_boxes.is_empty() &&
+            layout.add_static_polygons.is_empty() && layout.translate_squads.is_empty()
+        {
+            return Ok(());
+        }
         if self.source_episode.is_some() || self.source_policy_group.is_some() ||
             !self.source_policy_bindings.is_empty()
         {
@@ -907,7 +912,7 @@ impl NativePhysicalScene {
         let mut new_ids = HashSet::new();
         for placement in &layout.add_static_boxes {
             if placement.entity_id <= highest_original_id ||
-                placement.entity_id <= 0 ||
+                placement.entity_id <= 0 || placement.entity_id == i64::MAX ||
                 !new_ids.insert(placement.entity_id) {
                 return Err(invalid("new obstacle identities must be unique and above the captured world"));
             }
@@ -939,13 +944,19 @@ impl NativePhysicalScene {
         }
         for placement in &layout.add_static_polygons {
             if placement.entity_id <= highest_original_id ||
-                placement.entity_id <= 0 || !new_ids.insert(placement.entity_id) {
+                placement.entity_id <= 0 || placement.entity_id == i64::MAX ||
+                !new_ids.insert(placement.entity_id) {
                 return Err(invalid("new polygon identities must be unique and above the captured world"));
             }
             let position = Vec2::new(placement.position[0], placement.position[1]);
             let pose = Pose { position, rotation_degrees: placement.rotation_degrees };
             if !position.is_finite() || !pose.rotation_degrees.is_finite() {
                 return Err(invalid("new polygon has nonfinite authored placement"));
+            }
+            if placement.local_vertices.as_ref().is_some_and(|vertices|
+                !(3..=8192).contains(&vertices.len())
+            ) {
+                return Err(invalid("native polygon path must contain 3 to 8192 vertices"));
             }
             let prepared = match &placement.local_vertices {
                 Some(vertices) => polygons.prepare_spawn_live_polygon(
@@ -991,7 +1002,7 @@ impl NativePhysicalScene {
                     destination.y > self.bounds.max.y ||
                     placements.insert(id, destination).is_some()
                 {
-                    return Err(invalid("native squad placement overlaps or leaves the Level bounds"));
+                    return Err(invalid("native squad placement duplicates a ship or leaves the Level bounds"));
                 }
             }
         }
