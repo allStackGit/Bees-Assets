@@ -636,7 +636,7 @@
       "combat_window_seconds": 5,
       "user_controlled": false,
       "turrets": [],
-      "is_carrier_ship": true,
+      "is_carrier_ship": false,
       "persistent_fleet": true,
       "fleet_ship_id": 24
     },
