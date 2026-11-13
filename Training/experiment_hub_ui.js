@@ -3035,7 +3035,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tinyBrainsDevice.value='';
         setEvaluationEditor();
         syncTinyBrainsEditor(JSON.parse($('hub-config-json').value));
-        renderDesignEditor();
+        renderDesignEditor(true);
         $('hub-config-save').textContent='Save draft';
         feedback('hub-config-message','');
     }
@@ -3282,7 +3282,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?c.parameters.device:'';
                 setEvaluationEditor(c.evaluation_stop);
                 syncTinyBrainsEditor(c.parameters);
-                renderDesignEditor();
+                renderDesignEditor(true);
                 $('hub-config-save').textContent='Save revision';
                 feedback('hub-config-message','Editing revision '+c.revision);
             }));
@@ -3295,7 +3295,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?c.parameters.device:'';
                 setEvaluationEditor(c.evaluation_stop);
                 syncTinyBrainsEditor(c.parameters);
-                renderDesignEditor();
+                renderDesignEditor(true);
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
             }));
             if(project==='bees') {
