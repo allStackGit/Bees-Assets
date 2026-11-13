@@ -131,6 +131,10 @@ struct GameShip {
     support_zone: Option<GameCollider>,
     #[serde(default)]
     policy: Option<GamePolicyAgent>,
+    /// Original CarrierShip.Carrier link for a Drone (Strikers use
+    /// special.carrier_id). The parent must be an alive same-side Carrier.
+    #[serde(default)]
+    drone_carrier_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -469,7 +473,15 @@ impl NativePhysicalScene {
         let mut ship_sides = HashMap::new();
         let mut ship_types = HashMap::new();
         let mut special_weapon_ids = HashSet::new();
-        let mut striker_carriers = Vec::new();
+        let mut carrier_children = Vec::new();
+        let beehive_sprite = catalog.sprite_size(2)
+            .ok_or(invalid("native Beehive sprite dimensions are missing"))?;
+        // ConfigData.PixelsPerUnit = 8. The catalog exposes world units;
+        // source healing eligibility uses integer sprite pixels.
+        let beehive_pixels = [
+            (beehive_sprite.x * 8.0).round() as u32,
+            (beehive_sprite.y * 8.0).round() as u32,
+        ];
         let mut ship_player_control = HashMap::new();
         let mut source_policy_bindings = HashMap::new();
         let mut source_policy_inputs = HashMap::new();
@@ -506,8 +518,11 @@ impl NativePhysicalScene {
                 ship.combat_window_seconds <= 0.0 ||
                 (ship.is_carrier_ship && ship.ship_type != 5) ||
                 ship.policy.is_some() && (ship.user_controlled || ship.mined_cargo != 0) ||
-                // Beacon/Heal/Warp/Scout and other special controllers must
-                // first have their complete source-owned trigger data.
+                ship.drone_carrier_id.is_some_and(|carrier|
+                    ship.ship_type != 8 || carrier <= 0 || carrier == id
+                ) ||
+                // Beacon and Factory need additional source-owned runtime
+                // inputs before they can be instantiated as ordinary ships.
                 matches!(ship.ship_type, 1 | 9)
             {
                 return Err(invalid("invalid native ordinary game ship or unsupported special hull"));
@@ -614,11 +629,10 @@ impl NativePhysicalScene {
                 None if !matches!(ship.ship_type, 0 | 10 | 19 | 22 | 18) => None,
                 _ => return Err(invalid("native special ship requires an exact matching ability and power")),
             };
-            if (ship.policy.is_some() && special.is_some()) ||
-                ship.special_weapon.is_some() !=
-                    matches!(ship.ship_type, 0 | 10 | 19 | 22)
+            if ship.special_weapon.is_some() !=
+                matches!(ship.ship_type, 0 | 10 | 19 | 22)
             {
-                return Err(invalid("native game special requires its weapon; special policy abilities are not yet independently authored"));
+                return Err(invalid("native Bomb specialist requires its authored physical weapon"));
             }
             let authored_power = match &special {
                 Some(NativeAuthoredShipSpecial::Barge { power, .. }) |
@@ -648,10 +662,13 @@ impl NativePhysicalScene {
                     charge_range: charge, proximity,
                 })
             } else { None };
-            if let Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) = &special {
-                if let Some(carrier_id) = carrier.carrier_id {
-                    striker_carriers.push((ship.entity_id, ship.side, carrier_id));
-                }
+            let striker_carrier = match &special {
+                Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) => carrier.carrier_id,
+                _ => None,
+            };
+            let parent_carrier_id = ship.drone_carrier_id.or(striker_carrier);
+            if let Some(carrier_id) = parent_carrier_id {
+                carrier_children.push((id, ship.side, carrier_id));
             }
             ship_types.insert(id, ship.ship_type);
 
@@ -664,6 +681,27 @@ impl NativePhysicalScene {
                 return Err(invalid("only Beehives and Warp Gates take exact support trigger colliders"));
             }
 
+            // Policy capability eligibility matches the Unity source, but
+            // executable masks, specials and cooldowns remain owned by the
+            // one live CombatWorld, not copied into training metadata.
+            let policy_capabilities = if ship.policy.is_some() {
+                let healing = (ship.side == raw.bee_side &&
+                    sprite.x < beehive_sprite.x && sprite.y < beehive_sprite.y)
+                    .then_some(NativeHealingEligibility {
+                        bee_side: raw.bee_side,
+                        ship_size_pixels: [
+                            (sprite.x * 8.0).round() as u32,
+                            (sprite.y * 8.0).round() as u32,
+                        ],
+                        beehive_size_pixels: beehive_pixels,
+                    });
+                NativeAuthoredPolicyCapabilities {
+                    mining: matches!(ship.ship_type, 4 | 9),
+                    healing,
+                    warp_human_side: (ship.side == raw.human_side &&
+                        ship.ship_type != 20).then_some(raw.human_side),
+                }
+            } else { NativeAuthoredPolicyCapabilities::default() };
             let game_movement = GameMovementProfile {
                 turning_radius: ship.turning_radius,
                 half_width: sprite.x * 0.5,
@@ -821,22 +859,25 @@ impl NativePhysicalScene {
                     controller: ControlledShipPerception {
                         effective_vision_range: ship.sight.effective_range as f32,
                         movement_disabled_for_team: policy.movement_disabled,
-                        has_weapons: !turrets.is_empty(), has_turrets: !turrets.is_empty(),
-                        has_special_action: false, special_ready: false,
+                        has_weapons: !turrets.is_empty() || special_weapon.is_some(),
+                        has_turrets: !turrets.is_empty(),
+                        has_special_action: special.is_some(), special_ready: false,
                     },
                     capability: CapabilitySource {
                         special_resource_fraction: 0.0,
                         special_cooldown_fraction: 0.0,
                         special_phase: 0.0,
-                        mining_possible: false, healing_possible: false,
-                        warp_possible: false, is_carrier_child: false,
-                        has_living_parent_carrier: false,
+                        mining_possible: policy_capabilities.mining,
+                        healing_possible: policy_capabilities.healing.is_some(),
+                        warp_possible: policy_capabilities.warp_human_side.is_some(),
+                        is_carrier_child: matches!(ship.ship_type, 8 | 19),
+                        has_living_parent_carrier: parent_carrier_id.is_some(),
                         ship_mined_tsv: 0, team_retainable_mined_tsv: 0,
                         side_starting_tsv: if ship.side == raw.bee_side {
                             episode.bee_starting_tsv
                         } else { episode.human_starting_tsv },
                     },
-                    parent_carrier_id: None,
+                    parent_carrier_id,
                     own_weapons: self_weapons,
                 });
             }
@@ -846,9 +887,9 @@ impl NativePhysicalScene {
                 original_health: ship.original_health, size_class: ship.size_class,
                 healing_zone: if ship.ship_type == 2 { support_zone.clone() } else { None },
                 warp_zone: if ship.ship_type == 20 { support_zone } else { None },
-                policy_capabilities: NativeAuthoredPolicyCapabilities::default(),
+                policy_capabilities,
                 fleet_ship_id: special.as_ref().map(|_| id),
-                policy: None, drone_carrier_id: None,
+                policy: None, drone_carrier_id: ship.drone_carrier_id,
                 cease_fire: ship.cease_fire, turrets, special,
                 special_weapon,
                 combat_activity: Some(bees_sim::combat_world::NativeCombatActivity {
@@ -873,12 +914,12 @@ impl NativePhysicalScene {
         }
 
         if special_weapon_ids.iter().any(|id| ship_sides.contains_key(id)) ||
-            striker_carriers.iter().any(|&(_, side, carrier_id)|
+            carrier_children.iter().any(|&(_, side, carrier_id)|
                 ship_types.get(&carrier_id) != Some(&5) ||
                 ship_sides.get(&carrier_id) != Some(&side)
             )
         {
-            return Err(invalid("native Bomb weapon identities collide with ships or a Striker links to a non-Carrier on another side"));
+            return Err(invalid("native Bomb weapon identity collision or an invalid same-side Carrier child link"));
         }
 
         let mut world_ids = ship_sides.keys().copied().collect::<HashSet<_>>();
