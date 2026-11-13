@@ -89,6 +89,7 @@ pub struct NavigationScheduler {
     clearance_snapshot: Option<Arc<NavigationSearchSnapshot>>,
     snapshot_frame: Option<u64>,
     snapshot_moving_asteroids_present: Option<bool>,
+    static_geometry_revision: Option<u64>,
     pending_static_rebuild: bool,
 }
 
@@ -108,6 +109,7 @@ impl NavigationScheduler {
             clearance_snapshot: None,
             snapshot_frame: None,
             snapshot_moving_asteroids_present: None,
+            static_geometry_revision: None,
             pending_static_rebuild: true,
         };
         for index in 0..worker_count {
@@ -207,13 +209,21 @@ impl NavigationScheduler {
         world: &mut CombatWorld,
         runtime: &mut NavigationRuntime,
         fixed_frame: u64,
-        static_obstacles_dirty: bool,
+        static_geometry_revision: u64,
+        static_geometry_moves: bool,
         collision_asteroids_enabled: bool,
     ) -> Result<NavigationSchedulerStep, NavigationSchedulerError> {
         if runtime.clearance().grid() != self.grid {
             return Err(NavigationError::InvalidMap.into());
         }
-        if static_obstacles_dirty {
+        // Presence of static obstacles does NOT mean they change each
+        // frame. Re-rasterizing on presence made a large map wait for all
+        // workers after every step even though its geometry was unchanged.
+        // World-owned revision tracks admission; animated static shapes
+        // genuinely require a new snapshot on each completed frame.
+        if self.static_geometry_revision != Some(static_geometry_revision) ||
+            static_geometry_moves
+        {
             self.pending_static_rebuild = true;
             self.clearance_snapshot = None;
         }
@@ -285,6 +295,7 @@ impl NavigationScheduler {
             self.snapshot_frame = Some(fixed_frame);
             self.snapshot_moving_asteroids_present = Some(moving_asteroids_present);
             self.pending_static_rebuild = false;
+            self.static_geometry_revision = Some(static_geometry_revision);
             step.clearance_refreshed = true;
         }
         let snapshot = self.clearance_snapshot.as_ref()
