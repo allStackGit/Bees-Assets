@@ -112,11 +112,16 @@ class LocalExecution {
                     localAdapter?.gpu_dual_execution==='split-ppo'&&
                     job.frozen_parameters?.device==='dual'&&
                     job.resources?.gpu_mode==='exclusive';
+                const multi=count>=2&&count<=8&&
+                    this.supervisor instanceof LinuxSupervisor&&
+                    job.project_id==='courier'&&
+                    localAdapter?.gpu_multi_execution==='independent-ppo'&&
+                    job.resources?.gpu_mode==='exclusive';
                 const single=count===1;
                 if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
                     !this.supervisor.qualifiedAt||
                     job.status!=='waiting_adapter'||
-                    !(dual||single&&(job.resources?.gpu_mode==='exclusive'||
+                    !(dual||multi||single&&(job.resources?.gpu_mode==='exclusive'||
                         job.resources?.gpu_mode==='shared'&&
                         this.supervisor instanceof DockerSupervisor&&
                         localAdapter?.gpu_sharing==='cooperative-pytorch'))||
@@ -128,7 +133,7 @@ class LocalExecution {
                     lease.gpu_bindings.some((bound,i)=>
                         bound.id!==lease.resources.gpus?.[i]||
                         (job.resources.gpus?.length>0&&bound.id!==job.resources.gpus[i])))
-                    throw Error('GPU access probe requires a qualified frozen one- or two-GPU Linux lease.');
+                    throw Error('GPU access probe requires a qualified frozen, project-approved Linux GPU lease.');
                 // The bounded device-filter service verifies both allowed /
                 // denied render nodes and the actual installed HIP runtime.
                 // Read-only verifier construction must not create the
@@ -138,7 +143,7 @@ class LocalExecution {
                         job_id:job.id,project_id:job.project_id,
                         artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                         continuation_of_job_id:job.continuation_of_job_id||null,
-                        ...(dual
+                        ...(dual||multi
                             ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                             :{gpu_pci_address:lease.gpu_bindings[0].pci_address}),
                     }));
