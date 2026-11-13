@@ -58,7 +58,8 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
     rel = source.relative_to(root)
     if not rel.parts or any(forbidden_part(part) for part in rel.parts):
         return False
-    if not include_replays and any(part.lower() == "replays" for part in rel.parts):
+    if not include_replays and any(part.lower() == "replays"
+                                   for part in (*root.parts, *rel.parts)):
         return False
     if source.suffix.lower() not in SUFFIXES:
         return False
@@ -435,6 +436,10 @@ def export(spec: dict, output: Path) -> dict:
                 })
         def scan_directory(folder: Path, name_prefix: str, job_id: str,
                            counts_as_trainer: bool = True) -> None:
+            if not spec.get("include_replays", False) and any(
+                part.lower() == "replays" for part in folder.parts
+            ):
+                return
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
                 current = Path(dirpath)
                 # Do not traverse sensitive folders at all; the same rule
@@ -448,8 +453,8 @@ def export(spec: dict, output: Path) -> dict:
                         continue
                     add_file(source, name_prefix + "/" +
                              source.relative_to(folder).as_posix())
-                    if any(part.lower() == "replays"
-                           for part in source.relative_to(folder).parts):
+                    if any(part.lower() == "replays" for part in (
+                            *folder.parts, *source.relative_to(folder).parts)):
                         manifest["replay_files_included"] += 1
                     found_by_job[job_id] += 1
                     if counts_as_trainer:
