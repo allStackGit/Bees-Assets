@@ -204,7 +204,12 @@ cancels its queue:
 
 An explicit opposing target permits
 `{"kind":"aggressive","enemy_squad_item_id":52}` or
-`{"kind":"target_enemy","enemy_squad_item_id":52}`.
+`{"kind":"target_enemy","enemy_squad_item_id":52}`,
+`{"kind":"bombing_run","enemy_squad_item_id":52}` or
+`{"kind":"charge","enemy_squad_item_id":52}`.
+BombingRun and Charge require the actual source weapon specs, eligible
+bomber/Barge hulls, carrier-squad flag and live target metadata; they
+never substitute generic fire for a missing special weapon.
 Other source-authored orders include `{"kind":"hold"}`,
 `{"kind":"patrol","top_left":[-20,20],"bottom_right":[20,-20]}`,
 `{"kind":"guard","friendly_squad_item_id":53}`,
@@ -1477,8 +1482,8 @@ Patrol, Mining and Heal omit the source's AI-only timeout. Friendly projections
 use the canonical roster's registration order and director state for every origin.
 Host/player routing supports movement, chosen support actions and ranged Attack.
 Fresh authored scripted movement, Hold, Patrol, Guard, Scouting, targeted
-Aggressive, Mining, Heal and FullRetreat orders execute through the same
-canonical director;
+Aggressive, BombingRun, Charge, Mining, Heal and FullRetreat orders execute
+through the same canonical director;
 dialogue-triggered queue enrollment and arbitrary prepared Unity command
 histories remain outside the static Level-config contract.
 
