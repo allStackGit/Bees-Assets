@@ -126,6 +126,7 @@ enum ScriptedActivationConfig {
     Immediate,
     AfterSeconds { seconds: f32 },
     OnDeployment,
+    OnArrival,
     OnCampaignCue { cue: bees_host::policy_only_metadata::NativeMissionCue },
 }
 
@@ -447,6 +448,8 @@ fn make_setup(
                         bees_host::policy_only_metadata::NativeScriptedActivation::AfterSeconds(seconds),
                     ScriptedActivationConfig::OnDeployment =>
                         bees_host::policy_only_metadata::NativeScriptedActivation::OnDeployment,
+                    ScriptedActivationConfig::OnArrival =>
+                        bees_host::policy_only_metadata::NativeScriptedActivation::OnArrival,
                     ScriptedActivationConfig::OnCampaignCue { cue } =>
                         bees_host::policy_only_metadata::NativeScriptedActivation::OnCampaignCue(cue),
                 },

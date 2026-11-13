@@ -973,9 +973,14 @@ impl NativePhysicalScene {
         let deferred_squads = setup.reinforcements.iter()
             .flat_map(|wave| wave.squad_item_ids.iter().copied())
             .collect::<std::collections::HashSet<_>>();
+        let entry_squads = setup.reinforcements.iter()
+            .filter(|wave| wave.entry.is_some_and(|position|
+                !position.unity_equal(Vec2::ZERO)))
+            .flat_map(|wave| wave.squad_item_ids.iter().copied())
+            .collect::<std::collections::HashSet<_>>();
         authored.metadata.stage_scripted_queues(
-            &authored.squads, setup.scripted_queues, &deferred_squads, dt,
-            authored.campaign_dialogue,
+            &authored.squads, setup.scripted_queues, &deferred_squads,
+            &entry_squads, dt, authored.campaign_dialogue,
         ).map_err(NativePolicyOnlyLevelError::InvalidScriptedCommands)?;
         authored.stage_reinforcements(setup.reinforcements, dt)
             .map_err(NativePolicyOnlyLevelError::InvalidReinforcements)?;

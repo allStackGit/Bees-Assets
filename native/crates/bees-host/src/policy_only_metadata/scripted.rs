@@ -66,6 +66,9 @@ pub enum NativeScriptedActivation {
     AfterSeconds(f32),
     /// Run as soon as the specified deferred source squad enters the roster.
     OnDeployment,
+    /// Wait for the authenticated reinforcement entry movement to finish
+    /// before running a mission command that would replace that movement.
+    OnArrival,
     /// Subscribe to the same-tick authored campaign notification.
     /// A cue is latched once even if the intended squad deploys later.
     OnCampaignCue(NativeMissionCue),
@@ -85,6 +88,7 @@ pub(super) struct NativeScriptedQueueState {
     repeat: bool,
     ready_tick: u64,
     on_deployment: bool,
+    wait_for_entry: bool,
     required_cue: Option<NativeMissionCue>,
     cue_armed: bool,
 }
@@ -99,6 +103,7 @@ impl NativePolicyOnlyMetadata {
         squads: &[crate::scene_builder::NativeAuthoredSquad],
         plans: Vec<NativeScriptedQueuePlan>,
         deferred: &HashSet<i64>,
+        with_entry_order: &HashSet<i64>,
         dt_seconds: f32,
         campaign: Option<CampaignDialogueSpec>,
     ) -> Result<(), &'static str> {
@@ -139,10 +144,16 @@ impl NativePolicyOnlyMetadata {
             let is_deferred = deferred.contains(&plan.squad_item_id);
             if (is_deferred && !matches!(plan.activation,
                     NativeScriptedActivation::OnDeployment |
+                    NativeScriptedActivation::OnArrival |
                     NativeScriptedActivation::OnCampaignCue(_))) ||
                 (!is_deferred && matches!(plan.activation,
-                    NativeScriptedActivation::OnDeployment)) {
-                return Err("deferred scripted squads require on_deployment or on_campaign_cue");
+                    NativeScriptedActivation::OnDeployment |
+                    NativeScriptedActivation::OnArrival)) {
+                return Err("deferred scripted squads require a deployment, arrival or campaign cue gate");
+            }
+            if matches!(plan.activation, NativeScriptedActivation::OnArrival) &&
+                !with_entry_order.contains(&plan.squad_item_id) {
+                return Err("on_arrival requires a deferred squad with a real entry movement");
             }
             let required_cue = match plan.activation {
                 NativeScriptedActivation::OnCampaignCue(cue) if cue.valid_for(campaign) =>
@@ -154,6 +165,7 @@ impl NativePolicyOnlyMetadata {
             let ready_tick = match plan.activation {
                 NativeScriptedActivation::Immediate |
                 NativeScriptedActivation::OnDeployment |
+                NativeScriptedActivation::OnArrival |
                 NativeScriptedActivation::OnCampaignCue(_) => 1,
                 NativeScriptedActivation::AfterSeconds(seconds) => {
                     let tick = (f64::from(seconds) / f64::from(dt_seconds)).floor() + 1.0;
@@ -168,6 +180,7 @@ impl NativePolicyOnlyMetadata {
                 owner: squad.owner, orders: plan.orders,
                 cursor: 0, repeat: plan.repeat, ready_tick,
                 on_deployment: is_deferred,
+                wait_for_entry: matches!(plan.activation, NativeScriptedActivation::OnArrival),
                 required_cue, cue_armed: required_cue.is_none(),
             });
         }
@@ -233,7 +246,7 @@ impl NativePolicyOnlyMetadata {
         );
         self.scripted_queues.insert(insert_at, NativeScriptedQueueState {
             owner, orders: plan.orders, cursor: 0, repeat: plan.repeat,
-            ready_tick: 1, on_deployment: false,
+            ready_tick: 1, on_deployment: false, wait_for_entry: false,
             required_cue: None, cue_armed: true,
         });
         Ok(())
@@ -252,6 +265,8 @@ impl NativePolicyOnlyMetadata {
                 counts.waiting_for_deployment += 1;
             } else if tick < state.ready_tick {
                 counts.waiting_for_start_time += 1;
+            } else if state.wait_for_entry {
+                counts.waiting_for_arrival += 1;
             } else {
                 counts.ready_queues += 1;
             }
@@ -302,6 +317,21 @@ impl NativePolicyOnlyMetadata {
             if completed_tick < self.scripted_queues[index].ready_tick {
                 index += 1;
                 continue;
+            }
+            if self.scripted_queues[index].wait_for_entry {
+                let squad = events.roster().get(owner)
+                    .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
+                let mut moving = false;
+                for &ship_id in &squad.members {
+                    let body = world.ship_body(ship_id)
+                        .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
+                    moving |= body.motion.has_target_coordinates;
+                }
+                if moving {
+                    index += 1;
+                    continue;
+                }
+                self.scripted_queues[index].wait_for_entry = false;
             }
             if events.commands().has_active(owner) {
                 index += 1;

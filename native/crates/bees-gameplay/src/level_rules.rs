@@ -188,6 +188,7 @@ pub struct NativeScriptedQueueMeasurements {
     pub waiting_for_campaign_cue: usize,
     pub waiting_for_deployment: usize,
     pub waiting_for_start_time: usize,
+    pub waiting_for_arrival: usize,
     pub ready_queues: usize,
     pub commands_started: u64,
     pub orders_skipped_target_gone: u64,
@@ -203,6 +204,7 @@ impl NativeScriptedQueueMeasurements {
         self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
         self.waiting_for_deployment += other.waiting_for_deployment;
         self.waiting_for_start_time += other.waiting_for_start_time;
+        self.waiting_for_arrival += other.waiting_for_arrival;
         self.ready_queues += other.ready_queues;
         self.commands_started += other.commands_started;
         self.orders_skipped_target_gone += other.orders_skipped_target_gone;
