@@ -207,6 +207,16 @@ pub trait NativeLevelCommandContext {
         _completed_tick: u64, _dt_seconds: f32,
     ) -> Result<u64, NativeLevelEventError> { Ok(0) }
 
+    /// The source Squad.RunCommandQueue lifecycle is advanced after
+    /// canonical command finalization and before the next fixed step.
+    /// Gameplay, headless rollout and presentation use the same commands.
+    fn advance_scripted_commands(
+        &mut self, _world: &mut CombatWorld,
+        _events: &mut NativeLevelEventProcessor,
+        _random: &mut bees_sim::simulation::RandomStream,
+        _completed_tick: u64,
+    ) -> Result<u64, NativeLevelEventError> { Ok(0) }
+
     fn player_chase_measurements(&self) -> NativePlayerChaseMeasurements {
         NativePlayerChaseMeasurements::default()
     }
@@ -1061,6 +1071,16 @@ where
         // scan of all player squads, to release source Lock On state.
         for finished in state.events.latest_finished_commands() {
             state.metadata.player_command_finished(finished.owner);
+        }
+        // Scripted Level queues are source-owned, but each action uses the
+        // canonical local command director, movement, timers and outbox.
+        // Run after command completion so no additional command can
+        // replace the one which just finished in the same fixed tick.
+        if !state.events.completed() {
+            state.metadata.advance_scripted_commands(
+                &mut state.combat, &mut state.events, &mut world.random,
+                completed_tick,
+            )?;
         }
         // Source Squad.CheckChase fires independently of the current
         // command's timer. Install only authenticated player commands,

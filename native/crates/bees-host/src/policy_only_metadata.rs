@@ -7,6 +7,8 @@
 //! physical weapon subclass is not implemented still fail explicitly.
 
 mod commands;
+mod scripted;
+pub use scripted::{NativeScriptedOrder, NativeScriptedQueuePlan};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -158,6 +160,8 @@ pub struct NativePolicyOnlyMetadata {
     beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
     player: NativeSourcePlayerInputs,
     pub(crate) reinforcements: std::collections::VecDeque<crate::reinforcements::ReinforcementWave>,
+    scripted_queues: Vec<scripted::NativeScriptedQueueState>,
+    scripted_members: Vec<bees_sim::squad_movement::SquadFormationMember>,
     /// One source-second chase clock shared by the player's starting
     /// squads, whose Unity timers are all armed at Squad.Setup.
     chase_elapsed_seconds: f32,
@@ -284,6 +288,8 @@ impl NativePolicyOnlyMetadata {
             explorers: Vec::new(),
             agents: agent_map, sides: side_map, beacon_templates, player,
             reinforcements: std::collections::VecDeque::new(),
+            scripted_queues: Vec::new(),
+            scripted_members: Vec::new(),
             chase_elapsed_seconds: 0.0,
             chase_measurements: NativePlayerChaseMeasurements::default(),
         })
@@ -455,6 +461,15 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         self.chase_measurements
     }
 
+    fn advance_scripted_commands(
+        &mut self, world: &mut CombatWorld,
+        events: &mut bees_gameplay::level_events::NativeLevelEventProcessor,
+        random: &mut bees_sim::simulation::RandomStream,
+        completed_tick: u64,
+    ) -> Result<u64, bees_gameplay::level_events::NativeLevelEventError> {
+        self.advance_source_scripted(world, events, random, completed_tick)
+    }
+
     fn next_reinforcement_tick(&self) -> Option<u64> {
         self.reinforcements.front().map(|wave| wave.scheduled_tick())
     }
@@ -555,6 +570,7 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     }
 
     fn player_squad_retired(&mut self, owner: SquadLifetime) {
+        self.scripted_queues.retain(|queue| queue.owner != owner);
         // A dead source squad cannot reappear under the same lifetime.
         // Drop mutable UI/command preferences without touching original
         // fleet, reward, sight or discovery history.
@@ -689,7 +705,12 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     fn source_hivemind_squad(
         &self, owner: SquadLifetime,
     ) -> Option<bees_gameplay::level_host::NativeHiveMindSquadSource> {
-        self.hivemind_squads.get(&owner).copied()
+        self.hivemind_squads.get(&owner).copied().map(|mut source| {
+            if self.scripted_queues.iter().any(|queue| queue.owner == owner) {
+                source.hivemind_controlled = false;
+            }
+            source
+        })
     }
 
     fn source_strategy_matchup(
@@ -865,11 +886,13 @@ impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
             has_obstacles: self.player.has_obstacles, can_override_bounds: false }
     }
 
-    fn cancel_player_scripted_queue(&mut self, _owner: SquadLifetime)
+    fn cancel_player_scripted_queue(&mut self, owner: SquadLifetime)
         -> Result<(), GameCommandError>
     {
-        // The fresh-scene exporter rejects source scripted command queues;
-        // this adapter has no API that can create one after construction.
+        // Unity FinalizeUserCommand clears all pending scripted commands
+        // before replacing the current command. The shared event director
+        // handles finalizing the current scripted command exactly once.
+        self.scripted_queues.retain(|queue| queue.owner != owner);
         Ok(())
     }
 }
