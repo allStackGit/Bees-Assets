@@ -484,17 +484,38 @@ impl NativePolicyOnlyMetadata {
                 };
                 Some(target)
             } else { None };
-            let enemy = if matches!(order,
+            let enemy = if matches!(&order,
                 NativeScriptedOrder::Aggressive { .. } |
-                NativeScriptedOrder::TargetEnemy { .. }
+                NativeScriptedOrder::TargetEnemy { .. } |
+                NativeScriptedOrder::BombingRun { .. } |
+                NativeScriptedOrder::Charge { .. }
             ) {
                 let target = linked_target.expect("validated enemy target");
                 let enemy = self.live_enemy(world, events.roster(), owner, target)
                     .map_err(NativeLevelEventError::Commands)?;
-                self.live_aggressive_snapshot(
-                    world, events.roster(), owner, target, false,
-                ).map_err(NativeLevelEventError::Commands)?;
+                if matches!(&order,
+                    NativeScriptedOrder::Aggressive { .. } |
+                    NativeScriptedOrder::TargetEnemy { .. }
+                ) {
+                    // Ordinary attack and specialized bombers have
+                    // different authored weapon eligibility requirements.
+                    self.live_aggressive_snapshot(
+                        world, events.roster(), owner, target, false,
+                    ).map_err(NativeLevelEventError::Commands)?;
+                }
                 Some(enemy)
+            } else { None };
+            let mut bomb_weapons = Vec::new();
+            let mut bomb_enemies = Vec::new();
+            let carrier = if matches!(&order,
+                NativeScriptedOrder::BombingRun { .. } |
+                NativeScriptedOrder::Charge { .. }
+            ) {
+                Some(self.collect_bomb_activation(
+                    world, events.roster(), owner,
+                    linked_target.expect("validated specialist target"),
+                    &mut bomb_weapons, &mut bomb_enemies,
+                ).map_err(NativeLevelEventError::Commands)?)
             } else { None };
             let squad = events.roster().get(owner)
                 .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
@@ -544,11 +565,16 @@ impl NativePolicyOnlyMetadata {
                     &mut self.scripted_friendlies,
                 ).map_err(NativeLevelEventError::Commands)?;
             }
+            let bombing = carrier.map(|is_carrier_squad| NativeLocalBombingTargets {
+                enemy_owner: linked_target.expect("validated specialist target"),
+                weapons: &bomb_weapons, enemies: &bomb_enemies,
+                is_carrier_squad,
+            });
             let result = events.activate_local_command(
                 completed_tick, world, &self.navigation, random, order_view,
                 &self.scripted_friendlies,
                 source.settings, NativeLocalCommandSource::Scripted,
-                order.action(linked_target), source.shooting, None,
+                order.action(linked_target), source.shooting, bombing,
             )?;
             match result {
                 Activation::Applied { .. } => {
