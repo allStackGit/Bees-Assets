@@ -492,6 +492,7 @@ def main() -> None:
 
     config = source_config(run_path, manifest, output)
     shifted_seeds(config, args.seed_offset)
+    authored_level_count = len(config["levels"])
     template_worlds = config.pop("rollout_worlds", None)
     requested_worlds = args.rollout_worlds if args.rollout_worlds is not None else template_worlds
     if requested_worlds is not None:
@@ -511,11 +512,26 @@ def main() -> None:
             if (any(type(identity) is not int or identity <= 0 for identity in identities)
                     or len(set(identities)) != len(levels)):
                 parser.error(f"parallel rollouts require distinct positive {field} values")
+    # Equal world counts are the first constraint. Within each count tier,
+    # spread copies of each authored Level across processes, rather than a
+    # stride that can concentrate a slow scene on one worker whenever its
+    # source count divides the process count. The mapping is deterministic
+    # and makes no unsupported hardware speed assumptions.
+    buckets = [[] for _ in range(workers)]
+    source_counts = [{} for _ in range(workers)]
+    for level_index, level in enumerate(levels):
+        source = level_index % authored_level_count
+        worker = min(range(workers), key=lambda index: (
+            len(buckets[index]), source_counts[index].get(source, 0), index,
+        ))
+        buckets[worker].append(level)
+        source_counts[worker][source] = source_counts[worker].get(source, 0) + 1
+
     output.mkdir(parents=True, exist_ok=False)
     shards = []
-    for index in range(workers):
+    for index, allocated_levels in enumerate(buckets):
         directory = output if workers == 1 else output / f"rollout-{index}"
-        shard = {**config, "levels": levels[index::workers]}
+        shard = {**config, "levels": allocated_levels}
         if workers > 1:
             directory.mkdir()
             shard["connection_checkpoint"] = str(directory / "connection-checkpoint.json")

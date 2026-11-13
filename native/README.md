@@ -452,7 +452,9 @@ authored Levels without copying their scene JSON. Existing worlds retain
 their seeds; additional worlds receive deterministic derived seeds and
 unique world/Level IDs. Use `--rollout-workers M` to partition these worlds
 across M native rollout processes, with a compiled `--rollout-binary` for
-parallel processes. Both counts remain operator-owned; the wrapper does
+parallel processes. Shards balance Level counts and spread repeated
+source Levels across workers to reduce scene-dependent stragglers.
+Both counts remain operator-owned; the wrapper does
 not claim to auto-tune CPU/RAM or distributed placement. The native
 launcher remaps duplicate squad pool identities inside each process.
 Use `--learner-slot N` for mixed-checkpoint opponents, `--device cuda`
