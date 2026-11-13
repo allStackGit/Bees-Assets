@@ -1107,9 +1107,10 @@ document.addEventListener('DOMContentLoaded', () => {
         tab=next;
         for(const section of document.querySelectorAll('section[data-hub-tab]')) {
             const scope=section.dataset.project;
-            section.hidden=section.dataset.hubTab!==tab ||
+            const shouldHide=section.dataset.hubTab!==tab ||
                 (scope==='bees' && project!=='bees') ||
                 (scope==='other' && project==='bees');
+            if(section.hidden!==shouldHide)section.hidden=shouldHide;
         }
         for(const b of document.querySelectorAll('[data-hub-go]')) {
             b.setAttribute('aria-selected',String(b.dataset.hubGo===tab));
@@ -1359,7 +1360,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Automatic comparison updates replace several panels and charts. Keep
     // the currently visible metric at the same viewport position rather than
     // allowing browser scroll anchoring to jump back to the first chart.
-    function refreshComparisonKeepingViewport() {
+    function withCompareViewport(update) {
         const plots=$('hub-compare-plots');
         const sections=[...plots.querySelectorAll('.hub-progress-plot')];
         const visible=sections.find(section=>{
@@ -1369,12 +1370,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const anchorKey=visible?.dataset.metric;
         const anchorTop=visible?.getBoundingClientRect().top;
         const beforeScroll=window.scrollY;
-        renderComparison();
+        update();
         const replacement=anchorKey?[...plots.querySelectorAll('.hub-progress-plot')]
             .find(section=>section.dataset.metric===anchorKey):null;
         if(replacement&&Number.isFinite(anchorTop)) {
             window.scrollBy(0,replacement.getBoundingClientRect().top-anchorTop);
         }else if(window.scrollY!==beforeScroll)window.scrollTo(0,beforeScroll);
+    }
+    function refreshComparisonKeepingViewport() {
+        withCompareViewport(renderComparison);
     }
     function comparisonAxisLabel(key) {
         return key==='steps_completed'&&project==='tinybrains'
@@ -3893,7 +3897,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const r=await fetch('/api/hub/state',{cache:'no-store'});
             const data=await r.json();
             if(!r.ok)throw Error(data.error||'Hub state unavailable');
-            state=data;display();selectTab(tab);
+            const apply=()=>{state=data;display();selectTab(tab);};
+            if(tab==='compare')withCompareViewport(apply);
+            else apply();
         }catch(e){feedback('hub-config-message',e.message);}
     }
     function populateBeesForm(p) {
