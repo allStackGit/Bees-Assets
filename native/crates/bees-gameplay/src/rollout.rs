@@ -204,10 +204,7 @@ where
                 if per_world_actions[index].is_none() { continue; }
                 let world = simulation.world(index)
                     .expect("validated current native world index");
-                if world.state.combat.ships().iter().any(|ship|
-                    ship.ship_type == bees_sim::combat_world::SCOUT_TYPE &&
-                    !ship.vitals.is_dead()
-                ) {
+                if world.state.combat.has_scout_beacon_sources() {
                     serialized_worlds.push(index);
                 }
             }
