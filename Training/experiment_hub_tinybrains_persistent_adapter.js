@@ -105,10 +105,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_gpu_batch_adjustments','ppo_gpu_batch_accepted',
         'ppo_gpu_batch_settled','ppo_gpu_batch_restored',
         'ppo_gpu_batch_changed_next','ppo_gpu_batch_proven_target',
+        'ppo_gpu_batch_vram_capped',
         'rollout_gpu_batch_target_pixels','rollout_gpu_batch_next_target',
         'rollout_gpu_batch_adjustments','rollout_gpu_batch_accepted',
         'rollout_gpu_batch_settled','rollout_gpu_batch_restored',
         'rollout_gpu_batch_changed_next','rollout_gpu_batch_proven_target',
+        'rollout_gpu_batch_vram_capped',
         'rollout_inference_pixel_samples',
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
@@ -305,6 +307,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_inference_pixel_samples,'count');
         add('collector_'+i+'_gpu_batch_used_pixels',
             worker.rollout_gpu_batch_used_pixels,'count');
+        add('collector_'+i+'_gpu_batch_vram_capped',
+            worker.rollout_gpu_batch_vram_capped,'count');
         add('collector_'+i+'_opponent_processing_seconds',
             worker.rollout_opponent_processing_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
