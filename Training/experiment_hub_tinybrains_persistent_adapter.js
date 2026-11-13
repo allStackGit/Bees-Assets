@@ -90,6 +90,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_minibatches','ppo_microbatches',
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target',
+        'automatic_collector_allocation','collector_allocation_rebalanced',
         'rollout_inference_batches','rollout_inference_boards',
         'rollout_inference_max_batch'])
         add(name,row[name],'count');
@@ -190,6 +191,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_action_target',worker.action_target,'count');
+        if(Array.isArray(row.collector_action_weights))
+            add('collector_'+i+'_action_weight',
+                row.collector_action_weights[i],'count');
+        if(Array.isArray(row.next_collector_action_weights))
+            add('collector_'+i+'_next_action_weight',
+                row.next_collector_action_weights[i],'count');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
