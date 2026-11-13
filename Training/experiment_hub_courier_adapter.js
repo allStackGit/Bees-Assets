@@ -22,7 +22,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version',
     'training_tuner_adjustments','training_tuner_accepted',
-    'training_tuner_settled',
+    'training_tuner_settled','training_simulation_shards',
     'training_gpu_optimizer_lineages','training_gpu_optimizer_next_lineages',
     'training_gpu_optimizer_tuner_adjustments',
     'training_gpu_optimizer_tuner_accepted',
@@ -64,7 +64,8 @@ function courierMetrics(source) {
     const fields=Object.entries(stats);
     const workerField=/^worker_([0-9]{1,2})_(.+)$/;
     const core=new Set(['collection_seconds','optimization_seconds',
-        'simulation_seconds','inference_seconds','ingestion_seconds']);
+        'simulation_seconds','inference_seconds','ingestion_seconds',
+        'sim_shards','sim_shard_wall_seconds','sim_inflight_factor']);
     const ordered=[
         ...fields.filter(([name])=>!workerField.test(name)),
         ...fields.filter(([name])=>{
@@ -83,7 +84,8 @@ function courierMetrics(source) {
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
-            /^training_gpu_device_[0-7]_lineages$/.test(name))?'count':
+            /^training_gpu_device_[0-7]_lineages$/.test(name)||
+            /^worker_[0-9]{1,2}_sim_shards$/.test(name))?'count':
             name.endsWith('_mb')?'mb':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
@@ -182,6 +184,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
     let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false,gpuMulti=false;
+    let parallelWorlds=false;
     if(fs.existsSync(capabilitiesFile)) {
         if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
             !fs.statSync(capabilitiesFile).isFile()||
@@ -199,6 +202,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
              typeof capabilities.courier_gpu_pci_pin!=='boolean')||
             (capabilities.courier_gpu_multi_optimizer!==undefined&&
              typeof capabilities.courier_gpu_multi_optimizer!=='boolean')||
+            (capabilities.courier_parallel_worlds!==undefined&&
+             typeof capabilities.courier_parallel_worlds!=='boolean')||
             (capabilities.courier_gpu_pci_pin===true&&
              capabilities.courier_gpu_optimizer!==true)||
             (capabilities.courier_gpu_multi_optimizer===true&&
@@ -210,6 +215,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         optimizerGpu=capabilities.courier_gpu_optimizer===true;
         gpuPciPin=optimizerGpu&&capabilities.courier_gpu_pci_pin===true;
         gpuMulti=gpuPciPin&&capabilities.courier_gpu_multi_optimizer===true;
+        parallelWorlds=boundedLearners&&autoLearners&&
+            capabilities.courier_parallel_worlds===true;
     }
     if(enableGpu) {
         if(!optimizerGpu)
@@ -378,6 +385,23 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // the Hub's fixed CPU/RAM lease. Legacy/manual profiles retain
             // their original fixed-policy execution behavior.
             const auto=autoLearners&&cpuParallelism==='allocation';
+            // Saved policies retain exactly the same recurrent rollout
+            // length, courier slots and lineages. When spare leased CPUs
+            // and RAM exist, split complete independent maps *under* each
+            // existing PPO lineage. A fixed conservative initial shard
+            // count avoids extra simulator processes on an already busy
+            // 32/64-lineage host. The backend never restarts map processes
+            // between training updates or promotes one as a new policy.
+            const mapCount=parsed.colony?4:parsed.competitive?32:64;
+            const effectiveLearners=Math.max(1,Math.min(
+                chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)));
+            const cpuPerLearner=Math.floor(context.cpu_quota/effectiveLearners);
+            const ramPerLearner=Math.floor(
+                context.ram_quota_mb/Math.max(1,chosenWorkers));
+            const simulationShards=auto&&parallelWorlds
+                ?Math.min(8,mapCount,Math.max(1,cpuPerLearner),
+                    Math.max(1,Math.floor(ramPerLearner/768)))
+                :1;
             if(auto&&(!within(context.ram_quota_mb,128,1000000)))
                 throw Error('Courier automatic execution requires a fixed RAM lease.');
             // The wrapper provides the same checkpoint-boundary Stop request
@@ -391,6 +415,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(boundedLearners?['--active-learners',String(Math.min(
                     chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)))]:[]),
                 ...(auto?['--auto-active-learners']:[]),
+                ...(simulationShards>1
+                    ?['--simulation-shards',String(simulationShards)]:[]),
                 ...(auto||context.gpu_pci_address!==undefined||
                     context.gpu_pci_addresses!==undefined
                     ?['--ram-lease-mb',String(context.ram_quota_mb)]:[]),
