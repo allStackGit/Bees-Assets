@@ -2844,6 +2844,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const parameters=JSON.parse($('hub-config-json').value);
         const choice=designDefinition(parameters);
         if(!choice)throw Error('Matching approved project defaults are unavailable. Reconnect the worker or edit Advanced JSON.');
+        // Older, empty native drafts can be upgraded without discarding their
+        // saved unknown fields or altering any explicit trusted identities.
+        if(project==='courier'&&!parameters.config_sha256)
+            parameters.config_sha256=choice.entry.config_sha256;
+        if(project==='tinybrains'&&!parameters.profile&&!parameters.profile_sha256) {
+            parameters.profile=choice.profile;
+            parameters.profile_sha256=choice.entry.profile_sha256;
+            parameters.updates??=1000;
+        }
         const overrides={...parameters.design_overrides};
         for(const field of choice.entry.fields) {
             const input=controls.find(el=>el.dataset.designKey===field.key);
