@@ -2012,7 +2012,9 @@ document.addEventListener('DOMContentLoaded', () => {
             svg.clientWidth||svg.parentElement?.clientWidth||900));
         svg.setAttribute('viewBox','0 0 '+width+' 330');
         legend.replaceChildren();
-        tooltip.hidden=true;
+        const wasPinned=tooltip.dataset.pinned==='true';
+        const previousScroll=tooltip.scrollTop;
+        if(!wasPinned)tooltip.hidden=true;
         svg.onpointermove=null;
         svg.onpointerleave=null;
         const axisLabel=comparisonAxisLabel(xKey);
@@ -2207,8 +2209,6 @@ document.addEventListener('DOMContentLoaded', () => {
             stroke:run.color,'stroke-width':2,
             visibility:'hidden','pointer-events':'none',
         }));
-        const wasPinned=tooltip.dataset.pinned==='true';
-        const previousScroll=tooltip.scrollTop;
         const hide=()=>{
             if(tooltip.dataset.pinned==='true')return;
             tooltip.hidden=true;
@@ -2225,7 +2225,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         let lastMouseX=null,lastClientX=null,lastClientY=null;
         const format=value=>Number(value).toLocaleString(undefined,{
-            maximumSignificantDigits:15,
+            maximumFractionDigits:2,
         });
         const formattedValue=value=>{
             const unit=units[0]||'';
@@ -2235,7 +2235,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     unit==='mb'?' MiB':unit==='watts'?' W':
                     unit==='scalar'||unit==='count'?'':' '+unit);
         };
-        const inspectAt=(mouseX,clientX,clientY)=>{
+        const inspectAt=(mouseX,clientX,clientY,preservePinnedContent=false)=>{
             const chosen=perRun.map(({run,points})=>{
                 let closest=null,distance=Infinity;
                 for(const point of points) {
@@ -2256,6 +2256,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 markers[i].setAttribute('visibility',point?'visible':'hidden');
             }
+            // Keep the inspected samples and scrollbar exactly where the
+            // user pinned them; the underlying chart can keep refreshing.
+            if(preservePinnedContent)return;
             const pinned=tooltip.dataset.pinned==='true';
             const heading=document.createElement('div');
             heading.className='hub-plot-tooltip-heading';
@@ -2274,7 +2277,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const note=document.createElement('div');
             note.className='hub-plot-tooltip-instruction';
             note.textContent=pinned
-                ?'Pinned: scroll here to inspect all runs. Unpin or press Escape to close.'
+                ?'Pinned sample values remain fixed while new chart data arrives. Scroll here; Unpin or press Escape to close.'
                 :'Click anywhere on the chart to pin these values and scroll.';
             const rows=chosen.map(({run,closest})=>{
                 const item=document.createElement('div');
@@ -2364,7 +2367,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const mouseX=bounds.left+fraction*(bounds.right-bounds.left);
                 const rect=svg.getBoundingClientRect();
                 inspectAt(mouseX,rect.left+mouseX*rect.width/width,
-                    rect.top+100);
+                    rect.top+100,true);
                 tooltip.scrollTop=previousScroll;
             }else clearPin();
         }
