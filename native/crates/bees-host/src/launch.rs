@@ -274,6 +274,10 @@ struct RunConfig {
     /// Omitted or one retains the original serial gameplay path.
     #[serde(default)]
     physics_workers: Option<usize>,
+    /// Interactive-only persistent path-search CPU threads per Level.
+    /// Omitted leaves deterministic synchronous navigation unchanged.
+    #[serde(default)]
+    navigation_workers: Option<usize>,
     status_every_rounds: Option<u64>,
     delivery_every: u32,
     timing_sample_period: Option<u32>,
@@ -1075,6 +1079,14 @@ fn run_battle(
     if physical_workers.get() > 128 {
         return Err(invalid("physics_workers must be at most 128").into());
     }
+    let navigation_workers = config.navigation_workers;
+    if let Some(workers) = navigation_workers {
+        if !(1..=128).contains(&workers) || !view || replay_inputs.is_some() {
+            return Err(invalid(
+                "navigation_workers must be 1..128 and is available only for live interactive play, not headless training or input playback",
+            ).into());
+        }
+    }
     let timing = config.timing_sample_period
         .map(|value| nonzero(value, "timing_sample_period"))
         .transpose()?;
@@ -1467,7 +1479,12 @@ fn run_battle(
     if playback.as_ref().is_some_and(|trace| trace.end_round > config.max_rounds) {
         return Err(invalid("player trace exceeds the configured round budget").into());
     }
+    // Background path completion timing depends on operating-system
+    // scheduling. Never claim a deterministic replayable player-input
+    // trace for a run where asynchronous navigation can change route
+    // installation ticks.
     let trace_output = output.filter(|_| play && replay_inputs.is_none() &&
+        navigation_workers.is_none() &&
         config.hivemind.is_none() && config.model_updates.is_empty());
 
     let mut model = RolloutModel::default();
@@ -1533,6 +1550,14 @@ fn run_battle(
     let mut host = assets.build_imported_policy_runtime(
         launches, model, connection, sink,
     ).map_err(|error| contextual("native Level construction", error))?;
+    if let Some(workers) = navigation_workers {
+        for index in 0..config.levels.len() {
+            host.edit_level(index, |state, _| {
+                state.metadata.enable_navigation_workers(workers)
+            }).map_err(|error| contextual("navigation Level setup", error))?
+              .map_err(|error| contextual("navigation worker startup", error))?;
+        }
+    }
     for (index, level) in config.levels.iter().enumerate() {
         bind_evaluation_episode(
             &mut host, index, level, level.episode_seed(0), &source_digests[index],
@@ -1576,6 +1601,7 @@ fn run_battle(
         "decision_period": config.decision_period,
         "delivery_every": config.delivery_every,
         "physics_workers": physical_workers.get(),
+        "navigation_workers_per_level": navigation_workers.unwrap_or(0),
         "timing_sample_period": config.timing_sample_period,
         "interactive_view": view,
         "source_hivemind_commands": config.hivemind.as_ref()
@@ -1976,9 +2002,13 @@ fn run_battle(
                 )?;
                 let authored = scene.into_exported_policy_only_level(setup)
                     .map_err(|error| contextual("replayed Level source", error))?;
-                let replacement = assets.build_level(authored)
+                let mut replacement = assets.build_level(authored)
                     .map_err(|error| contextual("replayed Level assembly", error))?
                     .state;
+                if let Some(workers) = navigation_workers {
+                    replacement.metadata.enable_navigation_workers(workers)
+                        .map_err(|error| contextual("episode navigation worker startup", error))?;
+                }
                 host.reset_world(index, seed, replacement)
                     .map_err(|error| contextual("guarded Level reset", error))?;
                 bind_evaluation_episode(
