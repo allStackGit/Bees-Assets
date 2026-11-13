@@ -25,7 +25,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_optimizer_lineages','training_gpu_optimizer_next_lineages',
     'training_gpu_optimizer_tuner_adjustments',
     'training_gpu_optimizer_tuner_accepted',
-    'training_gpu_optimizer_tuner_settled']);
+    'training_gpu_optimizer_tuner_settled',
+    'training_gpu_metric_readbacks','training_gpu_metric_rows']);
 const WINDOWS_ENTRY=[
     'import os, runpy, sys',
     "sys.stdout = open(os.devnull, 'w', encoding='utf-8')",
