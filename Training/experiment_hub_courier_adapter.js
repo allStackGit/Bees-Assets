@@ -261,7 +261,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             return config;
         }
         return Buffer.from(JSON.stringify(
-            applyOverrides(parsed,'courier',overrides),null,2)+'\\n');
+            applyOverrides(parsed,'courier',overrides),null,2)+'\n');
     }
     function savedOverrides(folder) {
         const file=path.join(folder,'hub-design-overrides.json');
@@ -391,7 +391,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             fs.writeFileSync(configFile,environment,{flag:'wx',mode:0o600});
             if(design_overrides!==undefined)
                 fs.writeFileSync(path.join(out,'hub-design-overrides.json'),
-                    JSON.stringify(design_overrides)+'\\n',{flag:'wx',mode:0o600});
+                    JSON.stringify(design_overrides)+'\n',{flag:'wx',mode:0o600});
             // The wrapper provides the same checkpoint-boundary Stop request
             // on both platforms; systemd remains the sole Linux service owner.
             const launch=[path.join(__dirname,'experiment_hub_courier_train.py'),
