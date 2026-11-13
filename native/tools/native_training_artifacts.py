@@ -27,7 +27,7 @@ def normalized_python_source_sha256(path: Path) -> str:
     line endings. Normalize source line endings only: checkpoints, scenario
     JSON and captured binary data retain strict raw-byte identities.
     """
-    data = path.read_bytes().replace(b"\\r\\n", b"\\n").replace(b"\\r", b"\\n")
+    data = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     return hashlib.sha256(data).hexdigest()
 
 
