@@ -612,9 +612,27 @@ mapping its local source/config/model paths while retaining the pinned hashes:
 python native/tools/run_distributed_collector.py collection-round-00001.json halifax run.json checkpoint.pt manifest.json trainer.yaml /local/scratch /shared/native-inbox --rollout-binary /path/to/policy_rollout
 ```
 
-Use the actual `trainer.yaml` file required by the collector CLI; it is
-not consumed by a collect-only run. Each collector reuses the same compiled
-native simulator and resident policy inference process as local training.
+When a worker is **already managed by Experiment Hub**, use its
+installed `createNativeBeesAdapter({collectOnly:true,bundleInbox:...})`
+(`bees_native_collect`) instead of launching a second collector
+process. Copy the pending work order's `collection_id`,
+`world_start`, `world_count`, `rollout_workers`, `seed_offset` and
+`bundle_directory` into that Hub job's immutable `frozen_parameters`
+as `collection_id`, `rollout_world_start`, `rollout_worlds`,
+`rollout_workers`, `seed_offset` and `bundle_directory` alongside
+the adapter's already approved `config_sha256`. Hub still owns the
+actual job UUID, native process, resource lease, Stop and checkpoints.
+The collector writes its local artifacts under that UUID and publishes
+the pinned bundle under `bundle_directory` in the shared inbox; no
+extra scheduler or process owner is created. A `bees_native_collect`
+job with the old parameters remains unchanged. Hub's read-only log
+mirroring is **not** the rollout-bundle transport; the shared inbox
+must already be independently available to the learner.
+
+Use the actual `trainer.yaml` file required by the standalone collector
+CLI; it is not consumed by a collect-only run. Each collector reuses
+the same compiled native simulator and resident policy inference process
+as local training.
 The collector copies completed captures and their durable receipt to a
 unique shared-inbox directory; it never overwrites an earlier delivery.
 The session accepts only matching receipt IDs, source bytes, model SHA-256,
@@ -633,9 +651,12 @@ Rollout metrics retain individual collector SPS and a capacity-weighted
 aggregate: `wall_seconds_scope=sum_of_independent_collector_wall_seconds`
 means summed host-seconds, **not** a measured fleet-wide elapsed SPS.
 Use a relative, portable run configuration and stage the exact manifest
-and referenced model/scene artifacts on each machine. The hub still owns
-physical resource enforcement and dispatch, not this checkpoint-lineage
-controller. `--collector-timeout-seconds` optionally caps the wait;
+and referenced model/scene artifacts on each machine. Hub resource bundles reserve and start individual native jobs; they
+do **not** perform model synchronization or optimizer updates. The
+native session owns the **one** optimizer for its collected bundles;
+do not also Start a second Hub learner against the same work order.
+The Hub still owns physical resource enforcement and native dispatch,
+not this checkpoint-lineage controller. `--collector-timeout-seconds` optionally caps the wait;
 zero waits until a collector delivers or the session is interrupted.
 
 To measure learning separately from training episodes, add
