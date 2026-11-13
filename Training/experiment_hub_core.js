@@ -4584,7 +4584,7 @@ class ExperimentHub {
             const budget=resourceRequest(selection.resources);
             if(budget.gpu_count>1||
                 (budget.gpu_count===1&&budget.gpu_mode!=='exclusive'))
-                throw Error('A remote collector may use CPU only or one exclusively leased CUDA GPU.');
+                throw Error('A remote collector may use CPU only or one exclusively leased CUDA/ROCm GPU.');
             const eligible=machines.filter(host=>
                 host.status==='connected'&&host.tinybrains_rollout_endpoint===endpoint&&
                 host.tinybrains_rollout_key_fingerprint===
@@ -4594,9 +4594,13 @@ class ExperimentHub {
                 (host.agent_platform==='win32'||host.agent_platform==='linux'&&
                     host.execution_capabilities?.cgroup_v2_detected===true&&
                     ['cpu','memory'].every(c=>host.execution_capabilities?.cgroup_controllers.includes(c)))&&
-                (!budget.gpu_count||host.agent_platform==='win32'&&
-                    host.gpu_projects?.includes('tinybrains_rollout')&&
-                    host.gpu_inventory_source==='nvidia-smi-v1'));
+                (!budget.gpu_count||
+                    host.gpu_projects?.includes('tinybrains_rollout')&&(
+                        host.agent_platform==='win32'&&
+                            host.gpu_inventory_source==='nvidia-smi-v1'||
+                        host.agent_platform==='linux'&&
+                            host.gpu_inventory_source==='amdgpu-sysfs-v1'&&
+                            host.observed_gpus?.length>=2)));
             if(eligible.length!==1||seen.has(eligible[0].id))
                 throw Error('Every approved rollout endpoint must identify exactly one distinct connected, qualified worker.');
             const host=eligible[0];
