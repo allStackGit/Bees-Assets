@@ -120,25 +120,38 @@ same initializer can hand verified weights and a pinned scene to the
 existing resumable MA-POCA session controller:
 
 ```sh
-python native/tools/bootstrap_policy.py native-first --scenario duel --seed 42 --train-rounds 3 --episodes-per-world 4 --rollout-worlds 16 --learner-slot 0
+python native/tools/bootstrap_policy.py native-first --scenario duel --seed 42 \
+  --train-rounds 3 --episodes-per-world 4 --rollout-worlds 16 \
+  --learner-slot 0 --holdout-worlds 8 --evaluation-side 1
 ```
 
-This runs sixteen independent arenas, reusing each arena for four
-source-numbered policy episodes per collection, and then updates the
-learner using the already implemented native optimizer. The
-`native-first/session` directory retains round receipts, checkpoint
-lineage and performance summaries. The default single collector uses
-`cargo run --release`; add `--rollout-binary` with a compiled
-`policy_rollout` executable for multi-process collections. Distributed
-sessions can instead pass `--distributed-plan` and `--bundle-inbox`
-to the same initializer; holdout measurements use
-`--evaluation-run-config` and `--evaluation-side`.
-To resume an interrupted local session without regenerating the
-initial model, preserve the exact resource arguments:
+This runs sixteen independent training arenas with four source-numbered
+episodes each, followed by native MA-POCA updates. After each update,
+eight separate, fixed-seed native holdout arenas measure the same gameplay
+with that checkpoint; unlike training seeds, their seeds remain unchanged
+across rounds. The holdout evaluator accepts embedded `native_stage`
+assets without Unity exports. `native-first/session` stores resumable
+round receipts, model lineage, throughput and per-round holdout results.
+The default single collector uses `cargo run --release`; pass a compiled
+`policy_rollout` via `--rollout-binary` for multiple local processes.
+An existing distributed plan can be supplied with `--distributed-plan`
+and `--bundle-inbox`, or an existing evaluation run with
+`--evaluation-run-config` and `--evaluation-side` instead of generated
+`--holdout-worlds`.
+
+Resume the same configuration without reinitializing actor/critic weights:
 
 ```sh
-python native/tools/train_policy_session.py native-first/run.json native-first/checkpoint.pt native-first/trainer-config.yaml native-first/session --rounds 3 --resume --learner-slot 0 --rollout-worlds 16
+python native/tools/bootstrap_policy.py native-first --scenario duel --seed 42 \
+  --train-rounds 3 --episodes-per-world 4 --rollout-worlds 16 \
+  --learner-slot 0 --holdout-worlds 8 --evaluation-side 1 --resume
 ```
+
+Resume verifies the original model, scene, trainer settings, manifest
+and holdout configuration against the immutable bootstrap receipt before
+the existing session controller verifies round receipts and checkpoints.
+It also works when bootstrap completed but the first training session
+never started. Keep the resource options identical to the initial run.
 
 A bootstrap receipt means only that the initial actor/critic and
 manifest passed their artifact checks. Training, native gameplay
