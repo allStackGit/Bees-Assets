@@ -379,7 +379,7 @@ def decode_row_metadata(meta: bytearray, rows: int):
     return slots, fire, special, allow
 
 def collect_predictions(
-    policy_map, slots, observations, fire, special, allowed,
+    policy_map, slots, observations, fire, special, allowed, measurements=None,
 ):
     rows = len(slots)
     continuous = np.empty((rows, CONTINUOUS), dtype="<f4")
@@ -405,6 +405,11 @@ def collect_predictions(
         groups[identity][1].append(slot_id)
     fully_sampled = all(isinstance(model, MlagentsPolicy)
                         for model, _ in groups.values())
+    if measurements is not None:
+        measurements["batches"] += 1
+        measurements["agent_rows"] += rows
+        measurements["slot_forwards_without_sharing"] += len(unique_slots)
+        measurements["actual_model_forwards"] += len(groups)
 
     for model, model_slots in groups.values():
         if len(groups) == 1:
@@ -474,6 +479,27 @@ def main() -> None:
     resident_models = {
         model._verified_identity: model for model in policy_map.values()
     }
+    measurements = {
+        "batches": 0, "agent_rows": 0,
+        "slot_forwards_without_sharing": 0, "actual_model_forwards": 0,
+        "model_updates": 0,
+    }
+
+    def report_model_residency():
+        # JSON on stderr is deliberately outside the binary model protocol.
+        # At fixed low frequency it reports actual model calls, avoided
+        # passes and retained weights without timing the Python hot loop.
+        print(json.dumps({
+            "kind": "native_policy_inference_efficiency",
+            **measurements,
+            "model_forwards_saved":
+                measurements["slot_forwards_without_sharing"] -
+                measurements["actual_model_forwards"],
+            "model_slots": len(policy_map),
+            "distinct_loaded_models": len(resident_models),
+        }, sort_keys=True), file=sys.stderr, flush=True)
+
+    report_model_residency()
     # A holdout benchmark can pin the action-sampling RNG without changing
     # ordinary gameplay/training or the versioned inference wire protocol.
     # Seed after loading model weights: constructor initialization may
@@ -548,8 +574,10 @@ def main() -> None:
                 model._verified_identity: model for model in policy_map.values()
             }
             manifest_digest = new_digest
+            measurements["model_updates"] += 1
             new_map = None
             del old_map
+            report_model_residency()
             writer.write(HEADER.pack(b"MACK", VERSION, request_id, len(policy_map)))
             writer.write(manifest_digest)
             writer.flush()
@@ -571,8 +599,10 @@ def main() -> None:
         if not np.all(np.isfinite(observation)):
             raise ValueError("nonfinite policy observation")
         continuous, discrete, behavior = collect_predictions(
-            policy_map, slots, observation, fire, special, allowed
+            policy_map, slots, observation, fire, special, allowed, measurements
         )
+        if measurements["batches"] % 2048 == 0:
+            report_model_residency()
         writer.write(HEADER.pack(b"BTRN" if behavior is not None else b"BOUT", VERSION, request_id, rows))
         writer.write(continuous.tobytes(order="C"))
         writer.write(discrete.tobytes(order="C"))
@@ -582,6 +612,7 @@ def main() -> None:
         # Release NumPy/memoryview references before expanding the next
         # batch's storage; smaller/equal batches reuse the same allocation.
         del observation, payload
+    report_model_residency()
 
 
 if __name__ == "__main__":
