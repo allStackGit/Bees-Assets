@@ -636,6 +636,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <h3>Queue a saved configuration</h3>
     <div class="formgrid">
       <label>Saved configuration<select id="hub-job-configuration"></select></label>
+      <label>Run name (optional)<input id="hub-job-run-name" type="text" maxlength="100" placeholder="e.g. 12 CPUs · gpu1 · baseline" autocomplete="off"><small>Labels this job for Train and Compare. Does not change the saved configuration or training.</small></label>
       <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
       <div class="hub-metric-field">
         <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
