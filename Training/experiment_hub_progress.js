@@ -124,6 +124,13 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_parallel_step_max_seconds',
             'training_parallel_dispatch_max_seconds',
             'training_parallel_dispatch_slowest',
+            'training_shared_transfer_mb',
+            'training_shared_copy_max_seconds',
+            'training_shared_gather_max_seconds',
+            'training_shared_copy_slowest_worker',
+            'training_shared_gather_slowest_worker',
+            'training_sim_copy_max_ratio',
+            'training_sim_gather_max_ratio',
             'training_tuner_adjustments','training_tuner_accepted',
             'training_tuner_settled',
             'training_gpu_optimizer_lineages',
@@ -162,6 +169,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
             'training_sim_dispatch_pressure',
+            'training_sim_copy_pressure',
+            'training_sim_gather_pressure',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
@@ -532,6 +541,8 @@ class BottleneckEvidence {
             if(gapShare!==null)add('training_reply_gap_work_share',gapShare);
             const stageHints=[];
             const shardDispatchHints=[];
+            const shardCopyHints=[];
+            const shardGatherHints=[];
             // The backend reports its measured worst recurrent-minibatch
             // preparation alongside the *owning* lineage index. Comparing
             // unrelated maxima from different workers is not causal evidence.
@@ -564,6 +575,18 @@ class BottleneckEvidence {
                     add('worker_'+i+'_sim_dispatch_work_share',dispatchShare);
                 shardDispatchHints[i]=dispatchShare!==null&&
                     dispatchShare>=0.20;
+                const copy=seconds('worker_'+i+'_sim_shared_copy_seconds');
+                const gather=seconds('worker_'+i+'_sim_shared_gather_seconds');
+                const copyShare=shardStep>0&&copy!==null&&
+                    copy<=shardStep?copy/shardStep:null;
+                const gatherShare=shardStep>0&&gather!==null&&
+                    gather<=shardStep?gather/shardStep:null;
+                if(copyShare!==null)
+                    add('worker_'+i+'_sim_copy_work_share',copyShare);
+                if(gatherShare!==null)
+                    add('worker_'+i+'_sim_gather_work_share',gatherShare);
+                shardCopyHints[i]=copyShare!==null&&copyShare>=0.20;
+                shardGatherHints[i]=gatherShare!==null&&gatherShare>=0.20;
                 const fraction=collect/(collect+optimize);
                 const dataShare=(i===dataOwnerIndex&&dataWorst!==null&&
                     optimize>0&&dataWorst<=optimize*1.02)
@@ -621,7 +644,14 @@ class BottleneckEvidence {
             }
             const {at,prior}=history();
             if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,stageHints,shardDispatchHints,resourceHints,
+                const copyGlobal=metrics.training_sim_copy_max_ratio;
+                const gatherGlobal=metrics.training_sim_gather_max_ratio;
+                prior.samples.push({at,stageHints,shardDispatchHints,
+                    shardCopyHints,shardGatherHints,resourceHints,
+                    courierSimCopy:copyGlobal?.unit==='ratio'&&
+                        copyGlobal.value>=0.20,
+                    courierSimGather:gatherGlobal?.unit==='ratio'&&
+                        gatherGlobal.value>=0.20,
                     courierQueue:queueShare!==null&&queueShare>=0.20,
                     // With queued lineages, the last completion may be a
                     // normal admission wave rather than a slow worker.
@@ -653,6 +683,16 @@ class BottleneckEvidence {
                         add('worker_'+i+'_sim_dispatch_pressure',1,'count');
                 if(sustained(x=>x.shardDispatchHints?.some(Boolean)))
                     add('training_sim_dispatch_pressure',1,'count');
+                if(sustained(x=>x.courierSimCopy))
+                    add('training_sim_copy_pressure',1,'count');
+                if(sustained(x=>x.courierSimGather))
+                    add('training_sim_gather_pressure',1,'count');
+                for(let i=0;i<count;i++) {
+                    if(sustained(x=>x.shardCopyHints?.[i]))
+                        add('worker_'+i+'_sim_copy_pressure',1,'count');
+                    if(sustained(x=>x.shardGatherHints?.[i]))
+                        add('worker_'+i+'_sim_gather_pressure',1,'count');
+                }
                 for(let i=0;i<count;i++)
                     for(const stage of ['collection','optimization','ppo_data',
                         'simulation','observation','inference','ingestion',
