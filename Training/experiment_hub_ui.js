@@ -2070,10 +2070,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     if(!usable(point)||!Number.isSafeInteger(step)||step<0)
                         continue;
-                    window=window.filter(item=>item.step>step-50);
+                    window=window.filter(item=>
+                        item.step>step-50&&item.step!==step);
                     window.push({step,value:hubMetricValue(point,key)});
-                    part.push({axis,mean:window.reduce((sum,item)=>
-                        sum+item.value,0)/window.length});
+                    // A single retained point is not a rolling average.
+                    // Do not invent an average when downsampling has left
+                    // fewer than two distinct updates in this window.
+                    if(window.length>=2)
+                        part.push({axis,mean:window.reduce((sum,item)=>
+                            sum+item.value,0)/window.length});
+                    else flush();
                     lastStep=step;lastAxis=axis;
                 }
                 flush();
