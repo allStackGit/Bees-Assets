@@ -149,12 +149,19 @@ move formation centers or individual ships with Pathfinder. Omit `spawn`
 and supply authentic captured positions instead; synthesized spawning is
 rejected. Captured-position waves preserve all physical positions and
 deploy in `squad_item_ids` order, regardless of scene-array order.
-The squads arrive on the first fixed tick after their scheduled time while
-the battle is active. Use nondecreasing times and unique squad item IDs.
+Timed squads arrive on the first fixed tick after their scheduled time
+while the battle is active. Use nondecreasing times among timed waves and
+unique squad item IDs across all waves.
 Same-time waves retain their authored order and distinct positions. All ship,
 weapon and squad attributes must come from the authentic scene capture,
 not synthesized from ship type. The battle journal records their arrival
-tick and counts.
+tick and counts. A wave can alternatively omit `after_seconds` and use
+`"on_campaign_cue":"fire_tank_spotted"` (or another valid live cue from
+the Level's authored `campaign_dialogue`). The same canonical Level
+notification triggers deployment, without a second mission timer. Timed
+and cue-triggered waves may be interleaved; same-tick admissions preserve
+the wave configuration's original order. Terminal victory/defeat cues
+cannot deploy new ships because the battle is already complete.
 
 A fresh authored Level can also carry `scripted_queues` to drive initial
 mission orders through the same CombatWorld, movement and command timers
@@ -179,12 +186,26 @@ An explicit opposing target also permits
 `{"kind":"aggressive","enemy_squad_item_id":52}` in the orders.
 The enemy must be an actual initially deployed opposing squad; no
 nearest-enemy guess substitutes for the source Command.EnemySquad.
-The first scripted command starts on the first completed fixed tick.
-Subsequent orders start after the prior native command finishes, including
-its normal timed completion, and source HiveMind requests are suppressed
-while the scripted queue is active. Player command replacement cancels
-remaining orders. The source's dialogue/mission-triggered queue arming is not implied
-by this static plan. An actual native mission callback can instead call
+Without an `activation` field the first scripted command starts on the
+first completed fixed tick. The optional field selects an authentic
+source gate, for example:
+`"activation":{"kind":"after_seconds","seconds":90}`,
+`"activation":{"kind":"on_deployment"}` for deferred source squads,
+`"activation":{"kind":"on_arrival"}` to preserve their real entry
+movement until every member reaches its destination, or
+`"activation":{"kind":"on_campaign_cue","cue":"upload_fifty"}`.
+A cue is latched exactly once, even if the squad arrives afterward.
+The `on_arrival` gate requires a deferred squad with a nonzero `entry`
+in its reinforcement plan. Fire Tank and upload cues are validated against
+the imported campaign type; cues emitted only after battle completion
+are not accepted as movement or reinforcement activation sources.
+Subsequent orders start after the previous native command finishes,
+including its timer completion. Source HiveMind requests are suppressed
+while a scripted queue is pending or active. A player replacement cancels
+its remaining orders. Events not actually emitted by the native mission
+cannot be synthesized by an authored configuration. The source's
+dialogue/mission-triggered queue arming is not otherwise inferred from
+a static scene. An actual native mission callback can instead call
 `NativePolicyOnlyMetadata::enqueue_live_scripted_queue(roster, plan)`
 after the original trigger fires (including after a deferred wave's squads
 have entered the real roster). This public entry point validates the live
@@ -193,8 +214,10 @@ arming orders for the next completed fixed tick. The mission adapter owns
 when to invoke it; the native engine does not guess Unity cutscene/dialogue
 timing. Existing live Unity command/queue histories still cannot be
 resumed from an exported initial scene. `NativeHostGauges.scripted_queues`
-reports current active queues and pending orders plus episode-local
-starts, repeats, completions, cancellations and vanished-target skips.
+reports current active queues, pending orders, per-gate waiting states,
+and episode-local starts, repeats, completions, cancellations and
+vanished-target skips. Reinforcement gauges separately expose the
+remaining timed and campaign-cue wave counts.
 
 
 For Titania II's *obstacle-free* mission, the authored approach lanes
