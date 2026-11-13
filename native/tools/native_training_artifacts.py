@@ -144,3 +144,13 @@ def atomic_json(path: Path, value) -> None:
         os.fsync(stream.fileno())
     os.replace(pending, path)
     sync_directory(path.parent)
+
+if __name__ == "__main__":
+    # Narrow operator/Hub probe: standard-library-only and no GPU/training
+    # initialization. The same canonical function owns work orders and
+    # collector receipts. Print only the validated physical-task SHA-256.
+    import argparse
+    parser = argparse.ArgumentParser(description="Native Bees source contract identity")
+    parser.add_argument("source_contract", type=Path)
+    arguments = parser.parse_args()
+    print(native_source_contract_sha256(arguments.source_contract), flush=True)
