@@ -156,6 +156,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         row.simulation_total_charged_memory_mb,'mb');
     add('simulation_ram_lease_headroom_mb',
         row.simulation_ram_lease_headroom_mb,'mb');
+    // Actual combined on-host native child charge plus the shared learner
+    // process exactly once, distinct from the independent per-pool bounds.
+    add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
+    add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
@@ -247,6 +251,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         if(worker.mode==='local_gpu')
             add('collector_'+i+'_is_local_gpu',1,'count');
         add('collector_'+i+'_gpu_ordinal',worker.gpu_ordinal,'count');
+        add('collector_'+i+'_gpu_lease_index',worker.gpu_lease_index,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_simulation_match_steps',
             worker.simulation_match_steps,'count');
@@ -446,7 +451,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             'join_exposed_seconds','simulation_match_steps',
             'match_steps_per_second','sim_matches','sim_target',
             'sim_ram_headroom_mb','gpu_allocated_mb','gpu_vram_lease_mb',
-            'is_local_gpu','gpu_ordinal',
+            'is_local_gpu','gpu_ordinal','gpu_lease_index',
             'rollout_engine_step_seconds','learner_inference_seconds',
             'roundtrip_seconds','service_seconds',
             'sim_dispatch_queue_seconds','sim_last_child_gap_seconds',

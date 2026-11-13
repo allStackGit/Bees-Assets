@@ -173,8 +173,11 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     const multi=r.gpu_count>=2&&r.gpu_count<=8&&
         lr.gpu_count===r.gpu_count&&
         r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&
-        job.project_id==='courier'&&
-        adapter.gpu_multi_execution==='independent-ppo';
+        (job.project_id==='courier'&&
+            adapter.gpu_multi_execution==='independent-ppo'||
+         job.project_id==='tinybrains'&&r.gpu_count>=3&&
+            job.frozen_parameters?.device==='multi'&&
+            adapter.gpu_multi_execution==='ppo-local-collectors');
     if(!cpuOnly&&(!gpuEnabled||typeof adapter.gpu_verify_args!=='function'||
         !(single||dual||multi)||bindings.length!==r.gpu_count||
         lr.gpus?.length!==r.gpu_count||

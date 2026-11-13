@@ -72,6 +72,13 @@ def main():
         from experiment_hub_tinybrains_rocm_verify import verify_runtime_devices
         actual_pcis = verify_runtime_devices(args.rocm_pci)
         os.environ["TINYBRAINS_GPU_PHYSICAL_PCI_IDS"] = ",".join(actual_pcis)
+        if args.device == "multi":
+            # The Hub publishes host_gpu_N in immutable lease binding order,
+            # while HIP may enumerate the same verified PCI set differently.
+            # Freeze the complete ordinal -> lease-index permutation for
+            # per-collector physical GPU attribution at completed updates.
+            os.environ["TINYBRAINS_GPU_LEASE_ORDINALS"] = ",".join(
+                str(args.rocm_pci.index(pci)) for pci in actual_pcis)
         if args.device in ("dual", "multi"):
             # The lease fixes physical PCI identities, not HIP ordinal order.
             # Use its first GPU for PPO optimization and second for rollouts.
