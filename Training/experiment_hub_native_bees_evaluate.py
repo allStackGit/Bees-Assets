@@ -62,6 +62,13 @@ def source_inputs(suite_file: Path, suite: dict):
     reference = pinned_source(
         suite_file, suite["reference_manifest"], suite["reference_manifest_sha256"],
     )
+    reference_data = json.loads(read_bounded(reference, 131072))
+    if (reference_data.get("format") != "bees-native-model-v1" or
+            reference_data.get("abi_version") != 26 or
+            not isinstance(reference_data.get("models"), list) or
+            sum(model.get("slot") == suite["learner_slot"]
+                for model in reference_data["models"]) != 1):
+        raise ValueError("Native holdout reference must contain one v26 learner slot.")
     config = json.loads(read_bounded(run_file, 8 * 1024 * 1024))
     if (not isinstance(config, dict) or not isinstance(config.get("native_stage"), dict) or
             not isinstance(config.get("levels"), list) or not config["levels"] or
@@ -175,6 +182,17 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
     source_inputs(suite_file, suite)
     if file_sha256(rollout_binary) != suite["rollout_binary_sha256"]:
         raise ValueError("Native evaluation executable changed while benchmarking.")
+    print(json.dumps({
+        "kind": "native_bees_independent_evaluation_observation",
+        "candidate_checkpoint_sha256": checkpoint_digest,
+        "suite_id": suite["suite_id"],
+        "victories": receipt["side_victories"],
+        "trials": receipt["episodes"],
+        "world_steps": receipt["world_steps"],
+        "policy_rows": receipt["policy_rows"],
+        "wall_seconds": receipt["wall_seconds"],
+        "world_steps_per_wall_second": receipt["world_steps_per_wall_second"],
+    }, sort_keys=True), flush=True)
     return receipt["side_victories"]
 
 
