@@ -2442,8 +2442,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const url=URL.createObjectURL(blob);
         const link=document.createElement('a');
         link.href=url;
-        link.download=project+'-comparison-'+
-            exported.exported_at.replace(/[:.]/g,'-')+'.'+format;
+        const slug=value=>String(value||'run').normalize('NFKD')
+            .toLowerCase().replace(/[^a-z0-9]+/g,'-')
+            .replace(/^-+|-+$/g,'').slice(0,32).replace(/-+$/g,'')||'run';
+        const labels=runs.slice(0,2).map(run=>
+            slug(run.run_name||run.configuration_name));
+        link.download=project+'-'+labels.join('-vs-')+
+            (runs.length>2?'-plus-'+(runs.length-2)+'-more':'')+
+            '-'+exported.exported_at.replace(/[-:.]/g,'')
+                .replace('Z','z').toLowerCase()+
+            '-comparison.'+format;
         document.body.append(link);
         try{link.click();}finally{
             link.remove();
