@@ -262,7 +262,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['prev_reply_serial_seconds','collector_worker_previous_reply_serialize_seconds'],
             ['prev_reply_compress_seconds','collector_worker_previous_reply_compress_seconds'],
             ['prev_reply_auth_seconds','collector_worker_previous_reply_authenticate_seconds'],
-            ['prev_reply_send_seconds','collector_worker_previous_reply_send_seconds']])
+            ['prev_reply_send_seconds','collector_worker_previous_reply_send_seconds'],
+            ['prev_reply_service_seconds','collector_worker_previous_reply_service_seconds']])
             add('collector_'+i+'_'+suffix,worker[name],'seconds');
         // Reply timing from the worker necessarily arrives one PPO update
         // later; never label these durations as current-update service time.
@@ -341,7 +342,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         // a partial summary that can no longer be interpreted accurately.
         if(!fits())for(let i=collectors-1;i>=0;i--) {
             for(const suffix of ['prev_reply_prepare_seconds',
-                                 'prev_reply_send_seconds','prev_reply_update'])
+                                 'prev_reply_send_seconds',
+                                 'prev_reply_service_seconds',
+                                 'prev_reply_update'])
                 delete metrics['collector_'+i+'_'+suffix];
             if(fits())break;
         }
