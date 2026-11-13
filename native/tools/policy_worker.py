@@ -441,6 +441,25 @@ def main() -> None:
     parser.add_argument("--manifest", required=True, type=Path)
     args = parser.parse_args()
     signature, policy_map, manifest_digest = checked_manifest(args.manifest)
+    # A holdout benchmark can pin the action-sampling RNG without changing
+    # ordinary gameplay/training or the versioned inference wire protocol.
+    # Seed after loading model weights: constructor initialization may
+    # consume random numbers even though its parameters are overwritten.
+    policy_seed = os.environ.get("BEES_NATIVE_EVALUATION_SEED")
+    if policy_seed is not None:
+        if (not policy_seed.isascii() or not policy_seed.isdecimal() or
+                len(policy_seed) > 19):
+            raise ValueError("evaluation sampling seed must be an unsigned int63")
+        value = int(policy_seed)
+        if value >= (1 << 63):
+            raise ValueError("evaluation sampling seed exceeds int63")
+        import random
+        random.seed(value)
+        np.random.seed(value % (1 << 32))
+        if any(isinstance(model, (TorchScriptPolicy, MlagentsPolicy))
+               for model in policy_map.values()):
+            import torch
+            torch.manual_seed(value)
     reader = sys.stdin.buffer
     writer = sys.stdout.buffer
     writer.write(READY.pack(b"BHOK", VERSION, 26, len(signature)))
