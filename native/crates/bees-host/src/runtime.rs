@@ -1136,7 +1136,8 @@ where
         ).map_err(fail)?;
         let asteroids = state.metadata.collision_asteroids_enabled();
         let navigation = state.metadata.navigation_mut();
-        state.combat.refresh_world_navigation(navigation, true, asteroids)
+        let static_changed = state.combat.static_navigation_needs_refresh(navigation);
+        state.combat.refresh_world_navigation(navigation, static_changed, asteroids)
             .map_err(|error| fail(error.into()))?;
         bees_sim::squad_movement::issue_squad_move(
             &mut state.combat, navigation, order.members, home,
