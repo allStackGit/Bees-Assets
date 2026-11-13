@@ -98,6 +98,101 @@ function latestSelectionMetrics(root,checkpointRound) {
     }
 }
 
+// The Courier trainer already publishes real gameplay outcomes in its
+// checkpoint-bound status.json. Keep this read paired with the same committed
+// checkpoint round; older reports remain explicitly labeled by report round.
+// Selection lives rotate seeds and are NOT a fixed benchmark.
+function recordedCourierGameplay(root,checkpointRound) {
+    const file=path.join(root,'status.json');
+    let fd;
+    try {
+        if(fs.realpathSync(file)!==file)
+            throw Error('Courier gameplay status path is redirected.');
+        fd=fs.openSync(file,'r');
+        const stat=fs.fstatSync(fd);
+        if(!stat.isFile()||stat.size<1||stat.size>4*1024*1024)
+            throw Error('Courier gameplay status exceeds its bounded read.');
+        const buffer=Buffer.alloc(stat.size);
+        if(fs.readSync(fd,buffer,0,buffer.length,0)!==stat.size)
+            throw Error('Courier gameplay status changed during read.');
+        const saved=JSON.parse(buffer.toString('utf8'));
+        if(saved.round!==checkpointRound)return {};
+        const metrics={};
+        const add=(source,fields)=>{
+            if(!source||typeof source!=='object'||Array.isArray(source))return;
+            for(const [key,name,unit] of fields) {
+                const value=source[key];
+                if(typeof value!=='number'||!Number.isFinite(value)||
+                    Math.abs(value)>1e12||
+                    unit==='ratio'&&(value<0||value>1)||
+                    unit==='count'&&(!Number.isSafeInteger(value)||value<0))
+                    continue;
+                metrics[name]={value,unit};
+            }
+        };
+        add(saved.training_lifespan,[
+            ['recent_mean_completed_lifespan','training_recent_mean_completed_lifespan','scalar'],
+            ['recent_deaths','training_recent_deaths','count'],
+            ['mean_active_age','training_mean_active_age','scalar'],
+            ['oldest_active_age','training_oldest_active_age','scalar'],
+            ['active_couriers','training_active_couriers','count'],
+            ['mean_active_colony_age','training_mean_active_colony_age','scalar'],
+            ['active_colonies','training_active_colonies','count'],
+        ]);
+        // The policy that won the just-completed selection comparison has
+        // full gameplay metrics in the lineage's qualifying evaluation. It
+        // must match this round's scored candidate, never a previous result.
+        if(saved.selection?.qualified===true&&
+            typeof saved.selection.candidate_score==='number'&&
+            Array.isArray(saved.lineage)) {
+            const qualified=saved.lineage.map(row=>row?.qualification_metrics)
+                .filter(row=>row&&typeof row==='object'&&
+                    Number.isFinite(row.mean_survival_score)&&
+                    Number.isFinite(row.survival_rate)&&
+                    Number.isFinite(row.mean_deliveries))
+                .sort((a,b)=>b.mean_survival_score-a.mean_survival_score||
+                    b.survival_rate-a.survival_rate||
+                    b.mean_deliveries-a.mean_deliveries);
+            const candidate=qualified[0];
+            if(candidate&&
+                candidate.mean_survival_score===saved.selection.candidate_score)
+                add(candidate,[
+                    ['survival_rate','selection_candidate_survival_rate','ratio'],
+                    ['mean_lifespan','selection_candidate_mean_lifespan','scalar'],
+                    ['mean_deliveries','selection_candidate_mean_deliveries','scalar'],
+                    ['pickup_rate','selection_candidate_pickup_rate','ratio'],
+                    ['mean_steps_per_delivery','selection_candidate_mean_steps_per_delivery','scalar'],
+                    ['gross_energy_per_step','selection_candidate_gross_energy_per_step','scalar'],
+                    ['mean_feedings','selection_candidate_mean_feedings','scalar'],
+                    ['mean_births','selection_candidate_mean_births','scalar'],
+                ]);
+        }
+        // Optional fixed report benchmarks are disabled by default. When
+        // recorded, do not silently represent an older report as fresh.
+        if(Number.isSafeInteger(saved.benchmark_round)&&
+            saved.benchmark_round>=0&&saved.benchmark_round<=checkpointRound&&
+            saved.benchmark) {
+            metrics.benchmark_round={value:saved.benchmark_round,unit:'count'};
+            add(saved.benchmark,[
+                ['survival_rate','benchmark_survival_rate','ratio'],
+                ['mean_lifespan','benchmark_mean_lifespan','scalar'],
+                ['mean_deliveries','benchmark_mean_deliveries','scalar'],
+                ['pickup_rate','benchmark_pickup_rate','ratio'],
+                ['mean_steps_per_delivery','benchmark_mean_steps_per_delivery','scalar'],
+                ['gross_energy_per_step','benchmark_gross_energy_per_step','scalar'],
+                ['mean_feedings','benchmark_mean_feedings','scalar'],
+                ['mean_births','benchmark_mean_births','scalar'],
+            ]);
+        }
+        return metrics;
+    }catch(error) {
+        if(error.code==='ENOENT'&&fd===undefined)return {};
+        throw error;
+    }finally {
+        if(fd!==undefined)fs.closeSync(fd);
+    }
+}
+
 function liveWindowsProgress(root) {
     // Reading the durable checkpoint can block Python's replacement on Windows.
     // The append-only event is emitted after all checkpoint files are published.
@@ -285,7 +380,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 const progress=liveWindowsProgress(root);
                 return progress&&validateProgress({...identity,...progress,
                     metrics:{...progress.metrics,
-                        ...latestSelectionMetrics(root,progress.steps_completed)},
+                        ...latestSelectionMetrics(root,progress.steps_completed),
+                        ...recordedCourierGameplay(root,progress.steps_completed)},
                 },context.project_id);
             }
             const checkpoint=path.join(root,'checkpoint.json');
@@ -309,6 +405,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                         active_training_time:{value:summary.active_seconds,unit:'seconds'},
                         ...courierMetrics(summary),
                         ...latestSelectionMetrics(root,summary.round),
+                        ...recordedCourierGameplay(root,summary.round),
                     },
                 },context.project_id);
             }catch(error) {
