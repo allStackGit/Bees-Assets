@@ -9,6 +9,7 @@
 use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::policy::Decision;
 use bees_sim::simulation::{Simulation, StepError, World};
+use std::num::NonZeroUsize;
 use std::time::Instant;
 
 use crate::inference::{
@@ -66,6 +67,14 @@ pub enum NativeBatchedStepError<SourceError, BackendError> {
         worlds_stepped: usize,
         error: StepError<NativeLevelStepError>,
     },
+    /// A parallel model batch may step worlds after the first failing
+    /// index. The whole policy batch must be discarded, not assumed to
+    /// have a successful contiguous prefix.
+    ParallelStep {
+        worlds_stepped: usize,
+        failures: Vec<(usize, StepError<NativeLevelStepError>)>,
+    },
+    ParallelPlan(&'static str),
 }
 
 /// Synchronous GPU/CPU model batching across all current worlds.
@@ -84,6 +93,9 @@ pub enum NativeBatchedStepError<SourceError, BackendError> {
 /// Level notifications are kept in its persistent outbox, so repeated
 /// calls cannot silently overwrite earlier rewards even if the host
 /// flushes them only at the end of a rollout window.
+/// Preserve the serial gameplay/client path and its first-failure
+/// semantics while sharing every model/observation preflight with the
+/// optional multi-core physics dispatcher.
 pub fn step_batched_levels<M, A, B, F, SourceError>(
     simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
     batch: &mut NativeLevelInferenceBatch,
@@ -99,6 +111,114 @@ where
     F: FnMut(
         usize, &World<NativeLevelState<M, A>>, &mut NativeLevelInferenceBatch,
     ) -> Result<(), SourceError>,
+{
+    step_batched_levels_with_dispatch(
+        simulation, batch, backend, build_observations, decisions,
+        |simulation, batch, decisions, counts| {
+            for index in 0..simulation.world_count() {
+                let world = simulation.world(index)
+                    .ok_or(NativeBatchedStepError::MissingWorld { index })?;
+                if world.is_failed() || world.state.events.completed() ||
+                    world.state.events.was_aborted() {
+                    continue;
+                }
+                batch.decisions_for_world(world, decisions)
+                    .map_err(|error|
+                        NativeBatchedStepError::Dispatch { index, error }
+                    )?;
+                simulation.step_world(index, decisions).map_err(|error|
+                    NativeBatchedStepError::Step {
+                        index, worlds_stepped: counts.worlds_stepped, error,
+                    }
+                )?;
+                counts.worlds_stepped += 1;
+            }
+            Ok(())
+        },
+    )
+}
+
+/// Optional multi-core physical execution AFTER the same complete model
+/// inference and action validation. Only world-owned gameplay runs on CPU
+/// workers; policy calls and notification/credit delivery are unchanged.
+/// The output vector is retained across frames to avoid hot-path allocation.
+pub fn step_batched_levels_parallel<M, A, B, F, SourceError>(
+    simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+    batch: &mut NativeLevelInferenceBatch,
+    backend: &mut B,
+    build_observations: &mut F,
+    decisions: &mut Vec<Decision>,
+    per_world_actions: &mut Vec<Option<Vec<Decision>>>,
+    workers: NonZeroUsize,
+) -> Result<NativeBatchedStepCounts,
+    NativeBatchedStepError<SourceError, B::Error>>
+where
+    M: NativeLevelRewardMetadata + NativeLevelCommandContext + Send,
+    A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError> + Send,
+    B: NativePolicyInference,
+    F: FnMut(
+        usize, &World<NativeLevelState<M, A>>, &mut NativeLevelInferenceBatch,
+    ) -> Result<(), SourceError>,
+{
+    step_batched_levels_with_dispatch(
+        simulation, batch, backend, build_observations, decisions,
+        |simulation, batch, _decisions, counts| {
+            per_world_actions.resize_with(simulation.world_count(), || None);
+            per_world_actions.truncate(simulation.world_count());
+            // Prepare ALL world actions and prove their current identity
+            // before *any* physical world advances.
+            for index in 0..simulation.world_count() {
+                let world = simulation.world(index)
+                    .ok_or(NativeBatchedStepError::MissingWorld { index })?;
+                if world.is_failed() || world.state.events.completed() ||
+                    world.state.events.was_aborted() {
+                    per_world_actions[index] = None;
+                    continue;
+                }
+                let output = per_world_actions[index]
+                    .get_or_insert_with(Vec::new);
+                batch.decisions_for_world(world, output)
+                    .map_err(|error|
+                        NativeBatchedStepError::Dispatch { index, error }
+                    )?;
+            }
+            let report = simulation.step_selected_worlds_parallel(
+                per_world_actions, workers,
+            ).map_err(NativeBatchedStepError::ParallelPlan)?;
+            counts.worlds_stepped = report.worlds_stepped;
+            if !report.failed_worlds.is_empty() {
+                return Err(NativeBatchedStepError::ParallelStep {
+                    worlds_stepped: report.worlds_stepped,
+                    failures: report.failed_worlds,
+                });
+            }
+            Ok(())
+        },
+    )
+}
+
+fn step_batched_levels_with_dispatch<M, A, B, F, SourceError, D>(
+    simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+    batch: &mut NativeLevelInferenceBatch,
+    backend: &mut B,
+    build_observations: &mut F,
+    decisions: &mut Vec<Decision>,
+    dispatch: D,
+) -> Result<NativeBatchedStepCounts,
+    NativeBatchedStepError<SourceError, B::Error>>
+where
+    M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+    A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    B: NativePolicyInference,
+    F: FnMut(
+        usize, &World<NativeLevelState<M, A>>, &mut NativeLevelInferenceBatch,
+    ) -> Result<(), SourceError>,
+    D: FnOnce(
+        &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        &NativeLevelInferenceBatch,
+        &mut Vec<Decision>,
+        &mut NativeBatchedStepCounts,
+    ) -> Result<(), NativeBatchedStepError<SourceError, B::Error>>,
 {
     let sample_phases =
         batch.sample_rollout_phase_timing(simulation.timing_sample_period());
@@ -196,24 +316,7 @@ where
         counts.inference_and_validation_nanos = started.elapsed().as_nanos();
     }
     let dispatch_started = sample_phases.then(Instant::now);
-    for index in 0..simulation.world_count() {
-        let world = simulation.world(index)
-            .ok_or(NativeBatchedStepError::MissingWorld { index })?;
-        if world.is_failed() || world.state.events.completed() ||
-            world.state.events.was_aborted() {
-            continue;
-        }
-        batch.decisions_for_world(world, decisions)
-            .map_err(|error|
-                NativeBatchedStepError::Dispatch { index, error }
-            )?;
-        simulation.step_world(index, decisions).map_err(|error|
-            NativeBatchedStepError::Step {
-                index, worlds_stepped: counts.worlds_stepped, error,
-            }
-        )?;
-        counts.worlds_stepped += 1;
-    }
+    dispatch(simulation, batch, decisions, &mut counts)?;
     if let Some(started) = dispatch_started {
         counts.world_dispatch_and_step_nanos = started.elapsed().as_nanos();
     }
