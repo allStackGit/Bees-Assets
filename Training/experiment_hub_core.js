@@ -1781,10 +1781,15 @@ class ExperimentHub {
                             ?job.resources.gpu_mode==='exclusive'&&(
                                 job.project_id==='courier'&&job.resources.gpu_count<=8||
                                 job.project_id==='tinybrains'&&
-                                    job.resources.gpu_count===2&&
-                                    job.frozen_parameters?.device==='dual'&&
-                                    machine.tinybrains_dual_gpu_profiles
-                                        ?.includes(job.frozen_parameters.profile))
+                                    (job.resources.gpu_count===2&&
+                                     job.frozen_parameters?.device==='dual'&&
+                                     machine.tinybrains_dual_gpu_profiles
+                                         ?.includes(job.frozen_parameters.profile)||
+                                     job.resources.gpu_count>=3&&
+                                     job.resources.gpu_count<=8&&
+                                     job.frozen_parameters?.device==='multi'&&
+                                     machine.tinybrains_multi_gpu_profiles
+                                         ?.includes(job.frozen_parameters.profile)))
                             :job.resources.gpu_count===1&&
                                 (job.resources.gpu_mode==='exclusive'||
                                     job.resources.gpu_mode==='shared'&&
@@ -1836,7 +1841,8 @@ class ExperimentHub {
             if(session.probe_exclusive_gpu) {
                 for(const job of pendingClaims) {
                     if(!(job.resources.gpu_count===1||
-                            job.project_id==='tinybrains'&&job.resources.gpu_count===2||
+                            job.project_id==='tinybrains'&&
+                                job.resources.gpu_count>=2&&job.resources.gpu_count<=8||
                             job.project_id==='courier'&&
                                 job.resources.gpu_count>=2&&job.resources.gpu_count<=8)||
                         !(job.resources.gpu_mode==='exclusive'||
@@ -1867,9 +1873,11 @@ class ExperimentHub {
                     r.gpu_count===0&&!(r.gpus||[]).length||
                     session.claim_exclusive_gpu&&(
                         r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode)||
-                        r.gpu_count===2&&r.gpu_mode==='exclusive'&&
+                        r.gpu_count>=2&&r.gpu_count<=8&&
+                            r.gpu_mode==='exclusive'&&
                             job.project_id==='tinybrains'&&
-                            job.frozen_parameters?.device==='dual'||
+                            (r.gpu_count===2&&job.frozen_parameters?.device==='dual'||
+                             r.gpu_count>=3&&job.frozen_parameters?.device==='multi')||
                         r.gpu_count>=2&&r.gpu_count<=8&&
                             r.gpu_mode==='exclusive'&&job.project_id==='courier'));
             };
@@ -4241,6 +4249,13 @@ class ExperimentHub {
                 machine.agent_platform==='linux'&&
                 job.resources.gpu_count>=2&&job.resources.gpu_count<=8&&
                 job.resources.gpu_mode==='exclusive';
+            const tinyMulti=job.project_id==='tinybrains'&&
+                machine.agent_platform==='linux'&&
+                job.resources.gpu_count>=3&&job.resources.gpu_count<=8&&
+                job.resources.gpu_mode==='exclusive'&&
+                job.frozen_parameters?.device==='multi'&&
+                machine.tinybrains_multi_gpu_profiles
+                    ?.includes(job.frozen_parameters.profile);
             if(job.resources.ram_mb<128||
                 (job.resources.gpu_count>0&&
                     (!machine.gpu_projects?.includes(job.project_id)||
@@ -4252,7 +4267,7 @@ class ExperimentHub {
                           machine.agent_platform!=='linux'||
                           !machine.tinybrains_dual_gpu_profiles
                               ?.includes(job.frozen_parameters.profile)))||
-                     (job.resources.gpu_count>2&&!courierMulti))))
+                     (job.resources.gpu_count>2&&!courierMulti&&!tinyMulti))))
                 throw Error('Bundle member '+(index+1)+' is not eligible for its requested native CPU/GPU mode.');
             // Use the actual lease allocator, not a separate capacity
             // estimate. Earlier members consume budget in the same draft;
