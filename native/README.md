@@ -32,9 +32,9 @@ step, so this is intended for sufficiently expensive arenas; compare
 it enabled. The `interval` and `run_final` reports include worker
 counts, total worker elapsed time, and rounds serialized to preserve
 source Stage squad IDs when living Scouts could spawn Beacon children.
-An active Scout forces source-ordered physical execution for that round;
-model inference, recording, and HiveMind outcome persistence are never
-performed by worker threads. Use the same run config, seeds, and model
+Only arenas with a living Scout enter the source-ordered Stage-ID lane;
+other arenas still execute concurrently. Model inference, recording, and
+HiveMind outcome persistence are never performed by worker threads. Use the same run config, seeds, and model
 manifest when comparing the serial and parallel settings.
 
 To choose among local battle configurations in a window, create a catalog:
