@@ -304,6 +304,15 @@ class BottleneckEvidence {
                     replyPrep:priorTotal>=0.5&&prepShare>=0.70&&
                         prepWorkShare>=0.25
                 };
+                const inferenceHost=seconds('collector_'+i+'_learner_inference_seconds');
+                const inferenceStream=seconds('collector_'+i+'_learner_gpu_stream_seconds');
+                // Stream events bracket GPU dispatch, sampling and kernel
+                // gaps; host wall also includes copies and record creation.
+                // The difference is not proof of GPU or network saturation.
+                if(inferenceHost>0&&inferenceStream!==null&&
+                    inferenceStream<=inferenceHost)
+                    add('collector_'+i+'_inference_gpu_stream_share',
+                        inferenceStream/inferenceHost);
                 const durations=sourceNames.map(name=>
                     seconds('collector_'+i+'_'+name));
                 if(durations.some(x=>x===null))continue;
@@ -468,6 +477,10 @@ class BottleneckEvidence {
             // diagnosis across project changes or instrumentation versions.
             this.byJob.delete(job.id);
         }
+        const streamPpo=seconds('ppo_gpu_stream_interval_seconds');
+        const hostPpo=seconds('optimization_seconds');
+        if(hostPpo>0&&streamPpo!==null&&streamPpo<=hostPpo)
+            add('ppo_gpu_stream_work_share',streamPpo/hostPpo);
         const engine=seconds('rollout_engine_step_seconds');
         const inference=seconds('rollout_learner_inference_seconds');
         if(engine!==null&&inference!==null&&engine+inference>0) {
