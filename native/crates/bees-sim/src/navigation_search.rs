@@ -109,17 +109,16 @@ impl NavigationSearch {
         let dynamic = layers.dynamic_clearance();
         if dynamic[end_index] < hard { return Ok(None); }
 
-        // In a map without occupied static or moving-obstacle cells, every
-        // preferred-clearance cell forms one convex interior rectangle.
-        // The supercover line between two such cells also has preferred
-        // clearance, so source A* + source smoothing always reduces to the
-        // same single destination waypoint. Avoid its heap, cell visits and
-        // path reconstruction for this common unobstructed training route.
-        // Border-adjacent endpoints and all obstructed maps retain the exact
-        // source search, including preferred-clearance detours and egress.
-        if layers.unobstructed() &&
-            dynamic[start_index] >= preferred &&
+        // A straight supercover line through preferred-clearance cells
+        // already realizes the minimum octile distance with zero clearance
+        // penalty. A* cannot find a cheaper route, and source smoothing
+        // would reduce its path to the same single waypoint. Checking this
+        // exact source geometry is linear in distance, not explored cells,
+        // and works with or without obstacles. Other routes retain the
+        // original preferred-clearance search and signed-static egress.
+        if dynamic[start_index] >= preferred &&
             dynamic[end_index] >= preferred &&
+            self.clear_grid_line(start_index, end_index, dynamic, preferred) &&
             deadline.is_none_or(|limit| Instant::now() < limit)
         {
             return Ok(Some(NavigationPath {
