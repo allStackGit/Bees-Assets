@@ -34,11 +34,14 @@ struct Options {
     /// Every fourth world can use a heavier authentic-hull population.
     /// Other worlds retain --ships, allowing mixed 1v1 and fleet load.
     heavy_ships: Option<usize>,
+    /// Exercise the exact one-physics-tick-per-inference-frame dispatcher.
+    model_step_dispatch: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { worlds: 16, ships: 2, steps: 1000, workers: 4, heavy_ships: None }
+        Self { worlds: 16, ships: 2, steps: 1000, workers: 4,
+            heavy_ships: None, model_step_dispatch: false }
     }
 }
 
@@ -46,8 +49,12 @@ fn options() -> Options {
     let mut opt = Options::default();
     let mut arguments = env::args().skip(1);
     while let Some(flag) = arguments.next() {
+        if flag == "--model-step-dispatch" {
+            opt.model_step_dispatch = true;
+            continue;
+        }
         if flag == "--help" || flag == "-h" {
-            println!("Usage: rollout_throughput [--worlds 1..256] [--ships 1..256] [--steps 1..1000000] [--workers 1..128] [--heavy-ships 1..256]");
+            println!("Usage: rollout_throughput [--worlds 1..256] [--ships 1..256] [--steps 1..1000000] [--workers 1..128] [--heavy-ships 1..256] [--model-step-dispatch]");
             std::process::exit(0);
         }
         let value = arguments.next().unwrap_or_else(|| panic!("missing value for {flag}"));
@@ -188,6 +195,47 @@ fn measure(
         m.broadphase_candidates, m.narrowphase_tests, m.trigger_enters)
 }
 
+/// Physics-only surrogate for the shared model-batched dispatcher. It
+/// measures exactly the per-round scheduling overhead that long CPU-only
+/// windows hide; no model inference or scripted rewards are fabricated.
+fn measure_model_step_dispatch(
+    opt: Options,
+    workers: usize,
+    label: &str,
+    assets: &ShipAssetCatalog,
+    projectiles: &Arc<ProjectileAssetCatalog>,
+) -> (u64, u64, u64, u64, u64, u64) {
+    use std::time::Instant;
+    let mut sim = build_worlds(opt, assets, projectiles);
+    let actions = (0..opt.worlds).map(|_| Some(Vec::<Decision>::new()))
+        .collect::<Vec<_>>();
+    // No hidden warm-up worlds: both modes start with identical authored
+    // hulls, RNG and physics state and complete exactly opt.steps ticks.
+    let started = Instant::now();
+    let mut actual_workers = 0usize;
+    for _ in 0..opt.steps {
+        let report = sim.step_selected_worlds_parallel(
+            &actions, NonZeroUsize::new(workers).unwrap(),
+        ).expect("matching arena action count");
+        assert!(report.failed_worlds.is_empty(), "model-step physics failed");
+        assert_eq!(report.worlds_stepped, opt.worlds);
+        actual_workers = actual_workers.max(report.worker_loads.len());
+    }
+    let elapsed = started.elapsed().as_secs_f64();
+    let m = sim.measurements();
+    println!(
+        "{label},{},{},{workers},{},{:.3},{:.1},{},{},{},{},{}",
+        opt.worlds, opt.ships, m.ticks,
+        elapsed, m.ticks as f64 / elapsed,
+        m.integrated_bodies, m.broadphase_candidates,
+        m.narrowphase_tests, m.trigger_enters,
+        opt.heavy_ships.unwrap_or(0),
+    );
+    eprintln!("{label}: requested={workers} actual_max_workers={actual_workers}");
+    (fingerprint(&sim), m.ticks, m.integrated_bodies,
+        m.broadphase_candidates, m.narrowphase_tests, m.trigger_enters)
+}
+
 fn main() {
     let opt = options();
     eprintln!("PHYSICS BASELINE ONLY: authored ship hulls, no weapons, no AI, collision layers disabled; not full gameplay/training TPS.");
@@ -196,8 +244,17 @@ fn main() {
         ProjectileAssetCatalog::embedded().expect("authored projectile collider catalog"),
     );
     println!("mode,worlds,ships_per_world,workers,world_steps,wall_seconds,world_steps_per_second,integrated_bodies,broadphase_candidates,narrowphase_tests,contacts,heavy_ships_every_fourth_world");
-    let serial = measure(opt, 1, "serial", &assets, &projectiles);
-    let parallel = measure(opt, opt.workers, "parallel", &assets, &projectiles);
+    let serial = if opt.model_step_dispatch {
+        measure_model_step_dispatch(opt, 1, "serial-model-step-physics", &assets, &projectiles)
+    } else {
+        measure(opt, 1, "serial", &assets, &projectiles)
+    };
+    let parallel = if opt.model_step_dispatch {
+        measure_model_step_dispatch(opt, opt.workers,
+            "parallel-model-step-physics", &assets, &projectiles)
+    } else {
+        measure(opt, opt.workers, "parallel", &assets, &projectiles)
+    };
     assert_eq!(
         serial, parallel,
         "serial and parallel native physics state/workload differed",
