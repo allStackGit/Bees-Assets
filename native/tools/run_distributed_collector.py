@@ -12,7 +12,9 @@ import subprocess
 import sys
 import uuid
 
-from native_training_artifacts import check_learner, file_sha256
+from native_training_artifacts import (
+    check_learner, file_sha256, native_source_contract_sha256,
+)
 from native_distributed_collection import verify_bundle
 
 
@@ -40,8 +42,14 @@ def main():
     if len(matches) != 1:
         parser.error("collector id is not uniquely allocated in the work order")
     job = matches[0]
+    if "source_run_contract_sha256" in orders:
+        if native_source_contract_sha256(args.run_config) != orders["source_run_contract_sha256"]:
+            raise ValueError("collector's physical native source differs from the work order")
+    elif file_sha256(args.run_config.resolve(strict=True)) != orders["source_run_config_sha256"]:
+        # Old work orders must retain their original exact-byte identity;
+        # a partially finished distributed round cannot silently migrate.
+        raise ValueError("collector's legacy source run bytes differ from the work order")
     for path, digest in (
-        (args.run_config, orders["source_run_config_sha256"]),
         (args.checkpoint, orders["input_checkpoint_sha256"]),
         (args.model_manifest, orders["input_manifest_sha256"]),
     ):
