@@ -42,6 +42,8 @@ pub struct NativeBatchedStepCounts {
     /// Shared Stage squad IDs cannot be allocated in arbitrary worker order
     /// without changing observable lifetime identity across replay runs.
     pub serialized_for_stage_ids: bool,
+    /// Number of actual arena ticks on the source-ordered lane.
+    pub serialized_stage_arenas: usize,
     /// False when Simulation timing sampling is disabled or this call
     /// was not selected. The three durations are then exactly zero.
     pub phase_timing_sampled: bool,
@@ -215,6 +217,7 @@ where
                 per_world_actions, workers, serialized_worlds,
             ).map_err(NativeBatchedStepError::ParallelPlan)?;
             counts.worlds_stepped = report.worlds_stepped;
+            counts.serialized_stage_arenas = report.serialized_arenas;
             counts.parallel_physics_workers = report.parallel_workers;
             counts.parallel_physics_worker_nanos = report.worker_loads.iter()
                 .map(|load| load.wall_elapsed.as_nanos())
