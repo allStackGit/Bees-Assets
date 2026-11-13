@@ -31,6 +31,71 @@ def normalized_python_source_sha256(path: Path) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def native_source_contract_sha256(path: Path) -> str:
+    """Content identity for a native collector's *physical* training task.
+
+    A learner on Linux and a collector on Windows cannot share literal
+    `python`, `policy_worker`, scene or output paths. Hash the exact
+    source configuration with only those machine-local locations replaced
+    by the immutable content they select. Inference weights are independently
+    bound by the manifest digest in the distributed collection work order.
+    Reject missing files rather than trusting path spellings or empty hashes.
+    """
+    path = path.resolve(strict=True)
+    source = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(source, dict) or not isinstance(source.get("levels"), list) or not source["levels"]:
+        raise ValueError("native source contract requires explicit physical Levels")
+    if (source.get("hivemind") is not None or source.get("model_updates") or
+            source.get("recover_notifications") or
+            source.get("recover_outcome_journals") or
+            "rollout_bundles" in source):
+        raise ValueError("distributed native source contract requires fresh model-only Levels")
+
+    file_cache = {}
+    def sha_file(value, *, python_source=False):
+        if not isinstance(value, str) or not value:
+            raise ValueError("native source contract requires a real local source file")
+        file = Path(value)
+        if not file.is_absolute():
+            file = path.parent / file
+        file = file.resolve(strict=True)
+        if file not in file_cache:
+            file_cache[file] = {}
+        kind = "python" if python_source else "bytes"
+        if kind not in file_cache[file]:
+            file_cache[file][kind] = (
+                normalized_python_source_sha256(file)
+                if python_source else file_sha256(file)
+            )
+        return file_cache[file][kind]
+
+    # Output journals, interpreter installation, and model locations are
+    # execution plumbing. No gameplay/simulation property is dropped.
+    portable = {
+        key: value for key, value in source.items()
+        if key not in (
+            "python", "policy_worker", "model_manifest",
+            "connection_checkpoint", "notifications", "rollout_summary",
+            "policy_capture",
+        )
+    }
+    portable["policy_worker_source_sha256"] = sha_file(
+        source.get("policy_worker"), python_source=True,
+    )
+    for key in ("collision_matrix", "stage_palette"):
+        if key in portable and portable[key] is not None:
+            portable[key] = {"source_sha256": sha_file(portable[key])}
+    portable["levels"] = []
+    for level in source["levels"]:
+        if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
+            raise ValueError("native source contract requires every Level scene")
+        row = dict(level)
+        row["scene"] = {"source_sha256": sha_file(level["scene"])}
+        portable["levels"].append(row)
+    payload = json.dumps(portable, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> str:
     record = json.loads(manifest.read_text(encoding="utf-8"))
     if record.get("format") != "bees-native-model-v1" or not isinstance(record.get("models"), list):
