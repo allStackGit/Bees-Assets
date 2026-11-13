@@ -1548,7 +1548,7 @@ document.addEventListener('DOMContentLoaded', () => {
             collectorStageProfiles.append(heading);
             const table=document.createElement('table');
             const headers=['Collector','Samples','Decisions/s','Match steps/s',
-                'Engine step (s)','Observation preparation (s)',
+                'Engine step/join (s)','Observation preparation (s)',
                 'Inference (s)','Opponent processing (s)',
                 'Model prepare (s)','Roundtrip (s)'];
             const tr=document.createElement('tr');
@@ -1575,7 +1575,7 @@ document.addEventListener('DOMContentLoaded', () => {
             collectorStageProfiles.append(table);
         }
         const note=document.createElement('p');
-        note.textContent='Medians use up to 32 paired observations from the latest chart segment. Engine and inference timings are host-wall stage observations, not exclusive CPU or GPU time; stages may overlap. Remote roundtrip includes transfer and worker computation, not network latency alone. Missing columns mean the recorded samples did not contain the metric consistently; no values are inferred.';
+        note.textContent='Medians use up to 32 paired observations from the latest chart segment. Engine and inference timings are host-wall observations, not exclusive CPU or GPU time. When native steps are prefetched, the engine figure is remaining join wait and may overlap opponent preparation; full native batch wall is recorded separately. Remote roundtrip includes transfer and worker computation, not network latency alone. Missing columns are not inferred.';
         collectorStageProfiles.append(note);
     }
     function renderMeasuredSeconds(runs) {
