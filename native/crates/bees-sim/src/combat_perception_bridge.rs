@@ -455,6 +455,69 @@ fn compare_ship_candidates(
         .then_with(|| left.id.cmp(&right.id))
 }
 
+/// Reusable bounded exact-nearest selection for source allies and learned
+/// enemies. With x-sorted positions, every unvisited source is at least
+/// the next x-slab distance away; stop only when that bound is strictly
+/// farther than the worst retained full-distance candidate. Equality
+/// remains observable because the source breaks ties by ship type/fleet/ID.
+fn select_prepared_nearest(
+    entries: &[LiveShipCandidateSource],
+    origin: Vec2,
+    observer_id: i64,
+    nearest: &mut BinaryHeap<ShipCandidateKey>,
+    output: &mut Vec<ShipCandidateKey>,
+) -> Result<(), CombatPerceptionError> {
+    const LIMIT: usize = 64;
+    let mut left = entries.partition_point(|entry|
+        entry.position.x.total_cmp(&origin.x).is_lt()
+    );
+    let mut right = left;
+    nearest.clear();
+    while left > 0 || right < entries.len() {
+        let left_sq = if left > 0 {
+            let dx = origin.x - entries[left - 1].position.x;
+            dx * dx
+        } else { f32::INFINITY };
+        let right_sq = if right < entries.len() {
+            let dx = entries[right].position.x - origin.x;
+            dx * dx
+        } else { f32::INFINITY };
+        if nearest.len() == LIMIT &&
+            left_sq.min(right_sq) > nearest.peek()
+                .expect("full heap").distance_squared {
+            break;
+        }
+        let entry = if left_sq <= right_sq {
+            left -= 1;
+            entries[left]
+        } else {
+            let entry = entries[right];
+            right += 1;
+            entry
+        };
+        if entry.id == observer_id { continue; }
+        let distance_squared = (entry.position - origin).length_squared();
+        if !distance_squared.is_finite() {
+            return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+        }
+        let candidate = ShipCandidateKey {
+            id: entry.id, distance_squared,
+            ship_type: entry.ship_type, fleet_id: entry.fleet_id,
+        };
+        if nearest.len() < LIMIT {
+            nearest.push(candidate);
+        } else if candidate < *nearest.peek().expect("full heap") {
+            nearest.pop();
+            nearest.push(candidate);
+        }
+    }
+    output.clear();
+    while let Some(candidate) = nearest.pop() {
+        output.push(candidate);
+    }
+    Ok(())
+}
+
 /// Gather only discovered, alive collision asteroids from the actual
 /// native obstacle registry. Unity's RlCombatPerception uses the active
 /// clearance-mapping collider AABB (or primary collider), the body's
@@ -682,6 +745,10 @@ pub struct LiveShipCandidateCollector {
     /// X-sorted, per-side live roster, built once per world/episode/tick by
     /// NativeWorldPerceptionAssembler instead of scanned for every agent.
     live_by_side: HashMap<i32, Vec<LiveShipCandidateSource>>,
+    /// The HiveMind VisionCache is source-side-specific, not simply every
+    /// living opposing ship. Snapshot these exact discovered memberships
+    /// alongside the live roster and retain the same per-side X index.
+    learned_by_side: HashMap<i32, Vec<LiveShipCandidateSource>>,
     /// A bounded max-heap of the nearest 64. The root is always the worst
     /// selected ship according to Unity's complete distance/type/fleet/ID
     /// comparator, so equal-distance tie behavior is retained exactly.
@@ -696,7 +763,7 @@ impl LiveShipCandidateCollector {
     /// world and invalidated by the owning assembler on episode/tick change
     /// or explicitly when a Level mutates between fixed ticks.
     pub fn prepare_live_roster(
-        &mut self, world: &CombatWorld,
+        &mut self, world: &CombatWorld, observing_sides: [i32; 2],
     ) -> Result<(), CombatPerceptionError> {
         for side in self.live_by_side.values_mut() { side.clear(); }
         if world.ships().len() != world.physics().ships().len() {
@@ -726,6 +793,34 @@ impl LiveShipCandidateCollector {
                     .then_with(|| a.id.cmp(&b.id))
             });
         }
+        for side in observing_sides {
+            let entries = self.learned_by_side.entry(side).or_default();
+            entries.clear();
+            if let Some(known) = world.discovery().ship_ids(side) {
+                for &id in known {
+                    let Some(ship) = world.ship(id) else {
+                        continue; // retired before the discovery cache pruned it
+                    };
+                    if ship.side == side { continue; }
+                    let (ship, body) = match live_ship(world, id) {
+                        Ok(value) => value,
+                        Err(CombatPerceptionError::InactiveShip(_)) => continue,
+                        Err(error) => return Err(error),
+                    };
+                    entries.push(LiveShipCandidateSource {
+                        id: ship.entity_id,
+                        position: body.motion.position,
+                        ship_type: ship.ship_type,
+                        fleet_id: world.ship_fleet_identity(ship.entity_id)
+                            .unwrap_or(i64::MAX),
+                    });
+                }
+            }
+            entries.sort_unstable_by(|a, b| {
+                a.position.x.total_cmp(&b.position.x)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
         Ok(())
     }
 
@@ -744,59 +839,34 @@ impl LiveShipCandidateCollector {
         metadata_for: impl FnMut(i64) -> Option<AuthoredShipPerception>,
         output: &mut Vec<ObservedShip>,
     ) -> Result<usize, CombatPerceptionError> {
-        const LIMIT: usize = 64;
         let (observer, observer_body) = live_ship(world, observer_id)?;
-        let origin = observer_body.motion.position;
         let entries = self.live_by_side.get(&observer.side)
             .ok_or(CombatPerceptionError::MismatchedWorldStorage)?;
-        let mut left = entries.partition_point(|entry|
-            entry.position.x.total_cmp(&origin.x).is_lt()
-        );
-        let mut right = left;
-        self.nearest.clear();
+        select_prepared_nearest(
+            entries, observer_body.motion.position, observer_id,
+            &mut self.nearest, &mut self.candidates,
+        )?;
+        self.sort_and_project(world, identities, metadata_for, output)
+    }
 
-        while left > 0 || right < entries.len() {
-            let left_sq = if left > 0 {
-                let dx = origin.x - entries[left - 1].position.x;
-                dx * dx
-            } else { f32::INFINITY };
-            let right_sq = if right < entries.len() {
-                let dx = entries[right].position.x - origin.x;
-                dx * dx
-            } else { f32::INFINITY };
-            if self.nearest.len() == LIMIT &&
-                left_sq.min(right_sq) > self.nearest.peek()
-                    .expect("full heap").distance_squared {
-                break;
-            }
-            let entry = if left_sq <= right_sq {
-                left -= 1;
-                entries[left]
-            } else {
-                let entry = entries[right];
-                right += 1;
-                entry
-            };
-            if entry.id == observer_id { continue; }
-            let distance_squared = (entry.position - origin).length_squared();
-            if !distance_squared.is_finite() {
-                return Err(CombatPerceptionError::InvalidAuthoredMetadata);
-            }
-            let candidate = ShipCandidateKey {
-                id: entry.id, distance_squared,
-                ship_type: entry.ship_type, fleet_id: entry.fleet_id,
-            };
-            if self.nearest.len() < LIMIT {
-                self.nearest.push(candidate);
-            } else if candidate < *self.nearest.peek().expect("full heap") {
-                self.nearest.pop();
-                self.nearest.push(candidate);
-            }
-        }
-        self.candidates.clear();
-        while let Some(candidate) = self.nearest.pop() {
-            self.candidates.push(candidate);
-        }
+    /// VisionCache is ever-learned per observing side. Preserve its
+    /// membership while avoiding repeated ship hash lookups and top-K
+    /// full-population scans for every allied agent in this batch.
+    pub fn collect_prepared_learned_enemies(
+        &mut self,
+        world: &CombatWorld,
+        observer_id: i64,
+        identities: &mut EpisodeShipIdentities,
+        metadata_for: impl FnMut(i64) -> Option<AuthoredShipPerception>,
+        output: &mut Vec<ObservedShip>,
+    ) -> Result<usize, CombatPerceptionError> {
+        let (observer, observer_body) = live_ship(world, observer_id)?;
+        let entries = self.learned_by_side.get(&observer.side)
+            .ok_or(CombatPerceptionError::MismatchedWorldStorage)?;
+        select_prepared_nearest(
+            entries, observer_body.motion.position, observer_id,
+            &mut self.nearest, &mut self.candidates,
+        )?;
         self.sort_and_project(world, identities, metadata_for, output)
     }
 

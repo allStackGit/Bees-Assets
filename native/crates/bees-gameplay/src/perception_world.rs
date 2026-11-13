@@ -242,15 +242,16 @@ impl NativeWorldPerceptionAssembler {
         // population at a fixed decision boundary. Build one side-indexed
         // live roster for the entire batch rather than rescanning every
         // active ship for each observer's nearest 64 allies.
+        let sides = owning_world.state.events.sides();
         if self.live_roster_epoch != Some(epoch) {
-            self.candidates.prepare_live_roster(world)?;
+            self.candidates.prepare_live_roster(world, sides)?;
             self.live_roster_epoch = Some(epoch);
         }
         self.candidates.collect_prepared_allies(
             world, ship_id, &mut self.identities,
             |id| authored_ship(id), &mut self.allies,
         )?;
-        self.candidates.collect_learned_enemies(
+        self.candidates.collect_prepared_learned_enemies(
             world, ship_id, &mut self.identities,
             |id| authored_ship(id), &mut self.enemies,
         )?;
@@ -259,7 +260,6 @@ impl NativeWorldPerceptionAssembler {
                 CombatPerceptionError::MissingShip(ship_id),
             ),
         )?.side;
-        let sides = owning_world.state.events.sides();
         if !sides.contains(&side) {
             return Err(NativeWorldPerceptionError::InvalidEpisodeSide(side));
         }
