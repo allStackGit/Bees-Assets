@@ -112,6 +112,36 @@ interpreter/worker paths in the generated run file are local to the
 bootstrap machine and must be updated after copying it elsewhere.
 Initial random weights are not a trained or qualified Bees policy.
 
+For a **fresh, multi-round native training session without Unity**, the
+same initializer can hand verified weights and a pinned scene to the
+existing resumable MA-POCA session controller:
+
+```sh
+python native/tools/bootstrap_policy.py native-first --scenario duel --seed 42 --train-rounds 3 --episodes-per-world 4 --rollout-worlds 16 --learner-slot 0
+```
+
+This runs sixteen independent arenas, reusing each arena for four
+source-numbered policy episodes per collection, and then updates the
+learner using the already implemented native optimizer. The
+`native-first/session` directory retains round receipts, checkpoint
+lineage and performance summaries. The default single collector uses
+`cargo run --release`; add `--rollout-binary` with a compiled
+`policy_rollout` executable for multi-process collections. Distributed
+sessions can instead pass `--distributed-plan` and `--bundle-inbox`
+to the same initializer; holdout measurements use
+`--evaluation-run-config` and `--evaluation-side`.
+To resume an interrupted local session without regenerating the
+initial model, preserve the exact resource arguments:
+
+```sh
+python native/tools/train_policy_session.py native-first/run.json native-first/checkpoint.pt native-first/trainer-config.yaml native-first/session --rounds 3 --resume --learner-slot 0 --rollout-worlds 16
+```
+
+A bootstrap receipt means only that the initial actor/critic and
+manifest passed their artifact checks. Training, native gameplay
+qualification and actual throughput still require an executable Rust
+runner and compatible ML-Agents Python runtime.
+
 Native PPO ships require explicitly authored group/reward inputs; the
 runtime rejects missing group agents, inconsistent team/frame/authority,
 or policy scene edits that change fixed initial membership after its
