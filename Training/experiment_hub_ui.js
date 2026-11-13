@@ -2835,7 +2835,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function readDesignControls() {
         const controls=[...$('hub-design-editor').querySelectorAll('[data-design-key]')];
-        if(!controls.length)return JSON.parse($('hub-config-json').value);
+        const runControls=[...$('hub-design-run').querySelectorAll('[data-design-run]')];
+        if(!controls.length&&!runControls.length)
+            return JSON.parse($('hub-config-json').value);
         const parameters=JSON.parse($('hub-config-json').value);
         const choice=designDefinition(parameters);
         if(!choice)throw Error('Matching approved project defaults are unavailable. Reconnect the worker or edit Advanced JSON.');
@@ -2855,6 +2857,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if(value===field.default)delete overrides[field.key];
             else overrides[field.key]=value;
         }
+        for(const input of runControls) {
+            const key=input.dataset.designRun;
+            if(!input.value.trim()) {
+                if(key==='workers')delete parameters.workers;
+                else throw Error(key.replace(/_/g,' ')+' requires a whole number.');
+                continue;
+            }
+            const value=Number(input.value);
+            if(!Number.isSafeInteger(value)||value<Number(input.min)||
+                value>Number(input.max))
+                throw Error(key.replace(/_/g,' ')+' is outside its approved limits.');
+            parameters[key]=value;
+        }
         if(Object.keys(overrides).length)parameters.design_overrides=overrides;
         else delete parameters.design_overrides;
         $('hub-config-json').value=JSON.stringify(parameters,null,2);
@@ -2869,8 +2884,37 @@ document.addEventListener('DOMContentLoaded', () => {
         editor.hidden=!chosen;
         $('hub-design-training').replaceChildren();
         $('hub-design-environment').replaceChildren();
+        $('hub-design-run').replaceChildren();
         if(!chosen)return;
         const {entry,machine}=chosen;
+        $('hub-design-run-panel').hidden=project!=='courier';
+        if(project==='courier') {
+            for(const [key,label,min,max,defaultValue] of [
+                ['seed','Random seed',0,4294967295,42],
+                ['workers','Concurrent environment workers (optional)',1,64,null],
+                ['max_rounds','Maximum training rounds',0,10000000,1000],
+                ['checkpoint_rounds','Checkpoint interval (rounds)',1,10000000,250],
+            ]) {
+                const wrapper=document.createElement('label');
+                wrapper.textContent=label;
+                const input=document.createElement('input');
+                input.type='number';input.step='1';
+                input.min=String(min);input.max=String(max);
+                input.dataset.designRun=key;
+                input.value=String(parameters[key]??(defaultValue??''));
+                input.placeholder=key==='workers'?'Use allocated CPU parallelism':'';
+                const hint=document.createElement('small');
+                hint.textContent=defaultValue===null
+                    ?'Optional. Omitting requires a worker with allocation-based CPU parallelism.'
+                    :'New-draft default '+defaultValue;
+                wrapper.append(input,hint);
+                input.addEventListener('change',()=>{
+                    try{readDesignControls();feedback('hub-config-message','');}
+                    catch(error){feedback('hub-config-message',error.message);}
+                });
+                $('hub-design-run').append(wrapper);
+            }
+        }
         $('hub-design-source').textContent='Defaults from '+machine.id+
             ' · approved '+(project==='courier'?'environment':'profile')+
             ' '+(entry.config_sha256||entry.profile_sha256).slice(0,12)+
@@ -2919,6 +2963,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const chosen=designDefinition(parameters);
             if(!chosen)throw Error('No matching approved project defaults.');
             delete parameters.design_overrides;
+            if(project==='courier') {
+                parameters.seed=42;
+                parameters.workers=1;
+                parameters.max_rounds=1000;
+                parameters.checkpoint_rounds=250;
+            }
             $('hub-config-json').value=JSON.stringify(parameters,null,2);
             renderDesignEditor();
         }catch(error){feedback('hub-config-message',error.message);}
