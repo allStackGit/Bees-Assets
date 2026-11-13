@@ -177,13 +177,14 @@ impl NativePolicyOnlyMetadata {
                 return Err("scripted command source lacks formation or command settings");
             }
             for order in &plan.orders {
-                if let NativeScriptedOrder::Aggressive { enemy_squad_item_id } = order {
-                    if !squads.iter().any(|enemy|
-                        enemy.owner.squad_id == *enemy_squad_item_id &&
-                        enemy.owner.level_id == squad.owner.level_id &&
-                        enemy.side != squad.side
+                if let Some((target_id, enemy)) = order.target_squad() {
+                    if !squads.iter().any(|target|
+                        target.owner.squad_id == target_id &&
+                        target.owner.level_id == squad.owner.level_id &&
+                        (target.side != squad.side) == enemy &&
+                        (enemy || target.owner != squad.owner)
                     ) {
-                        return Err("scripted Aggressive needs an authenticated opposing squad");
+                        return Err("scripted command needs an authenticated live friendly or opposing squad");
                     }
                 }
             }
@@ -284,13 +285,15 @@ impl NativePolicyOnlyMetadata {
             return Err("live scripted command source lacks formation or settings");
         }
         for order in &plan.orders {
-            if let NativeScriptedOrder::Aggressive { enemy_squad_item_id } = order {
-                if !roster.source_order().iter().copied().any(|enemy_owner|
-                    enemy_owner.level_id == owner.level_id &&
-                    enemy_owner.squad_id == *enemy_squad_item_id &&
-                    roster.get(enemy_owner).is_some_and(|enemy| enemy.side != squad.side)
+            if let Some((target_id, enemy)) = order.target_squad() {
+                if !roster.source_order().iter().copied().any(|target_owner|
+                    target_owner.level_id == owner.level_id &&
+                    target_owner.squad_id == target_id &&
+                    (enemy || target_owner != owner) &&
+                    roster.get(target_owner).is_some_and(|target|
+                        (target.side != squad.side) == enemy)
                 ) {
-                    return Err("live scripted Aggressive needs a real opposing squad");
+                    return Err("live scripted command needs a real friendly or opposing squad");
                 }
             }
         }
