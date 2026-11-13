@@ -17,6 +17,7 @@ const POST_ACTIONS={
     '/api/hub/leases':[201,'requestLease'],
     '/api/hub/leases/release':[200,'releaseLease'],
     '/api/hub/jobs':[201,'queueConfiguration'],
+    '/api/hub/jobs/rename':[200,'renameJob'],
     '/api/hub/pipelines':[201,'queuePipeline'],
     '/api/hub/distributed/tinybrains':[201,'queueDistributedTinyBrains'],
     '/api/hub/distributed/tinybrains/schedule-start':[200,'scheduleDistributedGroup'],
