@@ -69,6 +69,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_engine_step_seconds','rollout_learner_inference_seconds',
         'rollout_observation_encode_seconds','rollout_opponent_inference_seconds',
         'rollout_result_processing_seconds',
+        'rollout_observation_prepare_seconds',
+        'rollout_opponent_processing_seconds',
+        'simulation_engine_roundtrip_seconds',
+        'simulation_dispatch_queue_seconds',
+        'simulation_batch_wall_seconds',
+        'simulation_last_child_gap_seconds',
         'optimization_seconds','collector_wait_seconds',
         'collector_critical_path_seconds','collector_elapsed_spread_seconds',
         'rollout_engine_cpu_seconds_total','rollout_engine_cpu_seconds',
@@ -81,7 +87,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
         'ppo_backward_seconds','ppo_metric_readback_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
-        'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds'])
+        'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
+        'ppo_gpu_stream_interval_seconds','checkpoint_seconds'])
         add(name,row[name],'seconds');
     for(const name of ['ant_decisions','group_states','births','deaths',
         'episodes_ended','multi_ant_states','terminal_rewards',
@@ -92,7 +99,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_unique_board_shapes','policy_lag','action_target',
         'automatic_collector_allocation','collector_allocation_rebalanced',
         'rollout_inference_batches','rollout_inference_boards',
-        'rollout_inference_max_batch'])
+        'rollout_inference_max_batch',
+        'simulation_active_matches','simulation_target_matches',
+        'simulation_concurrency_adjustments','simulation_tuner_accepted',
+        'simulation_tuner_settled','simulation_target_restored',
+        'simulation_proven_target','simulation_prefetch_engine_steps',
+        'collector_auto_balance_adjustments',
+        'collector_auto_balance_accepted',
+        'collector_auto_balance_settled'])
         add(name,row[name],'count');
     // These optimizer observations can be negative; they are scalar values,
     // never performance or strength certification.
@@ -104,6 +118,30 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rss_mb',row.rss_mb,'mb');
+    add('simulation_engine_memory_mb',row.simulation_engine_memory_mb,'mb');
+    add('pipeline_collection_exposure_fraction',
+        row.pipeline_collection_exposure_fraction,'ratio');
+    add('pipeline_slowest_collector_ratio',
+        row.pipeline_slowest_collector_ratio,'scalar');
+    add('pipeline_slowest_collector_id',
+        row.pipeline_slowest_collector_id,'count');
+    add('pipeline_collector_stage_fraction',
+        row.pipeline_collector_stage_fraction,'ratio');
+    // The diagnosis is an observed wall-delay candidate, NOT hardware
+    // saturation. Encode categorical labels only as present-valued flags;
+    // absent profiling must not be rendered as a zero-measured bottleneck.
+    for(const [field,choices,prefix] of [
+        ['pipeline_delay_candidate',
+            ['collection','optimization','overlapping_or_shared','unresolved'],
+            'pipeline_delay_'],
+        ['pipeline_collector_stage_candidate',
+            ['simulation','observation','inference','opponents','unattributed',
+                'unprofiled','overlapping_timers','overlapping_or_shared'],
+            'pipeline_stage_'],
+    ]) {
+        if(choices.includes(row[field]))
+            add(prefix+row[field],1,'count');
+    }
     add('rollout_engine_cpu_cores',row.rollout_engine_cpu_cores,'scalar');
     add('rollout_engine_rss_mb',row.rollout_engine_rss_mb,'mb');
     if(Number.isFinite(row.elapsed_seconds))
@@ -206,6 +244,25 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_learner_inference_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
+        // Match the current persistent remote collector's native stage and
+        // transport names; older field names remain supported above/below.
+        for(const name of ['rollout_observation_prepare_seconds',
+            'rollout_opponent_processing_seconds',
+            'collector_client_serialize_seconds',
+            'collector_client_compress_seconds',
+            'collector_client_send_seconds',
+            'collector_client_receive_seconds',
+            'collector_client_decode_seconds',
+            'collector_learner_ingestion_seconds',
+            'collector_service_seconds',
+            'collector_record_encode_seconds'])
+            add('collector_'+i+'_'+name,worker[name],'seconds');
+        for(const name of ['simulation_active_matches',
+            'simulation_target_matches','simulation_target_restored',
+            'simulation_proven_target'])
+            add('collector_'+i+'_'+name,worker[name],'count');
+        add('collector_'+i+'_simulation_engine_memory_mb',
+            worker.simulation_engine_memory_mb,'mb');
         for(const name of ['rollout_inference_batches','rollout_inference_boards',
             'rollout_inference_max_batch'])
             add('collector_'+i+'_'+name,worker[name],'count');
