@@ -2448,6 +2448,7 @@ fn run_battle(
                 "cloned_squads": layout.clone_squads.len(),
                 "cloned_ships": layout.clone_squads.iter()
                     .map(|entry| entry.ship_ids.len()).sum::<usize>(),
+                "removed_squads": layout.remove_squads.len(),
             }))
         ).collect::<Vec<_>>());
     }
