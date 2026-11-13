@@ -279,7 +279,7 @@ class LocalExecution {
                 report.evaluation=results[0];
             }
         }
-        const checkpointProject=['courier','tinybrains'].includes(job.project_id);
+        const checkpointProject=['courier','tinybrains','bees_native'].includes(job.project_id);
         if(checkpointProject&&(lease.status!=='released'||
             order.action==='inspect'&&job.reverify_checkpoint===true||
             report.evaluation||report.evaluations)&&
