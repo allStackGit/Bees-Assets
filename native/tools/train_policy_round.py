@@ -524,6 +524,8 @@ def main() -> None:
                         help="fixed optimizer intra-op threads, not rollout parallelism")
     parser.add_argument("--rollout-workers", type=int,
                         help="fixed number of parallel native rollout processes")
+    parser.add_argument("--physics-workers", type=int,
+                        help="CPU physics threads per rollout process (1..128); shared model inference remains batched")
     parser.add_argument("--rollout-worlds", type=int,
                         help="independent native Worlds in this collector's reproducible window")
     parser.add_argument("--rollout-world-start", type=int,
@@ -566,6 +568,8 @@ def main() -> None:
         parser.error("--torch-threads must be between 1 and 256")
     if args.rollout_workers is not None and not 1 <= args.rollout_workers <= 256:
         parser.error("--rollout-workers must be between 1 and 256")
+    if args.physics_workers is not None and not 1 <= args.physics_workers <= 128:
+        parser.error("--physics-workers must be between 1 and 128")
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
     inbox = args.bundle_inbox.resolve(strict=True) if args.bundle_inbox else None
@@ -599,7 +603,8 @@ def main() -> None:
         "input_manifest_sha256": input_manifest_sha,
     }
     if "rollout_bundles" in run_document:
-        if (args.rollout_workers is not None or args.rollout_worlds is not None or
+        if (args.rollout_workers is not None or args.physics_workers is not None or
+                args.rollout_worlds is not None or
                 args.rollout_world_start is not None or
                 "rollout_world_start" in run_document or "rollout_worlds" in run_document):
             parser.error("imported rollout bundles cannot allocate local Worlds or workers")
@@ -691,6 +696,13 @@ def main() -> None:
         )
     template_workers = config.pop("rollout_workers", 1)
     workers = args.rollout_workers if args.rollout_workers is not None else template_workers
+    physics_workers = (args.physics_workers if args.physics_workers is not None
+                       else config.get("physics_workers", 1))
+    if type(physics_workers) is not int or not 1 <= physics_workers <= 128:
+        parser.error("physics_workers must be an integer between 1 and 128")
+    # Keep this a native run-config field, not a second per-process
+    # scheduler: the compiled game determines runnable worlds each step.
+    config["physics_workers"] = physics_workers
     levels = config["levels"]
     if type(world_start) is not int or world_start < 0:
         parser.error("rollout_world_start must be a nonnegative integer")
@@ -736,6 +748,7 @@ def main() -> None:
     print(json.dumps({"kind": "native_training_round_started", "run_config": str(config_path),
                       "rollout_worlds": len(levels), "rollout_world_start": world_start,
                       "rollout_processes": workers,
+                      "physics_workers_per_process": physics_workers,
                       "seed_offset": args.seed_offset,
                       "input_manifest_sha256": input_manifest_sha,
                       "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
@@ -771,6 +784,7 @@ def main() -> None:
             **({"collection_id": args.collection_id} if args.collection_id is not None else {}),
             "rollout_worlds": len(levels),
             "rollout_processes": workers,
+            "physics_workers_per_process": physics_workers,
             "partition": {
                 "source_run_id": config["run_id"],
                 "world_start": world_start,
@@ -792,6 +806,7 @@ def main() -> None:
         rollout_worlds=len(levels),
         rollout_world_start=world_start,
         rollout_processes=workers,
+        physics_workers_per_process=physics_workers,
         run_config=str(config_path),
         run_config_sha256=file_sha256(config_path),
         capture=first["policy_capture"],
