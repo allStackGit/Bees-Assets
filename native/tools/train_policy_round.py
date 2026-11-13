@@ -7,13 +7,14 @@ never converts a failed or incomplete rollout into training data.
 
 import argparse
 import copy
-from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 from tempfile import TemporaryDirectory
 import time
@@ -300,6 +301,100 @@ def combined_rollout_metrics(shards, wall_seconds):
             key: sum(sample[key] for sample in samples) for key in ("calls", "rows", "wall_seconds")
         }
     return metrics
+
+
+def stop_parallel_rollout_workers(processes):
+    """Retire only subprocesses launched by this collector, including their
+    resident inference children. Do not abandon expensive orphaned workers
+    when a sibling fails or operator interruption ends the round.
+    """
+    live = [process for process in processes if process.poll() is None]
+    if not live:
+        return
+    if os.name == "nt":
+        # Windows Popen.terminate only kills the Rust parent, leaving its
+        # Python model worker behind. /T follows this owned process tree.
+        for process in live:
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    check=False, timeout=5,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                process.kill()
+    else:
+        # Each launched rollout has a separate session/process group.
+        # A child policy backend inherits that group, so stopping its
+        # owner does not leave a GPU inference process running.
+        for process in live:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and any(
+            process.poll() is None for process in live
+        ):
+            time.sleep(0.05)
+        for process in live:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    for process in live:
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            # Cancellation remains a failure; never publish a receipt.
+            pass
+
+
+def run_parallel_rollouts(shards, command, manifest_sha, diagnostics):
+    """Supervise one immutable rollout subprocess per process allocation.
+
+    Any failed exit OR invalid completed summary makes the collection
+    unsalvageable; stop all remaining workers rather than burning their
+    CPU/GPU budget and accepting an incomplete aggregate.
+    """
+    started = time.perf_counter()
+    processes = []
+    metrics = {}
+    with ExitStack() as files:
+        try:
+            for shard, config_path in shards:
+                log = (files.enter_context(
+                    config_path.with_name("rollout.log").open("x", encoding="utf-8")
+                ) if diagnostics else None)
+                processes.append(subprocess.Popen(
+                    [*command, str(config_path)],
+                    stdout=log, stderr=subprocess.STDOUT if log is not None else None,
+                    start_new_session=os.name != "nt",
+                    creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
+                ))
+            while len(metrics) != len(shards):
+                for index, (shard, _) in enumerate(shards):
+                    if index in metrics:
+                        continue
+                    returncode = processes[index].poll()
+                    if returncode is None:
+                        continue
+                    if returncode != 0:
+                        raise subprocess.CalledProcessError(
+                            returncode, processes[index].args,
+                        )
+                    metrics[index] = rollout_metrics(
+                        Path(shard["rollout_summary"]), shard, manifest_sha,
+                    )
+                if len(metrics) != len(shards):
+                    time.sleep(0.1)
+            return combined_rollout_metrics(
+                [metrics[index] for index in range(len(shards))],
+                time.perf_counter() - started,
+            )
+        except BaseException:
+            stop_parallel_rollout_workers(processes)
+            raise
 
 
 def sync_directory(path):
@@ -593,10 +688,9 @@ def main() -> None:
     if workers == 1:
         rollout = run_shard(shards[0])
     else:
-        started = time.perf_counter()
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            shard_metrics = list(pool.map(run_shard, shards))
-        rollout = combined_rollout_metrics(shard_metrics, time.perf_counter() - started)
+        rollout = run_parallel_rollouts(
+            shards, command, input_manifest_sha, args.stage_diagnostics,
+        )
     if args.collect_only:
         captures = []
         for shard, _ in shards:
