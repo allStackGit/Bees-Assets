@@ -24,6 +24,7 @@ import uuid
 
 from native_training_artifacts import (
     file_sha256, check_learner, sync_directory, normalized_python_source_sha256,
+    native_source_contract_sha256,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 
@@ -769,6 +770,8 @@ def main() -> None:
     policy_worker_path = Path(config["policy_worker"])
     policy_worker_sha = (normalized_python_source_sha256(policy_worker_path)
                          if args.collect_only else None)
+    source_contract_sha = (native_source_contract_sha256(run_path)
+                           if args.collect_only else None)
     shifted_seeds(config, args.seed_offset)
     authored_level_count = len(config["levels"])
     template_worlds = config.pop("rollout_worlds", None)
@@ -857,8 +860,9 @@ def main() -> None:
         if (file_sha256(checkpoint) != input_checkpoint_sha or
                 file_sha256(manifest) != input_manifest_sha or
                 file_sha256(binary) != runner_sha or
-                normalized_python_source_sha256(policy_worker_path) != policy_worker_sha):
-            raise ValueError("rollout input model or runtime changed during collection")
+                normalized_python_source_sha256(policy_worker_path) != policy_worker_sha or
+                native_source_contract_sha256(run_path) != source_contract_sha):
+            raise ValueError("rollout input model, source content or runtime changed during collection")
         receipt = {
             "schema_version": 1,
             "kind": "native_rollout_bundle",
@@ -866,6 +870,7 @@ def main() -> None:
             "input_manifest_sha256": input_manifest_sha,
             "learner_slot": args.learner_slot,
             "run_config_sha256": hashlib.sha256(run_bytes).hexdigest(),
+            "source_run_contract_sha256": source_contract_sha,
             "seed_offset": args.seed_offset,
             "native_runner_sha256": runner_sha,
             "policy_worker_sha256": policy_worker_sha,
