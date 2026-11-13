@@ -381,8 +381,14 @@ def main() -> None:
     parser.add_argument("--bundle-inbox", type=Path,
                         help="existing writable directory for distributed collection receipts")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0)
+    parser.add_argument("--holdout-worlds", type=int,
+                        help="generate this many fixed-seed native policy holdout arenas")
+    parser.add_argument("--holdout-seed", type=int, default=918273645,
+                        help="independent uint64 holdout world seed (default: 918273645)")
+    parser.add_argument("--holdout-episodes", type=int, default=1,
+                        help="episodes per native holdout arena (default: 1)")
     parser.add_argument("--evaluation-run-config", type=Path,
-                        help="holdout native Levels evaluated after each finished learner update")
+                        help="existing holdout native Levels evaluated after each finished learner update")
     parser.add_argument("--evaluation-side", type=int, choices=(1, 2),
                         help="source side to measure during holdout evaluation")
     parser.add_argument("--evaluation-policy-seed", type=int, default=0,
@@ -400,15 +406,28 @@ def main() -> None:
         parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds must be nonnegative")
-    if (args.evaluation_run_config is None) != (args.evaluation_side is None):
-        parser.error("holdout evaluation requires both --evaluation-run-config and --evaluation-side")
+    if args.holdout_worlds is not None and not 1 <= args.holdout_worlds <= 1024:
+        parser.error("--holdout-worlds must be between 1 and 1024")
+    if not 0 <= args.holdout_seed < U64 or not 1 <= args.holdout_episodes <= 10000:
+        parser.error("--holdout-seed must be uint64 and --holdout-episodes must be 1..10000")
+    if args.holdout_worlds is None and (
+        args.holdout_seed != 918273645 or args.holdout_episodes != 1
+    ):
+        parser.error("--holdout-seed and --holdout-episodes require --holdout-worlds")
+    if args.holdout_worlds is not None and args.evaluation_run_config is not None:
+        parser.error("choose generated --holdout-worlds or an existing --evaluation-run-config")
+    if (args.holdout_worlds is None and args.evaluation_run_config is None) != (
+        args.evaluation_side is None
+    ):
+        parser.error("holdout evaluation requires --evaluation-side and a native holdout source")
     if not 0 <= args.evaluation_policy_seed < (1 << 63):
         parser.error("--evaluation-policy-seed must be nonnegative int63")
     if args.evaluation_policy_seed != 0 and args.evaluation_run_config is None:
         parser.error("--evaluation-policy-seed requires an evaluation run")
     if args.train_rounds is None and any((
         args.distributed_plan is not None, args.bundle_inbox is not None,
-        args.evaluation_run_config is not None, args.evaluation_side is not None,
+        args.holdout_worlds is not None, args.evaluation_run_config is not None,
+        args.evaluation_side is not None,
         args.evaluation_policy_seed != 0, args.collector_timeout_seconds != 0,
     )):
         parser.error("distributed collection and evaluation require --train-rounds")
@@ -447,11 +466,13 @@ def main() -> None:
     if args.resume:
         result = verified_existing_bootstrap(
             output, args.seed, args.slots, args.scenario, args.episodes_per_world,
+            args.holdout_worlds, args.holdout_seed, args.holdout_episodes,
         )
     else:
         result = bootstrap(output, args.trainer_config,
                            args.seed, args.slots, args.inference_device, args.cargo,
-                           args.scenario, args.episodes_per_world)
+                           args.scenario, args.episodes_per_world,
+                           args.holdout_worlds, args.holdout_seed, args.holdout_episodes)
     print(json.dumps(result, sort_keys=True), flush=True)
     if args.train_rounds is not None:
         learner_slot = (args.learner_slot if args.learner_slot is not None
@@ -466,8 +487,9 @@ def main() -> None:
             args.optimizer_device, args.rollout_binary,
             args.distributed_plan, args.bundle_inbox,
             args.collector_timeout_seconds,
-            args.evaluation_run_config, args.evaluation_side,
-            args.evaluation_policy_seed,
+            (output / "holdout-run.json" if args.holdout_worlds is not None
+             else args.evaluation_run_config),
+            args.evaluation_side, args.evaluation_policy_seed,
             resume=args.resume and session.is_dir(),
         )
 
