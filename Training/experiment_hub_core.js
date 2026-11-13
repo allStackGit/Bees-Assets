@@ -415,10 +415,10 @@ function independentSequenceComplete(job) {
         job.evaluation_stop,job.dispatch_id);
 }
 function checkpointContinuationComplete(job) {
-    if(!['courier','tinybrains'].includes(job?.project_id))return false;
+    if(!['courier','tinybrains','bees_native'].includes(job?.project_id))return false;
     return job.status==='finished'
         ?job.checkpoint_ready_verified===true||
-            job.checkpoint_proof_required!==true
+            (job.project_id!=='bees_native'&&job.checkpoint_proof_required!==true)
         :job.status==='stopped'&&job.checkpoint_stop_verified===true;
 }
 // A failed dispatch occupies no checkpoint lineage slot only after the
@@ -556,7 +556,7 @@ function retainFinalEvaluations(job,report) {
 // exact bytes used for native checkpoint continuation. Training charts and
 // a checkpoint-ready flag alone cannot select a winning model.
 function comparableCandidate(job) {
-    if(!job||!['courier','tinybrains'].includes(job.project_id)||
+    if(!job||!['courier','tinybrains','bees_native'].includes(job.project_id)||
         !['finished','stopped'].includes(job.status)||
         !checkpointContinuationComplete(job)||
         !independentSequenceComplete(job)||
@@ -3276,7 +3276,7 @@ class ExperimentHub {
                 ?'stop_requested':report.state;
             if(state==='launch_requested'&&job.status!=='start_requested')continue;
             if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
-            if(['courier','tinybrains'].includes(job.project_id)) {
+            if(['courier','tinybrains','bees_native'].includes(job.project_id)) {
                 if(state==='finished'&&report.checkpoint_ready_verified===true) {
                     job.checkpoint_ready_verified=true;
                     changed=true;
@@ -4756,7 +4756,7 @@ class ExperimentHub {
             new Set(ids).size!==ids.length)
             throw Error('Select 2–16 distinct candidate jobs.');
         const jobs=ids.map(id=>this.state.jobs.find(j=>j.id===id));
-        if(jobs.some(j=>!j)||!['courier','tinybrains'].includes(jobs[0].project_id)||
+        if(jobs.some(j=>!j)||!['courier','tinybrains','bees_native'].includes(jobs[0].project_id)||
             jobs.some(j=>j.project_id!==jobs[0].project_id||
                 !j.evaluation_stop||
                 !['waiting_adapter','waiting_predecessor','start_requested',
@@ -4789,7 +4789,7 @@ class ExperimentHub {
             (Object.hasOwn(selected.parameters,'import_checkpoint')||
                 Object.hasOwn(selected.parameters,'import_checkpoint_sha256')))
             throw Error('Candidate winner continuation needs a TinyBrains configuration without an external checkpoint import.');
-        const pin=jobs[0].project_id==='courier'?'config_sha256':'profile_sha256';
+        const pin=jobs[0].project_id==='tinybrains'?'profile_sha256':'config_sha256';
         if(!SHA256.test(String(selected.parameters?.[pin]||''))||
             jobs.some(j=>j.frozen_parameters?.[pin]!==selected.parameters[pin]))
             throw Error('Every candidate must be compatible with the same approved continuation environment.');
@@ -5013,7 +5013,7 @@ class ExperimentHub {
                 .update(JSON.stringify(frozen)).digest('hex'),
             frozen_parameters:frozen, resources,
             ...(selectedMetrics?.length?{metric_selection:selectedMetrics.slice()}:{}),
-            ...(['courier','tinybrains'].includes(project.id)
+            ...(['courier','tinybrains','bees_native'].includes(project.id)
                 ?{checkpoint_proof_required:true}:{}),
             ...(selected.evaluation_stop
                 ?{evaluation_stop:evaluationPolicy(selected.evaluation_stop)}:{}),
