@@ -131,7 +131,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         // With many independent recurrent PPO lineages, retain sustained
         // limiting stages rather than the first dozens of raw counters.
         for(let i=0;i<64;i++)
-            for(const stage of ['collection','optimization'])
+            for(const stage of ['collection','optimization',
+                'simulation','observation','collection_other'])
                 retain('worker_'+i+'_'+stage+'_dominant',
                     reported['worker_'+i+'_'+stage+'_dominant']);
         for(const [name,value] of Object.entries(reported))retain(name,value);
@@ -395,11 +396,32 @@ class BottleneckEvidence {
                 const optimize=seconds('worker_'+i+'_optimization_seconds');
                 if(collect===null||optimize===null||collect+optimize<=0)
                     continue;
-                // The two intervals can have other unmeasured overhead.
-                // Neither percentage is exclusive hardware utilization.
+                // Simulation is nested in rollout collection; observation
+                // preparation is nested in simulation. These wall intervals
+                // must never be summed as independent elapsed stages.
+                const simulation=seconds('worker_'+i+'_simulation_seconds');
+                const observation=seconds('worker_'+i+'_observation_seconds');
                 const fraction=collect/(collect+optimize);
-                if(fraction>=0.70)stageHints[i]='collection';
-                else if(fraction<=0.30)stageHints[i]='optimization';
+                const simShare=(collect>0&&simulation!==null&&
+                    simulation<=collect)?simulation/collect:null;
+                const obsShare=(simulation>0&&observation!==null&&
+                    observation<=simulation)?observation/simulation:null;
+                if(simShare!==null)
+                    add('worker_'+i+'_simulation_work_share',simShare);
+                if(obsShare!==null)
+                    add('worker_'+i+'_observation_work_share',obsShare);
+                stageHints[i]={
+                    collection:fraction>=0.70,
+                    optimization:fraction<=0.30,
+                    simulation:simShare!==null&&simShare>=0.65,
+                    observation:simShare!==null&&simShare>=0.50&&
+                        obsShare!==null&&obsShare>=0.60,
+                    // Unmeasured within-collector work includes actor
+                    // inference, recurrent state handling and Python
+                    // coordination. It is not automatically GPU saturation.
+                    collection_other:fraction>=0.70&&simShare!==null&&
+                        simShare<=0.35
+                };
             }
             const {at,prior}=history();
             if(Number.isFinite(at)&&at>prior.lastAt) {
@@ -431,8 +453,9 @@ class BottleneckEvidence {
                     sustained(x=>x.courierQueue))
                     add('training_parallelism_underuse_evidence',1,'count');
                 for(let i=0;i<count;i++)
-                    for(const stage of ['collection','optimization'])
-                        if(sustained(x=>x.stageHints?.[i]===stage))
+                    for(const stage of ['collection','optimization',
+                        'simulation','observation','collection_other'])
+                        if(sustained(x=>x.stageHints?.[i]?.[stage]))
                             add('worker_'+i+'_'+stage+'_dominant',1,'count');
             }
         } else {
