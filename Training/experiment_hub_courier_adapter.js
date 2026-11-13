@@ -8,6 +8,11 @@ const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const COURIER_COUNT_FIELDS=new Set([
+    'training_profile_round','training_lineage_workers',
+    'training_slowest_worker','training_simulated_steps',
+    'training_useful_steps','training_rejected_workers',
+    'training_concurrency_limit']);
 const WINDOWS_ENTRY=[
     'import os, runpy, sys',
     "sys.stdout = open(os.devnull, 'w', encoding='utf-8')",
@@ -37,12 +42,7 @@ function courierMetrics(source) {
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
-        const countFields=new Set([
-            'training_profile_round','training_lineage_workers',
-            'training_slowest_worker','training_simulated_steps',
-            'training_useful_steps','training_rejected_workers',
-            'training_concurrency_limit']);
-        const unit=countFields.has(name)?'count':
+        const unit=COURIER_COUNT_FIELDS.has(name)?'count':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
                     ?'rate':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
