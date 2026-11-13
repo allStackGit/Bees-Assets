@@ -383,11 +383,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     }
     // The source progress/heartbeat has a fixed small envelope; the complete
     // committed PPO history row and full-job export remain authoritative.
+    // Reserve approximately 5 KiB / 72 source slots for the Hub's existing
+    // sustained pressure diagnosis before the 32-KiB/512-metric wire limit.
     // Do not silently omit collectors 9-16 when a heterogeneous distributed
     // group exceeds the detail budget. Give *every* collector the same core
     // measurements first, then use remaining space for grouped reply evidence
     // and fine-grained stages, evenly across workers.
-    if(Object.keys(metrics).length>500||JSON.stringify(metrics).length>31000) {
+    if(Object.keys(metrics).length>440||JSON.stringify(metrics).length>27000) {
         const all=metrics;
         const selected={};
         const n=Math.min(17,Array.isArray(row.collector_samples)
@@ -397,7 +399,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             if(!Object.hasOwn(all,key)||Object.hasOwn(selected,key))return false;
             const size=JSON.stringify(key).length+1+
                 JSON.stringify(all[key]).length+(count?1:0);
-            if(count>=500||bytes+size>31000)return false;
+            if(count>=440||bytes+size>27000)return false;
             selected[key]=all[key];
             count++;
             bytes+=size;
