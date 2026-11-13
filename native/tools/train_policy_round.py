@@ -316,11 +316,13 @@ def stop_parallel_rollout_workers(processes):
         # Python model worker behind. /T follows this owned process tree.
         for process in live:
             try:
-                subprocess.run(
+                result = subprocess.run(
                     ["taskkill", "/PID", str(process.pid), "/T", "/F"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     check=False, timeout=5,
                 )
+                if result.returncode != 0 and process.poll() is None:
+                    process.kill()
             except (OSError, subprocess.TimeoutExpired):
                 if process.poll() is None:
                     try:
