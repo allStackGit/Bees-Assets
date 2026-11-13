@@ -2365,15 +2365,23 @@ The reusable `NavigationRuntime` owns the Level map's full affine transform,
 static/dynamic clearance maps and A* arrays. It refreshes directly from
 `CombatWorld`'s live obstacles; `refresh_world_navigation` and
 `solve_next_world_navigation_job` provide the shared integration boundary.
-For interactive native clients, `NavigationScheduler::pump` now connects
-these APIs to bounded background CPU workers. Each worker reuses its own A*
+For interactive native clients, set `"navigation_workers": 2` in the
+run configuration to opt into persistent per-Level background pathfinding.
+The default keeps the synchronous search behavior, and headless training
+and deterministic input replay reject the option. Because operating-system
+completion timing can change the tick at which a route becomes active,
+input-trace recording is disabled for these live asynchronous runs.
+`NavigationScheduler::pump` uses the same CombatWorld request tokens and
+route installation as synchronous gameplay. Each worker reuses its own A*
 arrays; a per-fixed-frame immutable clearance snapshot is shared by Arc.
 Results are applied only on the world-owning thread. Pending static-layer
 rebuilds wait until active searches finish, while newer dynamic-asteroid
 snapshots can coexist with older in-flight searches. Worker shutdown drains
 owned jobs without leaving the channel receiver blocked. The five-second
 Unity search deadline is enforced only for these interactive workers, not
-the deterministic synchronous/headless search API.
+the deterministic synchronous/headless search API. Status gauges and final
+run summaries include completed jobs, launches, requeues, discards, static
+clearance refreshes, and the number of busy workers.
 
 For normal gameplay, callers supply a `GameMovementProfile` with the
 actual configured `ShipTurningRadius` and rendered ship half-extents.
@@ -2390,9 +2398,10 @@ do not invalidate active workers. Route waypoints, egress counts, turning
 dead bands, variable speed and StopMoving share the existing physics core.
 
 **Integration still incomplete:** squad/Hive Mind/user command
-dispatch must supply authored movement profiles and Level orders, and the
-native game loop must call the path scheduler at the appropriate fixed-frame
-boundary. The native sweep uses continuous authored-shape geometry but does
+dispatch must supply authored movement profiles and Level orders. The
+interactive native game now pumps background pathfinding at the shared Level
+fixed-step boundary; exact Unity search scheduling and gameplay movement
+parity remain unverified. The native sweep uses continuous authored-shape geometry but does
 not promise Box2D's precise hit ordering or Unity's 16-hit non-alloc buffer.
 Multi-map placement and gameplay/rendering parity remain unverified.
 As requested, these changes have not been compiled or executed.
