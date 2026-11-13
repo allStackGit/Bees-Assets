@@ -11,14 +11,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && node -e "if (Number(process.versions.node.split('.')[0]) < 18) process.exit(1)"
 
-# The Hub launches /opt/tinybrains-venv/bin/python, and TinyBrains' own
-# checkpoint benchmark exports ONNX through that interpreter. Older approved
-# base images can lack this optional PyTorch exporter dependency even though
-# TinyBrains' current ROCm Dockerfile lists it. Install it in the venv actually
-# used by Hub, without replacing the base image's ROCm PyTorch.
-RUN /opt/tinybrains-venv/bin/python -m pip install --no-cache-dir \
-        'onnxscript==0.7.2' \
-    && /opt/tinybrains-venv/bin/python -c \
-        'import torch, onnxscript; torch.onnx.export(torch.nn.Identity(), (torch.zeros(1, 2),), "/tmp/tinybrains-onnx-smoke.onnx", opset_version=17)' \
-    && test -s /tmp/tinybrains-onnx-smoke.onnx \
+# The TinyBrains deployment uses ONNX opset 17. Its memory and standard
+# exporters both explicitly use the legacy TorchScript export path, preserving
+# dynamic H/W axes and avoiding unsupported opset conversion in ROCm PyTorch.
+# Check that path in the interpreter used by the Hub without altering ROCm.
+RUN /opt/tinybrains-venv/bin/python -c \
+        'import torch, onnx; torch.onnx.export(torch.nn.Identity().eval(), (torch.zeros(1, 2),), "/tmp/tinybrains-onnx-smoke.onnx", opset_version=17, dynamo=False); assert onnx.load("/tmp/tinybrains-onnx-smoke.onnx").opset_import[0].version == 17' \
     && rm /tmp/tinybrains-onnx-smoke.onnx
