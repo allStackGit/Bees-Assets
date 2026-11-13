@@ -276,7 +276,7 @@ function launchArguments(record,invocation,gpuPlan) {
             :['--multi',bindings.length,...bindings.flatMap(binding=>
                 [binding.id,binding.pci_address,binding.vram_mb])];
         args.push(...gpuPlan.device_properties.map(p=>'--property='+p),
-            '--property=TimeoutStartSec=25s',
+            '--property=TimeoutStartSec='+(bindings.length>1?'45s':'25s'),
             ...gpuSelectorArgs(rocrUuid),
             '--property=ExecStartPre='+[process.execPath,check,...physical,
                 deviceIdentity(gpuPlan),invocation.executable,...verifyArgs].join(' '));
