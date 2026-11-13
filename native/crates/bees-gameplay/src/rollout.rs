@@ -39,6 +39,9 @@ pub struct NativeBatchedStepCounts {
     /// Sum of worker wall durations, including scheduling overhead. This
     /// deliberately differs from real elapsed wall time when workers overlap.
     pub parallel_physics_worker_nanos: u128,
+    /// Shared Stage squad IDs cannot be allocated in arbitrary worker order
+    /// without changing observable lifetime identity across replay runs.
+    pub serialized_for_stage_ids: bool,
     /// False when Simulation timing sampling is disabled or this call
     /// was not selected. The three durations are then exactly zero.
     pub phase_timing_sampled: bool,
@@ -188,8 +191,25 @@ where
                         NativeBatchedStepError::Dispatch { index, error }
                     )?;
             }
+            // A live Scout can create a Beacon and its new SquadLifetime
+            // inside this tick. That allocation uses one Stage-wide ID
+            // stream; parallel arrival order would make replay identities
+            // depend on OS scheduling. Keep these rounds source ordered
+            // until child identities can be preassigned at a tick boundary.
+            let shared_stage_ids = (0..simulation.world_count()).any(|index|
+                simulation.world(index).is_some_and(|world|
+                    world.state.combat.ships().iter().any(|ship|
+                        ship.ship_type == bees_sim::combat_world::SCOUT_TYPE &&
+                        !ship.vitals.is_dead()
+                    )
+                )
+            );
+            counts.serialized_for_stage_ids = shared_stage_ids && workers.get() > 1;
+            let effective_workers = if shared_stage_ids {
+                NonZeroUsize::new(1).expect("positive serial worker")
+            } else { workers };
             let report = simulation.step_selected_worlds_parallel(
-                per_world_actions, workers,
+                per_world_actions, effective_workers,
             ).map_err(NativeBatchedStepError::ParallelPlan)?;
             counts.worlds_stepped = report.worlds_stepped;
             counts.parallel_physics_workers = report.worker_loads.len();
