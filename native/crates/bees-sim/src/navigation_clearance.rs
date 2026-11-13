@@ -25,6 +25,7 @@ pub struct NavigationSearchSnapshot {
     grid: NavigationGrid,
     signed_static: Arc<Vec<i32>>,
     dynamic: Vec<i32>,
+    unobstructed: bool,
 }
 
 /// The synchronous world and asynchronous workers search the identical
@@ -33,12 +34,15 @@ pub trait NavigationSearchLayers {
     fn grid(&self) -> NavigationGrid;
     fn dynamic_clearance(&self) -> &[i32];
     fn static_signed_clearance(&self) -> &[i32];
+    /// The active dynamic grid contains only the rectangular map boundary.
+    fn unobstructed(&self) -> bool;
 }
 
 impl NavigationSearchLayers for NavigationSearchSnapshot {
     fn grid(&self) -> NavigationGrid { self.grid }
     fn dynamic_clearance(&self) -> &[i32] { &self.dynamic }
     fn static_signed_clearance(&self) -> &[i32] { self.signed_static.as_slice() }
+    fn unobstructed(&self) -> bool { self.unobstructed }
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +69,9 @@ impl NavigationSearchLayers for NavigationClearance {
     fn grid(&self) -> NavigationGrid { self.grid }
     fn dynamic_clearance(&self) -> &[i32] { &self.dynamic }
     fn static_signed_clearance(&self) -> &[i32] { self.signed_static.as_slice() }
+    fn unobstructed(&self) -> bool {
+        !self.has_static_blocked_cells && self.dynamic_matches_static
+    }
 }
 
 impl NavigationClearance {
@@ -101,6 +108,7 @@ impl NavigationClearance {
             grid: self.grid,
             signed_static: Arc::clone(&self.signed_static),
             dynamic: self.dynamic.clone(),
+            unobstructed: self.unobstructed(),
         }
     }
 
