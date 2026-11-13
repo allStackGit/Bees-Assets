@@ -210,7 +210,7 @@ impl NavigationScheduler {
         runtime: &mut NavigationRuntime,
         fixed_frame: u64,
         static_geometry_revision: u64,
-        static_geometry_moves: bool,
+        static_geometry_dirty: bool,
         collision_asteroids_enabled: bool,
     ) -> Result<NavigationSchedulerStep, NavigationSchedulerError> {
         if runtime.clearance().grid() != self.grid {
@@ -219,10 +219,10 @@ impl NavigationScheduler {
         // Presence of static obstacles does NOT mean they change each
         // frame. Re-rasterizing on presence made a large map wait for all
         // workers after every step even though its geometry was unchanged.
-        // World-owned revision tracks admission; animated static shapes
-        // genuinely require a new snapshot on each completed frame.
+        // World-owned revision tracks admission; the caller also detects
+        // animated static shapes and invalidated navigation workspaces.
         if self.static_geometry_revision != Some(static_geometry_revision) ||
-            static_geometry_moves
+            static_geometry_dirty
         {
             self.pending_static_rebuild = true;
             self.clearance_snapshot = None;
