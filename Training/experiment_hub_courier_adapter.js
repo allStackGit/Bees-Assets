@@ -159,7 +159,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // bounded backend capability manifest allows the same Hub adapter to
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
-    let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false;
+    let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false,gpuMulti=false;
     if(fs.existsSync(capabilitiesFile)) {
         if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
             !fs.statSync(capabilitiesFile).isFile()||
@@ -180,12 +180,14 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             (capabilities.courier_gpu_pci_pin===true&&
              capabilities.courier_gpu_optimizer!==true)||
             (capabilities.courier_gpu_multi_optimizer===true&&
-             capabilities.courier_gpu_optimizer!==true))
+             (capabilities.courier_gpu_optimizer!==true||
+              capabilities.courier_gpu_pci_pin!==true)))
             throw Error('Unsupported Courier backend capabilities manifest.');
         boundedLearners=capabilities.courier_active_learners;
         autoLearners=boundedLearners&&capabilities.courier_auto_active_learners===true;
         optimizerGpu=capabilities.courier_gpu_optimizer===true;
         gpuPciPin=optimizerGpu&&capabilities.courier_gpu_pci_pin===true;
+        gpuMulti=gpuPciPin&&capabilities.courier_gpu_multi_optimizer===true;
     }
     if(enableGpu) {
         if(!optimizerGpu)
@@ -229,7 +231,14 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 (windows&&!NVIDIA_UUID.test(String(context.gpu_cuda_uuid||'')))||
                 (!windows&&context.gpu_cuda_uuid!==undefined)))||
             (context.gpu_pci_address===undefined&&context.gpu_cuda_uuid!==undefined)||
-            context.gpu_pci_addresses!==undefined)
+            (context.gpu_pci_addresses!==undefined&&(
+                context.gpu_pci_address!==undefined||context.gpu_cuda_uuid!==undefined||
+                !enableGpu||windows||!gpuMulti||context.gpu_mode!=='exclusive'||
+                !Array.isArray(context.gpu_pci_addresses)||
+                ![2,3,4,5,6,7,8].includes(context.gpu_pci_addresses.length)||
+                context.gpu_pci_addresses.some(pci=>
+                    !PCI.test(String(pci))||!Object.hasOwn(approvedRocr,pci))||
+                new Set(context.gpu_pci_addresses).size!==context.gpu_pci_addresses.length)))
             throw Error('Invalid Courier job, physical GPU lease or checkpoint lineage.');
         return path.join(artifacts,context.job_id);
     }
@@ -264,13 +273,18 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         ...(enableGpu&&windows?{gpu_execution:'cuda'}:{}),
         ...(enableGpu&&!windows?{
             rocr_gpu_uuids:approvedRocr,
+            ...(gpuMulti&&Object.keys(approvedRocr).length>=2
+                ?{gpu_multi_execution:'independent-ppo'}:{}),
             gpu_verify_args(_parameters,context) {
-                if(!PCI.test(String(context?.gpu_pci_address||''))||
-                    context.gpu_pci_addresses!==undefined)
-                    throw Error('Courier GPU qualification requires one pinned AMD PCI identity.');
+                const ids=context?.gpu_pci_addresses??[context?.gpu_pci_address];
+                if(!Array.isArray(ids)||ids.length<1||ids.length>8||
+                    (ids.length>1&&(!gpuMulti||Object.keys(approvedRocr).length<2))||
+                    ids.some(pci=>!PCI.test(String(pci))||
+                        (ids.length>1&&!Object.hasOwn(approvedRocr,pci)))||
+                    new Set(ids).size!==ids.length)
+                    throw Error('Courier GPU qualification requires frozen AMD PCI identities.');
                 return ['-B',path.join(__dirname,
-                    'experiment_hub_tinybrains_rocm_verify.py'),
-                    context.gpu_pci_address];
+                    'experiment_hub_tinybrains_rocm_verify.py'),...ids];
             },
         }:{}),
         // Private machine-local export root, never an operator HTTP path.
@@ -306,6 +320,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // lineages, not parallel simulators for one shared policy.
             // Keep population size independent of CPU lease changes.
             let chosenWorkers=workers===undefined?12:workers;
+            if(context.gpu_pci_addresses&&chosenWorkers<context.gpu_pci_addresses.length)
+                throw Error('Courier cannot allocate more GPU optimizers than independent saved lineages.');
             const out=jobRoot(context);
             const publish=Boolean(snapshots&&context.evaluation_suite_id);
             if(publish&&(!UUID.test(String(context.dispatch_id||''))||
@@ -353,12 +369,17 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(boundedLearners?['--active-learners',String(Math.min(
                     chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)))]:[]),
                 ...(auto?['--auto-active-learners']:[]),
-                ...(auto||context.gpu_pci_address!==undefined
+                ...(auto||context.gpu_pci_address!==undefined||
+                    context.gpu_pci_addresses!==undefined
                     ?['--ram-lease-mb',String(context.ram_quota_mb)]:[]),
-                ...(context.gpu_pci_address!==undefined
+                ...(context.gpu_pci_address!==undefined||
+                    context.gpu_pci_addresses!==undefined
                     ?['--optimizer-device','cuda',
-                       ...(gpuPciPin&&!windows
-                           ?['--optimizer-gpu-pci',context.gpu_pci_address]:[])]:[]),
+                       ...(context.gpu_pci_addresses
+                           ?context.gpu_pci_addresses.flatMap(pci=>
+                               ['--optimizer-gpu-pci',pci])
+                           :gpuPciPin&&!windows
+                               ?['--optimizer-gpu-pci',context.gpu_pci_address]:[])]:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(predecessor?['--resume']:[])];
         },
