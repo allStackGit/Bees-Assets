@@ -1133,6 +1133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     collectorStageProfiles.insertAdjacentElement('afterend',secondsMetricsDetails);
     const comparisonMetricOverrides=new Map();
     const comparisonChartAverages=new Map();
+    const comparisonChartRolling=new Map();
     let lastComparisonChart=null,lastComparisonChartWidth=0;
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
@@ -1346,14 +1347,34 @@ document.addEventListener('DOMContentLoaded', () => {
             comparisonData=body;
             comparisonProject=requested;
             comparisonError=null;
-            renderComparison();
+            refreshComparisonKeepingViewport();
         }catch(error){
             if(serial!==comparisonRequest||requested!==project)return;
             comparisonData=null;
             comparisonProject=requested;
             comparisonError=String(error.message||error);
-            renderComparison();
+            refreshComparisonKeepingViewport();
         }
+    }
+    // Automatic comparison updates replace several panels and charts. Keep
+    // the currently visible metric at the same viewport position rather than
+    // allowing browser scroll anchoring to jump back to the first chart.
+    function refreshComparisonKeepingViewport() {
+        const plots=$('hub-compare-plots');
+        const sections=[...plots.querySelectorAll('.hub-progress-plot')];
+        const visible=sections.find(section=>{
+            const rect=section.getBoundingClientRect();
+            return rect.bottom>0&&rect.top<window.innerHeight;
+        });
+        const anchorKey=visible?.dataset.metric;
+        const anchorTop=visible?.getBoundingClientRect().top;
+        const beforeScroll=window.scrollY;
+        renderComparison();
+        const replacement=anchorKey?[...plots.querySelectorAll('.hub-progress-plot')]
+            .find(section=>section.dataset.metric===anchorKey):null;
+        if(replacement&&Number.isFinite(anchorTop)) {
+            window.scrollBy(0,replacement.getBoundingClientRect().top-anchorTop);
+        }else if(window.scrollY!==beforeScroll)window.scrollTo(0,beforeScroll);
     }
     function comparisonAxisLabel(key) {
         return key==='steps_completed'&&project==='tinybrains'
@@ -1879,10 +1900,13 @@ document.addEventListener('DOMContentLoaded', () => {
         for(const key of keys) {
             const section=document.createElement('div');
             section.className='hub-progress-plot';
+            section.dataset.metric=key;
             const title=document.createElement('h3');
             title.textContent=key.slice(7);
             const header=document.createElement('div');
             header.className='hub-plot-header';
+            const toggles=document.createElement('div');
+            toggles.className='hub-plot-toggles';
             const averageLabel=document.createElement('label');
             averageLabel.className='hub-plot-average-toggle';
             averageLabel.title='Arithmetic mean of retained chart samples for each run, not weighted by elapsed time or steps.';
@@ -1891,7 +1915,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const averageId=project+'|'+key;
             average.checked=comparisonChartAverages.get(averageId)===true;
             averageLabel.append(average,document.createTextNode(' Show sample mean'));
-            header.append(title,averageLabel);
+            const rollingLabel=document.createElement('label');
+            rollingLabel.className='hub-plot-average-toggle';
+            rollingLabel.title='Mean of available retained chart samples within the preceding 50 project updates/rounds. Chart downsampling means this is not a mean of every raw update.';
+            const rolling=document.createElement('input');
+            rolling.type='checkbox';
+            const rollingId=project+'|'+key;
+            rolling.checked=comparisonChartRolling.get(rollingId)===true;
+            rollingLabel.append(rolling,document.createTextNode(
+                project==='tinybrains'?' Rolling 50-update mean':
+                project==='courier'?' Rolling 50-round mean':' Rolling 50-step mean'));
+            toggles.append(averageLabel,rollingLabel);
+            header.append(title,toggles);
             const description=document.createElement('p');
             description.className='hub-plot-description';
             description.textContent=hubMetricDescription(key.slice(7));
@@ -1908,15 +1943,19 @@ document.addEventListener('DOMContentLoaded', () => {
             section.append(header,description,svg,tooltip,legend);
             container.append(section);
             const redraw=()=>drawComparisonChart(runs,key,xKey,svg,
-                legend,tooltip,average.checked);
+                legend,tooltip,average.checked,rolling.checked);
             average.addEventListener('change',()=>{
                 comparisonChartAverages.set(averageId,average.checked);
+                redraw();
+            });
+            rolling.addEventListener('change',()=>{
+                comparisonChartRolling.set(rollingId,rolling.checked);
                 redraw();
             });
             redraw();
         }
     }
-    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage) {
+    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage,showRolling) {
         const width=Math.max(320,Math.round(svg.getBoundingClientRect().width||
             svg.clientWidth||svg.parentElement?.clientWidth||900));
         svg.setAttribute('viewBox','0 0 '+width+' 330');
@@ -2003,6 +2042,38 @@ document.addEventListener('DOMContentLoaded', () => {
             if(showAverage&&mean!==null)
                 node('line',{x1:bounds.left,y1:y(mean),x2:bounds.right,y2:y(mean),
                     stroke:run.color,'stroke-dasharray':'7 5',class:'plot-average'});
+            if(showRolling) {
+                let window=[],part=[],lastStep=null,lastAxis=null;
+                const flush=()=>{
+                    if(part.length>1)
+                        node('path',{d:part.map((sample,i)=>
+                            (i?'L':'M')+x(sample.axis).toFixed(1)+' '+
+                            y(sample.mean).toFixed(1)).join(' '),
+                            stroke:run.color,class:'plot-rolling'});
+                    else if(part.length===1)
+                        node('circle',{cx:x(part[0].axis),cy:y(part[0].mean),
+                            r:3,fill:run.color,class:'plot-rolling-point'});
+                    part=[];
+                };
+                for(const point of run.valid) {
+                    const step=point.steps_completed;
+                    const axis=hubComparisonAxisValue(point,xKey);
+                    if(point.break_before||!usable(point)||
+                        !Number.isSafeInteger(step)||step<0||
+                        lastStep!==null&&step<lastStep||
+                        lastAxis!==null&&axis<lastAxis) {
+                        flush();window=[];lastStep=null;lastAxis=null;
+                    }
+                    if(!usable(point)||!Number.isSafeInteger(step)||step<0)
+                        continue;
+                    window=window.filter(item=>item.step>step-50);
+                    window.push({step,value:hubMetricValue(point,key)});
+                    part.push({axis,mean:window.reduce((sum,item)=>
+                        sum+item.value,0)/window.length});
+                    lastStep=step;lastAxis=axis;
+                }
+                flush();
+            }
             const legendItem=document.createElement('span');
             legendItem.className='hub-plot-legend-entry';
             const swatch=document.createElement('span');
@@ -2017,7 +2088,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         unit==='scalar'||unit==='count'?'':' '+unit);
             legendItem.append(swatch,document.createTextNode(
                 run.slot+' · '+run.job.configuration_name+
-                (showAverage&&mean!==null?' · mean '+formatted(mean):'')));
+                (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
+                (showRolling?' · rolling 50-step sample mean':'')));
             legend.append(legendItem);
             let part=[],previousX=null;
             const flush=()=>{
@@ -2050,26 +2122,32 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             flush();
         }
-        const points=series.flatMap(run=>run.valid.filter(usable).map(point=>({
-            run,point,cx:x(hubComparisonAxisValue(point,xKey)),
-            cy:y(hubMetricValue(point,key)),
-            value:hubMetricValue(point,key),
-            axis:hubComparisonAxisValue(point,xKey),
-        })));
-        // Keep the plot area hoverable even when only one or two samples exist.
+        const perRun=series.map(run=>({
+            run,
+            points:run.valid.filter(usable).map(point=>({
+                point,cx:x(hubComparisonAxisValue(point,xKey)),
+                cy:y(hubMetricValue(point,key)),
+                value:hubMetricValue(point,key),
+                axis:hubComparisonAxisValue(point,xKey),
+            })),
+        }));
+        // Whole plot is hoverable; select a separate nearest x-axis sample
+        // for every run instead of showing only one run under the pointer.
         node('rect',{x:bounds.left,y:bounds.top,width:bounds.right-bounds.left,
             height:bounds.bottom-bounds.top,fill:'transparent',
             class:'plot-hover-area'});
         const guide=node('line',{x1:bounds.left,x2:bounds.left,
             y1:bounds.top,y2:bounds.bottom,class:'plot-crosshair',
             visibility:'hidden','pointer-events':'none'});
-        const focus=node('circle',{cx:bounds.left,cy:bounds.bottom,r:6,
-            fill:'white',stroke:'black','stroke-width':2,
-            visibility:'hidden','pointer-events':'none'});
+        const markers=perRun.map(({run})=>node('circle',{
+            cx:bounds.left,cy:bounds.bottom,r:5,fill:'white',
+            stroke:run.color,'stroke-width':2,
+            visibility:'hidden','pointer-events':'none',
+        }));
         const hide=()=>{
             tooltip.hidden=true;
             guide.setAttribute('visibility','hidden');
-            focus.setAttribute('visibility','hidden');
+            for(const marker of markers)marker.setAttribute('visibility','hidden');
         };
         svg.onpointerleave=hide;
         svg.onpointermove=event=>{
@@ -2078,42 +2156,74 @@ document.addEventListener('DOMContentLoaded', () => {
             const mouseY=(event.clientY-rect.top)*330/rect.height;
             if(mouseX<bounds.left||mouseX>bounds.right||
                 mouseY<bounds.top||mouseY>bounds.bottom)return hide();
-            let nearest=null,best=Infinity;
-            for(const sample of points) {
-                const distance=Math.hypot(mouseX-sample.cx,mouseY-sample.cy);
-                if(distance<best){best=distance;nearest=sample;}
-            }
-            if(!nearest)return hide();
-            guide.setAttribute('x1',nearest.cx);
-            guide.setAttribute('x2',nearest.cx);
+            const chosen=perRun.map(({run,points})=>{
+                let closest=null,distance=Infinity;
+                for(const point of points) {
+                    const delta=Math.abs(mouseX-point.cx);
+                    if(delta<distance){distance=delta;closest=point;}
+                }
+                return {run,closest};
+            });
+            if(!chosen.some(item=>item.closest))return hide();
+            guide.setAttribute('x1',mouseX);
+            guide.setAttribute('x2',mouseX);
             guide.setAttribute('visibility','visible');
-            focus.setAttribute('cx',nearest.cx);
-            focus.setAttribute('cy',nearest.cy);
-            focus.setAttribute('stroke',nearest.run.color);
-            focus.setAttribute('visibility','visible');
-            const unit=units[0]||'';
-            const value=unit==='ratio'
-                ?(nearest.value*100).toFixed(2)+'%'
-                :Number(nearest.value.toPrecision(7)).toLocaleString()+
-                    (unit==='seconds'?' s':unit==='rate'?' /s':
-                        unit==='mb'?' MiB':unit==='watts'?' W':
-                        unit==='scalar'||unit==='count'?'':' '+unit);
-            const timestamp=nearest.point.source_modified_at;
-            tooltip.textContent=[
-                'Nearest recorded sample',
-                nearest.run.slot+' · '+nearest.run.job.configuration_name,
-                genericKey+': '+value,
-                axisLabel+': '+Number(nearest.axis.toPrecision(8)).toLocaleString(),
-                'Published: '+(timestamp?new Date(timestamp).toLocaleString():'unknown'),
-                'Segment: '+(nearest.point.segment_id||'unknown'),
-            ].join('\n');
+            for(let i=0;i<chosen.length;i++) {
+                const point=chosen[i].closest;
+                if(point) {
+                    markers[i].setAttribute('cx',point.cx);
+                    markers[i].setAttribute('cy',point.cy);
+                }
+                markers[i].setAttribute('visibility',point?'visible':'hidden');
+            }
+            const format=value=>Number(value).toLocaleString(undefined,{
+                maximumSignificantDigits:15,
+            });
+            const heading=document.createElement('div');
+            heading.className='hub-plot-tooltip-heading';
+            heading.textContent='Nearest recorded sample for each run';
+            const rows=chosen.map(({run,closest})=>{
+                const item=document.createElement('div');
+                item.className='hub-plot-tooltip-run';
+                const title=document.createElement('div');
+                title.className='hub-plot-tooltip-run-title';
+                const swatch=document.createElement('span');
+                swatch.className='hub-plot-legend-swatch';
+                swatch.style.borderColor=run.color;
+                title.append(swatch,document.createTextNode(
+                    'Run '+run.slot+' · '+run.job.configuration_name));
+                item.append(title);
+                const line=text=>{
+                    const detail=document.createElement('div');
+                    detail.className='hub-plot-tooltip-detail';
+                    detail.textContent=text;
+                    item.append(detail);
+                };
+                if(!closest){line('No recorded metric samples');return item;}
+                const unit=units[0]||'';
+                const value=unit==='ratio'
+                    ?format(closest.value*100)+'% ('+format(closest.value)+')'
+                    :format(closest.value)+(unit==='seconds'?' s':
+                        unit==='rate'?' /s':unit==='mb'?' MiB':
+                        unit==='watts'?' W':unit==='scalar'||unit==='count'?'':' '+unit);
+                line(genericKey+': '+value);
+                line(axisLabel+': '+format(closest.axis));
+                const timestamp=closest.point.source_modified_at;
+                line('Published: '+(timestamp&&!Number.isNaN(Date.parse(timestamp))
+                    ?new Date(timestamp).toLocaleString():'unknown'));
+                line('Segment: '+(closest.point.segment_id||'unknown'));
+                return item;
+            });
+            tooltip.replaceChildren(heading,...rows);
+            tooltip.hidden=false;
             const parent=svg.parentElement;
             const box=parent.getBoundingClientRect();
-            tooltip.style.left=Math.max(8,Math.min(parent.clientWidth-265,
-                event.clientX-box.left+14))+'px';
-            tooltip.style.top=Math.max(38,Math.min(parent.clientHeight-126,
-                event.clientY-box.top+14))+'px';
-            tooltip.hidden=false;
+            const tipWidth=tooltip.offsetWidth||460;
+            const tipHeight=tooltip.offsetHeight||150;
+            tooltip.style.left=Math.max(8,Math.min(
+                parent.clientWidth-tipWidth-8,event.clientX-box.left+14))+'px';
+            tooltip.style.top=Math.max(8,Math.min(
+                parent.clientHeight-tipHeight-8,event.clientY-box.top+14))+'px';
         };
     }
     function exportComparison(format) {
@@ -2206,13 +2316,16 @@ document.addEventListener('DOMContentLoaded', () => {
         button.disabled=true;
         const message=$('hub-compare-export-message');
         try {
-            feedback('hub-compare-export-message','Preparing complete job archives; no training files will be modified.');
+            const includeReplays=$('hub-compare-export-replays').checked;
+            feedback('hub-compare-export-message','Preparing complete job archives'+
+                (includeReplays?' with available raw replays':' without raw replays')+
+                '; no training files will be modified.');
             const requested=await action('hub/exports',{
                 project_id:project,job_ids:ids,
                 metrics:exportAllMetricsToggle.checked?[]:
                     selectedComparisonMetrics().map(key=>key.slice(7)),
                 all_recorded_metrics:exportAllMetricsToggle.checked,
-                include_replays:$('hub-compare-export-replays').checked,
+                include_replays:includeReplays,
             });
             // An export is read-only and asynchronous. Poll its status rather
             // than attempting a single unbounded HTTP download response.
@@ -2227,6 +2340,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(result.status==='ready') {
                     message.replaceChildren(document.createTextNode(
                         result.parts.length+' independently downloadable ZIP part(s), each at most 500 MB. '+
+                        (includeReplays?'Replay inclusion was requested; check the ZIP manifest for replay availability. ':'')+
                         (result.missing_artifact_job_ids?.length
                             ?'Some jobs have no local artifacts: '+
                               result.missing_artifact_job_ids.join(', ')+'. ':'')+
@@ -3843,6 +3957,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-export-message',String(error.message||error));
             }
         });
+    const replayChoice=$('hub-compare-export-replays');
+    replayChoice.addEventListener('change',()=>{
+        feedback('hub-compare-replays-note',replayChoice.checked
+            ?'Replay inclusion requested for the next complete diagnostic ZIP export. Click Export complete job diagnostics to create it; only available replay files can be included.'
+            :'Raw replay files are excluded. This option only applies to Export complete job diagnostics.');
+    });
     const exportAllMetricsLabel=document.createElement('label');
     const exportAllMetricsToggle=document.createElement('input');
     exportAllMetricsToggle.type='checkbox';
