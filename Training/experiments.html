@@ -351,6 +351,8 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .hub-standalone { border: 2px solid var(--ink); padding: 12px; margin: 14px 0; }
 .hub-standalone h3 { margin: 0 0 8px; font-size: 17px; }
 .hub-table td { white-space: normal; }
+/* Configuration row actions use the same spacing rhythm as the tab and form controls. */
+#hub-config-rows td:last-child button { margin: 0 9px 9px 0; }
 .hub-pipeline-stage {
     display: grid;
     grid-template-columns: minmax(160px, 1fr) minmax(220px, 1fr) auto;
@@ -633,7 +635,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <label>Name<input id="hub-new-project-name" required placeholder="Ants"></label>
         <label class="wide">Description<input id="hub-new-project-description" placeholder="Independent simulation and training system"></label>
       </div>
-      <button type="submit">Add project</button>
+      <div class="hub-controls"><button type="submit">Add project</button></div>
       <p class="muted">Project registration does not install executable code. Only trusted server-side adapters may launch jobs.</p>
     </form>
   </div>
