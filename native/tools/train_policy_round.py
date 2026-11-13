@@ -748,9 +748,11 @@ def main() -> None:
                        else config.get("physics_workers", 1))
     if type(physics_workers) is not int or not 1 <= physics_workers <= 128:
         parser.error("physics_workers must be an integer between 1 and 128")
-    # Keep this a native run-config field, not a second per-process
-    # scheduler: the compiled game determines runnable worlds each step.
-    config["physics_workers"] = physics_workers
+    # Preserve legacy run JSON for an unchanged single-worker allocation:
+    # older compiled native runners reject unknown configuration keys.
+    # Explicit operator settings still require the new runner contract.
+    if args.physics_workers is not None or "physics_workers" in config:
+        config["physics_workers"] = physics_workers
     levels = config["levels"]
     if type(world_start) is not int or world_start < 0:
         parser.error("rollout_world_start must be a nonnegative integer")
