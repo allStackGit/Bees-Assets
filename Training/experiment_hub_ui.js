@@ -2394,6 +2394,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_sim_prefetch_engine_steps',
             'collector_'+i+'_sim_prefetch_overlap_seconds',
             'collector_'+i+'_sim_last_child_gap_share',
+            'collector_'+i+'_sim_exposed_wait_share',
             'collector_'+i+'_sim_dispatch_queue_share',
             'collector_'+i+'_sim_inflight_factor',
             'collector_'+i+'_sim_straggler_pressure',
