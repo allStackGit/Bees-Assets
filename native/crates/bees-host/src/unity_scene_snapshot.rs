@@ -967,11 +967,17 @@ impl NativePhysicalScene {
         })?;
         authored.extraction = setup.extraction;
         authored.campaign_dialogue = setup.campaign_dialogue;
+        // Validate scripted ownership against the complete source roster
+        // before wave extraction removes deferred squads from the initial
+        // scene. Deferred orders activate only after real deployment.
+        let deferred_squads = setup.reinforcements.iter()
+            .flat_map(|wave| wave.squad_item_ids.iter().copied())
+            .collect::<std::collections::HashSet<_>>();
+        authored.metadata.stage_scripted_queues(
+            &authored.squads, setup.scripted_queues, &deferred_squads, dt,
+        ).map_err(NativePolicyOnlyLevelError::InvalidScriptedCommands)?;
         authored.stage_reinforcements(setup.reinforcements, dt)
             .map_err(NativePolicyOnlyLevelError::InvalidReinforcements)?;
-        authored.metadata.stage_scripted_queues(
-            &authored.squads, setup.scripted_queues,
-        ).map_err(NativePolicyOnlyLevelError::InvalidScriptedCommands)?;
         if let Some(CampaignDialogueSpec::TitaniaBeenoculars { player_side, .. }) =
             authored.campaign_dialogue
         {

@@ -55,9 +55,20 @@ impl NativeScriptedOrder {
 /// recycled hotkey number. The initial order starts on the first completed
 /// fixed step; delayed/cutscene-triggered orders require their actual Level
 /// trigger to enqueue this plan at that boundary.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NativeScriptedActivation {
+    /// Source Squad.RunCommandQueue called at Level start.
+    Immediate,
+    /// A source-authored elapsed Level time, never elapsed worker wall time.
+    AfterSeconds(f32),
+    /// Run as soon as the specified deferred source squad enters the roster.
+    OnDeployment,
+}
+
 pub struct NativeScriptedQueuePlan {
     pub squad_item_id: i64,
     pub repeat: bool,
+    pub activation: NativeScriptedActivation,
     pub orders: Vec<NativeScriptedOrder>,
 }
 
@@ -66,6 +77,8 @@ pub(super) struct NativeScriptedQueueState {
     orders: Vec<NativeScriptedOrder>,
     cursor: usize,
     repeat: bool,
+    ready_tick: u64,
+    on_deployment: bool,
 }
 
 impl NativePolicyOnlyMetadata {
@@ -77,7 +90,12 @@ impl NativePolicyOnlyMetadata {
         &mut self,
         squads: &[crate::scene_builder::NativeAuthoredSquad],
         plans: Vec<NativeScriptedQueuePlan>,
+        deferred: &HashSet<i64>,
+        dt_seconds: f32,
     ) -> Result<(), &'static str> {
+        if !dt_seconds.is_finite() || dt_seconds <= 0.0 {
+            return Err("scripted queue requires the source Level fixed-step duration");
+        }
         if !self.scripted_queues.is_empty() {
             return Err("initial mission queues were already installed");
         }
@@ -109,9 +127,26 @@ impl NativePolicyOnlyMetadata {
                     }
                 }
             }
+            let is_deferred = deferred.contains(&plan.squad_item_id);
+            if is_deferred != matches!(plan.activation, NativeScriptedActivation::OnDeployment) {
+                return Err("deferred scripted squads require on_deployment; initial squads cannot use it");
+            }
+            let ready_tick = match plan.activation {
+                NativeScriptedActivation::Immediate |
+                NativeScriptedActivation::OnDeployment => 1,
+                NativeScriptedActivation::AfterSeconds(seconds) => {
+                    let tick = (f64::from(seconds) / f64::from(dt_seconds)).floor() + 1.0;
+                    if !seconds.is_finite() || seconds <= 0.0 ||
+                        !tick.is_finite() || tick >= u64::MAX as f64 {
+                        return Err("scripted after_seconds must be finite, positive and representable");
+                    }
+                    tick as u64
+                }
+            };
             staged.push(NativeScriptedQueueState {
                 owner: squad.owner, orders: plan.orders,
-                cursor: 0, repeat: plan.repeat,
+                cursor: 0, repeat: plan.repeat, ready_tick,
+                on_deployment: is_deferred,
             });
         }
         // NativeAuthoredLevel.squads is the source's actual Level.State.Squads
@@ -138,7 +173,8 @@ impl NativePolicyOnlyMetadata {
         plan: NativeScriptedQueuePlan,
     ) -> Result<(), &'static str> {
         if plan.squad_item_id <= 0 || plan.orders.is_empty() ||
-            plan.orders.len() > 256 || plan.orders.iter().any(|order| !order.valid()) {
+            plan.orders.len() > 256 || plan.orders.iter().any(|order| !order.valid()) ||
+            !matches!(plan.activation, NativeScriptedActivation::Immediate) {
             return Err("invalid live scripted command plan");
         }
         let owner = roster.source_order().iter().copied()
@@ -175,6 +211,7 @@ impl NativePolicyOnlyMetadata {
         );
         self.scripted_queues.insert(insert_at, NativeScriptedQueueState {
             owner, orders: plan.orders, cursor: 0, repeat: plan.repeat,
+            ready_tick: 1, on_deployment: false,
         });
         Ok(())
     }
@@ -201,8 +238,18 @@ impl NativePolicyOnlyMetadata {
         while index < self.scripted_queues.len() {
             let owner = self.scripted_queues[index].owner;
             if events.roster().get(owner).is_none() {
+                if self.scripted_queues[index].on_deployment {
+                    // The source squad is still in a pending wave; no
+                    // physical ships or command lifetime exist yet.
+                    index += 1;
+                    continue;
+                }
                 self.scripted_queues.remove(index);
                 self.scripted_counts.queues_cancelled += 1;
+                continue;
+            }
+            if completed_tick < self.scripted_queues[index].ready_tick {
+                index += 1;
                 continue;
             }
             if events.commands().has_active(owner) {

@@ -114,7 +114,18 @@ struct ScriptedQueueConfig {
     squad_item_id: i64,
     #[serde(default)]
     repeat: bool,
+    #[serde(default)]
+    activation: ScriptedActivationConfig,
     orders: Vec<ScriptedOrderConfig>,
+}
+
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ScriptedActivationConfig {
+    #[default]
+    Immediate,
+    AfterSeconds { seconds: f32 },
+    OnDeployment,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -414,6 +425,14 @@ fn make_setup(
                 squad_item_id: remapped_squads.get(&queue.squad_item_id)
                     .copied().unwrap_or(queue.squad_item_id),
                 repeat: queue.repeat,
+                activation: match queue.activation {
+                    ScriptedActivationConfig::Immediate =>
+                        bees_host::policy_only_metadata::NativeScriptedActivation::Immediate,
+                    ScriptedActivationConfig::AfterSeconds { seconds } =>
+                        bees_host::policy_only_metadata::NativeScriptedActivation::AfterSeconds(seconds),
+                    ScriptedActivationConfig::OnDeployment =>
+                        bees_host::policy_only_metadata::NativeScriptedActivation::OnDeployment,
+                },
                 orders: queue.orders.iter().map(|order| match *order {
                     ScriptedOrderConfig::MoveToPoint { destination } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::MoveToPoint {
