@@ -255,6 +255,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_service_seconds',worker.collector_service_seconds,'seconds');
         add('collector_'+i+'_record_encode_seconds',
             worker.collector_record_encode_seconds,'seconds');
+        add('collector_'+i+'_record_packed',
+            worker.collector_record_packed,'count');
+        add('collector_'+i+'_record_board_groups',
+            worker.collector_record_board_groups,'count');
         // Separately timed remote/learner stages are observational; never
         // treat socket send/receive blocking as measured network bandwidth.
         for(const [suffix,name] of [
