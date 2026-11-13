@@ -134,6 +134,19 @@ def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot,
             metrics["optimizer_input_steps"] <= 0):
         raise ValueError(f"optimizer metrics do not identify these artifacts: {receipt_path}")
     check_learner(manifest, checkpoint, learner_slot)
+    if refresh_opponent_slot is not None:
+        models = read_json(manifest)["models"]
+        promoted = [
+            model for model in models if model.get("slot") == refresh_opponent_slot
+        ]
+        if (len(promoted) != 1 or
+                promoted[0].get("backend") != "mlagents" or
+                promoted[0].get("sha256") != record["next_checkpoint_sha256"] or
+                (manifest.parent / promoted[0].get("path", "")).resolve(strict=True) !=
+                    checkpoint.resolve() or
+                metrics.get("refreshed_opponent_from_checkpoint_sha256") !=
+                    record["next_checkpoint_sha256"]):
+            raise ValueError(f"native self-play opponent promotion has invalid model lineage: {receipt_path}")
     if "collection_orders" in record:
         work_order = Path(record["collection_orders"])
         if (not work_order.is_file() or
@@ -372,6 +385,8 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
              "stage_serialized_arenas":
                  record["rollout_metrics"].get("parallel_stage_id_serialized_arenas"),
              "optimizer_input_steps": record["learner_metrics"]["optimizer_input_steps"],
+             "refreshed_opponent_slot":
+                 record["learner_metrics"].get("refreshed_opponent_slot"),
              "training_outcomes": record["learner_metrics"].get("training_outcomes", {}),
              "holdout": evaluations.get(str(path))}
             for index, (path, record) in enumerate(completed, 1)
