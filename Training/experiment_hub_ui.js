@@ -1346,14 +1346,34 @@ document.addEventListener('DOMContentLoaded', () => {
             comparisonData=body;
             comparisonProject=requested;
             comparisonError=null;
-            renderComparison();
+            refreshComparisonKeepingViewport();
         }catch(error){
             if(serial!==comparisonRequest||requested!==project)return;
             comparisonData=null;
             comparisonProject=requested;
             comparisonError=String(error.message||error);
-            renderComparison();
+            refreshComparisonKeepingViewport();
         }
+    }
+    // Automatic comparison updates replace several panels and charts. Keep
+    // the currently visible metric at the same viewport position rather than
+    // allowing browser scroll anchoring to jump back to the first chart.
+    function refreshComparisonKeepingViewport() {
+        const plots=$('hub-compare-plots');
+        const sections=[...plots.querySelectorAll('.hub-progress-plot')];
+        const visible=sections.find(section=>{
+            const rect=section.getBoundingClientRect();
+            return rect.bottom>0&&rect.top<window.innerHeight;
+        });
+        const anchorKey=visible?.dataset.metric;
+        const anchorTop=visible?.getBoundingClientRect().top;
+        const beforeScroll=window.scrollY;
+        renderComparison();
+        const replacement=anchorKey?[...plots.querySelectorAll('.hub-progress-plot')]
+            .find(section=>section.dataset.metric===anchorKey):null;
+        if(replacement&&Number.isFinite(anchorTop)) {
+            window.scrollBy(0,replacement.getBoundingClientRect().top-anchorTop);
+        }else if(window.scrollY!==beforeScroll)window.scrollTo(0,beforeScroll);
     }
     function comparisonAxisLabel(key) {
         return key==='steps_completed'&&project==='tinybrains'
@@ -1879,6 +1899,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for(const key of keys) {
             const section=document.createElement('div');
             section.className='hub-progress-plot';
+            section.dataset.metric=key;
             const title=document.createElement('h3');
             title.textContent=key.slice(7);
             const header=document.createElement('div');
@@ -2206,13 +2227,16 @@ document.addEventListener('DOMContentLoaded', () => {
         button.disabled=true;
         const message=$('hub-compare-export-message');
         try {
-            feedback('hub-compare-export-message','Preparing complete job archives; no training files will be modified.');
+            const includeReplays=$('hub-compare-export-replays').checked;
+            feedback('hub-compare-export-message','Preparing complete job archives'+
+                (includeReplays?' with available raw replays':' without raw replays')+
+                '; no training files will be modified.');
             const requested=await action('hub/exports',{
                 project_id:project,job_ids:ids,
                 metrics:exportAllMetricsToggle.checked?[]:
                     selectedComparisonMetrics().map(key=>key.slice(7)),
                 all_recorded_metrics:exportAllMetricsToggle.checked,
-                include_replays:$('hub-compare-export-replays').checked,
+                include_replays:includeReplays,
             });
             // An export is read-only and asynchronous. Poll its status rather
             // than attempting a single unbounded HTTP download response.
@@ -2227,6 +2251,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(result.status==='ready') {
                     message.replaceChildren(document.createTextNode(
                         result.parts.length+' independently downloadable ZIP part(s), each at most 500 MB. '+
+                        (includeReplays?'Replay inclusion was requested; check the ZIP manifest for replay availability. ':'')+
                         (result.missing_artifact_job_ids?.length
                             ?'Some jobs have no local artifacts: '+
                               result.missing_artifact_job_ids.join(', ')+'. ':'')+
@@ -3843,6 +3868,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-export-message',String(error.message||error));
             }
         });
+    const replayChoice=$('hub-compare-export-replays');
+    replayChoice.addEventListener('change',()=>{
+        feedback('hub-compare-replays-note',replayChoice.checked
+            ?'Replay inclusion requested for the next complete diagnostic ZIP export. Click Export complete job diagnostics to create it; only available replay files can be included.'
+            :'Raw replay files are excluded. This option only applies to Export complete job diagnostics.');
+    });
     const exportAllMetricsLabel=document.createElement('label');
     const exportAllMetricsToggle=document.createElement('input');
     exportAllMetricsToggle.type='checkbox';
