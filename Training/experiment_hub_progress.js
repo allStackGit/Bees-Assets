@@ -129,6 +129,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_gather_max_seconds',
             'training_shared_copy_slowest_worker',
             'training_shared_gather_slowest_worker',
+            'training_info_recv_max_seconds',
+            'training_info_recv_slowest_worker',
+            'training_sim_info_ratio_owner',
+            'training_sim_info_max_ratio',
             'training_sim_copy_ratio_owner',
             'training_sim_gather_ratio_owner',
             'training_sim_copy_max_ratio',
@@ -173,6 +177,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_sim_dispatch_pressure',
             'training_sim_copy_pressure',
             'training_sim_gather_pressure',
+            'training_sim_info_pressure',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
@@ -545,6 +550,7 @@ class BottleneckEvidence {
             const shardDispatchHints=[];
             const shardCopyHints=[];
             const shardGatherHints=[];
+            const shardInfoHints=[];
             // The backend reports its measured worst recurrent-minibatch
             // preparation alongside the *owning* lineage index. Comparing
             // unrelated maxima from different workers is not causal evidence.
@@ -579,16 +585,22 @@ class BottleneckEvidence {
                     dispatchShare>=0.20;
                 const copy=seconds('worker_'+i+'_sim_shared_copy_seconds');
                 const gather=seconds('worker_'+i+'_sim_shared_gather_seconds');
+                const info=seconds('worker_'+i+'_sim_info_recv_seconds');
                 const copyShare=shardStep>0&&copy!==null&&
                     copy<=shardStep?copy/shardStep:null;
                 const gatherShare=shardStep>0&&gather!==null&&
                     gather<=shardStep?gather/shardStep:null;
+                const infoShare=shardStep>0&&info!==null&&
+                    info<=shardStep?info/shardStep:null;
+                if(infoShare!==null)
+                    add('worker_'+i+'_sim_info_work_share',infoShare);
                 if(copyShare!==null)
                     add('worker_'+i+'_sim_copy_work_share',copyShare);
                 if(gatherShare!==null)
                     add('worker_'+i+'_sim_gather_work_share',gatherShare);
                 shardCopyHints[i]=copyShare!==null&&copyShare>=0.20;
                 shardGatherHints[i]=gatherShare!==null&&gatherShare>=0.20;
+                shardInfoHints[i]=infoShare!==null&&infoShare>=0.20;
                 const fraction=collect/(collect+optimize);
                 const dataShare=(i===dataOwnerIndex&&dataWorst!==null&&
                     optimize>0&&dataWorst<=optimize*1.02)
@@ -648,8 +660,11 @@ class BottleneckEvidence {
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 const copyGlobal=metrics.training_sim_copy_max_ratio;
                 const gatherGlobal=metrics.training_sim_gather_max_ratio;
+                const infoGlobal=metrics.training_sim_info_max_ratio;
                 prior.samples.push({at,stageHints,shardDispatchHints,
-                    shardCopyHints,shardGatherHints,resourceHints,
+                    shardCopyHints,shardGatherHints,shardInfoHints,resourceHints,
+                    courierSimInfo:infoGlobal?.unit==='ratio'&&
+                        infoGlobal.value>=0.20,
                     courierSimCopy:copyGlobal?.unit==='ratio'&&
                         copyGlobal.value>=0.20,
                     courierSimGather:gatherGlobal?.unit==='ratio'&&
@@ -689,11 +704,15 @@ class BottleneckEvidence {
                     add('training_sim_copy_pressure',1,'count');
                 if(sustained(x=>x.courierSimGather))
                     add('training_sim_gather_pressure',1,'count');
+                if(sustained(x=>x.courierSimInfo))
+                    add('training_sim_info_pressure',1,'count');
                 for(let i=0;i<count;i++) {
                     if(sustained(x=>x.shardCopyHints?.[i]))
                         add('worker_'+i+'_sim_copy_pressure',1,'count');
                     if(sustained(x=>x.shardGatherHints?.[i]))
                         add('worker_'+i+'_sim_gather_pressure',1,'count');
+                    if(sustained(x=>x.shardInfoHints?.[i]))
+                        add('worker_'+i+'_sim_info_pressure',1,'count');
                 }
                 for(let i=0;i<count;i++)
                     for(const stage of ['collection','optimization','ppo_data',
