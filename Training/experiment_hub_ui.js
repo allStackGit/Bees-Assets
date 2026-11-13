@@ -695,6 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     let project = document.documentElement.dataset.hubDefaultProject || 'bees';
     let tab = 'monitor', state = null, editing = null;
+    let initialDesignLoaded=false;
     let comparisonData = null,comparisonProject = null,comparisonError = null;
     let comparisonRequest = 0,selectionProject = null,previewCandidateKey = null;
     let comparisonDefaultsApplied = false;
@@ -4357,7 +4358,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const r=await fetch('/api/hub/state',{cache:'no-store'});
             const data=await r.json();
             if(!r.ok)throw Error(data.error||'Hub state unavailable');
-            const apply=()=>{state=data;display();selectTab(tab);};
+            const apply=()=>{
+                state=data;
+                if(!initialDesignLoaded) {
+                    initialDesignLoaded=true;
+                    if(!state.projects.some(item=>item.id===project))project='bees';
+                }
+                // The initial HTML contains an empty JSON placeholder. Populate
+                // it from the connected trusted adapter, including its digest,
+                // rather than saving an unintentionally empty native job.
+                if(!editing&&$('hub-config-json').value.trim()==='{}') {
+                    const defaults=projectDefaultParameters();
+                    if(Object.keys(defaults).length)
+                        $('hub-config-json').value=JSON.stringify(defaults,null,2);
+                }
+                display();
+                syncTinyBrainsEditor(JSON.parse($('hub-config-json').value));
+                selectTab(tab);
+            };
             if(tab==='compare')withCompareViewport(apply);
             else apply();
         }catch(e){feedback('hub-config-message',e.message);}
