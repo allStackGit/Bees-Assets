@@ -61,20 +61,28 @@ function checkedAdapterArgs(adapter,fn,parameters,context) {
 }
 function gpuRuntimeProof(adapter,parameters,context) {
     const pci=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
-    const dual=Array.isArray(context?.gpu_pci_addresses)&&
-        context.gpu_pci_addresses.length===2&&
-        new Set(context.gpu_pci_addresses).size===2&&
-        context.gpu_pci_addresses.every(p=>pci.test(String(p)));
+    const ids=context?.gpu_pci_addresses;
+    const dual=Array.isArray(ids)&&ids.length===2&&
+        new Set(ids).size===2&&ids.every(p=>pci.test(String(p)))&&
+        adapter?.gpu_dual_execution==='split-ppo';
+    const multi=Array.isArray(ids)&&ids.length>=2&&ids.length<=8&&
+        new Set(ids).size===ids.length&&ids.every(p=>pci.test(String(p)))&&
+        adapter?.gpu_multi_execution==='independent-ppo';
+    const single=!ids&&pci.test(String(context?.gpu_pci_address||''));
     if(!adapter||typeof adapter.executable!=='string'||
         !path.isAbsolute(adapter.executable)||
         !SAFE_ARG.test(adapter.executable)||
-        !(dual&&adapter.gpu_dual_execution==='split-ppo'||
-            !context?.gpu_pci_addresses&&pci.test(String(context?.gpu_pci_address||''))))
+        !(dual||multi||single))
         throw Error('Invalid local ROCm runtime or leased PCI identity.');
-    const rocrUuid=dual?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
-        ?adapter.rocr_gpu_uuids[context.gpu_pci_address]:null;
+    const rocrUuid=multi?ids.map(p=>adapter.rocr_gpu_uuids?.[p])
+        :dual?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
+            ?adapter.rocr_gpu_uuids[context.gpu_pci_address]:null;
     if(rocrUuid!==null&&
-        (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
+        (Array.isArray(rocrUuid)
+            ?rocrUuid.length!==ids.length||
+                new Set(rocrUuid).size!==rocrUuid.length||
+                rocrUuid.some(uuid=>typeof uuid!=='string'||!ROCM_UUID.test(uuid))
+            :typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
         throw Error('Invalid locally approved ROCr GPU UUID selector.');
     // The verifier's inputs must be identical during an unstarted
     // qualification and a later native Start. Dispatch IDs and evaluation
@@ -84,21 +92,29 @@ function gpuRuntimeProof(adapter,parameters,context) {
         job_id:context.job_id,project_id:context.project_id,
         artifact_lineage_root_id:context.artifact_lineage_root_id,
         continuation_of_job_id:context.continuation_of_job_id||null,
-        ...(dual?{gpu_pci_addresses:context.gpu_pci_addresses.slice()}:
+        ...(dual||multi?{gpu_pci_addresses:ids.slice()}:
             {gpu_pci_address:context.gpu_pci_address}),
     });
+    // Every selected GPU is qualified alone while the other GPUs must be
+    // denied by the kernel device filter. Only then may the trusted native
+    // service use the union of the leased render nodes.
+    const singleProofs=multi?ids.map(p=>gpuRuntimeProof(adapter,parameters,{
+        ...verifierContext,gpu_pci_addresses:undefined,gpu_pci_address:p
+    })):null;
     return {executable:adapter.executable,
         verifyArgs:checkedAdapterArgs(adapter,adapter.gpu_verify_args,
             parameters,verifierContext),
-        rocrUuid};
+        rocrUuid,...(singleProofs?{singleProofs}:{})};
 }
 function gpuSelectorArgs(rocrUuid) {
-    if(rocrUuid!=null&&
-        (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
+    const selectors=Array.isArray(rocrUuid)?rocrUuid:rocrUuid?[rocrUuid]:[];
+    if(selectors.length>8||
+        new Set(selectors).size!==selectors.length||
+        selectors.some(uuid=>typeof uuid!=='string'||!ROCM_UUID.test(uuid)))
         throw Error('Invalid locally pinned ROCr GPU selector.');
-    return [...(rocrUuid?['--setenv=ROCR_VISIBLE_DEVICES='+rocrUuid]:[]),
+    return [...(selectors.length?['--setenv=ROCR_VISIBLE_DEVICES='+selectors.join(',')]:[]),
         '--property=UnsetEnvironment=CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES'+
-            (rocrUuid?'':' ROCR_VISIBLE_DEVICES')+' GPU_DEVICE_ORDINAL'];
+            (selectors.length?'':' ROCR_VISIBLE_DEVICES')+' GPU_DEVICE_ORDINAL'];
 }
 function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=false) {
     if(!job||!lease||job.status!=='waiting_adapter'||
