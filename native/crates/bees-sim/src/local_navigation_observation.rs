@@ -68,6 +68,21 @@ impl LocalNavigationOccupancy {
         self.grid_max = min + Vec2::new(2.0 * half_span, 2.0 * half_span);
         self.occupancy.fill(0.0);
         self.initialized = true;
+        // The vast majority of policy decisions in open training arenas
+        // observe a square wholly inside the Level. Avoid 441 per-cell
+        // bounds tests then; visible static AABBs still mark their cells
+        // afterward. Use the exact arithmetic of the last cell's maximum
+        // (rather than a rounded grid span) to preserve boundary parity.
+        let last_cell_min = min + Vec2::new(
+            (NAV_SIZE - 1) as f32 * NAV_CELL_SIZE,
+            (NAV_SIZE - 1) as f32 * NAV_CELL_SIZE,
+        );
+        let last_cell_max = last_cell_min + Vec2::new(NAV_CELL_SIZE, NAV_CELL_SIZE);
+        if min.x >= level_bounds.min.x && min.y >= level_bounds.min.y &&
+            last_cell_max.x <= level_bounds.max.x &&
+            last_cell_max.y <= level_bounds.max.y {
+            return Ok(());
+        }
         for y in 0..NAV_SIZE {
             let cell_min_y = min.y + y as f32 * NAV_CELL_SIZE;
             let cell_max_y = cell_min_y + NAV_CELL_SIZE;
