@@ -570,6 +570,26 @@ and seed. The learner waits for every shard to complete, then performs one
 update on the combined capture. The receipt lists each shard and reports
 elapsed rollout wall time. Sampled backend seconds sum work across workers.
 
+To train continuously without manually handing off a checkpoint after each
+round, use the native session controller over the same collector and learner:
+
+```sh
+python native/tools/train_policy_session.py run.json checkpoint.pt Training/rl_1v1_config.yaml native-session --rounds 100 --rollout-binary path/to/policy_rollout --rollout-worlds 16 --rollout-workers 4 --device cuda
+```
+
+After interruption or a failed round, repeat the command with `--resume`;
+`--rounds` counts the total desired successful rounds and may be increased
+without changing the pinned run, trainer, model, or resource allocation.
+Each round advances its seed offset, writes a fresh checkpoint and model
+manifest, and records its own output and diagnostics. Incomplete attempts
+are retained, never silently reused as learning data. The atomic
+`native-session/session-progress.json` combines simulation throughput,
+optimizer steps, and learning outcomes across verified rounds. Original
+round receipts and checkpoint hashes, not that derived progress snapshot,
+are the source of truth for safe resumption. This controller coordinates
+sequential local rounds; distributed collectors still use separately
+allocated, pinned bundle windows, not a repeated stale capture.
+
 Add `--collect-only` to the round command on a model-only worker to stop
 after publishing `rollout-bundle.json`. Transfer the receipt and its listed
 capture and journal files together, preserving relative paths. Use the same
