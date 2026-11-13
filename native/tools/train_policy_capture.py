@@ -522,7 +522,8 @@ def trajectories(rollouts, horizon, behavior_id):
                     experiences[agent] = []
 
 
-def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot, expected_sha=None):
+def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot,
+                    expected_sha=None, partitions=None):
     receipt_path = receipt_path.resolve(strict=True)
     root = receipt_path.parent
     content = receipt_path.read_bytes()
@@ -534,6 +535,30 @@ def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot, ex
             receipt.get("input_checkpoint_sha256") != checkpoint_sha or
             receipt.get("learner_slot") != learner_slot or not receipt.get("captures")):
         raise ValueError("native rollout bundle does not match the learner inputs")
+    # Native collectors allocate independent contiguous global world-index
+    # windows from the same source run. Never double-train an overlapping
+    # window just because the physical collectors generated different
+    # per-execution run UUIDs. Older receipts without partition metadata
+    # retain their original supported import contract.
+    partition = receipt.get("partition")
+    if partition is not None:
+        if not isinstance(partition, dict):
+            raise ValueError("native rollout partition must be an object")
+        source = partition.get("source_run_id")
+        start = partition.get("world_start")
+        count = partition.get("world_count")
+        if (not isinstance(source, str) or not source.strip() or
+                type(start) is not int or start < 0 or
+                type(count) is not int or not 1 <= count <= 1024 or
+                start + count > (1 << 63)):
+            raise ValueError("native rollout partition has invalid source or world range")
+        if receipt.get("rollout_worlds") != count:
+            raise ValueError("native rollout partition does not match its collected world count")
+        if partitions is not None:
+            for prior_start, prior_end in partitions[source]:
+                if start < prior_end and prior_start < start + count:
+                    raise ValueError("overlapping native rollout partitions from the same source run")
+            partitions[source].append((start, start + count))
     for entry in receipt["captures"]:
         files = []
         for key in ("policy_capture", "notifications"):
@@ -642,11 +667,13 @@ def main():
         source.seek(0)
         if stream_sha256(source) != input_sha:
             raise ValueError("optimizer input checkpoint changed while loading")
+    partitions = defaultdict(list)
     for receipt, digest in bundles:
         inputs.extend(
             (capture, journal, primary_path)
             for capture, journal in bundle_captures(
                 receipt, primary_manifest_sha, input_sha, args.learner_slot, digest,
+                partitions=partitions,
             )
         )
     args.output.mkdir()
