@@ -220,23 +220,33 @@ def rollout_metrics(summary_path, config, manifest_sha):
         "parallel_stage_id_serialized_arenas",
         "peak_parallel_physics_workers",
     )
-    physics = {key: throughput.get(key) for key in physics_ints}
     requested = config.get("physics_workers", 1)
-    if (type(requested) is not int or not 1 <= requested <= 128 or
-            any(type(value) is not int or value < 0 for value in physics.values()) or
-            physics["requested_physics_workers"] != requested or
-            physics["peak_parallel_physics_workers"] > min(requested, len(config["levels"])) or
-            any(physics[key] > summary["rounds"] for key in (
-                "parallel_physics_rounds", "parallel_stage_id_serialized_rounds",
-            ))):
-        raise ValueError("native rollout summary has an invalid physical worker allocation")
-    worker_seconds = throughput.get("parallel_worker_cpu_wall_seconds_sum")
-    if (type(worker_seconds) not in (float, int) or
-            not math.isfinite(worker_seconds) or worker_seconds < 0):
-        raise ValueError("native rollout summary has invalid physical worker timing")
-    metrics.update(physics)
-    metrics["parallel_worker_cpu_wall_seconds_sum"] = worker_seconds
+    if type(requested) is not int or not 1 <= requested <= 128:
+        raise ValueError("invalid native physics worker allocation")
     metrics["requested_physics_worker_slots"] = requested
+    has_physics = any(key in throughput for key in (
+        *physics_ints, "parallel_worker_cpu_wall_seconds_sum",
+    ))
+    if has_physics:
+        physics = {key: throughput.get(key) for key in physics_ints}
+        if (any(type(value) is not int or value < 0 for value in physics.values()) or
+                physics["requested_physics_workers"] != requested or
+                physics["peak_parallel_physics_workers"] > min(requested, len(config["levels"])) or
+                any(physics[key] > summary["rounds"] for key in (
+                    "parallel_physics_rounds", "parallel_stage_id_serialized_rounds",
+                ))):
+            raise ValueError("native rollout summary has invalid physical worker measurements")
+        worker_seconds = throughput.get("parallel_worker_cpu_wall_seconds_sum")
+        if (type(worker_seconds) not in (float, int) or
+                not math.isfinite(worker_seconds) or worker_seconds < 0):
+            raise ValueError("native rollout summary has invalid physical worker timing")
+        metrics.update(physics)
+        metrics["parallel_worker_cpu_wall_seconds_sum"] = worker_seconds
+    elif requested != 1 or "physics_workers" in config:
+        # Explicit physical parallelism must be acknowledged by a runner
+        # that implements it; old binaries may be used only for untouched
+        # single-worker configurations.
+        raise ValueError("native runner did not report requested physical worker allocation")
     model_timing = summary.get("sampled_model_timing")
     if model_timing is not None:
         calls, rows, seconds = (model_timing[key] for key in ("calls", "rows", "wall_seconds"))
