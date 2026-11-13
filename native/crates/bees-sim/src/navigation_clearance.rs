@@ -48,6 +48,10 @@ pub struct NavigationClearance {
     signed_static: Arc<Vec<i32>>,
     dynamic: Vec<i32>,
     moving_blocked: Vec<bool>,
+    /// The dynamic field is already the static field unless an occupied
+    /// collision-asteroid cell changed it. Avoid copying a full map in
+    /// successive empty-asteroid fixed steps.
+    dynamic_matches_static: bool,
     /// An obstacle-free rectangular map has one connected walkable region
     /// at every clearance. No per-clearance flood-fill cache is needed.
     has_static_blocked_cells: bool,
@@ -75,6 +79,7 @@ impl NavigationClearance {
             signed_static: Arc::new(vec![0; length]),
             dynamic: vec![0; length],
             moving_blocked: vec![false; length],
+            dynamic_matches_static: true,
             has_static_blocked_cells: false,
             static_components_by_clearance: HashMap::new(),
         };
@@ -281,6 +286,7 @@ impl NavigationClearance {
         build_signed_static(self.grid, &self.base, Arc::make_mut(&mut self.signed_static).as_mut_slice());
         self.dynamic.copy_from_slice(&self.base);
         self.moving_blocked.fill(false);
+        self.dynamic_matches_static = true;
     }
 
     /// Unity's UpdateDynamicObstacleLayer: start from the static base,
@@ -300,21 +306,28 @@ impl NavigationClearance {
         let counts = self.grid.rasterize_obstacles(
             asteroids, to_world, to_level, &mut self.moving_blocked,
         )?;
-        self.dynamic.copy_from_slice(&self.base);
         // With no occupied moving cells the precomputed static distance
-        // transform is already the exact answer; avoid two full-grid passes.
-        if counts.blocked_cells == 0 { return Ok(counts); }
+        // transform is already the exact answer. The world may have been
+        // static-only for many frames, so avoid even the redundant copy.
+        if counts.blocked_cells == 0 {
+            self.restore_static_only();
+            return Ok(counts);
+        }
+        self.dynamic.copy_from_slice(&self.base);
         for (clearance, &moving) in self.dynamic.iter_mut().zip(&self.moving_blocked) {
             if moving { *clearance = 0; }
         }
         calculate_clearance(self.grid, &mut self.dynamic);
+        self.dynamic_matches_static = false;
         Ok(counts)
     }
 
     /// Unity short-circuits moving-asteroid occupancy when disabled.
     pub fn restore_static_only(&mut self) {
+        if self.dynamic_matches_static { return; }
         self.dynamic.copy_from_slice(&self.base);
         self.moving_blocked.fill(false);
+        self.dynamic_matches_static = true;
     }
 }
 

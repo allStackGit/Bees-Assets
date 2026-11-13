@@ -132,9 +132,18 @@ impl NavigationRuntime {
             self.clearance.restore_static_only();
             return Ok(NavigationRasterCounts::default());
         }
+        // Most headless training scenes have zero live collision asteroids
+        // even when their Stage configuration permits them. Do not clear an
+        // arena-sized occupancy buffer or rebuild the dynamic distance map
+        // for an empty iterator on every pathfinding batch.
+        let mut asteroids = live_asteroids.into_iter();
+        let Some(first) = asteroids.next() else {
+            self.clearance.restore_static_only();
+            return Ok(NavigationRasterCounts::default());
+        };
         let frame = self.map_frame;
         self.clearance.update_dynamic_asteroids(
-            live_asteroids,
+            std::iter::once(first).chain(asteroids),
             |point| frame.level_to_world(point),
             |point| frame.world_to_level(point),
         )
