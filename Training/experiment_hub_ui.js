@@ -2132,26 +2132,33 @@ document.addEventListener('DOMContentLoaded', () => {
             axisLabel);
         const showPoints=series.reduce((n,run)=>n+run.valid.length,0)<=300;
         const stats=new Map();
+        // Draw statistical overlays after the raw traces, so spikes and
+        // individual samples cannot obscure selected means.
+        const overlays=[];
         for(const run of series) {
             const sampled=run.valid.filter(usable).map(p=>hubMetricValue(p,key));
             const mean=sampled.length
                 ?sampled.reduce((sum,value)=>sum+value,0)/sampled.length:null;
             if(showAverage&&mean!==null)
-                node('line',{x1:bounds.left,y1:y(mean),x2:bounds.right,y2:y(mean),
-                    stroke:run.color,'stroke-dasharray':'7 5',class:'plot-average'});
+                overlays.push({tag:'line',attrs:{
+                    x1:bounds.left,y1:y(mean),x2:bounds.right,y2:y(mean),
+                    stroke:run.color,'stroke-dasharray':'8 5',
+                    class:'plot-average'}});
             const rollingByPoint=new Map();
             stats.set(run,{mean,rollingByPoint});
             if(showRolling) {
                 let window=[],part=[],lastStep=null,lastAxis=null;
                 const flush=()=>{
                     if(part.length>1)
-                        node('path',{d:part.map((sample,i)=>
-                            (i?'L':'M')+x(sample.axis).toFixed(1)+' '+
-                            y(sample.mean).toFixed(1)).join(' '),
-                            stroke:run.color,class:'plot-rolling'});
+                        overlays.push({tag:'path',attrs:{
+                            d:part.map((sample,i)=>
+                                (i?'L':'M')+x(sample.axis).toFixed(1)+' '+
+                                y(sample.mean).toFixed(1)).join(' '),
+                            stroke:run.color,class:'plot-rolling'}});
                     else if(part.length===1)
-                        node('circle',{cx:x(part[0].axis),cy:y(part[0].mean),
-                            r:3,fill:run.color,class:'plot-rolling-point'});
+                        overlays.push({tag:'circle',attrs:{
+                            cx:x(part[0].axis),cy:y(part[0].mean),
+                            r:4,fill:run.color,class:'plot-rolling-point'}});
                     part=[];
                 };
                 for(const point of run.valid) {
@@ -2211,6 +2218,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         r:3.5,fill:run.color,class:'plot-point'});
             }
             flush();
+        }
+        for(const overlay of overlays) {
+            if(overlay.tag!=='circle')
+                node(overlay.tag,{...overlay.attrs,
+                    stroke:'white',class:overlay.attrs.class+'-halo'});
+            node(overlay.tag,overlay.attrs);
         }
         const perRun=series.map(run=>({
             run,
