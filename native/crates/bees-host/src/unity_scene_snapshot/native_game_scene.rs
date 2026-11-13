@@ -521,9 +521,11 @@ impl NativePhysicalScene {
                 ship.drone_carrier_id.is_some_and(|carrier|
                     ship.ship_type != 8 || carrier <= 0 || carrier == id
                 ) ||
-                // Beacon and Factory need additional source-owned runtime
-                // inputs before they can be instantiated as ordinary ships.
-                matches!(ship.ship_type, 1 | 9)
+                // Beacon spawns through a configured Scout and needs the
+                // owning MotherSquad/vision/fleet identity, not an ordinary
+                // free-standing ship registration. Factory has no extra
+                // training physics beyond the shared mining implementation.
+                ship.ship_type == 1
             {
                 return Err(invalid("invalid native ordinary game ship or unsupported special hull"));
             }
