@@ -98,7 +98,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_gpu_stream_work_share',
             'remote_policy_shared_collectors',
             'remote_policy_shared_encode_seconds',
-            'remote_policy_shared_bytes'])
+            'remote_policy_shared_bytes',
+            'rollout_onnx_batch_share','rollout_onnx_calls',
+            'rollout_onnx_batches','rollout_onnx_states',
+            'rollout_opponent_forward_chunks'])
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
@@ -157,6 +160,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
                 retain('collector_'+i+'_stage_'+stage+'_dominant',
                     reported['collector_'+i+'_stage_'+stage+'_dominant']);
         }
+        // Show per-collector batching coverage without treating a static
+        // ONNX model or many narrow boards as a hardware bottleneck.
+        for(let i=0;i<17;i++)
+            retain('collector_'+i+'_onnx_batch_share',
+                reported['collector_'+i+'_onnx_batch_share']);
         // With many independent recurrent PPO lineages, retain sustained
         // limiting stages rather than the first dozens of raw counters.
         for(let i=0;i<64;i++)
