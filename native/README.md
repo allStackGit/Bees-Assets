@@ -210,7 +210,8 @@ Other source-authored orders include `{"kind":"hold"}`,
 `{"kind":"guard","friendly_squad_item_id":53}`,
 `{"kind":"closest_friendly"}`,
 `{"kind":"scouting","max_sight":40,"human_side":1}`,
-`{"kind":"mining","asteroid_id":100}` and
+`{"kind":"mining","asteroid_id":100}`,
+`{"kind":"heal","beehive_ids":[102,103]}` and
 `{"kind":"full_retreat","warp_gate_id":101}`.
 Scouting requires the real source squad maximum sight and human side,
 not an inferred or zero-filled default.
@@ -1475,8 +1476,9 @@ the old command first, including when the new target is unavailable. Local Guard
 Patrol, Mining and Heal omit the source's AI-only timeout. Friendly projections
 use the canonical roster's registration order and director state for every origin.
 Host/player routing supports movement, chosen support actions and ranged Attack.
-Fresh authored scripted movement, Hold, Patrol, Guard, targeted Aggressive,
-Mining and FullRetreat orders execute through the same canonical director;
+Fresh authored scripted movement, Hold, Patrol, Guard, Scouting, targeted
+Aggressive, Mining, Heal and FullRetreat orders execute through the same
+canonical director;
 dialogue-triggered queue enrollment and arbitrary prepared Unity command
 histories remain outside the static Level-config contract.
 
