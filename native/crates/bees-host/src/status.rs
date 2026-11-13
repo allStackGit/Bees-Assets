@@ -202,6 +202,7 @@ pub struct NativeHostStatusInterval {
     /// Opt-in multi-core physical model steps only (not serial PPO).
     pub parallel_physics_rounds: u64,
     pub parallel_stage_id_serialized_rounds: u64,
+    pub parallel_stage_id_serialized_arenas: u64,
     pub parallel_physics_max_workers: usize,
     pub parallel_physics_worker_nanos: u128,
     pub gauges: NativeHostGauges,
@@ -219,6 +220,7 @@ struct PhaseSamples {
     dispatch_nanos: u128,
     parallel_rounds: u64,
     stage_id_serialized_rounds: u64,
+    stage_id_serialized_arenas: u64,
     parallel_max_workers: usize,
     parallel_worker_nanos: u128,
 }
@@ -251,6 +253,8 @@ impl NativeStatusSampler {
         pending.parallel_rounds += u64::from(counts.parallel_physics_rounds);
         pending.stage_id_serialized_rounds +=
             u64::from(counts.parallel_stage_id_serialized_rounds);
+        pending.stage_id_serialized_arenas +=
+            counts.parallel_stage_id_serialized_arenas as u64;
         pending.parallel_max_workers = pending.parallel_max_workers
             .max(counts.parallel_physics_max_workers);
         pending.parallel_worker_nanos += counts.parallel_physics_worker_nanos;
@@ -400,6 +404,7 @@ impl NativeStatusSampler {
                 sampled_world_dispatch_and_step_nanos: phases.dispatch_nanos,
                 parallel_physics_rounds: phases.parallel_rounds,
                 parallel_stage_id_serialized_rounds: phases.stage_id_serialized_rounds,
+                parallel_stage_id_serialized_arenas: phases.stage_id_serialized_arenas,
                 parallel_physics_max_workers: phases.parallel_max_workers,
                 parallel_physics_worker_nanos: phases.parallel_worker_nanos,
                 gauges: NativeHostGauges::from(&current),
