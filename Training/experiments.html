@@ -465,7 +465,18 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     margin: 0;
 }
 .hub-plot-legend { display: flex; gap: 7px 18px; flex-wrap: wrap; font-size: 12px; padding: 5px 0 0; }
-.hub-plot-legend-entry { display: inline-flex; align-items: baseline; gap: 7px; }
+.hub-plot-legend-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    cursor: pointer;
+}
+.hub-plot-legend-entry input[type="checkbox"] {
+    flex: 0 0 19px;
+    width: 19px;
+    height: 19px;
+}
 .hub-plot-legend-swatch { display: inline-block; flex: 0 0 20px; width: 20px; border-top: 4px solid; }
 .hub-plot-tooltip {
     position: absolute;
@@ -493,7 +504,6 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     font-weight: 900;
     margin-bottom: 4px;
 }
-.hub-plot-tooltip-instruction { font-size: 11px; margin-bottom: 6px; }
 .hub-plot-tooltip-unpin {
     flex: 0 0 auto;
     min-height: 28px;
@@ -514,8 +524,27 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .hub-progress-plot .plot-axis { stroke: #000; stroke-width: 2; }
 .hub-progress-plot .plot-grid { stroke: #ddd; stroke-width: 1; }
 .hub-progress-plot .plot-line { fill: none; stroke-width: 3; }
-.hub-progress-plot .plot-average { stroke-width: 2; opacity: .85; }
-.hub-progress-plot .plot-rolling { stroke-width: 2.5; stroke-dasharray: 3 5; fill: none; opacity: .9; }
+.hub-progress-plot .plot-average-halo {
+    stroke: white;
+    stroke-width: 8;
+    stroke-dasharray: 8 5;
+}
+.hub-progress-plot .plot-average {
+    stroke-width: 4;
+    stroke-dasharray: 8 5;
+    opacity: 1;
+}
+.hub-progress-plot .plot-rolling-halo {
+    stroke: white;
+    stroke-width: 7;
+    fill: none;
+}
+.hub-progress-plot .plot-rolling {
+    stroke-width: 3.5;
+    stroke-dasharray: 3 5;
+    fill: none;
+    opacity: 1;
+}
 .hub-progress-plot .plot-rolling-point { stroke: var(--paper); stroke-width: 1.5; }
 .hub-progress-plot .plot-crosshair { stroke: #555; stroke-width: 1.5; stroke-dasharray: 4 4; }
 .hub-progress-plot .plot-hover-area { cursor: crosshair; }
