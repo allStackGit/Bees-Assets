@@ -109,13 +109,13 @@ impl NavigationSearch {
         let dynamic = layers.dynamic_clearance();
         if dynamic[end_index] < hard { return Ok(None); }
 
-        // A straight supercover line through preferred-clearance cells
-        // already realizes the minimum octile distance with zero clearance
-        // penalty. A* cannot find a cheaper route, and source smoothing
-        // would reduce its path to the same single waypoint. Checking this
-        // exact source geometry is linear in distance, not explored cells,
-        // and works with or without obstacles. Other routes retain the
-        // original preferred-clearance search and signed-static egress.
+        // A source supercover line through preferred-clearance cells
+        // proves graph reachability, including the diagonal corner rule.
+        // Whether or not A* takes the shortest octile route, its result
+        // is reduced by source smoothing to the same single destination
+        // waypoint, because this exact line passes its preferred check.
+        // The check is linear in distance, not explored cells; all other
+        // routes retain normal source A*, preferred detours and egress.
         if dynamic[start_index] >= preferred &&
             dynamic[end_index] >= preferred &&
             self.clear_grid_line(start_index, end_index, dynamic, preferred) &&
