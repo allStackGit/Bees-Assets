@@ -108,7 +108,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         // collector. Give confirmed per-worker evidence a default chart slot.
         for(let i=0;i<9;i++) {
             for(const suffix of ['sim_straggler_pressure','sim_dispatch_pressure',
-                'record_encode_pressure'])
+                'record_encode_pressure','prev_reply_prep_pressure'])
                 retain('collector_'+i+'_'+suffix,reported['collector_'+i+'_'+suffix]);
             for(const stage of ['engine','observation','inference','opponent'])
                 retain('collector_'+i+'_stage_'+stage+'_dominant',
@@ -237,6 +237,21 @@ class BottleneckEvidence {
                     ?packing/service:null;
                 if(packingShare!==null)
                     add('collector_'+i+'_record_encode_work_share',packingShare);
+                // A reply cannot contain its own serialization timing, so
+                // these measurements are authenticated on the NEXT update.
+                // Compare only stages from the same previous reply; do not
+                // subtract them from the current update's service interval.
+                const priorUpdate=metrics['collector_'+i+'_prev_reply_update'];
+                const priorNames=['serial','compress','auth','send'].map(stage=>
+                    seconds('collector_'+i+'_prev_reply_'+stage+'_seconds'));
+                const priorValid=priorUpdate?.unit==='count'&&
+                    Number.isSafeInteger(priorUpdate.value)&&
+                    priorNames.every(x=>x!==null);
+                const priorTotal=priorValid?priorNames.reduce((a,b)=>a+b,0):0;
+                const prepShare=priorTotal>0
+                    ?(priorNames[0]+priorNames[1]+priorNames[2])/priorTotal:null;
+                if(prepShare!==null)
+                    add('collector_'+i+'_prev_reply_prep_share',prepShare);
                 simHints[i]={
                     // With early dispatch, the slowest-child completion
                     // tail may have been hidden under opponent preparation.
@@ -245,7 +260,11 @@ class BottleneckEvidence {
                     tail:tailShare!==null&&tailShare>=0.25&&
                         (!prefetched||(exposedShare!==null&&exposedShare>=0.25)),
                     queue:queueShare!==null&&queueShare>=0.20,
-                    packing:packingShare!==null&&packingShare>=0.30
+                    packing:packingShare!==null&&packingShare>=0.30,
+                    // A sustained expensive worker reply preparation stage
+                    // suggests codec/serialization work, not network or GPU
+                    // saturation. Ignore trivial sub-second replies.
+                    replyPrep:priorTotal>=0.5&&prepShare>=0.70
                 };
                 const durations=sourceNames.map(name=>
                     seconds('collector_'+i+'_'+name));
@@ -308,6 +327,8 @@ class BottleneckEvidence {
                         add('collector_'+i+'_sim_dispatch_pressure',1,'count');
                     if(recent.filter(x=>x.simHints?.[i]?.packing).length>=5)
                         add('collector_'+i+'_record_encode_pressure',1,'count');
+                    if(recent.filter(x=>x.simHints?.[i]?.replyPrep).length>=5)
+                        add('collector_'+i+'_prev_reply_prep_pressure',1,'count');
                     for(let stage=0;stage<stageNames.length;stage++) {
                         if(recent.filter(x=>x.stageHints?.[i]===stage).length>=5)
                             add('collector_'+i+'_stage_'+stageNames[stage]+
