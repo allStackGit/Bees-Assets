@@ -17,6 +17,17 @@ function fieldsFor(config,project) {
                 if(path.length<7)visit(value,path);
                 continue;
             }
+            const enums=project==='tinybrains'?{
+                'training.action_reduction':['mean','sum'],
+                'environment.map_selection':['engine','shuffled_cycle'],
+            }:{};
+            const options=enums[joined];
+            if(options&&typeof value==='string'&&options.includes(value)) {
+                fields.push({key:joined,section:path[0]==='training'?'training':'environment',
+                    label:key.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),
+                    type:'enum',default:value,options});
+                continue;
+            }
             if(typeof value!=='number'&&typeof value!=='boolean')continue;
             if(typeof value==='number'&&!Number.isFinite(value))continue;
             // Trainer identities, seed references and runtime device selection
@@ -56,6 +67,7 @@ function applyOverrides(config,project,overrides) {
         const field=fields.get(key);
         if(!field)throw Error('Unsupported '+project+' design parameter: '+key);
         if(field.type==='boolean'?typeof value!=='boolean':
+            field.type==='enum'?typeof value!=='string'||!field.options.includes(value):
             typeof value!=='number'||!Number.isFinite(value)||
             field.type==='integer'&&!Number.isSafeInteger(value)||
             value<field.min||value>field.max)
@@ -84,9 +96,15 @@ function validField(field) {
         typeof field.key!=='string'||!/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){0,6}$/i.test(field.key)||
         typeof field.label!=='string'||field.label.length>100||
         !['training','environment'].includes(field.section)||
-        !['number','integer','boolean'].includes(field.type))
+        !['number','integer','boolean','enum'].includes(field.type))
         return false;
     if(field.type==='boolean')return typeof field.default==='boolean';
+    if(field.type==='enum')return typeof field.default==='string'&&
+        Array.isArray(field.options)&&field.options.length>=2&&
+        field.options.length<=16&&field.options.every(option=>
+            typeof option==='string'&&option.length>0&&option.length<=80)&&
+        new Set(field.options).size===field.options.length&&
+        field.options.includes(field.default);
     return typeof field.default==='number'&&Number.isFinite(field.default)&&
         typeof field.min==='number'&&Number.isFinite(field.min)&&
         typeof field.max==='number'&&Number.isFinite(field.max)&&
@@ -147,6 +165,7 @@ function supportsDesign(catalog,project,parameters) {
     return Object.entries(changes).every(([key,value])=>{
         const field=known.get(key);
         return field&&(field.type==='boolean'?typeof value==='boolean':
+            field.type==='enum'?typeof value==='string'&&field.options.includes(value):
             typeof value==='number'&&Number.isFinite(value)&&
             value>=field.min&&value<=field.max&&
             (field.type!=='integer'||Number.isSafeInteger(value)));
