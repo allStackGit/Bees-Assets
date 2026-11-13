@@ -64,6 +64,10 @@ function hubComparisonPoints(run) {
     return run.points.length?run.points:
         [run.job.live_execution?.progress||run.job.final_progress].filter(Boolean);
 }
+function hubJobLabel(job) {
+    const configuration=job?.configuration_name||job?.configuration_id||'Unnamed run';
+    return job?.run_name?job.run_name+' · '+configuration:configuration;
+}
 function hubGenericMetricCatalog(runs) {
     const types=new Map();
     for(const run of runs)for(const point of hubComparisonPoints(run))
@@ -548,7 +552,7 @@ function trialBatchLabel(job) {
 }
 function hubComparisonCsv(exported) {
     const fields=[
-        'slot','job_id','project_id','configuration_name','configuration_sha256',
+        'slot','job_id','project_id','configuration_name','run_name','configuration_sha256',
         'selected_x_axis','selected_metric','selected_metrics','assigned_machine_id',
         'artifact_lineage_root_id','continuation_of_job_id','status',
         'observed_at','source_modified_at','experiment_id','segment_id',
@@ -575,6 +579,7 @@ function hubComparisonCsv(exported) {
     const rows=exported.runs.flatMap(run=>run.points.map(point=>({
         slot:run.slot,job_id:run.job_id,project_id:exported.project_id,
         configuration_name:run.configuration_name,
+        run_name:run.run_name||'',
         configuration_sha256:run.configuration_sha256,
         selected_x_axis:exported.x_axis,
         selected_metric:exported.metric,
@@ -1408,7 +1413,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const select=$('hub-compare-'+compareSlots[i]);
             select.replaceChildren(new Option('No run',''),
                 ...selectable.map(j=>new Option(
-                    j.configuration_name+
+                    hubJobLabel(j)+
                     trialBatchLabel(j)+
                     ' · job '+(jobs.indexOf(j)+1)+
                     (j.continuation_of_job_id?' · continuation':' · initial run')+
@@ -1599,7 +1604,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const j=run.job,p=j.live_execution?.progress||j.final_progress||
                 run.points[run.points.length-1]||null;
             const tr=document.createElement('tr');
-            cell(tr,run.slot+' · '+j.configuration_name+
+            cell(tr,run.slot+' · '+hubJobLabel(j)+
                 trialBatchLabel(j)+
                 (j.continuation_of_job_id?' (continuation)':''));
             cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned')+
@@ -2097,7 +2102,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         unit==='mb'?' MiB':unit==='watts'?' W':
                         unit==='scalar'||unit==='count'?'':' '+unit);
             legendItem.append(swatch,document.createTextNode(
-                run.slot+' · '+run.job.configuration_name+
+                run.slot+' · '+hubJobLabel(run.job)+
                 (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
                 (showRolling?' · rolling 50-'+(project==='tinybrains'?'update':project==='courier'?'round':'step')+' sample mean':'')));
             legend.append(legendItem);
@@ -2201,7 +2206,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 swatch.className='hub-plot-legend-swatch';
                 swatch.style.borderColor=run.color;
                 title.append(swatch,document.createTextNode(
-                    'Run '+run.slot+' · '+run.job.configuration_name));
+                    'Run '+run.slot+' · '+hubJobLabel(run.job)));
                 item.append(title);
                 const line=text=>{
                     const detail=document.createElement('div');
@@ -2255,6 +2260,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return {
                 slot:slot.toUpperCase(),job_id:job.id,
                 configuration_name:job.configuration_name,
+                run_name:job.run_name||null,
                 configuration_sha256:job.configuration_sha256||null,
                 assigned_machine_id:job.assigned_machine_id||null,
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
@@ -3062,7 +3068,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const displayedTrialBatches=new Set();
         for(const j of hubVisibleJobs(records,50)) {
             const tr=document.createElement('tr');
-            cell(tr,(j.configuration_name||j.configuration_id)+trialBatchLabel(j));
+            cell(tr,hubJobLabel(j)+trialBatchLabel(j));
             cell(tr,j.configuration_revision);
             const provenanceLease=state.reservations.find(l=>l.id===j.lease_id);
             const linked=provenanceLease&&
@@ -3239,6 +3245,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'';
             cell(tr,learningSummary(j)+evaluation);
             const actions=cell(tr,'');
+            actions.append(button('Rename run',async()=>{
+                const entered=prompt('Run name (optional; blank restores the configuration name):',
+                    j.run_name||'');
+                if(entered===null||entered.trim()===(j.run_name||''))return;
+                try {
+                    await action('hub/jobs/rename',{
+                        job_id:j.id,run_name:entered.trim(),
+                        expected_run_name:j.run_name||null,
+                    });
+                    feedback('hub-job-message','Run label updated. Trainer and job configuration are unchanged.');
+                    await reload();
+                }catch(error){feedback('hub-job-message',String(error.message||error));}
+            }));
             if(j.status==='waiting_adapter'&&!j.lease_id)
                 actions.append(button('Coordinate capacity',()=>allocateJob([j.id])));
             if(j.gpu_probe_block===null&&
@@ -3621,7 +3640,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr=document.createElement('tr');
             const live=j.live_execution;
             const progress=live?.progress||j.final_progress;
-            cell(tr,j.configuration_name+
+            cell(tr,hubJobLabel(j)+
                 trialBatchLabel(j)+
                 (j.continuation_of_job_id?' · continuation':''));
             cell(tr,(j.status==='waiting_predecessor'
@@ -4751,6 +4770,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         if(!confirm('Freeze '+selected.name+' revision '+selected.revision+
+            ($('hub-job-run-name').value.trim()
+                ?' as run "'+$('hub-job-run-name').value.trim()+'"':'')+
             (predecessor?' as a continuation of the selected predecessor':
                 ' as a new job')+
             '? '+(prequeue
@@ -4762,9 +4783,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const job=await action('hub/jobs',{
                 configuration_id:selected.id,expected_revision:selected.revision,
                 resources:JSON.parse($('hub-job-resources').value),
+                ...($('hub-job-run-name').value.trim()
+                    ?{run_name:$('hub-job-run-name').value.trim()}:{}),
                 ...(metrics.length?{metric_selection:metrics}:{}),
                 ...(predecessor?{continuation_of_job_id:predecessor}:{}),
             });
+            $('hub-job-run-name').value='';
             feedback('hub-job-message',job.status==='waiting_predecessor'
                 ?'Prequeued stage '+job.id+'. It cannot claim capacity or start until the predecessor finishes and releases capacity.'
                 :'Queued job '+job.id+'. Coordinate capacity before explicitly authorizing native execution.');
