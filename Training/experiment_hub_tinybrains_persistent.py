@@ -79,6 +79,11 @@ def main():
             if not 0 < fraction <= 1:
                 raise SystemExit("Shared GPU memory request exceeds the device capacity.")
             torch.cuda.set_per_process_memory_fraction(float(fraction), 0)
+            # The native GPU width/prestaging code must measure its own
+            # allocator headroom, not the full physical card's free VRAM.
+            # This is an advisory safety bound in addition to PyTorch's
+            # enforced per-process memory allocator limit.
+            os.environ['TINYBRAINS_GPU_VRAM_BUDGET_MB'] = str(args.gpu_vram_mb)
     # Existing installations may have the distributed collector protocol but
     # not the newer conservative balancing runtime. Preserve their existing
     # launch behavior until that trainer version is installed.
