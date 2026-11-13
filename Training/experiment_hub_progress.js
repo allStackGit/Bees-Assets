@@ -95,7 +95,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'rollout_gpu_batch_next_target','rollout_gpu_batch_settled',
             'rollout_gpu_batch_proven_target',
             'ppo_gpu_batch_proven_target',
-            'ppo_gpu_stream_work_share'])
+            'ppo_gpu_stream_work_share',
+            'remote_policy_shared_collectors',
+            'remote_policy_shared_encode_seconds',
+            'remote_policy_shared_bytes'])
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
