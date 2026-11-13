@@ -1,0 +1,256 @@
+{
+  "native_game_schema": 1,
+  "level_name": "Native Duel MA-POCA",
+  "stage_name": "Native Duel",
+  "bounds": {
+    "min": [
+      -160,
+      -100
+    ],
+    "max": [
+      160,
+      100
+    ]
+  },
+  "fixed_dt_seconds": 0.02,
+  "bee_side": 1,
+  "human_side": 2,
+  "command_settings": {
+    "max_command_seconds": 120,
+    "ai_random_max_distance": 45,
+    "ai_patrol_max_size": 80,
+    "ai_squad_patrol_seconds": 40,
+    "ai_squad_following_seconds": 50,
+    "ai_squad_guard_seconds": 55
+  },
+  "shots_harmless": false,
+  "activate_collision_asteroids": false,
+  "activate_mining": false,
+  "activate_fog_of_war": false,
+  "activate_hivemind": false,
+  "starting_positions": [
+    [
+      -95,
+      0
+    ],
+    [
+      95,
+      0
+    ]
+  ],
+  "camera_zoom": [
+    12,
+    110
+  ],
+  "ships": [
+    {
+      "entity_id": 11,
+      "ship_type": 21,
+      "side": 1,
+      "position": [
+        -75,
+        0
+      ],
+      "rotation_degrees": 270,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 14,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 55,
+      "firepower": 10,
+      "ship_type_letter": 21,
+      "target_max_range": 55,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [
+        {
+          "slot": 0,
+          "weapon_type": 2,
+          "projectile_type": 2,
+          "mount_offset": [
+            0,
+            0
+          ],
+          "initial_rotation_degrees": 270,
+          "rotation_rate": 180,
+          "range": 55,
+          "power": 10,
+          "rate_of_fire": 1.25,
+          "projectile_value": 0,
+          "projectile_speed": 65,
+          "fire_pattern": {
+            "kind": "single"
+          },
+          "aim_at_front_of_ship": true,
+          "range_collider": {
+            "offset": [
+              0,
+              0
+            ],
+            "radius": 55,
+            "layer": 11,
+            "enabled": true
+          }
+        }
+      ],
+      "policy": {
+        "agent_id": 1001,
+        "team_id": 0,
+        "quarter_turns": 0,
+        "movement_disabled": false
+      }
+    },
+    {
+      "entity_id": 12,
+      "ship_type": 13,
+      "side": 2,
+      "position": [
+        75,
+        0
+      ],
+      "rotation_degrees": 90,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 14,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 55,
+      "firepower": 10,
+      "ship_type_letter": 13,
+      "target_max_range": 55,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [
+        {
+          "slot": 0,
+          "weapon_type": 3,
+          "projectile_type": 6,
+          "mount_offset": [
+            0,
+            0
+          ],
+          "initial_rotation_degrees": 90,
+          "rotation_rate": 180,
+          "range": 55,
+          "power": 10,
+          "rate_of_fire": 1.25,
+          "projectile_value": 0,
+          "projectile_speed": 65,
+          "fire_pattern": {
+            "kind": "single"
+          },
+          "aim_at_front_of_ship": true,
+          "range_collider": {
+            "offset": [
+              0,
+              0
+            ],
+            "radius": 55,
+            "layer": 12,
+            "enabled": true
+          }
+        }
+      ],
+      "policy": {
+        "agent_id": 1002,
+        "team_id": 1,
+        "quarter_turns": 1,
+        "movement_disabled": false
+      }
+    }
+  ],
+  "squads": [
+    {
+      "item_id": 101,
+      "side": 1,
+      "members": [
+        11
+      ],
+      "shooting_strategy_id": 1,
+      "user_controlled": false,
+      "can_accept_input": false,
+      "command_bans": []
+    },
+    {
+      "item_id": 102,
+      "side": 2,
+      "members": [
+        12
+      ],
+      "shooting_strategy_id": 1,
+      "user_controlled": false,
+      "can_accept_input": false,
+      "command_bans": []
+    }
+  ],
+  "layout": {
+    "add_static_boxes": [
+      {
+        "entity_id": 30,
+        "prefab_name": "1x1",
+        "position": [
+          0,
+          -30
+        ],
+        "rotation_degrees": 0
+      }
+    ]
+  },
+  "policy_episode": {
+    "episode_number": 1,
+    "bee_starting_tsv": 100,
+    "human_starting_tsv": 100,
+    "timeout_seconds": 120,
+    "discovery_baselines": [
+      [
+        100,
+        0,
+        1000,
+        0
+      ],
+      [
+        100,
+        0,
+        1000,
+        0
+      ]
+    ],
+    "movement_disabled_by_team": [
+      false,
+      false
+    ]
+  }
+}
