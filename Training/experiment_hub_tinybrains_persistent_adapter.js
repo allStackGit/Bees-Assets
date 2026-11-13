@@ -495,9 +495,9 @@ function createTinyBrainsPersistentDockerAdapter({
             return path.join(artifacts,jobId);
         },
         gpu_execution:'cuda',
-        ...(designEnabled?{design_catalog:{tinybrains:{profiles:
+        ...(designEnabled?{design_catalog:{tinybrains:{...designFields,profiles:
             Object.fromEntries([...approved].map(([id,item])=>[
-                id,{...designFields,profile_sha256:item.sha256},
+                id,{profile_sha256:item.sha256},
             ]))}}}:{}),
         gpu_sharing:'cooperative-pytorch',
         tinybrains_profiles:Object.fromEntries([...approved].map(([id,p])=>[id,p.sha256])),
