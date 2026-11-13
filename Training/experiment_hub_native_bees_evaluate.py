@@ -62,7 +62,7 @@ def source_inputs(suite_file: Path, suite: dict):
     reference = pinned_source(
         suite_file, suite["reference_manifest"], suite["reference_manifest_sha256"],
     )
-    config = json.loads(read_bounded(run_file, 1024 * 1024))
+    config = json.loads(read_bounded(run_file, 8 * 1024 * 1024))
     if (not isinstance(config, dict) or not isinstance(config.get("native_stage"), dict) or
             not isinstance(config.get("levels"), list) or not config["levels"] or
             type(config.get("episodes_per_world", 1)) is not int or
@@ -77,7 +77,7 @@ def source_inputs(suite_file: Path, suite: dict):
             raise ValueError("Every native evaluation Level needs an authored scene.")
         scene_path = (run_file.parent / level["scene"]).resolve(strict=True)
         scenes.add(scene_path)
-        snapshot = json.loads(read_bounded(scene_path, 1024 * 1024))
+        snapshot = json.loads(read_bounded(scene_path, 8 * 1024 * 1024))
         routed = level.get("model_slots", {})
         if (not isinstance(routed, dict) or not isinstance(snapshot.get("ships"), list)):
             raise ValueError("Native evaluation Levels must route real policy-controlled ships.")
@@ -145,10 +145,10 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
             raise ValueError("Fixed native reference opponent weights changed.")
         cpu = dict(model)
         cpu["path"] = str(original)
-        if cpu["backend"] == "mlagents":
-            cpu["device"] = "cpu"
-        elif cpu.get("providers") not in (None, ["CPUExecutionProvider"]):
-            raise ValueError("Independent native benchmark requires CPU-only ONNX reference inference.")
+        if cpu["backend"] == "onnx":
+            if cpu.get("providers") not in (None, ["CPUExecutionProvider"]):
+                raise ValueError("Independent native benchmark requires CPU-only ONNX reference inference.")
+            cpu.pop("device", None)
         else:
             cpu["device"] = "cpu"
         models.append(cpu)
@@ -198,7 +198,7 @@ def create_suite_main(arguments) -> int:
     reference = args.reference_manifest.resolve(strict=True)
     binary = args.rollout_binary.resolve(strict=True)
     output = args.output.resolve()
-    config = json.loads(read_bounded(run, 1024 * 1024))
+    config = json.loads(read_bounded(run, 8 * 1024 * 1024))
     if (not isinstance(config, dict) or not isinstance(config.get("native_stage"), dict) or
             not isinstance(config.get("levels"), list) or not config["levels"] or
             not isinstance(config.get("policy_worker"), str)):
