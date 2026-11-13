@@ -136,6 +136,8 @@ enum ScriptedOrderConfig {
     MoveToRandom { #[serde(default)] range: f32 },
     Aggressive { enemy_squad_item_id: i64 },
     TargetEnemy { enemy_squad_item_id: i64 },
+    BombingRun { enemy_squad_item_id: i64 },
+    Charge { enemy_squad_item_id: i64 },
     Guard { friendly_squad_item_id: i64 },
     Patrol { top_left: [f32; 2], bottom_right: [f32; 2] },
     Hold,
@@ -496,6 +498,16 @@ fn make_setup(
                         },
                     ScriptedOrderConfig::TargetEnemy { enemy_squad_item_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::TargetEnemy {
+                            enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
+                                .copied().unwrap_or(enemy_squad_item_id),
+                        },
+                    ScriptedOrderConfig::BombingRun { enemy_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::BombingRun {
+                            enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
+                                .copied().unwrap_or(enemy_squad_item_id),
+                        },
+                    ScriptedOrderConfig::Charge { enemy_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::Charge {
                             enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
                                 .copied().unwrap_or(enemy_squad_item_id),
                         },
