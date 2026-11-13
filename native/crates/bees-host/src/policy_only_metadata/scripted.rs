@@ -36,6 +36,11 @@ pub enum NativeScriptedOrder {
     /// Prepared source EnemySquad identity. Never guess an opponent.
     Aggressive { enemy_squad_item_id: i64 },
     TargetEnemy { enemy_squad_item_id: i64 },
+    Retreat { enemy_squad_item_id: i64 },
+    CircleSquad { enemy_squad_item_id: i64 },
+    RightSwipe { enemy_squad_item_id: i64 },
+    LeftSwipe { enemy_squad_item_id: i64 },
+    InAndOut { enemy_squad_item_id: i64 },
     BombingRun { enemy_squad_item_id: i64 },
     Charge { enemy_squad_item_id: i64 },
     /// Prepared source Squad.GuardedSquad identity.
@@ -61,6 +66,11 @@ impl NativeScriptedOrder {
             Self::TargetEnemy { .. } => NativeLocalCommandAction::TargetEnemy {
                 target: target.expect("authenticated current enemy squad"),
             },
+            Self::Retreat { .. } => NativeLocalCommandAction::Retreat,
+            Self::CircleSquad { .. } => NativeLocalCommandAction::CircleSquad,
+            Self::RightSwipe { .. } => NativeLocalCommandAction::RightSwipe,
+            Self::LeftSwipe { .. } => NativeLocalCommandAction::LeftSwipe,
+            Self::InAndOut { .. } => NativeLocalCommandAction::InAndOut,
             Self::BombingRun { .. } => NativeLocalCommandAction::BombingRun,
             Self::Charge { .. } => NativeLocalCommandAction::Charge,
             Self::Guard { .. } => NativeLocalCommandAction::Guard {
@@ -86,6 +96,11 @@ impl NativeScriptedOrder {
             Self::MoveToRandom { range } => range.is_finite(),
             Self::Aggressive { enemy_squad_item_id } |
             Self::TargetEnemy { enemy_squad_item_id } |
+            Self::Retreat { enemy_squad_item_id } |
+            Self::CircleSquad { enemy_squad_item_id } |
+            Self::RightSwipe { enemy_squad_item_id } |
+            Self::LeftSwipe { enemy_squad_item_id } |
+            Self::InAndOut { enemy_squad_item_id } |
             Self::BombingRun { enemy_squad_item_id } |
             Self::Charge { enemy_squad_item_id } => enemy_squad_item_id > 0,
             Self::Guard { friendly_squad_item_id } => friendly_squad_item_id > 0,
@@ -105,6 +120,11 @@ impl NativeScriptedOrder {
         match *self {
             Self::Aggressive { enemy_squad_item_id } |
             Self::TargetEnemy { enemy_squad_item_id } |
+            Self::Retreat { enemy_squad_item_id } |
+            Self::CircleSquad { enemy_squad_item_id } |
+            Self::RightSwipe { enemy_squad_item_id } |
+            Self::LeftSwipe { enemy_squad_item_id } |
+            Self::InAndOut { enemy_squad_item_id } |
             Self::BombingRun { enemy_squad_item_id } |
             Self::Charge { enemy_squad_item_id } =>
                 Some((enemy_squad_item_id, true)),
@@ -491,6 +511,11 @@ impl NativePolicyOnlyMetadata {
             let enemy = if matches!(&order,
                 NativeScriptedOrder::Aggressive { .. } |
                 NativeScriptedOrder::TargetEnemy { .. } |
+                NativeScriptedOrder::Retreat { .. } |
+                NativeScriptedOrder::CircleSquad { .. } |
+                NativeScriptedOrder::RightSwipe { .. } |
+                NativeScriptedOrder::LeftSwipe { .. } |
+                NativeScriptedOrder::InAndOut { .. } |
                 NativeScriptedOrder::BombingRun { .. } |
                 NativeScriptedOrder::Charge { .. }
             ) {
