@@ -2890,9 +2890,13 @@ document.addEventListener('DOMContentLoaded', () => {
             parameters.design_overrides=overrides;
             if(project==='tinybrains')
                 parameters.design_source_sha256=choice.machine.design_catalog.tinybrains.source_sha256;
+            if(project==='courier'&&Object.keys(overrides).some(key=>key.startsWith('training.')))
+                parameters.training_schema_sha256=choice.entry.training_schema_sha256;
+            else delete parameters.training_schema_sha256;
         }else {
             delete parameters.design_overrides;
             delete parameters.design_source_sha256;
+            delete parameters.training_schema_sha256;
         }
         $('hub-config-json').value=JSON.stringify(parameters,null,2);
         return parameters;
@@ -3018,6 +3022,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!chosen)throw Error('No matching approved project defaults.');
             delete parameters.design_overrides;
             delete parameters.design_source_sha256;
+            delete parameters.training_schema_sha256;
             if(project==='courier') {
                 parameters.seed=42;
                 delete parameters.workers;
