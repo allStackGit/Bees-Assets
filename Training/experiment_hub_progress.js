@@ -137,6 +137,18 @@ class BottleneckEvidence {
                 (unit!=='ratio'||value<=1))
                 derived[name]={value,unit};
         };
+        const history=()=>{
+            const identity=String(job.dispatch_id||'')+':'+progress.segment_id;
+            const at=Date.parse(progress.source_modified_at);
+            let prior=this.byJob.get(job.id);
+            if(!prior||prior.identity!==identity||at<prior.lastAt) {
+                prior={identity,lastAt:-Infinity,samples:[]};
+                if(this.byJob.size>=128&&!this.byJob.has(job.id))
+                    this.byJob.delete(this.byJob.keys().next().value);
+                this.byJob.set(job.id,prior);
+            }
+            return {at,prior};
+        };
         // These are trusted, authenticated native-job/cgroup observations.
         // GPU occupancy remains HOST-wide even with an exclusive Hub lease.
         // It cannot certify useful per-job GPU work or exclude outside load.
@@ -186,17 +198,9 @@ class BottleneckEvidence {
                 ?merge/collection:null;
             if(waitShare!==null)add('pipeline_remote_wait_work_share',waitShare);
             if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
-            const identity=String(job.dispatch_id||'')+':'+progress.segment_id;
-            const at=Date.parse(progress.source_modified_at);
-            let prior=this.byJob.get(job.id);
-            if(!prior||prior.identity!==identity||at<prior.lastAt) {
-                prior={identity,lastAt:-Infinity,samples:[]};
-                // Bounded, observational evidence is never persisted as
-                // training state or used to change allocations.
-                if(this.byJob.size>=128&&!this.byJob.has(job.id))
-                    this.byJob.delete(this.byJob.keys().next().value);
-                this.byJob.set(job.id,prior);
-            }
+            // Bounded observational state is neither a scheduler input
+            // nor evidence that any particular device is saturated.
+            const {at,prior}=history();
             // Per-collector stage times are independent *wall intervals*.
             // Compare only a complete set from one collector. A dominant
             // measured stage is not evidence that a specific CPU/GPU is full.
@@ -344,9 +348,71 @@ class BottleneckEvidence {
                     }
                 }
             }
+        } else if(seconds('training_batch_wall_seconds')>0&&
+            metrics.training_lineage_workers?.unit==='count'&&
+            Number.isSafeInteger(metrics.training_lineage_workers.value)&&
+            metrics.training_lineage_workers.value>=1&&
+            metrics.training_lineage_workers.value<=64) {
+            // Courier trains independent recurrent-PPO policy lineages.
+            // Wall intervals overlap: compare each worker's own stages and
+            // use the coordinator's actual finished-at timings for waits.
+            const count=metrics.training_lineage_workers.value;
+            const wall=seconds('training_batch_wall_seconds');
+            const queue=seconds('training_queue_max_seconds');
+            const gap=seconds('training_finish_gap_seconds');
+            const queueShare=queue!==null&&queue<=wall?queue/wall:null;
+            const gapShare=gap!==null&&gap<=wall?gap/wall:null;
+            if(queueShare!==null)add('training_queue_work_share',queueShare);
+            if(gapShare!==null)add('training_finish_gap_work_share',gapShare);
+            const stageHints=[];
+            for(let i=0;i<count;i++) {
+                const collect=seconds('worker_'+i+'_collection_seconds');
+                const optimize=seconds('worker_'+i+'_optimization_seconds');
+                if(collect===null||optimize===null||collect+optimize<=0)
+                    continue;
+                // The two intervals can have other unmeasured overhead.
+                // Neither percentage is exclusive hardware utilization.
+                const fraction=collect/(collect+optimize);
+                if(fraction>=0.70)stageHints[i]='collection';
+                else if(fraction<=0.30)stageHints[i]='optimization';
+            }
+            const {at,prior}=history();
+            if(Number.isFinite(at)&&at>prior.lastAt) {
+                prior.samples.push({at,stageHints,resourceHints,
+                    courierQueue:queueShare!==null&&queueShare>=0.20,
+                    // With queued lineages, the last completion may be a
+                    // normal admission wave rather than a slow worker.
+                    courierTail:gapShare!==null&&gapShare>=0.25&&
+                        (queueShare===null||queueShare<=0.10)});
+                if(prior.samples.length>8)prior.samples.shift();
+                prior.lastAt=at;
+            }
+            const recent=prior.samples.slice(-6);
+            add('training_timing_sample_count',recent.length,'count');
+            if(recent.length>=5&&
+                recent.at(-1).at-recent[0].at>=120000) {
+                const sustained=fn=>recent.filter(fn).length>=5;
+                if(sustained(x=>x.courierQueue))
+                    add('training_queue_pressure',1,'count');
+                if(sustained(x=>x.courierTail))
+                    add('training_final_join_pressure',1,'count');
+                if(sustained(x=>x.resourceHints?.cpuBusy))
+                    add('pipeline_cpu_lease_pressure',1,'count');
+                if(sustained(x=>x.resourceHints?.throttled))
+                    add('pipeline_cpu_throttle_pressure',1,'count');
+                if(sustained(x=>x.resourceHints?.ramNear))
+                    add('pipeline_ram_lease_pressure',1,'count');
+                if(sustained(x=>x.resourceHints?.cpuIdle)&&
+                    sustained(x=>x.courierQueue))
+                    add('training_parallelism_underuse_evidence',1,'count');
+                for(let i=0;i<count;i++)
+                    for(const stage of ['collection','optimization'])
+                        if(sustained(x=>x.stageHints?.[i]===stage))
+                            add('worker_'+i+'_'+stage+'_dominant',1,'count');
+            }
         } else {
-            // Don't carry a prior timing conclusion into a source version
-            // which no longer provides comparable completed stage timings.
+            // No comparable completed stage timing: do not retain a stale
+            // diagnosis across project changes or instrumentation versions.
             this.byJob.delete(job.id);
         }
         const engine=seconds('rollout_engine_step_seconds');
