@@ -244,13 +244,20 @@ class BottleneckEvidence {
                 const priorUpdate=metrics['collector_'+i+'_prev_reply_update'];
                 const priorPrep=seconds('collector_'+i+'_prev_reply_prepare_seconds');
                 const priorSend=seconds('collector_'+i+'_prev_reply_send_seconds');
+                const priorService=seconds('collector_'+i+'_prev_reply_service_seconds');
                 const priorValid=priorUpdate?.unit==='count'&&
                     Number.isSafeInteger(priorUpdate.value)&&
-                    priorPrep!==null&&priorSend!==null;
+                    priorPrep!==null&&priorSend!==null&&priorService!==null;
                 const priorTotal=priorValid?priorPrep+priorSend:0;
                 const prepShare=priorTotal>0?priorPrep/priorTotal:null;
+                // Compare reply encoding to the SERVICE interval of the SAME
+                // previous update, not to the next update's processing time.
+                const prepWorkShare=priorTotal+priorService>0&&priorValid
+                    ?priorPrep/(priorTotal+priorService):null;
                 if(prepShare!==null)
                     add('collector_'+i+'_prev_reply_prep_share',prepShare);
+                if(prepWorkShare!==null)
+                    add('collector_'+i+'_prev_reply_prep_work_share',prepWorkShare);
                 simHints[i]={
                     // With early dispatch, the slowest-child completion
                     // tail may have been hidden under opponent preparation.
@@ -262,8 +269,10 @@ class BottleneckEvidence {
                     packing:packingShare!==null&&packingShare>=0.30,
                     // A sustained expensive worker reply preparation stage
                     // suggests codec/serialization work, not network or GPU
-                    // saturation. Ignore trivial sub-second replies.
-                    replyPrep:priorTotal>=0.5&&prepShare>=0.70
+                    // saturation. Require both substantial reply time AND
+                    // a meaningful fraction of the same worker update.
+                    replyPrep:priorTotal>=0.5&&prepShare>=0.70&&
+                        prepWorkShare>=0.25
                 };
                 const durations=sourceNames.map(name=>
                     seconds('collector_'+i+'_'+name));
