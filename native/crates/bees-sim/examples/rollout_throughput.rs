@@ -31,11 +31,14 @@ struct Options {
     ships: usize,
     steps: u32,
     workers: usize,
+    /// Every fourth world can use a heavier authentic-hull population.
+    /// Other worlds retain --ships, allowing mixed 1v1 and fleet load.
+    heavy_ships: Option<usize>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { worlds: 16, ships: 2, steps: 1000, workers: 4 }
+        Self { worlds: 16, ships: 2, steps: 1000, workers: 4, heavy_ships: None }
     }
 }
 
@@ -44,7 +47,7 @@ fn options() -> Options {
     let mut arguments = env::args().skip(1);
     while let Some(flag) = arguments.next() {
         if flag == "--help" || flag == "-h" {
-            println!("Usage: rollout_throughput [--worlds 1..256] [--ships 1..256] [--steps 1..1000000] [--workers 1..128]");
+            println!("Usage: rollout_throughput [--worlds 1..256] [--ships 1..256] [--steps 1..1000000] [--workers 1..128] [--heavy-ships 1..256]");
             std::process::exit(0);
         }
         let value = arguments.next().unwrap_or_else(|| panic!("missing value for {flag}"));
@@ -54,6 +57,7 @@ fn options() -> Options {
             "--ships" if (1..=256).contains(&parsed) => opt.ships = parsed,
             "--steps" if (1..=1_000_000).contains(&parsed) => opt.steps = parsed as u32,
             "--workers" if (1..=128).contains(&parsed) => opt.workers = parsed,
+            "--heavy-ships" if (1..=256).contains(&parsed) => opt.heavy_ships = Some(parsed),
             _ => panic!("unknown option or value out of range: {flag}={value}"),
         }
     }
@@ -73,9 +77,14 @@ fn build_worlds(
     let mut sim = Simulation::new(rules, 0.02).expect("valid fixed timestep");
     sim.set_timing_sample_period(NonZeroU32::new(128));
 
-    let columns = (opt.ships as f32).sqrt().ceil() as usize;
-    let half_extent = (columns as f32 * 16.0) / 2.0 + 128.0;
     for world_index in 0..opt.worlds {
+        let ships = if world_index % 4 == 0 {
+            opt.heavy_ships.unwrap_or(opt.ships)
+        } else {
+            opt.ships
+        };
+        let columns = (ships as f32).sqrt().ceil() as usize;
+        let half_extent = (columns as f32 * 16.0) / 2.0 + 128.0;
         let mut world = CombatWorld::new(
             Aabb {
                 min: Vec2::new(-half_extent, -half_extent),
@@ -84,7 +93,7 @@ fn build_worlds(
             8.0,
             Arc::clone(projectiles),
         ).expect("valid benchmark arena");
-        for index in 0..opt.ships {
+        for index in 0..ships {
             let kind = if index % 2 == 0 { 21 } else { 13 };
             let ship = assets.by_type(kind).expect("authored Wasp/Gunship hull");
             let x = ((index % columns) as f32 - (columns as f32 - 1.0) * 0.5) * 16.0;
@@ -165,13 +174,16 @@ fn measure(
     assert!(report.failed_worlds.is_empty(), "native physics step failed");
     let m = report.measurements;
     println!(
-        "{label},{},{},{workers},{},{:.3},{:.1},{},{},{},{}",
+        "{label},{},{},{workers},{},{:.3},{:.1},{},{},{},{},{}",
         opt.worlds, opt.ships, m.ticks,
         report.wall_elapsed.as_secs_f64(),
         report.steps_per_second().unwrap_or(0.0),
         m.integrated_bodies, m.broadphase_candidates,
         m.narrowphase_tests, m.trigger_enters,
+        opt.heavy_ships.unwrap_or(0),
     );
+    eprintln!("{label} CPU worker loads (arenas, steps, bodies, narrowphase): {:?}",
+        report.worker_loads);
     (fingerprint(&sim), m.ticks, m.integrated_bodies,
         m.broadphase_candidates, m.narrowphase_tests, m.trigger_enters)
 }
@@ -183,7 +195,7 @@ fn main() {
     let projectiles = Arc::new(
         ProjectileAssetCatalog::embedded().expect("authored projectile collider catalog"),
     );
-    println!("mode,worlds,ships_per_world,workers,world_steps,wall_seconds,world_steps_per_second,integrated_bodies,broadphase_candidates,narrowphase_tests,contacts");
+    println!("mode,worlds,ships_per_world,workers,world_steps,wall_seconds,world_steps_per_second,integrated_bodies,broadphase_candidates,narrowphase_tests,contacts,heavy_ships_every_fourth_world");
     let serial = measure(opt, 1, "serial", &assets, &projectiles);
     let parallel = measure(opt, opt.workers, "parallel", &assets, &projectiles);
     assert_eq!(
