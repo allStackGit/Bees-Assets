@@ -629,6 +629,25 @@ impl NativePhysicalScene {
         if assigned.len() != ship_sides.len() {
             return Err(invalid("every native game ship must belong to exactly one squad"));
         }
+        let agent_ids = group_participants.iter()
+            .map(|member| member.agent_id).collect::<HashSet<_>>();
+        if agent_ids.len() != group_participants.len() ||
+            matches!(team_frames, [Some(left), Some(right)] if left == right)
+        {
+            return Err(invalid("native MA-POCA agents require unique IDs and distinct opposing policy frames"));
+        }
+        let episode_source = policy_episode.map(|episode| NativeSourceEpisode {
+            bee_side: raw.bee_side, human_side: raw.human_side,
+            bee_starting_tsv: episode.bee_starting_tsv,
+            human_starting_tsv: episode.human_starting_tsv,
+            timeout_seconds: episode.timeout_seconds,
+            discovery_baselines: episode.discovery_baselines,
+        });
+        let group_source = policy_episode.map(|episode| NativeSourcePolicyGroup {
+            episode_number: episode.episode_number,
+            movement_disabled_by_team: episode.movement_disabled_by_team,
+            participants: group_participants,
+        });
 
         let mut scene = Self {
             targeting_context: Some(bees_gameplay::squad_targeting::NativeTargetingContext {
@@ -655,6 +674,8 @@ impl NativePhysicalScene {
             has_obstacles: false,
             command_settings: settings,
             entities,
+            // Apply explicitly authored initial static layout before
+            // installing immutable reward baselines and PPO membership.
             source_episode: None,
             source_policy_group: None,
             source_navigation: NativeSourceNavigation {
@@ -663,15 +684,17 @@ impl NativePhysicalScene {
             fleet: NativeFleetInventory::from_source(fleet)
                 .map_err(NativeSnapshotError::Fleet)?,
             authored_ship_perceptions,
-            active_policy_ship_ids: Vec::new(),
+            active_policy_ship_ids,
             source_squads,
-            source_policy_bindings: HashMap::new(),
-            source_policy_inputs: HashMap::new(),
+            source_policy_bindings,
+            source_policy_inputs,
             source_vision,
             source_static_discovery_values: HashMap::new(),
             source_formation,
         };
         scene.apply_native_layout(&raw.layout, boxes, polygons)?;
+        scene.source_episode = episode_source;
+        scene.source_policy_group = group_source;
         Ok(scene)
     }
 }
