@@ -187,7 +187,9 @@ impl NativePolicyOnlyMetadata {
         for plan in plans {
             if plan.squad_item_id <= 0 || !seen.insert(plan.squad_item_id) ||
                 plan.orders.is_empty() || plan.orders.len() > 256 ||
-                plan.orders.iter().any(|order| !order.valid())
+                plan.orders.iter().any(|order| !order.valid() ||
+                    matches!(order, NativeScriptedOrder::Scouting { human_side, .. }
+                        if *human_side != self.player.human_side))
             {
                 return Err("invalid scripted command plan");
             }
@@ -291,7 +293,9 @@ impl NativePolicyOnlyMetadata {
         plan: NativeScriptedQueuePlan,
     ) -> Result<(), &'static str> {
         if plan.squad_item_id <= 0 || plan.orders.is_empty() ||
-            plan.orders.len() > 256 || plan.orders.iter().any(|order| !order.valid()) ||
+            plan.orders.len() > 256 || plan.orders.iter().any(|order| !order.valid() ||
+                matches!(order, NativeScriptedOrder::Scouting { human_side, .. }
+                    if *human_side != self.player.human_side)) ||
             !matches!(plan.activation, NativeScriptedActivation::Immediate) {
             return Err("invalid live scripted command plan");
         }
