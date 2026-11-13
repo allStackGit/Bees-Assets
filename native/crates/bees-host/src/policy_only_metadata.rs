@@ -341,54 +341,6 @@ impl NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
-    fn navigation_worker_measurements(&self) -> NativeNavigationWorkerMeasurements {
-        self.navigation_worker_counts
-    }
-
-    fn advance_navigation_for_tick(
-        &mut self, world: &mut CombatWorld, completed_tick: u64,
-    ) -> Result<u64, CombatWorldError> {
-        let Some(scheduler) = self.navigation_scheduler.as_mut() else {
-            // Deterministic headless simulation executes the same canonical
-            // path requests synchronously with its Level-owned workspace.
-            return self.advance_navigation(world);
-        };
-        // Until the source exposes an exact static-collider revision, retain
-        // the synchronous adapter's conservative dirty-geometry policy.
-        // Empty/static-free training maps skip this scan's heavy raster work.
-        let static_dirty = world.static_navigation_obstacles().next().is_some() ||
-            self.navigation.static_obstacles_present() != Some(false);
-        let step = scheduler.pump(
-            world, &mut self.navigation, completed_tick, static_dirty,
-            self.activate_collision_asteroids,
-        ).map_err(|error| match error {
-            NavigationSchedulerError::InvalidMap(source) =>
-                CombatWorldError::NavigationMap(source),
-            NavigationSchedulerError::World(source) => source,
-            NavigationSchedulerError::WorkerPanicked =>
-                CombatWorldError::NavigationWorkerPanicked,
-            NavigationSchedulerError::WorkerProtocol =>
-                CombatWorldError::NavigationWorkerProtocol,
-            NavigationSchedulerError::WorkerUnavailable |
-            NavigationSchedulerError::InvalidWorkerCount |
-            NavigationSchedulerError::Spawn(_) =>
-                CombatWorldError::NavigationWorkerUnavailable,
-        })?;
-        let counts = &mut self.navigation_worker_counts;
-        counts.launched += step.launched as u64;
-        counts.completed += step.completed as u64;
-        counts.requeued += step.requeued as u64;
-        counts.discarded += step.discarded as u64;
-        counts.clearance_refreshes += u64::from(step.clearance_refreshed);
-        counts.waiting_for_static_rebuild_frames +=
-            u64::from(step.waiting_for_static_rebuild);
-        counts.busy_workers = step.busy_workers;
-        // Match the synchronous Level counter: every completed path job
-        // counts, including lifecycle-safe requeues and discarded results.
-        // The accepted/requeued/discarded split remains separately measured.
-        Ok(step.completed as u64)
-    }
-
     fn register_scout_beacons(
         &mut self, world: &CombatWorld, events: &[CombatEvent],
     ) -> Result<(), CombatPerceptionError> {
@@ -757,6 +709,54 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     }
     fn ship_asset_catalog(&self) -> Option<&ShipAssetCatalog> {
         Some(&self.ship_catalog)
+    }
+
+    fn navigation_worker_measurements(&self) -> NativeNavigationWorkerMeasurements {
+        self.navigation_worker_counts
+    }
+
+    fn advance_navigation_for_tick(
+        &mut self, world: &mut CombatWorld, completed_tick: u64,
+    ) -> Result<u64, CombatWorldError> {
+        let Some(scheduler) = self.navigation_scheduler.as_mut() else {
+            // Deterministic headless simulation executes the same canonical
+            // path requests synchronously with its Level-owned workspace.
+            return self.advance_navigation(world);
+        };
+        // Until the source exposes an exact static-collider revision, retain
+        // the synchronous adapter's conservative dirty-geometry policy.
+        // Empty/static-free training maps skip this scan's heavy raster work.
+        let static_dirty = world.static_navigation_obstacles().next().is_some() ||
+            self.navigation.static_obstacles_present() != Some(false);
+        let step = scheduler.pump(
+            world, &mut self.navigation, completed_tick, static_dirty,
+            self.activate_collision_asteroids,
+        ).map_err(|error| match error {
+            NavigationSchedulerError::InvalidMap(source) =>
+                CombatWorldError::NavigationMap(source),
+            NavigationSchedulerError::World(source) => source,
+            NavigationSchedulerError::WorkerPanicked =>
+                CombatWorldError::NavigationWorkerPanicked,
+            NavigationSchedulerError::WorkerProtocol =>
+                CombatWorldError::NavigationWorkerProtocol,
+            NavigationSchedulerError::WorkerUnavailable |
+            NavigationSchedulerError::InvalidWorkerCount |
+            NavigationSchedulerError::Spawn(_) =>
+                CombatWorldError::NavigationWorkerUnavailable,
+        })?;
+        let counts = &mut self.navigation_worker_counts;
+        counts.launched += step.launched as u64;
+        counts.completed += step.completed as u64;
+        counts.requeued += step.requeued as u64;
+        counts.discarded += step.discarded as u64;
+        counts.clearance_refreshes += u64::from(step.clearance_refreshed);
+        counts.waiting_for_static_rebuild_frames +=
+            u64::from(step.waiting_for_static_rebuild);
+        counts.busy_workers = step.busy_workers;
+        // Match the synchronous Level counter: every completed path job
+        // counts, including lifecycle-safe requeues and discarded results.
+        // The accepted/requeued/discarded split remains separately measured.
+        Ok(step.completed as u64)
     }
 
     fn navigation(&self) -> &NavigationRuntime {
