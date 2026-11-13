@@ -201,17 +201,26 @@ function createNativeBeesAdapter({
         typeof config.model_manifest !== 'string' || !config.model_manifest)
         throw Error('Native Bees Hub runs require a model-only template and the installed interpreter.');
     const manifest = trustedFile(path.resolve(path.dirname(run), config.model_manifest));
-    const pins = new Map([
+    const basePins = new Map([
         [run, sha256(runBytes)],
-        ...[trainer, input, manifest, runner, ...(binary ? [binary] : [])]
+        ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
+    ]);
+    const sourcePins = nativeSourceDependencies(run, config);
+    const pins = new Map([
+        ...basePins,
+        ...sourcePins,
+        ...[runner, ...(binary ? [binary] : [])]
             .map(file => [file, sha256(fs.readFileSync(file))]),
-        ...nativeSourceDependencies(run, config),
     ]);
     const initialGpuInference = verifyModelDependencies(
         manifest, new Map([[input, pins.get(input)]]), input, learnerSlot,
     );
-    const configIdentity = [...[...pins.entries()].sort(([a], [b]) => a.localeCompare(b))
-        .map(([file, digest]) => [file, digest]), learnerSlot ?? null];
+    // Config identity is independent of machine-local absolute paths and
+    // platform-specific Rust binary bytes. Those are still pinned locally
+    // for execution, but a Windows/Linux rollout cannot share a single
+    // ELF/PE digest. Scene/Stage/worker content is part of the experiment.
+    const configIdentity = [...basePins.values(), learnerSlot ?? null,
+        ...sourcePins.values()];
     if (collectOnly) configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
     const configSha256 = sha256(JSON.stringify(configIdentity));
