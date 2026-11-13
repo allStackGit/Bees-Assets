@@ -1587,8 +1587,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if(new Set(hostIds).size>1)
                 warnings.push('Runs used different assigned machines; performance measurements may not be comparable.');
         }
+        const selectedAxis=$('hub-compare-x-axis').value;
+        const clockWithoutSamples=selectedAxis==='steps_completed'?[]:
+            runs.filter(run=>!hubComparisonPoints(run).some(point=>
+                hubComparisonAxisValue(point,selectedAxis)!==null));
         feedback('hub-compare-chart-note',
             warnings.join(' ')+(warnings.length?' ':'')+
+            (clockWithoutSamples.length
+                ?'No recorded '+comparisonAxisLabel(selectedAxis)+
+                    ' for '+clockWithoutSamples.map(run=>
+                        'Run '+run.slot+' ('+hubJobLabel(run.job)+')').join(', ')+
+                    '. These runs remain visible when using project updates. '
+                :'')+
             'Horizontal axis: '+(comparisonAxisLabel($('hub-compare-x-axis').value)||
                 chartAxes.steps_completed.label)+'. '+
             ($('hub-compare-x-axis').value==='elapsed_training_seconds'
