@@ -103,7 +103,22 @@ impl CombatWorld {
             min: body.pose.position, max: body.pose.position,
         });
         body.active = false;
+        // This wall was part of the authoritative pathfinder's static
+        // clearance. Removing it must invalidate both synchronous cached
+        // grids and interactive workers' immutable snapshots; the original
+        // add-only revision would leave paths blocked after a Fire Tank
+        // destroyed its wall.
+        self.static_navigation_revision = self.static_navigation_revision.wrapping_add(1);
         self.obstacle_by_id.remove(&linked_id);
+        // A destroyed animated wall cannot keep all subsequent map
+        // searches in per-frame static rebuild mode indefinitely.
+        if self.moving_static_navigation_obstacles {
+            let still_moving = self.static_navigation_obstacles().any(|(_, body)|
+                body.linear_velocity.length_squared() > 0.0 ||
+                body.angular_velocity_degrees != 0.0,
+            );
+            self.moving_static_navigation_obstacles = still_moving;
+        }
         self.discovery.retire(DiscoveryKind::Obstacle, linked_id);
         self.free_obstacle_slots.push(index);
         self.events.push(CombatEvent::FireTankObstacleBrokenApart {
