@@ -13,6 +13,7 @@ use bees_gameplay::commands::{
 };
 use bees_gameplay::level_events::{NativeLevelEventError, NativeLevelEventProcessor};
 use bees_gameplay::level_inputs::native_squad_order_from_catalog;
+use bees_gameplay::squads::NativeSquadRoster;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::geometry::Vec2;
@@ -77,6 +78,9 @@ impl NativePolicyOnlyMetadata {
         squads: &[crate::scene_builder::NativeAuthoredSquad],
         plans: Vec<NativeScriptedQueuePlan>,
     ) -> Result<(), &'static str> {
+        if !self.scripted_queues.is_empty() {
+            return Err("initial mission queues were already installed");
+        }
         let mut seen = HashSet::new();
         let mut staged = Vec::with_capacity(plans.len());
         for plan in plans {
@@ -116,6 +120,62 @@ impl NativePolicyOnlyMetadata {
             .position(|squad| squad.owner == state.owner)
             .expect("validated live authored squad"));
         self.scripted_queues = staged;
+        Ok(())
+    }
+
+    /// Called by an authentic native mission trigger after its squad has
+    /// actually joined the canonical roster. Unlike a static Level-config
+    /// plan, this can arm a scripted sequence after dialogue, reinforcements
+    /// or any other Level-owned event. It never invents trigger conditions,
+    /// moves ships early, or cancels the command already running.
+    ///
+    /// The owner is resolved from a current SquadLifetime, not a hotkey or
+    /// stale pooled squad object. The first order starts at the next native
+    /// completed fixed-tick boundary through advance_source_scripted.
+    pub fn enqueue_live_scripted_queue(
+        &mut self,
+        roster: &NativeSquadRoster,
+        plan: NativeScriptedQueuePlan,
+    ) -> Result<(), &'static str> {
+        if plan.squad_item_id <= 0 || plan.orders.is_empty() ||
+            plan.orders.len() > 256 || plan.orders.iter().any(|order| !order.valid()) {
+            return Err("invalid live scripted command plan");
+        }
+        let owner = roster.source_order().iter().copied()
+            .find(|owner| owner.squad_id == plan.squad_item_id)
+            .ok_or("live scripted queue requires a registered source squad")?;
+        let squad = roster.get(owner).ok_or("missing scripted source squad")?;
+        if self.scripted_queues.iter().any(|queue| queue.owner == owner) {
+            return Err("a scripted queue already owns this squad");
+        }
+        if !self.player.commands.contains_key(&owner) ||
+            squad.members.iter().any(|id| !self.player.ships.contains_key(id))
+        {
+            return Err("live scripted command source lacks formation or settings");
+        }
+        for order in &plan.orders {
+            if let NativeScriptedOrder::Aggressive { enemy_squad_item_id } = order {
+                if !roster.source_order().iter().copied().any(|enemy_owner|
+                    enemy_owner.level_id == owner.level_id &&
+                    enemy_owner.squad_id == *enemy_squad_item_id &&
+                    roster.get(enemy_owner).is_some_and(|enemy| enemy.side != squad.side)
+                ) {
+                    return Err("live scripted Aggressive needs a real opposing squad");
+                }
+            }
+        }
+        // Insertion is in actual Level.State.Squads order, not numeric ID
+        // order or whichever mission trigger happened to fire first.
+        let source_order = roster.source_order();
+        let destination = source_order.iter().position(|candidate| *candidate == owner)
+            .expect("registered source owner");
+        let insert_at = self.scripted_queues.partition_point(|queue|
+            source_order.iter().position(|candidate| *candidate == queue.owner)
+                .is_some_and(|index| index < destination)
+        );
+        self.scripted_queues.insert(insert_at, NativeScriptedQueueState {
+            owner, orders: plan.orders, cursor: 0, repeat: plan.repeat,
+        });
         Ok(())
     }
 
