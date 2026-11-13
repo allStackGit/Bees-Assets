@@ -181,6 +181,49 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     return result
 
 
+def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
+                                scenario: str, episodes_per_world: int) -> dict:
+    """Resume only a fully committed, unchanged initial model lineage."""
+    if not output.is_dir():
+        raise ValueError(f"native bootstrap directory does not exist: {output}")
+    receipt = json.loads((output / "receipt.json").read_text(encoding="utf-8"))
+    if (not isinstance(receipt, dict) or
+            receipt.get("kind") != "native_bees_policy_bootstrap" or
+            receipt.get("schema_version") != 1 or
+            receipt.get("seed") != seed or receipt.get("slots") != slots or
+            receipt.get("scenario") != scenario or
+            receipt.get("episodes_per_world") != episodes_per_world):
+        raise ValueError("bootstrap receipt does not match the requested initial run")
+    for name in ("checkpoint", "manifest", "trainer_config", "scene", "run"):
+        expected_name = {
+            "checkpoint": "checkpoint.pt",
+            "manifest": "manifest.json",
+            "trainer_config": "trainer-config.yaml",
+            "scene": "scene.json",
+            "run": "run.json",
+        }[name]
+        if receipt.get(name) != expected_name:
+            raise ValueError(f"initial bootstrap artifact path changed: {name}")
+        actual = file_sha256(output / expected_name)
+        if actual != receipt.get(f"{name}_sha256"):
+            raise ValueError(f"initial bootstrap artifact changed: {name}")
+    config = json.loads((output / "run.json").read_text(encoding="utf-8"))
+    if (config.get("episodes_per_world") != episodes_per_world or
+            config.get("model_manifest") != "manifest.json" or
+            len(config.get("levels", [])) != 1 or
+            config["levels"][0].get("scene") != "scene.json" or
+            config["levels"][0].get("model_slots") != {
+                "0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0]
+            }):
+        raise ValueError("saved native bootstrap model routing changed")
+    # The resident inference loader independently verifies all model-slot
+    # weights and the exact frozen v26 ABI, not just the receipt hashes.
+    _, loaded, _ = checked_manifest(output / "manifest.json")
+    if set(loaded) != set(slots):
+        raise ValueError("saved native bootstrap model slots are incomplete")
+    return receipt
+
+
 def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          rollout_worlds: int | None, rollout_workers: int | None,
                          physics_workers: int | None, torch_threads: int | None,
@@ -188,7 +231,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          distributed_plan: Path | None, bundle_inbox: Path | None,
                          collector_timeout_seconds: int,
                          evaluation_run_config: Path | None, evaluation_side: int | None,
-                         evaluation_policy_seed: int) -> None:
+                         evaluation_policy_seed: int,
+                         resume: bool = False) -> None:
     """Hand freshly verified artifacts to the one existing native trainer.
 
     The session has its own immutable recipe, model lineage, round receipts
@@ -201,6 +245,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         str(output / "trainer-config.yaml"), str(output / "session"),
         "--rounds", str(rounds), "--device", optimizer_device,
     ]
+    if resume:
+        command.append("--resume")
     if learner_slot is not None:
         command.extend(["--learner-slot", str(learner_slot)])
     for option, value in (
@@ -241,6 +287,8 @@ def main() -> None:
                         help="Rust cargo executable used to generate the canonical ABI manifest")
     parser.add_argument("--train-rounds", type=int,
                         help="also execute this many native MA-POCA rounds via the existing resumable session")
+    parser.add_argument("--resume", action="store_true",
+                        help="continue from an unchanged completed bootstrap and existing round receipts")
     parser.add_argument("--learner-slot", type=int,
                         help="model slot to optimize; defaults to the first slot for multi-slot sessions")
     parser.add_argument("--rollout-worlds", type=int,
@@ -269,6 +317,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.train_rounds is not None and not 1 <= args.train_rounds <= 99999:
         parser.error("--train-rounds must be between 1 and 99999")
+    if args.resume and args.train_rounds is None:
+        parser.error("--resume requires --train-rounds")
     if not 1 <= args.episodes_per_world <= 1000000:
         parser.error("--episodes-per-world must be between 1 and 1000000")
     if args.learner_slot is not None and args.learner_slot not in args.slots:
@@ -320,15 +370,24 @@ def main() -> None:
     if args.train_rounds is not None and args.rollout_binary is not None:
         if not args.rollout_binary.resolve().is_file():
             parser.error("--rollout-binary must identify an existing executable")
-    result = bootstrap(args.output.resolve(), args.trainer_config,
-                       args.seed, args.slots, args.inference_device, args.cargo,
-                       args.scenario, args.episodes_per_world)
+    output = args.output.resolve()
+    if args.resume:
+        result = verified_existing_bootstrap(
+            output, args.seed, args.slots, args.scenario, args.episodes_per_world,
+        )
+    else:
+        result = bootstrap(output, args.trainer_config,
+                           args.seed, args.slots, args.inference_device, args.cargo,
+                           args.scenario, args.episodes_per_world)
     print(json.dumps(result, sort_keys=True), flush=True)
     if args.train_rounds is not None:
         learner_slot = (args.learner_slot if args.learner_slot is not None
                         else args.slots[0] if len(args.slots) > 1 else None)
+        session = output / "session"
+        if args.resume and session.exists() and not session.is_dir():
+            raise ValueError("existing native training session is not a directory")
         run_training_session(
-            args.output.resolve(), args.train_rounds, learner_slot,
+            output, args.train_rounds, learner_slot,
             args.rollout_worlds, args.rollout_workers,
             args.physics_workers, args.torch_threads,
             args.optimizer_device, args.rollout_binary,
@@ -336,6 +395,7 @@ def main() -> None:
             args.collector_timeout_seconds,
             args.evaluation_run_config, args.evaluation_side,
             args.evaluation_policy_seed,
+            resume=args.resume and session.is_dir(),
         )
 
 
