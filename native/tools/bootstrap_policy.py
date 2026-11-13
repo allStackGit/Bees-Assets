@@ -26,7 +26,8 @@ DEFAULT_CONFIG = ROOT / "Training" / "rl_1v1_config.yaml"
 
 
 def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
-              inference_device: str, cargo: str, scenario: str) -> dict:
+              inference_device: str, cargo: str, scenario: str,
+              episodes_per_world: int = 1) -> dict:
     if output.exists():
         raise FileExistsError(f"refusing to overwrite existing output: {output}")
     if (not slots or len(slots) != len(set(slots)) or
@@ -36,6 +37,8 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         raise ValueError("initial policy seed must be a uint32 value")
     if not inference_device:
         raise ValueError("inference device must be nonempty")
+    if type(episodes_per_world) is not int or not 1 <= episodes_per_world <= 1000000:
+        raise ValueError("episodes_per_world must be between 1 and 1000000")
 
     trainer_config = trainer_config.resolve(strict=True)
     import torch
@@ -92,6 +95,15 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         "policy_worker": str(ROOT / "native" / "tools" / "policy_worker.py"),
         "model_manifest": "manifest.json",
     })
+    # One long-lived set of arenas can produce several completed episodes
+    # without creating a new rollout process or reloading model weights.
+    # The native runner already increments its episode-owned RNG, team
+    # permutation, model routing and reward membership on each reset.
+    original_round_budget = run["max_rounds"]
+    run["max_rounds"] = original_round_budget * episodes_per_world
+    run["episodes_per_world"] = episodes_per_world
+    if not 1 <= run["max_rounds"] <= (1 << 64) - 1:
+        raise ValueError("requested episode budget exceeds native uint64 run rounds")
     level = run["levels"][0]
     level["scene"] = "scene.json"
     level["model_slots"] = {"0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0]}
@@ -157,6 +169,7 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         "trainer_config": "trainer-config.yaml",
         "trainer_config_sha256": source_hash,
         "scenario": scenario,
+        "episodes_per_world": episodes_per_world,
         "scene": "scene.json",
         "scene_sha256": file_sha256(output / "scene.json"),
         "run": "run.json",
@@ -222,6 +235,8 @@ def main() -> None:
                         help="resident model device, e.g. cpu or cuda")
     parser.add_argument("--scenario", choices=("duel", "skirmish"), default="duel",
                         help="copy a full native policy scene/run template into the bootstrap")
+    parser.add_argument("--episodes-per-world", type=int, default=1,
+                        help="complete this many episodes per persistent native arena in each collection")
     parser.add_argument("--cargo", default="cargo",
                         help="Rust cargo executable used to generate the canonical ABI manifest")
     parser.add_argument("--train-rounds", type=int,
@@ -254,6 +269,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.train_rounds is not None and not 1 <= args.train_rounds <= 99999:
         parser.error("--train-rounds must be between 1 and 99999")
+    if not 1 <= args.episodes_per_world <= 1000000:
+        parser.error("--episodes-per-world must be between 1 and 1000000")
     if args.learner_slot is not None and args.learner_slot not in args.slots:
         parser.error("--learner-slot must identify one of the configured model slots")
     if (args.distributed_plan is None) != (args.bundle_inbox is None):
@@ -305,7 +322,7 @@ def main() -> None:
             parser.error("--rollout-binary must identify an existing executable")
     result = bootstrap(args.output.resolve(), args.trainer_config,
                        args.seed, args.slots, args.inference_device, args.cargo,
-                       args.scenario)
+                       args.scenario, args.episodes_per_world)
     print(json.dumps(result, sort_keys=True), flush=True)
     if args.train_rounds is not None:
         learner_slot = (args.learner_slot if args.learner_slot is not None
