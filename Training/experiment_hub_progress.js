@@ -242,14 +242,13 @@ class BottleneckEvidence {
                 // Compare only stages from the same previous reply; do not
                 // subtract them from the current update's service interval.
                 const priorUpdate=metrics['collector_'+i+'_prev_reply_update'];
-                const priorNames=['serial','compress','auth','send'].map(stage=>
-                    seconds('collector_'+i+'_prev_reply_'+stage+'_seconds'));
+                const priorPrep=seconds('collector_'+i+'_prev_reply_prepare_seconds');
+                const priorSend=seconds('collector_'+i+'_prev_reply_send_seconds');
                 const priorValid=priorUpdate?.unit==='count'&&
                     Number.isSafeInteger(priorUpdate.value)&&
-                    priorNames.every(x=>x!==null);
-                const priorTotal=priorValid?priorNames.reduce((a,b)=>a+b,0):0;
-                const prepShare=priorTotal>0
-                    ?(priorNames[0]+priorNames[1]+priorNames[2])/priorTotal:null;
+                    priorPrep!==null&&priorSend!==null;
+                const priorTotal=priorValid?priorPrep+priorSend:0;
+                const prepShare=priorTotal>0?priorPrep/priorTotal:null;
                 if(prepShare!==null)
                     add('collector_'+i+'_prev_reply_prep_share',prepShare);
                 simHints[i]={
