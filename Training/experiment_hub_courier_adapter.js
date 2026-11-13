@@ -3,11 +3,15 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
+const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
 const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const NVIDIA_UUID=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers',
     'training_slowest_worker','training_last_reply_worker',
@@ -118,7 +122,18 @@ function liveCourierProgress(root,allowCheckpointEvent) {
 }
 
 function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,evaluationRoot,evaluationSuites,snapshotRoot,
-    cpuParallelism='allocation'}) {
+    cpuParallelism='allocation',enableGpu=false,rocrGpuUuids={}}) {
+    if(typeof enableGpu!=='boolean'||enableGpu&&
+        !['linux','win32'].includes(process.platform))
+        throw Error('Courier GPU optimization requires an approved Windows CUDA or Linux ROCm owner.');
+    if(!rocrGpuUuids||typeof rocrGpuUuids!=='object'||
+        Array.isArray(rocrGpuUuids)||Object.keys(rocrGpuUuids).length>32||
+        (!enableGpu||process.platform!=='linux')&&Object.keys(rocrGpuUuids).length||
+        Object.entries(rocrGpuUuids).some(([pci,uuid])=>
+            !PCI.test(pci)||typeof uuid!=='string'||!ROCM_UUID.test(uuid))||
+        new Set(Object.values(rocrGpuUuids)).size!==Object.keys(rocrGpuUuids).length)
+        throw Error('Courier GPU selectors must map unique, approved ROCr UUIDs to canonical PCI identities.');
+    const approvedRocr=Object.freeze({...rocrGpuUuids});
     if(!['profile','allocation'].includes(cpuParallelism))
         throw Error('Courier CPU concurrency must be explicitly profile-based or follow allocated CPU cores.');
     for(const target of [projectRoot,pythonPath,artifactRoot,configPath]) {
@@ -136,7 +151,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // bounded backend capability manifest allows the same Hub adapter to
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
-    let boundedLearners=false,autoLearners=false;
+    let boundedLearners=false,autoLearners=false,optimizerGpu=false;
     if(fs.existsSync(capabilitiesFile)) {
         if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
             !fs.statSync(capabilitiesFile).isFile()||
@@ -147,10 +162,24 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             Array.isArray(capabilities)||capabilities.schema_version!==1||
             typeof capabilities.courier_active_learners!=='boolean'||
             (capabilities.courier_auto_active_learners!==undefined&&
-             typeof capabilities.courier_auto_active_learners!=='boolean'))
+             typeof capabilities.courier_auto_active_learners!=='boolean')||
+            (capabilities.courier_gpu_optimizer!==undefined&&
+             typeof capabilities.courier_gpu_optimizer!=='boolean'))
             throw Error('Unsupported Courier backend capabilities manifest.');
         boundedLearners=capabilities.courier_active_learners;
         autoLearners=boundedLearners&&capabilities.courier_auto_active_learners===true;
+        optimizerGpu=capabilities.courier_gpu_optimizer===true;
+    }
+    if(enableGpu) {
+        if(!optimizerGpu)
+            throw Error('The installed Courier backend does not advertise safe optimizer-only GPU migration.');
+        const check=spawnSync(executable,['-B','-c',process.platform==='win32'
+            ?'import torch; assert torch.version.cuda and torch.cuda.is_available()'
+            :'import torch; assert torch.version.hip and torch.cuda.is_available()'],{
+            cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+        });
+        if(check.status!==0)
+            throw Error('Courier GPU optimizer requires the locally installed CUDA/ROCm PyTorch wheel, not its CPU-only requirements.');
     }
     const config=fs.readFileSync(configPath);
     const parsed=JSON.parse(config.toString('utf8'));
@@ -177,8 +206,14 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     context.continuation_of_job_id===context.job_id||
                     context.artifact_lineage_root_id===context.job_id
                 :context.artifact_lineage_root_id!==context.job_id)||
-            context.gpu_pci_address)
-            throw Error('Invalid Courier CPU job or checkpoint lineage.');
+            (context.gpu_pci_address!==undefined&&(
+                !enableGpu||!PCI.test(String(context.gpu_pci_address))||
+                context.gpu_mode!=='exclusive'||
+                (windows&&!NVIDIA_UUID.test(String(context.gpu_cuda_uuid||'')))||
+                (!windows&&context.gpu_cuda_uuid!==undefined)))||
+            (context.gpu_pci_address===undefined&&context.gpu_cuda_uuid!==undefined)||
+            context.gpu_pci_addresses!==undefined)
+            throw Error('Invalid Courier job, physical GPU lease or checkpoint lineage.');
         return path.join(artifacts,context.job_id);
     }
 
@@ -209,6 +244,18 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        ...(enableGpu&&windows?{gpu_execution:'cuda'}:{}),
+        ...(enableGpu&&!windows?{
+            rocr_gpu_uuids:approvedRocr,
+            gpu_verify_args(_parameters,context) {
+                if(!PCI.test(String(context?.gpu_pci_address||''))||
+                    context.gpu_pci_addresses!==undefined)
+                    throw Error('Courier GPU qualification requires one pinned AMD PCI identity.');
+                return ['-B',path.join(__dirname,
+                    'experiment_hub_tinybrains_rocm_verify.py'),
+                    context.gpu_pci_address];
+            },
+        }:{}),
         // Private machine-local export root, never an operator HTTP path.
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))throw Error('Invalid Courier job identity.');
@@ -288,8 +335,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 '--seed',String(seed),'--workers',String(chosenWorkers),
                 ...(boundedLearners?['--active-learners',String(Math.min(
                     chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)))]:[]),
-                ...(auto?['--auto-active-learners',
-                           '--ram-lease-mb',String(context.ram_quota_mb)]:[]),
+                ...(auto?['--auto-active-learners']:[]),
+                ...(auto||context.gpu_pci_address!==undefined
+                    ?['--ram-lease-mb',String(context.ram_quota_mb)]:[]),
+                ...(context.gpu_pci_address!==undefined
+                    ?['--optimizer-device','cuda']:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(predecessor?['--resume']:[])];
         },
