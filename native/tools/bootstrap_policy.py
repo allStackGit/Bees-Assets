@@ -171,7 +171,11 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
 def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          rollout_worlds: int | None, rollout_workers: int | None,
                          physics_workers: int | None, torch_threads: int | None,
-                         optimizer_device: str, rollout_binary: Path | None) -> None:
+                         optimizer_device: str, rollout_binary: Path | None,
+                         distributed_plan: Path | None, bundle_inbox: Path | None,
+                         collector_timeout_seconds: int,
+                         evaluation_run_config: Path | None, evaluation_side: int | None,
+                         evaluation_policy_seed: int) -> None:
     """Hand freshly verified artifacts to the one existing native trainer.
 
     The session has its own immutable recipe, model lineage, round receipts
@@ -196,6 +200,14 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
             command.extend([option, str(value)])
     if rollout_binary is not None:
         command.extend(["--rollout-binary", str(rollout_binary.resolve(strict=True))])
+    if distributed_plan is not None:
+        command.extend(["--distributed-plan", str(distributed_plan.resolve(strict=True)),
+                        "--bundle-inbox", str(bundle_inbox.resolve(strict=True)),
+                        "--collector-timeout-seconds", str(collector_timeout_seconds)])
+    if evaluation_run_config is not None:
+        command.extend(["--evaluation-run-config", str(evaluation_run_config.resolve(strict=True)),
+                        "--evaluation-side", str(evaluation_side),
+                        "--evaluation-policy-seed", str(evaluation_policy_seed)])
     subprocess.run(command, cwd=ROOT, check=True)
 
 
@@ -228,11 +240,44 @@ def main() -> None:
                         help="MA-POCA optimizer device (cpu, cuda, cuda:0 on ROCm/CUDA)")
     parser.add_argument("--rollout-binary", type=Path,
                         help="prebuilt policy_rollout executable for Windows/Linux or multi-process rolls")
+    parser.add_argument("--distributed-plan", type=Path,
+                        help="existing native collection plan for Experiment Hub multi-machine rounds")
+    parser.add_argument("--bundle-inbox", type=Path,
+                        help="existing writable directory for distributed collection receipts")
+    parser.add_argument("--collector-timeout-seconds", type=int, default=0)
+    parser.add_argument("--evaluation-run-config", type=Path,
+                        help="holdout native Levels evaluated after each finished learner update")
+    parser.add_argument("--evaluation-side", type=int, choices=(1, 2),
+                        help="source side to measure during holdout evaluation")
+    parser.add_argument("--evaluation-policy-seed", type=int, default=0,
+                        help="fixed nonnegative int63 holdout inference sampling seed")
     args = parser.parse_args()
     if args.train_rounds is not None and not 1 <= args.train_rounds <= 99999:
         parser.error("--train-rounds must be between 1 and 99999")
     if args.learner_slot is not None and args.learner_slot not in args.slots:
         parser.error("--learner-slot must identify one of the configured model slots")
+    if (args.distributed_plan is None) != (args.bundle_inbox is None):
+        parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
+    if args.collector_timeout_seconds < 0:
+        parser.error("--collector-timeout-seconds must be nonnegative")
+    if (args.evaluation_run_config is None) != (args.evaluation_side is None):
+        parser.error("holdout evaluation requires both --evaluation-run-config and --evaluation-side")
+    if not 0 <= args.evaluation_policy_seed < (1 << 63):
+        parser.error("--evaluation-policy-seed must be nonnegative int63")
+    if args.evaluation_policy_seed != 0 and args.evaluation_run_config is None:
+        parser.error("--evaluation-policy-seed requires an evaluation run")
+    if args.train_rounds is None and any((
+        args.distributed_plan is not None, args.bundle_inbox is not None,
+        args.evaluation_run_config is not None, args.evaluation_side is not None,
+        args.evaluation_policy_seed != 0, args.collector_timeout_seconds != 0,
+    )):
+        parser.error("distributed collection and evaluation require --train-rounds")
+    if args.distributed_plan is not None and any(
+        value is not None for value in (
+            args.rollout_worlds, args.rollout_workers, args.physics_workers,
+        )
+    ):
+        parser.error("distributed resource allocations belong to --distributed-plan")
     for name, value, limit in (
         ("--rollout-worlds", args.rollout_worlds, 1024),
         ("--rollout-workers", args.rollout_workers, 256),
@@ -270,6 +315,10 @@ def main() -> None:
             args.rollout_worlds, args.rollout_workers,
             args.physics_workers, args.torch_threads,
             args.optimizer_device, args.rollout_binary,
+            args.distributed_plan, args.bundle_inbox,
+            args.collector_timeout_seconds,
+            args.evaluation_run_config, args.evaluation_side,
+            args.evaluation_policy_seed,
         )
 
 
