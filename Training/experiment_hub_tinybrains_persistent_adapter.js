@@ -403,7 +403,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             return true;
         }
         const keys=Object.keys(all);
-        const collectorField=/^collector_(\\d+)_(.+)$/;
+        const collectorField=/^collector_(\d+)_(.+)$/;
         for(const key of keys)
             if(!collectorField.test(key))include(key);
         const core=[
