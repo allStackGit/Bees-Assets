@@ -6,11 +6,11 @@ const safeInt=n=>Number.isSafeInteger(n)&&n>=0;
 // Optional project-neutral summaries from a locally trusted adapter.
 // Values and units are explicit; neither metrics nor steps authorize
 // training, benchmark decisions, lease release, or policy promotion.
-const GENERIC_METRIC=/^[a-z][a-z0-9_]{0,39}$/;
+const GENERIC_METRIC=/^[a-z][a-z0-9_]{0,63}$/;
 const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','bytes','milliseconds','watts']);
 // Keep a larger bounded source envelope than the 96-metric chart cache.
-// Complete trainer metrics must reach the observation archive before display
-// downselection; the transport's separate 32-KiB limit still applies.
+// Complete trainer metrics reach the observation archive before display
+// downselection; the agent heartbeat has a separate 64-KiB total limit.
 // Up to 17 concurrent TinyBrains collectors can report independent stage metrics.
 // Keep the bounded archive complete; the chart projection stays at 96 fields.
 const MAX_SOURCE_METRICS=640;
@@ -24,7 +24,7 @@ function validateGenericProgress(value,projectId) {
             'schema_version','source','experiment_id','segment_id',
             'source_modified_at','steps_completed','metrics',
         ].includes(key))||
-        JSON.stringify(value).length>32768||
+        JSON.stringify(value).length>48*1024||
         typeof value.experiment_id!=='string'||
         !/^[A-Za-z0-9_-]{1,80}$/.test(value.experiment_id)||
         typeof value.segment_id!=='string'||
