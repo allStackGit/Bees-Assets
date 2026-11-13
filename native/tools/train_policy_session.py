@@ -36,6 +36,41 @@ def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def native_input_dependencies(*runs):
+    """Pin scene, Stage and policy-worker files actually used by each Level.
+
+    The run configuration already pins embedded native_stage bytes. Legacy
+    Stage files and referenced scene JSON are separate immutable inputs.
+    Do this once per session, not once per world or fixed physics tick.
+    """
+    paths = set()
+    for source in runs:
+        if source is None:
+            continue
+        base = Path(source["path"]).parent
+        config = read_json(Path(source["path"]))
+        if not isinstance(config, dict) or not isinstance(config.get("levels"), list):
+            raise ValueError("native session source run must contain Levels")
+        for level in config["levels"]:
+            if not isinstance(level, dict) or not isinstance(level.get("scene"), str) or not level["scene"]:
+                raise ValueError("native session Level has no scene path")
+            paths.add((base / level["scene"]).resolve(strict=True))
+        for key in ("policy_worker", "collision_matrix", "stage_palette"):
+            value = config.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"native session has an invalid {key} path")
+            paths.add((base / value).resolve(strict=True))
+    return [pinned(path) for path in sorted(paths)]
+
+
+def check_native_input_dependencies(recipe):
+    for item in recipe.get("source_dependencies", []):
+        if file_sha256(Path(item["path"])) != item["sha256"]:
+            raise ValueError(f"native source changed during training session: {item['path']}")
+
+
 @contextmanager
 def session_lock(root):
     # Native flock / locking are released automatically if the controller
@@ -411,6 +446,9 @@ def main():
         recipe["evaluation_config"] = pinned(args.evaluation_run_config)
         recipe["evaluation_side"] = args.evaluation_side
         recipe["evaluation_policy_seed"] = args.evaluation_policy_seed
+    recipe["source_dependencies"] = native_input_dependencies(
+        run, recipe.get("evaluation_config"),
+    )
     root = args.output_dir.resolve()
     if args.resume:
         if not root.is_dir():
@@ -420,12 +458,19 @@ def main():
     with session_lock(root):
         config_path = root / "session-config.json"
         if args.resume:
-            if read_json(config_path) != recipe:
+            previous = read_json(config_path)
+            # Sessions created before scene/Stage pinning retain their
+            # original immutable recipe and complete checkpoint lineage.
+            # Do not invent historical hashes or invalidate their records.
+            if "source_dependencies" not in previous:
+                recipe.pop("source_dependencies")
+            if previous != recipe:
                 raise ValueError("session inputs or resource allocation changed; start a new session")
         else:
             if config_path.exists():
                 raise ValueError("session configuration already exists")
             atomic_json(config_path, recipe)
+        check_native_input_dependencies(recipe)
         distributed = "distributed_plan" in recipe
         if distributed:
             # One imported-bundle template for the entire checkpoint
@@ -465,6 +510,7 @@ def main():
                 source = recipe[label]
                 if source is not None and file_sha256(Path(source["path"])) != source["sha256"]:
                     raise ValueError(f"{label} changed during this training session")
+            check_native_input_dependencies(recipe)
             attempt = next_attempt if index == first_pending_round else 1
             if attempt > 999:
                 raise ValueError(f"round {index} exhausted its attempt numbers")
@@ -533,6 +579,7 @@ def main():
                 completed, args.rounds, evaluations,
             ))
             if "evaluation_config" in recipe:
+                check_native_input_dependencies(recipe)
                 evaluations[str(directory)] = ensure_evaluation(directory, next_manifest, recipe)
             snapshot = progress_snapshot(completed, args.rounds, evaluations)
             atomic_json(root / "session-progress.json", snapshot)
