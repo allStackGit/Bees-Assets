@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {validateProgress} = require('./experiment_hub_progress');
+const {evaluationReader} = require('./experiment_hub_evaluation');
 
 const PROJECT = 'bees_native';
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -161,6 +162,7 @@ function learnerMeasurements(metrics) {
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
+    evaluationRoot, evaluationSuites,
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
     // Local operator-owned PCI to ROCr UUID mappings are never job parameters.
@@ -170,6 +172,8 @@ function createNativeBeesAdapter({
         throw Error('Invalid locally approved native Bees ROCm GPU UUID bindings.');
     const rocr_gpu_uuids = Object.freeze({...rocrGpuUuids});
     const project = collectOnly ? 'bees_native_collect' : PROJECT;
+    if (collectOnly && (evaluationRoot != null || evaluationSuites != null))
+        throw Error('Native Bees collection-only jobs cannot own learner evaluations.');
     const executable = trustedFile(pythonPath);
     const run = trustedFile(runConfig);
     const trainer = trustedFile(trainerConfig);
@@ -179,6 +183,10 @@ function createNativeBeesAdapter({
         throw Error('Native Bees requires an absolute artifact root.');
     const artifacts = fs.realpathSync(artifactRoot);
     if (!fs.statSync(artifacts).isDirectory()) throw Error('Native Bees artifact root is not a directory.');
+    const evaluator = collectOnly ? {} : evaluationReader(
+        PROJECT, evaluationRoot, evaluationSuites,
+        [path.resolve(__dirname, '..'), artifacts],
+    );
     let inbox;
     if (bundleInbox !== undefined) {
         if (typeof bundleInbox !== 'string' || !path.isAbsolute(bundleInbox))
@@ -348,6 +356,7 @@ function createNativeBeesAdapter({
     }
 
     return {
+        ...evaluator,
         executable,
         cwd: path.dirname(runner),
         stop_policy: 'terminate-group',
