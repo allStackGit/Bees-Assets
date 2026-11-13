@@ -2086,6 +2086,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     project+'|'+key+'|'+run.job.id,checkbox.checked);
                 delete tooltip.dataset.pinned;
                 delete tooltip.dataset.pinnedFraction;
+                tooltip.classList.remove('hub-plot-tooltip-pinned');
                 drawComparisonChart(runs,key,xKey,svg,legend,tooltip,
                     showAverage,showRolling);
             });
