@@ -89,6 +89,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         retain('ant_decisions_per_second',reported.ant_decisions_per_second);
         retain('simulation_match_steps_per_second',
             reported.simulation_match_steps_per_second);
+        for(const name of ['training_useful_steps_per_second',
+            'training_concurrency_limit','training_concurrency_next_limit',
+            'training_cpu_parallelism','training_queue_max_seconds',
+            'training_finish_gap_seconds','training_last_finished_worker'])
+            retain(name,reported[name]);
         // Show measured stage pressure before unrelated high-cardinality
         // project metrics consume the default 96-chart-field cache.
         for(const name of ['pipeline_cpu_lease_pressure',
@@ -97,6 +102,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
             'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
             'pipeline_remote_wait_dominant',
+            'training_queue_pressure','training_final_join_pressure',
+            'training_parallelism_underuse_evidence',
+            'training_queue_work_share','training_finish_gap_work_share',
+            'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
             'pipeline_optimization_dominant','pipeline_remote_wait_work_share',
             'pipeline_merge_work_share','pipeline_collection_work_share',
@@ -114,6 +123,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
                 retain('collector_'+i+'_stage_'+stage+'_dominant',
                     reported['collector_'+i+'_stage_'+stage+'_dominant']);
         }
+        // With many independent recurrent PPO lineages, retain sustained
+        // limiting stages rather than the first dozens of raw counters.
+        for(let i=0;i<64;i++)
+            for(const stage of ['collection','optimization'])
+                retain('worker_'+i+'_'+stage+'_dominant',
+                    reported['worker_'+i+'_'+stage+'_dominant']);
         for(const [name,value] of Object.entries(reported))retain(name,value);
     }
     if(!count)
