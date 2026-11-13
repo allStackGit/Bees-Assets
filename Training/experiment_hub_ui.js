@@ -2083,6 +2083,7 @@ document.addEventListener('DOMContentLoaded', () => {
         node('text',{x:width/2,y:320,'text-anchor':'middle'},
             axisLabel);
         const showPoints=series.reduce((n,run)=>n+run.valid.length,0)<=300;
+        const stats=new Map();
         for(const run of series) {
             const sampled=run.valid.filter(usable).map(p=>hubMetricValue(p,key));
             const mean=sampled.length
@@ -2090,6 +2091,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if(showAverage&&mean!==null)
                 node('line',{x1:bounds.left,y1:y(mean),x2:bounds.right,y2:y(mean),
                     stroke:run.color,'stroke-dasharray':'7 5',class:'plot-average'});
+            const rollingByPoint=new Map();
+            stats.set(run,{mean,rollingByPoint});
             if(showRolling) {
                 let window=[],part=[],lastStep=null,lastAxis=null;
                 const flush=()=>{
@@ -2120,10 +2123,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     // A single retained point is not a rolling average.
                     // Do not invent an average when downsampling has left
                     // fewer than two distinct updates in this window.
-                    if(window.length>=2)
-                        part.push({axis,mean:window.reduce((sum,item)=>
-                            sum+item.value,0)/window.length});
-                    else flush();
+                    if(window.length>=2) {
+                        const rollingValue=window.reduce((sum,item)=>
+                            sum+item.value,0)/window.length;
+                        rollingByPoint.set(point,rollingValue);
+                        part.push({axis,mean:rollingValue});
+                    }else flush();
                     lastStep=step;lastAxis=axis;
                 }
                 flush();
