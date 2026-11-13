@@ -316,6 +316,11 @@ impl NativePhysicalScene {
         let mut source_formation = HashMap::new();
         let mut ship_sides = HashMap::new();
         let mut ship_player_control = HashMap::new();
+        let mut source_policy_bindings = HashMap::new();
+        let mut source_policy_inputs = HashMap::new();
+        let mut active_policy_ship_ids = Vec::new();
+        let mut group_participants = Vec::new();
+        let mut team_frames: [Option<u8>; 2] = [None, None];
         for ship in raw.ships {
             let id = ship.entity_id;
             let pos = Vec2::new(ship.position[0], ship.position[1]);
@@ -345,6 +350,7 @@ impl NativePhysicalScene {
                 !ship.combat_window_seconds.is_finite() ||
                 ship.combat_window_seconds <= 0.0 ||
                 ship.is_bomber || ship.is_carrier_ship ||
+                ship.policy.is_some() && (ship.user_controlled || ship.mined_cargo != 0) ||
                 // Special lifecycle/controllers need fully authored native
                 // relationship specifications, not missing Unity components.
                 matches!(ship.ship_type, 0 | 1 | 2 | 5 | 9 | 10 | 18 | 19 | 20 | 22)
@@ -373,6 +379,7 @@ impl NativePhysicalScene {
             );
             motion.user_controlled = ship.user_controlled;
             let mut observed_weapons = [None; 5];
+            let mut self_weapons: [Option<SelfWeapon>; 5] = [None; 5];
             let mut turrets = Vec::with_capacity(ship.turrets.len());
             for turret in ship.turrets {
                 let is_beam = matches!(&turret.fire_pattern, GameFirePattern::BeamCannon);
@@ -419,6 +426,28 @@ impl NativePhysicalScene {
                     range: spec.range,
                     power: spec.power as f32,
                     rate_of_fire: spec.rate_of_fire,
+                });
+                // The source self-weapon fallback uses actual authored
+                // muzzle geometry. After binding, the canonical physical
+                // turret's live angle, cooldown and target status take over.
+                let (sin, cos) = ship.rotation_degrees.to_radians().sin_cos();
+                let offset = spec.mount_offset;
+                let muzzle = pos + Vec2::new(
+                    offset.x * cos - offset.y * sin,
+                    offset.x * sin + offset.y * cos,
+                );
+                self_weapons[slot] = Some(SelfWeapon {
+                    weapon_type: spec.weapon_type, position: muzzle,
+                    range: spec.range, power: spec.power as f32,
+                    rate_of_fire: spec.rate_of_fire,
+                    rotation_rate: spec.rotation_rate,
+                    projectile_value: spec.projectile_value,
+                    projectile_speed: Some(spec.projectile_speed),
+                    turret: Some(bees_sim::perception_weapons::TurretObservation {
+                        rotation_degrees: spec.initial_rotation_degrees,
+                        ready_to_fire: false, aligned_with_target: false,
+                    }),
+                    has_target_ship: false,
                 });
                 turrets.push(NativeAuthoredTurret {
                     slot, spec, range_collider,
