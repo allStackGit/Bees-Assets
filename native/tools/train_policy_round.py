@@ -22,6 +22,7 @@ import traceback
 import uuid
 
 from native_training_artifacts import file_sha256, check_learner, sync_directory
+from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 
 
 def resolved(base: Path, value: str) -> str:
@@ -518,6 +519,8 @@ def main() -> None:
                         help="pin this collection to one distributed round work order")
     parser.add_argument("--pinned-rollout-bundle", nargs=2, action="append", default=[],
                         metavar=("RECEIPT", "SHA256"), help="supply an approved receipt to an empty bundle template")
+    parser.add_argument("--collection-orders", type=Path,
+                        help="verify every imported bundle against one distributed session order")
     args = parser.parse_args()
     if args.collection_id is not None and (
         len(args.collection_id) != 64 or any(
@@ -546,6 +549,8 @@ def main() -> None:
         parser.error("run configuration must be an object")
     if args.pinned_rollout_bundle and run_document.get("rollout_bundles") != []:
         parser.error("--pinned-rollout-bundle requires an empty rollout_bundles template")
+    if args.collection_orders is not None and run_document.get("rollout_bundles") != []:
+        parser.error("--collection-orders requires the empty imported-bundle template")
     manifest_value = args.model_manifest or run_document.get("model_manifest")
     if not manifest_value:
         parser.error("run configuration needs model_manifest or --model-manifest")
@@ -589,6 +594,27 @@ def main() -> None:
                 raise ValueError("rollout bundle receipt differs from the approved digest")
             pinned.append({"path": path, "sha256": digest})
             rollout_args.extend(["--pinned-rollout-bundle", path, digest])
+        if args.collection_orders is not None:
+            order_path = args.collection_orders.resolve(strict=True)
+            orders = json.loads(order_path.read_text(encoding="utf-8"))
+            if (orders.get("kind") != "native_distributed_collection_orders" or
+                    orders.get("schema_version") != 1 or
+                    orders.get("input_checkpoint_sha256") != input_checkpoint_sha or
+                    orders.get("input_manifest_sha256") != input_manifest_sha or
+                    orders.get("learner_slot") != args.learner_slot or
+                    len(orders.get("jobs", [])) != len(pinned) or
+                    any(Path(bundle["path"]).parent.name != job["bundle_directory"]
+                        for bundle, job in zip(pinned, orders["jobs"]))):
+                raise ValueError("pinned distributed collection does not match the training round")
+            collections = [
+                verify_bundle(Path(bundle["path"]), job, orders)
+                for bundle, job in zip(pinned, orders["jobs"])
+            ]
+            if any(bundle["sha256"] != source["sha256"]
+                   for bundle, source in zip(pinned, collections)):
+                raise ValueError("imported native rollout receipt differs from its pinned SHA-256")
+            result["collection_orders_sha256"] = file_sha256(order_path)
+            result["rollout_metrics"] = aggregate_collection_metrics(collections)
         output.mkdir(parents=True, exist_ok=False)
         result.update(
             run_id=f"{run_id}-{uuid.uuid4().hex}",
