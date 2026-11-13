@@ -17,9 +17,16 @@ function fieldsFor(config,project) {
                 if(path.length<7)visit(value,path);
                 continue;
             }
+            // Persistent PPO fixes rollout counts, action target and episode
+            // retention from its resource/job profile; some source-config
+            // fields are intentionally not consulted by that runtime.
+            if(project==='tinybrains'&&new Set([
+                'training.buffer_size','training.complete_episodes',
+                'environment.waves','environment.matches_per_wave',
+                'environment.map_cycle_start','environment.map_selection',
+            ]).has(joined))continue;
             const enums=project==='tinybrains'?{
                 'training.action_reduction':['mean','sum'],
-                'environment.map_selection':['engine','shuffled_cycle'],
             }:{};
             const options=enums[joined];
             if(options&&typeof value==='string'&&options.includes(value)) {
