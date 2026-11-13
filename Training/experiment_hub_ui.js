@@ -2043,6 +2043,70 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             flush();
         }
+        const points=series.flatMap(run=>run.valid.filter(usable).map(point=>({
+            run,point,cx:x(hubComparisonAxisValue(point,xKey)),
+            cy:y(hubMetricValue(point,key)),
+            value:hubMetricValue(point,key),
+            axis:hubComparisonAxisValue(point,xKey),
+        })));
+        // Keep the plot area hoverable even when only one or two samples exist.
+        node('rect',{x:bounds.left,y:bounds.top,width:bounds.right-bounds.left,
+            height:bounds.bottom-bounds.top,fill:'transparent',
+            class:'plot-hover-area'});
+        const guide=node('line',{x1:bounds.left,x2:bounds.left,
+            y1:bounds.top,y2:bounds.bottom,class:'plot-crosshair',
+            visibility:'hidden','pointer-events':'none'});
+        const focus=node('circle',{cx:bounds.left,cy:bounds.bottom,r:6,
+            fill:'white',stroke:'black','stroke-width':2,
+            visibility:'hidden','pointer-events':'none'});
+        const hide=()=>{
+            tooltip.hidden=true;
+            guide.setAttribute('visibility','hidden');
+            focus.setAttribute('visibility','hidden');
+        };
+        svg.onpointerleave=hide;
+        svg.onpointermove=event=>{
+            const rect=svg.getBoundingClientRect();
+            const mouseX=(event.clientX-rect.left)*width/rect.width;
+            const mouseY=(event.clientY-rect.top)*330/rect.height;
+            if(mouseX<bounds.left||mouseX>bounds.right||
+                mouseY<bounds.top||mouseY>bounds.bottom)return hide();
+            let nearest=null,best=Infinity;
+            for(const sample of points) {
+                const distance=Math.hypot(mouseX-sample.cx,mouseY-sample.cy);
+                if(distance<best){best=distance;nearest=sample;}
+            }
+            if(!nearest||best>95)return hide();
+            guide.setAttribute('x1',nearest.cx);
+            guide.setAttribute('x2',nearest.cx);
+            guide.setAttribute('visibility','visible');
+            focus.setAttribute('cx',nearest.cx);
+            focus.setAttribute('cy',nearest.cy);
+            focus.setAttribute('stroke',nearest.run.color);
+            focus.setAttribute('visibility','visible');
+            const unit=units[0]||'';
+            const value=unit==='ratio'
+                ?(nearest.value*100).toFixed(2)+'%'
+                :Number(nearest.value.toPrecision(7)).toLocaleString()+
+                    (unit==='seconds'?' s':unit==='rate'?' /s':
+                        unit==='mb'?' MiB':unit==='watts'?' W':
+                        unit==='scalar'||unit==='count'?'':' '+unit);
+            const timestamp=nearest.point.source_modified_at;
+            tooltip.textContent=[
+                nearest.run.slot+' · '+nearest.run.job.configuration_name,
+                genericKey+': '+value,
+                axisLabel+': '+Number(nearest.axis.toPrecision(8)).toLocaleString(),
+                'Published: '+(timestamp?new Date(timestamp).toLocaleString():'unknown'),
+                'Segment: '+(nearest.point.segment_id||'unknown'),
+            ].join('\n');
+            const parent=svg.parentElement;
+            const box=parent.getBoundingClientRect();
+            tooltip.style.left=Math.max(8,Math.min(parent.clientWidth-265,
+                event.clientX-box.left+14))+'px';
+            tooltip.style.top=Math.max(38,Math.min(parent.clientHeight-126,
+                event.clientY-box.top+14))+'px';
+            tooltip.hidden=false;
+        };
     }
     function exportComparison(format) {
         if(!state)
