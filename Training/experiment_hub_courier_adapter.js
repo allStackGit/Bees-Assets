@@ -124,7 +124,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // bounded backend capability manifest allows the same Hub adapter to
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
-    let boundedLearners=false;
+    let boundedLearners=false,autoLearners=false;
     if(fs.existsSync(capabilitiesFile)) {
         if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
             !fs.statSync(capabilitiesFile).isFile()||
@@ -133,9 +133,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         const capabilities=JSON.parse(fs.readFileSync(capabilitiesFile,'utf8'));
         if(!capabilities||typeof capabilities!=='object'||
             Array.isArray(capabilities)||capabilities.schema_version!==1||
-            typeof capabilities.courier_active_learners!=='boolean')
+            typeof capabilities.courier_active_learners!=='boolean'||
+            (capabilities.courier_auto_active_learners!==undefined&&
+             typeof capabilities.courier_auto_active_learners!=='boolean'))
             throw Error('Unsupported Courier backend capabilities manifest.');
         boundedLearners=capabilities.courier_active_learners;
+        autoLearners=boundedLearners&&capabilities.courier_auto_active_learners===true;
     }
     const config=fs.readFileSync(configPath);
     const parsed=JSON.parse(config.toString('utf8'));
@@ -257,6 +260,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 fs.copyFileSync(file,path.join(out,path.basename(file)),fs.constants.COPYFILE_EXCL);
             const configFile=path.join(out,'hub-environment.json');
             fs.writeFileSync(configFile,config,{flag:'wx',mode:0o600});
+            // Only trusted, capability-declared backends may tune within
+            // the Hub's fixed CPU/RAM lease. Legacy/manual profiles retain
+            // their original fixed-policy execution behavior.
+            const auto=autoLearners&&cpuParallelism==='allocation';
+            if(auto&&(!within(context.ram_quota_mb,128,1000000)))
+                throw Error('Courier automatic execution requires a fixed RAM lease.');
             // The wrapper provides the same checkpoint-boundary Stop request
             // on both platforms; systemd remains the sole Linux service owner.
             const launch=[path.join(__dirname,'experiment_hub_courier_train.py'),
@@ -267,6 +276,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 '--seed',String(seed),'--workers',String(chosenWorkers),
                 ...(boundedLearners?['--active-learners',String(Math.min(
                     chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)))]:[]),
+                ...(auto?['--auto-active-learners',
+                           '--ram-lease-mb',String(context.ram_quota_mb)]:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(predecessor?['--resume']:[])];
         },
