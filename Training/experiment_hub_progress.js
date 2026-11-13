@@ -115,6 +115,15 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
             'training_concurrency_limit','training_concurrency_next_limit',
+            'training_simulation_shards','training_simulation_active_shards',
+            'training_simulation_next_shards',
+            'training_simulation_tuner_adjustments',
+            'training_simulation_tuner_accepted',
+            'training_simulation_tuner_settled',
+            'training_parallel_worker_max_seconds',
+            'training_parallel_step_max_seconds',
+            'training_parallel_dispatch_max_seconds',
+            'training_parallel_dispatch_slowest',
             'training_tuner_adjustments','training_tuner_accepted',
             'training_tuner_settled',
             'training_gpu_optimizer_lineages',
@@ -152,6 +161,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_native_admission_pressure',
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
+            'training_sim_dispatch_pressure',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
@@ -521,6 +531,7 @@ class BottleneckEvidence {
             if(queueShare!==null)add('training_queue_work_share',queueShare);
             if(gapShare!==null)add('training_reply_gap_work_share',gapShare);
             const stageHints=[];
+            const shardDispatchHints=[];
             // The backend reports its measured worst recurrent-minibatch
             // preparation alongside the *owning* lineage index. Comparing
             // unrelated maxima from different workers is not causal evidence.
@@ -542,6 +553,17 @@ class BottleneckEvidence {
                 const observation=seconds('worker_'+i+'_observation_seconds');
                 const inference=seconds('worker_'+i+'_inference_seconds');
                 const ingestion=seconds('worker_'+i+'_ingestion_seconds');
+                const shardStep=seconds('worker_'+i+'_sim_shard_wall_seconds');
+                const dispatch=seconds('worker_'+i+'_sim_dispatch_seconds');
+                // Dispatch/pickle/wire submission is a real subset of
+                // local simulation wall time, but neither subprocess time
+                // nor overlapping child step wall is CPU utilization.
+                const dispatchShare=shardStep>0&&dispatch!==null&&
+                    dispatch<=shardStep?dispatch/shardStep:null;
+                if(dispatchShare!==null)
+                    add('worker_'+i+'_sim_dispatch_work_share',dispatchShare);
+                shardDispatchHints[i]=dispatchShare!==null&&
+                    dispatchShare>=0.20;
                 const fraction=collect/(collect+optimize);
                 const dataShare=(i===dataOwnerIndex&&dataWorst!==null&&
                     optimize>0&&dataWorst<=optimize*1.02)
@@ -599,7 +621,7 @@ class BottleneckEvidence {
             }
             const {at,prior}=history();
             if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,stageHints,resourceHints,
+                prior.samples.push({at,stageHints,shardDispatchHints,resourceHints,
                     courierQueue:queueShare!==null&&queueShare>=0.20,
                     // With queued lineages, the last completion may be a
                     // normal admission wave rather than a slow worker.
@@ -626,6 +648,11 @@ class BottleneckEvidence {
                 if(sustained(x=>x.resourceHints?.cpuIdle)&&
                     sustained(x=>x.courierQueue))
                     add('training_parallelism_underuse_evidence',1,'count');
+                for(let i=0;i<count;i++)
+                    if(sustained(x=>x.shardDispatchHints?.[i]))
+                        add('worker_'+i+'_sim_dispatch_pressure',1,'count');
+                if(sustained(x=>x.shardDispatchHints?.some(Boolean)))
+                    add('training_sim_dispatch_pressure',1,'count');
                 for(let i=0;i<count;i++)
                     for(const stage of ['collection','optimization','ppo_data',
                         'simulation','observation','inference','ingestion',
