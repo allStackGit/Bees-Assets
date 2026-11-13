@@ -38,11 +38,30 @@ A run may use the legacy `collision_matrix` and `stage_palette` paths
 `collision_matrix_rows` (32 symmetric bitmasks) and
 `asteroid_prefab_numbers` (ordered verified prefab IDs).
 
-This initial standalone scene format supports ordinary, non-policy ships.
-Special-ability/carrier ownership, independent native PPO policy/group
-authoring and full campaign parity still require work. Legacy exported
-scenes and training models remain loadable through the same launcher;
-new native game scenes do not fabricate policy agents or reward baselines.
+For native MA-POCA training, see
+`native/examples/native-duel.policy.scene.json`: it defines actual
+`policy` agent IDs, initial team indices, distinct quarter-turn frames,
+per-team movement restrictions and an explicit `policy_episode` with
+starting TSV, timeout and all four source-style discovery denominators per
+side (enemy ships, mining asteroids, static obstacles, map objects). This
+file exercises the same v26 observation encoder, physical action path,
+group reward stream and model-slot routing as imported RL Levels. To run
+its PPO rollouts, copy the duel run configuration, point `levels[0].scene`
+at this policy scene, remove the scripted opponent queue, and supply your
+real `python`, `policy_worker`, `model_manifest` and
+`levels[0].model_slots` model identities. No fake model manifest or
+training checkpoint is shipped with the example. The normal native PPO
+round/session tooling also accepts `native_stage` now.
+
+Native PPO ships require explicitly authored group/reward inputs; the
+runtime rejects missing group agents, inconsistent team/frame/authority,
+or policy scene edits that change fixed initial membership after its
+baselines are supplied. Initial static level obstacles can be authored in
+the scene before those baselines are installed. Full special-ability and
+carrier policy control, exact source reward parity, end-to-end learner
+qualification and complete campaign parity remain open work. Legacy
+exported scenes and training models still load through the same launcher;
+no second training-only combat implementation is introduced.
 
 ## Native tactical view (development)
 
