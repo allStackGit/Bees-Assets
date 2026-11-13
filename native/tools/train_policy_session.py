@@ -17,7 +17,7 @@ import signal
 import subprocess
 import sys
 
-from native_training_artifacts import check_learner, file_sha256, sync_directory
+from native_training_artifacts import atomic_json, check_learner, file_sha256
 
 
 ATTEMPT = re.compile(r"round-(\d{5})-attempt-(\d{3})\Z")
@@ -33,17 +33,6 @@ def pinned(path):
 
 def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def atomic_json(path, value):
-    pending = path.with_name(path.name + ".pending")
-    with pending.open("w", encoding="utf-8") as stream:
-        json.dump(value, stream, indent=2)
-        stream.write("\n")
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(pending, path)
-    sync_directory(path.parent)
 
 
 @contextmanager
