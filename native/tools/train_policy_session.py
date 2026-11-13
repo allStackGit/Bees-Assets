@@ -229,7 +229,7 @@ def ensure_evaluation(round_directory, manifest, recipe):
                              recipe["evaluation_side"], recipe["evaluation_policy_seed"])
 
 
-def progress_snapshot(completed, target, evaluations=None):
+def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None):
     evaluations = evaluations or {}
     world_steps = sum(record["rollout_metrics"]["successful_world_steps"]
                       for _, record in completed)
@@ -255,10 +255,17 @@ def progress_snapshot(completed, target, evaluations=None):
         else "local_rollout_wall_seconds"
     )
     latest_holdout = evaluations.get(str(completed[-1][0])) if completed else None
+    holdout_win_rate_gain = (
+        latest_holdout["side_win_rate"] - baseline_holdout["side_win_rate"]
+        if latest_holdout is not None and baseline_holdout is not None
+        else None
+    )
     return {
         "schema_version": 1, "kind": "native_training_session_progress",
         "evaluated_rounds": len(evaluations),
+        "baseline_holdout": baseline_holdout,
         "latest_holdout": latest_holdout,
+        "latest_holdout_win_rate_gain": holdout_win_rate_gain,
         "completed_rounds": len(completed), "target_rounds": target,
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
@@ -491,13 +498,23 @@ def main():
             root, Path(manifest["path"]), Path(checkpoint["path"]), args.learner_slot,
         )
         evaluations = {}
+        baseline_holdout = None
         if "evaluation_config" in recipe:
+            check_native_input_dependencies(recipe)
+            # Capture model quality BEFORE the first PPO update, using the
+            # exact same native fixed-seed Levels as every later candidate.
+            # The root attempt directories are separate from round attempts;
+            # interrupted baseline evaluation is resumed without touching
+            # the original model or completed checkpoints.
+            baseline_holdout = ensure_evaluation(
+                root, Path(manifest["path"]), recipe,
+            )
             for directory, record in completed:
                 evaluations[str(directory)] = ensure_evaluation(
                     directory, Path(record["next_manifest"]), recipe,
                 )
         atomic_json(root / "session-progress.json", progress_snapshot(
-            completed, args.rounds, evaluations,
+            completed, args.rounds, evaluations, baseline_holdout,
         ))
         if len(completed) > args.rounds:
             raise ValueError("target round count is smaller than the completed checkpoint lineage")
@@ -576,12 +593,14 @@ def main():
             # its subsequent holdout run fails. Resume evaluates this exact
             # artifact rather than collecting another training round.
             atomic_json(root / "session-progress.json", progress_snapshot(
-                completed, args.rounds, evaluations,
+                completed, args.rounds, evaluations, baseline_holdout,
             ))
             if "evaluation_config" in recipe:
                 check_native_input_dependencies(recipe)
                 evaluations[str(directory)] = ensure_evaluation(directory, next_manifest, recipe)
-            snapshot = progress_snapshot(completed, args.rounds, evaluations)
+            snapshot = progress_snapshot(
+                completed, args.rounds, evaluations, baseline_holdout,
+            )
             atomic_json(root / "session-progress.json", snapshot)
             print(json.dumps({"kind": "native_training_session_round_complete",
                               "round": index, "directory": str(directory),
