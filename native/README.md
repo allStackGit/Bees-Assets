@@ -141,6 +141,17 @@ and `--bundle-inbox`, or an existing evaluation run with
 `--evaluation-run-config` and `--evaluation-side` instead of generated
 `--holdout-worlds`.
 
+To train against a progressing opponent rather than a permanently frozen
+initial policy, start a **new** session with
+`--self-play-opponent-slot 1 --self-play-refresh-every 3`. Every third
+completed PPO round then publishes that round's checkpoint into opponent
+slot 1 for subsequent native rollouts. The learner stays on slot 0, and
+the existing distributed collector receives the updated immutable model
+manifest. The fixed-seed holdout keeps opponent slot 1 pinned to its
+*original* model, so win-rate comparisons still use the same reference.
+The session records which rounds promoted the opponent. Frozen-opponent
+training remains the default when these options are omitted.
+
 Resume the same configuration without reinitializing actor/critic weights:
 
 ```sh
