@@ -2311,6 +2311,7 @@ fn run_battle(
             "world_steps_per_execution_second": rate(successful_world_steps, execution_wall_seconds),
             "policy_rows_per_execution_second": rate(successful_policy_rows, execution_wall_seconds),
             "requested_physics_workers": physical_workers.get(),
+            "requested_navigation_workers_per_level": navigation_workers.unwrap_or(0),
             "parallel_physics_rounds": parallel_physics_rounds,
             "parallel_stage_id_serialized_rounds": stage_id_serialized_rounds,
             "parallel_stage_id_serialized_arenas": stage_id_serialized_arenas,
@@ -2332,6 +2333,7 @@ fn run_battle(
         // records completed fixed-step work separately across all episodes.
         "vision_current_episodes": status.vision,
         "vision_completed_step_totals": status.simulation.vision,
+        "navigation_current_episodes": status.navigation_workers,
         "campaign_outcome": campaign_outcome,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
