@@ -450,9 +450,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
     ///
     /// `decide` fills a worker-local reusable decision buffer for the
     /// current world. It must derive actions from real observations/policy
-    /// state; the simulation does not invent neural actions. A GPU-batched
-    /// inference pipeline should use the existing explicit `step_world`
-    /// interface instead, so policy inference can synchronize across worlds.
+    /// state; the simulation does not invent neural actions. A model-batched
+    /// pipeline should use `step_world` or `step_selected_worlds_parallel`
+    /// after validating every model row, never infer inside this callback.
     ///
     /// One arena or one requested worker runs inline, with no thread spawn.
     /// Multiple arenas use scoped threads once per window, not once per
