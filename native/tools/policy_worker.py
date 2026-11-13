@@ -254,7 +254,8 @@ def file_sha256(path: Path) -> str:
         return stream_sha256(artifact)
 
 
-def checked_manifest(path: Path, expected_digest: bytes | None = None):
+def checked_manifest(path: Path, expected_digest: bytes | None = None,
+                     resident_models: dict | None = None):
     manifest_bytes = path.read_bytes()
     manifest_digest = hashlib.sha256(manifest_bytes).digest()
     if expected_digest is not None and manifest_digest != expected_digest:
@@ -312,6 +313,12 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None):
         }
         identity = (expected_sha256, json.dumps(settings, sort_keys=True))
         model = loaded_models.get(identity)
+        if model is None and resident_models is not None:
+            # An episode-boundary model update can change only the learner
+            # while retaining several verified frozen opponents. Their
+            # actor/ONNX sessions are still loaded, so neither allocate a
+            # second GPU copy nor reset unchanged state on a reload.
+            model = resident_models.get(identity)
         if model is None:
             if backend == "torchscript":
                 model = TorchScriptPolicy(model_file, config)
@@ -319,7 +326,11 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None):
                 model = OnnxPolicy(model_file, config)
             else:
                 model = MlagentsPolicy(model_file, config)
-            loaded_models[identity] = model
+        loaded_models[identity] = model
+        # The caller reconstructs its live cache only AFTER every candidate
+        # slot, signature and manifest update has been accepted. A rejected
+        # candidate can never displace the active cache.
+        model._verified_identity = identity
         # Libraries reopen model paths during deserialization. Detect an
         # artifact replaced between the first verified read and actual
         # model load, rather than attributing different weights to the
@@ -460,6 +471,9 @@ def main() -> None:
     parser.add_argument("--manifest", required=True, type=Path)
     args = parser.parse_args()
     signature, policy_map, manifest_digest = checked_manifest(args.manifest)
+    resident_models = {
+        model._verified_identity: model for model in policy_map.values()
+    }
     # A holdout benchmark can pin the action-sampling RNG without changing
     # ordinary gameplay/training or the versioned inference wire protocol.
     # Seed after loading model weights: constructor initialization may
@@ -510,7 +524,7 @@ def main() -> None:
                 if not manifest_path.is_absolute():
                     raise ValueError("model-update manifest must be absolute")
                 new_signature, new_map, new_digest = checked_manifest(
-                    manifest_path, expected_digest
+                    manifest_path, expected_digest, resident_models
                 )
                 if new_signature != signature:
                     raise ValueError("model-update policy ABI signature mismatch")
@@ -528,6 +542,11 @@ def main() -> None:
                 continue
             old_map = policy_map
             policy_map = new_map
+            # Replace, never accumulate: obsolete opponents and old learner
+            # weights must be released after a successful model transition.
+            resident_models = {
+                model._verified_identity: model for model in policy_map.values()
+            }
             manifest_digest = new_digest
             new_map = None
             del old_map
