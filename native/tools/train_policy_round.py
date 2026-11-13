@@ -21,7 +21,7 @@ import time
 import traceback
 import uuid
 
-from policy_worker import file_sha256
+from native_training_artifacts import file_sha256, check_learner, sync_directory
 
 
 def resolved(base: Path, value: str) -> str:
@@ -160,24 +160,6 @@ def expand_rollout_worlds(config: dict, requested_worlds: int, world_start: int 
                 ]
         selected.append(clone)
     config["levels"] = selected
-
-
-def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> str:
-    record = json.loads(manifest.read_text(encoding="utf-8"))
-    if record.get("format") != "bees-native-model-v1" or not isinstance(record.get("models"), list):
-        raise ValueError("native training requires a generated model manifest")
-    digest = file_sha256(checkpoint)
-    models = record["models"]
-    matching = {
-        item["slot"] for item in models
-        if item["backend"] == "mlagents" and item["sha256"] == digest
-    }
-    if slot is None:
-        if not matching or matching != {item["slot"] for item in models}:
-            raise ValueError("mixed-checkpoint training requires --learner-slot")
-    elif slot not in matching:
-        raise ValueError("learner slot must identify the supplied input checkpoint")
-    return digest
 
 
 def run_stage(command, diagnostic_path):
@@ -405,15 +387,6 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics):
         except BaseException:
             stop_parallel_rollout_workers(processes)
             raise
-
-
-def sync_directory(path):
-    if os.name == "posix":
-        directory = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
 
 
 def publish_receipt(output, filename, receipt, *, announce=True):
