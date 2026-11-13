@@ -78,6 +78,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'optimization_seconds','checkpoint_seconds',
         'remote_collector_join_wait_seconds','collection_merge_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
+        'remote_policy_shared_encode_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
         'ppo_ordering_seconds','ppo_zero_grad_seconds',
@@ -140,6 +141,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
+    add('remote_policy_shared_bytes',row.remote_policy_shared_bytes,'bytes');
+    add('remote_policy_shared_collectors',row.remote_policy_shared_collectors,'count');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
@@ -272,6 +275,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.collector_record_packed,'count');
         add('collector_'+i+'_record_board_groups',
             worker.collector_record_board_groups,'count');
+        add('collector_'+i+'_supports_weight_blob',
+            worker.collector_supports_weight_blob,'count');
+        add('collector_'+i+'_weight_blob_used',
+            worker.collector_weight_blob_used,'count');
         for(const [suffix,name] of [
             ['gpu_allocated_mb','collector_gpu_allocated_mb'],
             ['gpu_reserved_mb','collector_gpu_reserved_mb'],
