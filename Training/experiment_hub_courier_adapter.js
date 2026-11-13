@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {validateProgress}=require('./experiment_hub_progress');
+const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -227,6 +228,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const entry=windows?['-c',WINDOWS_ENTRY,path.join(out,'trainer.stderr.txt'),...launch]:launch;
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
                 '--seed',String(seed),'--workers',String(chosenWorkers),
+                '--active-learners',String(Math.min(chosenWorkers,
+                    fixedCpuParallelism(context.cpu_quota,64))),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(predecessor?['--resume']:[])];
         },
