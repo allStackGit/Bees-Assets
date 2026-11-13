@@ -630,6 +630,8 @@ pub struct NativeLevelLayout {
     pub add_static_polygons: Vec<NativePlacedStaticPolygon>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub translate_squads: Vec<NativeSquadTranslation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clone_squads: Vec<NativeSquadClone>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -662,6 +664,20 @@ pub struct NativePlacedStaticPolygon {
 #[serde(deny_unknown_fields)]
 pub struct NativeSquadTranslation {
     pub squad_item_id: i64,
+    pub by: [f32; 2],
+}
+
+/// Add a genuinely new native game squad from a verified source squad's
+/// exact hulls, weapons, sight, fleet metadata and formation. The Level
+/// allocates independent gameplay identities and may move the new squad
+/// without altering the original template.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeSquadClone {
+    pub source_squad_item_id: i64,
+    pub new_squad_item_id: i64,
+    /// One new world entity ID for each source member, in original order.
+    pub ship_ids: Vec<i64>,
     pub by: [f32; 2],
 }
 
@@ -879,7 +895,8 @@ impl NativePhysicalScene {
         use bees_sim::obstacle::ObstacleKind;
         let invalid = NativeSnapshotError::InvalidNativeLayout;
         if layout.remove_static_ids.is_empty() && layout.add_static_boxes.is_empty() &&
-            layout.add_static_polygons.is_empty() && layout.translate_squads.is_empty()
+            layout.add_static_polygons.is_empty() && layout.translate_squads.is_empty() &&
+            layout.clone_squads.is_empty()
         {
             return Ok(());
         }
