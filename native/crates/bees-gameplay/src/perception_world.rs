@@ -232,6 +232,18 @@ impl NativeWorldPerceptionAssembler {
             }
         }
         self.own_weapons = *inputs.own_weapons;
+        // Bomb is a physical non-turret special weapon. Its source-authored
+        // static statistics live in the Level, but its mount follows the
+        // current physical hull, including rotation. Both game and policy
+        // special actions use this same CombatWorld weapon attachment.
+        if let Some(spec) = world.special_weapon_spec(ship_id) {
+            if let Some(weapon) = self.own_weapons[spec.slot].as_mut() {
+                weapon.position = world.special_weapon_origin(ship_id)
+                    .ok_or(NativeWorldPerceptionError::Game(
+                        CombatWorldError::UnknownShip,
+                    ))?;
+            }
+        }
         // Real registered turrets own aiming, cooldown, attachment
         // offsets and readiness; an external snapshot may only supply
         // as-yet-unported non-turret weapon slots.

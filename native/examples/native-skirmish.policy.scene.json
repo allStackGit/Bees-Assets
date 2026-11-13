@@ -480,6 +480,13 @@
           "radius": 22,
           "layer": 18,
           "enabled": true
+        },
+        "observation": {
+          "range": 22,
+          "rate_of_fire": 1,
+          "rotation_rate": 0,
+          "projectile_value": 1,
+          "has_target_ship": false
         }
       },
       "policy": {
@@ -618,6 +625,13 @@
           "radius": 22,
           "layer": 18,
           "enabled": true
+        },
+        "observation": {
+          "range": 22,
+          "rate_of_fire": 1,
+          "rotation_rate": 0,
+          "projectile_value": 1,
+          "has_target_ship": false
         }
       },
       "policy": {

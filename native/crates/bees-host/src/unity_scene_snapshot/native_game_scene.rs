@@ -339,6 +339,24 @@ struct GameSpecialWeapon {
     charge_range: Option<GameWeaponRange>,
     #[serde(default)]
     proximity: Option<GameWeaponRange>,
+    /// Source Weapon stat fields not derivable from a physical Bomb trigger.
+    /// Mandatory for a policy Bomb controller; ordinary authored game
+    /// specialists can still omit policy-only observation metadata.
+    #[serde(default)]
+    observation: Option<GameBombObservation>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GameBombObservation {
+    range: f32,
+    rate_of_fire: f32,
+    rotation_rate: f32,
+    projectile_value: f32,
+    #[serde(default)]
+    projectile_speed: Option<f64>,
+    #[serde(default)]
+    has_target_ship: bool,
 }
 
 #[derive(Deserialize)]
@@ -656,7 +674,24 @@ impl NativePhysicalScene {
                 Some(NativeAuthoredShipSpecial::Striker { power, .. }) => Some(*power),
                 _ => None,
             };
+            let mut bomb_observation = None;
             let special_weapon = if let Some(weapon) = ship.special_weapon {
+                if ship.policy.is_some() && weapon.observation.is_none() {
+                    return Err(invalid("native policy Bomb needs its authored weapon observation attributes"));
+                }
+                if let Some(observed) = weapon.observation {
+                    if !observed.range.is_finite() || observed.range < 0.0 ||
+                        !observed.rate_of_fire.is_finite() || observed.rate_of_fire < 0.0 ||
+                        !observed.rotation_rate.is_finite() || observed.rotation_rate < 0.0 ||
+                        !observed.projectile_value.is_finite() || observed.projectile_value < 0.0 ||
+                        observed.projectile_speed.is_some_and(|v| !v.is_finite() || v < 0.0)
+                    {
+                        return Err(invalid("native Bomb observation attributes must be nonnegative and finite"));
+                    }
+                    bomb_observation = Some((weapon.slot, observed,
+                        Vec2::new(weapon.mount_offset[0], weapon.mount_offset[1]),
+                        weapon.power));
+                }
                 let charge = weapon.charge_range.map(GameWeaponRange::into_native);
                 let proximity = weapon.proximity.map(GameWeaponRange::into_native);
                 let mount_offset = Vec2::new(weapon.mount_offset[0], weapon.mount_offset[1]);
@@ -808,6 +843,29 @@ impl NativePhysicalScene {
                 turrets.push(NativeAuthoredTurret {
                     slot, spec, range_collider,
                     aim_at_front_of_ship: turret.aim_at_front_of_ship,
+                });
+            }
+            if let Some((slot, observed, offset, power)) = bomb_observation {
+                if observed_weapons[slot].is_some() {
+                    return Err(invalid("native Bomb slot collides with an ordinary turret slot"));
+                }
+                let (sin, cos) = ship.rotation_degrees.to_radians().sin_cos();
+                let muzzle = pos + Vec2::new(
+                    offset.x * cos - offset.y * sin,
+                    offset.x * sin + offset.y * cos,
+                );
+                observed_weapons[slot] = Some(ObservedWeapon {
+                    weapon_type: 0, range: observed.range,
+                    power: power as f32, rate_of_fire: observed.rate_of_fire,
+                });
+                self_weapons[slot] = Some(SelfWeapon {
+                    weapon_type: 0, position: muzzle,
+                    range: observed.range, power: power as f32,
+                    rate_of_fire: observed.rate_of_fire,
+                    rotation_rate: observed.rotation_rate,
+                    projectile_value: observed.projectile_value,
+                    projectile_speed: observed.projectile_speed,
+                    turret: None, has_target_ship: observed.has_target_ship,
                 });
             }
             let perception = AuthoredShipPerception {
