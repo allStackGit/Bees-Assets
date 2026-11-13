@@ -201,6 +201,7 @@ impl NativePolicyOnlyMetadata {
             !self.player.chasing.iter().any(|&owner|
                 events.roster().get(owner).is_some() &&
                 !events.commands().is_chasing_command(owner) &&
+                !self.scripted_queues.iter().any(|queue| queue.owner == owner) &&
                 self.player.squads.get(&owner)
                     .is_some_and(|p| p.user_controlled && p.can_accept_input))
         {
@@ -223,6 +224,7 @@ impl NativePolicyOnlyMetadata {
         for &(owner, side, origin) in &centers {
             if !self.player.chasing.contains(&owner) ||
                 events.commands().is_chasing_command(owner) ||
+                self.scripted_queues.iter().any(|queue| queue.owner == owner) ||
                 !self.player.squads.get(&owner).is_some_and(|p|
                     p.user_controlled && p.can_accept_input)
             { continue; }
