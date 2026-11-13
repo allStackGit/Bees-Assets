@@ -70,7 +70,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     }
     for(const name of ['collection_seconds','rollout_model_refresh_seconds',
         'rollout_engine_step_seconds','rollout_observation_prepare_seconds',
-        'rollout_learner_inference_seconds','rollout_opponent_processing_seconds',
+        'rollout_learner_inference_seconds','rollout_learner_gpu_stream_seconds',
+        'rollout_opponent_processing_seconds',
         'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
         'simulation_batch_wall_seconds','simulation_last_child_gap_seconds',
         'simulation_prefetch_overlap_seconds',
@@ -289,6 +290,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_observation_prepare_seconds,'seconds');
         add('collector_'+i+'_learner_inference_seconds',
             worker.rollout_learner_inference_seconds,'seconds');
+        add('collector_'+i+'_learner_gpu_stream_seconds',
+            worker.rollout_learner_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_opponent_processing_seconds',
             worker.rollout_opponent_processing_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
