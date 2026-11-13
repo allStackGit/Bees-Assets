@@ -1025,6 +1025,97 @@ impl NativePhysicalScene {
             }
         }
 
+        // Stage complete copies before changing the original Level. Unlike
+        // a position-only duplicate, each native ship needs its own physical
+        // ID, fleet value, current sight, command formation, and targeting
+        // history. Pull the exact weapon mounts/capabilities from one verified
+        // source template; never substitute hull-class guesses.
+        let highest_original_squad_id = self.source_squads.iter()
+            .map(|squad| squad.item_id).max().unwrap_or(0);
+        let mut new_squad_ids = HashSet::new();
+        let mut cloned_squads = Vec::new();
+        for clone in &layout.clone_squads {
+            let delta = Vec2::new(clone.by[0], clone.by[1]);
+            if !delta.is_finite() || clone.source_squad_item_id <= 0 ||
+                clone.new_squad_item_id <= highest_original_squad_id ||
+                clone.new_squad_item_id == i64::MAX ||
+                !new_squad_ids.insert(clone.new_squad_item_id)
+            {
+                return Err(invalid("native clone needs a unique new Stage squad identity and a finite offset"));
+            }
+            let template = self.source_squads.iter().find(|squad|
+                squad.item_id == clone.source_squad_item_id
+            ).ok_or(invalid("native clone references an unknown source squad"))?;
+            if template.members.is_empty() || template.members.len() > 1024 ||
+                template.members.len() != clone.ship_ids.len()
+            {
+                return Err(invalid("native clone must specify one new ship ID per original squad member"));
+            }
+            let mut ships = Vec::with_capacity(template.members.len());
+            for (&source_id, &new_id) in template.members.iter().zip(&clone.ship_ids) {
+                if new_id <= highest_original_id || new_id <= 0 ||
+                    new_id == i64::MAX || !new_ids.insert(new_id) ||
+                    self.fleet.get(new_id).is_some()
+                {
+                    return Err(invalid("native clone ship IDs must be unique and above all captured entities"));
+                }
+                let source = self.entities.iter().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == source_id => Some(ship),
+                    _ => None,
+                }).ok_or(invalid("native clone template ship is missing"))?;
+                // These carry source-only relationship IDs and extra
+                // lifecycle owners. Until fully native special/child fleet
+                // authoring exists, never clone those relationships blindly.
+                if source.policy.is_some() || source.motion.is_policy_controlled ||
+                    source.special.is_some() || source.special_weapon.is_some() ||
+                    source.drone_carrier_id.is_some() || source.vitals.is_dead() ||
+                    source.motion.is_moving || source.motion.has_target_coordinates ||
+                    source.motion.body_velocity.length_squared() != 0.0
+                {
+                    return Err(invalid("native squad clones require stationary ordinary game ships, not policy, special or carrier children"));
+                }
+                let position = source.motion.position + delta;
+                if !position.is_finite() ||
+                    position.x < self.bounds.min.x || position.x > self.bounds.max.x ||
+                    position.y < self.bounds.min.y || position.y > self.bounds.max.y
+                {
+                    return Err(invalid("native cloned ship placement is outside the authored map"));
+                }
+                let mut new_ship = source.clone();
+                new_ship.entity_id = new_id;
+                new_ship.motion.position = position;
+                new_ship.fleet_ship_id = None;
+                if let Some(activity) = &mut new_ship.combat_activity {
+                    activity.elapsed_seconds = None;
+                }
+                if let Some(rank) = &mut new_ship.weapon_rank_source {
+                    rank.stats.ship_id = new_id;
+                    rank.stats.fleet_damage_done = 0;
+                    rank.fleet_owner_ship_id = new_id;
+                }
+                let mut perception = *self.authored_ship_perceptions.get(&source_id)
+                    .ok_or(invalid("native clone is missing source weapon/perception metadata"))?;
+                perception.minerals_mined_this_level = 0;
+                if let Some(message) = &mut perception.allied_communication {
+                    *message = [0.0; 4];
+                }
+                let vision = *self.source_vision.get(&source_id)
+                    .ok_or(invalid("native clone is missing source vision registration"))?;
+                let formation = *self.source_formation.get(&source_id)
+                    .ok_or(invalid("native clone is missing source formation offsets"))?;
+                ships.push((new_ship, perception, vision, formation));
+            }
+            let mut squad = template.clone();
+            squad.item_id = clone.new_squad_item_id;
+            squad.members = clone.ship_ids.clone();
+            // The source's hotkey belongs to the original fleet. New native
+            // squads remain selectable by actual roster identity instead
+            // of masquerading as an old numbered player squad.
+            squad.hotkey_number = None;
+            squad.original_squad_count = None;
+            cloned_squads.push((squad, ships));
+        }
+
         if !removed.is_empty() {
             self.entities.retain(|entity| !removed.contains(&entity.entity_id()));
             self.source_static_discovery_values.retain(|id, _| !removed.contains(id));
@@ -1067,6 +1158,21 @@ impl NativePhysicalScene {
         }
         if !layout.add_static_boxes.is_empty() || !layout.add_static_polygons.is_empty() {
             self.has_obstacles = true;
+        }
+        for (squad, ships) in cloned_squads {
+            for (ship, perception, vision, formation) in ships {
+                let id = ship.entity_id;
+                self.fleet.register_spawned_ship(NativeFleetShipValue {
+                    ship_id: id,
+                    has_persistent_fleet_value: false,
+                    minerals_mined_this_level: 0,
+                }).expect("native clone IDs and fresh fleet values prevalidated");
+                self.authored_ship_perceptions.insert(id, perception);
+                self.source_vision.insert(id, vision);
+                self.source_formation.insert(id, formation);
+                self.entities.push(NativeAuthoredEntity::Ship(ship));
+            }
+            self.source_squads.push(squad);
         }
         Ok(())
     }
