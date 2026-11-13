@@ -904,11 +904,25 @@ impl NativePhysicalScene {
         {
             return Ok(());
         }
-        if self.source_episode.is_some() || self.source_policy_group.is_some() ||
-            !self.source_policy_bindings.is_empty()
-        {
+        // Imported training exports have already captured immutable source
+        // reward denominators. Never apply any layout mutation to those.
+        // A newly native-authored policy scene differs: static collider
+        // placements must be installed BEFORE its explicitly authored
+        // discovery baselines are checked and the group episode is frozen.
+        // Its agent roster, positions and squad membership still cannot be
+        // changed by the layout editor.
+        if self.source_episode.is_some() || self.source_policy_group.is_some() {
             return Err(invalid(
-                "native layout edits require a gameplay Level without frozen policy reward baselines",
+                "native layout edits require a Level without frozen policy reward baselines",
+            ));
+        }
+        if !self.source_policy_bindings.is_empty() && (
+            !layout.translate_squads.is_empty() ||
+            !layout.clone_squads.is_empty() ||
+            !layout.remove_squads.is_empty()
+        ) {
+            return Err(invalid(
+                "native policy layouts may only author initial static collider geometry",
             ));
         }
         let mut removed = HashSet::new();
