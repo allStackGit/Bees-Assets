@@ -2186,7 +2186,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const rollingByPoint=new Map();
             stats.set(run,{mean,rollingByPoint});
             if(showRolling) {
-                let window=[],part=[],lastStep=null,lastAxis=null;
+                let samples=[],sum=0,part=[],lastStep=null,lastAxis=null;
+                let regularSpacing=null;
                 const flush=()=>{
                     if(part.length>1)
                         overlays.push({tag:'path',attrs:{
@@ -2200,29 +2201,46 @@ document.addEventListener('DOMContentLoaded', () => {
                             r:4,fill:run.color,class:'plot-rolling-point'}});
                     part=[];
                 };
+                const reset=()=>{
+                    flush();samples=[];sum=0;lastStep=null;
+                    lastAxis=null;regularSpacing=null;
+                };
                 for(const point of run.valid) {
                     const step=point.steps_completed;
                     const axis=hubComparisonAxisValue(point,xKey);
-                    if(point.break_before||!usable(point)||
-                        !Number.isSafeInteger(step)||step<0||
-                        lastStep!==null&&step<lastStep||
-                        lastAxis!==null&&axis<lastAxis) {
-                        flush();window=[];lastStep=null;lastAxis=null;
+                    const valid=usable(point)&&Number.isSafeInteger(step)&&step>=0;
+                    if(point.break_before||!valid)reset();
+                    if(!valid)continue;
+                    if(lastStep!==null) {
+                        const spacing=axis-lastAxis;
+                        // Only smooth consecutive, approximately evenly
+                        // spaced observations along the chosen X-axis. A
+                        // downsampling boundary or telemetry gap starts a
+                        // new window; do not interpolate missing samples.
+                        if(step<=lastStep||!Number.isFinite(spacing)||
+                            spacing<=0||
+                            regularSpacing!==null&&
+                            Math.abs(spacing-regularSpacing)>
+                                Math.max(1,Math.abs(regularSpacing)*0.20))
+                            reset();
+                        else if(regularSpacing===null)
+                            regularSpacing=spacing;
                     }
-                    if(!usable(point)||!Number.isSafeInteger(step)||step<0)
-                        continue;
-                    window=window.filter(item=>
-                        item.step>step-50&&item.step!==step);
-                    window.push({step,value:hubMetricValue(point,key)});
-                    // A single retained point is not a rolling average.
-                    // Do not invent an average when downsampling has left
-                    // fewer than two distinct updates in this window.
-                    if(window.length>=2) {
-                        const rollingValue=window.reduce((sum,item)=>
-                            sum+item.value,0)/window.length;
-                        rollingByPoint.set(point,rollingValue);
+                    const value=hubMetricValue(point,key);
+                    samples.push(value);
+                    sum+=value;
+                    if(samples.length>rollingSamples)
+                        sum-=samples.shift();
+                    // The first valid pair starts the rolling curve.
+                    // While fewer than N samples exist, use the available
+                    // consecutive samples and display their actual count.
+                    if(samples.length>=2) {
+                        const rollingValue=sum/samples.length;
+                        rollingByPoint.set(point,{
+                            value:rollingValue,count:samples.length,
+                        });
                         part.push({axis,mean:rollingValue});
-                    }else flush();
+                    }
                     lastStep=step;lastAxis=axis;
                 }
                 flush();
