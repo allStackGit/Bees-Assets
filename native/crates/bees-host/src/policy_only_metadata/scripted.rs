@@ -88,11 +88,7 @@ impl NativeScriptedOrder {
                 max_sight.is_finite() && max_sight >= 0.0 && human_side > 0,
             Self::Mining { asteroid_id } => asteroid_id > 0,
             Self::Heal { ref beehive_ids } =>
-                !beehive_ids.is_empty() && beehive_ids.len() <= 256 &&
-                beehive_ids.iter().all(|id| *id > 0) && {
-                    let mut seen = HashSet::new();
-                    beehive_ids.iter().all(|id| seen.insert(*id))
-                },
+                !beehive_ids.is_empty() && beehive_ids.iter().all(|id| *id > 0),
             Self::FullRetreat { warp_gate_id } => warp_gate_id > 0,
         }
     }
