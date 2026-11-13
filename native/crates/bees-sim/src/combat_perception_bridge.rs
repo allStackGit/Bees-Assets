@@ -466,8 +466,9 @@ fn select_prepared_nearest(
     observer_id: i64,
     nearest: &mut BinaryHeap<ShipCandidateKey>,
     output: &mut Vec<ShipCandidateKey>,
-) -> Result<(), CombatPerceptionError> {
+) -> Result<u64, CombatPerceptionError> {
     const LIMIT: usize = 64;
+    let mut probed = 0_u64;
     let mut left = entries.partition_point(|entry|
         entry.position.x.total_cmp(&origin.x).is_lt()
     );
@@ -496,6 +497,7 @@ fn select_prepared_nearest(
             entry
         };
         if entry.id == observer_id { continue; }
+        probed += 1;
         let distance_squared = (entry.position - origin).length_squared();
         if !distance_squared.is_finite() {
             return Err(CombatPerceptionError::InvalidAuthoredMetadata);
@@ -515,7 +517,7 @@ fn select_prepared_nearest(
     while let Some(candidate) = nearest.pop() {
         output.push(candidate);
     }
-    Ok(())
+    Ok(probed)
 }
 
 /// Gather only discovered, alive collision asteroids from the actual
@@ -739,9 +741,33 @@ struct LiveShipCandidateSource {
     fleet_id: i64,
 }
 
+/// Episode-local observation work. Eligible counts are the source's
+/// full-scan alternatives, and examined counts are actual pruned visits.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct LiveShipCandidateMeasurements {
+    pub snapshots: u64,
+    pub indexed_live_ships: u64,
+    pub indexed_learned_enemies: u64,
+    pub eligible_candidates: u64,
+    pub examined_candidates: u64,
+    pub selected_candidates: u64,
+}
+
+impl LiveShipCandidateMeasurements {
+    pub fn merge(&mut self, other: Self) {
+        self.snapshots += other.snapshots;
+        self.indexed_live_ships += other.indexed_live_ships;
+        self.indexed_learned_enemies += other.indexed_learned_enemies;
+        self.eligible_candidates += other.eligible_candidates;
+        self.examined_candidates += other.examined_candidates;
+        self.selected_candidates += other.selected_candidates;
+    }
+}
+
 #[derive(Default)]
 pub struct LiveShipCandidateCollector {
     candidates: Vec<ShipCandidateKey>,
+    measurements: LiveShipCandidateMeasurements,
     /// X-sorted, per-side live roster, built once per world/episode/tick by
     /// NativeWorldPerceptionAssembler instead of scanned for every agent.
     live_by_side: HashMap<i32, Vec<LiveShipCandidateSource>>,
@@ -758,6 +784,14 @@ pub struct LiveShipCandidateCollector {
 impl LiveShipCandidateCollector {
     pub fn new() -> Self { Self::default() }
 
+    pub fn measurements(&self) -> LiveShipCandidateMeasurements {
+        self.measurements
+    }
+
+    pub fn reset_measurements(&mut self) {
+        self.measurements = LiveShipCandidateMeasurements::default();
+    }
+
     /// Snapshot the authoritative living source roster at one immutable
     /// policy decision boundary. This is shared by all observers in that
     /// world and invalidated by the owning assembler on episode/tick change
@@ -766,6 +800,7 @@ impl LiveShipCandidateCollector {
         &mut self, world: &CombatWorld, observing_sides: [i32; 2],
     ) -> Result<(), CombatPerceptionError> {
         for side in self.live_by_side.values_mut() { side.clear(); }
+        for side in self.learned_by_side.values_mut() { side.clear(); }
         if world.ships().len() != world.physics().ships().len() {
             return Err(CombatPerceptionError::MismatchedWorldStorage);
         }
@@ -821,6 +856,11 @@ impl LiveShipCandidateCollector {
                     .then_with(|| a.id.cmp(&b.id))
             });
         }
+        self.measurements.snapshots += 1;
+        self.measurements.indexed_live_ships += self.live_by_side.values()
+            .map(|entries| entries.len() as u64).sum::<u64>();
+        self.measurements.indexed_learned_enemies += self.learned_by_side.values()
+            .map(|entries| entries.len() as u64).sum::<u64>();
         Ok(())
     }
 
@@ -842,10 +882,13 @@ impl LiveShipCandidateCollector {
         let (observer, observer_body) = live_ship(world, observer_id)?;
         let entries = self.live_by_side.get(&observer.side)
             .ok_or(CombatPerceptionError::MismatchedWorldStorage)?;
-        select_prepared_nearest(
+        let examined = select_prepared_nearest(
             entries, observer_body.motion.position, observer_id,
             &mut self.nearest, &mut self.candidates,
         )?;
+        self.measurements.eligible_candidates += entries.len().saturating_sub(1) as u64;
+        self.measurements.examined_candidates += examined;
+        self.measurements.selected_candidates += self.candidates.len() as u64;
         self.sort_and_project(world, identities, metadata_for, output)
     }
 
@@ -863,10 +906,13 @@ impl LiveShipCandidateCollector {
         let (observer, observer_body) = live_ship(world, observer_id)?;
         let entries = self.learned_by_side.get(&observer.side)
             .ok_or(CombatPerceptionError::MismatchedWorldStorage)?;
-        select_prepared_nearest(
+        let examined = select_prepared_nearest(
             entries, observer_body.motion.position, observer_id,
             &mut self.nearest, &mut self.candidates,
         )?;
+        self.measurements.eligible_candidates += entries.len() as u64;
+        self.measurements.examined_candidates += examined;
+        self.measurements.selected_candidates += self.candidates.len() as u64;
         self.sort_and_project(world, identities, metadata_for, output)
     }
 
