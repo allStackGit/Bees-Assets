@@ -25,6 +25,9 @@ use super::NativePolicyOnlyMetadata;
 pub enum NativeScriptedOrder {
     MoveToPoint { destination: Vec2 },
     MoveToRandom { range: f32 },
+    /// The source Queue's prepared Command.EnemySquad reference. A mission
+    /// must identify an actual opposing squad, never a guessed nearest side.
+    Aggressive { enemy_squad_item_id: i64 },
 }
 
 impl NativeScriptedOrder {
@@ -34,6 +37,7 @@ impl NativeScriptedOrder {
                 NativeLocalCommandAction::MoveToPoint { destination },
             Self::MoveToRandom { range } =>
                 NativeLocalCommandAction::MoveToRandom { range },
+            Self::Aggressive { .. } => NativeLocalCommandAction::Aggressive,
         }
     }
 
@@ -41,6 +45,7 @@ impl NativeScriptedOrder {
         match self {
             Self::MoveToPoint { destination } => destination.is_finite(),
             Self::MoveToRandom { range } => range.is_finite() && range > 0.0,
+            Self::Aggressive { enemy_squad_item_id } => enemy_squad_item_id > 0,
         }
     }
 }
@@ -89,6 +94,17 @@ impl NativePolicyOnlyMetadata {
             {
                 return Err("scripted command source lacks formation or command settings");
             }
+            for order in &plan.orders {
+                if let NativeScriptedOrder::Aggressive { enemy_squad_item_id } = order {
+                    if !squads.iter().any(|enemy|
+                        enemy.owner.squad_id == *enemy_squad_item_id &&
+                        enemy.owner.level_id == squad.owner.level_id &&
+                        enemy.side != squad.side
+                    ) {
+                        return Err("scripted Aggressive needs an authenticated opposing squad");
+                    }
+                }
+            }
             staged.push(NativeScriptedQueueState {
                 owner: squad.owner, orders: plan.orders,
                 cursor: 0, repeat: plan.repeat,
@@ -132,6 +148,27 @@ impl NativePolicyOnlyMetadata {
             let order = self.scripted_queues[index].orders[self.scripted_queues[index].cursor];
             let source = *self.player.commands.get(&owner)
                 .ok_or(NativeLevelEventError::Commands(GameCommandError::MissingCombatSnapshot))?;
+            let enemy = if let NativeScriptedOrder::Aggressive { enemy_squad_item_id } = order {
+                let enemy_owner = events.roster().source_order().iter()
+                    .copied().find(|candidate|
+                        candidate.squad_id == enemy_squad_item_id
+                    );
+                let Some(enemy_owner) = enemy_owner else {
+                    // Unity Aggressive's first timer would finish when
+                    // EnemySquad has already been killed. Skip its now
+                    // unavailable prepared order without credit or a
+                    // second physical action.
+                    self.scripted_queues[index].cursor += 1;
+                    index += 1;
+                    continue;
+                };
+                let enemy = self.live_enemy(world, events.roster(), owner, enemy_owner)
+                    .map_err(NativeLevelEventError::Commands)?;
+                self.live_aggressive_snapshot(
+                    world, events.roster(), owner, enemy_owner, false,
+                ).map_err(NativeLevelEventError::Commands)?;
+                Some(enemy)
+            } else { None };
             let squad = events.roster().get(owner)
                 .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
             let formation = SquadFormationOptions {
@@ -139,7 +176,7 @@ impl NativePolicyOnlyMetadata {
                 can_override_bounds: false,
             };
             let order_view = native_squad_order_from_catalog(
-                world, squad, &self.ship_catalog, formation, None, None,
+                world, squad, &self.ship_catalog, formation, enemy, None,
                 |id| self.player.ships.get(&id).map(|source| source.offset),
                 |id| self.player.ships.get(&id).map(|source| source.clearance),
                 &mut self.scripted_members,

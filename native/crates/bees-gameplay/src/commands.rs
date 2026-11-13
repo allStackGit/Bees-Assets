@@ -1447,7 +1447,8 @@ impl NativeSquadCommandDirector {
         // existing HiveMind command and its reserved IDs intact.
         let timeout_seconds = match selection.local_command {
             LocalCommandKind::Guard | LocalCommandKind::Patrol |
-            LocalCommandKind::Mining | LocalCommandKind::Heal if local.is_some() => None,
+            LocalCommandKind::Mining | LocalCommandKind::Heal |
+            LocalCommandKind::Aggressive if local.is_some() => None,
             LocalCommandKind::Patrol => Some(settings.ai_squad_patrol_seconds),
             LocalCommandKind::ClosestFriendly =>
                 Some(settings.ai_squad_following_seconds),

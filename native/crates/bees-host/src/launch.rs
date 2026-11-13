@@ -122,6 +122,7 @@ struct ScriptedQueueConfig {
 enum ScriptedOrderConfig {
     MoveToPoint { destination: [f32; 2] },
     MoveToRandom { range: f32 },
+    Aggressive { enemy_squad_item_id: i64 },
 }
 
 #[derive(Deserialize, Serialize)]
@@ -420,6 +421,11 @@ fn make_setup(
                         },
                     ScriptedOrderConfig::MoveToRandom { range } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::MoveToRandom { range },
+                    ScriptedOrderConfig::Aggressive { enemy_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::Aggressive {
+                            enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
+                                .copied().unwrap_or(enemy_squad_item_id),
+                        },
                 }).collect(),
             },
         ).collect(),
