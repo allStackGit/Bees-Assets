@@ -1157,6 +1157,11 @@ impl NativePhysicalScene {
                 }
             }
         }
+        if layout.translate_squads.iter().any(|edit|
+            omitted_squads.contains(&edit.squad_item_id)
+        ) {
+            return Err(invalid("cannot translate and remove the same native source squad"));
+        }
         if omitted_squads.len() == self.source_squads.len() && cloned_squads.is_empty() {
             return Err(invalid("native layout would remove every playable squad"));
         }
@@ -1164,7 +1169,7 @@ impl NativePhysicalScene {
             NativeAuthoredEntity::Ship(ship) if !omitted_ship_ids.contains(&ship.entity_id) =>
                 ship.drone_carrier_id.is_some_and(|id| omitted_ship_ids.contains(&id)) ||
                 matches!(&ship.special, Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
-                    if omitted_ship_ids.contains(&carrier.carrier_id)),
+                    if carrier.carrier_id.is_some_and(|id| omitted_ship_ids.contains(&id))),
             _ => false,
         }) {
             return Err(invalid("native squad removal would orphan a surviving carrier child"));
