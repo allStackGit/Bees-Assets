@@ -166,13 +166,18 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&
         job.project_id==='tinybrains'&&job.frozen_parameters?.device==='dual'&&
         adapter.gpu_dual_execution==='split-ppo';
+    const multi=r.gpu_count>=2&&r.gpu_count<=8&&
+        lr.gpu_count===r.gpu_count&&
+        r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&
+        job.project_id==='courier'&&
+        adapter.gpu_multi_execution==='independent-ppo';
     if(!cpuOnly&&(!gpuEnabled||typeof adapter.gpu_verify_args!=='function'||
-        !(single||dual)||bindings.length!==r.gpu_count||
+        !(single||dual||multi)||bindings.length!==r.gpu_count||
         lr.gpus?.length!==r.gpu_count||
         bindings.some((bound,index)=>bound.id!==lr.gpus[index])||
         new Set(bindings.map(bound=>bound.pci_address)).size!==bindings.length||
         (r.gpus?.length&&r.gpus.some((id,index)=>id!==lr.gpus[index]))))
-        throw Error('Native GPU launch needs one approved PCI binding or two exclusive split-PPO bindings.');
+        throw Error('Native GPU launch needs a qualified physical PCI set and project-approved execution mode.');
     const stopPolicy=adapter.stop_policy||'terminate-group';
     if(!['terminate-group','interrupt-main'].includes(stopPolicy))
         throw Error('Unknown locally installed native stop policy.');
@@ -192,7 +197,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         artifact_lineage_root_id:lineageRoot,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
-        ...(!cpuOnly?(dual
+        ...(!cpuOnly?(dual||multi
             ?{gpu_pci_addresses:bindings.map(bound=>bound.pci_address),
                 gpu_mode:'exclusive'}
             :{gpu_pci_address:binding.pci_address,
