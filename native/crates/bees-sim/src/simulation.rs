@@ -5,7 +5,6 @@
 //! This initial foundation deliberately does not substitute approximate
 //! physics for Unity's behavior.
 
-use std::collections::VecDeque;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -466,7 +465,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                     return None;
                 }
                 action.as_ref().map(|action| (index, world, action.as_slice()))
-            }).collect::<VecDeque<_>>());
+            }));
         let outcomes = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(workers);
             for _ in 0..workers {
@@ -478,7 +477,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                     let mut arenas = 0;
                     loop {
                         let next = pending.lock()
-                            .expect("native model-step arena queue poisoned").pop_front();
+                            .expect("native model-step arena queue poisoned").next();
                         let Some((index, world, actions)) = next else { break };
                         arenas += 1;
                         if let Err(error) = step_one(
@@ -586,7 +585,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         // other workers finish their cheap arenas and sit idle. The threshold
         // keeps queue setup off the one-/few-tick path used by clients.
         let outcomes = if steps >= 64 && self.worlds.len() > workers {
-            let pending = Mutex::new(self.worlds.iter_mut().collect::<VecDeque<_>>());
+            let pending = Mutex::new(self.worlds.iter_mut());
             std::thread::scope(|scope| {
                 let mut handles = Vec::with_capacity(workers);
                 for _ in 0..workers {
@@ -598,7 +597,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                         let mut assigned = 0;
                         loop {
                             let next = pending.lock()
-                                .expect("native arena queue poisoned").pop_front();
+                                .expect("native arena queue poisoned").next();
                             let Some(world) = next else { break };
                             assigned += 1;
                             run_partition(
