@@ -206,11 +206,66 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_
     return result
 
 
+def fixed_reference_evaluation_manifest(round_directory, manifest, recipe):
+    """Evaluate the learner against the SAME initial opponent in every round.
+
+    The live training manifest periodically upgrades its opponent slot for
+    self-play. Reusing that mutable opponent in the holdout would invalidate
+    cross-round win-rate comparisons, despite identical environment seeds.
+    This derived manifest changes no training checkpoint or model routing.
+    """
+    initial = recipe["initial_manifest"]
+    original_path = Path(initial["path"])
+    if file_sha256(original_path) != initial["sha256"]:
+        raise ValueError("initial reference opponent manifest changed")
+    current = read_json(manifest)
+    reference = read_json(original_path)
+    if any(current.get(field) != reference.get(field)
+           for field in ("format", "abi_version", "policy_signature")):
+        raise ValueError("reference opponent and learner use different native policy ABIs")
+    if not isinstance(current.get("models"), list) or not isinstance(reference.get("models"), list):
+        raise ValueError("native evaluation requires verified model slot lists")
+    slot = recipe["self_play"]["opponent_slot"]
+    opponents = [entry for entry in reference["models"] if entry.get("slot") == slot]
+    if len(opponents) != 1:
+        raise ValueError("initial reference opponent slot is missing or ambiguous")
+    source_model = opponents[0]
+    reference_file = (original_path.parent / source_model["path"]).resolve(strict=True)
+    if file_sha256(reference_file) != source_model["sha256"]:
+        raise ValueError("initial reference opponent weights changed")
+
+    found = False
+    for model in current["models"]:
+        identity = model.get("slot")
+        if identity == slot:
+            model.clear()
+            model.update({**source_model, "path": str(reference_file)})
+            found = True
+            continue
+        artifact = (manifest.parent / model["path"]).resolve(strict=True)
+        if file_sha256(artifact) != model["sha256"]:
+            raise ValueError(f"native holdout model weights changed: slot {identity}")
+        # The derived manifest lives in a different directory from the
+        # trainer's emitted manifest; preserve absolute artifact identity.
+        model["path"] = str(artifact)
+    if not found:
+        raise ValueError("current native model manifest omitted the opponent slot")
+    output = round_directory / "fixed-reference-manifest.json"
+    if output.exists():
+        if read_json(output) != current:
+            raise ValueError("pinned reference holdout manifest changed on resume")
+    else:
+        atomic_json(output, current)
+    return output
+
+
 def ensure_evaluation(round_directory, manifest, recipe):
     eval_source = recipe["evaluation_config"]
     source_sha = eval_source["sha256"]
     if file_sha256(Path(eval_source["path"])) != source_sha:
         raise ValueError("holdout evaluation configuration changed during session")
+    if "self_play" in recipe:
+        manifest = fixed_reference_evaluation_manifest(round_directory, manifest, recipe)
     manifest_sha = file_sha256(manifest)
     attempts = []
     for path in round_directory.iterdir():
