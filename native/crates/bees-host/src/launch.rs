@@ -126,7 +126,7 @@ enum ScriptedActivationConfig {
     Immediate,
     AfterSeconds { seconds: f32 },
     OnDeployment,
-    OnCampaignCue { cue: bees_host::policy_only_metadata::NativeScriptedCue },
+    OnCampaignCue { cue: bees_host::policy_only_metadata::NativeMissionCue },
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]

@@ -14,10 +14,7 @@ use bees_gameplay::commands::{
 use bees_gameplay::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor, NativeLevelNotificationKind,
 };
-use bees_gameplay::campaign_dialogue::{
-    CampaignCue, CampaignDialogueSpec, UploadMilestone,
-};
-use serde::{Deserialize, Serialize};
+use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
 use bees_gameplay::level_inputs::native_squad_order_from_catalog;
 use bees_gameplay::squads::NativeSquadRoster;
 use bees_hivemind::session::SquadLifetime;
@@ -26,7 +23,7 @@ use bees_sim::geometry::Vec2;
 use bees_sim::simulation::RandomStream;
 use bees_sim::squad_movement::SquadFormationOptions;
 
-use super::NativePolicyOnlyMetadata;
+use super::{NativePolicyOnlyMetadata, NativeMissionCue};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NativeScriptedOrder {
@@ -61,56 +58,6 @@ impl NativeScriptedOrder {
 /// recycled hotkey number. The initial order starts on the first completed
 /// fixed step; delayed/cutscene-triggered orders require their actual Level
 /// trigger to enqueue this plan at that boundary.
-/// The actual kind of source campaign event. Fire Tank identity and
-/// upload progress are checked by the canonical event emitter; mission
-/// queues subscribe to a kind, not a copied object-ID or timer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NativeScriptedCue {
-    FireTankSpotted,
-    FireTankDestroyed,
-    MinesweeperVictory,
-    MinesweeperDefeat,
-    UploadTen,
-    UploadTwentyFour,
-    UploadFifty,
-    UploadSeventyFive,
-    UploadNinety,
-    BeenocularsVictory,
-    BeenocularsDefeat,
-}
-
-impl NativeScriptedCue {
-    fn matches(self, cue: CampaignCue) -> bool {
-        matches!((self, cue),
-            (Self::FireTankSpotted, CampaignCue::FireTankSpotted { .. }) |
-            (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
-            (Self::MinesweeperVictory, CampaignCue::MinesweeperVictory) |
-            (Self::MinesweeperDefeat, CampaignCue::MinesweeperDefeat) |
-            (Self::UploadTen, CampaignCue::BeenocularsUpload(UploadMilestone::Ten)) |
-            (Self::UploadTwentyFour, CampaignCue::BeenocularsUpload(UploadMilestone::TwentyFour)) |
-            (Self::UploadFifty, CampaignCue::BeenocularsUpload(UploadMilestone::Fifty)) |
-            (Self::UploadSeventyFive, CampaignCue::BeenocularsUpload(UploadMilestone::SeventyFive)) |
-            (Self::UploadNinety, CampaignCue::BeenocularsUpload(UploadMilestone::Ninety)) |
-            (Self::BeenocularsVictory, CampaignCue::BeenocularsVictory) |
-            (Self::BeenocularsDefeat, CampaignCue::BeenocularsDefeat)
-        )
-    }
-
-    fn valid_for(self, spec: Option<CampaignDialogueSpec>) -> bool {
-        match spec {
-            Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) =>
-                matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed |
-                    Self::MinesweeperVictory | Self::MinesweeperDefeat),
-            Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
-                matches!(self, Self::UploadTen | Self::UploadTwentyFour |
-                    Self::UploadFifty | Self::UploadSeventyFive | Self::UploadNinety |
-                    Self::BeenocularsVictory | Self::BeenocularsDefeat),
-            None => false,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NativeScriptedActivation {
     /// Source Squad.RunCommandQueue called at Level start.
@@ -121,7 +68,7 @@ pub enum NativeScriptedActivation {
     OnDeployment,
     /// Subscribe to the same-tick authored campaign notification.
     /// A cue is latched once even if the intended squad deploys later.
-    OnCampaignCue(NativeScriptedCue),
+    OnCampaignCue(NativeMissionCue),
 }
 
 pub struct NativeScriptedQueuePlan {
@@ -138,7 +85,7 @@ pub(super) struct NativeScriptedQueueState {
     repeat: bool,
     ready_tick: u64,
     on_deployment: bool,
-    required_cue: Option<NativeScriptedCue>,
+    required_cue: Option<NativeMissionCue>,
     cue_armed: bool,
 }
 

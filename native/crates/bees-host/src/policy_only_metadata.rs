@@ -8,7 +8,9 @@
 
 mod commands;
 mod scripted;
-pub use scripted::{NativeScriptedOrder, NativeScriptedQueuePlan};
+mod mission_cues;
+pub use scripted::{NativeScriptedOrder, NativeScriptedQueuePlan, NativeScriptedActivation};
+pub use mission_cues::NativeMissionCue;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
