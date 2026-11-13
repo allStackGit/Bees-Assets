@@ -57,6 +57,24 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             (unit==='ratio'&&(value<0||value>1)))return;
         metrics[name]={value,unit};
     }
+    // Count only real network collectors, never the local learner or
+    // additional GPUs within its process. Setup is measured client-side,
+    // while a full roundtrip includes independent worker compute.
+    const remoteSamples=(Array.isArray(row.collector_samples)
+        ?row.collector_samples:[]).filter(w=>w.mode==='remote'&&
+            (w.collector_client_connection_reused===0||
+             w.collector_client_connection_reused===1));
+    if(remoteSamples.length) {
+        const reused=remoteSamples.filter(
+            w=>w.collector_client_connection_reused===1).length;
+        add('remote_connection_reuse_share',
+            reused/remoteSamples.length,'ratio');
+        add('remote_connections_new',remoteSamples.length-reused,'count');
+        const times=remoteSamples.map(w=>w.collector_client_connect_seconds);
+        if(times.every(x=>Number.isFinite(x)&&x>=0))
+            add('remote_connection_setup_max_seconds',
+                Math.max(...times),'seconds');
+    }
     add('total_ppo_updates',row.update,'count');
     add('engine_steps',row.engine_steps,'count');
     add('simulation_match_steps',row.simulation_match_steps,'count');
@@ -325,6 +343,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_action_target',worker.action_target,'count');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
+        add('collector_'+i+'_connection_reused',
+            worker.collector_client_connection_reused,'count');
+        add('collector_'+i+'_connection_requests',
+            worker.collector_worker_connection_requests,'count');
+        add('collector_'+i+'_persistent_supported',
+            worker.collector_supports_persistent_session,'count');
+        add('collector_'+i+'_connect_seconds',
+            worker.collector_client_connect_seconds,'seconds');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
         // Learner-local elapsed wait measured after local collection; never
         // inferred from remote clocks or socket blocking as a network cause.
@@ -468,6 +494,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             'join_exposed_seconds','simulation_match_steps',
             'match_steps_per_second','sim_matches','sim_target',
             'sim_ram_headroom_mb','sim_admission_denied',
+            'connection_reused','connect_seconds',
             'gpu_allocated_mb','gpu_vram_lease_mb',
             'is_local_gpu','gpu_ordinal','gpu_lease_index',
             'rollout_engine_step_seconds','learner_inference_seconds',

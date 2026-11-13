@@ -174,6 +174,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_local_gpu_wait_dominant',
             'pipeline_local_gpu_wait_work_share',
             'pipeline_native_admission_pressure',
+            'pipeline_connection_setup_pressure',
+            'remote_connection_reuse_share',
+            'remote_connections_new',
+            'remote_connection_setup_max_seconds',
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
             'training_sim_dispatch_pressure',
@@ -194,7 +198,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         for(let i=0;i<17;i++) {
             for(const suffix of ['join_delay_pressure',
                 'sim_straggler_pressure','sim_dispatch_pressure',
-                'record_encode_pressure','prev_reply_prep_pressure'])
+                'record_encode_pressure','prev_reply_prep_pressure',
+                'connect_pressure'])
                 retain('collector_'+i+'_'+suffix,reported['collector_'+i+'_'+suffix]);
             for(const stage of ['engine','observation','inference','opponent'])
                 retain('collector_'+i+'_stage_'+stage+'_dominant',
@@ -345,12 +350,23 @@ class BottleneckEvidence {
             const stageHints=[];
             const simHints=[];
             const joinHints=[];
+            const connectHints=[];
             const gpuHints=[];
             for(let i=0;i<17;i++) {
                 const batch=seconds('collector_'+i+'_sim_batch_wall_seconds');
                 const tail=seconds('collector_'+i+'_sim_last_child_gap_seconds');
                 const queue=seconds('collector_'+i+'_sim_dispatch_queue_seconds');
                 const worker=seconds('collector_'+i+'_sim_engine_roundtrip_seconds');
+                const connect=seconds('collector_'+i+'_connect_seconds');
+                const roundtrip=seconds('collector_'+i+'_roundtrip_seconds');
+                const connectShare=(roundtrip>0&&connect!==null&&
+                    connect<=roundtrip)?connect/roundtrip:null;
+                if(connectShare!==null)
+                    add('collector_'+i+'_connect_work_share',connectShare);
+                // This is connection establishment, not the actual wire
+                // transmission or remote simulation compute.
+                connectHints[i]=connect!==null&&connect>=0.2&&
+                    connectShare!==null&&connectShare>=0.2;
                 const tailShare=(batch>0&&tail!==null&&tail<=batch)
                     ?tail/batch:null;
                 const exposed=seconds('collector_'+i+'_rollout_engine_step_seconds');
@@ -463,7 +479,7 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,localShare,mergeShare,stageHints,simHints,
-                    joinHints,gpuHints,collectorNativeDenials,resourceHints});
+                    joinHints,connectHints,gpuHints,collectorNativeDenials,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -498,6 +514,9 @@ class BottleneckEvidence {
                     Array.from({length:17},(_,i)=>i).some(i=>
                         recent.filter(x=>x.collectorNativeDenials?.[i]).length>=5))
                     add('pipeline_native_admission_pressure',1,'count');
+                if(Array.from({length:17},(_,i)=>i).some(i=>
+                    recent.filter(x=>x.connectHints?.[i]).length>=5))
+                    add('pipeline_connection_setup_pressure',1,'count');
                 if(sustained('gpuBusy'))
                     add('pipeline_gpu_host_busy_pressure',1,'count');
                 if(sustained('gpuMixed'))
@@ -527,6 +546,8 @@ class BottleneckEvidence {
                     // software parallelism pressure, not CPU saturation.
                     if(recent.filter(x=>x.collectorNativeDenials?.[i]).length>=5)
                         add('collector_'+i+'_sim_admission_pressure',1,'count');
+                    if(recent.filter(x=>x.connectHints?.[i]).length>=5)
+                        add('collector_'+i+'_connect_pressure',1,'count');
                     if(recent.filter(x=>x.simHints?.[i]?.tail).length>=5)
                         add('collector_'+i+'_sim_straggler_pressure',1,'count');
                     if(recent.filter(x=>x.simHints?.[i]?.queue).length>=5)
