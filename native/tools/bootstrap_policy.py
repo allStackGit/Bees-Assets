@@ -305,7 +305,9 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          collector_timeout_seconds: int,
                          evaluation_run_config: Path | None, evaluation_side: int | None,
                          evaluation_policy_seed: int,
-                         resume: bool = False) -> None:
+                         resume: bool = False,
+                         self_play_opponent_slot: int | None = None,
+                         self_play_refresh_every: int | None = None) -> None:
     """Hand freshly verified artifacts to the one existing native trainer.
 
     The session has its own immutable recipe, model lineage, round receipts
@@ -322,6 +324,11 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         command.append("--resume")
     if learner_slot is not None:
         command.extend(["--learner-slot", str(learner_slot)])
+    if self_play_opponent_slot is not None:
+        command.extend([
+            "--self-play-opponent-slot", str(self_play_opponent_slot),
+            "--self-play-refresh-every", str(self_play_refresh_every),
+        ])
     for option, value in (
         ("--rollout-worlds", rollout_worlds),
         ("--rollout-workers", rollout_workers),
@@ -364,6 +371,10 @@ def main() -> None:
                         help="continue from an unchanged completed bootstrap and existing round receipts")
     parser.add_argument("--learner-slot", type=int,
                         help="model slot to optimize; defaults to the first slot for multi-slot sessions")
+    parser.add_argument("--self-play-opponent-slot", type=int,
+                        help="opponent model slot to promote from the learner's completed checkpoints")
+    parser.add_argument("--self-play-refresh-every", type=int,
+                        help="successful PPO rounds between opponent promotions")
     parser.add_argument("--rollout-worlds", type=int,
                         help="number of independent native simulation arenas per training round")
     parser.add_argument("--rollout-workers", type=int,
@@ -402,6 +413,19 @@ def main() -> None:
         parser.error("--episodes-per-world must be between 1 and 1000000")
     if args.learner_slot is not None and args.learner_slot not in args.slots:
         parser.error("--learner-slot must identify one of the configured model slots")
+    if (args.self_play_opponent_slot is None) != (args.self_play_refresh_every is None):
+        parser.error("self-play needs both --self-play-opponent-slot and --self-play-refresh-every")
+    chosen_learner = (
+        args.learner_slot if args.learner_slot is not None
+        else args.slots[0] if len(args.slots) > 1 else None
+    )
+    if args.self_play_opponent_slot is not None and (
+        args.train_rounds is None or chosen_learner is None or
+        args.self_play_opponent_slot == chosen_learner or
+        args.self_play_opponent_slot not in args.slots or
+        not 1 <= args.self_play_refresh_every <= 99999
+    ):
+        parser.error("self-play requires training rounds, a distinct opponent model slot, and a positive refresh interval")
     if (args.distributed_plan is None) != (args.bundle_inbox is None):
         parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
     if args.collector_timeout_seconds < 0:
@@ -476,8 +500,7 @@ def main() -> None:
                            args.holdout_worlds, args.holdout_seed, args.holdout_episodes)
     print(json.dumps(result, sort_keys=True), flush=True)
     if args.train_rounds is not None:
-        learner_slot = (args.learner_slot if args.learner_slot is not None
-                        else args.slots[0] if len(args.slots) > 1 else None)
+        learner_slot = chosen_learner
         session = output / "session"
         if args.resume and session.exists() and not session.is_dir():
             raise ValueError("existing native training session is not a directory")
@@ -492,6 +515,8 @@ def main() -> None:
              else args.evaluation_run_config),
             args.evaluation_side, args.evaluation_policy_seed,
             resume=args.resume and session.is_dir(),
+            self_play_opponent_slot=args.self_play_opponent_slot,
+            self_play_refresh_every=args.self_play_refresh_every,
         )
 
 
