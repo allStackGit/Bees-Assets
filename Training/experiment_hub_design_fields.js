@@ -157,7 +157,13 @@ function validateCatalog(raw,installed=[],approved={}) {
     if(raw.courier!==undefined) {
         if(!installed.includes('courier')||!/^[0-9a-f]{64}$/.test(raw.courier.config_sha256))
             throw Error('Courier Design defaults require the installed adapter digest.');
-        result.courier={...validateFields(raw.courier),config_sha256:raw.courier.config_sha256};
+        if(raw.courier.training_schema_sha256!==undefined&&
+            !/^[0-9a-f]{64}$/.test(raw.courier.training_schema_sha256))
+            throw Error('Courier PPO Design settings require an approved training schema digest.');
+        result.courier={...validateFields(raw.courier),
+            config_sha256:raw.courier.config_sha256,
+            ...(raw.courier.training_schema_sha256
+                ?{training_schema_sha256:raw.courier.training_schema_sha256}:{})};
     }
     if(raw.tinybrains!==undefined) {
         const profiles=raw.tinybrains?.profiles;
@@ -188,6 +194,14 @@ function supportsDesign(catalog,project,parameters) {
         (entry.profile_sha256!==parameters.profile_sha256||
             catalog.tinybrains.source_sha256!==parameters.design_source_sha256))
         return false;
+    if(project==='courier') {
+        const training=Object.keys(changes).some(key=>key.startsWith('training.'));
+        if(training
+            ?!catalog.courier.training_schema_sha256||
+                parameters.training_schema_sha256!==catalog.courier.training_schema_sha256
+            :parameters.training_schema_sha256!==undefined)
+            return false;
+    }
     const known=new Map((entry.fields||catalog?.tinybrains?.fields||[]).map(field=>[field.key,field]));
     return Object.entries(changes).every(([key,value])=>{
         const field=known.get(key);
