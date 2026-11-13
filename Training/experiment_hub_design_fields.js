@@ -81,7 +81,7 @@ function described(config,project) {
 // Reject malformed descriptions before they become UI or placement evidence.
 function validField(field) {
     if(!field||typeof field!=='object'||Array.isArray(field)||
-        typeof field.key!=='string'||!/^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){0,6}$/i.test(field.key)||
+        typeof field.key!=='string'||!/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){0,6}$/i.test(field.key)||
         typeof field.label!=='string'||field.label.length>100||
         !['training','environment'].includes(field.section)||
         !['number','integer','boolean'].includes(field.type))
