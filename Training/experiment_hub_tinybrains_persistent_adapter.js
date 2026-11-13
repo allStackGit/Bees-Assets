@@ -309,6 +309,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_gpu_batch_used_pixels,'count');
         add('collector_'+i+'_gpu_batch_vram_capped',
             worker.rollout_gpu_batch_vram_capped,'count');
+        for(const [suffix,name] of [
+            ['gpu_batch_target_pixels','rollout_gpu_batch_target_pixels'],
+            ['gpu_batch_next_target','rollout_gpu_batch_next_target'],
+            ['gpu_batch_adjustments','rollout_gpu_batch_adjustments'],
+            ['gpu_batch_accepted','rollout_gpu_batch_accepted'],
+            ['gpu_batch_settled','rollout_gpu_batch_settled'],
+            ['gpu_batch_changed_next','rollout_gpu_batch_changed_next'],
+            ['gpu_batch_proven_target','rollout_gpu_batch_proven_target']])
+            add('collector_'+i+'_'+suffix,worker[name],'count');
         add('collector_'+i+'_opponent_processing_seconds',
             worker.rollout_opponent_processing_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
