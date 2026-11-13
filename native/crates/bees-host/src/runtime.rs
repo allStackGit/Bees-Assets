@@ -3,7 +3,7 @@
 //! session and durable notification sink. No placeholder actions, alternate
 //! physics, or shadow command queues live here.
 
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use bees_gameplay::inference::NativePolicyInference;
 use bees_gameplay::level_host::{
     NativeHiveMindFrameDelivery, NativeLevelActivationContext,
@@ -845,9 +845,9 @@ where
         Ok(())
     }
 
-    /// Actual multi-Level model inference, fixed-step combat and ordered
-    /// durable notification delivery. A partial-step error is returned,
-    /// never silently retried as a valid PPO trajectory.
+    /// Rendered and headless windows use the same model, world rules and
+    /// durable store-credit owner. Serial remains the default for small
+    /// battles; parallel physics is explicit and requires Send world state.
     pub fn run_window(
         &mut self,
         rounds: NonZeroU32,
@@ -863,6 +863,45 @@ where
                 &mut self.sink, rounds, delivery_every,
             )
         ).map_err(HostWindowError::Connection)?;
+        self.finish_window(result)
+    }
+
+    /// Parallel physical execution after one shared inference batch. The
+    /// same ordered sink flush and checkpoint protocol runs after workers
+    /// join; neither the connection nor the model crosses worker threads.
+    pub fn run_window_parallel(
+        &mut self,
+        rounds: NonZeroU32,
+        delivery_every: NonZeroU32,
+        workers: NonZeroUsize,
+    ) -> Result<NativeLevelWindowCounts,
+        HostWindowError<
+            <M as NativeLevelObservationContext>::Error, B::Error, S::Error,
+        >>
+    where
+        M: Send,
+        A: Send,
+    {
+        let result = self.connection.with_level_lifecycle(|connection|
+            self.driver.run_window_parallel(
+                &mut self.simulation, &mut self.model, connection,
+                &mut self.sink, rounds, delivery_every, workers,
+            )
+        ).map_err(HostWindowError::Connection)?;
+        self.finish_window(result)
+    }
+
+    fn finish_window(
+        &mut self,
+        result: Result<NativeLevelWindowCounts,
+            NativeLevelWindowError<
+                <M as NativeLevelObservationContext>::Error, B::Error, S::Error,
+            >>,
+    ) -> Result<NativeLevelWindowCounts,
+        HostWindowError<
+            <M as NativeLevelObservationContext>::Error, B::Error, S::Error,
+        >>
+    {
         // Even when a later world step failed, earlier completed episodes
         // may already have durably published prepared credits in this window.
         // Checkpoint those before returning either the window result or its
