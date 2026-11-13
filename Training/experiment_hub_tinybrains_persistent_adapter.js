@@ -76,7 +76,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_batch_wall_seconds','simulation_last_child_gap_seconds',
         'simulation_prefetch_overlap_seconds',
         'optimization_seconds','checkpoint_seconds',
-        'remote_collector_join_wait_seconds','collection_merge_seconds',
+        'remote_collector_join_wait_seconds','remote_collector_wait_after_local_max_seconds',
+        'collection_merge_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
         'remote_policy_shared_encode_seconds',
         'remote_opponent_snapshot_seconds',
@@ -117,6 +118,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'remote_collectors_ready_at_local_end',
+        'remote_collectors_pending_at_local_end',
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_next_update',
@@ -224,7 +227,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // Each collector is a separately identified contributor; remote transfer
     // roundtrip includes transmission and worker compute, not network-only time.
     for(const [i,worker] of (Array.isArray(row.collector_samples)
-        ?row.collector_samples:[]).slice(0,9).entries()) {
+        ?row.collector_samples:[]).slice(0,17).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_simulation_match_steps',
@@ -268,6 +271,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
+        // Learner-local elapsed wait measured after local collection; never
+        // inferred from remote clocks or socket blocking as a network cause.
+        add('collector_'+i+'_learner_wait_after_local_seconds',
+            worker.learner_wait_after_local_seconds,'seconds');
         add('collector_'+i+'_service_seconds',worker.collector_service_seconds,'seconds');
         add('collector_'+i+'_record_encode_seconds',
             worker.collector_record_encode_seconds,'seconds');
@@ -373,44 +380,77 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 worker.simulation_match_steps/elapsed,'rate');
         }
     }
-    // This is only a source-report envelope: the TinyBrains committed row
-    // retains the full transport profile. Never reject a valid many-worker
-    // update merely because optional detailed timings overflow the Hub's
-    // fixed project-neutral 512-field / 32-KiB progress contract.
-    // Keep the compact previous-reply summary for every worker as long as
-    // possible, dropping finer breakdowns across workers before summaries.
-    const optionalSuffixes=[
-        'client_auth_seconds','reply_auth_seconds',
-        'reply_decompress_seconds','reply_deserialize_seconds',
-        'worker_auth_seconds','worker_decompress_seconds',
-        'worker_deserialize_seconds',
-        'prev_reply_serial_seconds','prev_reply_compress_seconds',
-        'prev_reply_auth_seconds'];
-    const collectors=Math.min(9,Array.isArray(row.collector_samples)
-        ?row.collector_samples.length:0);
-    const fits=()=>Object.keys(metrics).length<=500&&
-        JSON.stringify(metrics).length<=31000;
-    if(!fits()) {
-        for(const suffix of optionalSuffixes) {
-            // Delete a detail for all workers before deleting a more
-            // valuable stage from just one worker.
-            for(let i=collectors-1;i>=0;i--) {
-                delete metrics['collector_'+i+'_'+suffix];
-                if(fits())break;
+    // The source progress/heartbeat has a fixed small envelope; the complete
+    // committed PPO history row and full-job export remain authoritative.
+    // Do not silently omit collectors 9-16 when a heterogeneous distributed
+    // group exceeds the detail budget. Give *every* collector the same core
+    // measurements first, then use remaining space for grouped reply evidence
+    // and fine-grained stages, evenly across workers.
+    if(Object.keys(metrics).length>500||JSON.stringify(metrics).length>31000) {
+        const all=metrics;
+        const selected={};
+        const n=Math.min(17,Array.isArray(row.collector_samples)
+            ?row.collector_samples.length:0);
+        let count=0, bytes=2; // JSON object braces
+        function include(key) {
+            if(!Object.hasOwn(all,key)||Object.hasOwn(selected,key))return false;
+            const size=JSON.stringify(key).length+1+
+                JSON.stringify(all[key]).length+(count?1:0);
+            if(count>=500||bytes+size>31000)return false;
+            selected[key]=all[key];
+            count++;
+            bytes+=size;
+            return true;
+        }
+        const keys=Object.keys(all);
+        const collectorField=/^collector_(\\d+)_(.+)$/;
+        for(const key of keys)
+            if(!collectorField.test(key))include(key);
+        const core=[
+            'ant_decisions','decisions_per_second','elapsed_seconds',
+            'learner_wait_after_local_seconds','simulation_match_steps',
+            'match_steps_per_second','sim_matches','sim_target',
+            'sim_ram_headroom_mb','gpu_allocated_mb','gpu_vram_lease_mb',
+            'rollout_engine_step_seconds','learner_inference_seconds',
+            'roundtrip_seconds','service_seconds',
+            'sim_dispatch_queue_seconds','sim_last_child_gap_seconds'];
+        for(const suffix of core)
+            for(let i=0;i<n;i++)include('collector_'+i+'_'+suffix);
+        // A delayed previous-worker reply is meaningful only if the prior
+        // update and its complete timing tuple survive together.
+        const prior=['prev_reply_update','prev_reply_prepare_seconds',
+                     'prev_reply_send_seconds','prev_reply_service_seconds'];
+        for(let i=0;i<n;i++) {
+            const names=prior.map(suffix=>'collector_'+i+'_'+suffix);
+            if(!names.every(name=>Object.hasOwn(all,name)))continue;
+            const originalCount=count,originalBytes=bytes;
+            const added=[];
+            for(const name of names) {
+                if(!include(name))break;
+                added.push(name);
             }
-            if(fits())break;
+            if(added.length!==names.length) {
+                for(const name of added)delete selected[name];
+                count=originalCount;
+                bytes=originalBytes;
+            }
         }
-        // Previous-reply diagnosis needs all three fields from the same
-        // update. Remove complete per-worker groups rather than publishing
-        // a partial summary that can no longer be interpreted accurately.
-        if(!fits())for(let i=collectors-1;i>=0;i--) {
-            for(const suffix of ['prev_reply_prepare_seconds',
-                                 'prev_reply_send_seconds',
-                                 'prev_reply_service_seconds',
-                                 'prev_reply_update'])
-                delete metrics['collector_'+i+'_'+suffix];
-            if(fits())break;
+        // The original source order groups comparable stage names. Visit
+        // each name across all collectors before the next optional stage so
+        // capacity pressure cannot erase every metric on later machines.
+        const coreSet=new Set([...core,...prior]);
+        const suffixes=[];
+        const seen=new Set();
+        for(const key of keys) {
+            const match=collectorField.exec(key);
+            if(match&&!coreSet.has(match[2])&&!seen.has(match[2])) {
+                suffixes.push(match[2]);
+                seen.add(match[2]);
+            }
         }
+        for(const suffix of suffixes)
+            for(let i=0;i<n;i++)include('collector_'+i+'_'+suffix);
+        return selected;
     }
     return metrics;
 }
