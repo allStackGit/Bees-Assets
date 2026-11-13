@@ -213,15 +213,20 @@ Unity to move entire squads or change static obstacle layouts. Add
     {"entity_id": 9000, "prefab_name": "Big Wall",
      "position": [12, -16], "rotation_degrees": 0}
   ],
+  "add_static_polygons": [
+    {"entity_id": 9001, "position": [-20, 18], "rotation_degrees": 30}
+  ],
   "translate_squads": [
     {"squad_item_id": 51, "by": [16, 0]}
   ]
 }
 ```
 
-Added boxes use the verified native prefab catalog; optional
-`local_corners` supplies four exact collider-local coordinates to resize
-the box. A new entity ID must be greater than every captured entity ID.
+Added boxes and polygons use the verified native prefab catalogs;
+optional `local_corners` supplies four exact box-local coordinates, and
+optional `local_vertices` replaces the polygon's source collider outline
+with an explicit valid local path. A new entity ID must be greater than
+every captured entity ID and must be unique across both kinds.
 Removal accepts only existing static box/polygon obstacles, never MapBorder,
 ships, projectiles or mission objects. Squad shifts preserve the original
 ship/weapon identity and formation offsets and require stationary initial
