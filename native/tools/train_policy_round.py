@@ -512,20 +512,20 @@ def main() -> None:
             if (any(type(identity) is not int or identity <= 0 for identity in identities)
                     or len(set(identities)) != len(levels)):
                 parser.error(f"parallel rollouts require distinct positive {field} values")
-    # Equal world counts are the first constraint. Within each count tier,
-    # spread copies of each authored Level across processes, rather than a
-    # stride that can concentrate a slow scene on one worker whenever its
-    # source count divides the process count. The mapping is deterministic
-    # and makes no unsupported hardware speed assumptions.
+    # Rotate worker assignment separately for each authored Level, but
+    # advance one shared worker cursor across sources. This guarantees
+    # that both total world counts and each source's replica counts differ
+    # by at most one across processes. Preserve the original Level order
+    # within every shard for deterministic source-order processing.
+    assignments = [None] * len(levels)
+    next_worker = 0
+    for source in range(authored_level_count):
+        for level_index in range(source, len(levels), authored_level_count):
+            assignments[level_index] = next_worker % workers
+            next_worker += 1
     buckets = [[] for _ in range(workers)]
-    source_counts = [{} for _ in range(workers)]
-    for level_index, level in enumerate(levels):
-        source = level_index % authored_level_count
-        worker = min(range(workers), key=lambda index: (
-            len(buckets[index]), source_counts[index].get(source, 0), index,
-        ))
-        buckets[worker].append(level)
-        source_counts[worker][source] = source_counts[worker].get(source, 0) + 1
+    for index, level in enumerate(levels):
+        buckets[assignments[index]].append(level)
 
     output.mkdir(parents=True, exist_ok=False)
     shards = []
