@@ -4,7 +4,6 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {validateProgress}=require('./experiment_hub_progress');
-const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -186,11 +185,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 !within(max_rounds,0,10000000)||
                 !within(checkpoint_rounds,1,10000000))
                 throw Error('Courier requires the approved configuration digest and valid seed, worker and round counts.');
-            // The approved adapter may treat an omitted worker count as the
-            // immutable CPU lease size. Explicit worker counts retain their
-            // previous semantics for existing frozen configurations.
-            const chosenWorkers=workers===undefined
-                ?fixedCpuParallelism(context.cpu_quota,64):workers;
+            // Courier workers own separate PPO policies and population
+            // lineages, not parallel simulators for one shared policy.
+            // Keep population size independent of CPU lease changes.
+            let chosenWorkers=workers===undefined?12:workers;
             const out=jobRoot(context);
             const publish=Boolean(snapshots&&context.evaluation_suite_id);
             if(publish&&(!UUID.test(String(context.dispatch_id||''))||
@@ -202,6 +200,14 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 const source=path.join(artifacts,predecessor);
                 const saved=completedCheckpoint(source,max_rounds);
                 files=saved.files;
+                if(workers===undefined) {
+                    // A continuation retains its original active population.
+                    // Extra CPU resources must not create new PPO lineages.
+                    if(!within(saved.checkpoint.workers,1,64)||
+                        saved.checkpoint.workers>saved.checkpoint.lineage.length)
+                        throw Error('Courier predecessor has an invalid saved population.');
+                    chosenWorkers=saved.checkpoint.workers;
+                }
                 if(context.expected_parent_model_sha256&&
                     modelFileSha256(saved.files.find(file=>path.basename(file)==='lineage-0.zip'))!==
                         context.expected_parent_model_sha256)
