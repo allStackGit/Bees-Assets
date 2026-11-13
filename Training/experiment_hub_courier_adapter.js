@@ -5,6 +5,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {validateProgress}=require('./experiment_hub_progress');
 const {fixedCpuParallelism}=require('./experiment_hub_resources');
+const {applyOverrides,described}=require('./experiment_hub_design_fields');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -253,6 +254,24 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
         throw Error('Courier environment configuration must be a JSON object.');
     const configSha256=crypto.createHash('sha256').update(config).digest('hex');
+    const designFields=described(parsed,'courier');
+    function effectiveConfig(overrides) {
+        if(overrides===undefined||Object.keys(overrides||{}).length===0) {
+            applyOverrides(parsed,'courier',overrides);
+            return config;
+        }
+        return Buffer.from(JSON.stringify(
+            applyOverrides(parsed,'courier',overrides),null,2)+'\\n');
+    }
+    function savedOverrides(folder) {
+        const file=path.join(folder,'hub-design-overrides.json');
+        if(!fs.existsSync(file))return undefined;
+        if(fs.realpathSync(file)!==file)throw Error('Courier design override file was redirected.');
+        const stat=fs.statSync(file);
+        if(!stat.isFile()||stat.size>16384)
+            throw Error('Courier design override file is invalid.');
+        return JSON.parse(fs.readFileSync(file,'utf8'));
+    }
     const windows=process.platform==='win32';
     const evaluator=evaluationReader('courier',evaluationRoot,evaluationSuites,[project,artifacts]);
     let snapshots=null;
@@ -292,7 +311,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         if(fs.statSync(summaryFile).size>256*1024)
             throw Error('Courier checkpoint summary exceeds 256 KiB.');
         const checkpoint=JSON.parse(fs.readFileSync(summaryFile,'utf8'));
-        if(!fs.readFileSync(localFile('hub-environment.json')).equals(config)||
+        const environment=effectiveConfig(savedOverrides(source));
+        if(!fs.readFileSync(localFile('hub-environment.json')).equals(environment)||
             !within(checkpoint.round,1,Number.MAX_SAFE_INTEGER-maxRounds)||
             !Array.isArray(checkpoint.lineage)||!within(checkpoint.lineage.length,1,64))
             throw Error('Courier checkpoint environment or population is invalid.');
@@ -300,11 +320,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         const required=['checkpoint.json',...checkpoint.lineage.map((_,i)=>'lineage-'+i+'.zip')];
         const optional=['champion.zip','milestone.json','milestone-policy.zip',
             ...checkpoint.lineage.map((_,i)=>'lineage-'+i+'-traits.json')];
-        return {checkpoint,files:required.concat(optional.filter(name=>names.has(name))).map(localFile)};
+        return {checkpoint,files:required.concat(optional.filter(name=>names.has(name))).map(localFile),environment};
     }
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        design_catalog:{courier:{...designFields,config_sha256:configSha256}},
         // Private machine-local export root, never an operator HTTP path.
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))throw Error('Invalid Courier job identity.');
@@ -313,11 +334,15 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         checkpoint_ready(context) {
             if(context.frozen_parameters?.config_sha256!==configSha256)
                 throw Error('Courier checkpoint environment pin changed.');
-            completedCheckpoint(jobRoot(context),10000000);
+            const saved=completedCheckpoint(jobRoot(context),10000000);
+            if(!saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides)))
+                throw Error('Courier checkpoint design differs from its frozen job.');
             return true;
         },
         model_checkpoint_sha256(context) {
             const saved=completedCheckpoint(jobRoot(context),10000000);
+            if(!saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides)))
+                throw Error('Courier checkpoint design differs from its frozen job.');
             const model=saved.files.find(file=>path.basename(file)==='lineage-0.zip');
             if(!model)throw Error('Courier evaluated policy is not available for promotion.');
             return modelFileSha256(model);
@@ -325,9 +350,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         checkpoint_stop_file:context=>path.join(jobRoot(context),'hub-stop.request'),
         ...evaluator,
         args(parameters,context) {
-            const {config_sha256,seed,workers,max_rounds,checkpoint_rounds}=parameters;
+            const {config_sha256,seed,workers,max_rounds,checkpoint_rounds,design_overrides}=parameters;
+            const environment=effectiveConfig(design_overrides);
             if(Object.keys(parameters).some(key=>
-                !['config_sha256','seed','workers','max_rounds','checkpoint_rounds'].includes(key))||
+                !['config_sha256','seed','workers','max_rounds','checkpoint_rounds','design_overrides'].includes(key))||
                 config_sha256!==configSha256||!within(seed,0,4294967295)||
                 !(workers===undefined&&cpuParallelism==='allocation')&&
                     !within(workers,1,64)||
@@ -349,6 +375,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             if(predecessor) {
                 const source=path.join(artifacts,predecessor);
                 const saved=completedCheckpoint(source,max_rounds);
+                if(!saved.environment.equals(environment))
+                    throw Error('Courier checkpoint continuation requires unchanged training environment.');
                 files=saved.files;
                 if(context.expected_parent_model_sha256&&
                     modelFileSha256(saved.files.find(file=>path.basename(file)==='lineage-0.zip'))!==
@@ -360,7 +388,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             for(const file of files)
                 fs.copyFileSync(file,path.join(out,path.basename(file)),fs.constants.COPYFILE_EXCL);
             const configFile=path.join(out,'hub-environment.json');
-            fs.writeFileSync(configFile,config,{flag:'wx',mode:0o600});
+            fs.writeFileSync(configFile,environment,{flag:'wx',mode:0o600});
+            if(design_overrides!==undefined)
+                fs.writeFileSync(path.join(out,'hub-design-overrides.json'),
+                    JSON.stringify(design_overrides)+'\\n',{flag:'wx',mode:0o600});
             // The wrapper provides the same checkpoint-boundary Stop request
             // on both platforms; systemd remains the sole Linux service owner.
             const launch=[path.join(__dirname,'experiment_hub_courier_train.py'),
