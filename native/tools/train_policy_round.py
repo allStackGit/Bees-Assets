@@ -287,16 +287,19 @@ def combined_rollout_metrics(shards, wall_seconds):
 
 
 def stop_parallel_rollout_workers(processes):
-    """Retire only subprocesses launched by this collector, including their
-    resident inference children. Do not abandon expensive orphaned workers
-    when a sibling fails or operator interruption ends the round.
+    """Retire the owned native process trees after any failed collection.
+
+    On POSIX the Rust group leader may already have exited nonzero while
+    its Python inference descendant is still running. A parent-only live
+    list misses that child. Each rollout was launched with a dedicated
+    session ID equal to its PID, so terminate the *owned process group*
+    even when the leader has already exited.
     """
     live = [process for process in processes if process.poll() is None]
-    if not live:
-        return
     if os.name == "nt":
-        # Windows Popen.terminate only kills the Rust parent, leaving its
-        # Python model worker behind. /T follows this owned process tree.
+        if not live:
+            return
+        # Windows taskkill /T traverses a still-live Rust process tree.
         for process in live:
             try:
                 result = subprocess.run(
@@ -313,24 +316,27 @@ def stop_parallel_rollout_workers(processes):
                     except ProcessLookupError:
                         pass
     else:
-        # Each launched rollout has a separate session/process group.
-        # A child policy backend inherits that group, so stopping its
-        # owner does not leave a GPU inference process running.
-        for process in live:
+        groups = []
+        for process in processes:
             try:
                 os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
-                pass
-        deadline = time.monotonic() + 1.0
-        while time.monotonic() < deadline and any(
-            process.poll() is None for process in live
-        ):
-            time.sleep(0.05)
-        for process in live:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+                continue
+            groups.append(process.pid)
+        # Give children a short interval to release GPU/IPC resources.
+        # Waiting only for the parent is insufficient after a Rust crash.
+        if groups:
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline:
+                if not any(process.poll() is None for process in live):
+                    time.sleep(0.2)
+                    break
+                time.sleep(0.05)
+            for group in groups:
+                try:
+                    os.killpg(group, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
     for process in live:
         try:
             process.wait(timeout=5)
