@@ -885,7 +885,7 @@ impl NativePhysicalScene {
                         mining_possible: policy_capabilities.mining,
                         healing_possible: policy_capabilities.healing.is_some(),
                         warp_possible: policy_capabilities.warp_human_side.is_some(),
-                        is_carrier_child: matches!(ship.ship_type, 8 | 19),
+                        is_carrier_child: parent_carrier_id.is_some(),
                         has_living_parent_carrier: parent_carrier_id.is_some(),
                         ship_mined_tsv: 0, team_retainable_mined_tsv: 0,
                         side_starting_tsv: if ship.side == raw.bee_side {
