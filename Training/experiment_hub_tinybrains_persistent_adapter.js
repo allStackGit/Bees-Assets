@@ -67,6 +67,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     }
     for(const name of ['collection_seconds','rollout_model_refresh_seconds',
         'rollout_engine_step_seconds','rollout_learner_inference_seconds',
+        'rollout_observation_encode_seconds','rollout_opponent_inference_seconds',
+        'rollout_result_processing_seconds',
         'optimization_seconds','collector_wait_seconds',
         'collector_critical_path_seconds','collector_elapsed_spread_seconds',
         'checkpoint_write_seconds',
@@ -86,7 +88,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'truncated_groups','terminal_groups','collector_count',
         'ppo_minibatches','ppo_microbatches',
         'ppo_board_pixel_samples','ppo_max_board_cells',
-        'ppo_unique_board_shapes','policy_lag','action_target'])
+        'ppo_unique_board_shapes','policy_lag','action_target',
+        'rollout_inference_batches','rollout_inference_boards',
+        'rollout_inference_max_batch'])
         add(name,row[name],'count');
     // These optimizer observations can be negative; they are scalar values,
     // never performance or strength certification.
@@ -94,7 +98,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'entropy','actor_grad_norm','group_grad_norm',
         'baseline_grad_norm','actor_max_weight_change',
         'critic_max_weight_change','learning_rate','population_mean',
-        'states_per_microbatch'])add(name,row[name],'scalar');
+        'states_per_microbatch','rollout_inference_mean_batch'])
+        add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rss_mb',row.rss_mb,'mb');
     if(Number.isFinite(row.elapsed_seconds))
@@ -178,7 +183,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // Each collector is a separately identified contributor; remote transfer
     // roundtrip includes transmission and worker compute, not network-only time.
     for(const [i,worker] of (Array.isArray(row.collector_samples)
-        ?row.collector_samples:[]).slice(0,9).entries()) {
+        ?row.collector_samples:[]).slice(0,17).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_action_target',worker.action_target,'count');
@@ -191,6 +196,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_learner_inference_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
+        for(const name of ['rollout_inference_batches','rollout_inference_boards',
+            'rollout_inference_max_batch'])
+            add('collector_'+i+'_'+name,worker[name],'count');
+        add('collector_'+i+'_rollout_inference_mean_batch',
+            worker.rollout_inference_mean_batch,'scalar');
+        for(const name of ['rollout_observation_encode_seconds',
+            'rollout_opponent_inference_seconds','rollout_result_processing_seconds'])
+            add('collector_'+i+'_'+name,worker[name],'seconds');
         for(const stage of ['remote_collect_seconds','remote_record_encode_seconds',
             'transport_connect_seconds','transport_request_send_seconds',
             'transport_response_receive_seconds','transport_record_decode_seconds'])
