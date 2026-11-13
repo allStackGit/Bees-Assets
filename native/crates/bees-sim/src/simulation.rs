@@ -466,30 +466,41 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 }
                 action.as_ref().map(|action| (index, world, action.as_slice()))
             }));
-        let outcomes = std::thread::scope(|scope| {
-            let mut handles = Vec::with_capacity(workers);
-            for _ in 0..workers {
-                let pending = &pending;
-                handles.push(scope.spawn(move || {
-                    let started = Instant::now();
-                    let mut measurements = Measurements::default();
-                    let mut failures = Vec::new();
-                    let mut arenas = 0;
-                    loop {
-                        let next = pending.lock()
-                            .expect("native model-step arena queue poisoned").next();
-                        let Some((index, world, actions)) = next else { break };
-                        arenas += 1;
-                        if let Err(error) = step_one(
-                            rules, dt, sample, world, actions, &mut measurements,
-                        ) {
-                            failures.push((index, error));
-                        }
-                    }
-                    (measurements, arenas, failures, started.elapsed())
-                }));
+        // Run one worker on the owning caller thread. Spawning every
+        // worker and then immediately blocking on joins wasted one CPU core
+        // and paid an extra thread creation on every model inference round.
+        // The model has already finished; only disjoint world ticks run
+        // here. Catch the inline panic too so all scoped workers are joined
+        // before the same all-world failure path invalidates trajectories.
+        let work = || {
+            let started = Instant::now();
+            let mut measurements = Measurements::default();
+            let mut failures = Vec::new();
+            let mut arenas = 0;
+            loop {
+                let next = pending.lock()
+                    .expect("native model-step arena queue poisoned").next();
+                let Some((index, world, actions)) = next else { break };
+                arenas += 1;
+                if let Err(error) = step_one(
+                    rules, dt, sample, world, actions, &mut measurements,
+                ) {
+                    failures.push((index, error));
+                }
             }
-            handles.into_iter().map(|handle| handle.join()).collect::<Vec<_>>()
+            (measurements, arenas, failures, started.elapsed())
+        };
+        let outcomes = std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(workers - 1);
+            for _ in 1..workers {
+                handles.push(scope.spawn(&work));
+            }
+            let mut outcomes = Vec::with_capacity(workers);
+            outcomes.push(std::panic::catch_unwind(
+                std::panic::AssertUnwindSafe(&work),
+            ));
+            outcomes.extend(handles.into_iter().map(|handle| handle.join()));
+            outcomes
         });
         // Release claimed/unclaimed mutable references before modifying
         // world state after a worker failure.
