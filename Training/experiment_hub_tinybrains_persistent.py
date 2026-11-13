@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--device", choices=("cpu", "cuda", "dual"), default="cuda")
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
+    parser.add_argument("--adaptive-local-engines", action="store_true")
     parser.add_argument("--remote-rollout-endpoint", action="append", default=[])
     parser.add_argument("--remote-rollout-weight", action="append", type=int, default=[])
     parser.add_argument("--remote-rollout-key-file")
@@ -80,6 +81,7 @@ def main():
         "--config", str(spec),
         "--out", str(run),
         "--persistent",
+        *(["--adaptive-local-engines"] if args.adaptive_local_engines else []),
         "--self-play-device", optimization_device,
         *(["--self-play-collection-device", collection_device] if collection_device else []),
         "--self-play-threads", str(args.threads),
