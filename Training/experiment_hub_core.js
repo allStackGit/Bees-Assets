@@ -3956,7 +3956,7 @@ class ExperimentHub {
             // device; they are not measured per-job GPU consumption.
             // Diagnoses are observational only: neither native ownership nor
             // checkpoint, stop, admission or promotion decisions use them.
-            let chartProgress=this.bottleneckEvidence.enrich(job,progress);
+            let chartProgress=null;
             {
                 const liveOwner=['running','stop_requested'].includes(item.state);
                 const observed={};
@@ -4014,6 +4014,11 @@ class ExperimentHub {
                             device.hotspot_temperature_c,'scalar');
                     }
                 }
+                // Correlate completed training stages with authenticated
+                // per-job lease observations only after the host sample has
+                // been constructed. Missing/host-wide device data never
+                // becomes invented trainer-level GPU utilization.
+                chartProgress=this.bottleneckEvidence.enrich(job,progress,observed);
                 // Archive validated source and host measurements before the
                 // bounded chart selector/coalescer discards sampling detail.
                 // This archive is observational and cannot gate training.
