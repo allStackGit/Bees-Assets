@@ -799,8 +799,8 @@
       "ship_type": 9,
       "side": 2,
       "position": [
-        48,
-        62
+        4,
+        70
       ],
       "rotation_degrees": 270,
       "rotation_speed_degrees_per_second": 0,
