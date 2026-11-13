@@ -13,6 +13,7 @@ from pathlib import Path
 import random
 import shutil
 import subprocess
+import sys
 
 import numpy as np
 
@@ -87,7 +88,7 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     run.update({
         "run_id": f"native-{scenario}-bootstrap-{seed}",
         "stage_name": scene["stage_name"],
-        "python": str(Path(__import__("sys").executable).resolve()),
+        "python": str(Path(sys.executable).resolve()),
         "policy_worker": str(ROOT / "native" / "tools" / "policy_worker.py"),
         "model_manifest": "manifest.json",
     })
@@ -95,9 +96,9 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     level["scene"] = "scene.json"
     level["model_slots"] = {"0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0]}
     level.pop("scripted_queues", None)
-    with (output / "run.json").open("x", encoding="utf-8", newline="\\n") as file:
+    with (output / "run.json").open("x", encoding="utf-8", newline="\n") as file:
         json.dump(run, file, indent=2)
-        file.write("\\n")
+        file.write("\n")
         file.flush()
         os.fsync(file.fileno())
     sync_directory(output)
