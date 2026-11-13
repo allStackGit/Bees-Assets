@@ -9,9 +9,9 @@ const safeInt=n=>Number.isSafeInteger(n)&&n>=0;
 const GENERIC_METRIC=/^[a-z][a-z0-9_]{0,39}$/;
 const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','bytes','milliseconds','watts']);
 // Keep the bounded source envelope larger than the 96-metric chart cache.
-// Nine fully instrumented collectors can publish almost 400 stage,
-// resource and outcome measurements. The unchanged 32-KiB serialized
-// envelope still bounds payload size, separately from this field limit.
+// The bounded source projection preserves core measurements for up to 17
+// collectors and reserves room for sustained coordinator-side diagnosis.
+// Complete training history and full-job exports remain authoritative.
 // Complete trainer metrics reach the archive before chart downselection.
 const MAX_SOURCE_METRICS=512;
 function validateGenericProgress(value,projectId) {
@@ -142,8 +142,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             retain(name,reported[name]);
         // At most one sustained stage can dominate each fully instrumented
         // collector. Give confirmed per-worker evidence a default chart slot.
-        for(let i=0;i<9;i++) {
-            for(const suffix of ['sim_straggler_pressure','sim_dispatch_pressure',
+        for(let i=0;i<17;i++) {
+            for(const suffix of ['join_delay_pressure',
+                'sim_straggler_pressure','sim_dispatch_pressure',
                 'record_encode_pressure','prev_reply_prep_pressure'])
                 retain('collector_'+i+'_'+suffix,reported['collector_'+i+'_'+suffix]);
             for(const stage of ['engine','observation','inference','opponent'])
@@ -258,7 +259,8 @@ class BottleneckEvidence {
                 'opponent_processing_seconds'];
             const stageHints=[];
             const simHints=[];
-            for(let i=0;i<9;i++) {
+            const joinHints=[];
+            for(let i=0;i<17;i++) {
                 const batch=seconds('collector_'+i+'_sim_batch_wall_seconds');
                 const tail=seconds('collector_'+i+'_sim_last_child_gap_seconds');
                 const queue=seconds('collector_'+i+'_sim_dispatch_queue_seconds');
@@ -310,6 +312,16 @@ class BottleneckEvidence {
                     add('collector_'+i+'_prev_reply_prep_share',prepShare);
                 if(prepWorkShare!==null)
                     add('collector_'+i+'_prev_reply_prep_work_share',prepWorkShare);
+                const joinExposed=seconds('collector_'+i+'_join_exposed_seconds');
+                const joinShare=(collection>0&&joinExposed!==null&&
+                    joinExposed<=collection)?joinExposed/collection:null;
+                if(joinShare!==null)
+                    add('collector_'+i+'_join_exposed_share',joinShare);
+                // An individual remote collector is a sustained barrier
+                // only when its authenticated, learner-clock completion is
+                // late relative to local collection, not just because the
+                // coordinator read its future in a particular order.
+                joinHints[i]=joinExposed>=0.5&&joinShare>=0.20;
                 simHints[i]={
                     // With early dispatch, the slowest-child completion
                     // tail may have been hidden under opponent preparation.
@@ -348,7 +360,7 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,mergeShare,stageHints,simHints,
-                    resourceHints});
+                    joinHints,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -387,7 +399,11 @@ class BottleneckEvidence {
                 if(sustained('gpuIdle')&&
                         recent.filter(x=>x.fraction<=0.3).length>=5)
                     add('pipeline_gpu_idle_evidence',1,'count');
-                for(let i=0;i<9;i++) {
+                for(let i=0;i<17;i++) {
+                    // The reported collector ID is a stable position in
+                    // the frozen remote fanout, not an inferred host label.
+                    if(recent.filter(x=>x.joinHints?.[i]).length>=5)
+                        add('collector_'+i+'_join_delay_pressure',1,'count');
                     // Stable straggler tails or dispatch queueing suggest
                     // software parallelism pressure, not CPU saturation.
                     if(recent.filter(x=>x.simHints?.[i]?.tail).length>=5)
@@ -514,7 +530,7 @@ class BottleneckEvidence {
         // the existing TinyBrains source and must never be subtracted from it.
         // Residual includes transport, framing, serialization and queueing,
         // NOT a measurement of network bandwidth alone.
-        for(let i=0;i<9;i++) {
+        for(let i=0;i<17;i++) {
             const roundtrip=seconds('collector_'+i+'_roundtrip_seconds');
             const service=seconds('collector_'+i+'_service_seconds');
             if(roundtrip!==null&&service!==null&&roundtrip>0&&service<=roundtrip)
@@ -525,20 +541,20 @@ class BottleneckEvidence {
         // metrics or violate the existing bounded wire contract.
         const available=Math.max(0,MAX_SOURCE_METRICS-Object.keys(metrics).length);
         // Confirmed, sustained stage limitations matter more than optional
-        // continuous ratios when nine profiled collectors approach the wire
-        // limit. Never evict a project-owned source metric for a diagnosis.
+        // continuous ratios when many collectors approach the wire limit. Never evict a project-owned source metric for a diagnosis.
         const priority=name=>
             name.startsWith('pipeline_')&&(
                 name.endsWith('_pressure')||name.endsWith('_evidence'))?0:
             name.startsWith('pipeline_')&&name.endsWith('_dominant')?0:
             // Keep evidence from every machine before filling the report
             // with a second or third warning from the first collector.
-            name.endsWith('_sim_straggler_pressure')?1:
-            name.endsWith('_sim_dispatch_pressure')?2:
-            name.endsWith('_record_encode_pressure')?3:
-            name.endsWith('_pressure')?4:
-            name.endsWith('_dominant')?5:
-            name==='pipeline_timing_sample_count'?6:7;
+            name.endsWith('_join_delay_pressure')?1:
+            name.endsWith('_sim_straggler_pressure')?2:
+            name.endsWith('_sim_dispatch_pressure')?3:
+            name.endsWith('_record_encode_pressure')?4:
+            name.endsWith('_pressure')?5:
+            name.endsWith('_dominant')?6:
+            name==='pipeline_timing_sample_count'?7:8;
         const additions=Object.entries(derived).sort(
             ([a],[b])=>priority(a)-priority(b)).slice(0,available);
         // A heavily instrumented job can approach the 32-KiB report limit.
