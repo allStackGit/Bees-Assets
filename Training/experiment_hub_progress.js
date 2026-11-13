@@ -410,15 +410,20 @@ class BottleneckEvidence {
                     add('worker_'+i+'_simulation_work_share',simShare);
                 if(obsShare!==null)
                     add('worker_'+i+'_observation_work_share',obsShare);
+                // Report the broad collection/optimization split and at
+                // most one deeper collection cause per worker. Otherwise
+                // 64 lineages can displace later workers' evidence at the
+                // 512-field report limit simply through nested duplicates.
+                const observationHeavy=simShare!==null&&simShare>=0.50&&
+                    obsShare!==null&&obsShare>=0.60;
                 stageHints[i]={
                     collection:fraction>=0.70,
                     optimization:fraction<=0.30,
-                    simulation:simShare!==null&&simShare>=0.65,
-                    observation:simShare!==null&&simShare>=0.50&&
-                        obsShare!==null&&obsShare>=0.60,
-                    // Unmeasured within-collector work includes actor
-                    // inference, recurrent state handling and Python
-                    // coordination. It is not automatically GPU saturation.
+                    simulation:fraction>=0.70&&!observationHeavy&&
+                        simShare!==null&&simShare>=0.65,
+                    observation:fraction>=0.70&&observationHeavy,
+                    // Unmeasured work also includes actor inference,
+                    // recurrent state handling and Python coordination.
                     collection_other:fraction>=0.70&&simShare!==null&&
                         simShare<=0.35
                 };
