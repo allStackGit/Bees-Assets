@@ -267,16 +267,19 @@ function launchArguments(record,invocation,gpuPlan) {
             ?['--property=SuccessExitStatus=130']:[]),
         '--property=CPUAccounting=yes','--property=MemoryAccounting=yes'];
     if(gpuPlan) {
-        const {binding,verifyArgs,rocrUuid}=invocation.gpu;
+        const {bindings,verifyArgs,rocrUuid}=invocation.gpu;
         const check=path.join(__dirname,'experiment_hub_linux_gpu_launch_check.js');
         if(!SAFE_ARG.test(process.execPath)||!SAFE_ARG.test(check))
             throw Error('GPU pre-start verifier requires unambiguous local executable paths.');
+        const physical=bindings.length===1
+            ?[bindings[0].id,bindings[0].pci_address,bindings[0].vram_mb]
+            :['--multi',bindings.length,...bindings.flatMap(binding=>
+                [binding.id,binding.pci_address,binding.vram_mb])];
         args.push(...gpuPlan.device_properties.map(p=>'--property='+p),
             '--property=TimeoutStartSec=25s',
             ...gpuSelectorArgs(rocrUuid),
-            '--property=ExecStartPre='+[process.execPath,check,binding.id,
-                binding.pci_address,binding.vram_mb,deviceIdentity(gpuPlan),
-                invocation.executable,...verifyArgs].join(' '));
+            '--property=ExecStartPre='+[process.execPath,check,...physical,
+                deviceIdentity(gpuPlan),invocation.executable,...verifyArgs].join(' '));
     }else {
         // CPU adapter masks preserve existing selector behavior.
         args.push('--setenv=CUDA_VISIBLE_DEVICES=','--setenv=HIP_VISIBLE_DEVICES=',
