@@ -31,6 +31,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_simulation_active_shards','training_simulation_next_shards',
     'training_simulation_tuner_adjustments',
     'training_simulation_tuner_accepted','training_simulation_tuner_settled',
+    'training_sim_tuning_pending','training_sim_tuning_lineage',
+    'training_simulation_idle_shards',
     'training_gpu_optimizer_lineages','training_gpu_optimizer_next_lineages',
     'training_gpu_optimizer_tuner_adjustments',
     'training_gpu_optimizer_tuner_accepted',
