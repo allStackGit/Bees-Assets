@@ -70,6 +70,10 @@ pub struct NavigationRequests {
     next_request_id: u64,
     ships: HashMap<i64, ShipPathOwner>,
     waiting_ship_ids: VecDeque<i64>,
+    /// Exact number of claimable waiting jobs, maintained only when the
+    /// authoritative ship request owner changes state. Stale queue IDs from
+    /// dead ships do not make each path-worker pump linear in past spawns.
+    claimable_waiting: usize,
 }
 
 impl NavigationRequests {
@@ -93,7 +97,11 @@ impl NavigationRequests {
     /// Killed, deactivated or released ships cannot own any queued result.
     /// Already-running jobs remain free to finish, but their results vanish.
     pub fn retire_ship(&mut self, ship_id: i64) {
-        self.ships.remove(&ship_id);
+        if let Some(owner) = self.ships.remove(&ship_id) {
+            if owner.waiting.is_some() && owner.running.is_none() {
+                self.claimable_waiting -= 1;
+            }
+        }
     }
 
     /// An episode/pooled-object reset renews lifecycle ownership even if the
@@ -105,7 +113,11 @@ impl NavigationRequests {
         let lifecycle = self.next_lifecycle_id.checked_add(1)
             .ok_or(NavigationRequestError::IdExhausted)?;
         self.next_lifecycle_id = lifecycle;
-        let existing_queue_slot = self.ships[&ship_id].queued;
+        let previous = &self.ships[&ship_id];
+        let existing_queue_slot = previous.queued;
+        if previous.waiting.is_some() && previous.running.is_none() {
+            self.claimable_waiting -= 1;
+        }
         self.ships.insert(ship_id, ShipPathOwner {
             lifecycle_id: lifecycle,
             queued: existing_queue_slot,
@@ -125,7 +137,9 @@ impl NavigationRequests {
         let new_id = self.reserve_request_id()?;
         let owner = self.ships.get_mut(&ship_id).expect("checked");
         owner.request_id = new_id;
-        owner.waiting = None;
+        if owner.waiting.take().is_some() && owner.running.is_none() {
+            self.claimable_waiting -= 1;
+        }
         // Never clear owner.running here: CPU work still owns its slot.
         owner.deferred = None;
         Ok(())
@@ -180,6 +194,9 @@ impl NavigationRequests {
             owner.deferred = Some(request);
             return Ok(NavigationRequestDisposition::DeferredUntilRunningCompletes);
         }
+        if owner.waiting.is_none() {
+            self.claimable_waiting += 1;
+        }
         owner.waiting = Some(request);
         if !owner.queued {
             owner.queued = true;
@@ -194,9 +211,7 @@ impl NavigationRequests {
 
     /// True when the pending queue includes a claimable request.
     pub fn has_waiting_jobs(&self) -> bool {
-        self.waiting_ship_ids.iter().any(|id|
-            self.ships.get(id).is_some_and(|owner|
-                owner.waiting.is_some() && owner.running.is_none()))
+        self.claimable_waiting != 0
     }
 
     /// Worker claims the next still-current job. At most one queue slot per
@@ -207,6 +222,7 @@ impl NavigationRequests {
             owner.queued = false;
             let Some(job) = owner.waiting.take() else { continue };
             if owner.running.is_some() { continue; }
+            self.claimable_waiting -= 1;
             owner.running = Some(job);
             return Some(job);
         }
@@ -234,6 +250,9 @@ impl NavigationRequests {
         owner.running = None;
         if let Some(mut deferred) = owner.deferred.take() {
             deferred.start = current_position;
+            if owner.waiting.is_none() {
+                self.claimable_waiting += 1;
+            }
             owner.waiting = Some(deferred);
             if !owner.queued {
                 owner.queued = true;
@@ -261,7 +280,9 @@ impl NavigationRequests {
             return;
         }
         owner.running = None;
-        owner.waiting = None;
+        if owner.waiting.take().is_some() {
+            self.claimable_waiting -= 1;
+        }
         owner.deferred = None;
     }
 
