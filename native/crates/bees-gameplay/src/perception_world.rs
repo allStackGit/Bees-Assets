@@ -103,6 +103,7 @@ struct SideEnvironment {
 pub struct NativeWorldPerceptionAssembler {
     identities: EpisodeShipIdentities,
     candidates: LiveShipCandidateCollector,
+    live_roster_epoch: Option<EnvironmentEpoch>,
     allies: Vec<ObservedShip>,
     enemies: Vec<ObservedShip>,
     /// Live native turrets override the Level's non-turret weapon slots.
@@ -120,6 +121,7 @@ impl NativeWorldPerceptionAssembler {
         Self {
             identities,
             candidates: LiveShipCandidateCollector::new(),
+            live_roster_epoch: None,
             allies: Vec::new(),
             enemies: Vec::new(),
             own_weapons: [None; 5],
@@ -140,6 +142,7 @@ impl NativeWorldPerceptionAssembler {
         self.allies.clear();
         self.enemies.clear();
         self.own_weapons = [None; 5];
+        self.live_roster_epoch = None;
         self.mining_counts_epoch = None;
         // Retain storage for recurring episode resets but never reuse
         // old discovery data under a new identity permutation.
@@ -182,6 +185,7 @@ impl NativeWorldPerceptionAssembler {
     /// registry between inference boundaries without a fixed step.
     /// Normal fixed-step changes invalidate automatically via tick.
     pub fn invalidate_environment(&mut self) {
+        self.live_roster_epoch = None;
         self.mining_counts_epoch = None;
         for environment in self.environment_by_side.values_mut() {
             environment.epoch = None;
@@ -229,7 +233,20 @@ impl NativeWorldPerceptionAssembler {
         } else {
             None
         };
-        self.candidates.collect_allies(
+        let epoch = EnvironmentEpoch {
+            world: owning_world.id,
+            episode: owning_world.episode_revision(),
+            tick: owning_world.tick(),
+        };
+        // All agents in this world see the same immutable source ship
+        // population at a fixed decision boundary. Build one side-indexed
+        // live roster for the entire batch rather than rescanning every
+        // active ship for each observer's nearest 64 allies.
+        if self.live_roster_epoch != Some(epoch) {
+            self.candidates.prepare_live_roster(world)?;
+            self.live_roster_epoch = Some(epoch);
+        }
+        self.candidates.collect_prepared_allies(
             world, ship_id, &mut self.identities,
             |id| authored_ship(id), &mut self.allies,
         )?;
@@ -246,11 +263,6 @@ impl NativeWorldPerceptionAssembler {
         if !sides.contains(&side) {
             return Err(NativeWorldPerceptionError::InvalidEpisodeSide(side));
         }
-        let epoch = EnvironmentEpoch {
-            world: owning_world.id,
-            episode: owning_world.episode_revision(),
-            tick: owning_world.tick(),
-        };
         // Native mining command enrollment is world-wide, but the known
         // mining asteroid set is per faction. Snapshot the command-owner
         // map once per world tick and reuse for every policy decision.
