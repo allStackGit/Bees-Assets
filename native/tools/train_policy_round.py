@@ -273,6 +273,27 @@ def combined_rollout_metrics(shards, wall_seconds):
         "worker_world_steps_per_execution_second_max":
             max(shard["world_steps_per_execution_second"] for shard in shards),
     })
+    # Retain per-process evidence so a resource scheduler can distinguish
+    # an overloaded process, a scene-dependent straggler and accelerator
+    # inference time without requiring frame-level logs or guessed CPU use.
+    metrics["worker_shards"] = [
+        {
+            "worker": index,
+            "worlds": shard["worlds"],
+            "episodes": shard["episodes"],
+            "world_steps": shard["successful_world_steps"],
+            "policy_rows": shard["successful_policy_rows"],
+            "wall_seconds": shard["wall_seconds"],
+            "execution_wall_seconds": shard["execution_wall_seconds"],
+            "world_steps_per_execution_second":
+                shard["world_steps_per_execution_second"],
+            "policy_rows_per_execution_second":
+                shard["policy_rows_per_execution_second"],
+            **({"sampled_model_timing": shard["sampled_model_timing"]}
+               if "sampled_model_timing" in shard else {}),
+        }
+        for index, shard in enumerate(shards)
+    ]
     samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
     if samples:
         metrics["sampled_model_timing"] = {
