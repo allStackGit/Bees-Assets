@@ -1342,7 +1342,7 @@ impl NativeLevelBatchDriver {
         B: NativePolicyInference,
     {
         self.step_with_dispatch(simulation, backend,
-            |simulation, batch, backend, build, decisions, _parallel_actions| {
+            |simulation, batch, backend, mut build, decisions, _parallel_actions| {
                 step_batched_levels(simulation, batch, backend,
                     &mut build, decisions)
             })
@@ -1367,7 +1367,7 @@ impl NativeLevelBatchDriver {
         B: NativePolicyInference,
     {
         self.step_with_dispatch(simulation, backend,
-            |simulation, batch, backend, build, decisions, parallel_actions| {
+            |simulation, batch, backend, mut build, decisions, parallel_actions| {
                 step_batched_levels_parallel(simulation, batch, backend,
                     &mut build, decisions, parallel_actions, workers)
             })
