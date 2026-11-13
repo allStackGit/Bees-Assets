@@ -534,6 +534,9 @@ pub struct NativeRuntimeStatus {
     /// Sum of current episodes' lifecycle-checked navigation completions.
     /// Resets with worlds; this is not a host-lifetime rate counter.
     pub navigation_jobs_completed: u64,
+    /// Live episodes' source pathfinding worker work; zero for headless
+    /// deterministic physics and clients without async navigation.
+    pub navigation_workers: crate::level_rules::NativeNavigationWorkerMeasurements,
     pub navigation_jobs_waiting: usize,
     pub navigation_queue_slots: usize,
     pub queued_notifications: usize,
@@ -1221,6 +1224,7 @@ impl NativeLevelBatchDriver {
             reinforcement_arrivals: crate::level_events::NativeReinforcementArrivals::default(),
             vision: bees_sim::vision::VisionSweepCounts::default(),
             navigation_jobs_completed: 0,
+            navigation_workers: crate::level_rules::NativeNavigationWorkerMeasurements::default(),
             navigation_jobs_waiting: 0,
             navigation_queue_slots: 0,
             queued_notifications: 0,
@@ -1259,6 +1263,9 @@ impl NativeLevelBatchDriver {
                 ),
             );
             status.navigation_jobs_completed += world.state.navigation_jobs_completed();
+            status.navigation_workers.merge(
+                world.state.metadata.navigation_worker_measurements(),
+            );
             let (waiting, queue_slots) = world.state.combat.navigation_queue_gauges();
             status.navigation_jobs_waiting += waiting;
             status.navigation_queue_slots += queue_slots;
