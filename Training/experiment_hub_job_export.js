@@ -10,7 +10,7 @@ const crypto=require('node:crypto');
 const {spawn}=require('node:child_process');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
-const METRIC=/^[a-z][a-z0-9_]{0,39}$/;
+const METRIC=/^[a-z][a-z0-9_]{0,63}$/;
 const KEEP_MS=2*60*60*1000;
 const JOB_FIELDS=[
     'id','project_id','configuration_name','configuration_sha256',
