@@ -135,6 +135,12 @@ enum ScriptedOrderConfig {
     MoveToPoint { destination: [f32; 2] },
     MoveToRandom { #[serde(default)] range: f32 },
     Aggressive { enemy_squad_item_id: i64 },
+    TargetEnemy { enemy_squad_item_id: i64 },
+    Guard { friendly_squad_item_id: i64 },
+    Patrol { top_left: [f32; 2], bottom_right: [f32; 2] },
+    Hold,
+    Mining { asteroid_id: i64 },
+    FullRetreat { warp_gate_id: i64 },
 }
 
 #[derive(Deserialize, Serialize)]
@@ -485,6 +491,26 @@ fn make_setup(
                             enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
                                 .copied().unwrap_or(enemy_squad_item_id),
                         },
+                    ScriptedOrderConfig::TargetEnemy { enemy_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::TargetEnemy {
+                            enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
+                                .copied().unwrap_or(enemy_squad_item_id),
+                        },
+                    ScriptedOrderConfig::Guard { friendly_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::Guard {
+                            friendly_squad_item_id: remapped_squads.get(&friendly_squad_item_id)
+                                .copied().unwrap_or(friendly_squad_item_id),
+                        },
+                    ScriptedOrderConfig::Patrol { top_left, bottom_right } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::Patrol {
+                            top_left: vec2(top_left), bottom_right: vec2(bottom_right),
+                        },
+                    ScriptedOrderConfig::Hold =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::Hold,
+                    ScriptedOrderConfig::Mining { asteroid_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::Mining { asteroid_id },
+                    ScriptedOrderConfig::FullRetreat { warp_gate_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::FullRetreat { warp_gate_id },
                 }).collect(),
             },
         ).collect(),
