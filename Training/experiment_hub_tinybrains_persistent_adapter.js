@@ -132,6 +132,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rss_mb',row.rss_mb,'mb');
     add('simulation_engine_memory_mb',row.simulation_engine_memory_mb,'mb');
+    add('simulation_learner_memory_mb',row.simulation_learner_memory_mb,'mb');
+    add('simulation_total_charged_memory_mb',
+        row.simulation_total_charged_memory_mb,'mb');
+    add('simulation_ram_lease_headroom_mb',
+        row.simulation_ram_lease_headroom_mb,'mb');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
@@ -230,6 +235,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('collector_'+i+'_'+suffix,worker[name],'count');
         add('collector_'+i+'_sim_rss_mb',
             worker.simulation_engine_memory_mb,'mb');
+        for(const [suffix,name] of [
+            ['sim_learner_mb','simulation_learner_memory_mb'],
+            ['sim_charged_mb','simulation_total_charged_memory_mb'],
+            ['sim_ram_headroom_mb','simulation_ram_lease_headroom_mb']])
+            add('collector_'+i+'_'+suffix,worker[name],'mb');
         add('collector_'+i+'_sim_prefetch_engine_steps',
             worker.simulation_prefetch_engine_steps,'count');
         for(const [suffix,name] of [
