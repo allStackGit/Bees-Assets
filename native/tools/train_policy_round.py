@@ -388,11 +388,18 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics):
             if len(shards) == 1:
                 # Retain the historical single-process receipt layout while
                 # giving it the same supervised process-tree lifetime.
-                return metrics[0]
-            return combined_rollout_metrics(
-                [metrics[index] for index in range(len(shards))],
-                time.perf_counter() - started,
-            )
+                combined = metrics[0]
+            else:
+                combined = combined_rollout_metrics(
+                    [metrics[index] for index in range(len(shards))],
+                    time.perf_counter() - started,
+                )
+            if os.name != "nt":
+                # A successful Rust parent has finished writing its summary.
+                # Retire any remaining inference descendants before the
+                # next round starts or its GPU allocation is reused.
+                stop_parallel_rollout_workers(processes)
+            return combined
         except BaseException:
             stop_parallel_rollout_workers(processes)
             raise
