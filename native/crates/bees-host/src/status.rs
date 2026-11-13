@@ -51,6 +51,7 @@ pub struct NativeHostGauges {
     pub vision: bees_sim::vision::VisionSweepCounts,
     pub navigation_jobs_completed: u64,
     pub navigation_workers: bees_gameplay::level_rules::NativeNavigationWorkerMeasurements,
+    pub navigation_rasters: bees_sim::navigation_runtime::NavigationRasterMeasurements,
     /// The exact claimable count and retained FIFO slots, including stale
     /// retired IDs not eligible to launch a worker.
     pub navigation_jobs_waiting: usize,
@@ -96,6 +97,7 @@ impl From<&NativeRuntimeStatus> for NativeHostGauges {
             vision: value.vision,
             navigation_jobs_completed: value.navigation_jobs_completed,
             navigation_workers: value.navigation_workers,
+            navigation_rasters: value.navigation_rasters,
             navigation_jobs_waiting: value.navigation_jobs_waiting,
             navigation_queue_slots: value.navigation_queue_slots,
             notifications_queued: value.queued_notifications,
