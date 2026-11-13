@@ -120,6 +120,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_simulation_tuner_adjustments',
             'training_simulation_tuner_accepted',
             'training_simulation_tuner_settled',
+            'training_sim_tuning_pending','training_sim_tuning_lineage',
+            'training_simulation_idle_shards',
             'training_parallel_worker_max_seconds',
             'training_parallel_step_max_seconds',
             'training_parallel_dispatch_max_seconds',

@@ -31,6 +31,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_simulation_active_shards','training_simulation_next_shards',
     'training_simulation_tuner_adjustments',
     'training_simulation_tuner_accepted','training_simulation_tuner_settled',
+    'training_sim_tuning_pending','training_sim_tuning_lineage',
+    'training_simulation_idle_shards',
     'training_gpu_optimizer_lineages','training_gpu_optimizer_next_lineages',
     'training_gpu_optimizer_tuner_adjustments',
     'training_gpu_optimizer_tuner_accepted',
@@ -420,17 +422,17 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // the Hub's fixed CPU/RAM lease. Legacy/manual profiles retain
             // their original fixed-policy execution behavior.
             const auto=autoLearners&&cpuParallelism==='allocation';
-            // Saved policies retain exactly the same recurrent rollout
-            // length, courier slots and lineages. When spare leased CPUs
-            // and RAM exist, split complete independent maps *under* each
-            // existing PPO lineage. A fixed conservative initial shard
-            // count avoids extra simulator processes on an already busy
-            // 32/64-lineage host. The backend never restarts map processes
-            // between training updates or promotes one as a new policy.
+            // Provision complete independent map engines from the RAM
+            // budget, not the machine's logical CPU count. Persistent engine
+            // state is independent of how many engines are dispatched at
+            // once. Courier tunes that dispatch concurrency conservatively
+            // using completed useful simulation throughput, including when
+            // its productive setting is ABOVE its initial CPU share.
+            // Leave 768 MiB for each saved recurrent PPO owner, then
+            // conservatively reserve 768 MiB per persistent map process.
+            // The backend's measured parent+descendant admission is still
+            // authoritative; this is only the initial safe capacity offer.
             const mapCount=parsed.colony?4:parsed.competitive?32:64;
-            const effectiveLearners=Math.max(1,Math.min(
-                chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)));
-            const cpuPerLearner=Math.floor(context.cpu_quota/effectiveLearners);
             const ramPerLearner=Math.floor(
                 context.ram_quota_mb/Math.max(1,chosenWorkers));
             // Simple courier worlds already vectorize their independent
@@ -440,8 +442,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // keeps explicit shard support for other modes if warranted by
             // measured workloads; no user tuning is required in the Hub.
             const simulationShards=auto&&parallelWorlds&&parsed.colony
-                ?Math.min(8,mapCount,Math.max(1,cpuPerLearner),
-                    Math.max(1,Math.floor(ramPerLearner/768)))
+                ?Math.min(8,mapCount,Math.max(1,
+                    Math.floor((ramPerLearner-768)/768)))
                 :1;
             if(auto&&(!within(context.ram_quota_mb,128,1000000)))
                 throw Error('Courier automatic execution requires a fixed RAM lease.');
