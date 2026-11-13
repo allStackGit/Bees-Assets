@@ -475,6 +475,16 @@ pub trait NativeLevelCommandContext {
         Ok(jobs)
     }
 
+    /// Source fixed-tick navigation boundary. Deterministic training uses
+    /// the synchronous default above; an interactive Level may instead
+    /// service its persistent pathfinding workers and apply only completed,
+    /// lifecycle-checked paths on the owning simulation thread.
+    fn advance_navigation_for_tick(
+        &mut self, combat: &mut CombatWorld, _completed_tick: u64,
+    ) -> Result<u64, CombatWorldError> {
+        self.advance_navigation(combat)
+    }
+
     /// Once the single CombatWorld exists, initialize this Level's real
     /// static navigation clearance from its actual active colliders.
     /// Rich game adapters may have their own fully authored navigation
@@ -930,7 +940,9 @@ where
             return Err(NativeLevelStepError::InvalidDecisionCadence);
         }
         state.navigation_jobs_completed +=
-            state.metadata.advance_navigation(&mut state.combat)?;
+            state.metadata.advance_navigation_for_tick(
+                &mut state.combat, completed_tick,
+            )?;
         // No independent policy/physics rules in gameplay or training:
         // both adapters invoke CombatWorld's one canonical transaction.
         let events = &state.events;
