@@ -581,6 +581,8 @@ def main():
     for name in ("manifest", "checkpoint", "config", "output"):
         parser.add_argument(name, type=Path)
     parser.add_argument("--learner-slot", type=int, help="train only on this manifest slot")
+    parser.add_argument("--refresh-opponent-slot", type=int,
+                        help="publish the newly trained checkpoint as this opponent slot for the next round")
     parser.add_argument(
         "--torch-threads", type=int,
         help="fixed CPU intra-op thread count for the optimizer, independent of rollout workers",
@@ -660,6 +662,17 @@ def main():
             content = path.read_bytes()
             manifests[path] = json.loads(content), hashlib.sha256(content).hexdigest()
     primary_manifest, primary_manifest_sha = manifests[primary_path]
+    if args.refresh_opponent_slot is not None:
+        if (args.learner_slot is None or
+                args.refresh_opponent_slot == args.learner_slot or
+                not 0 <= args.refresh_opponent_slot < (1 << 32)):
+            parser.error("opponent refresh requires a distinct explicit uint32 learner and opponent slot")
+        candidates = [
+            item for item in primary_manifest.get("models", [])
+            if item.get("slot") == args.refresh_opponent_slot
+        ]
+        if len(candidates) != 1 or candidates[0].get("backend") != "mlagents":
+            parser.error("refreshed opponent must be an existing MA-POCA model slot")
     with args.checkpoint.open("rb") as source:
         input_sha = stream_sha256(source)
         source.seek(0)
@@ -769,7 +782,11 @@ def main():
         output.flush()
         os.fsync(output.fileno())
 
-    # Keep the source ABI and every opponent slot. Only update the learner.
+    # Default to pinned frozen opponents. An explicitly scheduled self-play
+    # round can replace ONE chosen opponent with the just-completed learner
+    # checkpoint. Both slots then share immutable weights until the next
+    # scheduled promotion. The next native rollout uses the same model worker
+    # and source physics; no alternate self-play actor is introduced.
     manifest = primary_manifest
     if args.learner_slot is None:
         learner_slots = {
@@ -780,7 +797,8 @@ def main():
         learner_slots = {args.learner_slot}
     next_sha = file_sha256(next_checkpoint)
     for entry in manifest["models"]:
-        if entry["slot"] in learner_slots:
+        if (entry["slot"] in learner_slots or
+                entry["slot"] == args.refresh_opponent_slot):
             entry["path"] = next_checkpoint.name
             entry["sha256"] = next_sha
         else:
@@ -806,6 +824,9 @@ def main():
         "input_checkpoint_sha256": input_sha,
         "input_manifest_sha256": primary_manifest_sha,
         "learner_slot": args.learner_slot,
+        "refreshed_opponent_slot": args.refresh_opponent_slot,
+        "refreshed_opponent_from_checkpoint_sha256":
+            next_sha if args.refresh_opponent_slot is not None else None,
         "next_checkpoint": str(next_checkpoint.resolve()),
         "next_checkpoint_sha256": next_sha,
         "next_manifest": str(next_manifest.resolve()),
