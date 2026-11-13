@@ -3,6 +3,47 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
+## Standalone native gameplay scenes
+
+`native/examples/native-duel.scene.json` is a complete game scene authored
+without a Unity scene export: it declares its own map bounds, two opposing
+ships, actual turret/projectile parameters, sight, squad membership,
+command timings and a static box obstacle. Run it using
+`native/examples/native-duel.run.json`, which also supplies an authored
+32-layer collision matrix and asteroid prefab palette through
+`native_stage` instead of the two legacy Stage-export files.
+
+```sh
+cargo build --release --manifest-path native/Cargo.toml -p bees-host --features client --bin bees
+native/target/release/bees play native/examples/native-duel.run.json --output-dir native-duel-output
+```
+
+On Windows run the corresponding `bees.exe`. All relative scene paths
+resolve against the run configuration. Create an empty/new output directory
+per run. The sample's collision matrix and ship/weapon values are
+**native-authored gameplay choices**, not a claim to reproduce a particular
+legacy Unity match. Game and headless runs both use the existing
+`NativePhysicalScene` -> `NativeAuthoredLevel` -> `CombatWorld`
+pipeline, including identical collision and weapon implementations.
+
+Native scene files use `"native_game_schema": 1` instead of the Unity
+snapshot's `schema_version`. Weapon range colliders, aiming modes,
+projectile speeds, health, formation offsets, vision and command timings are
+explicit inputs, not inferred from visual ship classes. The immutable
+`native/assets` geometry and projectiles are still shared by all worlds.
+The optional embedded `layout` supports additional static geometry and
+squad instantiation/omission exactly like a run's `native_layout` field.
+A run may use the legacy `collision_matrix` and `stage_palette` paths
+**or** the native `native_stage` object, but not both. The latter accepts
+`collision_matrix_rows` (32 symmetric bitmasks) and
+`asteroid_prefab_numbers` (ordered verified prefab IDs).
+
+This initial standalone scene format supports ordinary, non-policy ships.
+Special-ability/carrier ownership, independent native PPO policy/group
+authoring and full campaign parity still require work. Legacy exported
+scenes and training models remain loadable through the same launcher;
+new native game scenes do not fabricate policy agents or reward baselines.
+
 ## Native tactical view (development)
 
 The `bees` executable opens a native Windows/Linux-X11 window around the
