@@ -597,41 +597,46 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         // keeps queue setup off the one-/few-tick path used by clients.
         let outcomes = if steps >= 64 && self.worlds.len() > workers {
             let pending = Mutex::new(self.worlds.iter_mut());
-            std::thread::scope(|scope| {
-                let mut handles = Vec::with_capacity(workers);
-                for _ in 0..workers {
-                    let pending = &pending;
-                    handles.push(scope.spawn(move || {
-                        let worker_started = Instant::now();
-                        let mut report = ParallelWindow::default();
-                        let mut decisions = Vec::new();
-                        let mut assigned = 0;
-                        loop {
-                            let next = pending.lock()
-                                .expect("native arena queue poisoned").next();
-                            let Some(world) = next else { break };
-                            assigned += 1;
-                            run_partition(
-                                rules, dt, sample,
-                                std::slice::from_mut(world), steps, decide, &mut decisions,
-                                &mut report,
-                            );
-                        }
-                        (report, assigned, worker_started.elapsed())
-                    }));
+            let work = || {
+                let worker_started = Instant::now();
+                let mut report = ParallelWindow::default();
+                let mut decisions = Vec::new();
+                let mut assigned = 0;
+                loop {
+                    let next = pending.lock()
+                        .expect("native arena queue poisoned").next();
+                    let Some(world) = next else { break };
+                    assigned += 1;
+                    run_partition(
+                        rules, dt, sample,
+                        std::slice::from_mut(world), steps, decide, &mut decisions,
+                        &mut report,
+                    );
                 }
-                handles.into_iter().map(|handle| handle.join())
-                    .collect::<Vec<_>>()
+                (report, assigned, worker_started.elapsed())
+            };
+            std::thread::scope(|scope| {
+                let mut handles = Vec::with_capacity(workers - 1);
+                for _ in 1..workers {
+                    handles.push(scope.spawn(&work));
+                }
+                let mut outcomes = Vec::with_capacity(workers);
+                outcomes.push(std::panic::catch_unwind(
+                    std::panic::AssertUnwindSafe(&work),
+                ));
+                outcomes.extend(handles.into_iter().map(|handle| handle.join()));
+                outcomes
             })
         } else {
-            // Fixed consecutive partitions avoid the queue entirely for
-            // short windows. Workers still hold their own decision buffers.
+            // Fixed consecutive partitions avoid a queue for short windows.
+            // Give the last chunk to the caller rather than spawning every
+            // worker and waiting with an otherwise idle simulation thread.
             let base = self.worlds.len() / workers;
             let extras = self.worlds.len() % workers;
             std::thread::scope(|scope| {
                 let mut remaining = self.worlds.as_mut_slice();
-                let mut handles = Vec::with_capacity(workers);
-                for index in 0..workers {
+                let mut handles = Vec::with_capacity(workers - 1);
+                for index in 0..workers - 1 {
                     let size = base + usize::from(index < extras);
                     let (chunk, rest) = remaining.split_at_mut(size);
                     remaining = rest;
@@ -646,8 +651,22 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                         (report, size, worker_started.elapsed())
                     }));
                 }
-                handles.into_iter().map(|handle| handle.join())
-                    .collect::<Vec<_>>()
+                let caller_started = Instant::now();
+                let caller = std::panic::catch_unwind(
+                    std::panic::AssertUnwindSafe(|| {
+                        let mut decisions = Vec::new();
+                        let mut report = ParallelWindow::default();
+                        run_partition(
+                            rules, dt, sample, remaining, steps, decide, &mut decisions,
+                            &mut report,
+                        );
+                        (report, remaining.len(), caller_started.elapsed())
+                    }),
+                );
+                let mut outcomes = Vec::with_capacity(workers);
+                outcomes.push(caller);
+                outcomes.extend(handles.into_iter().map(|handle| handle.join()));
+                outcomes
             })
         };
 
