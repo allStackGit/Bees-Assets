@@ -401,7 +401,13 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const cpuPerLearner=Math.floor(context.cpu_quota/effectiveLearners);
             const ramPerLearner=Math.floor(
                 context.ram_quota_mb/Math.max(1,chosenWorkers));
-            const simulationShards=auto&&parallelWorlds
+            // Simple courier worlds already vectorize their independent
+            // moves in one NumPy batch. Subprocess IPC can cost more than
+            // those tiny steps, so only enable automatic map splitting for
+            // the more Python-heavy colony/food/combat family. The backend
+            // keeps explicit shard support for other modes if warranted by
+            // measured workloads; no user tuning is required in the Hub.
+            const simulationShards=auto&&parallelWorlds&&parsed.colony
                 ?Math.min(8,mapCount,Math.max(1,cpuPerLearner),
                     Math.max(1,Math.floor(ramPerLearner/768)))
                 :1;
