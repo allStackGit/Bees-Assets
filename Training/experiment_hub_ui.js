@@ -1894,7 +1894,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const container=$('hub-compare-plots');
         lastComparisonChart={runs,keys,xKey};
         lastComparisonChartWidth=container.clientWidth;
-        container.replaceChildren();
         if(!runs.length||!keys.length) {
             const notice=document.createElement('p');
             notice.className='hub-notice';
@@ -1903,11 +1902,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 :$('hub-compare-metric').options.length
                     ?'No chart metrics are selected. Check one or more metrics above to display a graph.'
                     :'No recorded chart metrics are available for this project yet.';
-            container.append(notice);
+            container.replaceChildren(notice);
             return;
         }
-        for(const key of keys) {
-            const section=document.createElement('div');
+        const existing=new Map([...container.children].filter(element=>
+            element.classList.contains('hub-progress-plot')&&element.dataset.metric)
+            .map(element=>[element.dataset.metric,element]));
+        const sections=keys.map(key=>{
+            let section=existing.get(key);
+            if(section)return section;
+            section=document.createElement('div');
             section.className='hub-progress-plot';
             section.dataset.metric=key;
             const title=document.createElement('h3');
@@ -1950,9 +1954,14 @@ document.addEventListener('DOMContentLoaded', () => {
             tooltip.className='hub-plot-tooltip';
             tooltip.hidden=true;
             section.append(header,description,svg,tooltip,legend);
-            container.append(section);
-            const redraw=()=>drawComparisonChart(runs,key,xKey,svg,
-                legend,tooltip,average.checked,rolling.checked);
+            const chart={key,runs,xKey,svg,legend,tooltip,average,rolling,
+                averageId,rollingId,signature:null,width:0};
+            section._hubChart=chart;
+            const redraw=()=>{
+                chart.signature=null;
+                drawComparisonChart(chart.runs,chart.key,chart.xKey,svg,
+                    legend,tooltip,average.checked,rolling.checked);
+            };
             average.addEventListener('change',()=>{
                 comparisonChartAverages.set(averageId,average.checked);
                 redraw();
@@ -1961,7 +1970,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 comparisonChartRolling.set(rollingId,rolling.checked);
                 redraw();
             });
-            redraw();
+            return section;
+        });
+        // Keep existing DOM nodes, event handlers and chart scroll/hover state
+        // through the ten-second Hub heartbeat. Replace only if chart choices
+        // or their order actually changed.
+        if(sections.length!==container.children.length||
+            sections.some((element,i)=>container.children[i]!==element))
+            container.replaceChildren(...sections);
+        for(const section of sections) {
+            const chart=section._hubChart;
+            chart.runs=runs;chart.xKey=xKey;
+            const metricKey=chart.key.slice(7);
+            const signature=JSON.stringify({
+                project,xKey,metricKey,
+                runs:runs.map(run=>({
+                    id:run.job.id,label:hubJobLabel(run.job),
+                    slot:run.slot,color:run.color,
+                    points:hubComparisonPoints(run).map(p=>({
+                        source:p.source_modified_at,segment:p.segment_id,
+                        breakBefore:p.break_before,steps:p.steps_completed,
+                        axis:hubComparisonAxisValue(p,xKey),
+                        measurement:p.metrics?.[metricKey]||null,
+                    })),
+                })),
+            });
+            const width=Math.round(chart.svg.getBoundingClientRect().width||
+                chart.svg.clientWidth||900);
+            if(chart.signature===signature&&chart.width===width)continue;
+            drawComparisonChart(runs,chart.key,xKey,chart.svg,chart.legend,
+                chart.tooltip,chart.average.checked,chart.rolling.checked);
+            chart.signature=signature;chart.width=width;
         }
     }
     function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage,showRolling) {
