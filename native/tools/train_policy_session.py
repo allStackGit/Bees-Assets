@@ -367,7 +367,6 @@ def main():
         "round_python": round_python,
         "rollout_binary": binary,
         "rollout_workers": args.rollout_workers,
-        "physics_workers": args.physics_workers,
         "rollout_worlds": args.rollout_worlds,
         "rollout_world_start": args.rollout_world_start,
         "seed_offset_start": args.seed_offset_start,
@@ -376,6 +375,10 @@ def main():
         "device": args.device,
         "stage_diagnostics": args.stage_diagnostics,
     }
+    # Preserve existing session fingerprints when this new resource
+    # selection was not specified; older recipes have no such field.
+    if args.physics_workers is not None:
+        recipe["physics_workers"] = args.physics_workers
     if args.distributed_plan is not None:
         recipe["distributed_plan"] = pinned(args.distributed_plan)
         recipe["bundle_inbox"] = str(args.bundle_inbox.resolve(strict=True))
