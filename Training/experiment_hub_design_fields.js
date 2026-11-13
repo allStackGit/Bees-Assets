@@ -21,7 +21,8 @@ function fieldsFor(config,project) {
             // retention from its resource/job profile; some source-config
             // fields are intentionally not consulted by that runtime.
             if(project==='tinybrains'&&new Set([
-                'training.buffer_size','training.complete_episodes',
+                'training.buffer_size','training.batch_size',
+                'training.baseline_coefficient','training.complete_episodes',
                 'environment.waves','environment.matches_per_wave',
                 'environment.map_cycle_start','environment.map_selection',
             ]).has(joined))continue;
