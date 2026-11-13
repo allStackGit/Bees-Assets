@@ -119,6 +119,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_opponent_forward_chunks','rollout_onnx_calls','rollout_onnx_batches',
+        'rollout_onnx_batched_states','rollout_onnx_states',
         'remote_collectors_ready_at_local_end',
         'remote_collectors_pending_at_local_end',
         'collector_auto_balance_adjustments',
@@ -127,6 +129,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target'])
         add(name,row[name],'count');
+    if(Number.isSafeInteger(row.rollout_onnx_states)&&row.rollout_onnx_states>0&&
+        Number.isSafeInteger(row.rollout_onnx_batched_states)&&
+        row.rollout_onnx_batched_states>=0&&
+        row.rollout_onnx_batched_states<=row.rollout_onnx_states)
+        add('rollout_onnx_batch_share',
+            row.rollout_onnx_batched_states/row.rollout_onnx_states,'ratio');
     // These optimizer observations can be negative; they are scalar values,
     // never performance or strength certification.
     for(const name of ['loss','policy_loss','value_loss','baseline_loss',
@@ -268,6 +276,21 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_shape_groups,'count');
         add('collector_'+i+'_opponent_readbacks',
             worker.rollout_opponent_readbacks,'count');
+        for(const [suffix,name] of [
+            ['opponent_forward_chunks','rollout_opponent_forward_chunks'],
+            ['onnx_calls','rollout_onnx_calls'],
+            ['onnx_batches','rollout_onnx_batches'],
+            ['onnx_batched_states','rollout_onnx_batched_states'],
+            ['onnx_states','rollout_onnx_states']])
+            add('collector_'+i+'_'+suffix,worker[name],'count');
+        if(Number.isSafeInteger(worker.rollout_onnx_states)&&
+            worker.rollout_onnx_states>0&&
+            Number.isSafeInteger(worker.rollout_onnx_batched_states)&&
+            worker.rollout_onnx_batched_states>=0&&
+            worker.rollout_onnx_batched_states<=worker.rollout_onnx_states)
+            add('collector_'+i+'_onnx_batch_share',
+                worker.rollout_onnx_batched_states/worker.rollout_onnx_states,
+                'ratio');
         add('collector_'+i+'_action_target',worker.action_target,'count');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
@@ -416,7 +439,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             'sim_ram_headroom_mb','gpu_allocated_mb','gpu_vram_lease_mb',
             'rollout_engine_step_seconds','learner_inference_seconds',
             'roundtrip_seconds','service_seconds',
-            'sim_dispatch_queue_seconds','sim_last_child_gap_seconds'];
+            'sim_dispatch_queue_seconds','sim_last_child_gap_seconds',
+            'onnx_batch_share','opponent_forward_chunks'];
         for(const suffix of core)
             for(let i=0;i<n;i++)include('collector_'+i+'_'+suffix);
         // A delayed previous-worker reply is meaningful only if the prior
