@@ -545,9 +545,8 @@ impl NativePolicyOnlyMetadata {
             // tick. Empty native arenas retain their already-initialized
             // static grid; a present static collider may have moved/died.
             if started == 0 {
-                let has_static = world.static_navigation_obstacles().next().is_some();
-                let rebuild_static = has_static ||
-                    self.navigation.static_obstacles_present() != Some(false);
+                let rebuild_static =
+                    world.static_navigation_needs_refresh(&self.navigation);
                 world.refresh_world_navigation(
                     &mut self.navigation, rebuild_static, self.activate_collision_asteroids,
                 ).map_err(|error| NativeLevelEventError::Commands(
