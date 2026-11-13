@@ -44,7 +44,7 @@ def source_config(path: Path, manifest: Path, output: Path) -> dict:
     base = path.parent
     if config.get("native_stage") is not None:
         if not isinstance(config["native_stage"], dict) or any(
-            key in config for key in ("collision_matrix", "stage_palette")
+            config.get(key) is not None for key in ("collision_matrix", "stage_palette")
         ):
             raise ValueError("native_stage cannot be combined with exported Stage asset paths")
     else:
