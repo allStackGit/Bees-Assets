@@ -2445,6 +2445,9 @@ fn run_battle(
                 "placed_boxes": layout.add_static_boxes.len(),
                 "placed_polygons": layout.add_static_polygons.len(),
                 "translated_squads": layout.translate_squads.len(),
+                "cloned_squads": layout.clone_squads.len(),
+                "cloned_ships": layout.clone_squads.iter()
+                    .map(|entry| entry.ship_ids.len()).sum::<usize>(),
             }))
         ).collect::<Vec<_>>());
     }
