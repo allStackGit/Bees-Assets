@@ -360,6 +360,10 @@ class JobExporter {
                         fs.statSync(path.join(dir,part.name)).size!==part.bytes))
                     throw Error('Export part validation failed.');
                 session.parts=report.parts;
+                if(!Number.isSafeInteger(report.replay_files_included)||
+                    report.replay_files_included<0)
+                    throw Error('Invalid replay inclusion count in export report.');
+                session.replay_files_included=report.replay_files_included;
                 session.missing_artifact_job_ids=report.missing_artifact_job_ids||[];
                 session.missing_sources=report.missing_sources||[];
                 session.missing_source_count=report.missing_source_count||0;
@@ -378,6 +382,7 @@ class JobExporter {
         return {
             id,project_id:session.project,status:session.status,
             parts:session.parts,error:session.error,
+            replay_files_included:session.replay_files_included??null,
             missing_artifact_job_ids:session.missing_artifact_job_ids||[],
             missing_sources:session.missing_sources||[],
             missing_source_count:session.missing_source_count||0,
