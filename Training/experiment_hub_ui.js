@@ -3429,16 +3429,16 @@ document.addEventListener('DOMContentLoaded', () => {
         pipeline.hidden=['bees','ants'].includes(project);
         const kind=$('hub-pipeline-kind'),oldKind=kind.value;
         kind.replaceChildren(
-            new Option('Independent fresh jobs (no shared checkpoint)','independent'),
-            new Option('Independent trials (no dependency)','batch'),
+            new Option('Fresh jobs in sequence (wait for predecessor)','independent'),
+            new Option('Independent trials (can run concurrently)','batch'),
             ...(['tinybrains','courier'].includes(project)
-                ?[new Option('Checkpoint-continuation stages','continuation')]
+                ?[new Option('Checkpoint continuation (sequential, inherited model)','continuation')]
                 :[]));
         if(pipelineKindProject===project&&
             ['independent','batch','continuation'].includes(oldKind)&&
             (oldKind!=='continuation'||['tinybrains','courier'].includes(project)))
             kind.value=oldKind;
-        else kind.value=['tinybrains','courier'].includes(project)?'continuation':'independent';
+        else kind.value=['tinybrains','courier'].includes(project)?'batch':'independent';
         pipelineKindProject=project;
         const checkpointPipeline=['tinybrains','courier'].includes(project)&&kind.value==='continuation';
         const trialBatch=kind.value==='batch';
@@ -3446,7 +3446,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-pipeline-queue').textContent=trialBatch?'Queue all trials':'Queue entire pipeline';
         $('hub-pipeline-title').textContent=checkpointPipeline
             ?'Prequeue checkpoint-continuation stages'
-            :trialBatch?'Queue independent trials together':'Queue independent project jobs in sequence';
+            :trialBatch?'Queue independent trials together':'Queue fresh project jobs in sequence';
         $('hub-pipeline-description').textContent=checkpointPipeline
             ?'Two to sixteen stages with the same approved configuration digest, on the original worker. Natural completion advances only with a verified saved checkpoint; evaluation-triggered Stop additionally requires native checkpoint-preserving shutdown. Manual Stops and failures hold later stages for review.'
             :trialBatch?'Two to sixteen fresh jobs with separate artifact lineages. Select saved configurations for each seed or parameter variant. The jobs are eligible independently as qualified capacity becomes available.':
