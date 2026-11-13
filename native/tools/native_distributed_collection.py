@@ -155,6 +155,7 @@ def verify_bundle(path, job, orders):
         "sha256": hashlib.sha256(raw).hexdigest(),
         "collector_id": job["id"],
         "partition": partition,
+        "rollout_processes": receipt["rollout_processes"],
         "native_runner_sha256": receipt["native_runner_sha256"],
         "policy_worker_sha256": receipt["policy_worker_sha256"],
         "metrics": metrics,
@@ -203,7 +204,15 @@ def aggregate_collection_metrics(bundles):
     steps = sum(row["successful_world_steps"] for row in rows)
     policies = sum(row["successful_policy_rows"] for row in rows)
     seconds = sum(row["wall_seconds"] for row in rows)
-    return {
+    collector_rates = [
+        row["successful_world_steps"] / row["wall_seconds"]
+        for row in rows
+    ]
+    sampled = [
+        row["sampled_model_timing"] for row in rows
+        if isinstance(row.get("sampled_model_timing"), dict)
+    ]
+    result = {
         "successful_world_steps": steps,
         "successful_policy_rows": policies,
         "worlds": sum(row["worlds"] for row in rows),
@@ -213,12 +222,20 @@ def aggregate_collection_metrics(bundles):
         "world_steps_per_wall_second": steps / seconds,
         "policy_rows_per_wall_second": policies / seconds,
         "collector_count": len(rows),
+        "total_rollout_processes": sum(
+            bundle["rollout_processes"] for bundle in bundles
+        ),
+        "collector_world_steps_per_wall_second_min": min(collector_rates),
+        "collector_world_steps_per_wall_second_max": max(collector_rates),
         "policy_worker_sha256": next(iter(worker_digests)),
         "collectors": [
             {
                 "id": bundle["collector_id"],
                 "partition": bundle["partition"],
                 "native_runner_sha256": bundle["native_runner_sha256"],
+                "rollout_processes": bundle["rollout_processes"],
+                "worker_shards": row.get("worker_shards", []),
+                "sampled_model_timing": row.get("sampled_model_timing"),
                 "world_steps": row["successful_world_steps"],
                 "policy_rows": row["successful_policy_rows"],
                 "wall_seconds": row["wall_seconds"],
@@ -228,3 +245,9 @@ def aggregate_collection_metrics(bundles):
             } for bundle, row in zip(bundles, rows)
         ],
     }
+    if sampled:
+        result["sampled_model_timing"] = {
+            key: sum(sample[key] for sample in sampled)
+            for key in ("calls", "rows", "wall_seconds")
+        }
+    return result
