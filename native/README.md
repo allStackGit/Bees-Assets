@@ -160,7 +160,10 @@ tick and counts. A wave can alternatively omit `after_seconds` and use
 the Level's authored `campaign_dialogue`), or
 `"on_ship_destroyed":527` where 527 is the authentic source ship ID
 from this same Level. The ship-death gate uses the actual
-`CombatEvent::ShipDied` event, not a missing-entity or proximity guess. The same canonical Level
+`CombatEvent::ShipDied` event, not a missing-entity or proximity guess.
+Death-triggered missions run only while their Level is active: a death
+that simultaneously finalizes the episode cannot introduce a new
+post-terminal wave. The same canonical Level
 notification triggers deployment, without a second mission timer. Timed
 and cue-triggered waves may be interleaved; same-tick admissions preserve
 the wave configuration's original order. Terminal victory/defeat cues
