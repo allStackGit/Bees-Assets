@@ -8,8 +8,8 @@
 use std::collections::HashSet;
 
 use bees_gameplay::commands::{
-    Activation, GameCommandError, NativeLocalCommandAction,
-    NativeLocalCommandSource,
+    Activation, GameCommandError, NativeCommandOrigin,
+    NativeLocalCommandAction, NativeLocalCommandSource,
 };
 use bees_gameplay::level_events::{NativeLevelEventError, NativeLevelEventProcessor};
 use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
@@ -89,6 +89,10 @@ pub(super) struct NativeScriptedQueueState {
     wait_for_entry: bool,
     required_cue: Option<NativeMissionCue>,
     cue_armed: bool,
+    /// A dormant source trigger does not suppress HiveMind commands before
+    /// the mission event actually claims this live squad. Once claimed,
+    /// a late server reply cannot take ownership back.
+    pub(super) claimed: bool,
 }
 
 impl NativePolicyOnlyMetadata {
@@ -180,6 +184,7 @@ impl NativePolicyOnlyMetadata {
                 on_deployment: is_deferred,
                 wait_for_entry: matches!(plan.activation, NativeScriptedActivation::OnArrival),
                 required_cue, cue_armed: required_cue.is_none(),
+                claimed: matches!(plan.activation, NativeScriptedActivation::Immediate),
             });
         }
         // NativeAuthoredLevel.squads is the source's actual Level.State.Squads
@@ -245,7 +250,7 @@ impl NativePolicyOnlyMetadata {
         self.scripted_queues.insert(insert_at, NativeScriptedQueueState {
             owner, orders: plan.orders, cursor: 0, repeat: plan.repeat,
             ready_tick: 1, on_deployment: false, wait_for_entry: false,
-            required_cue: None, cue_armed: true,
+            required_cue: None, cue_armed: true, claimed: true,
         });
         Ok(())
     }
@@ -312,6 +317,10 @@ impl NativePolicyOnlyMetadata {
                 continue;
             }
             if self.scripted_queues[index].wait_for_entry {
+                // Deployment starts an actual physical entry move. Claim
+                // command authority now, but do not replace the movement
+                // until the source formation arrives.
+                self.scripted_queues[index].claimed = true;
                 let squad = events.roster().get(owner)
                     .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
                 let mut moving = false;
@@ -326,7 +335,17 @@ impl NativePolicyOnlyMetadata {
                 }
                 self.scripted_queues[index].wait_for_entry = false;
             }
-            if events.commands().has_active(owner) {
+            // The gate has fired for this registered squad. Source
+            // RunCommandQueue takes ownership at the trigger boundary,
+            // even if a prior HiveMind command is still running.
+            self.scripted_queues[index].claimed = true;
+            let script_running = events.commands().current_selection(owner)
+                .is_some_and(|selection| matches!(selection.origin(),
+                    NativeCommandOrigin::Local(identity)
+                    if identity.source == NativeLocalCommandSource::Scripted
+                ));
+            if script_running {
+                // Our previous order still owns this command's timer.
                 index += 1;
                 continue;
             }

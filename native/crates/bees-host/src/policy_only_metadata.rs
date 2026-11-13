@@ -463,7 +463,9 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     fn scripted_queue_owns(&self, owner: SquadLifetime) -> bool {
-        self.scripted_queues.iter().any(|queue| queue.owner == owner)
+        self.scripted_queues.iter().any(|queue|
+            queue.owner == owner && queue.claimed
+        )
     }
 
     fn player_chase_measurements(&self) -> NativePlayerChaseMeasurements {
@@ -728,7 +730,9 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
         &self, owner: SquadLifetime,
     ) -> Option<bees_gameplay::level_host::NativeHiveMindSquadSource> {
         self.hivemind_squads.get(&owner).copied().map(|mut source| {
-            if self.scripted_queues.iter().any(|queue| queue.owner == owner) {
+            if self.scripted_queues.iter().any(|queue|
+                queue.owner == owner && queue.claimed
+            ) {
                 source.hivemind_controlled = false;
             }
             source
