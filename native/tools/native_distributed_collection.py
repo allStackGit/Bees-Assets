@@ -168,6 +168,12 @@ def verify_bundle(path, job, orders):
         not math.isfinite(metrics["wall_seconds"]) or metrics["wall_seconds"] <= 0
     ):
         raise ValueError(f"distributed collector returned invalid work measurements: {path}")
+    capacity = receipt["rollout_processes"] * receipt.get("physics_workers_per_process", 1)
+    if (type(receipt.get("physics_workers_per_process", 1)) is not int or
+            not 1 <= receipt.get("physics_workers_per_process", 1) <= 128 or
+            type(metrics.get("requested_physics_worker_slots")) is not int or
+            metrics["requested_physics_worker_slots"] != capacity):
+        raise ValueError(f"distributed collector physics allocation and measured receipt disagree: {path}")
     return {
         "path": str(path.resolve()),
         "sha256": hashlib.sha256(raw).hexdigest(),
@@ -250,6 +256,13 @@ def aggregate_collection_metrics(bundles):
             bundle["rollout_processes"] * bundle["physics_workers_per_process"]
             for bundle in bundles
         ),
+        "parallel_physics_rounds": sum(row.get("parallel_physics_rounds", 0) for row in rows),
+        "parallel_stage_id_serialized_rounds":
+            sum(row.get("parallel_stage_id_serialized_rounds", 0) for row in rows),
+        "parallel_stage_id_serialized_arenas":
+            sum(row.get("parallel_stage_id_serialized_arenas", 0) for row in rows),
+        "parallel_worker_cpu_wall_seconds_sum":
+            sum(row.get("parallel_worker_cpu_wall_seconds_sum", 0.0) for row in rows),
         "collector_world_steps_per_wall_second_min": min(collector_rates),
         "collector_world_steps_per_wall_second_max": max(collector_rates),
         "policy_worker_sha256": next(iter(worker_digests)),
@@ -260,6 +273,11 @@ def aggregate_collection_metrics(bundles):
                 "native_runner_sha256": bundle["native_runner_sha256"],
                 "rollout_processes": bundle["rollout_processes"],
                 "physics_workers_per_process": bundle["physics_workers_per_process"],
+                "parallel_physics_rounds": row.get("parallel_physics_rounds", 0),
+                "parallel_stage_id_serialized_arenas":
+                    row.get("parallel_stage_id_serialized_arenas", 0),
+                "parallel_worker_cpu_wall_seconds_sum":
+                    row.get("parallel_worker_cpu_wall_seconds_sum", 0.0),
                 "worker_shards": row.get("worker_shards", []),
                 "sampled_model_timing": row.get("sampled_model_timing"),
                 "world_steps": row["successful_world_steps"],
