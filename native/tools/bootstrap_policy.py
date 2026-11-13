@@ -25,7 +25,7 @@ DEFAULT_CONFIG = ROOT / "Training" / "rl_1v1_config.yaml"
 
 
 def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
-              inference_device: str, cargo: str) -> dict:
+              inference_device: str, cargo: str, scenario: str) -> dict:
     if output.exists():
         raise FileExistsError(f"refusing to overwrite existing output: {output}")
     if (not slots or len(slots) != len(set(slots)) or
@@ -72,6 +72,34 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     torch.manual_seed(seed)
     output.mkdir(parents=True)
     shutil.copyfile(trainer_config, output / "trainer-config.yaml")
+
+    # Keep the entire native source scenario as an immutable per-run input:
+    # later changes to the repository's example scenes cannot silently
+    # alter the learning task for this checkpoint generation.
+    example_dir = ROOT / "native" / "examples"
+    source_scene = example_dir / f"native-{scenario}.policy.scene.json"
+    source_run = example_dir / f"native-{scenario}.run.json"
+    shutil.copyfile(source_scene, output / "scene.json")
+    scene = json.loads((output / "scene.json").read_text(encoding="utf-8"))
+    run = json.loads(source_run.read_text(encoding="utf-8"))
+    if len(run.get("levels", [])) != 1 or run.get("native_stage") is None:
+        raise ValueError("native bootstrap requires a one-Level, entirely native run configuration")
+    run.update({
+        "run_id": f"native-{scenario}-bootstrap-{seed}",
+        "stage_name": scene["stage_name"],
+        "python": str(Path(__import__("sys").executable).resolve()),
+        "policy_worker": str(ROOT / "native" / "tools" / "policy_worker.py"),
+        "model_manifest": "manifest.json",
+    })
+    level = run["levels"][0]
+    level["scene"] = "scene.json"
+    level["model_slots"] = {"0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0]}
+    level.pop("scripted_queues", None)
+    with (output / "run.json").open("x", encoding="utf-8", newline="\\n") as file:
+        json.dump(run, file, indent=2)
+        file.write("\\n")
+        file.flush()
+        os.fsync(file.fileno())
     sync_directory(output)
 
     trainer = POCATrainer(
@@ -127,7 +155,12 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         "manifest_sha256": file_sha256(manifest),
         "trainer_config": "trainer-config.yaml",
         "trainer_config_sha256": source_hash,
-        "torch_version": torch.__version__,
+        "scenario": scenario,
+        "scene": "scene.json",
+        "scene_sha256": file_sha256(output / "scene.json"),
+        "run": "run.json",
+        "run_sha256": file_sha256(output / "run.json"),
+        "torch_version": str(torch.__version__),
     }
     sync_directory(output)
     atomic_json(output / "receipt.json", result)
@@ -143,11 +176,14 @@ def main() -> None:
                         help="model slots sharing the initial checkpoint (default: 0 1)")
     parser.add_argument("--inference-device", default="cpu",
                         help="resident model device, e.g. cpu or cuda")
+    parser.add_argument("--scenario", choices=("duel", "skirmish"), default="duel",
+                        help="copy a full native policy scene/run template into the bootstrap")
     parser.add_argument("--cargo", default="cargo",
                         help="Rust cargo executable used to generate the canonical ABI manifest")
     args = parser.parse_args()
     result = bootstrap(args.output.resolve(), args.trainer_config,
-                       args.seed, args.slots, args.inference_device, args.cargo)
+                       args.seed, args.slots, args.inference_device, args.cargo,
+                       args.scenario)
     print(json.dumps(result, sort_keys=True))
 
 
