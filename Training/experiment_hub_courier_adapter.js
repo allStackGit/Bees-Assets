@@ -24,6 +24,9 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_environment_version',
     'training_tuner_adjustments','training_tuner_accepted',
     'training_tuner_settled','training_simulation_shards',
+    'training_simulation_active_shards','training_simulation_next_shards',
+    'training_simulation_tuner_adjustments',
+    'training_simulation_tuner_accepted','training_simulation_tuner_settled',
     'training_gpu_optimizer_lineages','training_gpu_optimizer_next_lineages',
     'training_gpu_optimizer_tuner_adjustments',
     'training_gpu_optimizer_tuner_accepted',
@@ -85,7 +88,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             /^training_gpu_device_[0-7]_lineages$/.test(name)||
-            /^worker_[0-9]{1,2}_sim_shards$/.test(name))?'count':
+            /^worker_[0-9]{1,2}_sim_(?:shards|active_shards|next_shards)$/.test(name))?'count':
             name.endsWith('_mb')?'mb':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
