@@ -111,7 +111,6 @@ impl NavigationClearance {
         debug_assert_eq!(snapshot.grid, self.grid);
         snapshot.signed_static = Arc::clone(&self.signed_static);
         snapshot.dynamic.copy_from_slice(&self.dynamic);
-        snapshot.unobstructed = self.unobstructed();
     }
 
     /// Unity CanOccupyDestination's clearance criterion, after the owning
