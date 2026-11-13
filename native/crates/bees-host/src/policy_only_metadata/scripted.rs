@@ -110,6 +110,7 @@ impl NativePolicyOnlyMetadata {
         plans: Vec<NativeScriptedQueuePlan>,
         deferred: &HashSet<i64>,
         with_entry_order: &HashSet<i64>,
+        known_ships: &HashSet<i64>,
         dt_seconds: f32,
         campaign: Option<CampaignDialogueSpec>,
     ) -> Result<(), &'static str> {
@@ -172,10 +173,8 @@ impl NativePolicyOnlyMetadata {
                 }
                 NativeScriptedActivation::OnShipDestroyed(ship_id) => {
                     let event = NativeMissionEvent::ShipDestroyed(ship_id);
-                    if !event.valid_for(campaign, |id|
-                        squads.iter().any(|squad| squad.members.contains(&id))
-                    ) {
-                        return Err("scripted ship-death trigger needs an authored squad ship");
+                    if !event.valid_for(campaign, |id| known_ships.contains(&id)) {
+                        return Err("scripted ship-death trigger needs an authored source ship");
                     }
                     Some(event)
                 }

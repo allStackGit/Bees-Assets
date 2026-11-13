@@ -978,9 +978,13 @@ impl NativePhysicalScene {
                 !position.unity_equal(Vec2::ZERO)))
             .flat_map(|wave| wave.squad_item_ids.iter().copied())
             .collect::<std::collections::HashSet<_>>();
+        let known_ships = authored.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) => Some(ship.entity_id),
+            _ => None,
+        }).collect::<std::collections::HashSet<_>>();
         authored.metadata.stage_scripted_queues(
             &authored.squads, setup.scripted_queues, &deferred_squads,
-            &entry_squads, dt, authored.campaign_dialogue,
+            &entry_squads, &known_ships, dt, authored.campaign_dialogue,
         ).map_err(NativePolicyOnlyLevelError::InvalidScriptedCommands)?;
         authored.stage_reinforcements(setup.reinforcements, dt)
             .map_err(NativePolicyOnlyLevelError::InvalidReinforcements)?;
