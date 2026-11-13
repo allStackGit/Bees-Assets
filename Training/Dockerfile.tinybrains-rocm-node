@@ -10,3 +10,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && node -e "if (Number(process.versions.node.split('.')[0]) < 18) process.exit(1)"
+
+# The Hub launches /opt/tinybrains-venv/bin/python, and TinyBrains' own
+# checkpoint benchmark exports ONNX through that interpreter. Older approved
+# base images can lack this optional PyTorch exporter dependency even though
+# TinyBrains' current ROCm Dockerfile lists it. Install it in the venv actually
+# used by Hub, without replacing the base image's ROCm PyTorch.
+RUN /opt/tinybrains-venv/bin/python -m pip install --no-cache-dir \
+        'onnxscript==0.7.2' \
+    && /opt/tinybrains-venv/bin/python -c \
+        'import torch, onnxscript; torch.onnx.export(torch.nn.Identity(), (torch.zeros(1, 2),), "/tmp/tinybrains-onnx-smoke.onnx", opset_version=17)' \
+    && test -s /tmp/tinybrains-onnx-smoke.onnx \
+    && rm /tmp/tinybrains-onnx-smoke.onnx
