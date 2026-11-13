@@ -198,6 +198,8 @@ pub struct NativeScriptedQueueMeasurements {
     pub ready_queues: usize,
     pub commands_started: u64,
     pub orders_skipped_target_gone: u64,
+    /// Authenticated source command had no current actionable target.
+    pub orders_skipped_unavailable: u64,
     pub queues_completed: u64,
     pub queues_cancelled: u64,
     pub queues_repeated: u64,
@@ -216,6 +218,7 @@ impl NativeScriptedQueueMeasurements {
         self.ready_queues += other.ready_queues;
         self.commands_started += other.commands_started;
         self.orders_skipped_target_gone += other.orders_skipped_target_gone;
+        self.orders_skipped_unavailable += other.orders_skipped_unavailable;
         self.queues_completed += other.queues_completed;
         self.queues_cancelled += other.queues_cancelled;
         self.queues_repeated += other.queues_repeated;
