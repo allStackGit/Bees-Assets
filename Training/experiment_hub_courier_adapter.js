@@ -290,7 +290,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const identity={schema_version:1,source:'hub-metrics-v1',
                 experiment_id:context.job_id,segment_id:'training'};
             if(['running','stop_requested'].includes(context.state)) {
-                const progress=liveCourierProgress(root,windows);
+                // Courier emits checkpoint events only after its policy
+                // population and checkpoint summary have been published.
+                // Read the committed event on both operating systems so
+                // ZIP serialization and publication stalls remain visible.
+                const progress=liveCourierProgress(root,true);
                 if(progress)return validateProgress(
                     {...identity,...progress},context.project_id);
                 if(windows)return null;
