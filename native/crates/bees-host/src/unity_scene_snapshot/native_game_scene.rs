@@ -17,6 +17,10 @@ struct GameScene {
     command_settings: GameCommandSettings,
     ships: Vec<GameShip>,
     squads: Vec<GameSquad>,
+    /// Supply the authentic MA-POCA group/episode baselines explicitly when
+    /// the native scene owns actual policy-controlled ships.
+    #[serde(default)]
+    policy_episode: Option<GamePolicyEpisode>,
     #[serde(default)]
     layout: NativeLevelLayout,
     #[serde(default)]
@@ -52,6 +56,26 @@ struct GameCommandSettings {
     ai_squad_patrol_seconds: f32,
     ai_squad_following_seconds: f32,
     ai_squad_guard_seconds: f32,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GamePolicyEpisode {
+    episode_number: u32,
+    bee_starting_tsv: i32,
+    human_starting_tsv: i32,
+    timeout_seconds: f32,
+    discovery_baselines: [[i32; 4]; 2],
+    movement_disabled_by_team: [bool; 2],
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GamePolicyAgent {
+    agent_id: u64,
+    team_id: u8,
+    quarter_turns: u8,
+    movement_disabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -92,6 +116,8 @@ struct GameShip {
     cease_fire: bool,
     #[serde(default)]
     turrets: Vec<GameTurret>,
+    #[serde(default)]
+    policy: Option<GamePolicyAgent>,
 }
 
 #[derive(Deserialize)]
