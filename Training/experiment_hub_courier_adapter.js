@@ -159,7 +159,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // bounded backend capability manifest allows the same Hub adapter to
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
-    let boundedLearners=false,autoLearners=false,optimizerGpu=false;
+    let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false;
     if(fs.existsSync(capabilitiesFile)) {
         if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
             !fs.statSync(capabilitiesFile).isFile()||
@@ -172,11 +172,20 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             (capabilities.courier_auto_active_learners!==undefined&&
              typeof capabilities.courier_auto_active_learners!=='boolean')||
             (capabilities.courier_gpu_optimizer!==undefined&&
-             typeof capabilities.courier_gpu_optimizer!=='boolean'))
+             typeof capabilities.courier_gpu_optimizer!=='boolean')||
+            (capabilities.courier_gpu_pci_pin!==undefined&&
+             typeof capabilities.courier_gpu_pci_pin!=='boolean')||
+            (capabilities.courier_gpu_multi_optimizer!==undefined&&
+             typeof capabilities.courier_gpu_multi_optimizer!=='boolean')||
+            (capabilities.courier_gpu_pci_pin===true&&
+             capabilities.courier_gpu_optimizer!==true)||
+            (capabilities.courier_gpu_multi_optimizer===true&&
+             capabilities.courier_gpu_optimizer!==true))
             throw Error('Unsupported Courier backend capabilities manifest.');
         boundedLearners=capabilities.courier_active_learners;
         autoLearners=boundedLearners&&capabilities.courier_auto_active_learners===true;
         optimizerGpu=capabilities.courier_gpu_optimizer===true;
+        gpuPciPin=optimizerGpu&&capabilities.courier_gpu_pci_pin===true;
     }
     if(enableGpu) {
         if(!optimizerGpu)
@@ -347,7 +356,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(auto||context.gpu_pci_address!==undefined
                     ?['--ram-lease-mb',String(context.ram_quota_mb)]:[]),
                 ...(context.gpu_pci_address!==undefined
-                    ?['--optimizer-device','cuda']:[]),
+                    ?['--optimizer-device','cuda',
+                       ...(gpuPciPin&&!windows
+                           ?['--optimizer-gpu-pci',context.gpu_pci_address]:[])]:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(predecessor?['--resume']:[])];
         },
