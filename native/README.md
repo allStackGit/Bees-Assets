@@ -202,6 +202,37 @@ cancels its queue:
 }]
 ```
 
+A captured gameplay Level can also be edited natively without returning to
+Unity to move entire squads or change static obstacle layouts. Add
+`native_layout` to that Level entry in the run configuration:
+
+```json
+"native_layout": {
+  "remove_static_ids": [300],
+  "add_static_boxes": [
+    {"entity_id": 9000, "prefab_name": "Big Wall",
+     "position": [12, -16], "rotation_degrees": 0}
+  ],
+  "translate_squads": [
+    {"squad_item_id": 51, "by": [16, 0]}
+  ]
+}
+```
+
+Added boxes use the verified native prefab catalog; optional
+`local_corners` supplies four exact collider-local coordinates to resize
+the box. A new entity ID must be greater than every captured entity ID.
+Removal accepts only existing static box/polygon obstacles, never MapBorder,
+ships, projectiles or mission objects. Squad shifts preserve the original
+ship/weapon identity and formation offsets and require stationary initial
+ships within the authored map bounds. Validation is transactional at scene
+setup, and the same edits apply to every restarted episode and gameplay
+fingerprint. This feature applies only to gameplay Levels without captured
+policy reward baselines; modifying training discovery denominators and
+resizing a Level's map bounds are not claimed to be supported. It still
+starts from a verified source scene and prefab catalog, rather than
+inventing missing ship/weapon data.
+
 An explicit opposing target permits
 `{"kind":"aggressive","enemy_squad_item_id":52}`,
 `{"kind":"target_enemy","enemy_squad_item_id":52}`,
