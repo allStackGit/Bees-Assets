@@ -252,6 +252,23 @@ impl NativePhysicalScene {
         {
             return Err(invalid("invalid native game Level identity, bounds or fixed timestep"));
         }
+        let policy_episode = raw.policy_episode;
+        let has_agents = raw.ships.iter().any(|ship| ship.policy.is_some());
+        if has_agents != policy_episode.is_some() {
+            return Err(invalid("native policy ships require a complete MA-POCA episode and group source"));
+        }
+        if let Some(episode) = policy_episode {
+            if episode.episode_number == 0 ||
+                episode.bee_starting_tsv <= 0 || episode.human_starting_tsv <= 0 ||
+                !episode.timeout_seconds.is_finite() || episode.timeout_seconds <= 0.0 ||
+                episode.discovery_baselines.iter().flatten().any(|&value| value < 0) ||
+                !raw.layout.clone_squads.is_empty() ||
+                !raw.layout.remove_squads.is_empty() ||
+                !raw.layout.translate_squads.is_empty()
+            {
+                return Err(invalid("native training requires exact positive reward baselines and fixed source policy squad membership"));
+            }
+        }
         let bounds = Aabb { min, max };
         let grid = NavigationGrid::new(span.x, span.y)
             .map_err(NativeSnapshotError::Navigation)?;
