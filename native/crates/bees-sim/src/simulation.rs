@@ -213,6 +213,16 @@ impl<E> Default for ParallelWindow<E> {
     }
 }
 
+/// The completed physics phase after one model inference batch. Worker
+/// errors identify their actual world index; parallel execution does not
+/// pretend its successful worlds form a serial prefix.
+#[derive(Debug)]
+pub struct ParallelSelectedStep<E> {
+    pub worlds_stepped: usize,
+    pub failed_worlds: Vec<(usize, StepError<E>)>,
+    pub worker_loads: Vec<ParallelWorkerMeasurements>,
+}
+
 /// A single world scheduler defaults to the cheapest serial path. For
 /// independent rollout windows, the same worlds and rules may be partitioned
 /// across scoped CPU workers for many steps at a time, amortizing thread
@@ -318,6 +328,120 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             &self.rules, self.dt_seconds, self.sample_every,
             world, decisions, &mut self.measurements,
         )
+    }
+
+    /// Execute one already-validated decision batch across independent worlds.
+    /// None skips a world; Some(empty) advances physics without a policy
+    /// decision. Caller-owned vectors are borrowed, not copied or replaced.
+    ///
+    /// This is the shared gameplay rules path, including vision, command
+    /// retirement and episode notifications. The owner MUST discard the
+    /// whole policy batch if any world fails: completed worlds may not be
+    /// a contiguous prefix in parallel execution. Model inference and
+    /// durable notification delivery stay on the owning caller thread.
+    ///
+    /// Parallel execution uses one queue claim per arena (never per ship)
+    /// and merges worker measurements only after all physics has finished.
+    /// Callers should request >1 worker only for measured heavyweight
+    /// configurations; thread startup can outweigh small arena ticks.
+    pub fn step_selected_worlds_parallel(
+        &mut self,
+        actions: &[Option<Vec<Decision>>],
+        worker_count: NonZeroUsize,
+    ) -> Result<ParallelSelectedStep<R::Error>, &'static str>
+    where
+        S: Send,
+        R: Sync,
+        R::Error: Send,
+    {
+        if actions.len() != self.worlds.len() {
+            return Err("parallel action count must match registered worlds");
+        }
+        let mut report = ParallelSelectedStep {
+            worlds_stepped: 0,
+            failed_worlds: Vec::new(),
+            worker_loads: Vec::new(),
+        };
+        let scheduled = actions.iter().filter(|entry| entry.is_some()).count();
+        if scheduled == 0 { return Ok(report); }
+        let workers = worker_count.get().min(scheduled);
+        let rules = &self.rules;
+        let dt = self.dt_seconds;
+        let sample = self.sample_every;
+        if workers == 1 {
+            let started = Instant::now();
+            let mut measurements = Measurements::default();
+            let mut arenas = 0;
+            for (index, (world, action)) in self.worlds.iter_mut().zip(actions).enumerate() {
+                let Some(action) = action else { continue };
+                arenas += 1;
+                if let Err(error) = step_one(
+                    rules, dt, sample, world, action, &mut measurements,
+                ) {
+                    report.failed_worlds.push((index, error));
+                }
+            }
+            report.worlds_stepped = measurements.ticks as usize;
+            report.worker_loads.push(ParallelWorkerMeasurements::from_report(
+                arenas, &measurements, started.elapsed(),
+            ));
+            self.measurements.merge(&measurements);
+            return Ok(report);
+        }
+
+        let pending = Mutex::new(self.worlds.iter_mut().zip(actions)
+            .enumerate().filter_map(|(index, (world, action))|
+                action.as_ref().map(|action| (index, world, action.as_slice()))
+            ).collect::<VecDeque<_>>());
+        let outcomes = std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(workers);
+            for _ in 0..workers {
+                let pending = &pending;
+                handles.push(scope.spawn(move || {
+                    let started = Instant::now();
+                    let mut measurements = Measurements::default();
+                    let mut failures = Vec::new();
+                    let mut arenas = 0;
+                    loop {
+                        let next = pending.lock()
+                            .expect("native model-step arena queue poisoned").pop_front();
+                        let Some((index, world, actions)) = next else { break };
+                        arenas += 1;
+                        if let Err(error) = step_one(
+                            rules, dt, sample, world, actions, &mut measurements,
+                        ) {
+                            failures.push((index, error));
+                        }
+                    }
+                    (measurements, arenas, failures, started.elapsed())
+                }));
+            }
+            handles.into_iter().map(|handle| handle.join()).collect::<Vec<_>>()
+        });
+        // Release unclaimed mutable world references before error handling.
+        drop(pending);
+        let mut panicked = false;
+        for outcome in outcomes {
+            match outcome {
+                Ok((measurements, arenas, mut failures, elapsed)) => {
+                    report.worlds_stepped += measurements.ticks as usize;
+                    report.worker_loads.push(ParallelWorkerMeasurements::from_report(
+                        arenas, &measurements, elapsed,
+                    ));
+                    self.measurements.merge(&measurements);
+                    report.failed_worlds.append(&mut failures);
+                }
+                Err(_) => panicked = true,
+            }
+        }
+        if panicked {
+            for world in &mut self.worlds {
+                world.failed = true;
+            }
+            panic!("native model-step physics worker panicked");
+        }
+        report.failed_worlds.sort_unstable_by_key(|(index, _)| *index);
+        Ok(report)
     }
 
     /// Advance independent arenas for multiple fixed steps per CPU worker.
