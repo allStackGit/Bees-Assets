@@ -116,7 +116,7 @@ def expand_rollout_worlds(config: dict, requested_worlds: int) -> None:
             raise ValueError(f"replicated native Levels need distinct valid {key} values")
 
     for level in originals:
-        has_seed = type(level.get("seed")) is int and "episode_seeds" not in level
+        has_seed = type(level.get("seed")) is int and level.get("episode_seeds") is None
         has_episode_seeds = (
             level.get("seed") is None and isinstance(level.get("episode_seeds"), list)
             and len(level["episode_seeds"]) == config.get("episodes_per_world", 1)
