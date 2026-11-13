@@ -73,6 +73,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_learner_inference_seconds','rollout_opponent_processing_seconds',
         'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
         'simulation_batch_wall_seconds','simulation_last_child_gap_seconds',
+        'simulation_prefetch_overlap_seconds',
         'optimization_seconds','checkpoint_seconds',
         'remote_collector_join_wait_seconds','collection_merge_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
@@ -95,6 +96,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'episodes_ended','multi_ant_states','terminal_rewards',
         'carried_matches','open_matches','peak_live_matches',
         'truncated_groups','terminal_groups','collector_count',
+        'simulation_prefetch_engine_steps',
         'ppo_minibatches','ppo_microbatches',
         'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
         'ppo_gpu_pixel_budget',
@@ -213,11 +215,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('collector_'+i+'_'+suffix,worker[name],'count');
         add('collector_'+i+'_sim_rss_mb',
             worker.simulation_engine_memory_mb,'mb');
+        add('collector_'+i+'_sim_prefetch_engine_steps',
+            worker.simulation_prefetch_engine_steps,'count');
         for(const [suffix,name] of [
             ['sim_engine_roundtrip_seconds','simulation_engine_roundtrip_seconds'],
             ['sim_dispatch_queue_seconds','simulation_dispatch_queue_seconds'],
             ['sim_batch_wall_seconds','simulation_batch_wall_seconds'],
-            ['sim_last_child_gap_seconds','simulation_last_child_gap_seconds']])
+            ['sim_last_child_gap_seconds','simulation_last_child_gap_seconds'],
+            ['sim_prefetch_overlap_seconds','simulation_prefetch_overlap_seconds']])
             add('collector_'+i+'_'+suffix,worker[name],'seconds');
         add('collector_'+i+'_inference_shape_groups',
             worker.rollout_inference_shape_groups,'count');
