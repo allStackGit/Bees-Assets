@@ -422,7 +422,8 @@ def main() -> None:
         parser.error("holdout evaluation requires --evaluation-side and a native holdout source")
     if not 0 <= args.evaluation_policy_seed < (1 << 63):
         parser.error("--evaluation-policy-seed must be nonnegative int63")
-    if args.evaluation_policy_seed != 0 and args.evaluation_run_config is None:
+    if (args.evaluation_policy_seed != 0 and args.evaluation_run_config is None
+            and args.holdout_worlds is None):
         parser.error("--evaluation-policy-seed requires an evaluation run")
     if args.train_rounds is None and any((
         args.distributed_plan is not None, args.bundle_inbox is not None,
