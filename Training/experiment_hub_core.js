@@ -334,9 +334,13 @@ function gpuStartBlock(job,lease,machine) {
         machine.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
         r.gpu_count===2&&allocated.gpu_count===2&&
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
-    if(!(single||dual)||allocated.gpus?.length!==r.gpu_count||
+    const multi=machine.agent_platform==='linux'&&
+        job.project_id==='courier'&&r.gpu_count>=2&&r.gpu_count<=8&&
+        allocated.gpu_count===r.gpu_count&&
+        r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
+    if(!(single||dual||multi)||allocated.gpus?.length!==r.gpu_count||
         (r.gpus?.length&&r.gpus.some((id,i)=>id!==allocated.gpus[i])))
-        return 'Native GPU Start requires one approved GPU, or two exclusively bound TinyBrains ROCm GPUs.';
+        return 'Native GPU Start requires the exact approved PCI lease and project GPU execution mode.';
     if(!machine.gpu_projects?.includes(job.project_id))
         return 'The local adapter has not opted into native GPU execution.';
     if(machine.agent_platform==='win32') {
@@ -379,11 +383,13 @@ function gpuProbeBlock(job,lease,machine) {
         job.frozen_parameters?.device==='dual'&&
         machine?.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
         job.resources.gpu_mode==='exclusive';
+    const multi=job.project_id==='courier'&&count>=2&&count<=8&&
+        job.resources.gpu_mode==='exclusive';
     if(!gpuProbeWorkerReady(job,lease,machine)||!lease.receipt_fresh||
         !machine.installed_projects?.includes(job.project_id)||
         !(count===1&&(job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&
-                machine.gpu_shared_projects?.includes(job.project_id))||dual)||
+                machine.gpu_shared_projects?.includes(job.project_id))||dual||multi)||
         (job.resources.gpus?.length>0&&
             job.resources.gpus.some((id,i)=>id!==lease?.resources.gpus?.[i]))||
         lease.resources.gpu_mode!==job.resources.gpu_mode||
@@ -392,7 +398,7 @@ function gpuProbeBlock(job,lease,machine) {
             gpu_inventory_source:machine.gpu_inventory_source,
             gpu_devices:machine.observed_gpus,
         },lease.resources,lease.gpu_bindings)?.length!==count)
-        return 'GPU access probe requires a fresh approved one- or two-GPU lease on a qualified Linux agent.';
+        return 'GPU access probe requires a fresh approved physical GPU lease on a qualified Linux agent.';
     const resourceBlock=nativeResourceBlock(job,lease);
     if(resourceBlock)return resourceBlock;
     if(!(machine.observed_gpus?.length>=2))
@@ -1281,7 +1287,8 @@ class ExperimentHub {
             const report=this.agentReports.get(proof.machine_id);
             const pinned=lease?.gpu_bindings;
             const stillMatched=Boolean(lease&&machine&&
-                [1,2].includes(pinned?.length)&&
+                (job.project_id==='courier'?pinned?.length>=1&&pinned.length<=8:
+                    [1,2].includes(pinned?.length))&&
                 proof.selected_pci_addresses?.length===pinned.length&&
                 pinned.every((bound,index)=>
                     proof.selected_pci_addresses[index]===bound.pci_address&&
@@ -1309,7 +1316,7 @@ class ExperimentHub {
             if(job.status==='waiting_adapter'&&job.project_id!=='bees')
                 job.native_start_readiness=nativeStartReadiness(snapshot,job);
             if(job.status==='waiting_adapter'&&job.lease_id&&
-                [1,2].includes(job.resources?.gpu_count)) {
+                job.resources?.gpu_count>=1&&job.resources.gpu_count<=8) {
                 const lease=snapshot.reservations.find(l=>l.id===job.lease_id);
                 const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
                 job.gpu_probe_block=gpuProbeBlock(job,lease,machine);
@@ -2325,7 +2332,8 @@ class ExperimentHub {
                 throw Error('A cleanup recheck cannot qualify GPU access.');
             const pinned=lease.gpu_bindings;
             const verified=report.result==='verified'&&
-                [1,2].includes(pinned?.length)&&
+                (job.project_id==='courier'?pinned?.length>=1&&pinned.length<=8:
+                    [1,2].includes(pinned?.length))&&
                 report.selected_pci_addresses.length===pinned.length&&
                 pinned.every((bound,index)=>
                     report.selected_pci_addresses[index]===bound.pci_address);
