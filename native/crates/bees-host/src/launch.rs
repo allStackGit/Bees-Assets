@@ -136,6 +136,11 @@ enum ScriptedOrderConfig {
     MoveToRandom { #[serde(default)] range: f32 },
     Aggressive { enemy_squad_item_id: i64 },
     TargetEnemy { enemy_squad_item_id: i64 },
+    Retreat { enemy_squad_item_id: i64 },
+    CircleSquad { enemy_squad_item_id: i64 },
+    RightSwipe { enemy_squad_item_id: i64 },
+    LeftSwipe { enemy_squad_item_id: i64 },
+    InAndOut { enemy_squad_item_id: i64 },
     BombingRun { enemy_squad_item_id: i64 },
     Charge { enemy_squad_item_id: i64 },
     Guard { friendly_squad_item_id: i64 },
@@ -502,6 +507,31 @@ fn make_setup(
                         },
                     ScriptedOrderConfig::TargetEnemy { enemy_squad_item_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::TargetEnemy {
+                            enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
+                                .copied().unwrap_or(enemy_squad_item_id),
+                        },
+                    ScriptedOrderConfig::Retreat { enemy_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::Retreat {
+                            enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
+                                .copied().unwrap_or(enemy_squad_item_id),
+                        },
+                    ScriptedOrderConfig::CircleSquad { enemy_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::CircleSquad {
+                            enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
+                                .copied().unwrap_or(enemy_squad_item_id),
+                        },
+                    ScriptedOrderConfig::RightSwipe { enemy_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::RightSwipe {
+                            enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
+                                .copied().unwrap_or(enemy_squad_item_id),
+                        },
+                    ScriptedOrderConfig::LeftSwipe { enemy_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::LeftSwipe {
+                            enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
+                                .copied().unwrap_or(enemy_squad_item_id),
+                        },
+                    ScriptedOrderConfig::InAndOut { enemy_squad_item_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::InAndOut {
                             enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
                                 .copied().unwrap_or(enemy_squad_item_id),
                         },
