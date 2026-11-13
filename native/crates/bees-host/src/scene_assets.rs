@@ -71,12 +71,41 @@ impl NativeSceneAssets {
         };
         let matrix_json = read(unity_collision_matrix_path)?;
         let stage_json = read(unity_stage_palette_path)?;
-        let collision_matrix = CollisionMatrix::from_unity_export(&matrix_json)
+        Self::from_asset_json(&matrix_json, &stage_json, expected_stage_name, authored_map_settings)
+    }
+
+    /// Native gameplay and training authoring can provide a collision layer
+    /// matrix and exact ordered asteroid prefab roster directly. These go
+    /// through the same symmetric-matrix and prefab catalog validators as
+    /// legacy Stage exports; no second physics or asteroid rules are added.
+    pub fn from_native_stage(
+        rows: [u32; 32], prefab_numbers: &[u8], expected_stage_name: &str,
+        authored_map_settings: FragmentSpawnSettings,
+    ) -> Result<Self, NativeSceneAssetError> {
+        let matrix = serde_json::json!({
+            "schema_version": 1,
+            "rows": rows,
+        }).to_string();
+        let palette = serde_json::json!({
+            "schema_version": 1,
+            "stage_name": expected_stage_name,
+            "asteroid_max_speed_exclusive":
+                authored_map_settings.asteroid_max_speed_exclusive,
+            "prefab_numbers": prefab_numbers,
+        }).to_string();
+        Self::from_asset_json(&matrix, &palette, expected_stage_name, authored_map_settings)
+    }
+
+    fn from_asset_json(
+        matrix_json: &str, stage_json: &str, expected_stage_name: &str,
+        authored_map_settings: FragmentSpawnSettings,
+    ) -> Result<Self, NativeSceneAssetError> {
+        let collision_matrix = CollisionMatrix::from_unity_export(matrix_json)
             .map_err(NativeSceneAssetError::CollisionMatrix)?;
         let catalog = Arc::new(CollisionAsteroidCatalog::embedded()
             .map_err(NativeSceneAssetError::AsteroidCatalog)?);
         let asteroid_stage = FullAsteroidStage::from_unity_export(
-            &stage_json, expected_stage_name, catalog, authored_map_settings,
+            stage_json, expected_stage_name, catalog, authored_map_settings,
         ).map_err(NativeSceneAssetError::StagePalette)?;
         let fragment_palette = AsteroidFragmentPalette::embedded()
             .map_err(NativeSceneAssetError::FragmentPalette)?;
