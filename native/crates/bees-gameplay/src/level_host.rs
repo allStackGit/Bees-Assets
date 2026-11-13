@@ -1479,6 +1479,67 @@ impl NativeLevelBatchDriver {
         B: NativePolicyInference,
         S: NativeLevelNotificationSink,
     {
+        self.run_window_with_step(
+            simulation, backend, connection, sink, max_rounds, delivery_every,
+            |driver, simulation, backend| driver.step(simulation, backend),
+        )
+    }
+
+    /// Model inference is common across worlds. With multiple CPU workers,
+    /// only the independent authoritative physics/Level updates fan out.
+    /// Notifications, PPO capture and HiveMind outcome checkpoint ordering
+    /// remain single-owner and identical to the serial window.
+    pub fn run_window_parallel<M, A, B, S>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        backend: &mut B,
+        connection: &mut NativeHiveMindConnection,
+        sink: &mut S,
+        max_rounds: NonZeroU32,
+        delivery_every: NonZeroU32,
+        workers: NonZeroUsize,
+    ) -> Result<NativeLevelWindowCounts,
+        NativeLevelWindowError<
+            <M as NativeLevelObservationContext>::Error, B::Error, S::Error>>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext +
+            NativeLevelObservationContext + Send,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError> + Send,
+        B: NativePolicyInference,
+        S: NativeLevelNotificationSink,
+    {
+        self.run_window_with_step(
+            simulation, backend, connection, sink, max_rounds, delivery_every,
+            |driver, simulation, backend|
+                driver.step_parallel(simulation, backend, workers),
+        )
+    }
+
+    fn run_window_with_step<M, A, B, S, D>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        backend: &mut B,
+        connection: &mut NativeHiveMindConnection,
+        sink: &mut S,
+        max_rounds: NonZeroU32,
+        delivery_every: NonZeroU32,
+        mut step: D,
+    ) -> Result<NativeLevelWindowCounts,
+        NativeLevelWindowError<
+            <M as NativeLevelObservationContext>::Error, B::Error, S::Error>>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext +
+            NativeLevelObservationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+        B: NativePolicyInference,
+        S: NativeLevelNotificationSink,
+        D: FnMut(
+            &mut NativeLevelBatchDriver,
+            &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+            &mut B,
+        ) -> Result<NativeBatchedStepCounts,
+            NativeBatchedStepError<NativeLevelSourceError<M::Error>, B::Error>>,
+    {
         let mut counts = NativeLevelWindowCounts::default();
         // An earlier window may have deferred its last notification
         // delivery. Never start another inference batch over a backlog
@@ -1491,7 +1552,7 @@ impl NativeLevelBatchDriver {
                     round: 0, error,
                 })?.notifications_accepted;
         for round in 1..=max_rounds.get() {
-            let step = self.step(simulation, backend)
+            let step = step(self, simulation, backend)
                 .map_err(|error| NativeLevelWindowError::Step {
                     round, error,
                 })?;
