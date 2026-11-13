@@ -360,8 +360,10 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
 
         if workers == 1 {
             let mut decisions = Vec::new();
-            let mut part = run_partition(
+            let mut part = ParallelWindow::default();
+            run_partition(
                 rules, dt, sample, &mut self.worlds, steps, decide, &mut decisions,
+                &mut part,
             );
             part.worker_loads.push(ParallelWorkerMeasurements::from_report(
                 self.worlds.len(), &part.measurements, started.elapsed(),
@@ -397,14 +399,11 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                                 .expect("native arena queue poisoned").pop_front();
                             let Some(world) = next else { break };
                             assigned += 1;
-                            let part = run_partition(
+                            run_partition(
                                 rules, dt, sample,
                                 std::slice::from_mut(world), steps, decide, &mut decisions,
+                                &mut report,
                             );
-                            report.measurements.merge(&part.measurements);
-                            report.skipped_failed_worlds += part.skipped_failed_worlds;
-                            report.completed_worlds += part.completed_worlds;
-                            report.failed_worlds.extend(part.failed_worlds);
                         }
                         (report, assigned, worker_started.elapsed())
                     }));
@@ -427,8 +426,10 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                     handles.push(scope.spawn(move || {
                         let worker_started = Instant::now();
                         let mut decisions = Vec::new();
-                        let report = run_partition(
+                        let mut report = ParallelWindow::default();
+                        run_partition(
                             rules, dt, sample, chunk, steps, decide, &mut decisions,
+                            &mut report,
                         );
                         (report, size, worker_started.elapsed())
                     }));
@@ -516,13 +517,14 @@ fn run_partition<S, R, F>(
     steps: u32,
     decide: &F,
     decisions: &mut Vec<Decision>,
-) -> ParallelWindow<R::Error>
+    report: &mut ParallelWindow<R::Error>,
+)
 where
     R: GameRules<S>,
     F: Fn(&World<S>, &mut Vec<Decision>),
 {
-    let mut report = ParallelWindow::default();
-    // Reuse action memory across every world claimed by this worker.
+    // Reuse action memory and result buffers across every world claimed
+    // by this worker; do not allocate a new report for each queue claim.
     for world in worlds {
         if world.failed {
             report.skipped_failed_worlds += 1;
@@ -548,7 +550,6 @@ where
             }
         }
     }
-    report
 }
 
 #[cfg(test)]
