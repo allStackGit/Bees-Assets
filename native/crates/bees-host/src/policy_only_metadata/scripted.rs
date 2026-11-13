@@ -517,12 +517,24 @@ impl NativePolicyOnlyMetadata {
                 source.settings, NativeLocalCommandSource::Scripted,
                 order.action(linked_target), source.shooting, None,
             )?;
-            if !matches!(result, Activation::Applied { .. }) {
-                return Err(NativeLevelEventError::Commands(GameCommandError::MissingCombatSnapshot));
+            match result {
+                Activation::Applied { .. } => {
+                    self.scripted_queues[index].cursor += 1;
+                    self.scripted_counts.commands_started += 1;
+                    started += 1;
+                }
+                Activation::Unavailable(_) => {
+                    // The actual mining resource, warp gate, squad or
+                    // other source target can retire between queue setup
+                    // and execution. Skip without fabricating a command
+                    // lifetime or failing an otherwise healthy episode.
+                    self.scripted_queues[index].cursor += 1;
+                    self.scripted_counts.orders_skipped_unavailable += 1;
+                }
+                _ => return Err(NativeLevelEventError::Commands(
+                    GameCommandError::MissingCombatSnapshot,
+                )),
             }
-            self.scripted_queues[index].cursor += 1;
-            self.scripted_counts.commands_started += 1;
-            started += 1;
             index += 1;
         }
         Ok(started)
