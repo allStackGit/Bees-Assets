@@ -544,6 +544,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
+                ...(remote_rollouts===true?[]:['--adaptive-local-engines']),
                 ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
                     '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
