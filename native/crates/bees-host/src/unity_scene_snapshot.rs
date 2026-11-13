@@ -25,7 +25,7 @@ use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::{CombatError, ShipVitals};
 use bees_sim::geometry::Vec2;
-use bees_sim::box_obstacle_assets::live_box_shape;
+use bees_sim::box_obstacle_assets::{live_box_shape, BoxObstacleCatalog};
 use bees_sim::physics::{ObstacleBody, ShipShape};
 use bees_sim::map_object::CombatMapObject;
 use bees_sim::obstacle::{CombatObstacle, ObstacleKind, ObstacleVitals};
@@ -48,7 +48,7 @@ use bees_gameplay::episode::{
 };
 use bees_gameplay::inference::NativePolicyInference;
 use bees_gameplay::level_host::NativeLevelNotificationSink;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::fleet_inventory::{
     NativeFleetInventory, NativeFleetInventoryError, NativeFleetShipValue,
@@ -592,6 +592,8 @@ pub enum NativeSnapshotError {
     Combat(CombatError),
     UnsupportedObstacle(i64),
     InvalidObstacle(i64),
+    /// Invalid native-authored map modification, rejected before scene mutation.
+    InvalidNativeLayout(&'static str),
     InvalidMapObject(i64),
     DuplicateEntity(i64),
     InvalidSquad(i64),
@@ -609,6 +611,43 @@ pub enum NativeSnapshotError {
     Episode(NativeEpisodeRewardError),
     MissingModelSlot(u8),
     Fleet(NativeFleetInventoryError),
+}
+
+/// Native-authored game Level geometry. Source snapshots supply verified
+/// prefabs and gameplay capabilities, while operators can change static
+/// obstacle layouts and translate complete source squads without re-exporting
+/// from Unity. Policy/group reward scenes are excluded until their immutable
+/// discovery denominators can be authored independently.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeLevelLayout {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remove_static_ids: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub add_static_boxes: Vec<NativePlacedStaticBox>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub translate_squads: Vec<NativeSquadTranslation>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativePlacedStaticBox {
+    pub entity_id: i64,
+    pub prefab_name: String,
+    pub position: [f32; 2],
+    pub rotation_degrees: f32,
+    /// Optional exact root-local primary collider corners. A map creator
+    /// may resize/reshape the source prefab; physics and rendering use the
+    /// same validated geometry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_corners: Option<[[f32; 2]; 4]>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeSquadTranslation {
+    pub squad_item_id: i64,
+    pub by: [f32; 2],
 }
 
 /// A source-authored INITIAL physical scene, ready to compose with actual
@@ -812,6 +851,147 @@ pub struct NativeSourcePolicyGroup {
 }
 
 impl NativePhysicalScene {
+    /// Apply an explicitly native game layout before any world is created.
+    /// Retain the original source asset types, ship identities, formation
+    /// offsets and Stage home positions. Each translated squad moves as one
+    /// formation; gameplay still owns all subsequent motion and collisions.
+    /// Validate the complete patch before mutating the imported template.
+    pub fn apply_native_layout(
+        &mut self, layout: &NativeLevelLayout, boxes: &BoxObstacleCatalog,
+    ) -> Result<(), NativeSnapshotError> {
+        use bees_sim::obstacle::ObstacleKind;
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if self.source_episode.is_some() || self.source_policy_group.is_some() ||
+            !self.source_policy_bindings.is_empty()
+        {
+            return Err(invalid(
+                "native layout edits require a gameplay Level without frozen policy reward baselines",
+            ));
+        }
+        let mut removed = HashSet::new();
+        for &id in &layout.remove_static_ids {
+            if id <= 0 || !removed.insert(id) {
+                return Err(invalid("duplicate or invalid removed obstacle identity"));
+            }
+            let found = self.entities.iter().find(|entity| entity.entity_id() == id);
+            let is_static = match found {
+                Some(NativeAuthoredEntity::BoxObstacle { prefab_name, .. }) =>
+                    boxes.by_name(prefab_name)
+                        .is_some_and(|asset| asset.kind == ObstacleKind::StaticObstacle),
+                Some(NativeAuthoredEntity::PolygonObstacle { .. }) => true,
+                _ => false,
+            };
+            if !is_static {
+                return Err(invalid("only present static obstacles may be removed"));
+            }
+        }
+
+        let highest_original_id = self.entities.iter()
+            .map(NativeAuthoredEntity::entity_id).max().unwrap_or(0);
+        let mut new_ids = HashSet::new();
+        for placement in &layout.add_static_boxes {
+            if placement.entity_id <= highest_original_id ||
+                placement.entity_id <= 0 ||
+                !new_ids.insert(placement.entity_id) {
+                return Err(invalid("new obstacle identities must be unique and above the captured world"));
+            }
+            let Some(asset) = boxes.by_name(&placement.prefab_name) else {
+                return Err(invalid("new obstacle requires a verified source box prefab"));
+            };
+            if asset.kind != ObstacleKind::StaticObstacle || asset.authored_health <= 0 {
+                return Err(invalid("native box placement must be a real damage-free static obstacle"));
+            }
+            let position = Vec2::new(placement.position[0], placement.position[1]);
+            let pose = Pose {
+                position, rotation_degrees: placement.rotation_degrees,
+            };
+            if !position.is_finite() || !pose.rotation_degrees.is_finite() ||
+                position.x < self.bounds.min.x || position.x > self.bounds.max.x ||
+                position.y < self.bounds.min.y || position.y > self.bounds.max.y
+            {
+                return Err(invalid("new obstacle origin is outside the native Level bounds"));
+            }
+            let prepared = if let Some(corners) = placement.local_corners {
+                asset.prepare_spawn_live_box(placement.entity_id, pose,
+                    corners.map(|v| Vec2::new(v[0], v[1])))
+            } else {
+                asset.prepare_spawn(placement.entity_id, Some(pose))
+            };
+            if prepared.is_err() {
+                return Err(invalid("native box collider corners are invalid"));
+            }
+        }
+
+        let mut translated = HashSet::new();
+        let mut placements = HashMap::new();
+        for edit in &layout.translate_squads {
+            let delta = Vec2::new(edit.by[0], edit.by[1]);
+            if edit.squad_item_id <= 0 || !translated.insert(edit.squad_item_id) ||
+                !delta.is_finite()
+            {
+                return Err(invalid("invalid or repeated native squad translation"));
+            }
+            let squad = self.source_squads.iter().find(|squad|
+                squad.item_id == edit.squad_item_id
+            ).ok_or(invalid("native squad translation references an unknown source squad"))?;
+            for &id in &squad.members {
+                let ship = self.entities.iter().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == id => Some(ship),
+                    _ => None,
+                }).ok_or(invalid("native squad translation requires a live authored ship"))?;
+                // Move only the initial placement; never turn a captured
+                // in-flight ship into a half-teleported physics/controller.
+                if ship.motion.is_moving || ship.motion.has_target_coordinates ||
+                    ship.motion.body_velocity.length_squared() != 0.0
+                {
+                    return Err(invalid("native placement requires stationary source ships"));
+                }
+                let destination = ship.motion.position + delta;
+                if !destination.is_finite() ||
+                    destination.x < self.bounds.min.x ||
+                    destination.x > self.bounds.max.x ||
+                    destination.y < self.bounds.min.y ||
+                    destination.y > self.bounds.max.y ||
+                    placements.insert(id, destination).is_some()
+                {
+                    return Err(invalid("native squad placement overlaps or leaves the Level bounds"));
+                }
+            }
+        }
+
+        if !removed.is_empty() {
+            self.entities.retain(|entity| !removed.contains(&entity.entity_id()));
+            self.source_static_discovery_values.retain(|id, _| !removed.contains(id));
+        }
+        for entity in &mut self.entities {
+            if let NativeAuthoredEntity::Ship(ship) = entity {
+                if let Some(&position) = placements.get(&ship.entity_id) {
+                    ship.motion.position = position;
+                }
+            }
+        }
+        for placement in &layout.add_static_boxes {
+            let asset = boxes.by_name(&placement.prefab_name)
+                .expect("validated immutable box prefab");
+            self.source_static_discovery_values
+                .insert(placement.entity_id, asset.authored_health);
+            self.entities.push(NativeAuthoredEntity::BoxObstacle {
+                entity_id: placement.entity_id,
+                prefab_name: placement.prefab_name.clone(),
+                pose: Some(Pose {
+                    position: Vec2::new(placement.position[0], placement.position[1]),
+                    rotation_degrees: placement.rotation_degrees,
+                }),
+                live_corners: placement.local_corners.map(|corners|
+                    corners.map(|v| Vec2::new(v[0], v[1]))),
+            });
+        }
+        if !layout.add_static_boxes.is_empty() {
+            self.has_obstacles = true;
+        }
+        Ok(())
+    }
+
     /// Construct the same Pathfinder.Scale=4 navigation grid and complete
     /// map affine basis used by this Unity Level. The canonical game world
     /// owns the live obstacle colliders; refresh static/dynamic clearance
