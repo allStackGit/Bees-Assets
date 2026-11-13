@@ -279,8 +279,9 @@ impl NativePolicyOnlyMetadata {
             }
         }
         if chosen.is_empty() { return Ok(0); }
+        let refresh_static = world.static_navigation_needs_refresh(&self.navigation);
         world.refresh_world_navigation(
-            &mut self.navigation, true, self.activate_collision_asteroids,
+            &mut self.navigation, refresh_static, self.activate_collision_asteroids,
         ).map_err(|error| err(error.into()))?;
 
         let mut started = 0u64;
