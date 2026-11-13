@@ -590,6 +590,23 @@ are the source of truth for safe resumption. This controller coordinates
 sequential local rounds; distributed collectors still use separately
 allocated, pinned bundle windows, not a repeated stale capture.
 
+To measure learning separately from training episodes, add
+`--evaluation-run-config fixed-holdout.json --evaluation-side 1` to
+the session command. The holdout config supplies explicit, unchanging
+seeds, authentic source scenes and model-only Levels. Each completed
+checkpoint is run through the same native headless game and durable
+episode outcome sink, without optimizer updates or training captures.
+The session records side-specific victory/draw rates, physical episode
+counts and evaluation SPS next to its training metrics. The evaluation
+is a source-side outcome measurement; it measures policy improvement
+only when the opponent and scenario distribution are comparable.
+A failed evaluation does not invalidate or repeat the already completed
+training round: `--resume` retries that evaluation first and retains
+all earlier attempts. For a one-off model benchmark use
+`python native/tools/evaluate_policy.py fixed-holdout.json learner/manifest.json fresh-eval --learner-side 1 --rollout-binary PATH`.
+This makes both gameplay and training use the identical simulation and
+outcome implementation, not a Python training-only mock.
+
 Add `--collect-only` to the round command on a model-only worker to stop
 after publishing `rollout-bundle.json`. Transfer the receipt and its listed
 capture and journal files together, preserving relative paths. Use the same
