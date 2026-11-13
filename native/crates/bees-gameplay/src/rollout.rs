@@ -158,6 +158,7 @@ pub fn step_batched_levels_parallel<M, A, B, F, SourceError>(
     build_observations: &mut F,
     decisions: &mut Vec<Decision>,
     per_world_actions: &mut Vec<Option<Vec<Decision>>>,
+    serialized_worlds: &mut Vec<usize>,
     workers: NonZeroUsize,
 ) -> Result<NativeBatchedStepCounts,
     NativeBatchedStepError<SourceError, B::Error>>
@@ -191,28 +192,30 @@ where
                         NativeBatchedStepError::Dispatch { index, error }
                     )?;
             }
-            // A live Scout can create a Beacon and its new SquadLifetime
-            // inside this tick. That allocation uses one Stage-wide ID
-            // stream; parallel arrival order would make replay identities
-            // depend on OS scheduling. Keep these rounds source ordered
-            // until child identities can be preassigned at a tick boundary.
-            let shared_stage_ids = (0..simulation.world_count()).any(|index|
-                simulation.world(index).is_some_and(|world|
-                    world.state.combat.ships().iter().any(|ship|
-                        ship.ship_type == bees_sim::combat_world::SCOUT_TYPE &&
-                        !ship.vitals.is_dead()
-                    )
-                )
-            );
-            counts.serialized_for_stage_ids = shared_stage_ids && workers.get() > 1;
-            let effective_workers = if shared_stage_ids {
-                NonZeroUsize::new(1).expect("positive serial worker")
-            } else { workers };
-            let report = simulation.step_selected_worlds_parallel(
-                per_world_actions, effective_workers,
+            // A live Scout can spawn a Beacon and claim a globally
+            // ordered Stage SquadLifetime this fixed tick. Only worlds
+            // containing a living Scout need to run in source order:
+            // unrelated arenas can still exploit CPU parallelism without
+            // changing the allocator's deterministic request sequence.
+            serialized_worlds.clear();
+            for index in 0..simulation.world_count() {
+                if per_world_actions[index].is_none() { continue; }
+                let world = simulation.world(index)
+                    .expect("validated current native world index");
+                if world.state.combat.ships().iter().any(|ship|
+                    ship.ship_type == bees_sim::combat_world::SCOUT_TYPE &&
+                    !ship.vitals.is_dead()
+                ) {
+                    serialized_worlds.push(index);
+                }
+            }
+            counts.serialized_for_stage_ids =
+                !serialized_worlds.is_empty() && workers.get() > 1;
+            let report = simulation.step_selected_worlds_partitioned(
+                per_world_actions, workers, serialized_worlds,
             ).map_err(NativeBatchedStepError::ParallelPlan)?;
             counts.worlds_stepped = report.worlds_stepped;
-            counts.parallel_physics_workers = report.worker_loads.len();
+            counts.parallel_physics_workers = report.parallel_workers;
             counts.parallel_physics_worker_nanos = report.worker_loads.iter()
                 .map(|load| load.wall_elapsed.as_nanos())
                 .sum();
