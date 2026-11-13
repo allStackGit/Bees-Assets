@@ -2850,7 +2850,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!input)throw Error('Reload Design: a project parameter field is missing.');
             let value;
             if(field.type==='boolean')value=input.checked;
-            else {
+            else if(field.type==='enum') {
+                value=input.value;
+                if(!field.options.includes(value))
+                    throw Error(field.label+' must use an approved option.');
+            }else {
                 if(!input.value.trim())throw Error(field.label+' requires a number.');
                 value=Number(input.value);
                 if(!Number.isFinite(value)||value<field.min||value>field.max||
@@ -2937,6 +2941,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 input.type='checkbox';
                 input.checked=parameters.design_overrides?.[field.key]??
                     field.default;
+            }else if(field.type==='enum') {
+                const select=document.createElement('select');
+                select.dataset.designKey=field.key;
+                select.replaceChildren(...field.options.map(option=>new Option(option,option)));
+                const current=parameters.design_overrides?.[field.key]??field.default;
+                select.value=field.options.includes(current)?current:field.default;
+                select.addEventListener('change',()=>{
+                    try{readDesignControls();feedback('hub-config-message','');}
+                    catch(error){feedback('hub-config-message',error.message);}
+                });
+                label.append(select);
+                const hint=document.createElement('small');
+                hint.textContent=field.key+' · default '+String(field.default);
+                label.append(hint);
+                $(field.section==='training'?'hub-design-training':
+                    'hub-design-environment').append(label);
+                continue;
             }else{
                 input.type='number';
                 input.step=field.type==='integer'?'1':'any';
