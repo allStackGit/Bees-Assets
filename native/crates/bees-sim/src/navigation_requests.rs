@@ -69,7 +69,9 @@ pub struct NavigationRequests {
     next_lifecycle_id: u64,
     next_request_id: u64,
     ships: HashMap<i64, ShipPathOwner>,
-    waiting_ship_ids: VecDeque<i64>,
+    /// Queue tokens include the ship incarnation, so retiring/reusing a
+    /// numeric ID cannot claim an obsolete position in the source FIFO.
+    waiting_ship_ids: VecDeque<(i64, u64)>,
     /// Exact number of claimable waiting jobs, maintained only when the
     /// authoritative ship request owner changes state. Stale queue IDs from
     /// dead ships do not make each path-worker pump linear in past spawns.
@@ -114,13 +116,13 @@ impl NavigationRequests {
             .ok_or(NavigationRequestError::IdExhausted)?;
         self.next_lifecycle_id = lifecycle;
         let previous = &self.ships[&ship_id];
-        let existing_queue_slot = previous.queued;
         if previous.waiting.is_some() && previous.running.is_none() {
             self.claimable_waiting -= 1;
         }
+        // The previous incarnation's FIFO token is obsolete. The first
+        // new request will enqueue a fresh token at the correct tail.
         self.ships.insert(ship_id, ShipPathOwner {
             lifecycle_id: lifecycle,
-            queued: existing_queue_slot,
             ..ShipPathOwner::default()
         });
         Ok(lifecycle)
@@ -200,7 +202,7 @@ impl NavigationRequests {
         owner.waiting = Some(request);
         if !owner.queued {
             owner.queued = true;
-            self.waiting_ship_ids.push_back(ship_id);
+            self.waiting_ship_ids.push_back((ship_id, lifecycle_id));
         }
         Ok(if queued {
             NavigationRequestDisposition::UpdatedQueued
@@ -224,8 +226,11 @@ impl NavigationRequests {
     /// Worker claims the next still-current job. At most one queue slot per
     /// ship is present; coalescing never creates an obsolete worker tail.
     pub fn next(&mut self) -> Option<NavigationRequest> {
-        while let Some(ship_id) = self.waiting_ship_ids.pop_front() {
+        while let Some((ship_id, lifecycle_id)) = self.waiting_ship_ids.pop_front() {
             let Some(owner) = self.ships.get_mut(&ship_id) else { continue };
+            if owner.lifecycle_id != lifecycle_id || !owner.queued {
+                continue;
+            }
             owner.queued = false;
             let Some(job) = owner.waiting.take() else { continue };
             if owner.running.is_some() { continue; }
@@ -263,7 +268,7 @@ impl NavigationRequests {
             owner.waiting = Some(deferred);
             if !owner.queued {
                 owner.queued = true;
-                self.waiting_ship_ids.push_back(job.ship_id);
+                self.waiting_ship_ids.push_back((job.ship_id, job.lifecycle_id));
             }
             return Ok(NavigationCompletion::Requeued {
                 ship_id: job.ship_id,
