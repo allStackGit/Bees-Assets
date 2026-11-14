@@ -207,6 +207,10 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         ...(job.project_id==='tinybrains'&&
             job.distributed_rollout_endpoints!==undefined
             ?{distributed_rollout_endpoints:Object.freeze(job.distributed_rollout_endpoints.slice())}:{}),
+        ...(job.project_id==='courier'&&
+            Array.isArray(job.distributed_courier_endpoints)
+            ?{distributed_courier_endpoints:Object.freeze(
+                job.distributed_courier_endpoints.slice())}:{}),
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(!cpuOnly?(dual||multi
