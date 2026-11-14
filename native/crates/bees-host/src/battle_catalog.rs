@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,53 @@ use serde_json::{json, Value};
 
 use super::{invalid, CampaignOutcome, CampaignFleetShipOutcome};
 use bees_host::fleet_inventory::NativeFleetCombatStats;
+
+/// Exclusive writer guard for one campaign directory. The native UI,
+/// headless mission launcher and fleet editor share this one ownership
+/// boundary, never an additional economy state. OS create_new is atomic
+/// on both Windows and Linux. A crashed process leaves a visible lock,
+/// intentionally requiring an operator to establish that no game/edit
+/// session is still running before clearing it.
+pub struct CampaignWriterLease {
+    lock_path: PathBuf,
+    file: Option<fs::File>,
+}
+
+impl CampaignWriterLease {
+    pub fn acquire(root: &Path) -> io::Result<Self> {
+        fs::create_dir_all(root)?;
+        let lock_path = root.join("campaign-writer.lock");
+        let mut file = match fs::OpenOptions::new()
+            .write(true).create_new(true).open(&lock_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                return Err(invalid(format!(
+                    "campaign directory is already in use ({}); if the prior process crashed, verify it has stopped before removing the stale lock",
+                    lock_path.display(),
+                )));
+            }
+            Err(error) => return Err(error),
+        };
+        if let Err(error) = writeln!(file, "pid={}", std::process::id())
+            .and_then(|_| file.sync_all())
+        {
+            drop(file);
+            let _ = fs::remove_file(&lock_path);
+            return Err(error);
+        }
+        Ok(Self { lock_path, file: Some(file) })
+    }
+}
+
+impl Drop for CampaignWriterLease {
+    fn drop(&mut self) {
+        // Windows cannot unlink a still-open lock file. Close the handle
+        // first, then release the OS-visible writer guard.
+        drop(self.file.take());
+        let _ = fs::remove_file(&self.lock_path);
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
