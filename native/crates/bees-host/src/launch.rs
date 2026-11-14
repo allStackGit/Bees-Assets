@@ -1672,6 +1672,58 @@ fn run_campaign_mission(
         output_root, &mut number, false).map(|_| ())
 }
 
+/// Offer original source FleetShips from the same authored scene source
+/// used by the game and edit preflight. A mixed/legacy catalog can still
+/// open its battle picker; only verified native campaign hulls are editable.
+#[cfg(feature = "client")]
+fn authored_menu_fleet(
+    catalog: &battle_catalog::BattleCatalog, root: &Path,
+    progress: &battle_catalog::CampaignProgress<'_>,
+) -> Vec<(i32, i64, i64)> {
+    let mut listed = Vec::new();
+    let mut seen_side = HashSet::new();
+    for entry in &catalog.battles {
+        let Some(mission) = entry.mission.as_ref() else { continue };
+        if seen_side.contains(&mission.player_side) { continue; }
+        let path = resolve(root, entry.config_for(progress));
+        let Ok(path) = path.canonicalize() else { continue };
+        let Ok(scene) = load_native_fleet_edit_scene(&path) else { continue };
+        seen_side.insert(mission.player_side);
+        for squad in &scene.source_squads {
+            let Some(saved_squad_id) = squad.saved_squad_id else { continue };
+            if squad.side != mission.player_side ||
+                !squad.player_permissions.user_controlled
+            { continue; }
+            for &entity_id in &squad.members {
+                let Some(ship) = scene.entities.iter().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == entity_id =>
+                        Some(ship),
+                    _ => None,
+                }) else { continue };
+                let Some(fleet_id) = ship.fleet_ship_id else { continue };
+                if !progress.original_fleet_is_editable(mission.player_side, fleet_id) ||
+                    ship.policy.is_some() || ship.motion.is_policy_controlled ||
+                    ship.special.is_some() || ship.special_weapon.is_some() ||
+                    ship.drone_carrier_id.is_some() ||
+                    ship.motion.is_moving || ship.motion.has_target_coordinates ||
+                    ship.motion.body_velocity.length_squared() != 0.0
+                { continue; }
+                let owns_child = scene.entities.iter().any(|entity| match entity {
+                    NativeAuthoredEntity::Ship(other) =>
+                        other.drone_carrier_id == Some(entity_id) ||
+                        matches!(&other.special,
+                            Some(bees_host::ship_specials::NativeAuthoredShipSpecial::Striker { carrier, .. })
+                            if carrier.carrier_id == Some(entity_id)),
+                    _ => false,
+                });
+                if !owns_child { listed.push((mission.player_side, fleet_id, saved_squad_id)); }
+            }
+        }
+    }
+    listed.sort_unstable();
+    listed
+}
+
 #[cfg(feature = "client")]
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
     use bees_host::presentation::{
