@@ -924,6 +924,21 @@ allocation (Experiment Hub retains machine/CPU/GPU/RAM ownership):
 python native/tools/train_policy_session.py run.json checkpoint.pt Training/rl_1v1_config.yaml native-session --rounds 100 --distributed-plan collectors.json --bundle-inbox /shared/native-inbox --device cuda
 ```
 
+Add `--auto-balance-collectors` to that command (or the equivalent
+`bootstrap_policy.py --train-rounds` invocation) to opt into measured
+between-round allocation of **arena worlds**, keeping each machine's
+assigned rollout processes and physics CPU workers unchanged. The plan
+must cover one contiguous range of world indices. After at least three
+completed rounds with stable, nontrivial collector measurements, the
+session evaluates a possible transfer every fourth round, capped at 10%
+of either collector's worlds and requiring at least 2% predicted reduction
+in the longest collection duration. An issued work order is immutable
+even after interruption and resume. The new per-round
+`native_distributed_allocation_selected` record states the allocations
+and why they did or did not change. Actual useful SPS and optimizer
+performance still need measurement; this option does not rebalance the
+Hub's CPU/GPU/RAM leases or the per-collector rollout process counts.
+
 The session publishes `collection-round-NNNNN.json` each round, naming
 the exact learner checkpoint, manifest, seed offset, source run fingerprint,
 nonoverlapping World windows, optional per-process physics CPU allocations,
