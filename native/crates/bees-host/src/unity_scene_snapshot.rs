@@ -972,6 +972,18 @@ impl NativePhysicalScene {
                         !matches!(&ship.special,
                             Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
                             if carrier.carrier_id.is_some()) &&
+                        // An authored carrier with dependent Strikers or
+                        // Drones cannot be purchased as a bare hull: its
+                        // source scene describes an owned family, not a
+                        // factory for orphaned single-ship clones.
+                        !self.entities.iter().any(|entity| match entity {
+                            NativeAuthoredEntity::Ship(child) =>
+                                child.drone_carrier_id == Some(ship.entity_id) ||
+                                matches!(&child.special,
+                                    Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
+                                    if carrier.carrier_id == Some(ship.entity_id)),
+                            _ => false,
+                        }) &&
                         !ship.motion.is_moving && !ship.motion.has_target_coordinates &&
                         ship.motion.body_velocity.length_squared() == 0.0 &&
                         ship.vitals.health() == ship.vitals.max_health() &&
@@ -1323,7 +1335,10 @@ impl NativePhysicalScene {
                     self.fleet.omit_initial_ship(id);
                 }
             }
-            changes += 1;
+            // Count actual physical ships reassigned, including dependent
+            // Drones and Strikers, rather than pretending a carrier is
+            // a single-world-body operation.
+            changes += family.len();
         }
         self.source_squads.retain(|squad| !squad.members.is_empty());
         if !self.source_squads.iter().any(|squad|
