@@ -1243,8 +1243,28 @@ class ExperimentHub {
             for(const plan of next.courier_launch_plans||[])
                 if(plan.status==='pending') {
                     plan.status='needs_review';
-                    plan.reason='Coordinator restarted: Courier native service ownership must be reviewed before any new learner Start.';
+                    plan.reason='Coordinator restarted: any previously started Courier remote services must be stopped through their native owners.';
                     plan.resolved_at=now();
+                    // A stale coordinator may no longer own the socket, but
+                    // its remote processes are still native job owners.
+                    // Never release a claim just because this process died.
+                    for(const member of plan.members) {
+                        const child=next.jobs.find(job=>job.id===member.job_id);
+                        if(!child)continue;
+                        if(child.status==='start_requested'&&
+                            child.start_first_offered_at===null) {
+                            child.status='waiting_adapter';
+                            delete child.dispatch_id;
+                            delete child.start_requested_at;
+                            delete child.start_first_offered_at;
+                        } else if(child.dispatch_id&&
+                            ['start_requested','launch_requested','running','unverified']
+                            .includes(child.status)) {
+                            child.status='stop_requested';
+                            child.stop_requested_at=now();
+                            child.status_reason='Native Courier sidecar Stop requested after coordinator restart.';
+                        }
+                    }
                 }
             for(const plan of next.distributed_group_plans||[])
                 if(plan.status==='pending') {
@@ -5005,6 +5025,8 @@ class ExperimentHub {
         let changed=false;
         for(const learner of next.jobs.filter(job=>job.project_id==='courier'&&
             job.distributed_courier_managed===true)) {
+            const failedPlan=(next.courier_launch_plans||[]).find(plan=>
+                plan.learner_job_id===learner.id&&plan.status==='needs_review');
             const children=next.jobs.filter(job=>
                 job.project_id==='courier_remote'&&
                 job.frozen_parameters?.learner_job_id===learner.id);
@@ -5017,6 +5039,46 @@ class ExperimentHub {
                     learner.status='stop_requested';
                     learner.stop_requested_at=now();
                     learner.status_reason='Frozen Courier remote policy lineage terminated; stopping learner safely.';
+                    changed=true;
+                }
+            }
+            if(learner.status==='waiting_adapter'&&!learner.dispatch_id&&failedPlan) {
+                // Reconcile failed admission exactly as in the normal
+                // terminal path: unoffered sidecars may be cancelled now,
+                // offered or running services require a verified native Stop.
+                for(const child of children) {
+                    if(child.status==='start_requested'&&
+                        child.start_first_offered_at===null) {
+                        child.status='waiting_adapter';
+                        delete child.dispatch_id;
+                        delete child.start_requested_at;
+                        delete child.start_first_offered_at;
+                    }
+                    if(child.status==='waiting_adapter'&&!child.dispatch_id) {
+                        this.cancelUnstartedJob(next,child,now());
+                        changed=true;
+                    } else if(child.dispatch_id&&
+                        ['start_requested','launch_requested','running','unverified']
+                            .includes(child.status)) {
+                        child.status='stop_requested';
+                        child.stop_requested_at=now();
+                        child.status_reason='Courier learner failed admission; native service Stop requested.';
+                        changed=true;
+                    }
+                }
+                const released=children.every(child=>
+                    child.status==='cancelled'||
+                    ['finished','stopped','failed'].includes(child.status)&&
+                    child.capacity_released_at&&
+                    next.reservations.some(lease=>
+                        lease.id===child.lease_id&&lease.status==='released'));
+                if(released&&!next.jobs.some(job=>
+                        (job.after_job_id===learner.id||
+                         job.continuation_of_job_id===learner.id)&&
+                        job.status!=='cancelled')) {
+                    this.cancelUnstartedJob(next,learner,now());
+                    failedPlan.status='aborted';
+                    failedPlan.reason='All Courier remote services have verified terminal release; unstarted learner cancelled.';
                     changed=true;
                 }
             }
