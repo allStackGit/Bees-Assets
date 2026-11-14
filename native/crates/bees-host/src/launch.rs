@@ -23,6 +23,7 @@ use bees_host::socket::{SetupKind, SetupLevelIdentity};
 use bees_host::runtime::{NativeHostRuntime, NativeHostSocketEvent};
 use bees_host::source_command_scheduler::NativeSourceCommandScheduler;
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
+use bees_host::fleet_inventory::NativeFleetCombatStats;
 use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvaluationContext, recover_command_outcomes};
 use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
 use bees_host::policy_action_trace::{PolicyActionPlayback, PolicyActionRecorder};
@@ -992,6 +993,8 @@ struct CampaignFleetShipOutcome {
     /// A safe extraction or WarpGate return does not set this flag.
     #[serde(default)]
     is_dead: Option<bool>,
+    #[serde(default)]
+    combat: Option<NativeFleetCombatStats>,
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
@@ -2499,6 +2502,7 @@ fn run_battle(
                 fleet_ship_id, side: ship.side,
                 minerals_mined_this_level: value.minerals_mined_this_level,
                 is_dead: Some(state.metadata.fleet.was_killed(ship.entity_id)),
+                combat: state.metadata.fleet.combat_stats(ship.entity_id),
             });
         }
         fleet.sort_unstable_by_key(|ship| ship.fleet_ship_id);
