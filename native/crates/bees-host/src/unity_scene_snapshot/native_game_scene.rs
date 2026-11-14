@@ -313,6 +313,15 @@ impl GameQueenSpawn {
     fn into_native(self, catalog: &ShipAssetCatalog, require_observation: bool)
         -> Result<NativeAuthoredShipSpecial, NativeSnapshotError>
     {
+        // Newborn Queen minions must be dynamically enrolled in the policy
+        // decision/group roster before a policy Level can claim MA-POCA
+        // parity. Do not run an apparently valid training episode with
+        // ordinary, non-policy-controlled YellowJackets instead.
+        if require_observation {
+            return Err(NativeSnapshotError::InvalidNativeLayout(
+                "Queen waves require dynamic policy-agent enrollment for a native MA-POCA Level",
+            ));
+        }
         let invalid = || NativeSnapshotError::InvalidNativeLayout(
             "Queen requires exact source YellowJacket spawn and Bomb inputs",
         );
