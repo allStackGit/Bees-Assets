@@ -1204,92 +1204,98 @@ fn preflight_native_ship_purchase(
     progress: &battle_catalog::CampaignProgress<'_>,
     side: i32, ship_type: u8, saved_squad_id: i64, price_tsv: u64,
 ) -> Result<i64, Box<dyn Error>> {
-    let mut highest_fleet_id = 0_i64;
     let max_size = catalog.max_squad_ships.ok_or_else(||
-        invalid("native ship shop has no authored maximum squad size"))? as usize;
+        invalid("native shop needs the source's maximum squad size"))? as usize;
     let dead = progress.lost_player_fleet_ids(side)?;
-    let purchased = progress.purchases_for_side(side);
-    let active_purchases = purchased.iter().filter(|ship|
-        ship.saved_squad_id == saved_squad_id &&
-        !dead.contains(&ship.fleet_ship_id)
-    ).count();
-    let mut checked = HashSet::new();
+    let mut purchases = progress.purchases_for_side(side);
+    purchases.retain(|ship| !dead.contains(&ship.fleet_ship_id));
+    // Probe a new unique identity using the SAME authored scene adapter as
+    // the actual game. This preview is dropped; it does not touch the
+    // player's balance, battle output or physics simulation.
+    purchases.push(NativePurchasedShip {
+        fleet_ship_id: i64::MAX, saved_squad_id, ship_type, price_tsv,
+    });
+    let mut highest_fleet_id = 0_i64;
+    let mut checked = 0_u64;
     for entry in &catalog.battles {
         if !entry.mission.as_ref().is_some_and(|mission| mission.player_side == side) {
             continue;
         }
         for config in entry.configurations() {
             let run_path = resolve(root, config).canonicalize()?;
-            let run: Value = serde_json::from_slice(&fs::read(&run_path)?)?;
-            let levels = run.get("levels").and_then(Value::as_array)
-                .ok_or_else(|| invalid("shop requires a physical native campaign Level"))?;
-            if levels.len() != 1 {
-                return Err(invalid("purchases require one real Level per campaign mission").into());
+            let run: RunConfig = serde_json::from_slice(&fs::read(&run_path)?)?;
+            if run.levels.len() != 1 || run.episodes_per_world != 1 {
+                return Err(invalid("native shop requires one physical episode per campaign Level").into());
             }
-            let scene_relative = levels[0].get("scene").and_then(Value::as_str)
-                .ok_or_else(|| invalid("purchased campaign Level lacks an authored scene"))?;
-            let scene_path = resolve(run_path.parent().ok_or_else(||
-                invalid("missing purchase run parent"))?, Path::new(scene_relative))
-                .canonicalize()?;
-            if !checked.insert(scene_path.clone()) { continue; }
-            let scene: Value = serde_json::from_slice(&fs::read(scene_path)?)?;
-            if scene.get("native_game_schema").and_then(Value::as_u64) != Some(1) {
-                return Err(invalid("ship purchase needs native-authored non-policy gameplay scenes").into());
+            let level = &run.levels[0];
+            let bounds = &run.fragment_spawn.map_bounds;
+            let fragments = FragmentSpawnSettings {
+                map_bounds: Aabb {
+                    min: vec2(bounds.min), max: vec2(bounds.max),
+                },
+                half_map_extents: vec2(run.fragment_spawn.half_map_extents),
+                asteroid_max_speed_exclusive:
+                    run.fragment_spawn.asteroid_max_speed_exclusive,
+                training_health_ratio: run.fragment_spawn.training_health_ratio,
+            };
+            if !fragments.valid() {
+                return Err(invalid("invalid native purchased Level fragmentation settings").into());
             }
-            let squads = scene.get("squads").and_then(Value::as_array)
-                .ok_or_else(|| invalid("shop needs authored saved squads"))?;
-            let squad = squads.iter().find(|squad|
-                squad.get("saved_squad_id").and_then(Value::as_i64) == Some(saved_squad_id) &&
-                squad.get("side").and_then(Value::as_i64) == Some(i64::from(side)) &&
-                squad.get("user_controlled").and_then(Value::as_bool) == Some(true)
-            ).ok_or_else(||
-                invalid("the purchased ship's saved player squad is absent from a campaign route"))?;
-            let ships = scene.get("ships").and_then(Value::as_array)
-                .ok_or_else(|| invalid("shop needs authored source ships"))?;
-            let members = squad.get("members").and_then(Value::as_array)
-                .ok_or_else(|| invalid("saved squad must have its exact authored ship members"))?;
-            let mut live_members = 0_usize;
-            for member in members {
-                let id = member.as_i64().ok_or_else(||
-                    invalid("invalid saved squad ship member ID"))?;
-                let original = ships.iter().find(|ship|
-                    ship.get("entity_id").and_then(Value::as_i64) == Some(id)
-                ).ok_or_else(|| invalid("saved squad has no authored source member"))?;
-                let fleet_id = original.get("fleet_ship_id").and_then(Value::as_i64)
-                    .ok_or_else(|| invalid("saved squad ship lacks persistent FleetShip ID"))?;
-                if !dead.contains(&fleet_id) { live_members += 1; }
+            let config_root = run_path.parent().ok_or_else(||
+                invalid("missing native shop run directory"))?;
+            let assets = match (
+                run.native_stage.as_ref(),
+                run.collision_matrix.as_ref(),
+                run.stage_palette.as_ref(),
+            ) {
+                (Some(native), None, None) => NativeSceneAssets::from_native_stage(
+                    native.collision_matrix_rows,
+                    &native.asteroid_prefab_numbers,
+                    &run.stage_name, fragments,
+                ),
+                (None, Some(matrix), Some(palette)) => NativeSceneAssets::load(
+                    &resolve(config_root, matrix), &resolve(config_root, palette),
+                    &run.stage_name, fragments,
+                ),
+                _ => return Err(invalid(
+                    "shop Level needs the same source Stage assets as ordinary native gameplay",
+                ).into()),
+            }.map_err(|error| contextual("shop Stage assets", error))?;
+            let scene_path = resolve(config_root, &level.scene).canonicalize()?;
+            let scene_json = fs::read_to_string(&scene_path)?;
+            let mut source = NativePhysicalScene::parse_scene_with_assets(
+                &scene_json, &assets,
+            ).map_err(|error| contextual("shop authored Level", error))?;
+            if let Some(layout) = &level.native_layout {
+                source.apply_native_layout(
+                    layout, assets.box_catalog(), assets.polygon_catalog(),
+                ).map_err(|error| contextual("shop native Level layout", error))?;
             }
-            if live_members.checked_add(active_purchases)
-                .and_then(|total| total.checked_add(1))
-                .is_none_or(|count| count > max_size)
-            {
-                return Err(invalid("the purchased ship would exceed the authored maximum saved-squad size").into());
-            }
-            for ship in ships {
-                if let Some(id) = ship.get("fleet_ship_id").and_then(Value::as_i64) {
-                    highest_fleet_id = highest_fleet_id.max(id);
+            for entity in &source.entities {
+                if let NativeAuthoredEntity::Ship(ship) = entity {
+                    if let Some(id) = ship.fleet_ship_id {
+                        highest_fleet_id = highest_fleet_id.max(id);
+                    }
                 }
             }
-            if !ships.iter().any(|ship| {
-                ship.get("ship_type").and_then(Value::as_u64) ==
-                    Some(u64::from(ship_type)) &&
-                ship.get("side").and_then(Value::as_i64) == Some(i64::from(side)) &&
-                ship.get("persistent_fleet").and_then(Value::as_bool) == Some(true) &&
-                ship.get("max_tsv").and_then(Value::as_u64) == Some(price_tsv) &&
-                ship.get("health").and_then(Value::as_i64).is_some_and(|hp|
-                    ship.get("max_health").and_then(Value::as_i64) == Some(hp) && hp > 0) &&
-                ship.get("mined_cargo").and_then(Value::as_i64).unwrap_or(0) == 0 &&
-                ["policy", "special", "special_weapon", "drone_carrier_id"]
-                    .iter().all(|field| ship.get(*field).is_none_or(Value::is_null))
-            }) {
+            source.install_purchased_ships(side, &purchases)
+                .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
+            source.omit_killed_fleet_ships(side, &dead)
+                .map_err(|error| contextual("shop saved-fleet casualties", error))?;
+            let squad = source.source_squads.iter().find(|squad|
+                squad.saved_squad_id == Some(saved_squad_id) &&
+                squad.side == side && squad.player_permissions.user_controlled
+            ).ok_or_else(|| invalid("new hull's saved squad is missing"))?;
+            if squad.members.len() > max_size {
                 return Err(invalid(
-                    "the purchased class has no ordinary full-health prefab at the source TSV price on every campaign route",
+                    "purchased hull exceeds the source's maximum saved-squad size",
                 ).into());
             }
+            checked += 1;
         }
     }
-    if checked.is_empty() {
-        return Err(invalid("no native campaign Levels can receive the purchased hull").into());
+    if checked == 0 {
+        return Err(invalid("no native campaign Levels can deploy the purchased hull").into());
     }
     Ok(highest_fleet_id)
 }
