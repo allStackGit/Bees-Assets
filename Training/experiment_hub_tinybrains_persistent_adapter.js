@@ -507,7 +507,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         for(const key of keys)
             if(!collectorField.test(key))include(key);
         const core=[
-            'ant_decisions','decisions_per_second','elapsed_seconds',
+            // Queue-time chart selections require both delivered rate and
+            // its actual immutable PPO share for every one of 17 collectors.
+            // Preserve these before any optional stage breakdown competes
+            // for the bounded, project-neutral progress envelope.
+            'ant_decisions','action_target','decisions_per_second','elapsed_seconds',
             'join_exposed_seconds','simulation_match_steps',
             'match_steps_per_second','sim_matches','sim_target',
             'sim_ram_headroom_mb','sim_admission_denied',
