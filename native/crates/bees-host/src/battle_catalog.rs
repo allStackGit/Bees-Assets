@@ -87,6 +87,11 @@ pub struct BattleCatalog {
     /// full-health ship prototype on every native campaign scene.
     #[serde(default)]
     pub buildable_ships: Vec<BuildableShip>,
+    /// Unity Configuration.MaxSquadSize for this authored campaign.
+    /// Required for a shop: buying ships must not bypass the saved-squad
+    /// capacity limit or change the canonical game roster contract.
+    #[serde(default)]
+    pub max_squad_ships: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -235,6 +240,11 @@ impl BattleCatalog {
         }
         if self.campaign_id.as_ref().is_some_and(|id| id.trim().is_empty()) {
             return Err(invalid("campaign_id must not be blank"));
+        }
+        if !self.buildable_ships.is_empty() &&
+            !self.max_squad_ships.is_some_and(|n| (1..=1024).contains(&n))
+        {
+            return Err(invalid("a native campaign ship shop requires the authored maximum SavedSquad size"));
         }
         let mut available = HashSet::new();
         for ship in &self.buildable_ships {
@@ -583,6 +593,7 @@ impl BattleCatalog {
             "spent_minerals": progress.spent_minerals,
             "available_minerals": progress.unspent_minerals().expect("validated account balance"),
             "bank_history_complete": progress.bank_history_complete,
+            "max_squad_ships": self.max_squad_ships,
             "purchased_ships": progress.purchases.iter().map(|(side, ship)| json!({
                 "player_side": side,
                 "fleet_ship_id": ship.fleet_ship_id,
