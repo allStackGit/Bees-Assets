@@ -21,7 +21,32 @@ HUB_JOB_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
 
 
 def read_plan(path):
-    plan = json.loads(path.read_text(encoding="utf-8"))
+    return _validate_collector_plan(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _issued_allocations(path, baseline):
+    """Recover the immutable allocations of an issued round, including on resume."""
+    orders = json.loads(path.read_text(encoding="utf-8"))
+    if (orders.get("kind") != "native_distributed_collection_orders" or
+            orders.get("schema_version") != 1 or
+            not isinstance(orders.get("jobs"), list)):
+        raise ValueError(f"invalid issued native collection order: {path}")
+    keys = ("id", "world_start", "world_count", "rollout_workers", "physics_workers")
+    previous = {"collectors": [
+        {key: job[key] for key in keys if key in job} for job in orders["jobs"]
+    ]}
+    read_plan_document = _validate_collector_plan(previous)
+    original = {item["id"]: item for item in baseline["collectors"]}
+    if (len(read_plan_document["collectors"]) != len(original) or
+            any(item["id"] not in original or
+                item["rollout_workers"] != original[item["id"]]["rollout_workers"] or
+                item.get("physics_workers") != original[item["id"]].get("physics_workers")
+                for item in read_plan_document["collectors"])):
+        raise ValueError(f"issued collector resources differ from pinned plan: {path}")
+    return read_plan_document
+
+
+def _validate_collector_plan(plan):
     if not isinstance(plan, dict) or set(plan) != {"collectors"}:
         raise ValueError("distributed plan must contain only collectors")
     collectors = plan["collectors"]
@@ -52,62 +77,6 @@ def read_plan(path):
     for left, right in zip(sorted(ranges), sorted(ranges)[1:]):
         if left[1] > right[0]:
             raise ValueError(f"collector world-index ranges overlap: {left[2]} and {right[2]}")
-    return plan
-
-
-
-def _issued_allocations(path, baseline):
-    """Recover the immutable allocations of an issued round, including on resume."""
-    orders = json.loads(path.read_text(encoding="utf-8"))
-    if (orders.get("kind") != "native_distributed_collection_orders" or
-            orders.get("schema_version") != 1 or
-            not isinstance(orders.get("jobs"), list)):
-        raise ValueError(f"invalid issued native collection order: {path}")
-    keys = ("id", "world_start", "world_count", "rollout_workers", "physics_workers")
-    previous = {"collectors": [
-        {key: job[key] for key in keys if key in job} for job in orders["jobs"]
-    ]}
-    read_plan_document = _validate_collector_plan(previous)
-    original = {item["id"]: item for item in baseline["collectors"]}
-    if (len(read_plan_document["collectors"]) != len(original) or
-            any(item["id"] not in original or
-                item["rollout_workers"] != original[item["id"]]["rollout_workers"] or
-                item.get("physics_workers") != original[item["id"]].get("physics_workers")
-                for item in read_plan_document["collectors"])):
-        raise ValueError(f"issued collector resources differ from pinned plan: {path}")
-    return read_plan_document
-
-
-def _validate_collector_plan(plan):
-    # One authority for all plan invariants, including nonoverlapping windows.
-    if not isinstance(plan, dict) or set(plan) != {"collectors"}:
-        raise ValueError("invalid distributed collector plan")
-    # Validate in memory using the same rules as read_plan, with no file I/O.
-    collectors = plan["collectors"]
-    if not isinstance(collectors, list) or not 1 <= len(collectors) <= 256:
-        raise ValueError("invalid distributed collector count")
-    seen = set()
-    ranges = []
-    for item in collectors:
-        required = {"id", "world_start", "world_count", "rollout_workers"}
-        if not isinstance(item, dict) or not required.issubset(item) or (
-                set(item) - required - {"physics_workers"}):
-            raise ValueError("invalid distributed collector entry")
-        name, start, count, workers = (item[k] for k in
-                                       ("id", "world_start", "world_count", "rollout_workers"))
-        if (not isinstance(name, str) or not COLLECTOR_ID.fullmatch(name) or
-                name in seen or type(start) is not int or type(count) is not int or
-                type(workers) is not int or start < 0 or start + count > (1 << 63) or
-                not 1 <= count <= 1024 or not 1 <= workers <= min(count, 256) or
-                ("physics_workers" in item and
-                 (type(item["physics_workers"]) is not int or
-                  not 1 <= item["physics_workers"] <= 128))):
-            raise ValueError(f"invalid distributed collector allocation: {name!r}")
-        seen.add(name)
-        ranges.append((start, start + count))
-    if any(left[1] > right[0] for left, right in
-           zip(sorted(ranges), sorted(ranges)[1:])):
-        raise ValueError("overlapping distributed collector allocations")
     return plan
 
 
