@@ -979,6 +979,7 @@ struct CampaignMission<'a> {
     bank_player_minerals: bool,
     lost_fleet_ids: Option<&'a HashSet<i64>>,
     purchased_ships: Option<&'a [NativePurchasedShip]>,
+    authored_roster: Option<&'a [(i64, i64, i64)]>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1190,6 +1191,8 @@ fn launch_catalog_battle(
     let config = resolve(catalog_root, entry.config_for(&progress));
     let mut purchased = entry.mission.as_ref()
         .map(|mission| progress.purchases_for_side(mission.player_side));
+    let authored = entry.mission.as_ref()
+        .map(|mission| progress.authored_roster_for_side(mission.player_side));
     let lost = entry.mission.as_ref()
         .filter(|mission| mission.persist_fleet_losses)
         .map(|mission| progress.lost_player_fleet_ids(mission.player_side))
@@ -1207,6 +1210,7 @@ fn launch_catalog_battle(
             bank_player_minerals: mission.bank_player_minerals,
             lost_fleet_ids: lost.as_ref(),
             purchased_ships: purchased.as_deref(),
+            authored_roster: authored.as_deref(),
         });
     // Reserve a unique parent before invoking the shared gameplay runtime.
     // Failed/interrupted launches never overwrite an earlier career receipt.
@@ -1242,7 +1246,7 @@ fn preflight_native_ship_purchase(
         fleet_ship_id: i64::MAX, saved_squad_id, ship_type, price_tsv,
     });
     preflight_native_fleet_edit(catalog, root, progress, side, &projected,
-        saved_squad_id)
+        &progress.authored_roster_for_side(side), saved_squad_id)
 }
 
 /// This is the same source-scene preflight for both ship construction
@@ -1251,7 +1255,8 @@ fn preflight_native_ship_purchase(
 fn preflight_native_fleet_edit(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>, side: i32,
-    projected: &[NativePurchasedShip], target_saved_squad_id: i64,
+    projected: &[NativePurchasedShip],
+    authored_roster: &[(i64, i64, i64)], target_saved_squad_id: i64,
 ) -> Result<i64, Box<dyn Error>> {
     let max_size = catalog.max_squad_ships.ok_or_else(||
         invalid("native shop needs the source's maximum squad size"))? as usize;
@@ -1330,6 +1335,8 @@ fn preflight_native_fleet_edit(
                     }
                 }
             }
+            source.apply_authored_fleet_roster(side, authored_roster)
+                .map_err(|error| contextual("shop original FleetShip reassignment", error))?;
             source.install_purchased_ships(side, &active)
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
             source.omit_killed_fleet_ships(side, &dead)
@@ -1433,7 +1440,8 @@ fn run_transfer_ship(
     let root = catalog_path.parent().ok_or_else(||
         invalid("missing native campaign parent"))?;
     preflight_native_fleet_edit(
-        &catalog, root, &progress, side, &projected, destination_squad_id,
+        &catalog, root, &progress, side, &projected,
+        &progress.authored_roster_for_side(side), destination_squad_id,
     )?;
     let moved = catalog.transfer_purchased_ship(
         &progress, output_root, fleet_ship_id, destination_squad_id,
@@ -1886,6 +1894,18 @@ fn run_battle(
                 layout, assets.box_catalog(), assets.polygon_catalog(),
             )
                 .map_err(|error| contextual("native Level layout", error))?;
+        }
+        if let Some(assignments) = mission.and_then(|mission| mission.authored_roster) {
+            let reassigned = source.apply_authored_fleet_roster(
+                mission.expect("authored campaign owner").player_side, assignments,
+            ).map_err(|error| contextual("saved authored FleetShip roster", error))?;
+            if reassigned != 0 {
+                println!("{}", json!({
+                    "kind": "native_campaign_authored_roster_restored",
+                    "level_id": level.level_id,
+                    "original_hulls_reassigned_or_reserved": reassigned,
+                }));
+            }
         }
         if let Some(purchased) = mission.and_then(|mission| mission.purchased_ships) {
             let installed = source.install_purchased_ships(
