@@ -24,6 +24,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_sim_copy_ratio_owner','training_sim_gather_ratio_owner',
     'training_sim_info_ratio_owner','training_sim_info_rebuild_ratio_owner',
     'training_info_recv_slowest_worker','training_info_rebuild_slowest_worker',
+    'training_sparse_info_events',
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version',
