@@ -1222,7 +1222,7 @@ fn launch_catalog_battle(
     let config = resolve(catalog_root, entry.config_for(&progress));
     let mut purchased = entry.mission.as_ref()
         .map(|mission| progress.purchases_for_side(mission.player_side));
-    let authored = entry.mission.as_ref()
+    let mut authored = entry.mission.as_ref()
         .map(|mission| progress.authored_roster_for_side(mission.player_side));
     let lost = entry.mission.as_ref()
         .filter(|mission| mission.persist_fleet_losses)
@@ -1233,6 +1233,12 @@ fn launch_catalog_battle(
         // ledger, not the next game's entity pool.
         purchased.retain(|ship| !lost.contains(&ship.fleet_ship_id) &&
             ship.saved_squad_id > 0);
+    }
+    if let (Some(authored), Some(lost)) = (authored.as_mut(), lost.as_ref()) {
+        // A historical saved-squad transfer remains in the audit ledger
+        // after its FleetShip dies. Do not attempt to move that dead
+        // original hull before applying the canonical casualty filter.
+        authored.retain(|(fleet_id, _, _)| !lost.contains(fleet_id));
     }
     let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
         .map(|(campaign_id, mission)| CampaignMission {
@@ -1353,6 +1359,9 @@ fn preflight_native_fleet_edit(
     }
     let active = projected.iter().copied()
         .filter(|ship| ship.saved_squad_id > 0).collect::<Vec<_>>();
+    let surviving_authored = authored_roster.iter().copied()
+        .filter(|(fleet_id, _, _)| !dead.contains(fleet_id))
+        .collect::<Vec<_>>();
     let mut highest_fleet_id = 0_i64;
     let mut checked = 0_u64;
     let has_upcoming = catalog.battles.iter().filter_map(|entry|
@@ -1375,7 +1384,7 @@ fn preflight_native_fleet_edit(
                     }
                 }
             }
-            source.apply_authored_fleet_roster(side, authored_roster)
+            source.apply_authored_fleet_roster(side, &surviving_authored)
                 .map_err(|error| contextual("shop original FleetShip reassignment", error))?;
             source.install_purchased_ships(side, &active, &dead)
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
