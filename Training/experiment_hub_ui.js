@@ -3616,6 +3616,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'inherit applicable selections. Already queued jobs remain unchanged.'))
             return;
         metricDefaultsSaving=true;
+        let outcome=null;
         try {
             await action('hub/projects/metric-defaults',{
                 project_id:projectId,
@@ -3623,17 +3624,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 metric_selection:selection,
             });
             jobMetricChoicesByProject.delete(projectId);
+            outcome=reset
+                ?'Restored built-in project metric defaults. Existing jobs unchanged.'
+                :'Saved '+selection.length+
+                    ' project metric defaults. Future jobs will inherit them.';
             await reload();
-            if(project===projectId)
-                feedback('hub-job-metric-default-status',reset
-                    ?'Restored built-in project metric defaults. Existing jobs unchanged.'
-                    :'Saved '+selection.length+
-                        ' project metric defaults. Future jobs will inherit them.');
         }catch(error){
-            feedback('hub-job-metric-default-status',error.message);
+            outcome=error.message;
         }finally{
             metricDefaultsSaving=false;
             renderJobMetricSelection();
+            if(project===projectId&&outcome)
+                feedback('hub-job-metric-default-status',outcome);
         }
     }
     $('hub-job-save-metric-defaults').addEventListener('click',()=>{
