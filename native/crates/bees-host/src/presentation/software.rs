@@ -103,6 +103,10 @@ pub struct NativeRenderCounts {
     pub ship_fallback_hulls: usize,
     /// Loaded source-art types, not the number of active ship entities.
     pub ship_art_types_loaded: usize,
+    pub asteroid_sprite_draws: usize,
+    pub asteroid_piece_sprite_draws: usize,
+    pub asteroid_fallback_hulls: usize,
+    pub asteroid_art_types_loaded: usize,
     pub projectile_sprite_draws: usize,
     /// Real Rocket / Fire Barge explosion sprite draws (a subset of projectiles).
     pub projectile_explosion_sprite_draws: usize,
@@ -324,6 +328,7 @@ fn source_art_sprite(
 
 const SOURCE_SHIP_TYPES: usize = 24;
 const SOURCE_PROJECTILE_TYPES: usize = 16;
+const SOURCE_ASTEROID_PREFABS: usize = 29; // zero is unused
 
 struct SourceShipArt {
     pixels_per_unit: f32,
@@ -513,6 +518,55 @@ fn source_projectile_art() -> Option<&'static SourceProjectileAtlas> {
     static ATLAS: OnceLock<Option<SourceProjectileAtlas>> = OnceLock::new();
     ATLAS.get_or_init(|| load_source_art(
         "projectile-sprites.rgba", SourceProjectileAtlas::decode,
+    )).as_ref()
+}
+
+/// Original Asteroid 1..28 PNGs, indexed by the same prefab numbers
+/// as the physical collision catalog. No visual-only asteroid inventory.
+struct SourceAsteroidArt {
+    pixels_per_unit: f32,
+    sprite: NativeSprite,
+}
+
+struct SourceAsteroidAtlas {
+    sprites: [Option<SourceAsteroidArt>; SOURCE_ASTEROID_PREFABS],
+    loaded: usize,
+}
+
+impl SourceAsteroidAtlas {
+    fn decode(bytes: &[u8]) -> io::Result<Self> {
+        let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+            "invalid native asteroid sprite atlas");
+        if bytes.get(..4) != Some(&b"BAS1"[..]) { return Err(invalid()); }
+        let mut at = 4usize;
+        let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+        if count > 28 { return Err(invalid()); }
+        let mut sprites = std::array::from_fn(|_| None);
+        for _ in 0..count {
+            let prefab = usize::from(*bytes.get(at).ok_or_else(invalid)?);
+            at += 1;
+            let ppu = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            let width = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            let height = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            if prefab == 0 || prefab >= SOURCE_ASTEROID_PREFABS ||
+                sprites[prefab].is_some() || ppu == 0 ||
+                width == 0 || height == 0 || width > 2048 || height > 2048 {
+                return Err(invalid());
+            }
+            let sprite = source_art_sprite(bytes, &mut at, width, height)?;
+            sprites[prefab] = Some(SourceAsteroidArt {
+                pixels_per_unit: ppu as f32, sprite,
+            });
+        }
+        if at != bytes.len() { return Err(invalid()); }
+        Ok(Self { sprites, loaded: count })
+    }
+}
+
+fn source_asteroid_art() -> Option<&'static SourceAsteroidAtlas> {
+    static ATLAS: OnceLock<Option<SourceAsteroidAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "asteroid-sprites.rgba", SourceAsteroidAtlas::decode,
     )).as_ref()
 }
 
