@@ -603,21 +603,27 @@ function createTinyBrainsPersistentDockerAdapter({
         throw Error('Multiple GPU enablement requires explicit local boolean opt-in.');
     let remote=null;
     if(remoteCollectors!==null) {
+        // A trusted machine-local choice: either pin every Tailnet endpoint,
+        // or explicitly opt into discovery using matching private HMAC keys.
+        const discover=remoteCollectors?.discovery===true;
         if(!remoteCollectors||typeof remoteCollectors!=='object'||
             Array.isArray(remoteCollectors)||
-            Object.keys(remoteCollectors).sort().join(',')!=='endpoints,keyDirectory'||
-            !Array.isArray(remoteCollectors.endpoints)||
-            !remoteCollectors.endpoints.length||remoteCollectors.endpoints.length>8||
-            remoteCollectors.endpoints.some(endpoint=>!approvedTailnetEndpoint(endpoint))||
-            new Set(remoteCollectors.endpoints).size!==remoteCollectors.endpoints.length)
-            throw Error('Remote TinyBrains collectors require unique, locally pinned tailnet IPv4 endpoints.');
+            (discover
+                ?Object.keys(remoteCollectors).sort().join(',')!=='discovery,keyDirectory'
+                :Object.keys(remoteCollectors).sort().join(',')!=='endpoints,keyDirectory')||
+            (!discover&&(!Array.isArray(remoteCollectors.endpoints)||
+                !remoteCollectors.endpoints.length||remoteCollectors.endpoints.length>8||
+                remoteCollectors.endpoints.some(endpoint=>!approvedTailnetEndpoint(endpoint))||
+                new Set(remoteCollectors.endpoints).size!==remoteCollectors.endpoints.length)))
+            throw Error('Remote rollout requires pinned Tailnet endpoints or explicit local HMAC discovery.');
         const keyDirectory=fullDir(remoteCollectors.keyDirectory);
         const keyFile=path.join(keyDirectory,'rollout.key');
         const stat=fs.lstatSync(keyFile);
         if(!stat.isFile()||fs.realpathSync(keyFile)!==keyFile||
             (stat.mode&0o077)!==0||stat.size<32||stat.size>4096)
             throw Error('Remote collector rollout.key must be an existing private regular file.');
-        remote={keyDirectory,endpoints:remoteCollectors.endpoints.slice(),
+        remote={keyDirectory,discovery:discover,
+            endpoints:discover?[]:remoteCollectors.endpoints.slice(),
             keyFingerprint:crypto.createHash('sha256').update(fs.readFileSync(keyFile)).digest('hex')};
     }
     if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||''))||
@@ -758,6 +764,7 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
         tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
         tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
+        tinybrains_remote_rollout_discovery:remote?.discovery===true,
         tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
         ...(enableMultiGpu?{gpu_multi_execution:'ppo-local-collectors'}:{}),
@@ -790,16 +797,23 @@ function createTinyBrainsPersistentDockerAdapter({
             // injected into the Docker network command by a job request.
             const selectedEndpoints=context.distributed_rollout_endpoints??
                 remote?.endpoints??[];
-            if(context.distributed_rollout_endpoints!==undefined&&(
-                remote_rollouts!==true||
-                !Array.isArray(selectedEndpoints)||selectedEndpoints.length<1||
-                selectedEndpoints.length>remote.endpoints.length||
-                selectedEndpoints.some(endpoint=>!remote.endpoints.includes(endpoint))||
-                new Set(selectedEndpoints).size!==selectedEndpoints.length||
-                JSON.stringify(selectedEndpoints)!==
-                    JSON.stringify(remote.endpoints.filter(endpoint=>
-                        selectedEndpoints.includes(endpoint)))))
-                throw Error('Distributed collector subset differs from the machine-local approved endpoint identities.');
+            const selectedValid=remote?.discovery===true
+                ?Array.isArray(context.distributed_rollout_endpoints)&&
+                    selectedEndpoints.length>=1&&selectedEndpoints.length<=8&&
+                    selectedEndpoints.every(endpoint=>approvedTailnetEndpoint(endpoint))&&
+                    new Set(selectedEndpoints).size===selectedEndpoints.length
+                :context.distributed_rollout_endpoints===undefined||
+                    Array.isArray(selectedEndpoints)&&selectedEndpoints.length>=1&&
+                    selectedEndpoints.length<=remote.endpoints.length&&
+                    selectedEndpoints.every(endpoint=>remote.endpoints.includes(endpoint))&&
+                    new Set(selectedEndpoints).size===selectedEndpoints.length&&
+                    JSON.stringify(selectedEndpoints)===
+                        JSON.stringify(remote.endpoints.filter(endpoint=>
+                            selectedEndpoints.includes(endpoint)));
+            if((context.distributed_rollout_endpoints!==undefined&&
+                    remote_rollouts!==true)||
+                (remote_rollouts===true&&!selectedValid))
+                throw Error('Distributed collectors must match the trusted local discovery/allowlist policy.');
             const selectedWeights=rollout_action_weights&&remote
                 ?[rollout_action_weights[0],
                     ...selectedEndpoints.map(endpoint=>rollout_action_weights[
@@ -814,7 +828,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 (remote_rollouts!==undefined&&
                     (remote_rollouts!==true||!remote))||
                 (rollout_action_weights!==undefined&&
-                    (remote_rollouts!==true||!Array.isArray(rollout_action_weights)||
+                    (remote_rollouts!==true||remote?.discovery===true||
+                     !Array.isArray(rollout_action_weights)||
                      rollout_action_weights.length!==remote.endpoints.length+1||
                      rollout_action_weights.some(w=>
                          !Number.isSafeInteger(w)||w<1||w>1024)))||
