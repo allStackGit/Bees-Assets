@@ -368,6 +368,29 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         &mut self, world: &CombatWorld, events: &[CombatEvent],
     ) -> Result<(), CombatPerceptionError> {
         for event in events {
+            if let CombatEvent::QueenMinionSpawned {
+                queen_id, minion_id, parent_fleet_id, ..
+            } = event {
+                let invalid = || CombatPerceptionError::InvalidAuthoredMetadata;
+                let template = self.queen_templates.get(queen_id).ok_or_else(invalid)?;
+                let ship = world.ship(*minion_id).ok_or_else(invalid)?;
+                if ship.ship_type != 22 ||
+                    world.ship_fleet_identity(*queen_id) != Some(*parent_fleet_id) ||
+                    world.ship_fleet_identity(*minion_id) != Some(*parent_fleet_id) ||
+                    self.authored_ships.contains_key(minion_id) ||
+                    self.effective_vision.contains_key(minion_id)
+                { return Err(invalid()); }
+                let cargo = ship.vitals.mined_cargo();
+                self.fleet.register_spawned_ship(NativeFleetShipValue {
+                    ship_id: *minion_id, has_persistent_fleet_value: false,
+                    minerals_mined_this_level: cargo,
+                }).map_err(|_| invalid())?;
+                let mut perception = template.perception;
+                perception.minerals_mined_this_level = cargo;
+                self.authored_ships.insert(*minion_id, perception);
+                self.effective_vision.insert(*minion_id, template.vision);
+                continue;
+            }
             let CombatEvent::ScoutBeaconDropped { scout_id, beacon_id, parent_fleet_id } = event
                 else { continue; };
             let invalid = || CombatPerceptionError::InvalidAuthoredMetadata;
