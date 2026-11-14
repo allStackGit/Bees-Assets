@@ -5,6 +5,7 @@ The Hub owns a fresh, checkpoint-seeded job directory. Neither the original
 Windows run nor the copied Halifax source run is modified by this process.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,7 @@ def main():
     parser.add_argument("--waves", type=int, required=True)
     parser.add_argument("--actions", type=int, required=True)
     parser.add_argument("--hub-design-overrides-file", type=Path)
+    parser.add_argument("--hub-design-overrides-sha256")
     parser.add_argument("--device", choices=("cpu", "cuda", "dual"), default="cuda")
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
@@ -48,13 +50,19 @@ def main():
         parser.error("A positive GPU memory ceiling requires the ROCm device.")
     run = args.run.resolve(strict=True)
     design_overrides = None
+    if (args.hub_design_overrides_file is None) != (args.hub_design_overrides_sha256 is None):
+        parser.error("Frozen Design manifest and SHA-256 must be supplied together.")
     if args.hub_design_overrides_file is not None:
         override_file = run / "hub-design-overrides.json"
         if (args.hub_design_overrides_file.resolve(strict=True) != override_file
                 or override_file.is_symlink() or not override_file.is_file()
                 or override_file.stat().st_size > 16384):
             parser.error("Frozen Design overrides must be the job-local manifest.")
-        design_overrides = json.loads(override_file.read_text(encoding="utf-8"))
+        raw_overrides = override_file.read_bytes()
+        if (len(raw_overrides) > 16384 or
+                hashlib.sha256(raw_overrides).hexdigest() != args.hub_design_overrides_sha256):
+            parser.error("Frozen Design manifest differs from its approved invocation.")
+        design_overrides = json.loads(raw_overrides)
         if not isinstance(design_overrides, dict) or len(design_overrides) > 128:
             parser.error("Invalid frozen project Design overrides.")
     checkpoint = run / "self-play" / "latest.pt"
