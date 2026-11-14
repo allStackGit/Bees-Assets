@@ -1465,14 +1465,14 @@ journals in one private `EXPERIMENT_HUB_LOCAL_ROOT`. It serializes launches
 using `mixed-launch.lock` and checks the **combined** unresolved CPU/RAM
 commitment against the real host before invoking either owner. Both projects
 still use their existing adapter-specific checkpoint/STOP and progress
-contracts. Courier and native Bees collectors remain CPU-only. When ROCm
-is enabled and a trusted `bees_native` learner adapter is installed, either
-that learner or TinyBrains can use an individually leased GPU: Bees uses the
-existing systemd HIP verifier, while TinyBrains retains Docker's verifier.
+contracts. Courier remains CPU-only. When ROCm is enabled and a trusted
+`bees_native` learner or `bees_native_collect` collector adapter is installed,
+those jobs or TinyBrains can use individually leased GPUs: native Bees uses
+the existing systemd HIP verifier, while TinyBrains retains Docker's verifier.
 Mixed mode serializes GPU qualification and launch with the same lock and
 rejects conflicting or unidentifiable GPU ownership across both ledgers.
-Native Bees GPU use is **single-device exclusive**; it cannot cooperatively
-share a GPU with a Docker job. Independent GPUs can serve both projects
+Native Bees GPU use (learner **or** collector) is **single-device exclusive**;
+it cannot cooperatively share a GPU with a Docker job. Independent GPUs can serve both projects
 concurrently under their separate physical leases. The Hub's normal machine
 reservations remain the cross-job scheduling budget.
 Do not run a second local agent or an independent supervisor writer against
@@ -1529,7 +1529,7 @@ run's existing physics-worker setting (one by default). The Hub reports actual
 CPU-wall time only when a completed native runner supplies those measurements.
 Existing continuation and collection receipts remain in the same native
 systemd owner ledger and combined CPU/RAM budget as Courier. A native
-Bees GPU learner uses an exclusive one-GPU lease and the adapter's
+Bees GPU learner or collector uses an exclusive one-GPU lease and the adapter's
 `rocrGpuUuids` mapping when a stable per-device ROCr selector is available.
 Run the authenticated GPU preflight and confirm that both selected and
 excluded render nodes are enforced before starting real training. GPU
@@ -1539,8 +1539,8 @@ Both systemd CPU/memory enforcement and Docker cgroup-v2 enforcement must
 pass local preflight before either backend advertises Start readiness. A
 TinyBrains GPU job still requires its **current** bounded, leased PCI/HIP
 runtime proof and a real successful container launch. The same qualification
-now applies to a native Bees ROCm learner through the systemd owner; the
-mixed agent prevents either backend from starting on a PCI device whose
+now applies to a native Bees ROCm learner or collector through the systemd
+owner; the mixed agent prevents either backend from starting on a PCI device whose
 ownership remains unresolved in the other backend. This mode has not
 established live Halifax qualification until the operator observes Courier
 and TinyBrains concurrently running, with distinct durable owners, correct
