@@ -861,6 +861,18 @@ function createTinyBrainsPersistentDockerAdapter({
                     ...selectedEndpoints.map(endpoint=>rollout_action_weights[
                         remote.endpoints.indexOf(endpoint)+1])]
                 :null;
+            // Match the native trainer's immutable total of 16 external
+            // collectors before staging any job artifacts. GPUs 3–8 each
+            // own a separate local on-policy collector; each contributor
+            // needs at least one action in the fixed PPO update target.
+            const extraLocalGpuCollectors=device==='multi'&&
+                Array.isArray(context.gpu_pci_addresses)
+                ?Math.max(0,context.gpu_pci_addresses.length-2):0;
+            if(remote_rollouts===true&&(
+                selectedEndpoints.length+extraLocalGpuCollectors>16||
+                selectedEndpoints.length+extraLocalGpuCollectors+1>
+                    (item?.profile?.rollout_actions??0)))
+                throw Error('Remote and local GPU collectors exceed native fanout or the immutable PPO action target.');
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
