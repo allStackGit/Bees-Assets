@@ -1018,6 +1018,10 @@ impl NativePhysicalScene {
             ship.motion.position = position;
             ship.motion.user_controlled =
                 self.source_squads[owner].player_permissions.user_controlled;
+            // The saved squad owns its cease-fire order; a prefab from
+            // another squad must not silently restore independent fire.
+            ship.cease_fire = self.source_squads[owner]
+                .cease_fire.unwrap_or(template.cease_fire);
             if let Some(bounds) = &mut ship.target_geometry {
                 bounds.bounds_latched = false;
             }
