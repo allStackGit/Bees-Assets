@@ -772,6 +772,9 @@ def main() -> None:
                          if args.collect_only else None)
     source_contract_sha = (native_source_contract_sha256(run_path)
                            if args.collect_only else None)
+    legacy_source_sha = (native_source_contract_sha256(
+        run_path, include_allocation=True,
+    ) if args.collect_only else None)
     shifted_seeds(config, args.seed_offset)
     authored_level_count = len(config["levels"])
     template_worlds = config.pop("rollout_worlds", None)
@@ -861,7 +864,10 @@ def main() -> None:
                 file_sha256(manifest) != input_manifest_sha or
                 file_sha256(binary) != runner_sha or
                 normalized_python_source_sha256(policy_worker_path) != policy_worker_sha or
-                native_source_contract_sha256(run_path) != source_contract_sha):
+                native_source_contract_sha256(run_path) != source_contract_sha or
+                native_source_contract_sha256(
+                    run_path, include_allocation=True,
+                ) != legacy_source_sha):
             raise ValueError("rollout input model, source content or runtime changed during collection")
         receipt = {
             "schema_version": 1,
@@ -871,6 +877,7 @@ def main() -> None:
             "learner_slot": args.learner_slot,
             "run_config_sha256": hashlib.sha256(run_bytes).hexdigest(),
             "source_run_contract_sha256": source_contract_sha,
+            "source_run_contract_sha256_v1": legacy_source_sha,
             "seed_offset": args.seed_offset,
             "native_runner_sha256": runner_sha,
             "policy_worker_sha256": policy_worker_sha,
