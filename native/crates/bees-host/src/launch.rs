@@ -963,6 +963,7 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees build <catalog.json> --output-dir <battle-runs> --side <n> --ship-type <n> --squad <saved-id>
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
+       bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
@@ -1045,6 +1046,25 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let progress = catalog.load_progress(&output_root)?;
         println!("{}", catalog.status(&progress));
         return Ok(());
+    }
+    if first == "squad-create" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") {
+            return Err(invalid(USAGE).into());
+        }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--template") {
+            return Err(invalid(USAGE).into());
+        }
+        let template: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        return run_create_saved_squad(&catalog, &output, side, template);
     }
     if first == "reassign" {
         let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
@@ -1566,6 +1586,71 @@ fn run_reassign_authored_ship(
         "fleet_ship_id": fleet_ship_id,
         "from_saved_squad_id": from_squad,
         "to_saved_squad_id": to_squad,
+        "cost_tsv": 0,
+    }));
+    Ok(())
+}
+
+fn run_create_saved_squad(
+    catalog_path: &Path, output_root: &Path,
+    side: i32, template_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    if !matches!(side, 1 | 2) || template_id <= 0 {
+        return Err(invalid("new squad requires a valid player side and saved template ID").into());
+    }
+    let root = catalog_path.parent()
+        .ok_or_else(|| invalid("missing native campaign root"))?;
+    let mut highest_saved_id = progress.highest_saved_squad_id();
+    let mut sources = Vec::new();
+    // A new squad must be usable with the same authenticated player
+    // settings on every authored mission variant, not just the first
+    // currently unlocked battle. Stage squad ItemIds are per-Level.
+    for entry in &catalog.battles {
+        if !entry.mission.as_ref()
+            .is_some_and(|mission| mission.player_side == side) {
+            continue;
+        }
+        for config in entry.configurations() {
+            let run_path = resolve(root, config).canonicalize()?;
+            let source = load_native_fleet_edit_scene(&run_path)?;
+            for squad in &source.source_squads {
+                if let Some(id) = squad.saved_squad_id {
+                    highest_saved_id = highest_saved_id.max(id);
+                }
+            }
+            sources.push(source);
+        }
+    }
+    if sources.is_empty() {
+        return Err(invalid("new squad requires a native-authored player campaign").into());
+    }
+    let new_id = highest_saved_id.checked_add(1)
+        .ok_or_else(|| invalid("persistent SavedSquad ID space exhausted"))?;
+    let created = NativeCreatedSquad {
+        side, saved_squad_id: new_id, template_saved_squad_id: template_id,
+    };
+    let mut projected = progress.created_squads_for_side(side);
+    projected.push(created);
+    for mut scene in sources {
+        scene.install_created_squads(side, &projected)
+            .map_err(|error| contextual("new native SavedSquad preflight", error))?;
+    }
+    let committed = catalog.create_saved_squad(
+        &progress, output_root, side, template_id, new_id,
+    )?;
+    println!("{}", json!({
+        "kind": "native_campaign_saved_squad_created",
+        "campaign_id": catalog.campaign_id,
+        "player_side": side,
+        "saved_squad_id": committed.saved_squad_id,
+        "template_saved_squad_id": committed.template_saved_squad_id,
+        "ships_deployed": 0,
         "cost_tsv": 0,
     }));
     Ok(())
