@@ -39,6 +39,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_sim_priority_applied_steps',
     'training_sim_processes','training_sim_migrations',
     'training_sim_migration_denials','training_sim_migration_owner',
+    'training_remote_lineages','training_remote_roundtrip_owner',
+    'training_remote_nontraining_owner',
     'training_lineage_priority_reorders','training_lineage_priority_active',
     'training_gpu_optimizer_lineages','training_gpu_optimizer_next_lineages',
     'training_gpu_optimizer_tuner_adjustments',
@@ -114,6 +116,9 @@ function courierMetrics(source) {
         'sim_process_migration_seconds','sim_process_migration_denials',
         'sim_priority_active','sim_priority_reorders',
         'sim_priority_steps',
+        'remote_roundtrip_seconds','remote_request_bytes',
+        'remote_reply_bytes','remote_checkpoint_bytes',
+        'remote_checkpoint_sync_seconds',
         'ppo_integrity_seconds',
         'gpu_prefetch_wait_seconds','gpu_prefetch_transfer_seconds',
         'gpu_prefetched_batches',
@@ -147,6 +152,8 @@ function courierMetrics(source) {
     'training_sim_priority_applied_steps',
     'training_sim_processes','training_sim_migrations',
     'training_sim_migration_denials','training_sim_migration_owner',
+    'training_remote_lineages','training_remote_roundtrip_owner',
+    'training_remote_nontraining_owner',
     'training_lineage_priority_reorders','training_lineage_priority_active',
         'training_gpu_optimizer_lineages','training_gpu_devices_assigned',
         'training_gpu_devices_active','training_ppo_integrity_checks',
@@ -154,6 +161,13 @@ function courierMetrics(source) {
         'training_gpu_prefetch_wait_max_seconds',
         'training_gpu_prefetch_copy_max_seconds',
         'training_sim_migration_max_seconds',
+        'training_remote_lineages','training_remote_roundtrip_max_seconds',
+        'training_remote_roundtrip_owner',
+        'training_remote_request_bytes','training_remote_reply_bytes',
+        'training_remote_checkpoint_bytes',
+        'training_remote_sync_max_seconds',
+        'training_remote_nontraining_max_seconds',
+        'training_remote_nontraining_owner',
         'training_info_rebuild_max_seconds','training_sparse_info_events',
         'training_sim_info_rebuild_max_ratio',
         'training_ppo_integrity_max_seconds',...ownerKeys,
@@ -183,6 +197,7 @@ function courierMetrics(source) {
             /^training_gpu_device_[0-7]_lineages$/.test(name)||
             /^worker_[0-9]{1,2}_(?:sim_(?:shards|active_shards|next_shards|physical_processes|process_migrations|process_migration_denials|priority_active|priority_reorders|priority_steps|sparse_info_events)|gpu_prefetched_batches)$/.test(name))?'count':
             name.endsWith('_mb')?'mb':
+            name.endsWith('_bytes')?'bytes':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
                     ?'rate':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
