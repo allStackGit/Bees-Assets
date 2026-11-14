@@ -3,7 +3,8 @@
 // Trusted machine-local rollout service. This is a separate Hub job with
 // its own CPU/RAM/GPU lease, not an unaccounted worker of the learner's lease.
 // The experiment may choose only a learner job ID; the executable, binding,
-// port, thread budget, cache and secret are installed by the host operator.
+// port, cache and secret are installed by the host operator. A thread ceiling
+// may be provided explicitly; otherwise the Hub's frozen CPU lease sets it.
 const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
@@ -66,9 +67,14 @@ function createTinyBrainsRemoteRolloutAdapter({
     const secret=keyFile(keyPath);
     const fingerprint=crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex');
     const host=tailnetIp(listenIp);
+    // An unspecified host-local limit is not a separate project-specific
+    // CPU ratio to tune. The immutable Hub job lease chooses actual worker
+    // threads, bounded by the backend's supported maximum. Explicit host
+    // operator ceilings remain authoritative for compatibility and safety.
+    const threadLimit=threads??256;
     if(!Number.isSafeInteger(port)||port<1024||port>65535||
-        !Number.isSafeInteger(threads)||threads<1||threads>256)
-        throw Error('Remote rollout listener needs an approved non-privileged port and CPU thread count.');
+        !Number.isSafeInteger(threadLimit)||threadLimit<1||threadLimit>256)
+        throw Error('Remote rollout listener needs an approved non-privileged port and optional CPU thread ceiling (1–256).');
     if(typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
         !fs.statSync(pythonPath).isFile()||fs.realpathSync(pythonPath)!==pythonPath)
         throw Error('Remote rollout Python must be an installed regular file.');
@@ -98,7 +104,7 @@ function createTinyBrainsRemoteRolloutAdapter({
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
         tinybrains_rollout_endpoint:host+':'+port,
         tinybrains_rollout_key_fingerprint:fingerprint,
-        tinybrains_rollout_thread_limit:threads,
+        tinybrains_rollout_thread_limit:threadLimit,
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
         ...(enableRocm?{
             rocr_gpu_uuids:approvedRocr,
@@ -115,13 +121,13 @@ function createTinyBrainsRemoteRolloutAdapter({
             },
         }:{}),
         args(parameters,context) {
-            const desired=parameters?.threads??Math.min(threads,context.cpu_quota);
+            const desired=parameters?.threads??Math.min(threadLimit,context.cpu_quota);
             if(supportsAutoPool&&(!Number.isSafeInteger(context.ram_quota_mb)||
                 context.ram_quota_mb<128||context.ram_quota_mb>1000000))
                 throw Error('Automatic remote simulation requires its original RAM lease.');
             if(!Number.isSafeInteger(context.cpu_quota)||context.cpu_quota<1||
                 !Number.isSafeInteger(desired)||desired<1||
-                desired>threads||desired>context.cpu_quota)
+                desired>threadLimit||desired>context.cpu_quota)
                 throw Error('Remote collector threads must fit both its CPU lease and the local approved thread limit.');
             if(crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex')!==fingerprint)
                 throw Error('Installed rollout HMAC key differs from its advertised physical worker identity.');
