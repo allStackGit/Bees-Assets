@@ -37,8 +37,15 @@ pub struct NativeTransferMenuRow {
     pub authored_from: Option<(i32, i64)>,
 }
 
+pub struct NativeCreateSquadMenuRow {
+    pub title: String,
+    pub side: i32,
+    pub template_saved_squad_id: i64,
+}
+
 pub enum NativeBattleMenuAction {
     Play(usize),
+    CreateSquad { side: i32, template_saved_squad_id: i64 },
     Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     Reassign { side: i32, fleet_ship_id: i64,
@@ -52,6 +59,7 @@ pub fn select_battle(
     fleet_rows: &[String], squad_rows: &[String],
     shop_rows: &[NativeShopMenuRow], banked_tsv: u64,
     transfer_rows: &[NativeTransferMenuRow],
+    create_rows: &[NativeCreateSquadMenuRow],
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
     *selected = (*selected).min(rows.len() - 1);
@@ -69,37 +77,50 @@ pub fn select_battle(
     let mut career_view: Option<bool> = None;
     let mut show_shop = false;
     let mut show_transfer = false;
+    let mut show_create = false;
     let mut shop_selected = 0_usize;
     let mut shop_first = 0_usize;
     let mut fleet_selected = 0_usize;
     let mut fleet_first = 0_usize;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if window.is_key_pressed(Key::F, KeyRepeat::No) {
-            career_view = if career_view == Some(false) && !show_shop && !show_transfer {
+            career_view = if career_view == Some(false) && !show_shop && !show_transfer && !show_create {
                 None
             } else { Some(false) };
             show_shop = false;
             show_transfer = false;
+            show_create = false;
         }
         if window.is_key_pressed(Key::S, KeyRepeat::No) {
-            career_view = if career_view == Some(true) && !show_shop && !show_transfer {
+            career_view = if career_view == Some(true) && !show_shop && !show_transfer && !show_create {
                 None
             } else { Some(true) };
             show_shop = false;
             show_transfer = false;
+            show_create = false;
         }
         if window.is_key_pressed(Key::B, KeyRepeat::No) {
             show_shop = !show_shop;
             show_transfer = false;
+            show_create = false;
             career_view = None;
         }
         if window.is_key_pressed(Key::T, KeyRepeat::No) {
             show_transfer = !show_transfer;
             show_shop = false;
+            show_create = false;
             career_view = None;
         }
-        if show_shop || show_transfer {
-            let count = if show_transfer { transfer_rows.len() } else { shop_rows.len() };
+        if window.is_key_pressed(Key::N, KeyRepeat::No) {
+            show_create = !show_create;
+            show_shop = false;
+            show_transfer = false;
+            career_view = None;
+        }
+        if show_shop || show_transfer || show_create {
+            let count = if show_transfer { transfer_rows.len() }
+                else if show_create { create_rows.len() }
+                else { shop_rows.len() };
             let choose = |index: usize| {
                 if show_transfer {
                     transfer_rows.get(index).map(|row| match row.authored_from {
@@ -113,6 +134,11 @@ pub fn select_battle(
                             fleet_ship_id: row.fleet_ship_id,
                             to_saved_squad_id: row.to_saved_squad_id,
                         },
+                    })
+                } else if show_create {
+                    create_rows.get(index).map(|row| NativeBattleMenuAction::CreateSquad {
+                        side: row.side,
+                        template_saved_squad_id: row.template_saved_squad_id,
                     })
                 } else {
                     shop_rows.get(index).filter(|row| row.unlocked)
@@ -163,17 +189,21 @@ pub fn select_battle(
             mouse_down = pressed;
             pixels.fill(0x080e19);
             text::draw_centered(&mut pixels, WIDTH, 24,
-                if show_transfer { "Assign fleet" } else { "Build fleet" }, 2, TEXT);
+                if show_transfer { "Assign fleet" }
+                else if show_create { "Create saved squad" }
+                else { "Build fleet" }, 2, TEXT);
             text::draw_centered(&mut pixels, WIDTH, 78,
-                if show_transfer { "Move a purchased hull between saved squads (no TSV cost)" }
+                if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
+                else if show_create { "Choose a player squad to copy its command settings" }
                 else { "Buy a source-authored ship" }, 1, MUTED);
-            if !show_transfer {
+            if show_shop {
                 text::draw_centered(&mut pixels, WIDTH, 94,
                     &format!("Available mined TSV: {banked_tsv}"), 1, MUTED);
             }
             if count == 0 {
                 text::draw_centered(&mut pixels, WIDTH, 218,
-                    if show_transfer { "No transferable purchased hulls" }
+                    if show_transfer { "No transferable owned ships" }
+                    else if show_create { "No native player squad templates" }
                     else { "Finish a campaign battle to register saved squads" }, 1, MUTED);
             }
             for index in shop_first..(shop_first + PAGE_SIZE).min(count) {
@@ -185,6 +215,8 @@ pub fn select_battle(
                 }
                 let (label, enabled) = if show_transfer {
                     (transfer_rows[index].title.as_str(), true)
+                } else if show_create {
+                    (create_rows[index].title.as_str(), true)
                 } else { (shop_rows[index].title.as_str(), shop_rows[index].unlocked) };
                 let title = text::fit(label, 560);
                 text::draw_centered(&mut pixels, WIDTH, top + 8, &title, 1,
@@ -196,7 +228,7 @@ pub fn select_battle(
                 text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
-                "Enter select   B build   T transfer   F fleet   S squads", 1, MUTED);
+                "Enter select   B build   T transfer   N new   F fleet   S squads", 1, MUTED);
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
         }
@@ -295,7 +327,7 @@ pub fn select_battle(
             let page = format!("{}-{} of {} battles", first + 1, (first + PAGE_SIZE).min(titles.len()), titles.len());
             text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
         }
-        text::draw_centered(&mut pixels, WIDTH, 441, "Enter play   B build   T transfer   F fleet   S squads", 1, MUTED);
+        text::draw_centered(&mut pixels, WIDTH, 441, "Enter play   B build   T transfer   N new   F fleet   S squads", 1, MUTED);
         if launch_failed {
             text::draw_centered(&mut pixels, WIDTH, 468, "Battle failed. See the console for details.", 1, [247, 172, 131]);
         }
