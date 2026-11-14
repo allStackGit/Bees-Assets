@@ -111,6 +111,7 @@ pub struct NativeClient {
     pub ship_fallback_hulls: u64,
     pub ship_art_types_loaded: usize,
     pub projectile_sprite_draws: u64,
+    pub projectile_explosion_sprite_draws: u64,
     pub projectile_fallback_hulls: u64,
     pub projectile_art_types_loaded: usize,
     pub culled_obstacle_draws: u64,
@@ -165,7 +166,8 @@ impl NativeClient {
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, ship_sprite_draws: 0,
             ship_fallback_hulls: 0, ship_art_types_loaded: 0,
-            projectile_sprite_draws: 0, projectile_fallback_hulls: 0,
+            projectile_sprite_draws: 0, projectile_explosion_sprite_draws: 0,
+            projectile_fallback_hulls: 0,
             projectile_art_types_loaded: 0,
             culled_obstacle_draws: 0,
             culled_projectile_draws: 0, culled_piece_draws: 0,
@@ -1141,6 +1143,8 @@ impl NativeClient {
         self.ship_art_types_loaded = counts.ship_art_types_loaded;
         self.projectile_sprite_draws = self.projectile_sprite_draws
             .saturating_add(counts.projectile_sprite_draws as u64);
+        self.projectile_explosion_sprite_draws = self.projectile_explosion_sprite_draws
+            .saturating_add(counts.projectile_explosion_sprite_draws as u64);
         self.projectile_fallback_hulls = self.projectile_fallback_hulls
             .saturating_add(counts.projectile_fallback_hulls as u64);
         self.projectile_art_types_loaded = counts.projectile_art_types_loaded;

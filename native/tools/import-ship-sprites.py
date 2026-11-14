@@ -38,7 +38,7 @@ PROJECTILE_IMAGES = (
     "Human Small Laser Shot.png", None, None,
     "Leafcutter Shot.png", "Queen Small Laser Shot.png",
     "Queen Stinger Laser Shot.png", "Striker Bomb.png",
-    None, None, None,
+    "Frigate Rocket Explosion.png", "Fireship Explosion.png", None,
 )
 
 
@@ -66,7 +66,24 @@ def source_frames(path: Path, animation: bool):
         ) or width > 2048 or height > 2048:
             raise ValueError(f"Out-of-range source sprite rect: {path}")
         frames.append(rgba.crop((x, top, x + width, top + height)))
-    return int(source_ppu[1]), frames
+    # Very large authored explosion sheets use 1024px frames. Preserve
+    # world-space size exactly while avoiding 170MB of decoded frames on
+    # older machines: reduce texture resolution and its PPU together.
+    ppu = int(source_ppu[1])
+    largest = max(max(frame.size) for frame in frames)
+    divisor = 1
+    if animation:
+        while largest // divisor > 256 and ppu % (2 * divisor) == 0:
+            divisor *= 2
+    if divisor > 1:
+        frames = [
+            frame.resize((max(1, frame.width // divisor),
+                          max(1, frame.height // divisor)),
+                         Image.Resampling.BOX)
+            for frame in frames
+        ]
+        ppu //= divisor
+    return ppu, frames
 
 
 def packed_pixels(data: bytearray, frame):

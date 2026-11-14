@@ -3858,6 +3858,7 @@ fn run_battle(
             "ship_fallback_hulls": client.ship_fallback_hulls,
             "ship_art_types_loaded": client.ship_art_types_loaded,
             "projectile_sprite_draws": client.projectile_sprite_draws,
+            "projectile_explosion_sprite_draws": client.projectile_explosion_sprite_draws,
             "projectile_fallback_hulls": client.projectile_fallback_hulls,
             "projectile_art_types_loaded": client.projectile_art_types_loaded,
             "culled_obstacle_draws": client.culled_obstacle_draws,

@@ -237,7 +237,11 @@ The converter reads the tracked source PNGs and Unity texture metadata and
 writes `native/assets/ship-sprites.rgba` and
 `native/assets/projectile-sprites.rgba`. These compact, per-type native
 atlases retain the source pixels-per-world-unit scale; available projectile
-animation slices cycle in presentation time without changing combat ticks.
+animation slices advance from each projectile's first visible tick without
+changing combat physics or training clocks. Rocket and Fire Barge explosion
+atlases are included; their 1024-pixel source frames are reduced with
+corresponding pixels-per-unit scaling to preserve visual world size without
+excessive memory use on older computers.
 To package a game, copy both atlases into an `assets/` directory beside
 `bees` or `bees.exe`, or point `BEES_NATIVE_ASSETS` at their directory.
 Neither Python nor Pillow is needed to run the compiled game; headless

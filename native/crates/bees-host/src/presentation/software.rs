@@ -96,6 +96,8 @@ pub struct NativeRenderCounts {
     /// Loaded source-art types, not the number of active ship entities.
     pub ship_art_types_loaded: usize,
     pub projectile_sprite_draws: usize,
+    /// Real Rocket / Fire Barge explosion sprite draws (a subset of projectiles).
+    pub projectile_explosion_sprite_draws: usize,
     pub projectile_fallback_hulls: usize,
     pub projectile_art_types_loaded: usize,
     pub obstacles: usize,
@@ -175,6 +177,10 @@ pub struct NativeSoftwareRenderer {
     pub hovered_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
     obstacle_debris: Vec<ObstacleDebris>,
+    /// Cosmetic first-seen ticks belong to the displayed world and
+    /// episode. No world model state or RNG changes when sprites animate.
+    projectile_art_owner: Option<(WorldId, u64)>,
+    projectile_art_ticks: HashMap<i64, (u64, u64)>,
 }
 
 #[derive(Clone, Copy)]
@@ -455,7 +461,8 @@ impl NativeSoftwareRenderer {
             ceasefire_selection_all: false,
             attack_on_sight_selection_all: false,
             hovered_tactical_action: None,
-            debris_frame: None, obstacle_debris: Vec::new() })
+            debris_frame: None, obstacle_debris: Vec::new(),
+            projectile_art_owner: None, projectile_art_ticks: HashMap::new() })
     }
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
@@ -1049,6 +1056,11 @@ impl NativeSoftwareRenderer {
         }
         let projectile_art = source_projectile_art();
         counts.projectile_art_types_loaded = projectile_art.map_or(0, |atlas| atlas.loaded);
+        let artwork_world = (view.world_id, view.episode_revision);
+        if self.projectile_art_owner != Some(artwork_world) {
+            self.projectile_art_owner = Some(artwork_world);
+            self.projectile_art_ticks.clear();
+        }
         for (projectile, body) in view.combat.render_projectiles() {
             counts.projectiles += 1;
             let position = body.motion.position;
@@ -1067,20 +1079,30 @@ impl NativeSoftwareRenderer {
                 counts.culled_projectiles += 1;
                 continue;
             }
-            let drew_art = projectile_art
+            let art = projectile_art
                 .and_then(|atlas| atlas.sprites.get(usize::from(projectile.projectile_type)))
-                .and_then(Option::as_ref)
-                .is_some_and(|art| {
-                    let phase = (view.tick as f32 * view.fixed_step_seconds * 8.0)
-                        .floor() as usize;
-                    let index = phase.wrapping_add(projectile.entity_id as usize)
-                        % art.frames.len();
-                    self.draw_sprite(&art.frames[index], position,
-                        body.rotation_degrees.to_radians(),
-                        self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
-                });
+                .and_then(Option::as_ref);
+            let drew_art = if let Some(art) = art {
+                // A newly created projectile always begins at its first
+                // authored frame. Stable live entity IDs and the current
+                // physics tick own animation age, not an arbitrary
+                // entity-ID modulo a whole sprite sheet.
+                let (born, seen) = self.projectile_art_ticks
+                    .entry(projectile.entity_id)
+                    .or_insert((view.tick, view.tick));
+                *seen = view.tick;
+                let age = view.tick.saturating_sub(*born) as f32
+                    * view.fixed_step_seconds;
+                let index = ((age * 8.0).floor() as usize).min(art.frames.len() - 1);
+                self.draw_sprite(&art.frames[index], position,
+                    body.rotation_degrees.to_radians(),
+                    self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
+            } else { false };
             if drew_art {
                 counts.projectile_sprite_draws += 1;
+                if matches!(projectile.projectile_type, 13 | 14) {
+                    counts.projectile_explosion_sprite_draws += 1;
+                }
             } else {
                 counts.projectile_fallback_hulls += 1;
                 if let Some(shape) = body.shape() {
@@ -1091,6 +1113,10 @@ impl NativeSoftwareRenderer {
                 self.cross(position, 1.0, 0xffd580);
             }
         }
+        // Reclaim expired cosmetic records when projectiles die or leave
+        // view; retained battles with millions of shots cannot accumulate
+        // stale animation state over time.
+        self.projectile_art_ticks.retain(|_, &mut (_, seen)| seen == view.tick);
         // Only presentation pixels are masked. Commands, physics, learning
         // and the source-owned visibility caches remain unchanged.
         self.apply_player_fog(view, &mut counts);
