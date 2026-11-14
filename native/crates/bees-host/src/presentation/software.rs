@@ -383,8 +383,8 @@ impl SourceShipAtlas {
         let invalid = || io::Error::new(io::ErrorKind::InvalidData,
             "invalid native ship sprite atlas");
         let source_color_masks = match bytes.get(..4) {
-            Some(b"BSS2") => true,
-            Some(b"BSS1") => false, // existing non-recolorable atlas
+            Some(magic) if magic == b"BSS2" => true,
+            Some(magic) if magic == b"BSS1" => false, // earlier non-recolorable atlas
             _ => return Err(invalid()),
         };
         let mut at = 4usize;
