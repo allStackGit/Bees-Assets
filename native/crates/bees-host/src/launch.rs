@@ -1701,22 +1701,11 @@ fn authored_menu_fleet(
                     _ => None,
                 }) else { continue };
                 let Some(fleet_id) = ship.fleet_ship_id else { continue };
-                if !progress.original_fleet_is_editable(mission.player_side, fleet_id) ||
-                    ship.policy.is_some() || ship.motion.is_policy_controlled ||
-                    ship.special.is_some() || ship.special_weapon.is_some() ||
-                    ship.drone_carrier_id.is_some() ||
-                    ship.motion.is_moving || ship.motion.has_target_coordinates ||
-                    ship.motion.body_velocity.length_squared() != 0.0
-                { continue; }
-                let owns_child = scene.entities.iter().any(|entity| match entity {
-                    NativeAuthoredEntity::Ship(other) =>
-                        other.drone_carrier_id == Some(entity_id) ||
-                        matches!(&other.special,
-                            Some(bees_host::ship_specials::NativeAuthoredShipSpecial::Striker { carrier, .. })
-                            if carrier.carrier_id == Some(entity_id)),
-                    _ => false,
-                });
-                if !owns_child { listed.push((mission.player_side, fleet_id, saved_squad_id)); }
+                if progress.original_fleet_is_editable(mission.player_side, fleet_id) &&
+                    scene.can_reassign_authored_ship(mission.player_side, entity_id)
+                {
+                    listed.push((mission.player_side, fleet_id, saved_squad_id));
+                }
             }
         }
     }
