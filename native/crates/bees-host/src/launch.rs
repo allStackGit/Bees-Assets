@@ -1243,7 +1243,7 @@ fn preflight_native_ship_purchase(
                 squad.get("side").and_then(Value::as_i64) == Some(i64::from(side)) &&
                 squad.get("user_controlled").and_then(Value::as_bool) == Some(true)
             ).ok_or_else(||
-                || invalid("the purchased ship's saved player squad is absent from a campaign route"))?;
+                invalid("the purchased ship's saved player squad is absent from a campaign route"))?;
             let ships = scene.get("ships").and_then(Value::as_array)
                 .ok_or_else(|| invalid("shop needs authored source ships"))?;
             let members = squad.get("members").and_then(Value::as_array)
