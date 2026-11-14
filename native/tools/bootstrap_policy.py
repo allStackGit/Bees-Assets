@@ -336,6 +336,9 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          collector_timeout_seconds: int, auto_balance_collectors: bool,
                          evaluation_run_config: Path | None, evaluation_side: int | None,
                          evaluation_policy_seed: int,
+                         early_stop_patience: int | None,
+                         early_stop_minimum_rounds: int,
+                         early_stop_minimum_extra_victories: int,
                          resume: bool = False,
                          self_play_opponent_slot: int | None = None,
                          self_play_refresh_every: int | None = None) -> None:
@@ -380,6 +383,13 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         command.extend(["--evaluation-run-config", str(evaluation_run_config.resolve(strict=True)),
                         "--evaluation-side", str(evaluation_side),
                         "--evaluation-policy-seed", str(evaluation_policy_seed)])
+    if early_stop_patience is not None:
+        command.extend([
+            "--early-stop-patience", str(early_stop_patience),
+            "--early-stop-minimum-rounds", str(early_stop_minimum_rounds),
+            "--early-stop-minimum-extra-victories",
+            str(early_stop_minimum_extra_victories),
+        ])
     subprocess.run(command, cwd=ROOT, check=True)
 
 
@@ -439,11 +449,27 @@ def main() -> None:
                         help="source side to measure during holdout evaluation")
     parser.add_argument("--evaluation-policy-seed", type=int, default=0,
                         help="fixed nonnegative int63 holdout inference sampling seed")
+    parser.add_argument("--early-stop-patience", type=int,
+                        help="stop when this many fixed-reference holdout rounds show no meaningful victory gain")
+    parser.add_argument("--early-stop-minimum-rounds", type=int, default=3,
+                        help="minimum completed PPO rounds before early stopping")
+    parser.add_argument("--early-stop-minimum-extra-victories", type=int, default=1,
+                        help="minimum extra fixed-holdout wins qualifying as a learning improvement")
     args = parser.parse_args()
     if args.train_rounds is not None and not 1 <= args.train_rounds <= 99999:
         parser.error("--train-rounds must be between 1 and 99999")
     if args.resume and args.train_rounds is None:
         parser.error("--resume requires --train-rounds")
+    if args.early_stop_patience is not None:
+        if (args.train_rounds is None or args.evaluation_side is None or
+                (args.holdout_worlds is None and args.evaluation_run_config is None) or
+                not 1 <= args.early_stop_patience <= 99999 or
+                not 1 <= args.early_stop_minimum_rounds <= args.train_rounds or
+                not 1 <= args.early_stop_minimum_extra_victories <= 1000000):
+            parser.error("early stopping requires training, holdout evaluation and positive thresholds")
+    elif (args.early_stop_minimum_rounds != 3 or
+          args.early_stop_minimum_extra_victories != 1):
+        parser.error("early-stop thresholds require --early-stop-patience")
     if not 1 <= args.episodes_per_world <= 1000000:
         parser.error("--episodes-per-world must be between 1 and 1000000")
     if args.learner_slot is not None and args.learner_slot not in args.slots:
@@ -576,6 +602,8 @@ def main() -> None:
             (output / "holdout-run.json" if args.holdout_worlds is not None
              else args.evaluation_run_config),
             args.evaluation_side, args.evaluation_policy_seed,
+            args.early_stop_patience, args.early_stop_minimum_rounds,
+            args.early_stop_minimum_extra_victories,
             resume=args.resume and session.is_dir(),
             self_play_opponent_slot=args.self_play_opponent_slot,
             self_play_refresh_every=args.self_play_refresh_every,
