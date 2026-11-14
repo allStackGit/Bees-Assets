@@ -83,7 +83,6 @@ pub struct QueenSpawnMeasurements {
 
 #[derive(Clone, Debug)]
 struct QueenWave {
-    sequence: u64,
     elapsed_seconds: f32,
     next_index: u8,
 }
@@ -236,7 +235,6 @@ impl CombatWorld {
                 runtime.next_sequence = runtime.next_sequence.checked_add(1)
                     .ok_or(CombatWorldError::EntityIdExhausted)?;
                 runtime.waves.push(QueenWave {
-                    sequence: runtime.next_sequence,
                     elapsed_seconds: 0.0, next_index: 0,
                 });
                 runtime.until_next_wave += runtime.spec.spawn_frequency_seconds;
@@ -253,7 +251,10 @@ impl CombatWorld {
                             f32::from(wave.next_index) * runtime.spec.seconds_between_minions
                     { break; }
                     let minion_index = wave.next_index;
-                    let sequence = wave.sequence;
+                    // Queen.SpawnMinions clears CurrentMinionSquad at
+                    // each new wave. An older overlapping coroutine
+                    // subsequently joins the *current* group too.
+                    let sequence = runtime.next_sequence;
                     runtime.waves[wave_index].next_index += 1;
                     self.spawn_queen_minion(queen_id, &runtime, sequence, minion_index)?;
                 }
