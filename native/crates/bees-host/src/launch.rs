@@ -956,6 +956,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
 const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
        bees menu <catalog.json> --output-dir <battle-runs>
        bees status <catalog.json> --output-dir <battle-runs>
+       bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
@@ -1012,6 +1013,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let progress = catalog.load_progress(&output_root)?;
         println!("{}", catalog.status(&progress));
         return Ok(());
+    }
+    if first == "campaign" {
+        let catalog_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--mission") {
+            return Err(invalid(USAGE).into());
+        }
+        let mission_id = args.next().ok_or_else(|| invalid(USAGE))?;
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        return run_campaign_mission(&catalog_path, &output,
+            &mission_id.to_string_lossy());
     }
     if first == "menu" {
         #[cfg(feature = "client")]
@@ -1080,6 +1095,67 @@ fn run_session(
     Ok(())
 }
 
+fn launch_catalog_battle(
+    catalog: &battle_catalog::BattleCatalog,
+    entry: &battle_catalog::BattleEntry,
+    catalog_root: &Path,
+    progress: &battle_catalog::CampaignProgress<'_>,
+    output_root: &Path,
+    next_number: &mut u64,
+    interactive: bool,
+) -> Result<(), Box<dyn Error>> {
+    let config = resolve(catalog_root, entry.config_for(progress));
+    let lost = entry.mission.as_ref()
+        .filter(|mission| mission.persist_fleet_losses)
+        .map(|mission| progress.lost_player_fleet_ids(mission.player_side))
+        .transpose()?;
+    let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
+        .map(|(campaign_id, mission)| CampaignMission {
+            campaign_id, mission_id: &mission.id, player_side: mission.player_side,
+            record_fleet_stats: mission.record_fleet_stats,
+            lost_fleet_ids: lost.as_ref(),
+        });
+    // Reserve a unique parent before invoking the shared gameplay runtime.
+    // Failed/interrupted launches never overwrite an earlier career receipt.
+    let output = loop {
+        *next_number = next_number.checked_add(1)
+            .ok_or_else(|| invalid("battle count exhausted"))?;
+        let directory = output_root.join(format!("battle-{:04}", *next_number));
+        match fs::create_dir(&directory) {
+            Ok(()) => break directory.join("run"),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    };
+    run_session(&config, interactive, interactive, Some(output), None, None, mission)
+}
+
+fn run_campaign_mission(
+    catalog_path: &Path, output_root: &Path, mission_id: &str,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    if catalog.campaign_id.is_none() {
+        return Err(invalid("headless campaign launch needs a campaign catalog").into());
+    }
+    let root = catalog_path.parent().ok_or_else(|| invalid("missing catalog directory"))?;
+    fs::create_dir_all(output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    let entry = catalog.battles.iter().find(|entry| entry.mission.as_ref()
+        .is_some_and(|mission| mission.id == mission_id))
+        .ok_or_else(|| invalid("unknown campaign mission ID"))?;
+    if !entry.mission.as_ref().expect("validated mission").requires.iter()
+        .all(|id| progress.completed(id))
+    {
+        return Err(invalid("campaign mission is still locked").into());
+    }
+    let mut number = 0_u64;
+    launch_catalog_battle(&catalog, entry, root, &progress,
+        output_root, &mut number, false)
+}
+
 #[cfg(feature = "client")]
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
     use bees_host::presentation::{BattleMenuRow, select_battle};
@@ -1107,33 +1183,13 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         let Some(index) = select_battle(&rows, &mut selected, launch_failed, &fleet_rows)?
             else { break };
         let entry = &catalog.battles[index];
-        let config = resolve(root, entry.config_for(&progress));
-        let lost = entry.mission.as_ref()
-            .filter(|mission| mission.persist_fleet_losses)
-            .map(|mission| progress.lost_player_fleet_ids(mission.player_side))
-            .transpose()?;
-        let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
-            .map(|(campaign_id, mission)| CampaignMission {
-                campaign_id, mission_id: &mission.id, player_side: mission.player_side,
-                record_fleet_stats: mission.record_fleet_stats,
-                lost_fleet_ids: lost.as_ref(),
-            });
-        // Reserve a parent atomically so another launcher cannot claim the
-        // same output. The battle owns creation of its normal run directory.
-        let output = loop {
-            number = number.checked_add(1).ok_or_else(|| invalid("battle count exhausted"))?;
-            let directory = output_root.join(format!("battle-{number:04}"));
-            match fs::create_dir(&directory) {
-                Ok(()) => break directory.join("run"),
-                Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error.into()),
-            }
-        };
-        let result = run_session(&config, true, true, Some(output), None, None, mission);
-        if mission.is_some() { progress = catalog.load_progress(output_root)?; }
+        let result = launch_catalog_battle(
+            &catalog, entry, root, &progress, output_root, &mut number, true,
+        );
+        if entry.mission.is_some() { progress = catalog.load_progress(output_root)?; }
         launch_failed = result.is_err();
         if let Err(error) = result {
-            eprintln!("Could not play {} ({}): {error}", entry.title, config.display());
+            eprintln!("Could not play {}: {error}", entry.title);
         }
     }
     Ok(())
