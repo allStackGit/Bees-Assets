@@ -4445,7 +4445,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Defaults carry the machine ID obtained from authenticated
             // agent reports; operators can reorder entries or vary budgets
             // without having to correlate endpoint list positions manually.
-            distributedBudgets.value=JSON.stringify(available.map(item=>({
+            // The existing distributed protocol supports at most eight
+            // remote sidecars per learner. More discovered machines remain
+            // selectable by editing machine IDs; no lease is pre-claimed.
+            distributedBudgets.value=JSON.stringify(available.slice(0,8).map(item=>({
                 machine_id:item.machine.id,
                 cpus:2,ram_mb:4096,gpu_count:0,
             })),null,2);
