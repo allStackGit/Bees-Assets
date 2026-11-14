@@ -359,16 +359,24 @@ impl CampaignProgress<'_> {
     }
 
     pub fn squad_rows(&self) -> Vec<String> {
-        let mut ids = self.squads.keys().copied().collect::<Vec<_>>();
+        let mut ids = self.squads.keys().copied().chain(
+            self.created_squads.iter().map(|squad| squad.saved_squad_id)
+        ).collect::<Vec<_>>();
         ids.sort_unstable();
+        ids.dedup();
         ids.into_iter().map(|id| {
-            let squad = &self.squads[&id];
-            format!(
-                "Squad #{id} S{} W{}/{} Lost{} Hit{} Taken{} Kill{}",
-                squad.side, squad.battles_won, squad.battles_fought,
-                squad.ships_lost, squad.damage_done, squad.damage_received,
-                squad.kills,
-            )
+            if let Some(squad) = self.squads.get(&id) {
+                format!(
+                    "Squad #{id} S{} W{}/{} Lost{} Hit{} Taken{} Kill{}",
+                    squad.side, squad.battles_won, squad.battles_fought,
+                    squad.ships_lost, squad.damage_done, squad.damage_received,
+                    squad.kills,
+                )
+            } else {
+                let side = self.created_squads.iter().find(|squad|
+                    squad.saved_squad_id == id).map_or(0, |squad| squad.side);
+                format!("Squad #{id} S{side}  Created - no completed battles yet")
+            }
         }).collect()
     }
 
