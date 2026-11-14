@@ -160,6 +160,27 @@ function learnerMeasurements(metrics) {
     return report;
 }
 
+// Expose only actual simulator receipts. Older runners may omit some
+// parallel-physics counters; missing measurements are never fabricated.
+function rolloutPhysicsMeasurements(rollout) {
+    const result = {};
+    for (const field of [
+        'requested_physics_worker_slots',
+        'parallel_physics_rounds',
+        'parallel_stage_id_serialized_rounds',
+        'parallel_stage_id_serialized_arenas',
+        'peak_parallel_physics_workers',
+    ]) {
+        if (rollout?.[field] != null)
+            result['rollout_' + field] = {value: rollout[field], unit: 'count'};
+    }
+    if (rollout?.parallel_worker_cpu_wall_seconds_sum != null)
+        result.rollout_parallel_worker_cpu_wall_seconds_sum = {
+            value: rollout.parallel_worker_cpu_wall_seconds_sum, unit: 'seconds',
+        };
+    return result;
+}
+
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
@@ -549,6 +570,7 @@ function createNativeBeesAdapter({
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
+                        ...rolloutPhysicsMeasurements(rollout),
                         ...(rollout.worker_execution_min_seconds !== undefined ? {
                             rollout_worker_execution_min_seconds: {
                                 value: rollout.worker_execution_min_seconds, unit: 'seconds',
@@ -582,6 +604,7 @@ function createNativeBeesAdapter({
                 steps_completed: metrics.optimizer_input_steps,
                 metrics: {
                     ...(rollout ? {
+                        ...rolloutPhysicsMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
