@@ -778,8 +778,9 @@ function nativeStartReadiness(snapshot, job) {
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
     if(!supportsTinyBrainsProfile(machine,job))
         return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
-    if(!distributedRolloutHost(snapshot,job,machine))
-        return block('The remote collector is not assigned to an active learner and its pinned physical endpoint.');
+    if(!distributedRolloutHost(snapshot,job,machine)||
+        !courierLineageHost(snapshot,job,machine))
+        return block('Remote service requires its managed learner, frozen endpoint and separately reserved native machine.');
     if(job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true) {
         const expectedEndpoints=approvedRemoteRolloutEndpoints(job,machine);
         const count=expectedEndpoints?.length;
@@ -968,6 +969,42 @@ function distributedRolloutHost(snapshot,job,machine) {
         other.status!=='cancelled'&&
         other.frozen_parameters?.learner_job_id===parent.id&&
         other.assigned_machine_id===machine.id))return false;
+    return true;
+}
+// Courier remote PPO lineages use exactly the same authenticated Hub
+// native resource claims as TinyBrains sidecars. Endpoint and slot are
+// frozen with the learner's group, never selected by a job's script args.
+function courierLineageHost(snapshot,job,machine) {
+    if(job?.project_id!=='courier_lineage')return true;
+    const frozen=job.frozen_parameters;
+    const parent=snapshot.jobs.find(j=>j.id===frozen?.learner_job_id);
+    if(!parent||parent.project_id!=='courier'||
+        parent.distributed_courier_managed!==true||
+        parent.distributed_abort_requested_at||
+        !['waiting_adapter','start_requested','launch_requested','running'].includes(parent.status)||
+        !parent.assigned_machine_id||!machine||
+        parent.assigned_machine_id===machine.id||
+        machine.status!=='connected'||machine.local_executor_enabled!==true||
+        machine.native_preflight_passed!==true||
+        !machine.installed_projects?.includes('courier_lineage'))return false;
+    const learner=snapshot.machines.find(m=>m.id===parent.assigned_machine_id);
+    const endpoints=parent.distributed_courier_endpoints;
+    const slots=parent.distributed_courier_slots;
+    const index=Array.isArray(endpoints)?
+        endpoints.indexOf(machine.courier_lineage_endpoint):-1;
+    if(!learner||learner.status!=='connected'||
+        learner.courier_remote_key_fingerprint!==parent.distributed_courier_key_fingerprint||
+        learner.courier_remote_key_fingerprint!==machine.courier_lineage_key_fingerprint||
+        index<0||!Array.isArray(slots)||slots[index]!==frozen.slot||
+        !Number.isSafeInteger(frozen.shards)||frozen.shards<1||
+        frozen.shards>machine.courier_lineage_max_shards)
+        return false;
+    if(snapshot.jobs.some(other=>other.id!==job.id&&
+        other.project_id==='courier_lineage'&&other.status!=='cancelled'&&
+        other.frozen_parameters?.learner_job_id===parent.id&&
+        (other.assigned_machine_id===machine.id||
+         other.frozen_parameters?.slot===frozen.slot)))
+        return false;
     return true;
 }
 function allocationBlockReason(machines,job,preferredMachineId=null) {
@@ -2278,7 +2315,8 @@ class ExperimentHub {
     }
     claimJobIn(next,job,machineId,machine) {
         const host=machine||this.snapshot().machines.find(m=>m.id===machineId);
-        if(!distributedRolloutHost({jobs:next.jobs,machines:this.snapshot().machines},job,host))
+        if(!distributedRolloutHost({jobs:next.jobs,machines:this.snapshot().machines},job,host)||
+            !courierLineageHost({jobs:next.jobs,machines:this.snapshot().machines},job,host))
             throw Error('Remote collector must be placed on its learner-approved endpoint and distinct host.');
         const lease=this.offerIn(next,job.project_id,machineId,
             resourceRequest(job.resources),job.id,host);
