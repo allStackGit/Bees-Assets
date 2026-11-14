@@ -302,14 +302,15 @@ struct GameQueenMinion {
     max_weapon_range: f32,
     firepower: f32,
     combat_window_seconds: f32,
-    observed_weapon_type: u8,
+    #[serde(default)]
+    observed_weapon_type: Option<u8>,
     special_weapon: GameSpecialWeapon,
     #[serde(default)]
     max_living_ships_per_side: Option<usize>,
 }
 
 impl GameQueenSpawn {
-    fn into_native(self, catalog: &ShipAssetCatalog)
+    fn into_native(self, catalog: &ShipAssetCatalog, require_observation: bool)
         -> Result<NativeAuthoredShipSpecial, NativeSnapshotError>
     {
         let invalid = || NativeSnapshotError::InvalidNativeLayout(
@@ -326,25 +327,32 @@ impl GameQueenSpawn {
             half_height: sprite.y * 0.5,
         };
         let offset = Vec2::new(weapon.mount_offset[0], weapon.mount_offset[1]);
-        let observed = weapon.observation.ok_or_else(invalid)?;
         let mut observed_weapons = [None; 5];
         if weapon.slot >= 5 || weapon.weapon_id != 0 ||
             weapon.charge_range.is_some() ||
-            minion.observed_weapon_type >= 10 ||
-            ![observed.range, observed.rate_of_fire, observed.rotation_rate,
-                observed.projectile_value].iter()
-                .all(|v| v.is_finite() && *v >= 0.0) ||
+            (require_observation && (weapon.observation.is_none() ||
+                minion.observed_weapon_type.is_none())) ||
+            minion.observed_weapon_type.is_some_and(|kind| kind >= 10) ||
             !offset.is_finite() || sight.source_sight < 0 ||
             sight.effective_range < 0 || sight.trigger_range < 0 ||
             (sight.enabled && sight.trigger_range == 0) ||
             !minion.combat_window_seconds.is_finite() ||
             minion.combat_window_seconds <= 0.0
         { return Err(invalid()); }
-        observed_weapons[weapon.slot] = Some(ObservedWeapon {
-            weapon_type: minion.observed_weapon_type,
-            range: observed.range, power: weapon.power,
-            rate_of_fire: observed.rate_of_fire,
-        });
+        if let Some(observed) = weapon.observation {
+            let weapon_type = minion.observed_weapon_type.ok_or_else(invalid)?;
+            if ![observed.range, observed.rate_of_fire, observed.rotation_rate,
+                observed.projectile_value].iter()
+                .all(|v| v.is_finite() && *v >= 0.0) {
+                return Err(invalid());
+            }
+            observed_weapons[weapon.slot] = Some(ObservedWeapon {
+                weapon_type, range: observed.range, power: weapon.power,
+                rate_of_fire: observed.rate_of_fire,
+            });
+        } else if minion.observed_weapon_type.is_some() {
+            return Err(invalid());
+        }
         let physical = bees_sim::combat_world::QueenSpawnSpec {
             minions_per_wave: self.minions_per_wave,
             spawn_frequency_seconds: self.spawn_frequency_seconds,
@@ -728,7 +736,7 @@ impl NativePhysicalScene {
                         },
                     }),
                 Some(GameShipSpecial::Queen { spawn }) if ship.ship_type == 17 =>
-                    Some(spawn.clone().into_native(catalog)?),
+                    Some(spawn.clone().into_native(catalog, has_agents)?),
                 Some(GameShipSpecial::Scout { enabled, beacon }) if ship.ship_type == 18 => {
                     if beacon.health <= 0 || beacon.original_health < beacon.health ||
                         beacon.max_tsv < 0 || !beacon.size_class.is_finite() ||
