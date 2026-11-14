@@ -41,6 +41,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_optimizer_tuner_accepted',
     'training_gpu_optimizer_tuner_settled',
     'training_gpu_metric_readbacks','training_gpu_metric_rows',
+    'training_gpu_prefetched_batches','training_gpu_prefetch_active_lineages',
+    'training_gpu_prefetch_slowest_worker',
     'training_ppo_integrity_checks',
     'training_ppo_integrity_slowest_worker',
     'training_gpu_state_reused_lineages',
@@ -95,6 +97,7 @@ function courierMetrics(source) {
         'training_inference_slowest_worker',
         'training_ppo_data_slowest_worker',
         'training_ppo_integrity_slowest_worker',
+        'training_gpu_prefetch_slowest_worker',
     ];
     const detail=[
         'sim_shard_wall_seconds','sim_dispatch_seconds',
@@ -104,6 +107,8 @@ function courierMetrics(source) {
         'sim_priority_active','sim_priority_reorders',
         'sim_priority_steps',
         'ppo_integrity_seconds',
+        'gpu_prefetch_wait_seconds','gpu_prefetch_transfer_seconds',
+        'gpu_prefetched_batches',
     ];
     for(const key of ownerKeys) {
         const i=stats[key];
@@ -135,6 +140,9 @@ function courierMetrics(source) {
     'training_lineage_priority_reorders','training_lineage_priority_active',
         'training_gpu_optimizer_lineages','training_gpu_devices_assigned',
         'training_gpu_devices_active','training_ppo_integrity_checks',
+        'training_gpu_prefetched_batches','training_gpu_prefetch_active_lineages',
+        'training_gpu_prefetch_wait_max_seconds',
+        'training_gpu_prefetch_transfer_max_seconds',
         'training_ppo_integrity_max_seconds',...ownerKeys,
     ]);
     const ordered=[
@@ -160,7 +168,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             /^training_gpu_device_[0-7]_lineages$/.test(name)||
-            /^worker_[0-9]{1,2}_sim_(?:shards|active_shards|next_shards|priority_active|priority_reorders|priority_steps)$/.test(name))?'count':
+            /^worker_[0-9]{1,2}_(?:sim_(?:shards|active_shards|next_shards|priority_active|priority_reorders|priority_steps)|gpu_prefetched_batches)$/.test(name))?'count':
             name.endsWith('_mb')?'mb':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
