@@ -124,6 +124,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_concurrency_limit','training_concurrency_next_limit',
             'training_simulation_shards','training_simulation_active_shards',
             'training_simulation_next_shards',
+            'training_sim_processes','training_sim_migrations',
+            'training_sim_migration_denials','training_sim_migration_owner',
+            'training_sim_migration_max_seconds',
             'training_simulation_tuner_adjustments',
             'training_simulation_tuner_accepted',
             'training_simulation_tuner_settled',
@@ -198,6 +201,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_sim_copy_pressure',
             'training_sim_gather_pressure',
             'training_sim_info_pressure','training_sim_info_rebuild_pressure',
+            'training_sim_migration_wall_share',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
@@ -274,8 +278,12 @@ class BottleneckEvidence {
             const environment=(version?.unit==='count'&&
                 Number.isSafeInteger(version.value))
                 ?':environment-'+version.value:'';
+            const physical=metrics.training_sim_processes;
+            const processLayout=(physical?.unit==='count'&&
+                Number.isSafeInteger(physical.value)&&physical.value>=1)
+                ?':sim-processes-'+physical.value:'';
             const identity=String(job.dispatch_id||'')+':'+progress.segment_id+
-                environment;
+                environment+processLayout;
             const at=Date.parse(progress.source_modified_at);
             let prior=this.byJob.get(job.id);
             if(!prior||prior.identity!==identity||at<prior.lastAt) {
@@ -661,6 +669,12 @@ class BottleneckEvidence {
             const gap=seconds('training_reply_gap_seconds');
             const queueShare=queue!==null&&queue<=wall?queue/wall:null;
             const gapShare=gap!==null&&gap<=wall?gap/wall:null;
+            const migration=seconds('training_sim_migration_max_seconds');
+            if(migration!==null&&migration<=wall)
+                add('training_sim_migration_wall_share',migration/wall);
+            const migrationCount=metrics.training_sim_migrations;
+            const migrated=(migrationCount?.unit==='count'&&
+                Number.isSafeInteger(migrationCount.value)&&migrationCount.value>0);
             if(queueShare!==null)add('training_queue_work_share',queueShare);
             if(gapShare!==null)add('training_reply_gap_work_share',gapShare);
             const stageHints=[];
@@ -800,6 +814,12 @@ class BottleneckEvidence {
             }
             const {at,prior}=history();
             if(Number.isFinite(at)&&at>prior.lastAt) {
+                if(migrated) {
+                    // A physical process topology change invalidates
+                    // subsequent straggler comparisons with the old layout.
+                    prior.samples=[];
+                    prior.lastAt=at;
+                } else {
                 const copyGlobal=metrics.training_sim_copy_max_ratio;
                 const gatherGlobal=metrics.training_sim_gather_max_ratio;
                 const infoGlobal=metrics.training_sim_info_max_ratio;
@@ -828,6 +848,7 @@ class BottleneckEvidence {
                         (queueShare===null||queueShare<=0.10)});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
+                }
             }
             const recent=prior.samples.slice(-6);
             add('training_timing_sample_count',recent.length,'count');
