@@ -3935,22 +3935,25 @@ class ExperimentHub {
         // Terminal learner receipts end the lifecycle of its exclusively
         // owned remote collection sidecars. Never launch or stop a different
         // learner's worker, and never infer a native process has disappeared.
-        for(const learner of next.jobs.filter(j=>j.project_id==='tinybrains'&&
-            j.distributed_rollout_managed===true&&
+        for(const learner of next.jobs.filter(j=>
+            (j.project_id==='tinybrains'&&j.distributed_rollout_managed===true||
+             j.project_id==='courier'&&j.distributed_courier_managed===true)&&
             ['finished','failed','stopped'].includes(j.status))) {
-            for(const child of next.jobs.filter(j=>j.project_id==='tinybrains_rollout'&&
+            const sidecarProject=learner.project_id==='courier'
+                ?'courier_lineage':'tinybrains_rollout';
+            for(const child of next.jobs.filter(j=>j.project_id===sidecarProject&&
                 j.frozen_parameters?.learner_job_id===learner.id)) {
                 if(['running','launch_requested','unverified'].includes(child.status)) {
                     const owned=next.reservations.find(lease=>
                         lease.id===child.lease_id&&lease.job_id===child.id&&
                         lease.machine_id===child.assigned_machine_id&&
-                        lease.project_id==='tinybrains_rollout'&&
+                        lease.project_id===sidecarProject&&
                         lease.status==='acknowledged'&&
                         lease.issued_by==='experiment-hub');
                     if(!child.dispatch_id||!owned)continue;
                     child.status='stop_requested';
                     child.stop_requested_at=now();
-                    child.status_reason='Parent learner is terminal; stopping its reserved remote collector.';
+                    child.status_reason='Parent learner is terminal; stopping its reserved remote worker.';
                     changed=true;
                 }else if(child.status==='start_requested'&&
                     child.start_first_offered_at===null) {
@@ -4562,6 +4565,7 @@ class ExperimentHub {
         // learner on the closing heartbeat when it cannot receive a Start.
         this.advancePendingDistributedGroups();
         this.advanceDistributedLaunches();
+        this.advanceCourierLaunches();
         this.advancePendingResourceBundles();
         // An agent awaiting a slow native Start/Stop/probe can renew
         // authenticated liveness without receiving a second instruction.
