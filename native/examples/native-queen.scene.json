@@ -1,0 +1,901 @@
+{
+  "native_game_schema": 1,
+  "level_name": "Native Queen Wave Encounter",
+  "stage_name": "Native Queen Wave Encounter",
+  "bounds": {
+    "min": [
+      -340,
+      -260
+    ],
+    "max": [
+      340,
+      260
+    ]
+  },
+  "fixed_dt_seconds": 0.02,
+  "bee_side": 1,
+  "human_side": 2,
+  "command_settings": {
+    "max_command_seconds": 120,
+    "ai_random_max_distance": 45,
+    "ai_patrol_max_size": 80,
+    "ai_squad_patrol_seconds": 40,
+    "ai_squad_following_seconds": 50,
+    "ai_squad_guard_seconds": 55
+  },
+  "shots_harmless": false,
+  "activate_collision_asteroids": false,
+  "activate_mining": true,
+  "activate_fog_of_war": false,
+  "activate_hivemind": false,
+  "starting_positions": [
+    [
+      -95,
+      0
+    ],
+    [
+      95,
+      0
+    ]
+  ],
+  "camera_zoom": [
+    12,
+    110
+  ],
+  "ships": [
+    {
+      "entity_id": 11,
+      "ship_type": 21,
+      "side": 1,
+      "position": [
+        -75,
+        10
+      ],
+      "rotation_degrees": 270,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 14,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 55,
+      "firepower": 10,
+      "ship_type_letter": 21,
+      "target_max_range": 55,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": true,
+      "turrets": [
+        {
+          "slot": 0,
+          "weapon_type": 2,
+          "projectile_type": 2,
+          "mount_offset": [
+            0,
+            0
+          ],
+          "initial_rotation_degrees": 270,
+          "rotation_rate": 180,
+          "range": 55,
+          "power": 10,
+          "rate_of_fire": 1.25,
+          "projectile_value": 0,
+          "projectile_speed": 65,
+          "fire_pattern": {
+            "kind": "single"
+          },
+          "aim_at_front_of_ship": true,
+          "range_collider": {
+            "offset": [
+              0,
+              0
+            ],
+            "radius": 55,
+            "layer": 11,
+            "enabled": true
+          }
+        }
+      ],
+      "persistent_fleet": true,
+      "fleet_ship_id": 11
+    },
+    {
+      "entity_id": 12,
+      "ship_type": 13,
+      "side": 2,
+      "position": [
+        75,
+        0
+      ],
+      "rotation_degrees": 90,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 14,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 55,
+      "firepower": 10,
+      "ship_type_letter": 13,
+      "target_max_range": 55,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [
+        {
+          "slot": 0,
+          "weapon_type": 3,
+          "projectile_type": 6,
+          "mount_offset": [
+            0,
+            0
+          ],
+          "initial_rotation_degrees": 90,
+          "rotation_rate": 180,
+          "range": 55,
+          "power": 10,
+          "rate_of_fire": 1.25,
+          "projectile_value": 0,
+          "projectile_speed": 65,
+          "fire_pattern": {
+            "kind": "single"
+          },
+          "aim_at_front_of_ship": true,
+          "range_collider": {
+            "offset": [
+              0,
+              0
+            ],
+            "radius": 55,
+            "layer": 12,
+            "enabled": true
+          }
+        }
+      ],
+      "persistent_fleet": true,
+      "fleet_ship_id": 12
+    },
+    {
+      "entity_id": 13,
+      "ship_type": 18,
+      "side": 1,
+      "position": [
+        -90,
+        35
+      ],
+      "rotation_degrees": 270,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 14,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 70,
+        "effective_range": 70,
+        "trigger_range": 70,
+        "fog_radius": 70
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 18,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": true,
+      "turrets": [],
+      "special": {
+        "kind": "scout",
+        "enabled": true,
+        "beacon": {
+          "health": 30,
+          "original_health": 30,
+          "max_tsv": 30,
+          "size_class": 0.25,
+          "base_speed": 0,
+          "rotation_speed": 60,
+          "height": 2,
+          "longest_side": 2.25,
+          "effective_vision_range": 40,
+          "hivemind_registered": true,
+          "hivemind_vision_enabled": true,
+          "front_offset": 0,
+          "ship_type_letter": 1,
+          "firepower": 0,
+          "combat_window_seconds": 5
+        }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 13
+    },
+    {
+      "entity_id": 14,
+      "ship_type": 2,
+      "side": 1,
+      "position": [
+        -115,
+        -55
+      ],
+      "rotation_degrees": 270,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 0,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 3,
+      "health": 250,
+      "max_health": 250,
+      "max_tsv": 250,
+      "original_health": 250,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 2,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": true,
+      "turrets": [],
+      "support_zone": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 21
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 14
+    },
+    {
+      "entity_id": 15,
+      "ship_type": 20,
+      "side": 1,
+      "position": [
+        -140,
+        -55
+      ],
+      "rotation_degrees": 270,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 0,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 3,
+      "health": 250,
+      "max_health": 250,
+      "max_tsv": 250,
+      "original_health": 250,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 20,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": true,
+      "turrets": [],
+      "support_zone": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 18
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 15
+    },
+    {
+      "entity_id": 20,
+      "ship_type": 0,
+      "side": 2,
+      "position": [
+        75,
+        27
+      ],
+      "rotation_degrees": 90,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 14,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 150,
+      "max_health": 150,
+      "max_tsv": 150,
+      "original_health": 150,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 0,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [],
+      "is_bomber": true,
+      "special": {
+        "kind": "barge",
+        "power": 35,
+        "can_override_bounds": false
+      },
+      "special_weapon": {
+        "weapon_id": 1000,
+        "slot": 0,
+        "power": 35,
+        "mount_offset": [
+          0,
+          0
+        ],
+        "charge_range": {
+          "offset": [
+            0,
+            0
+          ],
+          "radius": 44,
+          "layer": 19,
+          "enabled": true
+        }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 20
+    },
+    {
+      "entity_id": 21,
+      "ship_type": 10,
+      "side": 2,
+      "position": [
+        88,
+        -23
+      ],
+      "rotation_degrees": 90,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 14,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 10,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [],
+      "is_bomber": true,
+      "special": {
+        "kind": "fire_barge",
+        "power": 65
+      },
+      "special_weapon": {
+        "weapon_id": 1001,
+        "slot": 0,
+        "power": 65,
+        "mount_offset": [
+          0,
+          0
+        ],
+        "proximity": {
+          "offset": [
+            0,
+            0
+          ],
+          "radius": 22,
+          "layer": 18,
+          "enabled": true
+        }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 21
+    },
+    {
+      "entity_id": 22,
+      "ship_type": 22,
+      "side": 2,
+      "position": [
+        114,
+        -17
+      ],
+      "rotation_degrees": 90,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 24,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 22,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [],
+      "is_bomber": true,
+      "special": {
+        "kind": "yellow_jacket",
+        "power": 35
+      },
+      "special_weapon": {
+        "weapon_id": 1002,
+        "slot": 0,
+        "power": 35,
+        "mount_offset": [
+          0,
+          0
+        ],
+        "proximity": {
+          "offset": [
+            0,
+            0
+          ],
+          "radius": 22,
+          "layer": 18,
+          "enabled": true
+        }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 22
+    },
+    {
+      "entity_id": 23,
+      "ship_type": 19,
+      "side": 2,
+      "position": [
+        85,
+        55
+      ],
+      "rotation_degrees": 90,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 20,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 19,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [],
+      "is_bomber": true,
+      "special": {
+        "kind": "striker",
+        "power": 28,
+        "carrier_id": 24,
+        "offset_from_center": [
+          0,
+          0
+        ],
+        "refill_distance": 20
+      },
+      "special_weapon": {
+        "weapon_id": 1003,
+        "slot": 0,
+        "power": 28,
+        "mount_offset": [
+          0,
+          0
+        ],
+        "proximity": {
+          "offset": [
+            0,
+            0
+          ],
+          "radius": 22,
+          "layer": 18,
+          "enabled": true
+        }
+      },
+      "is_carrier_ship": true,
+      "persistent_fleet": false
+    },
+    {
+      "entity_id": 24,
+      "ship_type": 5,
+      "side": 2,
+      "position": [
+        116,
+        55
+      ],
+      "rotation_degrees": 90,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 8,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 200,
+      "max_health": 200,
+      "max_tsv": 200,
+      "original_health": 200,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 5,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [],
+      "is_carrier_ship": false,
+      "persistent_fleet": true,
+      "fleet_ship_id": 24
+    },
+    {
+      "entity_id": 16,
+      "ship_type": 4,
+      "side": 1,
+      "position": [
+        -30,
+        60
+      ],
+      "rotation_degrees": 270,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 14,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 4,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [],
+      "persistent_fleet": true,
+      "fleet_ship_id": 16
+    },
+    {
+      "entity_id": 40,
+      "ship_type": 17,
+      "side": 2,
+      "position": [
+        215,
+        40
+      ],
+      "rotation_degrees": 90,
+      "rotation_speed_degrees_per_second": 12,
+      "base_speed": 5,
+      "height": 128,
+      "turning_radius": 6,
+      "size_class": 16,
+      "health": 4000,
+      "max_health": 4000,
+      "max_tsv": 4000,
+      "original_health": 4000,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 20,
+      "sight": {
+        "source_sight": 170,
+        "effective_range": 170,
+        "trigger_range": 170
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 17,
+      "target_max_range": 55,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [],
+      "persistent_fleet": true,
+      "fleet_ship_id": 40,
+      "special": {
+        "kind": "queen",
+        "spawn": {
+          "minions_per_wave": 4,
+          "spawn_frequency_seconds": 8,
+          "seconds_between_minions": 0.5,
+          "spawn_point": [
+            0,
+            -98
+          ],
+          "minion": {
+            "health": 100,
+            "original_health": 100,
+            "max_tsv": 100,
+            "size_class": 1,
+            "base_speed": 24,
+            "rotation_speed": 135,
+            "height": 6,
+            "spawn_rotation_degrees": 0,
+            "path_clearance": 1,
+            "turning_radius": 6,
+            "sight": {
+              "source_sight": 65,
+              "effective_range": 65,
+              "trigger_range": 65,
+              "fog_radius": 65
+            },
+            "front_offset": 0,
+            "ship_type_letter": 22,
+            "max_weapon_range": 0,
+            "firepower": 0,
+            "combat_window_seconds": 5,
+            "special_weapon": {
+              "weapon_id": 0,
+              "slot": 0,
+              "power": 35,
+              "mount_offset": [
+                0,
+                0
+              ],
+              "proximity": {
+                "offset": [
+                  0,
+                  0
+                ],
+                "radius": 22,
+                "layer": 18,
+                "enabled": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "squads": [
+    {
+      "item_id": 101,
+      "side": 1,
+      "members": [
+        11,
+        13
+      ],
+      "shooting_strategy_id": 1,
+      "user_controlled": true,
+      "can_accept_input": true
+    },
+    {
+      "item_id": 102,
+      "side": 2,
+      "members": [
+        12,
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "shooting_strategy_id": 1,
+      "user_controlled": false,
+      "can_accept_input": false
+    },
+    {
+      "item_id": 103,
+      "side": 1,
+      "members": [
+        14,
+        15
+      ],
+      "shooting_strategy_id": 1,
+      "user_controlled": true,
+      "can_accept_input": true
+    },
+    {
+      "item_id": 104,
+      "side": 1,
+      "members": [
+        16
+      ],
+      "shooting_strategy_id": 1,
+      "user_controlled": false,
+      "can_accept_input": false
+    },
+    {
+      "item_id": 105,
+      "side": 2,
+      "members": [
+        40
+      ],
+      "shooting_strategy_id": 1,
+      "user_controlled": false,
+      "can_accept_input": false
+    }
+  ],
+  "layout": {
+    "add_static_boxes": [
+      {
+        "entity_id": 40,
+        "prefab_name": "1x1",
+        "position": [
+          7,
+          -23
+        ],
+        "rotation_degrees": 0
+      }
+    ]
+  },
+  "mining_asteroids": [
+    {
+      "entity_id": 30,
+      "position": [
+        -2,
+        70
+      ],
+      "rotation_degrees": 0,
+      "layer": 18,
+      "health": 100,
+      "local_vertices": [
+        [
+          -9,
+          -9
+        ],
+        [
+          9,
+          -9
+        ],
+        [
+          9,
+          9
+        ],
+        [
+          -9,
+          9
+        ]
+      ]
+    }
+  ],
+  "map_objects": [
+    {
+      "entity_id": 31,
+      "kind": "fire_tank",
+      "position": [
+        11,
+        -23
+      ],
+      "rotation_degrees": 0,
+      "layer": 18,
+      "max_health": 45,
+      "collider": {
+        "kind": "circle",
+        "offset": [
+          0,
+          0
+        ],
+        "radius": 6
+      },
+      "explosion_power": 60,
+      "linked_obstacle_id": 40
+    }
+  ]
+}
