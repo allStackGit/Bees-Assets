@@ -176,6 +176,10 @@ impl CampaignProgress<'_> {
             .ok_or_else(|| invalid("campaign purchases exceed banked minerals"))
     }
 
+    pub fn highest_fleet_id(&self) -> i64 {
+        self.fleet.keys().copied().max().unwrap_or(0)
+    }
+
     pub fn purchases_for_side(&self, side: i32) -> Vec<NativePurchasedShip> {
         self.purchases.iter().filter_map(|&(owner, ship)|
             (owner == side).then_some(ship)).collect()
@@ -258,6 +262,59 @@ impl BattleCatalog {
             earlier.insert(mission.id.as_str());
         }
         Ok(())
+    }
+
+    /// Commit one immutable purchase after resource and native asset
+    /// validation. The newly allocated directory is a transaction slot;
+    /// only an atomic published receipt changes the account balance.
+    /// Interrupted writes leave no spendable or playable purchased hull.
+    pub fn buy_ship(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        player_side: i32, ship_type: u8, saved_squad_id: i64,
+        fleet_ship_id: i64,
+    ) -> io::Result<NativePurchasedShip> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("ship purchase requires a native campaign"))?;
+        let shop = self.buildable_ships.iter().find(|entry|
+            entry.player_side == player_side && entry.ship_type == ship_type
+        ).ok_or_else(|| invalid("requested ship type is not unlocked in this campaign shop"))?;
+        if !progress.bank_history_complete ||
+            progress.unspent_minerals()? < shop.price_tsv ||
+            fleet_ship_id <= 0 || fleet_ship_id <= progress.highest_fleet_id() ||
+            saved_squad_id <= 0
+        {
+            return Err(invalid("purchase requires verified bank funds, new FleetShip ID and a valid SavedSquad"));
+        }
+        let ship = NativePurchasedShip {
+            fleet_ship_id, saved_squad_id, ship_type, price_tsv: shop.price_tsv,
+        };
+        let purchase = CampaignPurchase {
+            campaign_id: campaign_id.to_owned(), player_side, ship,
+        };
+        fs::create_dir_all(output)?;
+        let mut number = 0_u64;
+        let directory = loop {
+            number = number.checked_add(1)
+                .ok_or_else(|| invalid("campaign purchase slot exhaustion"))?;
+            let directory = output.join(format!("build-{number:04}"));
+            match fs::create_dir(&directory) {
+                Ok(()) => break directory,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        };
+        let pending = directory.join("purchase.json.tmp");
+        let destination = directory.join("purchase.json");
+        let file = fs::OpenOptions::new().create_new(true).write(true)
+            .open(&pending)?;
+        serde_json::to_writer(&file, &purchase)
+            .map_err(|error| invalid(format!("cannot write native purchase: {error}")))?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&pending, &destination)?;
+        #[cfg(unix)]
+        fs::File::open(&directory)?.sync_all()?;
+        Ok(ship)
     }
 
     /// Reconstruct save data from *completed* campaign summaries, not from
