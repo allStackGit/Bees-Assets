@@ -1089,6 +1089,43 @@ impl NativePhysicalScene {
         Ok(purchases.len())
     }
 
+    /// Source-authenticated movable fleet members. Special weapons and
+    /// autonomous Scout/Queen/Barge behavior remain attached to the ship:
+    /// they are configured from the same immutable source on its new squad.
+    /// Only policy-bound ships, in-flight movement and parent/child carrier
+    /// relationships remain unsafe to detach. Setup-time validation only.
+    pub fn can_reassign_authored_ship(&self, side: i32, entity_id: i64) -> bool {
+        let ship = self.entities.iter().find_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if ship.entity_id == entity_id => Some(ship),
+            _ => None,
+        });
+        let Some(ship) = ship else { return false };
+        if ship.side != side || ship.fleet_ship_id.is_none() ||
+            !self.fleet.get(entity_id)
+                .is_some_and(|record| record.has_persistent_fleet_value) ||
+            ship.policy.is_some() || ship.motion.is_policy_controlled ||
+            ship.drone_carrier_id.is_some() ||
+            matches!(&ship.special,
+                Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
+                if carrier.carrier_id.is_some()) ||
+            ship.motion.is_moving || ship.motion.has_target_coordinates ||
+            ship.motion.body_velocity.length_squared() != 0.0
+        {
+            return false;
+        }
+        // The owned ship might be a Carrier with live dependent drones or
+        // Strikers. Transfer the entire family only once source group
+        // ownership is supported; never detach its active children.
+        !self.entities.iter().any(|entity| match entity {
+            NativeAuthoredEntity::Ship(other) =>
+                other.drone_carrier_id == Some(entity_id) ||
+                matches!(&other.special,
+                    Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
+                    if carrier.carrier_id == Some(entity_id)),
+            _ => false,
+        })
+    }
+
     /// Apply persisted edits of originally authored player FleetShips.
     /// Membership changes are made before building any CombatWorld:
     /// gameplay, policy evaluation and presentation still share the
@@ -1136,25 +1173,8 @@ impl NativePhysicalScene {
                 matches!(entity, NativeAuthoredEntity::Ship(ship)
                     if ship.entity_id == source_ship)
             ).ok_or(invalid("source FleetShip entity was lost"))?;
-            let ordinary = match &self.entities[ship_index] {
-                NativeAuthoredEntity::Ship(ship) => {
-                    ship.policy.is_none() && !ship.motion.is_policy_controlled &&
-                    ship.special.is_none() && ship.special_weapon.is_none() &&
-                    ship.drone_carrier_id.is_none() &&
-                    !ship.motion.is_moving && !ship.motion.has_target_coordinates &&
-                    ship.motion.body_velocity.length_squared() == 0.0
-                }
-                _ => false,
-            };
-            if !ordinary || self.entities.iter().any(|entity| match entity {
-                NativeAuthoredEntity::Ship(ship) =>
-                    ship.drone_carrier_id == Some(source_ship) ||
-                    matches!(&ship.special,
-                        Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
-                        if carrier.carrier_id == Some(source_ship)),
-                _ => false,
-            }) {
-                return Err(invalid("source FleetShip has special, moving or child ownership that cannot be reassigned safely"));
+            if !self.can_reassign_authored_ship(side, source_ship) {
+                return Err(invalid("FleetShip has active movement, policy or carrier dependencies and cannot be reassigned"));
             }
             let to_index = if current_id == 0 { None } else {
                 Some(self.source_squads.iter().position(|squad|
