@@ -165,6 +165,7 @@ async function downloadFile(endpoint,machineId,token,learnerId,collectorId,
                     reject(Error(message));
                 };
                 if(!Number.isSafeInteger(size)||size<1||size>MAX_FILE||
+                    relative==='rollout-bundle.json'&&size>1024*1024||
                     response.headers['x-native-bundle-sha256']!==expectedSha)
                     return abort('Invalid native bundle file identity.');
                 let free;
