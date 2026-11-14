@@ -99,6 +99,8 @@ function authorizedBundleFile(hub,machineId,token,learnerId,collectorId,relative
         fail('Learner does not pin this collector receipt.');
     const root=path.dirname(hub.file);
     const verified=mirroredFile(root,collectorId,'rollout-bundle.json',pin.sha256);
+    if(verified.size>1024*1024)
+        fail('Native collector receipt exceeds the bounded schema size.');
     let receipt;
     try{receipt=JSON.parse(fs.readFileSync(verified.file,'utf8'));}
     catch{fail('Invalid verified collector receipt JSON.');}
