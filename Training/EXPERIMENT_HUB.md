@@ -1449,14 +1449,15 @@ waits for the trainer to flush a checkpoint and exit, and does not kill
 unfinished PPO updates. Containers remain available for inspect/recovery;
 the supervisor does not delete a container whose ownership is ambiguous.
 
-### Halifax mixed Courier CPU + TinyBrains ROCm Docker owner (opt-in)
+### Halifax mixed native CPU projects + TinyBrains ROCm Docker owner (opt-in)
 
 To run both projects under the **same enrolled Halifax machine**, select
 `EXPERIMENT_HUB_LINUX_BACKEND=mixed`. This is an explicit third execution
 mode; the existing `native` and `docker` modes retain their exclusive
 ownership checks. Mixed mode requires the trusted Courier native adapter and
-the trusted TinyBrains persistent Docker adapter, not two independently
-enrolled agents. The operator-approved example is
+the trusted TinyBrains persistent Docker adapter; it can additionally load
+`bees_native` training and `bees_native_collect` collection adapters through
+the same systemd owner, not independently enrolled agents. The operator-approved example is
 `Training/experiment_hub_halifax_mixed_adapter.example.js`.
 
 The mixed agent keeps the original, independent systemd and Docker durable
@@ -1464,8 +1465,8 @@ journals in one private `EXPERIMENT_HUB_LOCAL_ROOT`. It serializes launches
 using `mixed-launch.lock` and checks the **combined** unresolved CPU/RAM
 commitment against the real host before invoking either owner. Both projects
 still use their existing adapter-specific checkpoint/STOP and progress
-contracts. Courier has no GPU lease; only TinyBrains may request a Docker
-ROCm device. An unresolved native GPU owner blocks a new Docker GPU claim.
+contracts. Courier and native Bees jobs have no GPU lease in mixed mode;
+only TinyBrains may request a Docker ROCm device. An unresolved native GPU owner blocks a new Docker GPU claim.
 The Hub's normal machine reservations remain the cross-job scheduling budget.
 Do not run a second local agent or an independent supervisor writer against
 the same owner root. A leftover mixed launch lock after a crash is an
@@ -1475,8 +1476,8 @@ Before opting in, check both existing owner ledgers and any GPU preflight
 journals, ensure that their identities belong to this machine, and reconcile
 any unresolved launches. The agent will not resume or start previous jobs on
 startup. Existing terminal jobs remain in their respective ledgers; do not
-delete or migrate them to change modes. Create only the new Courier artifacts
-directory; do not modify TinyBrains' imported checkpoint or original run.
+delete or migrate them to change modes. Create only the required new job-artifact directories;
+do not modify TinyBrains' imported checkpoint or original run.
 
 For the Halifax layout in the example:
 
@@ -1490,6 +1491,24 @@ chmod 700 "$HOME/ai/experiments/experiment-hub/courier-jobs"
 # EXPERIMENT_HUB_ENABLE_ROCM=1
 # EXPERIMENT_HUB_DOCKER_SUDO=1  # ONLY with explicitly approved noninteractive Docker access
 ```
+
+To enable native Bees alongside those jobs, extend the trusted local adapter
+map with `bees_native` and/or `bees_native_collect`, each produced by
+`createNativeBeesAdapter` in
+`Training/experiment_hub_native_bees_adapter.js`. Supply the actual absolute
+Python interpreter, native `policy_rollout` binary, source run configuration,
+trainer configuration, starting checkpoint, and existing private artifact
+directory; set `learnerSlot` for training against a distinct opponent.
+Collectors use `collectOnly: true` and their own artifact directory; a
+verified inbox learner additionally uses `bundleInbox`. All configured
+files and complete model manifests must pass the adapter's content checks
+before the agent can execute or advertise them. Existing continuation and
+collection receipts remain in the same native systemd owner ledger and
+combined CPU/RAM budget as Courier. **Do not configure a GPU allocation for
+native Bees in mixed mode.** To qualify a native Bees ROCm GPU learner, use
+the dedicated `native` Linux backend after separately reconciling Docker
+ownership; mixed mode does not share or arbitrate GPU device ownership
+between systemd and Docker.
 
 Both systemd CPU/memory enforcement and Docker cgroup-v2 enforcement must
 pass local preflight before either backend advertises Start readiness. A
