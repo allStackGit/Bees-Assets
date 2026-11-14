@@ -333,7 +333,7 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          physics_workers: int | None, torch_threads: int | None,
                          optimizer_device: str, rollout_binary: Path | None,
                          distributed_plan: Path | None, bundle_inbox: Path | None,
-                         collector_timeout_seconds: int,
+                         collector_timeout_seconds: int, auto_balance_collectors: bool,
                          evaluation_run_config: Path | None, evaluation_side: int | None,
                          evaluation_policy_seed: int,
                          resume: bool = False,
@@ -374,6 +374,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         command.extend(["--distributed-plan", str(distributed_plan.resolve(strict=True)),
                         "--bundle-inbox", str(bundle_inbox.resolve(strict=True)),
                         "--collector-timeout-seconds", str(collector_timeout_seconds)])
+    if auto_balance_collectors:
+        command.append("--auto-balance-collectors")
     if evaluation_run_config is not None:
         command.extend(["--evaluation-run-config", str(evaluation_run_config.resolve(strict=True)),
                         "--evaluation-side", str(evaluation_side),
@@ -423,6 +425,8 @@ def main() -> None:
     parser.add_argument("--bundle-inbox", type=Path,
                         help="existing writable directory for distributed collection receipts")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0)
+    parser.add_argument("--auto-balance-collectors", action="store_true",
+                        help="conservatively rebalance native distributed arena windows from verified collector throughput")
     parser.add_argument("--holdout-worlds", type=int,
                         help="generate this many fixed-seed native policy holdout arenas")
     parser.add_argument("--holdout-seed", type=int, default=918273645,
@@ -461,6 +465,8 @@ def main() -> None:
         parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds must be nonnegative")
+    if args.auto_balance_collectors and args.distributed_plan is None:
+        parser.error("--auto-balance-collectors requires --distributed-plan")
     if args.holdout_worlds is not None and not 1 <= args.holdout_worlds <= 1024:
         parser.error("--holdout-worlds must be between 1 and 1024")
     if not 0 <= args.holdout_seed < U64 or not 1 <= args.holdout_episodes <= 10000:
@@ -566,7 +572,7 @@ def main() -> None:
             args.physics_workers, args.torch_threads,
             args.optimizer_device, args.rollout_binary,
             args.distributed_plan, args.bundle_inbox,
-            args.collector_timeout_seconds,
+            args.collector_timeout_seconds, args.auto_balance_collectors,
             (output / "holdout-run.json" if args.holdout_worlds is not None
              else args.evaluation_run_config),
             args.evaluation_side, args.evaluation_policy_seed,
