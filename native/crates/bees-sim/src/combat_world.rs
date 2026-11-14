@@ -871,6 +871,9 @@ pub struct CombatWorld {
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
     /// Collision-asteroid proximity contacts in entry order for each ship.
     nearby_asteroids_by_ship: HashMap<i64, Vec<i64>>,
+    /// Reuse the per-tick impacted-ship list across asteroid-heavy frames.
+    /// Deduplication still happens in canonical ID order before path replans.
+    newly_nearby_asteroid_ships: Vec<i64>,
     /// Unity NearbyAsteroidDoubleCheck runs at one-second intervals while
     /// the ship has nearby collision asteroids. One timer per ship avoids
     /// repeated route invalidation for multiple overlapping sensors.
@@ -1013,6 +1016,7 @@ impl CombatWorld {
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
             nearby_asteroids_by_ship: HashMap::new(),
+            newly_nearby_asteroid_ships: Vec::new(),
             asteroid_navigation_refresh: HashMap::new(),
             obstacle_by_id: HashMap::new(),
             static_navigation_revision: 0,
@@ -3592,7 +3596,7 @@ impl CombatWorld {
     /// then a primary overlap applies CollisionAsteroid.ShipCollision's
     /// shared asteroid and ship damage rules.
     fn process_asteroid_ship_contacts(&mut self) -> Result<(), CombatWorldError> {
-        let mut newly_nearby_ships = Vec::new();
+        self.newly_nearby_asteroid_ships.clear();
         let exiting = self.physics.proximity_ship_exits().len();
         for index in 0..exiting {
             let contact = self.physics.proximity_ship_exits()[index];
@@ -3613,7 +3617,7 @@ impl CombatWorld {
                 let nearby = self.nearby_asteroids_by_ship.entry(contact.ship_id).or_default();
                 if !nearby.contains(&contact.obstacle_id) {
                     nearby.push(contact.obstacle_id);
-                    newly_nearby_ships.push(contact.ship_id);
+                    self.newly_nearby_asteroid_ships.push(contact.ship_id);
                     self.asteroid_navigation_refresh
                         .entry(contact.ship_id)
                         .or_insert_with(|| ScaledTimer::new(1.0, true, false));
@@ -3681,9 +3685,10 @@ impl CombatWorld {
         // A Queen, immobile ship or policy-controlled ship never reissues
         // path commands. Replan at most once per fixed tick, even when
         // multiple asteroid proximity colliders enter simultaneously.
-        newly_nearby_ships.sort_unstable();
-        newly_nearby_ships.dedup();
-        for ship_id in newly_nearby_ships {
+        self.newly_nearby_asteroid_ships.sort_unstable();
+        self.newly_nearby_asteroid_ships.dedup();
+        for index in 0..self.newly_nearby_asteroid_ships.len() {
+            let ship_id = self.newly_nearby_asteroid_ships[index];
             let Some(&ship_index) = self.ship_by_id.get(&ship_id) else { continue };
             let body = &self.physics.ships()[ship_index];
             if !body.active || !body.motion.mobile ||
