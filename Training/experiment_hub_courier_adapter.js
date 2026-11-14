@@ -576,7 +576,6 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const simulationShards=auto&&parallelWorlds&&
                     (parsed.colony||parsed.competitive)
                 ?Math.min(mapCount,maximumMapShards,
-                    ...(remote.length?remote.map(item=>item.max_shards):[]),
                     Math.max(1,Math.floor((ramPerLearner-768)/768)))
                 :1;
             if(auto&&(!within(context.ram_quota_mb,128,1000000)))
@@ -596,7 +595,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     ?['--cpu-lease',String(context.cpu_quota),
                       '--simulation-shards',String(simulationShards)]:[]),
                 ...(remote.length?[
-                    ...remote.flatMap(item=>['--remote-lineage-endpoint',item.endpoint]),
+                    ...remote.flatMap(item=>[
+                        '--remote-lineage-endpoint',item.endpoint,
+                        '--remote-lineage-shards',String(item.max_shards)]),
                     '--remote-lineage-key-file',remoteSecret,
                     '--remote-job-id',context.job_id,
                 ]:[]),
