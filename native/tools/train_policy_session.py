@@ -568,6 +568,12 @@ def main():
                         help="source side 1 or 2 whose victories are measured")
     parser.add_argument("--evaluation-policy-seed", type=int, default=0,
                         help="fixed policy action-sampling RNG seed during holdout evaluation")
+    parser.add_argument("--early-stop-patience", type=int,
+                        help="stop after this many evaluated rounds without meaningful fixed-reference victories")
+    parser.add_argument("--early-stop-minimum-rounds", type=int, default=3,
+                        help="never stop before this many completed optimizer rounds (default: 3)")
+    parser.add_argument("--early-stop-minimum-extra-victories", type=int, default=1,
+                        help="minimum additional holdout wins for meaningful progress (default: 1)")
     parser.add_argument("--learner-slot", type=int)
     parser.add_argument("--self-play-opponent-slot", type=int,
                         help="existing MA-POCA slot to refresh from the completed learner checkpoint")
@@ -609,6 +615,16 @@ def main():
     if (not 0 <= args.evaluation_policy_seed < (1 << 63) or
             args.evaluation_run_config is None and args.evaluation_policy_seed != 0):
         parser.error("--evaluation-policy-seed requires a holdout and a nonnegative int63 seed")
+    if args.early_stop_patience is not None:
+        if args.evaluation_run_config is None or not 1 <= args.early_stop_patience <= 99999:
+            parser.error("early stopping requires an evaluation suite and positive patience")
+        if not 1 <= args.early_stop_minimum_rounds <= args.rounds:
+            parser.error("--early-stop-minimum-rounds must be between 1 and --rounds")
+        if not 1 <= args.early_stop_minimum_extra_victories <= 1000000:
+            parser.error("--early-stop-minimum-extra-victories must be a positive integer")
+    elif (args.early_stop_minimum_rounds != 3 or
+          args.early_stop_minimum_extra_victories != 1):
+        parser.error("early-stop thresholds require --early-stop-patience")
     if (args.seed_offset_start < 0 or args.seed_offset_stride < 1 or
             args.seed_offset_start + (args.rounds - 1) * args.seed_offset_stride >= (1 << 64)):
         parser.error("session seed offsets must be distinct and fit uint64")
@@ -713,6 +729,12 @@ def main():
         recipe["evaluation_config"] = pinned(args.evaluation_run_config)
         recipe["evaluation_side"] = args.evaluation_side
         recipe["evaluation_policy_seed"] = args.evaluation_policy_seed
+    if args.early_stop_patience is not None:
+        recipe["early_stop"] = {
+            "patience_rounds": args.early_stop_patience,
+            "minimum_rounds": args.early_stop_minimum_rounds,
+            "minimum_extra_victories": args.early_stop_minimum_extra_victories,
+        }
     recipe["source_dependencies"] = native_input_dependencies(
         run, recipe.get("evaluation_config"),
     )
