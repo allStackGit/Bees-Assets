@@ -9,6 +9,8 @@
 use std::collections::{HashMap, HashSet};
 use bees_gameplay::level_rules::NativeLevelRewardMetadata;
 use bees_sim::rl_shaping::DamageRewardMetadata;
+use bees_sim::combat_world::{CombatEvent, CombatWorld};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NativeFleetShipValue {
@@ -26,6 +28,20 @@ pub enum NativeFleetInventoryError {
     MiningCreditOverflow,
 }
 
+/// Source-oriented per-battle career counters computed from real combat
+/// events, after the shared reward consumer has processed that tick.
+/// These are observed physical events, not inferred from PPO reward
+/// totals or model decisions. Direct-hit damage uses loss of TSV,
+/// consistent with Unity FleetShip.DamageDone/DamageReceived.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeFleetCombatStats {
+    pub observed_turret_shots: u64,
+    pub enemy_tsv_damage_done: u64,
+    pub tsv_damage_received: u64,
+    pub attributed_enemy_kills: u64,
+}
+
 /// The owning native Level constructs this from its *real* FleetShip
 /// registry, including temporary/minion ships with persistent=false.
 /// A killed ship's record stays available for deferred damage/economics
@@ -35,6 +51,7 @@ pub struct NativeFleetInventory {
     /// Fatal losses for the current Level. A successful extraction or
     /// WarpGate departure is not a persistent fleet death.
     killed: HashSet<i64>,
+    combat: HashMap<i64, NativeFleetCombatStats>,
 }
 
 impl NativeFleetInventory {
@@ -50,7 +67,7 @@ impl NativeFleetInventory {
                 return Err(NativeFleetInventoryError::DuplicateShip(value.ship_id));
             }
         }
-        Ok(Self { entries, killed: HashSet::new() })
+        Ok(Self { entries, killed: HashSet::new(), combat: HashMap::new() })
     }
 
     pub fn get(&self, ship_id: i64) -> Option<NativeFleetShipValue> {
@@ -61,11 +78,81 @@ impl NativeFleetInventory {
         self.killed.contains(&ship_id)
     }
 
+    pub fn combat_stats(&self, ship_id: i64) -> Option<NativeFleetCombatStats> {
+        self.entries.get(&ship_id)
+            .filter(|entry| entry.has_persistent_fleet_value)?;
+        Some(self.combat.get(&ship_id).copied().unwrap_or_default())
+    }
+
+    /// One pass over the authoritative combat event buffer per completed
+    /// tick. No extra full-fleet scan, independent damage ledger, or work
+    /// in quiet ticks. All three source gameplay paths share these events.
+    pub fn record_combat_events(&mut self, world: &CombatWorld) {
+        for event in world.events() {
+            match event {
+                CombatEvent::GameWeaponFired { ship_id, .. } |
+                CombatEvent::PolicyWeaponFired { ship_id, .. } => {
+                    if self.entries.get(ship_id)
+                        .is_some_and(|entry| entry.has_persistent_fleet_value)
+                    {
+                        let row = self.combat.entry(*ship_id).or_default();
+                        row.observed_turret_shots =
+                            row.observed_turret_shots.saturating_add(1);
+                    }
+                }
+                CombatEvent::Hit(hit) => {
+                    let loss = hit.delta.tsv_loss.max(0) as u64;
+                    if loss == 0 { continue; }
+                    if hit.attacker_side != hit.target_side &&
+                        self.entries.get(&hit.attacker_id)
+                            .is_some_and(|entry| entry.has_persistent_fleet_value)
+                    {
+                        let row = self.combat.entry(hit.attacker_id).or_default();
+                        row.enemy_tsv_damage_done =
+                            row.enemy_tsv_damage_done.saturating_add(loss);
+                    }
+                    if self.entries.get(&hit.target_id)
+                        .is_some_and(|entry| entry.has_persistent_fleet_value)
+                    {
+                        let row = self.combat.entry(hit.target_id).or_default();
+                        row.tsv_damage_received =
+                            row.tsv_damage_received.saturating_add(loss);
+                    }
+                }
+                CombatEvent::UnattributedDamage { target_id, delta } => {
+                    if self.entries.get(target_id)
+                        .is_some_and(|entry| entry.has_persistent_fleet_value)
+                    {
+                        let row = self.combat.entry(*target_id).or_default();
+                        row.tsv_damage_received = row.tsv_damage_received
+                            .saturating_add(delta.tsv_loss.max(0) as u64);
+                    }
+                }
+                CombatEvent::ShipDied { victim_id, killer_id, .. } => {
+                    if killer_id == victim_id || *killer_id <= 0 {
+                        continue;
+                    }
+                    let opposing = world.ship(*killer_id).zip(world.ship(*victim_id))
+                        .is_some_and(|(killer, victim)| killer.side != victim.side);
+                    if opposing && self.entries.get(killer_id)
+                        .is_some_and(|entry| entry.has_persistent_fleet_value)
+                    {
+                        let row = self.combat.entry(*killer_id).or_default();
+                        row.attributed_enemy_kills =
+                            row.attributed_enemy_kills.saturating_add(1);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Native initial scene composition can omit ships before the Level is
     /// constructed. This removes only the episode-local FleetShip lookup,
     /// never the external player's persistent fleet/account record.
     pub fn omit_initial_ship(&mut self, ship_id: i64) -> bool {
         self.killed.remove(&ship_id);
+        self.combat.remove(&ship_id);
         self.entries.remove(&ship_id).is_some()
     }
 
@@ -133,5 +220,9 @@ impl NativeLevelRewardMetadata for NativeFleetInventory {
 
     fn retire_mined_credit_on_death(&mut self, ship_id: i64) {
         self.retire_mined_credit(ship_id);
+    }
+
+    fn observe_fleet_combat_tick(&mut self, world: &CombatWorld) {
+        self.record_combat_events(world);
     }
 }
