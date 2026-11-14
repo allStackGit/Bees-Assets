@@ -800,13 +800,24 @@ def main():
             best_evaluated = publish_best_evaluated(
                 root, recipe, completed, evaluations, baseline_holdout,
             )
+        stop_state = early_stop_decision(
+            completed, evaluations, baseline_holdout, recipe,
+        )
+        if stop_state is not None and (
+                stop_state["minimum_extra_victories"] > stop_state["holdout_episodes"]):
+            raise ValueError("early-stop meaningful improvement exceeds available holdout episodes")
         atomic_json(root / "session-progress.json", progress_snapshot(
-            completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
+            completed, args.rounds, evaluations, baseline_holdout, best_evaluated, stop_state,
         ))
         if len(completed) > args.rounds:
             raise ValueError("target round count is smaller than the completed checkpoint lineage")
         first_pending_round = len(completed) + 1
         for index in range(first_pending_round, args.rounds + 1):
+            if stop_state is not None and stop_state["stop"]:
+                # A resumed session reaches exactly the same stop decision
+                # as its original invocation from immutable evaluations.
+                # No extra collectors, learner update or work orders start.
+                break
             # A source scene, trainer settings, or rollout binary changed
             # between rounds would make throughput and learning quality
             # incomparable, even when the model lineage remains intact.
@@ -938,8 +949,12 @@ def main():
                 best_evaluated = publish_best_evaluated(
                     root, recipe, completed, evaluations, baseline_holdout,
                 )
+            stop_state = early_stop_decision(
+                completed, evaluations, baseline_holdout, recipe,
+            )
             snapshot = progress_snapshot(
                 completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
+                stop_state,
             )
             atomic_json(root / "session-progress.json", snapshot)
             print(json.dumps({"kind": "native_training_session_round_complete",
@@ -949,11 +964,29 @@ def main():
                               "next_checkpoint_sha256": record["next_checkpoint_sha256"],
                               "latest_training_outcomes": snapshot["latest_training_outcomes"]}),
                   flush=True)
+        stopped_early = (len(completed) < args.rounds and
+                         stop_state is not None and stop_state["stop"])
+        if stopped_early:
+            print(json.dumps({
+                "kind": "native_training_session_early_stopped",
+                "completed_rounds": len(completed),
+                "target_rounds": args.rounds,
+                "stopping": stop_state,
+                "best_playable_run": best_evaluated["playable_run"],
+                "best_checkpoint_sha256":
+                    best_evaluated["selected"]["checkpoint_sha256"],
+            }), flush=True)
         print(json.dumps({"kind": "native_training_session_complete",
                           "progress": str(root / "session-progress.json"),
                           "completed_rounds": len(completed),
+                          "target_rounds": args.rounds,
+                          "stopped_early": stopped_early,
+                          "stop_reason": stop_state["reason"] if stopped_early else None,
                           "checkpoint": str(next_checkpoint),
-                          "manifest": str(next_manifest)}), flush=True)
+                          "manifest": str(next_manifest),
+                          "best_playable_run":
+                              best_evaluated["playable_run"] if best_evaluated else None}),
+              flush=True)
 
 
 if __name__ == "__main__":
