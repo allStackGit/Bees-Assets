@@ -37,7 +37,7 @@ function safeLogPath(relative) {
 // never turn this endpoint into a checkpoint or arbitrary-file mirror.
 function safeNativeCollectorPath(relative) {
     return safeLogPath(relative) ||
-        /^(?:rollout-(?:0|[1-9][0-9]{0,2})\/)?decisions\.bin$/.test(relative);
+        /^(?:rollout-(?:0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\/)?decisions\.bin$/.test(relative);
 }
 function fail(message,status=400) {
     const error=Error(message);
