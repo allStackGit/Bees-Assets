@@ -362,11 +362,15 @@ preserves its original fleet identity, lifetime stats, and owned hull
 without spending minerals. These `squad-edit-NNNN/assignment.json`
 receipts record ownership changes independently from purchase
 transactions and replay before the shared Level is constructed.
-Initially moving independent, non-policy source hulls is supported,
-including ships with self-contained authored special weapons and
-abilities. Parent-linked Strikers/Drones and carriers with active
-children are deliberately not detached without their corresponding
-source ownership semantics. Previously killed hulls cannot be moved.
+Original non-policy hulls with self-contained special weapons remain
+movable. A carrier with attached Drones/Strikers can now move or enter
+reserve as **one family** when all dependents are stationary, on the
+same player SavedSquad, and free of policy or nested carrier ownership.
+The shared scene installer moves the physical hulls, their formation
+offsets and command ownership together while preserving their real
+parent-child references. Cross-squad and active-policy families are
+rejected rather than silently detached. Dead hulls remain lost;
+future missions skip their historical reassignment receipts.
 Scene preflight rejects formations that do not fit the authored map.
 
 A purchase is one immutable, atomic `build-NNNN/purchase.json`
@@ -1180,6 +1184,13 @@ receipt-matched `collection-round-NNNNN-window.json` records measured
 from work-order issuance through the last collector receipt, including
 dispatch and transfer. It reports missing or rejected historical windows
 without claiming that their worker-time averages are fleet throughput.
+The `useful_training_throughput` section adds the verified collection
+elapsed time to actual optimizer wall time. Its meaningful training SPS
+is available for local sessions and for distributed sessions with
+complete receipt-matched collection windows; incomplete distributed
+history returns a null SPS instead of inventing a fleet speed from
+overlapping worker times. Holdout evaluation and bootstrap/setup are
+measured separately, not folded into that denominator.
 
 The session publishes `collection-round-NNNNN.json` each round, naming
 the exact learner checkpoint, manifest, seed offset, source run fingerprint,
