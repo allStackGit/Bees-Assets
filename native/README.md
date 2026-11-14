@@ -341,18 +341,29 @@ bees build native/examples/native-frontier-campaign.json --output-dir native-fro
 
 A purchase is one immutable, atomic `build-NNNN/purchase.json`
 receipt. Its FleetShip ID persists between missions and its TSV cost
-is deducted exactly once. Every eligible route must contain a
-full-health, ordinary native ship of the purchased type at the same
-source `max_tsv` price and a matching player `saved_squad_id`.
-Before each battle, the same native scene builder instantiates the
-real ship's hull, turret mounts, sight, formation, movement and
-perception into its saved squad; dead bought ships are later omitted
-by the normal permanent-loss filter. Purchased ship combat and career
-records use the same authoritative world and campaign receipt as
-original authored hulls. The shop refuses unaffordable or unverified
-purchases rather than minting fictional equipment. This does not yet
-cover custom special-weapon prefab construction, transfer between
-squads, or the full Unity fleet-management screens.
+is deducted exactly once. `buildable_ships` can supply `unlocked_after`
+mission IDs, and a catalog with a shop must also supply
+`max_squad_ships` matching the source's Configuration.MaxSquadSize.
+The example unlocks both hull classes after Frontier and uses a
+ten-ship maximum. The shop owns one player faction.
+
+Before charging minerals, the *same native scene builder* preflights
+every upcoming mission route with the actual authored Stage assets,
+native layout, surviving prior purchases and casualty restoration.
+The full-health ordinary source ship must cost its exact
+`max_tsv`, the target `saved_squad_id` must exist, enough map space
+must be available and its squad must remain within its authored size.
+No fake purchased collider, special ability or extra training
+simulator is constructed. Each battle uses the same installer to
+create the bought ship's physics, turret mounts, sight, formation,
+movement and perception. Previously killed bought ships remain in
+career records but are not redeployed. A failed preflight never
+charges minerals. Only actual completed battle summaries award
+banked TSV, and the saved account's receipt totals reject overdrafts.
+The shop is currently for normal authored hulls; custom
+special-weapon prefabs, transfer between squads, full Unity
+fleet-management screens and recovery of simultaneous external
+shop writers remain outside this first native shop implementation.
 
 Use a compiled headless `bees` binary for automated native campaign
 qualification. Each invocation loads mission unlocks and saved player
