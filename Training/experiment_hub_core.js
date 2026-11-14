@@ -318,6 +318,25 @@ function boundedReport(value) {
         !Number.isSafeInteger(workerThreadLimit)||workerThreadLimit<0||workerThreadLimit>256||
         Boolean(workerThreadLimit)!==Boolean(workerEndpoint))
         throw Error('Remote rollout requires a locally installed Linux TinyBrains GPU adapter.');
+    const courierEndpoints=value.courier_remote_endpoints??[];
+    const courierKey=value.courier_remote_key_fingerprint??null;
+    const courierEndpoint=value.courier_remote_endpoint??null;
+    const courierServiceKey=value.courier_remote_service_key_fingerprint??null;
+    const courierMaxShards=value.courier_remote_max_shards??0;
+    if(!Array.isArray(courierEndpoints)||courierEndpoints.length>16||
+        courierEndpoints.some(endpoint=>!rolloutEndpoint(endpoint))||
+        new Set(courierEndpoints).size!==courierEndpoints.length||
+        Boolean(courierEndpoints.length)!==Boolean(courierKey)||
+        (courierKey!==null&&(!SHA256.test(String(courierKey))||
+            !installed.includes('courier')))||
+        (courierEndpoint===null)!==(courierServiceKey===null)||
+        (courierEndpoint!==null&&(!rolloutEndpoint(courierEndpoint)||
+            !SHA256.test(String(courierServiceKey))||
+            !installed.includes('courier_remote')))||
+        !Number.isSafeInteger(courierMaxShards)||courierMaxShards<0||
+        courierMaxShards>64||
+        Boolean(courierMaxShards)!==Boolean(courierEndpoint))
+        throw Error('Courier remote PPO identities require installed, authenticated native adapters.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
         requiredImports.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
@@ -366,6 +385,11 @@ function boundedReport(value) {
         tinybrains_rollout_endpoint:workerEndpoint,
         tinybrains_rollout_key_fingerprint:workerFingerprint,
         tinybrains_rollout_thread_limit:workerThreadLimit,
+        courier_remote_endpoints:courierEndpoints.slice(),
+        courier_remote_key_fingerprint:courierKey,
+        courier_remote_endpoint:courierEndpoint,
+        courier_remote_service_key_fingerprint:courierServiceKey,
+        courier_remote_max_shards:courierMaxShards,
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -1339,6 +1363,11 @@ class ExperimentHub {
                 machine.tinybrains_rollout_endpoint=report.tinybrains_rollout_endpoint;
                 machine.tinybrains_rollout_key_fingerprint=report.tinybrains_rollout_key_fingerprint;
                 machine.tinybrains_rollout_thread_limit=report.tinybrains_rollout_thread_limit;
+                machine.courier_remote_endpoints=report.courier_remote_endpoints.slice();
+                machine.courier_remote_key_fingerprint=report.courier_remote_key_fingerprint;
+                machine.courier_remote_endpoint=report.courier_remote_endpoint;
+                machine.courier_remote_service_key_fingerprint=report.courier_remote_service_key_fingerprint;
+                machine.courier_remote_max_shards=report.courier_remote_max_shards;
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
