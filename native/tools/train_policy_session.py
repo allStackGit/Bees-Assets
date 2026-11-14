@@ -487,6 +487,19 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         if str(directory) in evaluations
     ), None)
     latest_holdout = latest_observed[1] if latest_observed is not None else None
+    all_holdouts = ([baseline_holdout] if baseline_holdout is not None else []) + list(
+        evaluations.values()
+    )
+    measured_holdouts = [
+        receipt for receipt in all_holdouts
+        if (type(receipt.get("wall_seconds")) in (int, float) and
+            math.isfinite(receipt["wall_seconds"]) and
+            receipt["wall_seconds"] > 0 and
+            type(receipt.get("world_steps")) is int and
+            receipt["world_steps"] > 0)
+    ]
+    holdout_wall = sum(row["wall_seconds"] for row in measured_holdouts)
+    holdout_steps = sum(row["world_steps"] for row in measured_holdouts)
     holdout_win_rate_gain = (
         latest_holdout["side_win_rate"] - baseline_holdout["side_win_rate"]
         if latest_holdout is not None and baseline_holdout is not None
@@ -498,6 +511,15 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         "baseline_holdout": baseline_holdout,
         "latest_holdout": latest_holdout,
         "latest_holdout_round": latest_observed[0] if latest_observed else None,
+        **({"holdout_simulation_cost": {
+            "scope": "sum_of_independent_verified_holdout_simulation_wall_seconds",
+            "completed_holdouts_including_baseline": len(all_holdouts),
+            "holdouts_with_measured_runtime": len(measured_holdouts),
+            "useful_world_steps": holdout_steps,
+            "sum_holdout_simulation_wall_seconds": holdout_wall,
+            "world_steps_per_holdout_simulation_wall_second":
+                holdout_steps / holdout_wall if holdout_wall > 0 else None,
+        }} if all_holdouts else {}),
         "latest_holdout_win_rate_gain": holdout_win_rate_gain,
         **({"holdout_stopping": stopping} if stopping is not None else {}),
         **({"best_evaluated": {
