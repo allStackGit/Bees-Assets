@@ -173,6 +173,36 @@ impl CombatWorld {
         })
     }
 
+    /// Conservative Stage-ID admission for the upcoming fixed step.
+    /// Every Beacon path checks this same ship-owned cooldown before
+    /// spawning. Policy specials advance the clock by at most one dt in
+    /// the shared combat step; game Scouting callbacks cannot advance it
+    /// faster. A Scout with more than dt left cannot allocate an ID in
+    /// this tick, so its arena may run alongside other CPU workers.
+    ///
+    /// Deliberately do not infer availability from source enablement,
+    /// commands or the current side cap: those can change during a tick.
+    /// Unknown configurations and invalid deltas retain the conservative
+    /// source-order lane. No mutation or timer advancement is done here.
+    pub fn may_spawn_scout_beacon_during(&self, dt_seconds: f32) -> bool {
+        if !dt_seconds.is_finite() || dt_seconds <= 0.0 {
+            return self.has_scout_beacon_sources();
+        }
+        self.scout_beacon_specs.keys().any(|id| {
+            if let Some(runtime) = self.game_scout_runtime.get(id) {
+                return runtime.dropped < MAX_BEACONS &&
+                    runtime.remaining_cooldown <= dt_seconds;
+            }
+            if let Some(runtime) = self.policy_ship_runtime.get(id) {
+                if let Some(PolicyShipSpecial::Scout(scout)) = runtime.special {
+                    return scout.dropped < MAX_BEACONS &&
+                        scout.remaining_cooldown <= dt_seconds;
+                }
+            }
+            true
+        })
+    }
+
     /// Read only, suitable for a sparse ten-second Scouting callback.
     pub fn game_scout_beacon_ready(&self, scout_id: i64) -> bool {
         let Some(&runtime) = self.game_scout_runtime.get(&scout_id) else {
