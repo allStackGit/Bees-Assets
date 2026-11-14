@@ -370,6 +370,7 @@ class BottleneckEvidence {
             const simHints=[];
             const joinHints=[];
             const localGpuIndices=[];
+            const remoteIndices=[];
             const connectHints=[];
             const gpuHints=[];
             for(let i=0;i<17;i++) {
@@ -450,6 +451,8 @@ class BottleneckEvidence {
                 // host-wide and need not be exclusive useful PPO work.
                 localGpuIndices[i]=(metrics['collector_'+i+'_is_local_gpu']?.unit==='count'&&
                     metrics['collector_'+i+'_is_local_gpu'].value===1);
+                remoteIndices[i]=(seconds('collector_'+i+'_roundtrip_seconds')!==null&&
+                    !localGpuIndices[i]);
                 const leaseIndex=metrics['collector_'+i+'_gpu_lease_index'];
                 const ordinal=(eligibleGpu&&leaseIndex?.unit==='count'&&
                     Number.isSafeInteger(leaseIndex.value)&&
@@ -501,7 +504,7 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,localShare,mergeShare,stageHints,simHints,
-                    joinHints,localGpuIndices,connectHints,gpuHints,collectorNativeDenials,resourceHints,
+                    joinHints,localGpuIndices,remoteIndices,connectHints,gpuHints,collectorNativeDenials,resourceHints,
                     scanPressure:scanShare!==null&&scanShare>=0.15&&ramScan>=0.25});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
@@ -575,7 +578,7 @@ class BottleneckEvidence {
                             const owners=Array.from({length:17},(_,i)=>i)
                                 .filter(i=>stable(x=>x.joinHints?.[i]&&
                                     (source==='remote'
-                                        ?x.localGpuIndices?.[i]!==true
+                                        ?x.remoteIndices?.[i]===true
                                         :x.localGpuIndices?.[i]===true)));
                             if(owners.length===1) {
                                 add('pipeline_primary_delay_kind',
@@ -925,6 +928,8 @@ class BottleneckEvidence {
         // Confirmed, sustained stage limitations matter more than optional
         // continuous ratios when many collectors approach the wire limit. Never evict a project-owned source metric for a diagnosis.
         const priority=name=>
+            name.startsWith('pipeline_primary_')||
+                name==='pipeline_multiple_delay_evidence'?0:
             name.startsWith('pipeline_')&&(
                 name.endsWith('_pressure')||name.endsWith('_evidence'))?0:
             name.startsWith('pipeline_')&&name.endsWith('_dominant')?0:
