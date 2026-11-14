@@ -29,6 +29,10 @@ SHIP_IMAGES = (
     "yellowjacket.png", None,
 )
 
+# Source CollisionAsteroidCatalog prefab numbers 1..28. Slot zero is
+# unused, so native sprites retain the real authored asteroid identities.
+ASTEROID_IMAGES = (None,) + tuple(f"Asteroid {n}.png" for n in range(1, 29))
+
 # ConfigData.ProjectileTypes. Some explosion/beam visuals require custom
 # source timing or geometry; leave their authoritative collider outlines
 # until those presentations can be supported without inventing physics.
@@ -197,6 +201,8 @@ def main():
                         default=ROOT / "native/assets/ship-sprites.rgba")
     parser.add_argument("--projectile-output", type=Path,
                         default=ROOT / "native/assets/projectile-sprites.rgba")
+    parser.add_argument("--asteroid-output", type=Path,
+                        default=ROOT / "native/assets/asteroid-sprites.rgba")
     args = parser.parse_args()
     ships, ship_count = pack(
         SHIP_IMAGES, ROOT / "Sprites/Ships", b"BSS2", False,
@@ -205,11 +211,17 @@ def main():
     projectiles, projectile_count = pack(
         PROJECTILE_IMAGES, ROOT / "Sprites/Projectiles", b"BPS1", True,
     )
+    asteroids, asteroid_count = pack(
+        ASTEROID_IMAGES, ROOT / "Sprites/Asteroids", b"BAS1", False,
+    )
     ships_path = write_atomic(args.ship_output, ships)
     projectiles_path = write_atomic(args.projectile_output, projectiles)
+    asteroids_path = write_atomic(args.asteroid_output, asteroids)
     print(f"Ship sprites: {ship_count} types, {len(ships)} bytes at {ships_path}")
     print(f"Projectile sprites: {projectile_count} types, "
           f"{len(projectiles)} bytes at {projectiles_path}")
+    print(f"Asteroid sprites: {asteroid_count} types, "
+          f"{len(asteroids)} bytes at {asteroids_path}")
 
 
 if __name__ == "__main__":
