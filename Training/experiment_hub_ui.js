@@ -2962,7 +2962,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-design-run-panel').hidden=project!=='courier';
         if(project==='courier') {
             const instructions=document.createElement('p');
-            instructions.className='muted';
+            instructions.className='muted hub-design-note';
             instructions.textContent='Optional simulation modes follow connected worker defaults. Colony mode enables shared food, feeding, births and combat. Evolution and communication require colonies; speed requires both. Food patches require colonies. Switching neural observation/action modes needs a fresh lineage, not an incompatible checkpoint continuation.';
             $('hub-design-environment').append(instructions);
         }
@@ -2997,8 +2997,11 @@ document.addEventListener('DOMContentLoaded', () => {
             benchmark.type='checkbox';
             benchmark.dataset.designRun='reporting_benchmarks';
             benchmark.checked=parameters.reporting_benchmarks===true;
-            benchmarkLabel.append(benchmark,document.createTextNode(
-                ' Enable independent fixed and extended reporting benchmarks after champion promotions'));
+            benchmarkLabel.className='hub-design-checkbox';
+            const benchmarkText=document.createElement('span');
+            benchmarkText.className='hub-design-checkbox-text';
+            benchmarkText.textContent='Enable independent fixed and extended reporting benchmarks after champion promotions';
+            benchmarkLabel.append(benchmark,benchmarkText);
             const benchmarkHint=document.createElement('small');
             benchmarkHint.textContent='Off by default. Adds fresh reporting evaluations after champion promotion; costs training time and does not change the survival reward.';
             benchmarkLabel.append(benchmarkHint);
@@ -3017,14 +3020,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'');
         for(const field of entry.fields) {
             const label=document.createElement('label');
-            label.append(document.createTextNode(field.label));
             const input=document.createElement('input');
             input.dataset.designKey=field.key;
             if(field.type==='boolean') {
+                label.className='hub-design-checkbox';
                 input.type='checkbox';
                 input.checked=parameters.design_overrides?.[field.key]??
                     field.default;
+                const text=document.createElement('span');
+                text.className='hub-design-checkbox-text';
+                text.textContent=field.label;
+                label.append(input,text);
             }else if(field.type==='enum') {
+                label.append(document.createTextNode(field.label));
                 const select=document.createElement('select');
                 select.dataset.designKey=field.key;
                 select.replaceChildren(...field.options.map(option=>new Option(option,option)));
@@ -3042,6 +3050,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     'hub-design-environment').append(label);
                 continue;
             }else{
+                label.append(document.createTextNode(field.label));
                 input.type='number';
                 input.step=field.type==='integer'?'1':'any';
                 input.min=String(field.min);input.max=String(field.max);
@@ -3051,7 +3060,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const hint=document.createElement('small');
             hint.textContent=field.key+' · default '+String(field.default)+
                 (field.type==='boolean'?(field.default?' (on by default)':' (off by default)'):'');
-            label.append(input,hint);
+            if(field.type==='boolean')label.append(hint);
+            else label.append(input,hint);
             input.addEventListener('change',()=>{
                 try{readDesignControls();feedback('hub-config-message','');}
                 catch(error){feedback('hub-config-message',error.message);}
