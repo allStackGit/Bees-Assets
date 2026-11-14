@@ -1087,6 +1087,16 @@ internal static class NativePhysicalSceneExporter
             result.can_override_bounds = barge.CanOverrideBounds;
             weapon = barge.Charge;
         }
+        else if (ship is Queen)
+        {
+            // The prefab is not a live, initialized YellowJacket weapon or
+            // trigger. Exporting only its Queen hull would silently omit
+            // timed combatants from native gameplay and MA-POCA rewards.
+            throw new InvalidOperationException(
+                "Native Queen export needs a fully authored YellowJacket spawn template; " +
+                "use the standalone native Queen scene format until source prefab export is supported: " +
+                ship.Id);
+        }
         else if (ship is Scout scout)
         {
             float clock = ship.Stage.IsTraining ? Time.time : Time.realtimeSinceStartup;
