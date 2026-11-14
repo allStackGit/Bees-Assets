@@ -94,6 +94,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_gpu_stream_interval_seconds'])
         add(name,row[name],'seconds');
     for(const name of ['simulation_active_matches','simulation_target_matches',
+        'simulation_max_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
         'simulation_tuner_settled','simulation_target_restored',
         'simulation_proven_target',
@@ -121,6 +122,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'local_gpu_collector_count',
         'local_gpu_direct_model_updates',
+        'local_lease_native_engines_active',
         'local_gpu_collectors_pending_at_local_end',
         'local_gpu_collectors_ready_at_local_end',
         'collector_auto_balance_adjustments',
@@ -242,6 +244,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         for(const [suffix,name] of [
             ['sim_matches','simulation_active_matches'],
             ['sim_target','simulation_target_matches'],
+            ['sim_max','simulation_max_matches'],
             ['sim_changes','simulation_concurrency_adjustments'],
             ['sim_accepted','simulation_tuner_accepted'],
             ['sim_settled','simulation_tuner_settled'],
