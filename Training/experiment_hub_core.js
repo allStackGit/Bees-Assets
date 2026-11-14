@@ -4739,6 +4739,7 @@ class ExperimentHub {
                 host.courier_lineage_key_fingerprint!==fingerprint||
                 !Number.isSafeInteger(host.courier_lineage_max_shards)||
                 host.courier_lineage_max_shards<1||
+                resources.ram_mb<2048||
                 resources.gpu_count!==0||
                 resources.ram_mb<128||
                 (host.agent_platform==='linux'&&(
@@ -4766,8 +4767,9 @@ class ExperimentHub {
             host.courier_lineage_endpoint);
         learner.distributed_courier_slots=children.map((_,i)=>
             count-children.length+i);
-        learner.distributed_courier_shard_limits=children.map(({host})=>
-            host.courier_lineage_max_shards);
+        learner.distributed_courier_shard_limits=children.map(({host,resources})=>
+            Math.min(host.courier_lineage_max_shards,
+                Math.max(1,Math.floor((resources.ram_mb-768)/768))));
         learner.distributed_courier_key_fingerprint=fingerprint;
         learner.distributed_courier_sidecar_job_ids=[];
         const learnerLease=this.claimJobIn(next,learner,learnerHost.id,learnerHost);
@@ -4785,7 +4787,7 @@ class ExperimentHub {
                 parameters:{
                     learner_job_id:learner.id,
                     slot:learner.distributed_courier_slots[index],
-                    shards:host.courier_lineage_max_shards,
+                    shards:learner.distributed_courier_shard_limits[index],
                 },revision:1,created_at:created,updated_at:created,
             };
             next.configurations.push(cfg);
