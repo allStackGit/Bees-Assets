@@ -95,7 +95,67 @@ def packed_pixels(data: bytearray, frame):
             count -= run
 
 
-def pack(images, directory, magic, animated):
+def source_ship_color_palettes():
+    """Read the original Unity recolor matching palette, not an invented tint.
+
+    Like Utilities.GetChangablePixelsForImage, select alpha-positive pixels
+    whose RGB squared distance from a ConfigData palette color is < .035².
+    The native game never needs to parse C# or scan palettes per frame.
+    """
+    type_source = (ROOT / "Scripts/ConfigData.Types.cs").read_text(encoding="utf-8-sig")
+    match = re.search(r"enum ShipTypes\s*\{([^}]+)\}", type_source, re.DOTALL)
+    if match is None:
+        raise ValueError("Source ConfigData.ShipTypes enumeration is missing")
+    type_names = re.findall(r"^\s*([A-Za-z][A-Za-z0-9_]*)\s*,?\s*$",
+                            match[1], re.MULTILINE)
+    if len(type_names) != len(SHIP_IMAGES):
+        raise ValueError("Ship type atlas does not match the source enumeration")
+    source = (ROOT / "Scripts/ConfigData.Gameplay.cs").read_text(encoding="utf-8-sig")
+    start = source.index("ChangeableShipColors =")
+    end = source.index("\n        };", start)
+    palette_source = source[start:end]
+    entries = re.findall(
+        r"\{\s*ShipTypes\.(\w+),\s*new\[\]\s*\{(.*?)\}\s*\}",
+        palette_source, re.DOTALL,
+    )
+    palettes = {}
+    for name, body in entries:
+        colors = []
+        for color in re.findall(r"new Color\(([^)]+)\)", body):
+            values = [float(value.strip().rstrip("f"))
+                      for value in color.split(",")]
+            if len(values) != 4 or any(not 0 <= value <= 1 for value in values):
+                raise ValueError(f"Invalid source recolor palette for {name}")
+            colors.append(values[:3])
+        palettes[name] = colors
+    return [palettes.get(name, ()) for name in type_names]
+
+
+def packed_color_mask(data: bytearray, frame, colors):
+    """One source RGB match per pixel, compressed to a 1-byte mask run."""
+    # Cache repeated artwork colors; multi-layer sprites often share
+    # thousands of pixels of the same palette color.
+    from functools import lru_cache
+
+    @lru_cache(maxsize=16384)
+    def changeable(rgb):
+        red, green, blue = (value / 255.0 for value in rgb)
+        return int(any(
+            (red - r) ** 2 + (green - g) ** 2 + (blue - b) ** 2 < .035 ** 2
+            for r, g, b in colors
+        ))
+
+    mask = (changeable(rgba[:3]) if rgba[3] else 0
+            for rgba in frame.getdata())
+    for color, items in groupby(mask):
+        count = sum(1 for _ in items)
+        while count:
+            run = min(count, 65535)
+            data.extend(struct.pack("<HB", run, color))
+            count -= run
+
+
+def pack(images, directory, magic, animated, palettes=None):
     entries = [(kind, name) for kind, name in enumerate(images) if name]
     data = bytearray(struct.pack("<4sH", magic, len(entries)))
     for kind, name in entries:
@@ -109,6 +169,8 @@ def pack(images, directory, magic, animated):
             frame = frames[0]
             data.extend(struct.pack("<BHHH", kind, ppu, frame.width, frame.height))
             packed_pixels(data, frame)
+            if palettes is not None:
+                packed_color_mask(data, frame, palettes[kind])
     return data, len(entries)
 
 
@@ -137,7 +199,8 @@ def main():
                         default=ROOT / "native/assets/projectile-sprites.rgba")
     args = parser.parse_args()
     ships, ship_count = pack(
-        SHIP_IMAGES, ROOT / "Sprites/Ships", b"BSS1", False,
+        SHIP_IMAGES, ROOT / "Sprites/Ships", b"BSS2", False,
+        source_ship_color_palettes(),
     )
     projectiles, projectile_count = pack(
         PROJECTILE_IMAGES, ROOT / "Sprites/Projectiles", b"BPS1", True,

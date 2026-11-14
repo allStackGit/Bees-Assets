@@ -233,8 +233,8 @@ python3 -m pip install Pillow
 python3 native/tools/import-ship-sprites.py
 ```
 
-The converter reads the tracked source PNGs and Unity texture metadata and
-writes `native/assets/ship-sprites.rgba` and
+The converter reads the tracked source PNGs, Unity texture metadata and
+`ConfigData.ChangeableShipColors` palettes and writes `native/assets/ship-sprites.rgba` and
 `native/assets/projectile-sprites.rgba`. These compact, per-type native
 atlases retain the source pixels-per-world-unit scale; available projectile
 animation slices advance from each projectile's first visible tick without
@@ -244,6 +244,11 @@ corresponding pixels-per-unit scaling to preserve visual world size without
 excessive memory use on older computers.
 To package a game, copy both atlases into an `assets/` directory beside
 `bees` or `bees.exe`, or point `BEES_NATIVE_ASSETS` at their directory.
+The native renderer recolors only the same source-matched ship pixels for
+squads with authored custom colors, preserving original alpha and unaffected
+details. Recolored sprites are cached per ship type/color and measured in
+`presentation_final`; no recoloring or art loading happens in headless
+training. Existing BSS1 atlases remain readable without color overrides.
 Neither Python nor Pillow is needed to run the compiled game; headless
 simulation/inference never loads art. Absent or invalid optional artwork
 falls back to the real physical hulls. The Queen animation and unsupported

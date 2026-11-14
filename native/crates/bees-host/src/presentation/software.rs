@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
@@ -92,6 +92,11 @@ pub struct NativeRenderCounts {
     pub ships: usize,
     /// Source PNG sprites rendered instead of the fallback hull outline.
     pub ship_sprite_draws: usize,
+    /// Actual rendered source-color fleet sprites, not plain faction outlines.
+    pub custom_ship_color_draws: usize,
+    /// One-time source sprite recolor variants built this frame.
+    pub ship_color_cache_misses: usize,
+    pub ship_color_cache_variants: usize,
     /// Number of visible sprite-pixel candidates inspected by the software
     /// rasterizer, including ships, shots, debris and special effects.
     pub sprite_raster_candidate_pixels: u64,
@@ -163,6 +168,9 @@ pub struct NativeSoftwareRenderer {
     /// Filled from the live command director before the existing ship
     /// render pass, avoiding any additional ship loop or copied roster.
     command_target_ship_ids: HashSet<i64>,
+    /// Cache exact source-mask recolors by (ship class, SavedSquad RGB).
+    /// Shared physical templates and PPO workers never allocate here.
+    custom_ship_art: HashMap<(u8, [u8; 3]), Arc<NativeSprite>>,
     sprite_raster_candidate_pixels: u64,
     pub selection_box: Option<Aabb>,
     /// Optional inspection only. Disabled means no range or linecast work.
@@ -320,6 +328,46 @@ const SOURCE_PROJECTILE_TYPES: usize = 16;
 struct SourceShipArt {
     pixels_per_unit: f32,
     sprite: NativeSprite,
+    /// Exact ConfigData.ChangeableShipColors selection, prepared by the
+    /// offline converter. No source-color comparisons occur per game frame.
+    recolor_mask: Option<Vec<u8>>,
+}
+
+impl SourceShipArt {
+    fn recolored(&self, color: [u8; 3]) -> NativeSprite {
+        let mut pixels = self.sprite.pixels.clone();
+        if let Some(mask) = &self.recolor_mask {
+            for (rgba, &colored) in pixels.chunks_exact_mut(4).zip(mask) {
+                if colored != 0 {
+                    rgba[..3].copy_from_slice(&color);
+                }
+            }
+        }
+        NativeSprite::new(self.sprite.width, self.sprite.height, pixels)
+    }
+}
+
+/// One byte per pixel, RLE compressed: 1 means source artwork may
+/// substitute SavedSquad.Color while preserving each pixel's alpha.
+fn source_art_color_mask(bytes: &[u8], at: &mut usize, count: usize)
+    -> io::Result<Option<Vec<u8>>>
+{
+    let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+        "invalid native source squad color mask");
+    let mut mask = Vec::with_capacity(count);
+    let mut has_color = false;
+    while mask.len() < count {
+        let end = (*at).checked_add(3).ok_or_else(invalid)?;
+        let run = bytes.get(*at..end).ok_or_else(invalid)?;
+        *at = end;
+        let length = usize::from(u16::from_le_bytes([run[0], run[1]]));
+        if length == 0 || length > count - mask.len() || run[2] > 1 {
+            return Err(invalid());
+        }
+        has_color |= run[2] != 0;
+        mask.resize(mask.len() + length, run[2]);
+    }
+    Ok(has_color.then_some(mask))
 }
 
 /// The conversion format is deliberately small and independently validated.
@@ -334,7 +382,11 @@ impl SourceShipAtlas {
     fn decode(bytes: &[u8]) -> io::Result<Self> {
         let invalid = || io::Error::new(io::ErrorKind::InvalidData,
             "invalid native ship sprite atlas");
-        if bytes.get(..4) != Some(&b"BSS1"[..]) { return Err(invalid()); }
+        let source_color_masks = match bytes.get(..4) {
+            Some(b"BSS2") => true,
+            Some(b"BSS1") => false, // existing non-recolorable atlas
+            _ => return Err(invalid()),
+        };
         let mut at = 4usize;
         let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
         if count > SOURCE_SHIP_TYPES { return Err(invalid()); }
@@ -352,8 +404,11 @@ impl SourceShipAtlas {
                 return Err(invalid());
             }
             let sprite = source_art_sprite(bytes, &mut at, width, height)?;
+            let recolor_mask = if source_color_masks {
+                source_art_color_mask(bytes, &mut at, width * height)?
+            } else { None };
             sprites[ty] = Some(SourceShipArt {
-                pixels_per_unit: ppu as f32, sprite,
+                pixels_per_unit: ppu as f32, sprite, recolor_mask,
             });
         }
         if at != bytes.len() { return Err(invalid()); }
@@ -481,6 +536,7 @@ impl NativeSoftwareRenderer {
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
             command_target_ship_ids: HashSet::new(),
+            custom_ship_art: HashMap::new(),
             sprite_raster_candidate_pixels: 0,
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, show_shooting_menu: false,
@@ -954,15 +1010,39 @@ impl NativeSoftwareRenderer {
             // Only presentation pixels change: the exact ship collider is
             // still used for collision, selection, range and fog. The
             // source PNG's own Unity PPU controls its rendered world size.
-            let drew_art = ship_art
+            let art = ship_art
                 .and_then(|atlas| atlas.sprites.get(usize::from(ship.ship_type)))
-                .and_then(Option::as_ref)
-                .is_some_and(|art| self.draw_sprite(
-                    &art.sprite, pose.position, pose.rotation_degrees.to_radians(),
-                    self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
-                ));
+                .and_then(Option::as_ref);
+            // Each live squad retains its authentic custom color through
+            // the source-owned metadata, including dynamically created
+            // Queen/Scout children. Custom colors are never inferred from
+            // the side: a faction can contain differently colored squads.
+            let custom_rgb = view.roster.owning_squad(ship.entity_id)
+                .and_then(|owner| view.player_authority.player_squad_color_rgb(owner));
+            let tinted = art.and_then(|art| art.recolor_mask.as_ref()
+                .and_then(|_| custom_rgb.map(|rgb| (art, rgb))))
+                .map(|(art, rgb)| {
+                    let key = (ship.ship_type, rgb);
+                    if !self.custom_ship_art.contains_key(&key) {
+                        // Each variant holds full RGBA. Bound memory when
+                        // a user cycles through many different colors.
+                        if self.custom_ship_art.len() >= 96 {
+                            self.custom_ship_art.clear();
+                        }
+                        self.custom_ship_art.insert(key, Arc::new(art.recolored(rgb)));
+                        counts.ship_color_cache_misses += 1;
+                    }
+                    Arc::clone(self.custom_ship_art.get(&key)
+                        .expect("just inserted source squad recolor"))
+                });
+            let drew_art = art.is_some_and(|art| {
+                let sprite = tinted.as_deref().unwrap_or(&art.sprite);
+                self.draw_sprite(sprite, pose.position, pose.rotation_degrees.to_radians(),
+                    self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
+            });
             if drew_art {
                 counts.ship_sprite_draws += 1;
+                counts.custom_ship_color_draws += usize::from(tinted.is_some());
             } else {
                 counts.ship_fallback_hulls += 1;
             }
@@ -1154,6 +1234,7 @@ impl NativeSoftwareRenderer {
         // stale animation state over time.
         self.projectile_art_ticks.retain(|_, &mut (_, seen)| seen == view.tick);
         counts.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels;
+        counts.ship_color_cache_variants = self.custom_ship_art.len();
         // Only presentation pixels are masked. Commands, physics, learning
         // and the source-owned visibility caches remain unchanged.
         self.apply_player_fog(view, &mut counts);

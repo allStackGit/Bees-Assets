@@ -108,6 +108,9 @@ pub struct NativeClient {
     pub window_update_wall_seconds: f64,
     pub culled_ship_draws: u64,
     pub ship_sprite_draws: u64,
+    pub custom_ship_color_draws: u64,
+    pub ship_color_cache_misses: u64,
+    pub ship_color_cache_variants: usize,
     pub sprite_raster_candidate_pixels: u64,
     pub ship_fallback_hulls: u64,
     pub ship_art_types_loaded: usize,
@@ -166,6 +169,8 @@ impl NativeClient {
             rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, ship_sprite_draws: 0,
+            custom_ship_color_draws: 0, ship_color_cache_misses: 0,
+            ship_color_cache_variants: 0,
             sprite_raster_candidate_pixels: 0, ship_fallback_hulls: 0, ship_art_types_loaded: 0,
             projectile_sprite_draws: 0, projectile_explosion_sprite_draws: 0,
             projectile_fallback_hulls: 0,
@@ -1140,6 +1145,11 @@ impl NativeClient {
         );
         self.culled_ship_draws = self.culled_ship_draws.saturating_add(counts.culled_ships as u64);
         self.ship_sprite_draws = self.ship_sprite_draws.saturating_add(counts.ship_sprite_draws as u64);
+        self.custom_ship_color_draws = self.custom_ship_color_draws
+            .saturating_add(counts.custom_ship_color_draws as u64);
+        self.ship_color_cache_misses = self.ship_color_cache_misses
+            .saturating_add(counts.ship_color_cache_misses as u64);
+        self.ship_color_cache_variants = counts.ship_color_cache_variants;
         self.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels
             .saturating_add(counts.sprite_raster_candidate_pixels);
         self.ship_fallback_hulls = self.ship_fallback_hulls.saturating_add(counts.ship_fallback_hulls as u64);
