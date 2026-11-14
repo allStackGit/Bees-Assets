@@ -70,6 +70,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_engine_step_seconds','rollout_learner_inference_seconds',
         'rollout_observation_encode_seconds','rollout_opponent_inference_seconds',
         'rollout_result_processing_seconds',
+        'rollout_observation_prepare_seconds','rollout_opponent_processing_seconds',
+        'rollout_learner_gpu_stream_seconds','checkpoint_seconds',
         'optimization_seconds','collector_wait_seconds',
         'collector_critical_path_seconds','collector_elapsed_spread_seconds',
         'rollout_engine_cpu_seconds_total','rollout_engine_cpu_seconds',
@@ -93,7 +95,19 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_unique_board_shapes','policy_lag','action_target',
         'automatic_collector_allocation','collector_allocation_rebalanced',
         'rollout_inference_batches','rollout_inference_boards',
-        'rollout_inference_max_batch'])
+        'rollout_inference_max_batch',
+        'ppo_gpu_batch_target','ppo_gpu_batch_next_target',
+        'ppo_gpu_batch_adjustments','ppo_gpu_batch_accepted',
+        'ppo_gpu_batch_settled','ppo_gpu_batch_restored',
+        'ppo_gpu_batch_changed_next','ppo_gpu_batch_proven_target',
+        'rollout_inference_shape_groups','rollout_inference_readbacks',
+        'rollout_inference_forward_chunks','rollout_opponent_shape_groups',
+        'rollout_opponent_readbacks','rollout_opponent_forward_chunks',
+        'simulation_active_matches','simulation_target_matches',
+        'simulation_concurrency_adjustments','simulation_tuner_accepted',
+        'simulation_tuner_settled','simulation_target_restored',
+        'simulation_proven_target','simulation_native_engines_admitted',
+        'simulation_admission_denied'])
         add(name,row[name],'count');
     // These optimizer observations can be negative; they are scalar values,
     // never performance or strength certification.
@@ -107,6 +121,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('rss_mb',row.rss_mb,'mb');
     add('rollout_engine_cpu_cores',row.rollout_engine_cpu_cores,'scalar');
     add('rollout_engine_rss_mb',row.rollout_engine_rss_mb,'mb');
+    for(const name of ['simulation_engine_memory_mb','simulation_learner_memory_mb',
+        'simulation_total_charged_memory_mb','simulation_ram_lease_headroom_mb'])
+        add(name,row[name],'mb');
+    for(const name of ['simulation_engine_roundtrip_seconds',
+        'simulation_dispatch_queue_seconds','simulation_batch_wall_seconds',
+        'simulation_last_child_gap_seconds'])add(name,row[name],'seconds');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
@@ -205,6 +225,19 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_engine_step_seconds,'seconds');
         add('collector_'+i+'_learner_inference_seconds',
             worker.rollout_learner_inference_seconds,'seconds');
+        // These are worker-local exposures. They can overlap and must not be
+        // summed across collectors as a system-wide wall-clock bottleneck.
+        for(const name of ['rollout_observation_prepare_seconds',
+            'rollout_opponent_processing_seconds','collector_service_seconds',
+            'collector_learner_ingestion_seconds','collector_client_send_seconds',
+            'collector_client_receive_seconds'])
+            add('collector_'+i+'_'+name,worker[name],'seconds');
+        add('collector_'+i+'_simulation_total_charged_memory_mb',
+            worker.simulation_total_charged_memory_mb,'mb');
+        add('collector_'+i+'_rollout_gpu_batch_used_pixels',
+            worker.rollout_gpu_batch_used_pixels,'count');
+        add('collector_'+i+'_rollout_gpu_batch_vram_capped',
+            worker.rollout_gpu_batch_vram_capped,'count');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
         for(const name of ['rollout_inference_batches','rollout_inference_boards',
@@ -277,6 +310,31 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     for(const event of ['probing','accepted','draining','retired'])
         if(row.local_engine_tune_event===event)
             add('local_engine_tune_'+event,1,'count');
+
+    // A separate producer classifies observed delay only after completing
+    // an on-policy update. Zero/one series preserve unknown/shared evidence;
+    // none of these metrics asserts actual CPU/GPU/network saturation.
+    for(const name of ['pipeline_collection_exposure_fraction',
+        'pipeline_collector_stage_fraction'])
+        add(name,row[name],'ratio');
+    add('pipeline_slowest_collector_ratio',
+        row.pipeline_slowest_collector_ratio,'scalar');
+    add('pipeline_slowest_collector_id',row.pipeline_slowest_collector_id,'count');
+    const categories={
+        pipeline_delay_candidate:['collection','optimization',
+            'overlapping_or_shared','unresolved'],
+        pipeline_collector_candidate:['shared_or_unresolved',
+            'single_collector','longest_observed'],
+        pipeline_collector_stage_candidate:['simulation','observation',
+            'inference','opponents','unattributed','overlapping_or_shared',
+            'overlapping_timers','unprofiled'],
+    };
+    for(const [field,labels] of Object.entries(categories)) {
+        if(!labels.includes(row[field]))continue;
+        const prefix=field.replace(/_candidate$/,'');
+        for(const label of labels)
+            add(prefix+'_'+label+'_candidate',Number(row[field]===label),'count');
+    }
     return metrics;
 }
 
