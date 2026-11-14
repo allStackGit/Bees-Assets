@@ -970,6 +970,7 @@ struct CampaignMission<'a> {
     mission_id: &'a str,
     player_side: i32,
     record_fleet_stats: bool,
+    lost_fleet_ids: Option<&'a HashSet<i64>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -986,6 +987,10 @@ struct CampaignFleetShipOutcome {
     fleet_ship_id: i64,
     side: i32,
     minerals_mined_this_level: i32,
+    /// None only for summaries written before native loss persistence.
+    /// A safe extraction or WarpGate return does not set this flag.
+    #[serde(default)]
+    is_dead: Option<bool>,
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
@@ -1103,10 +1108,15 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             else { break };
         let entry = &catalog.battles[index];
         let config = resolve(root, entry.config_for(&progress));
+        let lost = entry.mission.as_ref()
+            .filter(|mission| mission.persist_fleet_losses)
+            .map(|mission| progress.lost_player_fleet_ids(mission.player_side))
+            .transpose()?;
         let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
             .map(|(campaign_id, mission)| CampaignMission {
                 campaign_id, mission_id: &mission.id, player_side: mission.player_side,
                 record_fleet_stats: mission.record_fleet_stats,
+                lost_fleet_ids: lost.as_ref(),
             });
         // Reserve a parent atomically so another launcher cannot claim the
         // same output. The battle owns creation of its normal run directory.
@@ -1314,6 +1324,18 @@ fn run_battle(
                 layout, assets.box_catalog(), assets.polygon_catalog(),
             )
                 .map_err(|error| contextual("native Level layout", error))?;
+        }
+        if let Some(dead_ids) = mission.and_then(|mission| mission.lost_fleet_ids) {
+            let removed = source.omit_killed_fleet_ships(
+                mission.expect("campaign owner").player_side, dead_ids,
+            ).map_err(|error| contextual("saved campaign fleet", error))?;
+            if removed != 0 {
+                println!("{}", json!({
+                    "kind": "native_campaign_fleet_restored",
+                    "level_id": level.level_id,
+                    "permanently_lost_ships_omitted": removed,
+                }));
+            }
         }
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
@@ -2420,6 +2442,7 @@ fn run_battle(
             fleet.push(CampaignFleetShipOutcome {
                 fleet_ship_id, side: ship.side,
                 minerals_mined_this_level: value.minerals_mined_this_level,
+                is_dead: Some(state.metadata.fleet.was_killed(ship.entity_id)),
             });
         }
         fleet.sort_unstable_by_key(|ship| ship.fleet_ship_id);
@@ -2596,11 +2619,16 @@ fn run_battle(
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
             use bees_host::client::{NativeResultAction, NativeResultControls};
-            let controls = match (replay_inputs, recorded_inputs.as_ref(), output) {
-                (Some(_), _, _) => NativeResultControls::WatchAgain,
-                (None, Some(_), _) => NativeResultControls::PlayAgainOrWatch,
-                (None, None, Some(_)) => NativeResultControls::PlayAgain,
-                (None, None, None) => NativeResultControls::Close,
+            // A fresh campaign battle must reload its newly committed
+            // fleet and mission progress. Never restart a rematch using
+            // the pre-battle casualty snapshot still held by this session.
+            let controls = match (mission, replay_inputs, recorded_inputs.as_ref(), output) {
+                (Some(_), _, Some(_), _) => NativeResultControls::WatchAgain,
+                (Some(_), _, None, _) => NativeResultControls::Close,
+                (None, Some(_), _, _) => NativeResultControls::WatchAgain,
+                (None, None, Some(_), _) => NativeResultControls::PlayAgainOrWatch,
+                (None, None, None, Some(_)) => NativeResultControls::PlayAgain,
+                (None, None, None, None) => NativeResultControls::Close,
             };
             client.show_result(controls);
             loop {
