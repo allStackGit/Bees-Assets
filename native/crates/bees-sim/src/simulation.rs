@@ -228,18 +228,18 @@ pub struct ParallelSelectedStep<E> {
     pub serialized_arenas: usize,
 }
 
-/// A single world scheduler defaults to the cheapest serial path. Model-batched
-/// physics reuses a bounded CPU pool between inference rounds; independent
-/// multi-step rollout windows retain their separate scoped-worker execution.
+/// A single world scheduler defaults to the cheapest serial path. Long
+/// independent rollout windows and model-batched physics reuse one bounded,
+/// lazily initialized CPU pool across rounds; short windows stay inexpensive.
 pub struct Simulation<S, R> {
     rules: R,
     worlds: Vec<World<S>>,
     dt_seconds: f32,
     sample_every: Option<NonZeroU32>,
     measurements: Measurements,
-    // Built lazily for the configured model-step allocation, never per tick.
-    // Only worker-local physics runs here; inference stays on the caller.
-    model_physics_pool: Option<(usize, rayon::ThreadPool)>,
+    // Shared by model-batched ticks and independent long-window rollouts.
+    // Rebuilt only if the explicit worker allocation changes.
+    physics_pool: Option<(usize, rayon::ThreadPool)>,
 }
 
 impl<S, R: GameRules<S>> Simulation<S, R> {
@@ -255,8 +255,23 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             dt_seconds,
             sample_every: None,
             measurements: Measurements::default(),
-            model_physics_pool: None,
+            physics_pool: None,
         })
+    }
+
+    /// Reserve one persistent physics pool per Simulation, without leaking
+    /// workers across unrelated experiments or the headless model backend.
+    /// A new pool is fully constructed before replacing the current one.
+    fn ensure_physics_pool(&mut self, workers: usize) -> Result<(), &'static str> {
+        if self.physics_pool.as_ref().is_some_and(|(capacity, _)| *capacity == workers) {
+            return Ok(());
+        }
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .build()
+            .map_err(|_| "unable to initialize native physics worker pool")?;
+        self.physics_pool = Some((workers, pool));
+        Ok(())
     }
 
     pub fn set_timing_sample_period(&mut self, every: Option<NonZeroU32>) {
@@ -405,14 +420,8 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         // Initialize before stepping any world so failure cannot partially
         // apply a model batch.
         let pool_size = worker_count.get().min(self.worlds.len());
-        if workers > 1 && self.model_physics_pool.as_ref()
-            .is_none_or(|(count, _)| *count != pool_size)
-        {
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(pool_size)
-                .build()
-                .map_err(|_| "unable to initialize native physics worker pool")?;
-            self.model_physics_pool = Some((pool_size, pool));
+        if workers > 1 {
+            self.ensure_physics_pool(pool_size)?;
         }
         let rules = &self.rules;
         let dt = self.dt_seconds;
@@ -509,7 +518,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             }
             (measurements, arenas, failures, started.elapsed())
         };
-        let pool = &self.model_physics_pool.as_ref()
+        let pool = &self.physics_pool.as_ref()
             .expect("multi-worker physics pool initialized above").1;
         let outcomes = pool.install(|| {
             (0..workers).into_par_iter().map(|_| {
@@ -557,8 +566,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
     /// after validating every model row, never infer inside this callback.
     ///
     /// One arena or one requested worker runs inline, with no thread spawn.
-    /// Multiple arenas use scoped threads once per window, not once per
-    /// frame. This is not a promise of faster execution for small windows.
+    /// Long windows with more arenas than workers reuse the same physical
+    /// thread pool as model-batched inference. Small windows keep the
+    /// existing inline/scoped low-latency dispatch.
     pub fn run_parallel_window<F>(
         &mut self,
         steps_per_world: NonZeroU32,
@@ -579,10 +589,18 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         }
 
         let workers = worker_count.get().min(self.worlds.len());
+        let steps = steps_per_world.get();
+        let reuse_pool = workers > 1 && steps >= 64 && self.worlds.len() > workers;
+        if reuse_pool {
+            // The public independent-window API returns a report, not an
+            // initialization Result. A failed thread allocation is fatal,
+            // as it was for scoped thread spawning. Do not half-step worlds.
+            self.ensure_physics_pool(workers)
+                .expect("unable to allocate persistent native physics workers");
+        }
         let rules = &self.rules;
         let dt = self.dt_seconds;
         let sample = self.sample_every;
-        let steps = steps_per_world.get();
 
         if workers == 1 {
             let mut decisions = Vec::new();
@@ -609,7 +627,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         // This avoids one busy world holding a whole static partition while
         // other workers finish their cheap arenas and sit idle. The threshold
         // keeps queue setup off the one-/few-tick path used by clients.
-        let outcomes = if steps >= 64 && self.worlds.len() > workers {
+        let outcomes = if reuse_pool {
             let pending = Mutex::new(self.worlds.iter_mut());
             let work = || {
                 let worker_started = Instant::now();
@@ -629,18 +647,15 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 }
                 (report, assigned, worker_started.elapsed())
             };
-            std::thread::scope(|scope| {
-                let mut handles = Vec::with_capacity(workers - 1);
-                for _ in 1..workers {
-                    handles.push(scope.spawn(&work));
-                }
-                let mut outcomes = Vec::with_capacity(workers);
-                outcomes.push(std::panic::catch_unwind(
-                    std::panic::AssertUnwindSafe(&work),
-                ));
-                outcomes.extend(handles.into_iter().map(|handle| handle.join()));
-                outcomes
-            })
+            // Rayon keeps the bounded OS threads across all subsequent
+            // rollout windows and also serves model-batched physics.
+            // Every worker owns a reusable action buffer for its claimed
+            // arena sequence; only claims take the short queue mutex.
+            let pool = &self.physics_pool.as_ref()
+                .expect("long-window physics pool initialized above").1;
+            pool.install(|| (0..workers).into_par_iter().map(|_| {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(&work))
+            }).collect::<Vec<_>>())
         } else {
             // Fixed consecutive partitions avoid a queue for short windows.
             // Give the last chunk to the caller rather than spawning every
