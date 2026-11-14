@@ -171,6 +171,26 @@ struct CampaignTransfer {
     to_saved_squad_id: i64,
 }
 
+/// An original authored FleetShip is owned independently of which
+/// saved squad currently commands it. Original ownership is recorded
+/// once; subsequent transfers replay through the same durable ledger.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignAuthoredAssignment {
+    campaign_id: String,
+    player_side: i32,
+    fleet_ship_id: i64,
+    from_saved_squad_id: i64,
+    to_saved_squad_id: i64,
+}
+
+#[derive(Clone, Copy)]
+struct AuthoredRosterOwner {
+    side: i32,
+    initial_saved_squad_id: i64,
+    current_saved_squad_id: i64,
+}
+
 #[derive(Default)]
 pub struct CampaignProgress<'a> {
     missions: HashMap<&'a str, MissionProgress>,
@@ -183,6 +203,8 @@ pub struct CampaignProgress<'a> {
     spent_minerals: u64,
     purchases: Vec<(i32, NativePurchasedShip)>,
     transfer_count: u64,
+    authored_roster: HashMap<i64, AuthoredRosterOwner>,
+    authored_transfer_count: u64,
 }
 
 #[derive(Default)]
@@ -265,6 +287,34 @@ impl CampaignProgress<'_> {
     pub fn purchases_for_side(&self, side: i32) -> Vec<NativePurchasedShip> {
         self.purchases.iter().filter_map(|&(owner, ship)|
             (owner == side).then_some(ship)).collect()
+    }
+
+    fn authored_roster_for_all(&self) -> Vec<Value> {
+        let mut ids = self.authored_roster.keys().copied().collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.into_iter().map(|id| {
+            let owner = &self.authored_roster[&id];
+            json!({
+                "fleet_ship_id": id,
+                "player_side": owner.side,
+                "initial_saved_squad_id": owner.initial_saved_squad_id,
+                "saved_squad_id": owner.current_saved_squad_id,
+                "in_reserve": owner.current_saved_squad_id == 0,
+            })
+        }).collect()
+    }
+
+    pub fn authored_roster_for_side(&self, side: i32) -> Vec<(i64, i64, i64)> {
+        let mut rows = self.authored_roster.iter().filter_map(|(&fleet_id, owner)|
+            (owner.side == side).then_some((
+                fleet_id, owner.initial_saved_squad_id, owner.current_saved_squad_id,
+            ))).collect::<Vec<_>>();
+        rows.sort_unstable_by_key(|row| row.0);
+        rows
+    }
+
+    pub fn authored_current_squad(&self, fleet_id: i64) -> Option<i64> {
+        self.authored_roster.get(&fleet_id).map(|owner| owner.current_saved_squad_id)
     }
 
     pub fn saved_squad_ids_for_side(&self, side: i32) -> Vec<i64> {
@@ -650,6 +700,43 @@ impl BattleCatalog {
             progress.transfer_count = progress.transfer_count.checked_add(1)
                 .ok_or_else(|| invalid("saved squad transfer count overflow"))?;
         }
+        for assignment_dir in numbered_directories(output, "squad-edit-")? {
+            let bytes = match fs::read(assignment_dir.join("assignment.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let edit: CampaignAuthoredAssignment = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("invalid authored fleet assignment: {error}")))?;
+            if edit.campaign_id != *campaign || !matches!(edit.player_side, 1 | 2) ||
+                edit.fleet_ship_id <= 0 ||
+                edit.from_saved_squad_id < 0 || edit.to_saved_squad_id < 0 ||
+                edit.from_saved_squad_id == edit.to_saved_squad_id ||
+                progress.purchases.iter().any(|(_, ship)|
+                    ship.fleet_ship_id == edit.fleet_ship_id) ||
+                progress.fleet.get(&edit.fleet_ship_id)
+                    .is_none_or(|ship| ship.side != edit.player_side || ship.is_dead)
+            {
+                return Err(invalid("invalid original FleetShip reassignment receipt"));
+            }
+            let owner = progress.authored_roster.entry(edit.fleet_ship_id)
+                .or_insert(AuthoredRosterOwner {
+                    side: edit.player_side,
+                    initial_saved_squad_id: edit.from_saved_squad_id,
+                    current_saved_squad_id: edit.from_saved_squad_id,
+                });
+            if owner.side != edit.player_side ||
+                owner.current_saved_squad_id != edit.from_saved_squad_id ||
+                (edit.to_saved_squad_id != 0 &&
+                    progress.squads.get(&edit.to_saved_squad_id)
+                        .is_none_or(|squad| squad.side != edit.player_side))
+            {
+                return Err(invalid("stale original FleetShip squad assignment"));
+            }
+            owner.current_saved_squad_id = edit.to_saved_squad_id;
+            progress.authored_transfer_count = progress.authored_transfer_count.checked_add(1)
+                .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
+        }
         progress.unspent_minerals()?;
         Ok(progress)
     }
@@ -727,6 +814,8 @@ impl BattleCatalog {
                 "unlocked_after": shop.unlocked_after,
             })).collect::<Vec<_>>(),
             "squad_transfers": progress.transfer_count,
+            "original_fleet_transfers": progress.authored_transfer_count,
+            "original_roster_overrides": progress.authored_roster_for_all(),
             "purchased_ships": progress.purchases.iter().map(|(side, ship)| json!({
                 "player_side": side,
                 "in_reserve": ship.saved_squad_id == 0,
