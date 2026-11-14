@@ -1495,9 +1495,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const metricSelect=$('hub-compare-metric');
         const oldMetrics=metricSelect.dataset.metricProject===project
             ?selectedComparisonMetrics():[];
-        const metricOptions=hubGenericMetricCatalog(chartable.map(job=>({
-            job,points:history.get(job.id)||[],
-        }))).map(metric=>({
+        // Compare only what the selected runs actually published. Other
+        // runs' metrics, saved requests and speculative capabilities are not data.
+        const metricOptions=hubGenericMetricCatalog(runs).map(metric=>({
             key:'metric:'+metric.key,
             label:metric.key+' ('+metric.units.join('/')+')',
             units:metric.units,
@@ -1526,10 +1526,14 @@ document.addEventListener('DOMContentLoaded', () => {
             'colony_mean_population',
             'ant_decisions_per_second'].map(name=>'metric:'+name)
             .filter(key=>metricOptions.some(option=>option.key===key));
-        const metricChoices=comparisonMetricOverrides.get(project) ??
-            (keep.length?keep:preferred.length?preferred:
-                learningDefaults.length?learningDefaults.slice(0,5):
-                    [metricOptions[0]?.key]);
+        const override=comparisonMetricOverrides.get(project);
+        const matchingOverride=override?.filter(key=>
+            metricOptions.some(metric=>metric.key===key));
+        const metricChoices=override?.length===0?[]:
+            matchingOverride?.length?matchingOverride:
+                keep.length?keep:preferred.length?preferred:
+                    learningDefaults.length?learningDefaults.slice(0,5):
+                        [metricOptions[0]?.key];
         for(const option of metricSelect.options)
             option.selected=metricChoices.includes(option.value);
         metricSelect.dataset.metricProject=project;
