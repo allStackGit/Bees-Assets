@@ -984,6 +984,8 @@ impl NativeSoftwareRenderer {
                 half_extents: (zone.max - zone.min) * 0.5 },
                 Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x75dbab);
         }
+        let asteroid_art = source_asteroid_art();
+        counts.asteroid_art_types_loaded = asteroid_art.map_or(0, |art| art.loaded);
         for (obstacle, body) in view.combat.render_obstacles() {
             counts.obstacles += 1;
             if body.primary_bounds().is_some_and(|hull| !hull.overlaps(viewport)) {
@@ -997,7 +999,24 @@ impl NativeSoftwareRenderer {
             let is_fire_tank = object.is_some_and(|object| object.kind == bees_sim::map_object::MapObjectKind::FireTank);
             if let Some(tank) = object.filter(|_| is_fire_tank) {
                 self.draw_fire_tank(tank, body.pose, view.tick as f32 * view.fixed_step_seconds);
+            } else if let Some(art) = asteroid_art
+                .filter(|_| obstacle.kind == bees_sim::obstacle::ObstacleKind::CollisionAsteroid)
+                .and_then(|atlas| body.source_asteroid_prefab_number
+                    .and_then(|prefab| atlas.sprites.get(usize::from(prefab))))
+                .and_then(Option::as_ref)
+            {
+                if self.draw_sprite(&art.sprite, body.pose.position,
+                    body.pose.rotation_degrees.to_radians(),
+                    self.camera.pixels_per_unit / art.pixels_per_unit, 1.0) {
+                    counts.asteroid_sprite_draws += 1;
+                } else {
+                    counts.asteroid_fallback_hulls += 1;
+                    self.shape(body.shape(), body.pose, 0x758496);
+                }
             } else {
+                if obstacle.kind == bees_sim::obstacle::ObstacleKind::CollisionAsteroid {
+                    counts.asteroid_fallback_hulls += 1;
+                }
                 self.shape(body.shape(), body.pose, if visible { 0x9bd2ae } else { 0x758496 });
             }
             if let Some(object) = object.filter(|_| visible) {
@@ -1017,8 +1036,19 @@ impl NativeSoftwareRenderer {
                 counts.culled_pieces += 1;
                 continue;
             }
-            let c = (piece.sprite_opacity() * 160.0) as u32;
-            self.cross(position, 1.0, c * 0x010101);
+            let art = asteroid_art
+                .and_then(|atlas| atlas.sprites.get(usize::from(piece.prototype.prefab_number)))
+                .and_then(Option::as_ref);
+            if art.is_some_and(|art| self.draw_sprite(
+                &art.sprite, piece.pose.position, piece.pose.rotation_degrees.to_radians(),
+                self.camera.pixels_per_unit / art.pixels_per_unit,
+                piece.sprite_opacity(),
+            )) {
+                counts.asteroid_piece_sprite_draws += 1;
+            } else {
+                let c = (piece.sprite_opacity() * 160.0) as u32;
+                self.cross(position, 1.0, c * 0x010101);
+            }
         }
         self.render_obstacle_debris(view, &mut counts);
         let ship_art = source_ship_art();
