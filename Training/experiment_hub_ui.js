@@ -4318,7 +4318,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const distributedMachine=document.createElement('select');
     const distributedBudgets=document.createElement('textarea');
     distributedBudgets.rows=5;
-    distributedBudgets.placeholder='Worker resource budgets keyed by machine_id (any order)';
+    distributedBudgets.placeholder='Keep any 1–8 approved machine_id budgets (any order)';
     const distributedDetails=document.createElement('div');
     const distributedFeedback=document.createElement('div');
     const distributedMachineLabel=document.createElement('label');
@@ -4344,9 +4344,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const budgets=JSON.parse(distributedBudgets.value);
             const selectedMachine=state.machines.find(m=>m.id===distributedMachine.value);
-            if(!Array.isArray(budgets)||budgets.length!==
-                selectedMachine?.tinybrains_remote_rollout_endpoints?.length)
-                throw Error('Supply one resource budget for each physically approved remote collector.');
+            const approvedCount=selectedMachine?.tinybrains_remote_rollout_endpoints?.length;
+            if(!Array.isArray(budgets)||!Number.isSafeInteger(approvedCount)||
+                budgets.length<1||budgets.length>approvedCount||
+                (budgets.length<approvedCount&&budgets.some(item=>
+                    typeof item?.machine_id!=='string')))
+                throw Error('Choose 1 to '+approvedCount+' approved remote collectors; selecting a subset requires each machine_id.');
             const resources=JSON.parse($('hub-job-resources').value);
             // The distributed queue must preserve the same Train metrics as
             // ordinary queueing. Prioritize paired collector evidence for
@@ -4425,7 +4428,7 @@ document.addEventListener('DOMContentLoaded', () => {
         distributedDetails.textContent=ready
             ?'Approved collectors: '+workers.map((items,i)=>
                 endpoints[i]+' on '+items[0].id).join('; ')+
-                '. Budgets are bound to machine_id in any order. Adjust CPU/RAM, independent thread counts, or request an exclusive CUDA/ROCm GPU.'
+                '. Remove unwanted JSON entries to reserve only the chosen machines. Budgets are keyed by machine_id in any order; CPU threads follow the lease by default. CPU-only or one exclusive GPU per collector.'
             :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
     }
     $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
