@@ -83,6 +83,7 @@ def make_orders(root, round_number, seed_offset, plan, run, checkpoint, manifest
         "source_run_config": run["path"],
         "source_run_config_sha256": run["sha256"],
         "source_run_contract_sha256": native_source_contract_sha256(Path(run["path"])),
+        "source_run_contract_version": 2,
         "checkpoint": str(checkpoint),
         "input_checkpoint_sha256": identity["checkpoint_sha256"],
         "model_manifest": str(manifest),
@@ -122,10 +123,22 @@ def make_orders(root, round_number, seed_offset, plan, run, checkpoint, manifest
     if path.exists():
         previous = json.loads(path.read_text(encoding="utf-8"))
         if "source_run_contract_sha256" not in previous:
-            # An interrupted session can finish its already-issued legacy
-            # exact-byte work order; do not reinterpret its original identity.
+            # Pre-portable work orders retain exact-byte source identity.
             legacy = {k: v for k, v in orders.items()
-                      if k != "source_run_contract_sha256"}
+                      if k not in ("source_run_contract_sha256",
+                                   "source_run_contract_version")}
+            if previous != legacy:
+                raise ValueError(f"distributed round work order changed: {path}")
+            return previous, path
+        if "source_run_contract_version" not in previous:
+            # Previously issued portable v1 orders included allocation
+            # defaults in their physical digest. Retain that exact contract
+            # and accept old/new collector receipts for its original hash.
+            legacy = {k: v for k, v in orders.items()
+                      if k != "source_run_contract_version"}
+            legacy["source_run_contract_sha256"] = native_source_contract_sha256(
+                Path(run["path"]), include_allocation=True,
+            )
             if previous != legacy:
                 raise ValueError(f"distributed round work order changed: {path}")
             return previous, path
@@ -140,18 +153,24 @@ def verify_bundle(path, job, orders):
     raw = path.read_bytes()
     receipt = json.loads(raw)
     partition = receipt.get("partition")
+    if "source_run_contract_sha256" not in orders:
+        source_matches = receipt.get("run_config_sha256") == orders["source_run_config_sha256"]
+    elif orders.get("source_run_contract_version") == 2:
+        source_matches = receipt.get("source_run_contract_sha256") == orders["source_run_contract_sha256"]
+    else:
+        # v1 collectors wrote the digest in the original field; updated
+        # collectors also publish it explicitly alongside the v2 value.
+        source_matches = receipt.get(
+            "source_run_contract_sha256_v1",
+            receipt.get("source_run_contract_sha256"),
+        ) == orders["source_run_contract_sha256"]
     expected = (
         receipt.get("schema_version") == 1 and
         receipt.get("kind") == "native_rollout_bundle" and
         receipt.get("collection_id") == job["collection_id"] and
         receipt.get("input_manifest_sha256") == orders["input_manifest_sha256"] and
         receipt.get("input_checkpoint_sha256") == orders["input_checkpoint_sha256"] and
-        (
-            (receipt.get("source_run_contract_sha256") ==
-             orders["source_run_contract_sha256"])
-            if "source_run_contract_sha256" in orders else
-            receipt.get("run_config_sha256") == orders["source_run_config_sha256"]
-        ) and
+        source_matches and
         receipt.get("seed_offset") == orders["seed_offset"] and
         receipt.get("learner_slot") == orders["learner_slot"] and
         receipt.get("rollout_worlds") == job["world_count"] and
