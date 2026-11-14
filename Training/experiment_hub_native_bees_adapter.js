@@ -579,8 +579,25 @@ function createNativeBeesAdapter({
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
+                        rollout_world_steps_per_second: {
+                            value: rollout.successful_world_steps / rollout.wall_seconds, unit: 'rate',
+                        },
+                        rollout_policy_rows_per_second: {
+                            value: rollout.successful_policy_rows / rollout.wall_seconds, unit: 'rate',
+                        },
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
                         ...rolloutPhysicsMeasurements(rollout),
+                        ...(rollout.sampled_model_timing ? {
+                            rollout_sampled_model_calls: {
+                                value: rollout.sampled_model_timing.calls, unit: 'count',
+                            },
+                            rollout_sampled_model_rows: {
+                                value: rollout.sampled_model_timing.rows, unit: 'count',
+                            },
+                            rollout_sampled_model_wall_seconds: {
+                                value: rollout.sampled_model_timing.wall_seconds, unit: 'seconds',
+                            },
+                        } : {}),
                         ...(rollout.worker_execution_min_seconds !== undefined ? {
                             rollout_worker_execution_min_seconds: {
                                 value: rollout.worker_execution_min_seconds, unit: 'seconds',
