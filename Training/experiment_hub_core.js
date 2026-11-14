@@ -4786,6 +4786,201 @@ class ExperimentHub {
             note:'Courier remote CPU/RAM capacity is reserved. All services require fresh native lease acknowledgments before a coordinated Start.'};
     }
 
+    // One explicit approval launches all reserved remote services, then a
+    // fresh native running/lease barrier alone permits learner Start.
+    authorizeCourierGroup(value) {
+        if(!object(value)||value.confirm_start!==true||
+            Object.keys(value).some(k=>![
+                'confirm_start','learner_job_id','expected_worker_job_ids'].includes(k))||
+            !UUID.test(String(value.learner_job_id||''))||
+            !Array.isArray(value.expected_worker_job_ids)||
+            value.expected_worker_job_ids.length<1||
+            value.expected_worker_job_ids.length>16||
+            value.expected_worker_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_worker_job_ids).size!==value.expected_worker_job_ids.length)
+            throw Error('Confirm the exact frozen Courier learner and 1–16 remote service job IDs.');
+        const state=this.snapshot(),learner=state.jobs.find(j=>j.id===value.learner_job_id);
+        if(!learner||learner.project_id!=='courier'||
+            learner.distributed_courier_managed!==true||
+            learner.status!=='waiting_adapter'||learner.dispatch_id||
+            !Array.isArray(learner.distributed_courier_endpoints)||
+            learner.distributed_courier_endpoints.length!==
+                value.expected_worker_job_ids.length||
+            (this.state.courier_launch_plans||[]).some(p=>
+                p.learner_job_id===learner.id&&['pending','needs_review'].includes(p.status)))
+            throw Error('Courier learner has no eligible unstarted frozen remote group.');
+        const learnerReady=nativeStartReadiness(state,learner);
+        if(!learnerReady.eligible)throw Error('Courier learner: '+learnerReady.reason);
+        const host=state.machines.find(m=>m.id===learner.assigned_machine_id);
+        if(!host||host.status!=='connected'||
+            !host.installed_projects?.includes('courier')||
+            host.courier_remote_key_fingerprint===null||
+            learner.distributed_courier_endpoints.some(e=>
+                !host.courier_remote_endpoints?.includes(e)))
+            throw Error('Courier learner lost its approved endpoint/key identity.');
+        const children=state.jobs.filter(job=>job.project_id==='courier_remote'&&
+            job.frozen_parameters?.learner_job_id===learner.id&&
+            job.status!=='cancelled');
+        const expected=new Set(value.expected_worker_job_ids);
+        if(children.length!==expected.size||children.some(job=>!expected.has(job.id)))
+            throw Error('Courier remote sidecar membership changed since reservation.');
+        const ownerAgents={},seen=new Set([host.id]);
+        const ordered=learner.distributed_courier_endpoints.map((endpoint,index)=>{
+            const slot=learner.frozen_parameters.workers-children.length+index;
+            const job=children.find(j=>j.frozen_parameters.slot===slot);
+            const machine=state.machines.find(m=>m.id===job?.assigned_machine_id);
+            if(!job||job.status!=='waiting_adapter'||job.dispatch_id||
+                !machine||machine.status!=='connected'||seen.has(machine.id)||
+                machine.courier_remote_endpoint!==endpoint||
+                machine.courier_remote_service_key_fingerprint!==
+                    host.courier_remote_key_fingerprint||
+                !machine.installed_projects?.includes('courier_remote'))
+                throw Error('Courier remote service identity or frozen PPO lineage slot changed.');
+            seen.add(machine.id);
+            const readiness=nativeStartReadiness(state,job);
+            if(!readiness.eligible)
+                throw Error('Courier remote service '+job.id+': '+readiness.reason);
+            const report=this.agentReports.get(machine.id);
+            if(!UUID.test(String(report?.instance_id||'')))
+                throw Error('Courier remote service has no live identified native agent.');
+            ownerAgents[machine.id]=report.instance_id;
+            return {job,endpoint,machine_id:machine.id,
+                lease_id:job.lease_id,agent_instance:report.instance_id};
+        });
+        const learnerAgent=this.agentReports.get(host.id);
+        if(!UUID.test(String(learnerAgent?.instance_id||'')))
+            throw Error('Courier learner has no active identified native agent.');
+        ownerAgents[host.id]=learnerAgent.instance_id;
+        const next=copy(this.state),at=now(),ids={};
+        for(const member of ordered) {
+            const job=next.jobs.find(j=>j.id===member.job.id);
+            job.status='start_requested';
+            job.dispatch_id=crypto.randomUUID();
+            job.start_requested_at=at;
+            job.start_first_offered_at=null;
+            job.status_reason='Courier remote PPO service Start authorized by frozen group.';
+            ids[job.id]=job.dispatch_id;
+        }
+        next.courier_launch_plans??=[];
+        if(next.courier_launch_plans.length>=64)
+            next.courier_launch_plans.shift();
+        next.courier_launch_plans.push({
+            id:crypto.randomUUID(),learner_job_id:learner.id,
+            learner_machine_id:host.id,learner_lease_id:learner.lease_id,
+            endpoints:learner.distributed_courier_endpoints.slice(),
+            key_fingerprint:host.courier_remote_key_fingerprint,
+            members:ordered.map(m=>({
+                job_id:m.job.id,dispatch_id:ids[m.job.id],
+                machine_id:m.machine_id,lease_id:m.lease_id,
+                endpoint:m.endpoint,agent_instance:m.agent_instance,
+            })),
+            learner_agent_instance:learnerAgent.instance_id,
+            status:'pending',approved_at:at,
+            expires_at:new Date(Date.now()+DISTRIBUTED_LAUNCH_TTL_MS).toISOString(),
+            reason:'Awaiting matching native running service receipts.',
+        });
+        this.commit(next);
+        return {learner_job_id:learner.id,
+            worker_job_ids:ordered.map(x=>x.job.id),
+            starts_authorized:ordered.length,learner_start_pending:true};
+    }
+    advanceCourierLaunches() {
+        const plans=(this.state.courier_launch_plans||[])
+            .filter(plan=>plan.status==='pending');
+        for(const plan of plans) {
+            const state=this.snapshot();
+            const learner=state.jobs.find(job=>job.id===plan.learner_job_id);
+            const host=state.machines.find(m=>m.id===plan.learner_machine_id);
+            const failing=plan.members.some(member=>{
+                const job=state.jobs.find(item=>item.id===member.job_id);
+                return !job||['failed','stopped','finished','cancelled'].includes(job.status);
+            });
+            const expired=Date.now()>Date.parse(plan.expires_at);
+            const drift=(!learner||learner.status!=='waiting_adapter'||learner.dispatch_id||
+                !host||host.status!=='connected'||
+                host.courier_remote_key_fingerprint!==plan.key_fingerprint||
+                JSON.stringify(learner.distributed_courier_endpoints)!==
+                    JSON.stringify(plan.endpoints));
+            if(failing||expired||drift) {
+                const next=copy(this.state),selected=next.courier_launch_plans
+                    .find(item=>item.id===plan.id);
+                if(!selected||selected.status!=='pending')continue;
+                selected.status='needs_review';
+                selected.reason=failing?'One Courier service ended before learner Start.':
+                    expired?'Remote Courier service readiness expired.':
+                        'Courier learner machine/endpoint ownership changed.';
+                selected.resolved_at=now();
+                // A service may already own its native process. Stop through
+                // its original machine/lease instead of freeing capacity.
+                for(const member of plan.members) {
+                    const child=next.jobs.find(job=>job.id===member.job_id);
+                    if(child&&['start_requested','launch_requested','running','unverified']
+                        .includes(child.status)&&child.dispatch_id&&
+                        child.start_first_offered_at!==null) {
+                        child.status='stop_requested';
+                        child.stop_requested_at=now();
+                        child.status_reason='Courier learner Start aborted; native remote service Stop required.';
+                    }
+                }
+                this.commit(next);
+                continue;
+            }
+            const ready=plan.members.every(member=>{
+                const job=state.jobs.find(item=>item.id===member.job_id);
+                const machine=state.machines.find(item=>item.id===member.machine_id);
+                const lease=state.reservations.find(item=>item.id===member.lease_id);
+                const report=this.agentReports.get(member.machine_id);
+                return job?.status==='running'&&
+                    job.dispatch_id===member.dispatch_id&&
+                    job.assigned_machine_id===member.machine_id&&
+                    job.lease_id===member.lease_id&&
+                    job.execution_updated_at&&
+                    Date.now()-Date.parse(job.execution_updated_at)<AGENT_HEARTBEAT_TTL_MS&&
+                    machine?.status==='connected'&&
+                    machine.courier_remote_endpoint===member.endpoint&&
+                    machine.courier_remote_service_key_fingerprint===
+                        plan.key_fingerprint&&
+                    report?.instance_id===member.agent_instance&&
+                    lease?.status==='acknowledged'&&lease.receipt_fresh===true;
+            });
+            if(!ready)continue;
+            if(this.agentReports.get(host.id)?.instance_id!==
+                plan.learner_agent_instance)continue;
+            try{
+                this.authorizeStart({job_id:learner.id,confirm_start:true},'courier');
+            }catch(error) {
+                const next=copy(this.state),selected=next.courier_launch_plans
+                    .find(item=>item.id===plan.id);
+                if(selected?.status==='pending') {
+                    selected.status='needs_review';
+                    selected.resolved_at=now();
+                    selected.reason='Courier learner Start failed: '+
+                        String(error.message||error).slice(0,150);
+                    this.commit(next);
+                }
+            }
+        }
+    }
+    // The learner is the only policy/checkpoint owner. Once a native
+    // terminal report exists, request sidecar Stop, retaining their leases
+    // until their own verified terminal receipts release capacity.
+    reconcileCourierSidecars(next) {
+        for(const learner of next.jobs.filter(job=>job.project_id==='courier'&&
+            job.distributed_courier_managed===true&&
+            ['finished','stopped','failed'].includes(job.status))) {
+            for(const child of next.jobs.filter(job=>
+                job.project_id==='courier_remote'&&
+                job.frozen_parameters?.learner_job_id===learner.id)) {
+                if(['start_requested','launch_requested','running','unverified']
+                    .includes(child.status)&&child.dispatch_id) {
+                    child.status='stop_requested';
+                    child.stop_requested_at=now();
+                    child.status_reason='Courier learner terminal; requesting remote native service shutdown.';
+                }
+            }
+        }
+    }
+
     // Queue and reserve an entire TinyBrains rollout group as one durable
     // transaction. The operator supplies resource budgets; physical worker
     // endpoints and identities come only from authenticated machine agents.
