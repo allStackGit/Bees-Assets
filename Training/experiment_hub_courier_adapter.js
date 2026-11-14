@@ -272,7 +272,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
     let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false,gpuMulti=false;
-    let parallelWorlds=false;
+    let parallelWorlds=false,maximumMapShards=8;
     if(fs.existsSync(capabilitiesFile)) {
         if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
             !fs.statSync(capabilitiesFile).isFile()||
@@ -292,6 +292,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
              typeof capabilities.courier_gpu_multi_optimizer!=='boolean')||
             (capabilities.courier_parallel_worlds!==undefined&&
              typeof capabilities.courier_parallel_worlds!=='boolean')||
+            (capabilities.courier_max_simulation_shards!==undefined&&
+             (!Number.isSafeInteger(capabilities.courier_max_simulation_shards)||
+              capabilities.courier_max_simulation_shards<2||
+              capabilities.courier_max_simulation_shards>64||
+              capabilities.courier_parallel_worlds!==true))||
             (capabilities.courier_gpu_pci_pin===true&&
              capabilities.courier_gpu_optimizer!==true)||
             (capabilities.courier_gpu_multi_optimizer===true&&
@@ -305,6 +310,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         gpuMulti=gpuPciPin&&capabilities.courier_gpu_multi_optimizer===true;
         parallelWorlds=boundedLearners&&autoLearners&&
             capabilities.courier_parallel_worlds===true;
+        if(parallelWorlds)
+            maximumMapShards=capabilities.courier_max_simulation_shards??8;
     }
     if(enableGpu) {
         if(!optimizerGpu)
@@ -493,7 +500,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // already vectorize tiny steps; avoid unnecessary process IPC.
             const simulationShards=auto&&parallelWorlds&&
                     (parsed.colony||parsed.competitive)
-                ?Math.min(mapCount,Math.max(1,
+                ?Math.min(mapCount,maximumMapShards,Math.max(1,
                     Math.floor((ramPerLearner-768)/768)))
                 :1;
             if(auto&&(!within(context.ram_quota_mb,128,1000000)))
