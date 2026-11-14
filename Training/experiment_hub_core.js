@@ -312,6 +312,16 @@ function object(value) {
     return value && typeof value === 'object' && !Array.isArray(value);
 }
 function copy(value) { return JSON.parse(JSON.stringify(value)); }
+// Preferred metrics are a bounded display-priority list, never extra trainer
+// measurements or a modification of the frozen optimizer configuration.
+function metricSelection(value) {
+    if(!Array.isArray(value)||value.length>96||
+        value.some(key=>typeof key!=='string'||
+            !/^[a-z][a-z0-9_]{0,63}$/.test(key))||
+        new Set(value).size!==value.length)
+        throw Error('Select up to 96 distinct project metric names.');
+    return value.slice();
+}
 function name(value, label) {
     if (typeof value !== 'string' || !value.trim() || value.length > 100)
         throw Error(label + ' must contain 1–100 characters.');
@@ -4150,6 +4160,31 @@ class ExperimentHub {
         this.commit(next);
         return copy(project);
     }
+    // The default is shared by the project, not by one revision, browser or
+    // worker. A null selection removes the custom default; [] explicitly
+    // requests no preferred chart fields. Neither changes queued jobs.
+    setProjectMetricDefaults(value) {
+        if(!object(value)||typeof value.project_id!=='string'||
+            !Number.isSafeInteger(value.expected_revision)||
+            value.expected_revision<0||
+            !Object.hasOwn(value,'metric_selection'))
+            throw Error('Select a project and its current metric-default revision.');
+        const project=this.project(value.project_id);
+        if(project.adapter!=='unconfigured'||project.id==='ants')
+            throw Error('Only native Hub projects have configurable metric defaults.');
+        if((project.metric_defaults_revision||0)!==value.expected_revision)
+            throw Error('Project metric defaults changed; reload before saving.');
+        const selection=value.metric_selection===null
+            ?null:metricSelection(value.metric_selection);
+        const next=copy(this.state);
+        const updated=next.projects.find(p=>p.id===project.id);
+        if(selection===null)delete updated.default_metric_selection;
+        else updated.default_metric_selection=selection;
+        updated.metric_defaults_revision=(project.metric_defaults_revision||0)+1;
+        updated.metric_defaults_updated_at=now();
+        this.commit(next);
+        return copy(updated);
+    }
     saveConfiguration(value) {
         if (!object(value)) throw Error('Missing configuration.');
         const project = this.project(value.project_id);
@@ -4942,13 +4977,9 @@ class ExperimentHub {
             ?null:name(value.run_name,'Run name');
         // Telemetry selection is independent from optimizer configuration
         // fingerprints. It never influences a model or continuation lineage.
-        const selectedMetrics=value.metric_selection??null;
-        if(selectedMetrics!==null&&(!Array.isArray(selectedMetrics)||
-            selectedMetrics.length>96||
-            selectedMetrics.some(k=>typeof k!=='string'||
-                !/^[a-z][a-z0-9_]{0,63}$/.test(k))||
-            new Set(selectedMetrics).size!==selectedMetrics.length))
-            throw Error('Select up to 96 distinct project metric names.');
+        const preferred=value.metric_selection??
+            project.default_metric_selection??null;
+        const selectedMetrics=preferred===null?null:metricSelection(preferred);
 
         const ancestorId=value.continuation_of_job_id==null
             ?null:value.continuation_of_job_id;
