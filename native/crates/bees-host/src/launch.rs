@@ -1190,6 +1190,122 @@ fn launch_catalog_battle(
     Ok(output)
 }
 
+/// Verify that every authored route for the player's campaign can
+/// actually instantiate the purchased class and SavedSquad. The ship's
+/// source MaxTSV is its authoritative Unity purchase price. No invented
+/// cost table, type collider or silent missing-route purchase is allowed.
+fn preflight_native_ship_purchase(
+    catalog: &battle_catalog::BattleCatalog, root: &Path,
+    side: i32, ship_type: u8, saved_squad_id: i64, price_tsv: u64,
+) -> Result<i64, Box<dyn Error>> {
+    let mut highest_fleet_id = 0_i64;
+    let mut checked = HashSet::new();
+    for entry in &catalog.battles {
+        if !entry.mission.as_ref().is_some_and(|mission| mission.player_side == side) {
+            continue;
+        }
+        for config in entry.configurations() {
+            let run_path = resolve(root, config).canonicalize()?;
+            let run: Value = serde_json::from_slice(&fs::read(&run_path)?)?;
+            let levels = run.get("levels").and_then(Value::as_array)
+                .ok_or_else(|| invalid("shop requires a physical native campaign Level"))?;
+            if levels.len() != 1 {
+                return Err(invalid("purchases require one real Level per campaign mission").into());
+            }
+            let scene_relative = levels[0].get("scene").and_then(Value::as_str)
+                .ok_or_else(|| invalid("purchased campaign Level lacks an authored scene"))?;
+            let scene_path = resolve(run_path.parent().ok_or_else(||
+                invalid("missing purchase run parent"))?, Path::new(scene_relative))
+                .canonicalize()?;
+            if !checked.insert(scene_path.clone()) { continue; }
+            let scene: Value = serde_json::from_slice(&fs::read(scene_path)?)?;
+            if scene.get("native_game_schema").and_then(Value::as_u64) != Some(1) {
+                return Err(invalid("ship purchase needs native-authored non-policy gameplay scenes").into());
+            }
+            let squads = scene.get("squads").and_then(Value::as_array)
+                .ok_or_else(|| invalid("shop needs authored saved squads"))?;
+            if !squads.iter().any(|squad|
+                squad.get("saved_squad_id").and_then(Value::as_i64) == Some(saved_squad_id) &&
+                squad.get("side").and_then(Value::as_i64) == Some(i64::from(side)) &&
+                squad.get("user_controlled").and_then(Value::as_bool) == Some(true))
+            {
+                return Err(invalid("the purchased ship's saved player squad is absent from a campaign route").into());
+            }
+            let ships = scene.get("ships").and_then(Value::as_array)
+                .ok_or_else(|| invalid("shop needs authored source ships"))?;
+            for ship in ships {
+                if let Some(id) = ship.get("fleet_ship_id").and_then(Value::as_i64) {
+                    highest_fleet_id = highest_fleet_id.max(id);
+                }
+            }
+            if !ships.iter().any(|ship| {
+                ship.get("ship_type").and_then(Value::as_u64) ==
+                    Some(u64::from(ship_type)) &&
+                ship.get("side").and_then(Value::as_i64) == Some(i64::from(side)) &&
+                ship.get("persistent_fleet").and_then(Value::as_bool) == Some(true) &&
+                ship.get("max_tsv").and_then(Value::as_u64) == Some(price_tsv) &&
+                ship.get("health").and_then(Value::as_i64).is_some_and(|hp|
+                    ship.get("max_health").and_then(Value::as_i64) == Some(hp) && hp > 0) &&
+                ship.get("mined_cargo").and_then(Value::as_i64).unwrap_or(0) == 0 &&
+                ["policy", "special", "special_weapon", "drone_carrier_id"]
+                    .iter().all(|field| ship.get(*field).is_none_or(Value::is_null))
+            }) {
+                return Err(invalid(
+                    "the purchased class has no ordinary full-health prefab at the source TSV price on every campaign route",
+                ).into());
+            }
+        }
+    }
+    if checked.is_empty() {
+        return Err(invalid("no native campaign Levels can receive the purchased hull").into());
+    }
+    Ok(highest_fleet_id)
+}
+
+fn run_build_ship(
+    catalog_path: &Path, output_root: &Path, player_side: i32,
+    ship_type: u8, saved_squad_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let progress = catalog.load_progress(output_root)?;
+    let shop = catalog.buildable_ships.iter().find(|shop|
+        shop.player_side == player_side && shop.ship_type == ship_type
+    ).ok_or_else(|| invalid("requested ship type is not in the player's authored shop"))?;
+    if !progress.bank_history_complete() {
+        return Err(invalid("cannot buy ships with incomplete historical campaign income").into());
+    }
+    if progress.unspent_minerals()? < shop.price_tsv {
+        return Err(invalid(format!(
+            "insufficient mined TSV: available {}, ship costs {}",
+            progress.unspent_minerals()?, shop.price_tsv,
+        )).into());
+    }
+    let root = catalog_path.parent().ok_or_else(||
+        invalid("missing shop catalog parent"))?;
+    let highest_authored = preflight_native_ship_purchase(
+        &catalog, root, player_side, ship_type, saved_squad_id, shop.price_tsv,
+    )?;
+    let new_fleet_id = highest_authored.max(progress.highest_fleet_id())
+        .checked_add(1).ok_or_else(|| invalid("native purchase FleetShip IDs exhausted"))?;
+    let purchased = catalog.buy_ship(
+        &progress, output_root, player_side, ship_type, saved_squad_id, new_fleet_id,
+    )?;
+    println!("{}", json!({
+        "kind": "native_campaign_ship_purchased",
+        "campaign_id": catalog.campaign_id,
+        "player_side": player_side,
+        "fleet_ship_id": purchased.fleet_ship_id,
+        "saved_squad_id": purchased.saved_squad_id,
+        "ship_type": purchased.ship_type,
+        "cost_tsv": purchased.price_tsv,
+        "remaining_mined_tsv": progress.unspent_minerals()? - purchased.price_tsv,
+    }));
+    Ok(())
+}
+
 fn run_all_campaign_missions(
     catalog_path: &Path, output_root: &Path,
 ) -> Result<(), Box<dyn Error>> {
