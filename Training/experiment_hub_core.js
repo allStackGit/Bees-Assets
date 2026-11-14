@@ -4610,6 +4610,13 @@ class ExperimentHub {
         const learnerMachine=snapshot.machines.find(m=>m.id===value.learner.machine_id);
         const config=snapshot.configurations.find(c=>c.id===value.learner.configuration_id&&
             c.revision===value.learner.expected_revision&&c.project_id==='tinybrains');
+        const learnerBudget=resourceRequest(value.learner.resources);
+        // queueIn freezes this same CPU fallback when a configuration
+        // leaves the device automatic. Validate the eventual frozen device,
+        // not the pre-queue draft, before any collector resource is claimed.
+        const learnerParameters=config?.parameters&&
+            learnerBudget.gpu_count===0&&config.parameters.device===undefined
+            ?{...config.parameters,device:'cpu'}:config?.parameters;
         const endpoints=learnerMachine?.tinybrains_remote_rollout_endpoints;
         const ancestorId=value.learner.continuation_of_job_id??null;
         const ancestor=ancestorId===null?null:snapshot.jobs.find(j=>j.id===ancestorId);
@@ -4620,16 +4627,16 @@ class ExperimentHub {
             ancestor.assigned_machine_id!==value.learner.machine_id))
             throw Error('Distributed continuation requires a verified resumable learner checkpoint, released capacity and the same learner machine.');
         if(!config||config.parameters?.remote_rollouts!==true||
-            config.parameters?.device==='cpu'||
             !learnerMachine||learnerMachine.status!=='connected'||
             learnerMachine.agent_platform!=='linux'||
             learnerMachine.local_executor_enabled!==true||
             learnerMachine.native_preflight_passed!==true||
             !learnerMachine.installed_projects?.includes('tinybrains')||
-            !learnerMachine.gpu_projects?.includes('tinybrains')||
+            (learnerBudget.gpu_count>0&&
+                !learnerMachine.gpu_projects?.includes('tinybrains'))||
             !supportsTinyBrainsProfile(learnerMachine,{
-                project_id:'tinybrains',frozen_parameters:config.parameters,
-                resources:resourceRequest(value.learner.resources),
+                project_id:'tinybrains',frozen_parameters:learnerParameters,
+                resources:learnerBudget,
                 continuation_of_job_id:ancestorId,
             })||
             !Array.isArray(endpoints)||!endpoints.length||endpoints.length>8||
