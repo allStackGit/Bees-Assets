@@ -775,6 +775,10 @@ label.hub-toggle-row > input[type="checkbox"] {
     margin: 0;
 }
 .hub-tinybrains-picker > .hub-controls { margin: 16px 0 0; }
+/* Project default actions are separate from the crowded search toolbar. */
+.hub-metric-default-actions { margin: 12px 0 8px; gap: 10px; }
+.hub-metric-default-actions button { min-height: var(--control-height); height: auto; }
+#hub-job-metric-default-status { margin: 6px 0 10px; }
 </style>
 </head>
 <body>
@@ -956,7 +960,12 @@ label.hub-toggle-row > input[type="checkbox"] {
         <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
         <select id="hub-job-metrics" class="hub-metric-source" multiple size="12" aria-label="Metrics to retain in Hub comparison history"></select>
         <div id="hub-job-metric-picker" class="hub-metric-picker" aria-label="Search and select job metrics"></div>
-        <small>Only metrics supported by the selected saved configuration and connected trainer, or previously recorded for that same revision, are listed. Simulation-mode and GPU-only metrics appear only when applicable. Supported metrics may still be absent from an individual run. Use <strong>Use project defaults</strong> to restore the preset, or leave all unchecked to prioritize recorded host resources and project measurements within the 96-field chart limit. The underlying project history is unaffected.</small>
+        <div class="hub-controls hub-metric-default-actions">
+          <button type="button" id="hub-job-save-metric-defaults">Save selection as project defaults</button>
+          <button type="button" id="hub-job-reset-metric-defaults">Restore built-in defaults</button>
+        </div>
+        <p id="hub-job-metric-default-status" class="muted" role="status">New jobs use this project's metric defaults.</p>
+        <small>Only metrics supported by the selected configuration and connected trainer, or previously recorded for that revision, are listed. Saving applies to future jobs across the project; unavailable defaults remain saved but are not selectable for this configuration. Use <strong>Use project defaults</strong> to discard one-job changes. An empty selection lets the Hub prioritize available host and trainer measurements. Existing jobs and full project history are unchanged.</small>
       </div>
     </div>
     <div class="hub-controls" id="hub-job-queue-actions">
