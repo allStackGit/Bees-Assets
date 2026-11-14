@@ -1551,7 +1551,8 @@ fn run_campaign_mission(
 #[cfg(feature = "client")]
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
     use bees_host::presentation::{
-        BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow, select_battle,
+        BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
+        NativeTransferMenuRow, select_battle,
     };
 
     let catalog_path = catalog_path.canonicalize()?;
@@ -1596,8 +1597,32 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 });
             }
         }
+        let mut transfer_rows = Vec::new();
+        for ship_type in &catalog.buildable_ships {
+            let side = ship_type.player_side;
+            let squads = progress.saved_squad_ids_for_side(side);
+            // A legacy receipt with unknown loss evidence does not qualify
+            // for reassignment. The existing career screens remain readable.
+            let Ok(lost) = progress.lost_player_fleet_ids(side) else { continue };
+            for purchased in progress.purchases_for_side(side) {
+                if lost.contains(&purchased.fleet_ship_id) { continue; }
+                for &destination in &squads {
+                    if purchased.saved_squad_id == destination { continue; }
+                    transfer_rows.push(NativeTransferMenuRow {
+                        title: format!(
+                            "Fleet #{} (Type {})  Squad #{} -> #{}",
+                            purchased.fleet_ship_id, purchased.ship_type,
+                            purchased.saved_squad_id, destination,
+                        ),
+                        fleet_ship_id: purchased.fleet_ship_id,
+                        to_saved_squad_id: destination,
+                    });
+                }
+            }
+            break;
+        }
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
-            &fleet_rows, &squad_rows, &shop_rows, available)?
+            &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows)?
             else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
@@ -1609,6 +1634,19 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 launch_failed = result.is_err();
                 if let Err(error) = result {
                     eprintln!("Could not build ship type {ship_type}: {error}");
+                }
+                continue;
+            }
+            NativeBattleMenuAction::Transfer {
+                fleet_ship_id, to_saved_squad_id,
+            } => {
+                let result = run_transfer_ship(
+                    &catalog_path, output_root, fleet_ship_id, to_saved_squad_id,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                if let Err(error) = result {
+                    eprintln!("Could not transfer FleetShip #{fleet_ship_id}: {error}");
                 }
                 continue;
             }
