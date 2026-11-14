@@ -2883,6 +2883,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         for(const input of runControls) {
             const key=input.dataset.designRun;
+            if(input.type==='checkbox') {
+                if(input.checked)parameters[key]=true;
+                else delete parameters[key];
+                continue;
+            }
             if(!input.value.trim()) {
                 if(key==='workers')delete parameters.workers;
                 else throw Error(key.replace(/_/g,' ')+' requires a whole number.');
@@ -2966,6 +2971,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 $('hub-design-run').append(wrapper);
             }
+            const benchmarkLabel=document.createElement('label');
+            const benchmark=document.createElement('input');
+            benchmark.type='checkbox';
+            benchmark.dataset.designRun='reporting_benchmarks';
+            benchmark.checked=parameters.reporting_benchmarks===true;
+            benchmarkLabel.append(benchmark,document.createTextNode(
+                ' Enable independent fixed and extended reporting benchmarks after champion promotions'));
+            const benchmarkHint=document.createElement('small');
+            benchmarkHint.textContent='Off by default. Adds fresh reporting evaluations after champion promotion; costs training time and does not change the survival reward.';
+            benchmarkLabel.append(benchmarkHint);
+            benchmark.addEventListener('change',()=>{
+                try{readDesignControls();feedback('hub-config-message','');}
+                catch(error){feedback('hub-config-message',error.message);}
+            });
+            $('hub-design-run').append(benchmarkLabel);
         }
         $('hub-design-source').textContent='Defaults from '+machine.id+
             ' · approved '+(project==='courier'?'environment':'profile')+
@@ -3043,6 +3063,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 delete parameters.workers;
                 parameters.max_rounds=1000;
                 parameters.checkpoint_rounds=250;
+                delete parameters.reporting_benchmarks;
             }
             $('hub-config-json').value=JSON.stringify(parameters,null,2);
             renderDesignEditor(true);
