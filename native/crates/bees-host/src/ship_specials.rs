@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use bees_sim::combat_world::{CombatWorld, CombatWorldError, GameStrikerCarrier, ScoutBeaconSpec, QueenSpawnSpec};
 use bees_sim::combat_perception_bridge::AuthoredShipPerception;
+use bees_sim::perception_weapons::SelfWeapon;
 use crate::policy_only_metadata::NativeSourceVision;
 
 #[derive(Clone, Debug)]
@@ -17,6 +18,9 @@ pub struct NativeQueenTemplate {
     pub physical: QueenSpawnSpec,
     pub perception: AuthoredShipPerception,
     pub vision: NativeSourceVision,
+    /// Exact source Bomb observation supplied only by a policy-enabled
+    /// native scene. Gameplay uses the physical Bomb contacts directly.
+    pub policy_weapon: Option<SelfWeapon>,
 }
 
 #[derive(Clone, Debug)]
