@@ -28,9 +28,16 @@ pub struct NativeShopMenuRow {
     pub saved_squad_id: i64,
 }
 
+pub struct NativeTransferMenuRow {
+    pub title: String,
+    pub fleet_ship_id: i64,
+    pub to_saved_squad_id: i64,
+}
+
 pub enum NativeBattleMenuAction {
     Play(usize),
     Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
+    Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
 }
 
 /// Returns a playable battle or purchase request, never applies
@@ -39,6 +46,7 @@ pub fn select_battle(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
     fleet_rows: &[String], squad_rows: &[String],
     shop_rows: &[NativeShopMenuRow], banked_tsv: u64,
+    transfer_rows: &[NativeTransferMenuRow],
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
     *selected = (*selected).min(rows.len() - 1);
@@ -55,49 +63,70 @@ pub fn select_battle(
     // saved-squad careers. Neither screen owns or mutates game data.
     let mut career_view: Option<bool> = None;
     let mut show_shop = false;
+    let mut show_transfer = false;
     let mut shop_selected = 0_usize;
     let mut shop_first = 0_usize;
     let mut fleet_selected = 0_usize;
     let mut fleet_first = 0_usize;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if window.is_key_pressed(Key::F, KeyRepeat::No) {
-            career_view = if career_view == Some(false) && !show_shop {
+            career_view = if career_view == Some(false) && !show_shop && !show_transfer {
                 None
             } else { Some(false) };
             show_shop = false;
+            show_transfer = false;
         }
         if window.is_key_pressed(Key::S, KeyRepeat::No) {
-            career_view = if career_view == Some(true) && !show_shop {
+            career_view = if career_view == Some(true) && !show_shop && !show_transfer {
                 None
             } else { Some(true) };
             show_shop = false;
+            show_transfer = false;
         }
         if window.is_key_pressed(Key::B, KeyRepeat::No) {
             show_shop = !show_shop;
+            show_transfer = false;
             career_view = None;
         }
-        if show_shop {
-            shop_selected = shop_selected.min(shop_rows.len().saturating_sub(1));
+        if window.is_key_pressed(Key::T, KeyRepeat::No) {
+            show_transfer = !show_transfer;
+            show_shop = false;
+            career_view = None;
+        }
+        if show_shop || show_transfer {
+            let count = if show_transfer { transfer_rows.len() } else { shop_rows.len() };
+            let choose = |index: usize| {
+                if show_transfer {
+                    transfer_rows.get(index).map(|row| NativeBattleMenuAction::Transfer {
+                        fleet_ship_id: row.fleet_ship_id,
+                        to_saved_squad_id: row.to_saved_squad_id,
+                    })
+                } else {
+                    shop_rows.get(index).filter(|row| row.unlocked)
+                        .map(|row| NativeBattleMenuAction::Buy {
+                            side: row.side,
+                            ship_type: row.ship_type,
+                            saved_squad_id: row.saved_squad_id,
+                        })
+                }
+            };
+            shop_selected = shop_selected.min(count.saturating_sub(1));
             shop_first = shop_first.min(shop_selected);
             if window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
                 shop_selected = shop_selected.saturating_sub(1);
             }
             if window.is_key_pressed(Key::Down, KeyRepeat::Yes) {
                 shop_selected = (shop_selected + 1)
-                    .min(shop_rows.len().saturating_sub(1));
+                    .min(count.saturating_sub(1));
             }
             if shop_selected < shop_first { shop_first = shop_selected; }
             if shop_selected >= shop_first + PAGE_SIZE {
                 shop_first = shop_selected + 1 - PAGE_SIZE;
             }
-            if window.is_key_pressed(Key::Enter, KeyRepeat::No) &&
-                shop_rows.get(shop_selected).is_some_and(|row| row.unlocked)
-            {
-                let row = &shop_rows[shop_selected];
-                return Ok(Some(NativeBattleMenuAction::Buy {
-                    side: row.side, ship_type: row.ship_type,
-                    saved_squad_id: row.saved_squad_id,
-                }));
+            if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
+                if let Some(action) = choose(shop_selected) {
+                    return Ok(Some(action));
+                }
             }
             let pressed = window.get_mouse_down(MouseButton::Left);
             if pressed && !mouse_down {
@@ -107,13 +136,12 @@ pub fn select_battle(
                         (LIST_TOP..LIST_TOP + PAGE_SIZE * ROW_HEIGHT).contains(&y)
                     {
                         let index = shop_first + (y - LIST_TOP) / ROW_HEIGHT;
-                        if let Some(row) = shop_rows.get(index) {
+                        if index < count {
                             shop_selected = index;
-                            if row.unlocked && (y - LIST_TOP) % ROW_HEIGHT < ROW_HEIGHT - 4 {
-                                return Ok(Some(NativeBattleMenuAction::Buy {
-                                    side: row.side, ship_type: row.ship_type,
-                                    saved_squad_id: row.saved_squad_id,
-                                }));
+                            if (y - LIST_TOP) % ROW_HEIGHT < ROW_HEIGHT - 4 {
+                                if let Some(action) = choose(index) {
+                                    return Ok(Some(action));
+                                }
                             }
                         }
                     }
@@ -121,32 +149,41 @@ pub fn select_battle(
             }
             mouse_down = pressed;
             pixels.fill(0x080e19);
-            text::draw_centered(&mut pixels, WIDTH, 24, "Build fleet", 2, TEXT);
+            text::draw_centered(&mut pixels, WIDTH, 24,
+                if show_transfer { "Assign fleet" } else { "Build fleet" }, 2, TEXT);
             text::draw_centered(&mut pixels, WIDTH, 78,
-                &format!("Available mined TSV: {banked_tsv}"), 1, MUTED);
-            if shop_rows.is_empty() {
-                text::draw_centered(&mut pixels, WIDTH, 218,
-                    "Finish a campaign battle to register saved squads", 1, MUTED);
+                if show_transfer { "Move a purchased hull between saved squads (no TSV cost)" }
+                else { "Buy a source-authored ship" }, 1, MUTED);
+            if !show_transfer {
+                text::draw_centered(&mut pixels, WIDTH, 94,
+                    &format!("Available mined TSV: {banked_tsv}"), 1, MUTED);
             }
-            for (i, row) in shop_rows.iter().skip(shop_first).take(PAGE_SIZE).enumerate() {
-                let top = LIST_TOP + i * ROW_HEIGHT;
-                let background = if shop_selected == shop_first + i {
-                    0x294a66
-                } else { 0x142235 };
+            if count == 0 {
+                text::draw_centered(&mut pixels, WIDTH, 218,
+                    if show_transfer { "No transferable purchased hulls" }
+                    else { "Finish a campaign battle to register saved squads" }, 1, MUTED);
+            }
+            for index in shop_first..(shop_first + PAGE_SIZE).min(count) {
+                let top = LIST_TOP + (index - shop_first) * ROW_HEIGHT;
+                let background = if shop_selected == index { 0x294a66 }
+                    else { 0x142235 };
                 for y in top..top + ROW_HEIGHT - 4 {
                     pixels[y * WIDTH + 100..y * WIDTH + 700].fill(background);
                 }
-                let label = text::fit(&row.title, 560);
-                text::draw_centered(&mut pixels, WIDTH, top + 8, &label, 1,
-                    if row.unlocked { TEXT } else { MUTED });
+                let (label, enabled) = if show_transfer {
+                    (transfer_rows[index].title.as_str(), true)
+                } else { (shop_rows[index].title.as_str(), shop_rows[index].unlocked) };
+                let title = text::fit(label, 560);
+                text::draw_centered(&mut pixels, WIDTH, top + 8, &title, 1,
+                    if enabled { TEXT } else { MUTED });
             }
-            if shop_rows.len() > PAGE_SIZE {
-                let page = format!("{}-{} of {} purchases", shop_first + 1,
-                    (shop_first + PAGE_SIZE).min(shop_rows.len()), shop_rows.len());
+            if count > PAGE_SIZE {
+                let page = format!("{}-{} of {} choices", shop_first + 1,
+                    (shop_first + PAGE_SIZE).min(count), count);
                 text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
-                "Enter build   B return   F fleet   S squads   Esc exit", 1, MUTED);
+                "Enter select   B build   T transfer   F fleet   S squads", 1, MUTED);
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
         }
@@ -245,7 +282,7 @@ pub fn select_battle(
             let page = format!("{}-{} of {} battles", first + 1, (first + PAGE_SIZE).min(titles.len()), titles.len());
             text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
         }
-        text::draw_centered(&mut pixels, WIDTH, 441, "Enter play   B build   F fleet   S squads   Esc exit", 1, MUTED);
+        text::draw_centered(&mut pixels, WIDTH, 441, "Enter play   B build   T transfer   F fleet   S squads", 1, MUTED);
         if launch_failed {
             text::draw_centered(&mut pixels, WIDTH, 468, "Battle failed. See the console for details.", 1, [247, 172, 131]);
         }
