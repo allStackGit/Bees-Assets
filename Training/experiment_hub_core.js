@@ -3459,6 +3459,40 @@ class ExperimentHub {
     // that the remote service is running. A group never silently rearms
     // after the coordinator or any native agent loses its identity.
     advanceCourierLaunches() {
+        // After a coordinator restart, no stale future Start is rearmed.
+        // Existing native owners still require an authenticated Stop; a
+        // disarmed plan alone must never free their CPU/RAM lease.
+        const disarmed=(this.state.courier_launch_plans||[])
+            .filter(plan=>plan.status==='disarmed');
+        if(disarmed.length) {
+            const next=copy(this.state);
+            let changed=false;
+            for(const plan of disarmed)
+                for(const [id,dispatch] of Object.entries(plan.sidecar_dispatches)) {
+                    const job=next.jobs.find(j=>j.id===id&&
+                        j.project_id==='courier_lineage'&&j.dispatch_id===dispatch);
+                    const lease=next.reservations.find(l=>
+                        l.id===job?.lease_id&&l.job_id===job?.id&&
+                        l.machine_id===job?.assigned_machine_id&&
+                        l.status==='acknowledged'&&
+                        l.project_id==='courier_lineage');
+                    if(!job||!lease)continue;
+                    if(job.status==='start_requested'&&
+                        job.start_first_offered_at===null) {
+                        job.status='waiting_adapter';
+                        delete job.dispatch_id;delete job.start_requested_at;
+                        delete job.start_first_offered_at;
+                        job.status_reason='Disarmed Courier Start withdrawn before native delivery.';
+                        changed=true;
+                    }else if(['start_requested','launch_requested',
+                            'running','unverified'].includes(job.status)) {
+                        job.status='stop_requested';job.stop_requested_at=now();
+                        job.status_reason='Courier launch disarmed; native remote PPO service Stop required.';
+                        changed=true;
+                    }
+                }
+            if(changed)this.commit(next);
+        }
         for(const id of (this.state.courier_launch_plans||[])
                 .filter(plan=>plan.status==='pending').map(plan=>plan.id)) {
             const intent=(this.state.courier_launch_plans||[])
@@ -3580,6 +3614,12 @@ class ExperimentHub {
             learner.start_first_offered_at!==null&&learner.start_first_offered_at!==undefined)
             throw Error('Abort only an unstarted Courier learner; running learners need ordinary checkpoint Stop.');
         learner.distributed_abort_requested_at=now();
+        if(learner.status==='start_requested'&&
+            learner.start_first_offered_at===null) {
+            learner.status='waiting_adapter';
+            delete learner.dispatch_id;delete learner.start_requested_at;
+            delete learner.start_first_offered_at;
+        }
         for(const plan of next.courier_launch_plans||[]) {
             if(plan.learner_job_id!==learner.id||plan.status!=='pending')continue;
             plan.status='disarmed';plan.reason='Operator aborted the Courier distributed startup.';
