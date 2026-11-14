@@ -50,7 +50,7 @@ use bees_sim::perception_weapons::SelfWeapon;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_gameplay::inference::NativePolicyRoute;
 use crate::fleet_inventory::{NativeFleetInventory, NativeFleetShipValue};
-use crate::ship_specials::NativeBeaconTemplate;
+use crate::ship_specials::{NativeBeaconTemplate, NativeQueenTemplate};
 use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerPermissions, NativePlayerAuthority};
 use bees_gameplay::squad_geometry::SquadMemberOffset;
 use bees_sim::{geometry::Vec2, squad_movement::SquadFormationOptions};
@@ -167,6 +167,7 @@ pub struct NativePolicyOnlyMetadata {
     agents: HashMap<i64, AuthoredPolicyAgent>,
     sides: HashMap<i32, AuthoredPolicySide>,
     beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
+    queen_templates: HashMap<i64, Arc<NativeQueenTemplate>>,
     player: NativeSourcePlayerInputs,
     pub(crate) reinforcements: std::collections::VecDeque<crate::reinforcements::ReinforcementWave>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
@@ -311,7 +312,8 @@ impl NativePolicyOnlyMetadata {
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
-            agents: agent_map, sides: side_map, beacon_templates, player,
+            agents: agent_map, sides: side_map, beacon_templates,
+            queen_templates: HashMap::new(), player,
             reinforcements: std::collections::VecDeque::new(),
             scripted_queues: Vec::new(),
             scripted_members: Vec::new(),
@@ -320,6 +322,27 @@ impl NativePolicyOnlyMetadata {
             chase_elapsed_seconds: 0.0,
             chase_measurements: NativePlayerChaseMeasurements::default(),
         })
+    }
+
+    /// Queen YellowJacket templates are installed once from the same
+    /// authoritative scene that supplies initial fleet and sight records.
+    /// No inferred combat metadata enters the headless training world.
+    pub fn install_queen_templates(
+        &mut self, templates: HashMap<i64, Arc<NativeQueenTemplate>>,
+    ) -> Result<(), PolicyOnlyMetadataError> {
+        if templates.iter().any(|(&id, template)|
+            !self.authored_ships.contains_key(&id) ||
+            !self.effective_vision.contains_key(&id) ||
+            !template.physical.valid() || !template.perception.valid() ||
+            template.vision.effective_range < 0 ||
+            template.vision.trigger_range < 0 ||
+            template.vision.enabled &&
+                (!template.vision.registered || template.vision.trigger_range == 0)
+        ) {
+            return Err(PolicyOnlyMetadataError::InvalidSource);
+        }
+        self.queen_templates = templates;
+        Ok(())
     }
 
     /// A rendered Level may change externally authored ship/controller
