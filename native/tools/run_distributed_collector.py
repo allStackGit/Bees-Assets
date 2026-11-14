@@ -43,7 +43,13 @@ def main():
         parser.error("collector id is not uniquely allocated in the work order")
     job = matches[0]
     if "source_run_contract_sha256" in orders:
-        if native_source_contract_sha256(args.run_config) != orders["source_run_contract_sha256"]:
+        version = orders.get("source_run_contract_version", 1)
+        if version not in (1, 2):
+            raise ValueError("unsupported native distributed physical source contract version")
+        local_digest = native_source_contract_sha256(
+            args.run_config, include_allocation=version == 1,
+        )
+        if local_digest != orders["source_run_contract_sha256"]:
             raise ValueError("collector's physical native source differs from the work order")
     elif file_sha256(args.run_config.resolve(strict=True)) != orders["source_run_config_sha256"]:
         # Old work orders must retain their original exact-byte identity;
