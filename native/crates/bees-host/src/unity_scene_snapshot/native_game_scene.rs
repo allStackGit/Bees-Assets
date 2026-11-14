@@ -267,6 +267,138 @@ enum GameShipSpecial {
         refill_distance: f32,
     },
     Scout { enabled: bool, beacon: GameBeacon },
+    Queen { spawn: GameQueenSpawn },
+}
+
+/// Exact native YellowJacket prefab inputs for a Queen's *future* waves.
+/// No initial ship, weapon or FleetShip ID is claimed for this template:
+/// CombatWorld assigns distinct live identities at each actual spawn.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GameQueenSpawn {
+    minions_per_wave: u8,
+    spawn_frequency_seconds: f32,
+    seconds_between_minions: f32,
+    spawn_point: [f32; 2],
+    minion: GameQueenMinion,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GameQueenMinion {
+    health: i32,
+    original_health: i32,
+    max_tsv: i32,
+    size_class: f32,
+    base_speed: f32,
+    rotation_speed: f32,
+    height: f32,
+    turning_radius: f32,
+    sight: GameSight,
+    front_offset: f32,
+    ship_type_letter: u8,
+    max_weapon_range: f32,
+    firepower: f32,
+    combat_window_seconds: f32,
+    observed_weapon_type: u8,
+    special_weapon: GameSpecialWeapon,
+    #[serde(default)]
+    max_living_ships_per_side: Option<usize>,
+}
+
+impl GameQueenSpawn {
+    fn into_native(self, catalog: &ShipAssetCatalog)
+        -> Result<NativeAuthoredShipSpecial, NativeSnapshotError>
+    {
+        let invalid = || NativeSnapshotError::InvalidNativeLayout(
+            "Queen requires exact source YellowJacket spawn and Bomb inputs",
+        );
+        let minion = self.minion;
+        let sprite = catalog.sprite_size(22).ok_or_else(invalid)?;
+        let asset = catalog.by_type(22).ok_or_else(invalid)?.clone();
+        let weapon = minion.special_weapon;
+        let sight = minion.sight;
+        let movement = GameMovementProfile {
+            turning_radius: minion.turning_radius,
+            half_width: sprite.x * 0.5,
+            half_height: sprite.y * 0.5,
+        };
+        let offset = Vec2::new(weapon.mount_offset[0], weapon.mount_offset[1]);
+        let observed = weapon.observation.ok_or_else(invalid)?;
+        let mut observed_weapons = [None; 5];
+        if weapon.slot >= 5 || weapon.weapon_id != 0 ||
+            weapon.charge_range.is_some() ||
+            minion.observed_weapon_type >= 10 ||
+            ![observed.range, observed.rate_of_fire, observed.rotation_rate,
+                observed.projectile_value].iter()
+                .all(|v| v.is_finite() && *v >= 0.0) ||
+            !offset.is_finite() || !sight.enabled && sight.effective_range == 0 ||
+            sight.source_sight < 0 || sight.effective_range <= 0 ||
+            sight.trigger_range <= 0 || !sight.enabled ||
+            !minion.combat_window_seconds.is_finite() ||
+            minion.combat_window_seconds <= 0.0
+        { return Err(invalid()); }
+        observed_weapons[weapon.slot] = Some(ObservedWeapon {
+            weapon_type: minion.observed_weapon_type,
+            range: observed.range, power: weapon.power,
+            rate_of_fire: observed.rate_of_fire,
+        });
+        let physical = bees_sim::combat_world::QueenSpawnSpec {
+            minions_per_wave: self.minions_per_wave,
+            spawn_frequency_seconds: self.spawn_frequency_seconds,
+            seconds_between_minions: self.seconds_between_minions,
+            spawn_point: Vec2::new(self.spawn_point[0], self.spawn_point[1]),
+            minion: Arc::new(bees_sim::combat_world::QueenMinionSpec {
+                asset: Arc::new(asset),
+                vitals: ShipVitals::new(
+                    minion.health, minion.health, minion.max_tsv, 0,
+                ).map_err(NativeSnapshotError::Combat)?,
+                original_health: minion.original_health,
+                size_class: minion.size_class,
+                base_speed: minion.base_speed, rotation_speed: minion.rotation_speed,
+                height: minion.height, movement,
+                combat_activity: Some(bees_sim::combat_world::NativeCombatActivity {
+                    enabled: true, window_seconds: minion.combat_window_seconds,
+                    elapsed_seconds: None,
+                }),
+                front_offset: minion.front_offset,
+                ship_type_letter: minion.ship_type_letter,
+                max_weapon_range: minion.max_weapon_range,
+                firepower: minion.firepower,
+                special_weapon: bees_sim::combat_world::NativeSpecialWeaponSpec {
+                    weapon_id: 0, slot: weapon.slot, power: weapon.power,
+                    mount_offset: offset,
+                    charge_range: None,
+                    proximity: weapon.proximity.map(GameWeaponRange::into_native),
+                },
+                max_living_ships_per_side: minion.max_living_ships_per_side,
+            }),
+        };
+        let perception = AuthoredShipPerception {
+            longest_side: sprite.x.max(sprite.y),
+            max_weapon_range: minion.max_weapon_range,
+            firepower: minion.firepower,
+            is_bomber: true, is_carrier_ship: false,
+            minerals_mined_this_level: 0, observed_weapons,
+            allied_communication: None,
+        };
+        if !physical.valid() || !perception.valid() ||
+            (sight.enabled && sight.trigger_range == 0) ||
+            sight.fog_radius.is_some_and(|v| !v.is_finite() || v < 0.0)
+        { return Err(invalid()); }
+        Ok(NativeAuthoredShipSpecial::Queen {
+            minions: Arc::new(NativeQueenTemplate {
+                physical, perception,
+                vision: NativeSourceVision {
+                    source_sight: Some(sight.source_sight),
+                    effective_range: sight.effective_range,
+                    trigger_range: sight.trigger_range,
+                    fog_radius: sight.fog_radius,
+                    registered: true, enabled: sight.enabled,
+                },
+            }),
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -591,6 +723,8 @@ impl NativePhysicalScene {
                             refill_distance: *refill_distance,
                         },
                     }),
+                Some(GameShipSpecial::Queen { spawn }) if ship.ship_type == 17 =>
+                    Some(spawn.into_native(catalog)?),
                 Some(GameShipSpecial::Scout { enabled, beacon }) if ship.ship_type == 18 => {
                     if beacon.health <= 0 || beacon.original_health < beacon.health ||
                         beacon.max_tsv < 0 || !beacon.size_class.is_finite() ||
@@ -659,7 +793,7 @@ impl NativePhysicalScene {
                         beacon: Arc::new(template),
                     })
                 },
-                None if !matches!(ship.ship_type, 0 | 10 | 19 | 22 | 18) => None,
+                None if !matches!(ship.ship_type, 0 | 10 | 17 | 19 | 22 | 18) => None,
                 _ => return Err(invalid("native special ship requires an exact matching ability and power")),
             };
             if ship.special_weapon.is_some() !=
@@ -934,7 +1068,9 @@ impl NativePhysicalScene {
                         movement_disabled_for_team: policy.movement_disabled,
                         has_weapons: !turrets.is_empty() || special_weapon.is_some(),
                         has_turrets: !turrets.is_empty(),
-                        has_special_action: special.is_some(), special_ready: false,
+                        has_special_action: special.as_ref().is_some_and(|ability|
+                            !matches!(ability, NativeAuthoredShipSpecial::Queen { .. })),
+                        special_ready: false,
                     },
                     capability: CapabilitySource {
                         special_resource_fraction: 0.0,
