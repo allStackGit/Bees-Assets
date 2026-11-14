@@ -1128,7 +1128,8 @@ where
                     state.metadata.player_queen_minion_added(
                         &mut state.combat, squad, queen_id, minion_id, minion_index,
                     )?;
-                    if state.formation_changed_seen.insert(squad) {
+                    if state.events.roster().get(squad).is_some() &&
+                        state.formation_changed_seen.insert(squad) {
                         state.formation_changed_squads.push(squad);
                     }
                 }
