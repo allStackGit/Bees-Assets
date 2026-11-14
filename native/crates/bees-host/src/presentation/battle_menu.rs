@@ -152,7 +152,8 @@ pub fn select_battle(
                 else if show_create { create_rows.len() }
                 else if show_tactics { tactics_rows.len() }
                 else { shop_rows.len() };
-            let choose = |index: usize| {
+            let choose = |index: usize, edit_index: Option<usize>,
+                          strategy: u8, chase: bool, cease_fire: bool| {
                 if show_transfer {
                     transfer_rows.get(index).map(|row| match row.authored_from {
                         Some((side, from_saved_squad_id)) => NativeBattleMenuAction::Reassign {
@@ -175,14 +176,14 @@ pub fn select_battle(
                     tactics_rows.get(index).map(|row| NativeBattleMenuAction::Tactics {
                         side: row.side,
                         saved_squad_id: row.saved_squad_id,
-                        shooting_strategy_id: if tactic_edit_index == Some(index) {
-                            tactic_strategy
+                        shooting_strategy_id: if edit_index == Some(index) {
+                            strategy
                         } else { row.shooting_strategy_id },
-                        should_chase: if tactic_edit_index == Some(index) {
-                            tactic_chase
+                        should_chase: if edit_index == Some(index) {
+                            chase
                         } else { row.should_chase },
-                        cease_fire: if tactic_edit_index == Some(index) {
-                            tactic_cease_fire
+                        cease_fire: if edit_index == Some(index) {
+                            cease_fire
                         } else { row.cease_fire },
                     })
                 } else {
@@ -232,7 +233,8 @@ pub fn select_battle(
                 }
             }
             if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
-                if let Some(action) = choose(shop_selected) {
+                if let Some(action) = choose(shop_selected, tactic_edit_index,
+                        tactic_strategy, tactic_chase, tactic_cease_fire) {
                     return Ok(Some(action));
                 }
             }
@@ -247,7 +249,13 @@ pub fn select_battle(
                         if index < count {
                             shop_selected = index;
                             if (y - LIST_TOP) % ROW_HEIGHT < ROW_HEIGHT - 4 {
-                                if let Some(action) = choose(index) {
+                                if show_tactics {
+                                    // Select a row before editing it; mouse
+                                    // selection is not an implicit save.
+                                    tactic_edit_index = None;
+                                } else if let Some(action) = choose(index, tactic_edit_index,
+                                    tactic_strategy, tactic_chase, tactic_cease_fire)
+                                {
                                     return Ok(Some(action));
                                 }
                             }
@@ -289,6 +297,8 @@ pub fn select_battle(
                     (transfer_rows[index].title.as_str(), true)
                 } else if show_create {
                     (create_rows[index].title.as_str(), true)
+                } else if show_tactics {
+                    (tactics_rows[index].title.as_str(), true)
                 } else { (shop_rows[index].title.as_str(), shop_rows[index].unlocked) };
                 let tactical_label = if show_tactics {
                     let row = &tactics_rows[index];
