@@ -392,18 +392,18 @@ function createNativeBeesAdapter({
         args(parameters, context) {
             const output = jobRoot(context);
             const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
-                collection_id, rollout_world_start, rollout_worlds,
+                physics_workers, collection_id, rollout_world_start, rollout_worlds,
                 bundle_directory, refresh_opponent_slot,
                 source_run_contract_sha256} = parameters;
             const allowed = inboxLearner
                 ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads',
                     'refresh_opponent_slot']
                 : collectOnly
-                    ? ['config_sha256', 'seed_offset', 'rollout_workers',
+                    ? ['config_sha256', 'seed_offset', 'rollout_workers', 'physics_workers',
                         'collection_id', 'rollout_world_start', 'rollout_worlds',
                         'bundle_directory', 'source_run_contract_sha256']
                     : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers',
-                        'refresh_opponent_slot'];
+                        'physics_workers', 'refresh_opponent_slot'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
                 (bundleRound && seed_offset !== 0))
@@ -440,14 +440,22 @@ function createNativeBeesAdapter({
             const activeWorlds = collectOnly && rollout_worlds !== undefined
                 ? rollout_worlds : config.rollout_worlds ?? config.levels?.length;
             const activeWorkers = rollout_workers ?? config.rollout_workers ?? 1;
+            // Rollout processes each retain a model worker and run their
+            // own shared physical CPU pool. Both dimensions consume the
+            // same fixed machine lease; never advertise more runnable
+            // physics threads than the coordinator allocated.
+            const activePhysicsWorkers = physics_workers ?? config.physics_workers ?? 1;
             if (!bundleRound && !inboxLearner &&
                 (!Number.isSafeInteger(activeWorkers) ||
                     activeWorkers < 1 || activeWorkers > 256 ||
                     !Number.isSafeInteger(context.cpu_quota) ||
                     activeWorkers > context.cpu_quota ||
+                    !Number.isSafeInteger(activePhysicsWorkers) ||
+                    activePhysicsWorkers < 1 || activePhysicsWorkers > 128 ||
+                    activeWorkers * activePhysicsWorkers > context.cpu_quota ||
                     !Number.isSafeInteger(activeWorlds) ||
                     activeWorkers < 1 || activeWorkers > activeWorlds))
-                throw Error('Effective rollout workers must fit the fixed Hub CPU quota and allocated World count.');
+                throw Error('Effective rollout processes and per-process physics threads must fit the fixed Hub CPU quota and allocated World count.');
             for (const [file, digest] of pins) {
                 if (sha256(fs.readFileSync(file)) !== digest)
                     throw Error('Native Bees pinned input changed after adapter installation.');
@@ -500,6 +508,8 @@ function createNativeBeesAdapter({
                     ['--torch-threads', String(optimizer_threads)]),
                 ...(rollout_workers === undefined ? [] :
                     ['--rollout-workers', String(rollout_workers)]),
+                ...(physics_workers === undefined ? [] :
+                    ['--physics-workers', String(physics_workers)]),
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)]),
                 ...(refresh_opponent_slot === undefined ? [] :
