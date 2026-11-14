@@ -1492,6 +1492,7 @@ impl NativePhysicalScene {
                 route: NativePolicyRoute {
                     team_id: binding.team_id, model_slot,
                 },
+                frame: binding.frame,
                 // Team policies change across self-play episodes. Read the
                 // current binding, not the immutable first-episode source
                 // controller's movement flag, so observations and physical
