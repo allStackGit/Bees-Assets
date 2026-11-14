@@ -24,7 +24,7 @@ mod battle_menu;
 #[cfg(feature = "client")]
 pub use battle_menu::{
     BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
-    NativeTransferMenuRow, select_battle,
+    NativeTransferMenuRow, NativeCreateSquadMenuRow, select_battle,
 };
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
