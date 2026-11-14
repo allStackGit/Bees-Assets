@@ -35,7 +35,8 @@ function filesForJob(folder,projectId) {
                     queue.push({folder:path.join(next.folder,item.name),
                         prefix:relative+'/',depth:next.depth+1});
             }else if(item.isFile()&&allowed(relative))names.push(relative);
-            if(names.length>256)throw Error('Job has too many eligible log files.');
+            const limit=projectId==='bees_native_collect'?1024:256;
+            if(names.length>limit)throw Error('Job has too many eligible artifact files.');
         }
     }
     return names.sort();
