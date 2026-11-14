@@ -3507,8 +3507,9 @@ impl NativePhysicalScene {
             let custom_color_rgb = match (squad.has_custom_color, squad.custom_color) {
                 (Some(true), Some(color)) if color.valid() => Some(color.rgb8()),
                 (Some(true), _) => return Err(NativeSnapshotError::InvalidSquad(squad.item_id)),
-                (_, Some(color)) if !color.valid() =>
-                    return Err(NativeSnapshotError::InvalidSquad(squad.item_id)),
+                // Original squad colors are only rendered when Unity's
+                // HasCustomColor flag is true. Ignore unused/default color
+                // channels; they must not invalidate a physics snapshot.
                 _ => None,
             };
             source_squads.push(NativeSourceSquad {
