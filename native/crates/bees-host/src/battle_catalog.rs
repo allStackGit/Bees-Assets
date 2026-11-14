@@ -236,9 +236,14 @@ impl BattleCatalog {
                 ship.price_tsv == 0 || ship.ship_type >= 32 ||
                 !available.insert((ship.player_side, ship.ship_type)) ||
                 !self.battles.iter().any(|entry| entry.mission.as_ref()
-                    .is_some_and(|mission| mission.player_side == ship.player_side))
+                    .is_some_and(|mission| mission.player_side == ship.player_side)) ||
+                self.battles.iter().filter_map(|entry| entry.mission.as_ref())
+                    .any(|mission| mission.player_side == ship.player_side &&
+                        (!mission.record_fleet_stats || !mission.persist_fleet_losses))
             {
-                return Err(invalid("invalid native campaign ship catalog or duplicate price"));
+                return Err(invalid(
+                    "native campaign ship shops require unique source prices and persistent casualty receipts on every mission",
+                ));
             }
         }
         let mut earlier = HashSet::new();
