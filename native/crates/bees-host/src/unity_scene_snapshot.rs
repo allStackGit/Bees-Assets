@@ -848,6 +848,19 @@ struct NativeSourcePolicyInputs {
     own_weapons: [Option<SelfWeapon>; 5],
 }
 
+/// A bought native hull is a persistent FleetShip, not an imported
+/// prefab instance. Scene adapters resolve its authored ship type each
+/// battle and use the same physical CombatWorld and source metadata as
+/// every other ship. Only immutable purchase receipts may supply this.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativePurchasedShip {
+    pub fleet_ship_id: i64,
+    pub saved_squad_id: i64,
+    pub ship_type: u8,
+    pub price_tsv: u64,
+}
+
 /// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
 /// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
 #[derive(Clone)]
