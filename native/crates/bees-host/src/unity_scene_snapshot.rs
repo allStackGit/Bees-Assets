@@ -1340,9 +1340,11 @@ impl NativePhysicalScene {
             // a single-world-body operation.
             changes += family.len();
         }
-        self.source_squads.retain(|squad| !squad.members.is_empty());
+        // Preserve emptied SavedSquad identities for future deployment or
+        // purchases. Only the live roster excludes vacant squads.
         if !self.source_squads.iter().any(|squad|
-            squad.side == side && squad.player_permissions.user_controlled)
+            squad.side == side && squad.player_permissions.user_controlled &&
+            !squad.members.is_empty())
         {
             return Err(invalid("roster changes would leave no playable player SavedSquad"));
         }
@@ -1419,7 +1421,8 @@ impl NativePhysicalScene {
         for squad in &mut self.source_squads {
             squad.members.retain(|id| !removed.contains(id));
         }
-        self.source_squads.retain(|squad| !squad.members.is_empty());
+        // Preserve emptied SavedSquad identities for future deployment or
+        // purchases. Only the live roster excludes vacant squads.
         for ship_id in &removed {
             self.authored_ship_perceptions.remove(ship_id);
             self.source_vision.remove(ship_id);
@@ -2127,21 +2130,26 @@ impl NativePhysicalScene {
                 human_side: self.human_side,
                 has_obstacles: self.has_obstacles,
                 ships: self.source_formation,
-                commands: self.source_squads.iter().zip(&squads).map(|(source, squad)|
+                commands: self.source_squads.iter()
+                    .filter(|source| !source.members.is_empty()).zip(&squads).map(|(source, squad)|
                     (squad.owner, bees_gameplay::player_inputs::NativePlayerCommandInputs {
                         is_carrier_squad: source.is_carrier_squad,
                         shooting: source.shooting, settings: self.command_settings,
                     })).collect(),
-                squads: self.source_squads.iter().zip(&squads)
+                squads: self.source_squads.iter()
+                    .filter(|source| !source.members.is_empty()).zip(&squads)
                     .map(|(source, squad)| (squad.owner, source.player_permissions)).collect(),
-                chasing: self.source_squads.iter().zip(&squads)
+                chasing: self.source_squads.iter()
+                    .filter(|source| !source.members.is_empty()).zip(&squads)
                     .filter_map(|(source, squad)| source.should_chase.then_some(squad.owner))
                     .collect(),
-                matching_speeds: self.source_squads.iter().zip(&squads)
+                matching_speeds: self.source_squads.iter()
+                    .filter(|source| !source.members.is_empty()).zip(&squads)
                     .filter_map(|(source, squad)| source.matching_speed
                         .map(|speed| (squad.owner, speed)))
                     .collect(),
-                cease_fire: self.source_squads.iter().zip(&squads)
+                cease_fire: self.source_squads.iter()
+                    .filter(|source| !source.members.is_empty()).zip(&squads)
                     .filter_map(|(source, squad)| source.cease_fire
                         .map(|enabled| (squad.owner, enabled)))
                     .collect(),
@@ -2155,7 +2163,8 @@ impl NativePhysicalScene {
         metadata.hivemind_active = self.activate_hivemind;
         metadata.hivemind_initial_delay_seconds = self.hivemind_initial_command_delay_seconds;
         metadata.hivemind_starting_positions = self.starting_positions;
-        metadata.hivemind_squads = self.source_squads.iter().zip(&squads)
+        metadata.hivemind_squads = self.source_squads.iter()
+                    .filter(|source| !source.members.is_empty()).zip(&squads)
             .filter_map(|(source, squad)| source.hivemind.map(|inputs| (squad.owner, inputs)))
             .collect();
         Ok(NativeAuthoredLevel {
@@ -2198,7 +2207,11 @@ impl NativePhysicalScene {
         if level_id <= 0 {
             return Err(NativeSnapshotError::InvalidSquad(level_id));
         }
-        Ok(self.source_squads.iter().map(|source|
+        // Empty saved squads remain in the campaign fleet editor but do
+        // not create empty live SquadLifetime entries: CombatWorld and its
+        // shared gameplay roster require at least one physical member.
+        Ok(self.source_squads.iter().filter(|source|
+            !source.members.is_empty()).map(|source|
             NativeAuthoredSquad {
                 command_bans: source.command_bans.clone(),
                 hotkey_number: source.hotkey_number,
