@@ -281,9 +281,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         // Only a verified HIP ordinal/physical PCI mapping may identify
         // the operator's leased GPU in host observations and comparisons.
         if(worker.mode==='local_gpu') {
+            add('collector_'+i+'_is_local_gpu',1,'count');
             add('collector_'+i+'_gpu_ordinal',worker.gpu_ordinal,'count');
             add('collector_'+i+'_gpu_lease_index',worker.gpu_lease_index,'count');
         }
+        add('collector_'+i+'_wait_after_local_seconds',
+            worker.learner_wait_after_local_seconds,'seconds');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
