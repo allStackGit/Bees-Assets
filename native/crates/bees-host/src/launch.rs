@@ -1263,9 +1263,13 @@ fn preflight_native_fleet_edit(
         .filter(|ship| ship.saved_squad_id > 0).collect::<Vec<_>>();
     let mut highest_fleet_id = 0_i64;
     let mut checked = 0_u64;
+    let has_upcoming = catalog.battles.iter().filter_map(|entry|
+        entry.mission.as_ref()).any(|mission|
+            mission.player_side == side && !progress.completed(&mission.id));
     for entry in &catalog.battles {
         if !entry.mission.as_ref().is_some_and(|mission|
-            mission.player_side == side && !progress.completed(&mission.id)
+            mission.player_side == side &&
+            (!progress.completed(&mission.id) || !has_upcoming)
         ) {
             continue;
         }
