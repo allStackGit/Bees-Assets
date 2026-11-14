@@ -7,7 +7,6 @@ use super::*;
 pub const QUEEN_TYPE: u8 = 17;
 pub const QUEEN_MINION_TYPE: u8 = 22;
 const MAX_WAVE_SIZE: u8 = 16;
-const MAX_OVERLAPPING_WAVES: usize = 64;
 
 /// All mutable weapon/physics identity comes from the source-authored
 /// YellowJacket template. The prefab's original weapon ID is intentionally
@@ -68,7 +67,7 @@ pub struct QueenSpawnSpec {
 
 impl QueenSpawnSpec {
     pub fn valid(&self) -> bool {
-        self.minions_per_wave >= 1 && self.minions_per_wave <= MAX_WAVE_SIZE &&
+        self.minions_per_wave <= MAX_WAVE_SIZE &&
             // Unity's ScaledTimer accepts a zero interval and fires once
             // per subsequent frame, never an unbounded catch-up loop.
             self.spawn_frequency_seconds.is_finite() && self.spawn_frequency_seconds >= 0.0 &&
@@ -139,7 +138,8 @@ impl CombatWorld {
         self.game_queens.iter().any(|(&id, runtime)| {
             let live = self.ship(id).is_some_and(|ship| !ship.vitals.is_dead()) &&
                 self.ship_body(id).is_some_and(|body| body.active);
-            live && (runtime.until_next_wave < dt ||
+            live && runtime.spec.minions_per_wave > 0 &&
+                (runtime.until_next_wave < dt ||
                 runtime.waves.iter().any(|wave| wave.next_index < runtime.spec.minions_per_wave &&
                     wave.elapsed_seconds + dt >=
                         f32::from(wave.next_index) * runtime.spec.seconds_between_minions))
@@ -234,6 +234,7 @@ impl CombatWorld {
     pub(super) fn advance_queen_waves(&mut self, dt: f32)
         -> Result<(), CombatWorldError>
     {
+        if self.game_queens.is_empty() { return Ok(()); }
         self.queen_spawn_ids.clear();
         self.queen_spawn_ids.extend(self.game_queens.keys().copied());
         for index in 0..self.queen_spawn_ids.len() {
@@ -252,9 +253,9 @@ impl CombatWorld {
             let previously_active = runtime.waves.len();
             runtime.until_next_wave -= dt;
             if runtime.until_next_wave < 0.0 {
-                if runtime.waves.len() >= MAX_OVERLAPPING_WAVES {
-                    return Err(CombatWorldError::InvalidQueenConfiguration);
-                }
+                // Source coroutines can overlap without a fixed wave
+                // count limit. Only one wave starts per fixed step, so
+                // no catch-up loop can allocate an unbounded burst.
                 runtime.next_sequence = runtime.next_sequence.checked_add(1)
                     .ok_or(CombatWorldError::EntityIdExhausted)?;
                 runtime.waves.push(QueenWave {
