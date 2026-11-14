@@ -34,6 +34,8 @@ pub struct NativeHostGauges {
     /// Live episode-local physical special effects (all controllers).
     /// Snapshot gauges, not cross-episode rates or host lifetime totals.
     pub special_scout_beacons_spawned: u64,
+    /// Episode-local native Queen wave/YellowJacket production gauges.
+    pub queen_spawning: bees_sim::combat_world::QueenSpawnMeasurements,
     pub special_fire_barge_self_detonations: u64,
     pub special_game_barge_charges_started: u64,
     pub special_game_barge_charge_hits: u64,
@@ -86,6 +88,7 @@ impl From<&NativeRuntimeStatus> for NativeHostGauges {
             spatial_grid_active_buckets: value.spatial_grid_active_buckets,
             spatial_grid_retained_buckets: value.spatial_grid_retained_buckets,
             special_scout_beacons_spawned: value.special_scout_beacons_spawned,
+            queen_spawning: value.queen_spawning,
             special_fire_barge_self_detonations: value.special_fire_barge_self_detonations,
             special_game_barge_charges_started: value.special_game_barge_charges_started,
             special_game_barge_charge_hits: value.special_game_barge_charge_hits,
