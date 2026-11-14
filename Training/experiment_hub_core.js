@@ -4858,7 +4858,8 @@ class ExperimentHub {
             count-children.length+i);
         learner.distributed_courier_shard_limits=children.map(({host,resources})=>
             Math.min(host.courier_lineage_max_shards,
-                Math.max(1,Math.floor((resources.ram_mb-768)/768))));
+                Math.max(1,Math.floor((resources.ram_mb-
+                    (resources.gpu_count===1?1280:768))/768))));
         learner.distributed_courier_key_fingerprint=fingerprint;
         learner.distributed_courier_sidecar_job_ids=[];
         const learnerLease=this.claimJobIn(next,learner,learnerHost.id,learnerHost);
