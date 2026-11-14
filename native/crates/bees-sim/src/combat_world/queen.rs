@@ -21,6 +21,8 @@ pub struct QueenMinionSpec {
     pub base_speed: f32,
     pub rotation_speed: f32,
     pub height: f32,
+    pub spawn_rotation_degrees: f32,
+    pub path_clearance: i32,
     pub movement: GameMovementProfile,
     pub combat_activity: Option<NativeCombatActivity>,
     pub front_offset: f32,
@@ -41,6 +43,7 @@ impl QueenMinionSpec {
                 self.max_weapon_range, self.firepower].iter()
                 .all(|value| value.is_finite() && *value >= 0.0) &&
             self.height > 0.0 && self.movement.valid() &&
+            self.spawn_rotation_degrees.is_finite() && self.path_clearance >= 0 &&
             self.front_offset.is_finite() && self.ship_type_letter < 24 &&
             self.combat_activity.is_none_or(|value| value.valid()) &&
             self.special_weapon.weapon_id == 0 &&
@@ -165,7 +168,7 @@ impl CombatWorld {
         // New YellowJacket Setup starts at the prefab's original rotation,
         // not the Queen's current rotation; only SpawnPoint is rotated.
         let minion_motion = ShipMotion::new(
-            spawn_position, 0.0, minion.rotation_speed,
+            spawn_position, minion.spawn_rotation_degrees, minion.rotation_speed,
             minion.base_speed, minion.height,
         );
         self.spawn_ship(&minion.asset, id, side, minion.vitals, minion_motion)?;
