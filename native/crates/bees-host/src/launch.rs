@@ -1218,7 +1218,9 @@ fn preflight_native_ship_purchase(
     let mut highest_fleet_id = 0_i64;
     let mut checked = 0_u64;
     for entry in &catalog.battles {
-        if !entry.mission.as_ref().is_some_and(|mission| mission.player_side == side) {
+        if !entry.mission.as_ref().is_some_and(|mission|
+            mission.player_side == side && !progress.completed(&mission.id)
+        ) {
             continue;
         }
         for config in entry.configurations() {
@@ -1314,6 +1316,9 @@ fn run_build_ship(
     ).ok_or_else(|| invalid("requested ship type is not in the player's authored shop"))?;
     if !progress.bank_history_complete() {
         return Err(invalid("cannot buy ships with incomplete historical campaign income").into());
+    }
+    if !progress.is_ship_unlocked(shop) {
+        return Err(invalid("this ship class is not yet unlocked by campaign progression").into());
     }
     if progress.unspent_minerals()? < shop.price_tsv {
         return Err(invalid(format!(
@@ -1493,13 +1498,16 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         let mut shop_rows = Vec::new();
         for ship in &catalog.buildable_ships {
             for squad_id in progress.saved_squad_ids_for_side(ship.player_side) {
+                let unlocked = progress.is_ship_unlocked(ship);
                 shop_rows.push(NativeShopMenuRow {
                     title: format!(
                         "Type {}  ->  Squad #{}   TSV {}{}",
                         ship.ship_type, squad_id, ship.price_tsv,
-                        if available < ship.price_tsv { "  [Insufficient]" } else { "" },
+                        if !unlocked { "  [Locked]" }
+                        else if available < ship.price_tsv { "  [Insufficient]" }
+                        else { "" },
                     ),
-                    unlocked: progress.bank_history_complete() &&
+                    unlocked: unlocked && progress.bank_history_complete() &&
                         available >= ship.price_tsv,
                     side: ship.player_side,
                     ship_type: ship.ship_type,
