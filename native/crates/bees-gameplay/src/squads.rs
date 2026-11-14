@@ -417,8 +417,13 @@ impl NativeSquadRoster {
         if !owner.valid() || owner.level_id != mother.level_id ||
             self.has_live_squad_number(owner)
         { return Err(SquadRosterError::InvalidOwner); }
+        // Source Queen.CreateMinionSquad inherits the SavedSquad's
+        // independent bans. Composition-specific bans are recalculated
+        // when its first actual YellowJacket joins the live formation.
+        let inherited_bans = self.active.get(&mother)
+            .and_then(|parent| parent.command_bans.clone());
         self.active.insert(owner, NativeSquadEntry {
-            command_bans: None, targeting: None,
+            command_bans: inherited_bans, targeting: None,
             owner, side: minion.side, members: vec![*minion_id],
             mother_squad: Some(mother), queen_wave: Some(key),
             source_hotkey_number: None, original_squad_count: None,
