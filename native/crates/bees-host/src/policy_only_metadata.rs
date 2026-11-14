@@ -427,7 +427,9 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
     ) -> Result<(), CombatPerceptionError> {
         // Game-only Levels have no policy controllers. The physical Queen
         // waves and source roster still execute without a learner.
-        if self.agents.is_empty() { return Ok(()); }
+        if self.agents.is_empty() || self.queen_templates.is_empty() {
+            return Ok(());
+        }
         let born: Vec<_> = world.events().iter().filter_map(|event| {
             match event {
                 CombatEvent::QueenMinionSpawned { queen_id, minion_id, .. } =>
