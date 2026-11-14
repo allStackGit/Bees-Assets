@@ -1108,10 +1108,20 @@ where
                 )?,
                 SquadRosterChange::QueenMinionCreated {
                     squad, mother_squad, queen_id, minion_id, minion_index,
-                } => state.metadata.player_queen_minion_created(
-                    &mut state.combat, mother_squad, squad, queen_id,
-                    minion_id, minion_index,
-                )?,
+                } => {
+                    state.metadata.player_queen_minion_created(
+                        &mut state.combat, mother_squad, squad, queen_id,
+                        minion_id, minion_index,
+                    )?;
+                    // Squad.Setup + AddShip immediately recomputes its
+                    // composition bans and actual formation. Reuse the
+                    // existing survivor recalculation rather than adding
+                    // another commands/geometry update path.
+                    if state.events.roster().get(squad).is_some() &&
+                        state.formation_changed_seen.insert(squad) {
+                        state.formation_changed_squads.push(squad);
+                    }
+                },
                 SquadRosterChange::QueenMinionAdded {
                     squad, queen_id, minion_id, minion_index,
                 } => {
