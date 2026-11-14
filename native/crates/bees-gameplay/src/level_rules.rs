@@ -289,13 +289,14 @@ pub trait NativeLevelCommandContext {
     /// accept user commands on their side.
     fn player_queen_minion_created(
         &mut self, _world: &mut CombatWorld,
-        _mother: SquadLifetime, _child: SquadLifetime,
+        _mother: SquadLifetime, _child: SquadLifetime, _queen_id: i64,
         _minion_id: i64, _minion_index: u8,
     ) -> Result<(), GameCommandError> { Ok(()) }
 
     fn player_queen_minion_added(
         &mut self, _world: &mut CombatWorld,
-        _child: SquadLifetime, _minion_id: i64, _minion_index: u8,
+        _child: SquadLifetime, _queen_id: i64,
+        _minion_id: i64, _minion_index: u8,
     ) -> Result<(), GameCommandError> { Ok(()) }
 
     /// The original Squad.CheckChase runs a 1-second source timer.
@@ -1093,16 +1094,16 @@ where
                     &mut state.combat, mother_squad, squad, beacon_id,
                 )?,
                 SquadRosterChange::QueenMinionCreated {
-                    squad, mother_squad, minion_id, minion_index, ..
+                    squad, mother_squad, queen_id, minion_id, minion_index,
                 } => state.metadata.player_queen_minion_created(
-                    &mut state.combat, mother_squad, squad,
+                    &mut state.combat, mother_squad, squad, queen_id,
                     minion_id, minion_index,
                 )?,
                 SquadRosterChange::QueenMinionAdded {
-                    squad, minion_id, minion_index,
+                    squad, queen_id, minion_id, minion_index,
                 } => {
                     state.metadata.player_queen_minion_added(
-                        &mut state.combat, squad, minion_id, minion_index,
+                        &mut state.combat, squad, queen_id, minion_id, minion_index,
                     )?;
                     if state.formation_changed_seen.insert(squad) {
                         state.formation_changed_squads.push(squad);
