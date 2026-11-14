@@ -4638,7 +4638,22 @@ class ExperimentHub {
         const learnerParameters=config?.parameters&&
             learnerBudget.gpu_count===0&&config.parameters.device===undefined
             ?{...config.parameters,device:'cpu'}:config?.parameters;
-        const endpoints=learnerMachine?.tinybrains_remote_rollout_endpoints;
+        const discovery=learnerMachine?.tinybrains_remote_rollout_discovery===true;
+        // Discovery uses the same authenticated machine reports and shared
+        // private HMAC identity as the static allowlist. Resolve once at
+        // queue time and freeze selected Tailnet endpoints on the learner.
+        // Machine ID (rather than iteration/heartbeat timing) is the
+        // deterministic collector slot ordering for dynamic discovery.
+        const endpoints=discovery
+            ?snapshot.machines.filter(host=>host.id!==learnerMachine.id&&
+                host.status==='connected'&&
+                rolloutEndpoint(host.tinybrains_rollout_endpoint)&&
+                host.tinybrains_rollout_key_fingerprint===
+                    learnerMachine.tinybrains_remote_key_fingerprint&&
+                host.installed_projects?.includes('tinybrains_rollout'))
+                .sort((a,b)=>a.id.localeCompare(b.id))
+                .map(host=>host.tinybrains_rollout_endpoint)
+            :learnerMachine?.tinybrains_remote_rollout_endpoints;
         const ancestorId=value.learner.continuation_of_job_id??null;
         const ancestor=ancestorId===null?null:snapshot.jobs.find(j=>j.id===ancestorId);
         if(ancestorId!==null&&(!UUID.test(String(ancestorId))||
@@ -4660,8 +4675,9 @@ class ExperimentHub {
                 resources:learnerBudget,
                 continuation_of_job_id:ancestorId,
             })||
-            !Array.isArray(endpoints)||!endpoints.length||endpoints.length>8||
-            value.collectors.length<1||
+            !Array.isArray(endpoints)||!endpoints.length||
+            (!discovery&&endpoints.length>8)||
+            value.collectors.length<1||value.collectors.length>8||
             value.collectors.length>endpoints.length||
             !SHA256.test(String(learnerMachine.tinybrains_remote_key_fingerprint||'')))
             throw Error('The selected Linux GPU learner must approve this profile and exactly the supplied remote collector count.');
@@ -4687,8 +4703,9 @@ class ExperimentHub {
         if(!machineBound&&value.collectors.some(selection=>
             object(selection)&&Object.hasOwn(selection,'machine_id')))
             throw Error('Either name every distributed collector machine or use the approved endpoint order.');
-        if(!machineBound&&value.collectors.length!==endpoints.length)
-            throw Error('Selecting a subset requires a machine ID for every chosen collector.');
+        if(!machineBound&&(discovery||
+                value.collectors.length!==endpoints.length))
+            throw Error('Discovered or subset collectors require explicit machine IDs for every chosen worker.');
         let orderedSelections=value.collectors,selectedEndpoints=endpoints;
         if(machineBound) {
             const byEndpoint=new Map();
@@ -4706,7 +4723,7 @@ class ExperimentHub {
         }
         // The learner's durable group freezes the chosen HMAC endpoint set.
         // Legacy all-endpoint jobs need no new field.
-        if(selectedEndpoints.length!==endpoints.length)
+        if(discovery||selectedEndpoints.length!==endpoints.length)
             learner.distributed_rollout_endpoints=selectedEndpoints.slice();
         for(const [index,endpoint] of selectedEndpoints.entries()) {
             const selection=orderedSelections[index];
