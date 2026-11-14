@@ -915,6 +915,7 @@ impl NativePhysicalScene {
     /// needed. This is setup-only, never in the simulation hot path.
     pub fn install_purchased_ships(
         &mut self, player_side: i32, purchases: &[NativePurchasedShip],
+        permanently_lost: &HashSet<i64>,
     ) -> Result<usize, NativeSnapshotError> {
         if purchases.is_empty() { return Ok(0); }
         let invalid = NativeSnapshotError::InvalidNativeLayout;
@@ -931,6 +932,7 @@ impl NativePhysicalScene {
         }).collect::<HashSet<_>>();
         let mut next_entity = self.entities.iter()
             .map(NativeAuthoredEntity::entity_id).max().unwrap_or(0);
+        let mut filled_casualty_slots = HashSet::new();
         for purchase in purchases {
             if purchase.fleet_ship_id <= 0 || purchase.saved_squad_id <= 0 ||
                 purchase.price_tsv == 0 ||
@@ -972,10 +974,29 @@ impl NativePhysicalScene {
             {
                 return Err(invalid("purchase price must equal the authored full-health ship TSV"));
             }
+            // Unity ReplaceDeadShipsInSquad preserves the dead
+            // SquadShip.Offset when installing a matching-class
+            // replacement. Prefer the exact authored casualty slot
+            // rather than assigning an unrelated new formation position.
+            let casualty_slot = self.source_squads[owner].members.iter()
+                .filter(|id| !filled_casualty_slots.contains(id))
+                .find_map(|&id| {
+                    let ship = self.entities.iter().find_map(|entity| match entity {
+                        NativeAuthoredEntity::Ship(ship) if ship.entity_id == id =>
+                            Some(ship),
+                        _ => None,
+                    })?;
+                    if ship.ship_type != purchase.ship_type ||
+                        !ship.fleet_ship_id
+                            .is_some_and(|fleet_id| permanently_lost.contains(&fleet_id))
+                    { return None; }
+                    let offset = self.source_formation.get(&id)?.offset;
+                    Some((id, ship.motion.position, offset))
+                });
             let half_size = template.game_movement.half_width.max(
                 template.game_movement.half_height).max(1.0);
             let spacing = half_size * 3.0;
-            let mut placement = None;
+            let mut placement = casualty_slot.map(|(_, position, _)| position);
             // Local squad-relative grid search, performed once at game
             // setup. Compare actual authored hull extents against every
             // live ship; never teleport active gameplay or simulate fake
@@ -1010,6 +1031,9 @@ impl NativePhysicalScene {
             let position = placement.ok_or(invalid(
                 "no clear authored map placement near the purchased ship's saved squad",
             ))?;
+            if let Some((id, ..)) = casualty_slot {
+                filled_casualty_slots.insert(id);
+            }
             next_entity = next_entity.checked_add(1)
                 .ok_or(invalid("purchased ship entity identities exhausted"))?;
             let mut ship = template.clone();
@@ -1045,7 +1069,10 @@ impl NativePhysicalScene {
                 .ok_or(invalid("purchased ship template lacks vision"))?;
             let mut formation = *self.source_formation.get(&template_id)
                 .ok_or(invalid("purchased ship template lacks formation"))?;
-            formation.offset = anchor_offset + (position - anchor_position);
+            formation.offset = casualty_slot.map_or(
+                anchor_offset + (position - anchor_position),
+                |(_, _, dead_offset)| dead_offset,
+            );
             self.fleet.register_spawned_ship(NativeFleetShipValue {
                 ship_id: next_entity,
                 has_persistent_fleet_value: true,
