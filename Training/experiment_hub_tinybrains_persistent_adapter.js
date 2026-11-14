@@ -648,9 +648,26 @@ function createTinyBrainsPersistentDockerAdapter({
             throw error;
         }
     }
-    const dualBackendReady=installedModule('pipeline')&&
+    // A Python file's mere existence is not sufficient evidence that an
+    // older installed CLI understands the multi-device launch arguments.
+    // Inspect only this bounded, locally pinned source at adapter install;
+    // no training processes, imports or GPU workloads are started here.
+    let dualCli=false, multiCli=false;
+    if(installedModule('learning_path')) {
+        const cli=path.join(project,'src','ants_mapoca','learning_path.py');
+        const size=fs.statSync(cli).size;
+        if(Number.isSafeInteger(size)&&size>0&&size<=1024*1024) {
+            const source=fs.readFileSync(cli,'utf8');
+            dualCli=source.includes("'--self-play-collection-device'")&&
+                source.includes("'--self-play-device'");
+            multiCli=dualCli&&
+                source.includes("'--self-play-local-gpu-collector'");
+        }
+    }
+    const dualBackendReady=dualCli&&installedModule('pipeline')&&
         installedModule('engine_pool');
-    const multiBackendReady=dualBackendReady&&installedModule('local_gpu_rollout');
+    const multiBackendReady=multiCli&&dualBackendReady&&
+        installedModule('local_gpu_rollout');
     const dualEnabled=enableDualGpu==='auto'?dualBackendReady:enableDualGpu;
     const multiEnabled=enableMultiGpu==='auto'?multiBackendReady:enableMultiGpu;
     if(project===artifacts||project===source||artifacts===source||
