@@ -1543,8 +1543,9 @@ incomplete artifact prevents the learner from starting; subsequent dispatch
 attempts can reuse verified files. No model, checkpoint, executable, or
 arbitrary worker file is accepted by this transport.
 
-The current mirrored-file ceiling is **500 MB per capture** and **5 GB per
-collector job**, with a 2 GB free-space reserve at the Hub and learner.
+The current mirrored-file ceiling is **500 MB per capture**, **1,024 files**
+(enough for 256 two-file rollout shards plus receipts and diagnostics), and
+**5 GB per collector job**, with a 2 GB free-space reserve at the Hub and learner.
 Larger captures require a separately qualified transport allocation rather
 than silently truncating the learning input. Collector model weights must
 still be locally installed and pinned; the transport moves completed
@@ -2103,7 +2104,8 @@ terminal state, the agent sends approved log snapshots to the existing
 loopback/SSH-forwarded machine endpoint on port 7149. Heartbeats and native
 Stop/Inspect commands are independent of this lower-priority transfer.
 Each HTTP chunk is limited to 1 MiB, a single file snapshot to 500 MB,
-and the receiving Hub to 256 files / 5 GB per job. The Hub also
+and the receiving Hub to 256 files / 5 GB per ordinary job, or
+1,024 files / 5 GB for a native Bees collector. The Hub also
 requires at least 2 GB of verified free filesystem space after each chunk
 so optional diagnostics cannot consume the checkpoint/journal disk reserve.
 Each cycle transfers up to 32 MiB for diagnostics or 128 MiB for native
