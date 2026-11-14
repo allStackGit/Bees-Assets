@@ -189,6 +189,13 @@ impl CampaignProgress<'_> {
             (owner == side).then_some(ship)).collect()
     }
 
+    pub fn saved_squad_ids_for_side(&self, side: i32) -> Vec<i64> {
+        let mut ids = self.squads.iter().filter_map(|(&id, squad)|
+            (squad.side == side).then_some(id)).collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids
+    }
+
     pub fn squad_rows(&self) -> Vec<String> {
         let mut ids = self.squads.keys().copied().collect::<Vec<_>>();
         ids.sort_unstable();
