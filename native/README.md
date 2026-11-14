@@ -370,8 +370,10 @@ simulator is constructed. Each battle uses the same installer to
 create the bought ship's physics, turret mounts, sight, formation,
 movement and perception. Previously killed bought ships remain in
 career records but are not redeployed. A failed preflight never
-charges minerals. Only actual completed battle summaries award
-banked TSV, and the saved account's receipt totals reject overdrafts.
+charges minerals. When all missions are complete, the editor checks
+the authored rematch routes instead, so owned ships can still be
+reorganized. Only actual completed battle summaries award banked TSV,
+and the saved account's receipt totals reject overdrafts.
 The shop is currently for normal authored hulls; custom
 special-weapon prefabs, editing originally authored squad members,
 and the complete Unity fleet-management screens remain separate work.
