@@ -241,6 +241,17 @@ impl BattleCatalog {
         if self.campaign_id.as_ref().is_some_and(|id| id.trim().is_empty()) {
             return Err(invalid("campaign_id must not be blank"));
         }
+        if let Some(first) = self.buildable_ships.first() {
+            if self.buildable_ships.iter().any(|ship|
+                ship.player_side != first.player_side) ||
+                self.battles.iter().filter_map(|entry| entry.mission.as_ref())
+                    .any(|mission| mission.player_side != first.player_side)
+            {
+                return Err(invalid(
+                    "the campaign ship bank and shop must belong to one player faction",
+                ));
+            }
+        }
         if !self.buildable_ships.is_empty() &&
             !self.max_squad_ships.is_some_and(|n| (1..=1024).contains(&n))
         {
