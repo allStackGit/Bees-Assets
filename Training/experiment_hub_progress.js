@@ -118,6 +118,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_device_1_peak_allocated_mb',
             'training_gpu_stream_max_seconds',
             'training_gpu_metric_readback_max_seconds',
+            'training_gpu_guard_readback_max_seconds',
+            'training_gpu_guard_readbacks',
             'training_gpu_optimizer_peak_allocated_mb',
             'training_cpu_parallelism','training_queue_max_seconds',
             'training_sim_early_dispatches',
@@ -145,6 +147,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
             'training_remote_gap_pressure','training_remote_codec_pressure',
+            'training_gpu_guard_wait_pressure',
+            'training_gpu_guard_readback_work_share',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
@@ -458,6 +462,24 @@ class BottleneckEvidence {
             ].some(([stage,field])=>
                 metrics['training_remote_'+stage+'_owner']?.value===critical&&
                 seconds(field)!==null&&seconds(field)/remoteWall>=0.25);
+            // Only the actual slowest PPO lineage can identify whether
+            // measured host blocking at the fused KL/finite GPU decision
+            // contributes to the experiment's critical path. This wait
+            // INCLUDES pending GPU work, so it is not a GPU busy fraction.
+            const slowest=metrics.training_slowest_worker?.value;
+            const guard=(Number.isSafeInteger(slowest)&&
+                slowest>=0&&slowest<count)
+                ?seconds('worker_'+slowest+'_gpu_guard_readback_seconds'):null;
+            const slowestOptimize=(Number.isSafeInteger(slowest)&&
+                slowest>=0&&slowest<count)
+                ?seconds('worker_'+slowest+'_optimization_seconds'):null;
+            const guardShare=slowestOptimize>0&&guard!==null&&
+                guard<=slowestOptimize
+                ?guard/slowestOptimize:null;
+            if(guardShare!==null)
+                add('training_gpu_guard_readback_work_share',guardShare);
+            const guardHint=guardShare!==null&&guardShare>=0.3&&
+                guard>=0.25&&slowestOptimize>=0.15*wall;
             for(let i=0;i<count;i++) {
                 const collect=seconds('worker_'+i+'_collection_seconds');
                 const optimize=seconds('worker_'+i+'_optimization_seconds');
@@ -504,7 +526,8 @@ class BottleneckEvidence {
                     courierTail:gapShare!==null&&gapShare>=0.25&&
                         (queueShare===null||queueShare<=0.10),
                     courierRemoteGap:remoteGapHint,
-                    courierRemoteCodec:remoteCodecHint});
+                    courierRemoteCodec:remoteCodecHint,
+                    courierGpuGuard:guardHint});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -521,6 +544,8 @@ class BottleneckEvidence {
                     add('training_remote_gap_pressure',1,'count');
                 if(sustained(x=>x.courierRemoteCodec))
                     add('training_remote_codec_pressure',1,'count');
+                if(sustained(x=>x.courierGpuGuard))
+                    add('training_gpu_guard_wait_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.cpuBusy))
                     add('pipeline_cpu_lease_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.throttled))
