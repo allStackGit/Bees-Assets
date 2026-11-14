@@ -196,6 +196,7 @@ impl CollisionAsteroidCatalog {
             entity_id, pose, asset.collision_layer, asset.shape.clone(),
             linear_velocity, angular_velocity_degrees,
         )?;
+        body.source_asteroid_prefab_number = Some(asset.prefab_number);
         body.set_proximity_collider(
             asset.proximity_layer, asset.proximity_shape.clone(),
         )?;
