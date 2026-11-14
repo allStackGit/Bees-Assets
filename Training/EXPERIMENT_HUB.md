@@ -1502,9 +1502,16 @@ directory; set `learnerSlot` for training against a distinct opponent.
 Collectors use `collectOnly: true` and their own artifact directory; a
 verified inbox learner additionally uses `bundleInbox`. All configured
 files and complete model manifests must pass the adapter's content checks
-before the agent can execute or advertise them. Existing continuation and
-collection receipts remain in the same native systemd owner ledger and
-combined CPU/RAM budget as Courier. **Do not configure a GPU allocation for
+before the agent can execute or advertise them. The optional frozen
+`physics_workers` job parameter sets native physics threads per rollout
+process (1–128). It may be combined with `rollout_workers` to run several
+model/rollout processes; their product must fit the job's allocated CPU count.
+One process with several physics threads shares one batched model worker, while
+several processes have separate model workers. The Hub reports actual
+`rollout_parallel_physics_rounds`, Stage-serialized arenas and summed worker
+CPU-wall time only when a completed native runner supplies those measurements.
+Existing continuation and collection receipts remain in the same native
+systemd owner ledger and combined CPU/RAM budget as Courier. **Do not configure a GPU allocation for
 native Bees in mixed mode.** To qualify a native Bees ROCm GPU learner, use
 the dedicated `native` Linux backend after separately reconciling Docker
 ownership; mixed mode does not share or arbitrate GPU device ownership
