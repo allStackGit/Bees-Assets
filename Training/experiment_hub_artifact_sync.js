@@ -32,6 +32,13 @@ function safeLogPath(relative) {
         s==='.'||s==='..'))return false;
     return SUFFIXES.has(path.posix.extname(relative).toLowerCase());
 }
+// Only the native collector's actual capture filename is binary. All
+// other project artifacts remain covered by the diagnostic-path allowlist;
+// never turn this endpoint into a checkpoint or arbitrary-file mirror.
+function safeNativeCollectorPath(relative) {
+    return safeLogPath(relative) ||
+        /^(?:rollout-(?:0|[1-9][0-9]{0,2})\/)?decisions\.bin$/.test(relative);
+}
 function fail(message,status=400) {
     const error=Error(message);
     error.status=status;
@@ -112,7 +119,9 @@ class ArtifactMirror {
             job.project_id==='bees'||!job.lease_id||
             job.start_first_offered_at==null)
             fail('Artifact job is not owned by this machine.',409);
-        if(!safeLogPath(relative)||!SHA.test(String(sha||''))||
+        if(!(job.project_id==='bees_native_collect'
+            ?safeNativeCollectorPath(relative):safeLogPath(relative))||
+            !SHA.test(String(sha||''))||
             !Number.isSafeInteger(size)||size<1||size>MAX_FILE)
             fail('Invalid artifact snapshot.',400);
         const root=path.dirname(hub.file);
@@ -251,4 +260,5 @@ class ArtifactMirror {
         return {offset:next,complete:false};
     }
 }
-module.exports={ArtifactMirror,safeLogPath,MAX_CHUNK,MAX_FILE};
+module.exports={ArtifactMirror,safeLogPath,safeNativeCollectorPath,
+    MAX_CHUNK,MAX_FILE};
