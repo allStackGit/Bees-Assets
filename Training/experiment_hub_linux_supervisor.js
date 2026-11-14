@@ -206,7 +206,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         // trusted learner adapter may turn this subset into endpoints.
         ...(job.project_id==='tinybrains'&&
             job.distributed_rollout_endpoints!==undefined
-            ?{distributed_rollout_endpoints:job.distributed_rollout_endpoints}:{}),
+            ?{distributed_rollout_endpoints:Object.freeze(job.distributed_rollout_endpoints.slice())}:{}),
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(!cpuOnly?(dual||multi
