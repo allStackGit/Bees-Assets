@@ -108,6 +108,7 @@ pub struct NativeClient {
     pub window_update_wall_seconds: f64,
     pub culled_ship_draws: u64,
     pub ship_sprite_draws: u64,
+    pub sprite_raster_candidate_pixels: u64,
     pub ship_fallback_hulls: u64,
     pub ship_art_types_loaded: usize,
     pub projectile_sprite_draws: u64,
@@ -165,7 +166,7 @@ impl NativeClient {
             rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, ship_sprite_draws: 0,
-            ship_fallback_hulls: 0, ship_art_types_loaded: 0,
+            sprite_raster_candidate_pixels: 0, ship_fallback_hulls: 0, ship_art_types_loaded: 0,
             projectile_sprite_draws: 0, projectile_explosion_sprite_draws: 0,
             projectile_fallback_hulls: 0,
             projectile_art_types_loaded: 0,
@@ -1139,6 +1140,8 @@ impl NativeClient {
         );
         self.culled_ship_draws = self.culled_ship_draws.saturating_add(counts.culled_ships as u64);
         self.ship_sprite_draws = self.ship_sprite_draws.saturating_add(counts.ship_sprite_draws as u64);
+        self.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels
+            .saturating_add(counts.sprite_raster_candidate_pixels);
         self.ship_fallback_hulls = self.ship_fallback_hulls.saturating_add(counts.ship_fallback_hulls as u64);
         self.ship_art_types_loaded = counts.ship_art_types_loaded;
         self.projectile_sprite_draws = self.projectile_sprite_draws

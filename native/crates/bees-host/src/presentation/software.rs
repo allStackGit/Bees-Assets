@@ -92,6 +92,9 @@ pub struct NativeRenderCounts {
     pub ships: usize,
     /// Source PNG sprites rendered instead of the fallback hull outline.
     pub ship_sprite_draws: usize,
+    /// Number of visible sprite-pixel candidates inspected by the software
+    /// rasterizer, including ships, shots, debris and special effects.
+    pub sprite_raster_candidate_pixels: u64,
     pub ship_fallback_hulls: usize,
     /// Loaded source-art types, not the number of active ship entities.
     pub ship_art_types_loaded: usize,
@@ -160,6 +163,7 @@ pub struct NativeSoftwareRenderer {
     /// Filled from the live command director before the existing ship
     /// render pass, avoiding any additional ship loop or copied roster.
     command_target_ship_ids: HashSet<i64>,
+    sprite_raster_candidate_pixels: u64,
     pub selection_box: Option<Aabb>,
     /// Optional inspection only. Disabled means no range or linecast work.
     pub show_weapon_ranges: bool,
@@ -220,6 +224,31 @@ struct NativeSprite {
     width: usize,
     height: usize,
     pixels: Vec<u8>,
+    /// Alpha-only visible rectangle in source pixel coordinates.
+    /// Computed once on load; ship and projectile rasterization never
+    /// rescans transparent padding on every rendered frame.
+    painted_bounds: Option<(usize, usize, usize, usize)>,
+}
+
+impl NativeSprite {
+    fn new(width: usize, height: usize, pixels: Vec<u8>) -> Self {
+        let mut left = width;
+        let mut top = height;
+        let mut right = 0;
+        let mut bottom = 0;
+        for (i, color) in pixels.chunks_exact(4).enumerate() {
+            if color[3] == 0 { continue; }
+            let x = i % width;
+            let y = i / width;
+            left = left.min(x);
+            top = top.min(y);
+            right = right.max(x + 1);
+            bottom = bottom.max(y + 1);
+        }
+        let painted_bounds = (left < right && top < bottom)
+            .then_some((left, top, right, bottom));
+        Self { width, height, pixels, painted_bounds }
+    }
 }
 
 struct SpriteAtlas {
@@ -246,7 +275,7 @@ impl SpriteAtlas {
                 for _ in 0..length { pixels.extend_from_slice(&rest[2..6]); }
                 rest = &rest[6..];
             }
-            NativeSprite { width, height, pixels }
+            NativeSprite::new(width, height, pixels)
         }).collect();
         assert!(rest.is_empty() && count > 0 && pixels_per_unit > 0.0);
         Self { pixels_per_unit, sprites }
@@ -282,7 +311,7 @@ fn source_art_sprite(
         }
         for _ in 0..length { pixels.extend_from_slice(&run[2..6]); }
     }
-    Ok(NativeSprite { width, height, pixels })
+    Ok(NativeSprite::new(width, height, pixels))
 }
 
 const SOURCE_SHIP_TYPES: usize = 24;
@@ -452,6 +481,7 @@ impl NativeSoftwareRenderer {
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
             command_target_ship_ids: HashSet::new(),
+            sprite_raster_candidate_pixels: 0,
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, show_shooting_menu: false,
             focused_shooting_strategy: 1,
@@ -834,6 +864,7 @@ impl NativeSoftwareRenderer {
             ) + pad,
         };
         self.pixels.fill(0x080e19);
+        self.sprite_raster_candidate_pixels = 0;
         let mut counts = NativeRenderCounts::default();
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
@@ -1122,6 +1153,7 @@ impl NativeSoftwareRenderer {
         // view; retained battles with millions of shots cannot accumulate
         // stale animation state over time.
         self.projectile_art_ticks.retain(|_, &mut (_, seen)| seen == view.tick);
+        counts.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels;
         // Only presentation pixels are masked. Commands, physics, learning
         // and the source-owned visibility caches remain unchanged.
         self.apply_player_fog(view, &mut counts);
@@ -1902,15 +1934,30 @@ impl NativeSoftwareRenderer {
     fn draw_sprite(&mut self, sprite: &NativeSprite, position: Vec2, angle: f32, scale: f32, alpha: f32) -> bool {
         let (center_x, center_y) = self.project(position);
         let (sin, cos) = angle.sin_cos();
+        let Some((px0, py0, px1, py1)) = sprite.painted_bounds else {
+            return false;
+        };
         let half_w = sprite.width as f32 * 0.5;
         let half_h = sprite.height as f32 * 0.5;
-        let extent_x = scale * (half_w * cos.abs() + half_h * sin.abs());
-        let extent_y = scale * (half_w * sin.abs() + half_h * cos.abs());
-        let left = (center_x - extent_x).floor().max(0.0) as usize;
-        let right = (center_x + extent_x).ceil().clamp(0.0, self.width as f32) as usize;
-        let top = (center_y - extent_y).floor().max(0.0) as usize;
-        let bottom = (center_y + extent_y).ceil().clamp(0.0, self.height as f32) as usize;
+        // Rotate the NONTRANSPARENT source bounds using the same
+        // transformation as the unchanged inverse texture sampler below.
+        // The sprite's original center/pivot is preserved even if almost
+        // its entire bitmap is transparent padding.
+        let alpha_cx = (px0 + px1) as f32 * 0.5 - half_w;
+        let alpha_cy = (py0 + py1) as f32 * 0.5 - half_h;
+        let half_alpha_w = (px1 - px0) as f32 * 0.5;
+        let half_alpha_h = (py1 - py0) as f32 * 0.5;
+        let bounds_x = center_x + scale * (alpha_cx * cos + alpha_cy * sin);
+        let bounds_y = center_y + scale * (-alpha_cx * sin + alpha_cy * cos);
+        let extent_x = scale * (half_alpha_w * cos.abs() + half_alpha_h * sin.abs());
+        let extent_y = scale * (half_alpha_w * sin.abs() + half_alpha_h * cos.abs());
+        let left = (bounds_x - extent_x).floor().clamp(0.0, self.width as f32) as usize;
+        let right = (bounds_x + extent_x).ceil().clamp(0.0, self.width as f32) as usize;
+        let top = (bounds_y - extent_y).floor().clamp(0.0, self.height as f32) as usize;
+        let bottom = (bounds_y + extent_y).ceil().clamp(0.0, self.height as f32) as usize;
         if left >= right || top >= bottom { return false; }
+        self.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels
+            .saturating_add(((right - left) as u64).saturating_mul((bottom - top) as u64));
         for y in top..bottom {
             let dy = (y as f32 + 0.5 - center_y) / scale;
             for x in left..right {
