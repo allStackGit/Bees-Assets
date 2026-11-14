@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {spawnSync} = require('node:child_process');
 const {validateProgress} = require('./experiment_hub_progress');
 const {evaluationReader} = require('./experiment_hub_evaluation');
 
@@ -179,6 +180,8 @@ function createNativeBeesAdapter({
     const trainer = trustedFile(trainerConfig);
     const input = trustedFile(checkpoint);
     const runner = trustedFile(path.resolve(__dirname, '../native/tools/train_policy_round.py'));
+    const contractScript = trustedFile(path.resolve(__dirname,
+        '../native/tools/native_training_artifacts.py'));
     if (typeof artifactRoot !== 'string' || !path.isAbsolute(artifactRoot))
         throw Error('Native Bees requires an absolute artifact root.');
     const artifacts = fs.realpathSync(artifactRoot);
@@ -218,10 +221,22 @@ function createNativeBeesAdapter({
         ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
     const sourcePins = nativeSourceDependencies(run, config);
+    let sourceContract = null;
+    if (collectOnly) {
+        // The exact shared Python implementation also signs the learner's
+        // work orders. One process at adapter setup, never in the hot path.
+        const probe = spawnSync(executable, ['-B', contractScript, run], {
+            encoding: 'utf8', timeout: 15000, maxBuffer: 4096,
+        });
+        if (probe.error || probe.status !== 0 ||
+            !/^[a-f0-9]{64}$/.test((probe.stdout || '').trim()))
+            throw Error('Native Bees physical source identity could not be verified by the installed Python runtime.');
+        sourceContract = probe.stdout.trim();
+    }
     const pins = new Map([
         ...basePins,
         ...sourcePins,
-        ...[runner, ...(binary ? [binary] : [])]
+        ...[runner, contractScript, ...(binary ? [binary] : [])]
             .map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
     const initialGpuInference = verifyModelDependencies(
@@ -378,14 +393,15 @@ function createNativeBeesAdapter({
             const output = jobRoot(context);
             const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
                 collection_id, rollout_world_start, rollout_worlds,
-                bundle_directory, refresh_opponent_slot} = parameters;
+                bundle_directory, refresh_opponent_slot,
+                source_run_contract_sha256} = parameters;
             const allowed = inboxLearner
                 ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads',
                     'refresh_opponent_slot']
                 : collectOnly
                     ? ['config_sha256', 'seed_offset', 'rollout_workers',
                         'collection_id', 'rollout_world_start', 'rollout_worlds',
-                        'bundle_directory']
+                        'bundle_directory', 'source_run_contract_sha256']
                     : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers',
                         'refresh_opponent_slot'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
@@ -414,7 +430,11 @@ function createNativeBeesAdapter({
                         bundle_directory !== undefined)) ||
                 (bundle_directory !== undefined &&
                     (typeof bundle_directory !== 'string' ||
-                        !/^[A-Za-z0-9_-]{1,96}$/.test(bundle_directory) || !inbox))
+                        !/^[A-Za-z0-9_-]{1,96}$/.test(bundle_directory) || !inbox)) ||
+                (source_run_contract_sha256 !== undefined &&
+                    (collection_id === undefined ||
+                        !/^[a-f0-9]{64}$/.test(String(source_run_contract_sha256)) ||
+                        source_run_contract_sha256 !== sourceContract))
             ))
                 throw Error('Native distributed work order needs an exact ID, bounded World window and safe inbox name.');
             const activeWorlds = collectOnly && rollout_worlds !== undefined
