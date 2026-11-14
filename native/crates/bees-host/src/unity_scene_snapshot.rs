@@ -979,7 +979,7 @@ impl NativePhysicalScene {
             // replacement. Prefer the exact authored casualty slot
             // rather than assigning an unrelated new formation position.
             let casualty_slot = self.source_squads[owner].members.iter()
-                .filter(|id| !filled_casualty_slots.contains(id))
+                .filter(|id| !filled_casualty_slots.contains(*id))
                 .find_map(|&id| {
                     let ship = self.entities.iter().find_map(|entity| match entity {
                         NativeAuthoredEntity::Ship(ship) if ship.entity_id == id =>
