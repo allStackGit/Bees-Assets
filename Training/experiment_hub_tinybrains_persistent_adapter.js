@@ -434,6 +434,53 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 delete metrics['collector_'+i+'_'+suffix];
             if(fits())break;
         }
+        // With 8 local GPUs plus the learner, a fully populated row can
+        // legitimately contain over 700 independent source measurements.
+        // The fixed neutral Hub transport cannot hold them all at once.
+        // Remove whole optional field COLUMNS across every collector to
+        // preserve comparable per-device coverage and critical-path owner
+        // evidence; never truncate an arbitrary tail of physical GPUs.
+        // The committed native history retains all measurements.
+        if(!fits()) {
+            const deferredDetails=[
+                // Proven batch width and adaptation remain in the backend
+                // row; the Hub retains measured inference work and rates.
+                'gpu_batch_adjustments','gpu_batch_accepted',
+                'gpu_batch_settled','gpu_batch_restored',
+                'gpu_batch_changed_next','gpu_batch_target_pixels',
+                'gpu_batch_next_target','gpu_batch_proven_target',
+                // Keep live/target/max simulation counts and real waits.
+                'sim_changes','sim_accepted','sim_settled',
+                'sim_restored','sim_proven',
+                'inference_shape_groups','inference_readbacks',
+                'inference_forward_chunks','opponent_shape_groups',
+                'opponent_readbacks',
+                'snapshot_cache_files','snapshot_cache_bytes',
+                'record_packed','record_board_groups',
+                'supports_weight_blob','weight_blob_used',
+                'gpu_ordinal','gpu_batch_used_pixels',
+                'gpu_batch_vram_capped','model_prepare_seconds',
+                // Preserve the physical lease index, live simulation count,
+                // effective throughput, critical stage and join wait ahead
+                // of secondary resource details under maximum fanout.
+                'gpu_reserved_mb','gpu_allocated_mb',
+                'gpu_peak_allocated_mb','gpu_physical_free_mb',
+                'gpu_vram_lease_mb','sim_engine_charged_mb',
+                'sim_learner_mb','sim_charged_mb','sim_ram_headroom_mb',
+                // Retain full remote codec breakdown unless the complete
+                // source envelope still cannot hold a valid update.
+                'serialize_seconds','compress_seconds',
+                'send_seconds','receive_seconds','decode_seconds',
+                'ingestion_seconds','worker_receive_seconds',
+                'worker_decode_seconds','record_encode_seconds',
+                'request_wire_bytes','response_wire_bytes',
+            ];
+            for(const suffix of deferredDetails) {
+                for(let i=0;i<collectors;i++)
+                    delete metrics['collector_'+i+'_'+suffix];
+                if(fits())break;
+            }
+        }
     }
     return metrics;
 }
