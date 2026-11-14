@@ -512,7 +512,7 @@ class BottleneckEvidence {
                 prior.samples.push({at,fraction,waitShare,localShare,mergeShare,stageHints,simHints,
                     joinHints,localGpuIndices,remoteIndices,connectHints,gpuHints,collectorNativeDenials,resourceHints,
                     scanPressure:scanShare!==null&&scanShare>=0.15&&ramScan>=0.25,
-                    exclusiveEvidence});
+                    exclusiveEvidence,overlapMeasured:overlap!==null});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -567,7 +567,9 @@ class BottleneckEvidence {
                 const optimizationDominant=stable(x=>x.fraction<=0.30);
                 const safelyExposed=stable(x=>x.exclusiveEvidence);
                 if(!safelyExposed&&
-                        (collectionDominant||optimizationDominant))
+                        (collectionDominant||optimizationDominant)&&
+                        recent.filter(x=>x.overlapMeasured&&
+                            !x.exclusiveEvidence).length>=5)
                     add('pipeline_multiple_delay_evidence',1,'count');
                 else if(optimizationDominant) {
                     add('pipeline_primary_delay_kind',2,'count');
