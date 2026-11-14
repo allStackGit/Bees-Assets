@@ -103,13 +103,39 @@ function courierMetrics(source) {
         for(const suffix of detail)
             focused.add('worker_'+i+'_'+suffix);
     }
+    // Under a full 64-lineage population, optional aggregate measurements
+    // must not consume the 480-field/29-KiB source budget *before* the last
+    // worker's core stage timings. Keep essential global throughput and
+    // measured bottleneck owners first, then every lineage's core stages,
+    // the diagnosed owner's detail, and finally optional global/worker data.
+    const criticalGlobals=new Set([
+        'training_profile_round','training_lineage_workers',
+        'training_batch_wall_seconds','training_slowest_worker',
+        'training_slowest_seconds','training_worker_gap_seconds',
+        'training_useful_steps','training_useful_steps_per_second',
+        'training_total_useful_steps','training_end_to_end_steps_per_second',
+        'training_tracked_active_seconds','training_rejected_workers',
+        'training_collect_max_seconds','training_optimize_max_seconds',
+        'training_simulation_max_seconds','training_inference_max_seconds',
+        'training_ppo_data_max_seconds','training_ingestion_max_seconds',
+        'training_selection_max_seconds','training_save_max_seconds',
+        'training_cpu_parallelism','training_cpu_sum_seconds',
+        'training_concurrency_limit','training_concurrency_next_limit',
+        'training_simulation_shards','training_simulation_active_shards',
+        'training_gpu_optimizer_lineages','training_gpu_devices_assigned',
+        'training_gpu_devices_active','training_ppo_integrity_checks',
+        'training_ppo_integrity_max_seconds',...ownerKeys,
+    ]);
     const ordered=[
-        ...fields.filter(([name])=>!workerField.test(name)),
+        ...fields.filter(([name])=>!workerField.test(name)&&
+            criticalGlobals.has(name)),
         ...fields.filter(([name])=>{
             const m=workerField.exec(name);
             return m&&core.has(m[2]);
         }),
         ...fields.filter(([name])=>focused.has(name)),
+        ...fields.filter(([name])=>!workerField.test(name)&&
+            !criticalGlobals.has(name)),
         ...fields.filter(([name])=>{
             const m=workerField.exec(name);
             return m&&!core.has(m[2])&&!focused.has(name);
