@@ -347,9 +347,13 @@ FleetShip and SavedSquad career statistics. Besides victories, mined
 minerals and permanent losses, each FleetShip reports observed turret
 fire, direct enemy TSV damage, received TSV damage and physically
 attributed enemy kills. These event-derived figures share the gameplay
-and training combat event stream; special chain-reaction kill credit
-and ability-specific fire counts may differ from Unity's full
-FleetShip career counters until that attribution is completed. Earlier
+and training combat event stream. Career accounting is enabled only
+on campaign Levels with `record_fleet_stats`, and its event ledger is
+disabled by default in parallel native training worlds; PPO collectors
+do not pay to accumulate unused long-term career counters. Special
+chain-reaction kill credit and ability-specific fire counts may differ
+from Unity's full FleetShip career counters until that attribution is
+completed. Earlier
 receipts without the observations remain usable and report incomplete
 combat history instead of fabricating counters.
 
