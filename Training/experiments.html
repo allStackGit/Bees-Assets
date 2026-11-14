@@ -767,7 +767,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
         <select id="hub-job-metrics" class="hub-metric-source" multiple size="12" aria-label="Metrics to retain in Hub comparison history"></select>
         <div id="hub-job-metric-picker" class="hub-metric-picker" aria-label="Search and select job metrics"></div>
-        <small>New jobs start with a project-specific set of learning-quality and training-speed metrics. Adjust them for this job or use <strong>Use project defaults</strong> to restore the preset. Leave all unchecked to prioritize observed host CPU/GPU measurements, followed by project metrics within the 96-field chart limit. Metrics not reported by the trainer remain unavailable; device busy and VRAM are host-wide. The underlying project history is unaffected.</small>
+        <small>Only metrics supported by the selected saved configuration and connected trainer, or previously recorded for that same revision, are listed. Simulation-mode and GPU-only metrics appear only when applicable. Supported metrics may still be absent from an individual run. Use <strong>Use project defaults</strong> to restore the preset, or leave all unchecked to prioritize recorded host resources and project measurements within the 96-field chart limit. The underlying project history is unaffected.</small>
       </div>
       <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
       <fieldset class="wide">
@@ -883,6 +883,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <label for="hub-compare-metric">Chart and export metrics</label>
       <select id="hub-compare-metric" class="hub-metric-source" multiple size="12" aria-label="Metrics to chart and export"></select>
       <div id="hub-compare-metric-picker" class="hub-metric-picker" aria-label="Search and select comparison metrics"></div>
+      <small>Only metrics actually recorded by the runs currently selected for comparison are listed. Select different runs to see their available measurements.</small>
     </div>
     <label>Horizontal axis
       <select id="hub-compare-x-axis">
