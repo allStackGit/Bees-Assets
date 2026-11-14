@@ -95,6 +95,9 @@ pub struct NativeRenderCounts {
     pub ship_fallback_hulls: usize,
     /// Loaded source-art types, not the number of active ship entities.
     pub ship_art_types_loaded: usize,
+    pub projectile_sprite_draws: usize,
+    pub projectile_fallback_hulls: usize,
+    pub projectile_art_types_loaded: usize,
     pub obstacles: usize,
     pub culled_ships: usize,
     pub culled_obstacles: usize,
@@ -244,7 +247,40 @@ impl SpriteAtlas {
     }
 }
 
+/// Decoder for bounded operator-generated sprite atlases. The original
+/// PNGs are converted once, never decoded by a physics or PPO worker.
+fn source_art_u16(bytes: &[u8], at: &mut usize) -> Option<usize> {
+    let end = (*at).checked_add(2)?;
+    let raw = bytes.get(*at..end)?;
+    *at = end;
+    Some(usize::from(u16::from_le_bytes([raw[0], raw[1]])))
+}
+
+fn source_art_sprite(
+    bytes: &[u8], at: &mut usize, width: usize, height: usize,
+) -> io::Result<NativeSprite> {
+    let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+        "invalid native source sprite data");
+    let expected = width.checked_mul(height)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(invalid)?;
+    let mut pixels = Vec::with_capacity(expected);
+    while pixels.len() < expected {
+        let end = (*at).checked_add(6).ok_or_else(invalid)?;
+        let run = bytes.get(*at..end).ok_or_else(invalid)?;
+        *at = end;
+        let length = usize::from(u16::from_le_bytes([run[0], run[1]]));
+        let to_write = length.checked_mul(4).ok_or_else(invalid)?;
+        if length == 0 || pixels.len() + to_write > expected {
+            return Err(invalid());
+        }
+        for _ in 0..length { pixels.extend_from_slice(&run[2..6]); }
+    }
+    Ok(NativeSprite { width, height, pixels })
+}
+
 const SOURCE_SHIP_TYPES: usize = 24;
+const SOURCE_PROJECTILE_TYPES: usize = 16;
 
 struct SourceShipArt {
     pixels_per_unit: f32,
@@ -265,44 +301,24 @@ impl SourceShipAtlas {
             "invalid native ship sprite atlas");
         if bytes.get(..4) != Some(&b"BSS1"[..]) { return Err(invalid()); }
         let mut at = 4usize;
-        let read_u16 = |at: &mut usize| -> Option<usize> {
-            let raw = bytes.get(*at..at.checked_add(2)?)?;
-            *at += 2;
-            Some(usize::from(u16::from_le_bytes([raw[0], raw[1]])))
-        };
-        let count = read_u16(&mut at).ok_or_else(invalid)?;
+        let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
         if count > SOURCE_SHIP_TYPES { return Err(invalid()); }
         let mut sprites = std::array::from_fn(|_| None);
         for _ in 0..count {
             let ty = usize::from(*bytes.get(at).ok_or_else(invalid)?);
             at += 1;
-            let ppu = read_u16(&mut at).ok_or_else(invalid)?;
-            let width = read_u16(&mut at).ok_or_else(invalid)?;
-            let height = read_u16(&mut at).ok_or_else(invalid)?;
+            let ppu = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            let width = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            let height = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
             if ty >= SOURCE_SHIP_TYPES || sprites[ty].is_some() ||
                 ppu == 0 || width == 0 || height == 0 ||
                 width > 2048 || height > 2048
             {
                 return Err(invalid());
             }
-            let expected = width.checked_mul(height)
-                .and_then(|pixels| pixels.checked_mul(4))
-                .ok_or_else(invalid)?;
-            let mut pixels = Vec::with_capacity(expected);
-            while pixels.len() < expected {
-                let run = bytes.get(at..at.checked_add(6).ok_or_else(invalid)?)
-                    .ok_or_else(invalid)?;
-                at += 6;
-                let length = usize::from(u16::from_le_bytes([run[0], run[1]]));
-                let bytes_to_write = length.checked_mul(4).ok_or_else(invalid)?;
-                if length == 0 || pixels.len() + bytes_to_write > expected {
-                    return Err(invalid());
-                }
-                for _ in 0..length { pixels.extend_from_slice(&run[2..6]); }
-            }
+            let sprite = source_art_sprite(bytes, &mut at, width, height)?;
             sprites[ty] = Some(SourceShipArt {
-                pixels_per_unit: ppu as f32,
-                sprite: NativeSprite { width, height, pixels },
+                pixels_per_unit: ppu as f32, sprite,
             });
         }
         if at != bytes.len() { return Err(invalid()); }
@@ -310,40 +326,104 @@ impl SourceShipAtlas {
     }
 }
 
-/// Load once on first render, never from the gameplay or training hot path.
-/// For packaged clients put the generated atlas in assets/ beside bees(.exe),
-/// or set BEES_NATIVE_ASSETS to its directory. Checkout-local paths are
-/// conveniences for Windows and Linux development without a build step.
+/// Real projectile sprites may have multiple source-authored animation
+/// slices. The global tick only determines cosmetic animation phase;
+/// projectile lifetime, hit geometry and root-shot identity stay in CombatWorld.
+struct SourceProjectileArt {
+    pixels_per_unit: f32,
+    frames: Vec<NativeSprite>,
+}
+
+struct SourceProjectileAtlas {
+    sprites: [Option<SourceProjectileArt>; SOURCE_PROJECTILE_TYPES],
+    loaded: usize,
+}
+
+impl SourceProjectileAtlas {
+    fn decode(bytes: &[u8]) -> io::Result<Self> {
+        let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+            "invalid native projectile sprite atlas");
+        if bytes.get(..4) != Some(&b"BPS1"[..]) { return Err(invalid()); }
+        let mut at = 4usize;
+        let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+        if count > SOURCE_PROJECTILE_TYPES { return Err(invalid()); }
+        let mut sprites = std::array::from_fn(|_| None);
+        let mut all_pixels = 0usize;
+        for _ in 0..count {
+            let kind = usize::from(*bytes.get(at).ok_or_else(invalid)?);
+            at += 1;
+            let ppu = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            let frame_count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            if kind >= SOURCE_PROJECTILE_TYPES || sprites[kind].is_some() ||
+                ppu == 0 || !(1..=64).contains(&frame_count) {
+                return Err(invalid());
+            }
+            let mut frames = Vec::with_capacity(frame_count);
+            for _ in 0..frame_count {
+                let width = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+                let height = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+                if width == 0 || height == 0 || width > 2048 || height > 2048 {
+                    return Err(invalid());
+                }
+                all_pixels = all_pixels.checked_add(width * height).ok_or_else(invalid)?;
+                if all_pixels > 16_777_216 { return Err(invalid()); }
+                frames.push(source_art_sprite(bytes, &mut at, width, height)?);
+            }
+            sprites[kind] = Some(SourceProjectileArt {
+                pixels_per_unit: ppu as f32, frames,
+            });
+        }
+        if at != bytes.len() { return Err(invalid()); }
+        Ok(Self { sprites, loaded: count })
+    }
+}
+
+/// Load optional packed art once when the software renderer first needs
+/// it. Packaged games need only the small .rgba outputs, not Pillow,
+/// Unity, or the source PNGs.
+fn source_art_path(filename: &str) -> Option<std::path::PathBuf> {
+    let requested = std::env::var_os("BEES_NATIVE_ASSETS")
+        .map(|dir| std::path::PathBuf::from(dir).join(filename));
+    if let Some(requested) = requested {
+        return requested.is_file().then_some(requested);
+    }
+    let mut candidates = vec![
+        std::path::PathBuf::from("native/assets").join(filename),
+        std::path::PathBuf::from("assets").join(filename),
+    ];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.join("assets").join(filename));
+        }
+    }
+    candidates.push(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets").join(filename));
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+fn load_source_art<T>(filename: &str, decoder: fn(&[u8]) -> io::Result<T>) -> Option<T> {
+    let path = source_art_path(filename)?;
+    match std::fs::read(&path).and_then(|bytes| decoder(&bytes)) {
+        Ok(atlas) => Some(atlas),
+        Err(error) => {
+            eprintln!("Ignoring invalid native artwork at {}: {error}", path.display());
+            None
+        }
+    }
+}
+
 fn source_ship_art() -> Option<&'static SourceShipAtlas> {
     static ATLAS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
-    ATLAS.get_or_init(|| {
-        let requested = std::env::var_os("BEES_NATIVE_ASSETS")
-            .map(|dir| std::path::PathBuf::from(dir).join("ship-sprites.rgba"));
-        let mut candidates = Vec::new();
-        if let Some(requested) = requested {
-            candidates.push(requested);
-        } else {
-            candidates.push(std::path::PathBuf::from("native/assets/ship-sprites.rgba"));
-            candidates.push(std::path::PathBuf::from("assets/ship-sprites.rgba"));
-            if let Ok(exe) = std::env::current_exe() {
-                if let Some(parent) = exe.parent() {
-                    candidates.push(parent.join("assets/ship-sprites.rgba"));
-                }
-            }
-            candidates.push(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../assets/ship-sprites.rgba"));
-        }
-        let Some(path) = candidates.into_iter().find(|path| path.is_file()) else {
-            return None;
-        };
-        match std::fs::read(&path).and_then(|bytes| SourceShipAtlas::decode(&bytes)) {
-            Ok(atlas) => Some(atlas),
-            Err(error) => {
-                eprintln!("Ignoring invalid native ship artwork at {}: {error}", path.display());
-                None
-            }
-        }
-    }).as_ref()
+    ATLAS.get_or_init(|| load_source_art(
+        "ship-sprites.rgba", SourceShipAtlas::decode,
+    )).as_ref()
+}
+
+fn source_projectile_art() -> Option<&'static SourceProjectileAtlas> {
+    static ATLAS: OnceLock<Option<SourceProjectileAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "projectile-sprites.rgba", SourceProjectileAtlas::decode,
+    )).as_ref()
 }
 
 fn fire_tank_debris_atlas() -> &'static SpriteAtlas {
@@ -967,7 +1047,9 @@ impl NativeSoftwareRenderer {
                 }
             }
         }
-        for (_, body) in view.combat.render_projectiles() {
+        let projectile_art = source_projectile_art();
+        counts.projectile_art_types_loaded = projectile_art.map_or(0, |atlas| atlas.loaded);
+        for (projectile, body) in view.combat.render_projectiles() {
             counts.projectiles += 1;
             let position = body.motion.position;
             let center_visible = position.x >= viewport.min.x &&
@@ -985,12 +1067,29 @@ impl NativeSoftwareRenderer {
                 counts.culled_projectiles += 1;
                 continue;
             }
-            if let Some(shape) = body.shape() {
-                self.shape(shape, Pose { position,
-                    rotation_degrees: body.rotation_degrees }, 0xffd580);
+            let drew_art = projectile_art
+                .and_then(|atlas| atlas.sprites.get(usize::from(projectile.projectile_type)))
+                .and_then(Option::as_ref)
+                .is_some_and(|art| {
+                    let phase = (view.tick as f32 * view.fixed_step_seconds * 8.0)
+                        .floor() as usize;
+                    let index = phase.wrapping_add(projectile.entity_id as usize)
+                        % art.frames.len();
+                    self.draw_sprite(&art.frames[index], position,
+                        body.rotation_degrees.to_radians(),
+                        self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
+                });
+            if drew_art {
+                counts.projectile_sprite_draws += 1;
+            } else {
+                counts.projectile_fallback_hulls += 1;
+                if let Some(shape) = body.shape() {
+                    self.shape(shape, Pose { position,
+                        rotation_degrees: body.rotation_degrees }, 0xffd580);
+                }
+                // Collider-less script entities remain inspectable.
+                self.cross(position, 1.0, 0xffd580);
             }
-            // Collider-less script entities still have an inspectable position.
-            self.cross(position, 1.0, 0xffd580);
         }
         // Only presentation pixels are masked. Commands, physics, learning
         // and the source-owned visibility caches remain unchanged.
