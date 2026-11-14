@@ -1108,50 +1108,81 @@ impl NativePhysicalScene {
         Ok(purchases.len())
     }
 
-    /// Source-authenticated movable fleet members. Special weapons and
-    /// autonomous Scout/Queen/Barge behavior remain attached to the ship:
-    /// they are configured from the same immutable source on its new squad.
-    /// Only policy-bound ships, in-flight movement and parent/child carrier
-    /// relationships remain unsafe to detach. Setup-time validation only.
-    pub fn can_reassign_authored_ship(&self, side: i32, entity_id: i64) -> bool {
-        let ship = self.entities.iter().find_map(|entity| match entity {
-            NativeAuthoredEntity::Ship(ship) if ship.entity_id == entity_id => Some(ship),
+    /// Resolve a complete, source-authenticated carrier family. A dependent
+    /// Striker or Drone does not own an independent saved-squad assignment:
+    /// the original parent FleetShip owns its deployment. Keep source entity
+    /// IDs and explicit carrier references unchanged across the move.
+    ///
+    /// Reject ambiguous cross-squad/active-policy ownership rather than
+    /// detaching children, cloning their collider inputs or manufacturing
+    /// a new combat hierarchy. This runs at scene construction, never per tick.
+    fn movable_authored_family(&self, side: i32, parent_id: i64) -> Option<Vec<i64>> {
+        let parent = self.entities.iter().find_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if ship.entity_id == parent_id =>
+                Some(ship),
             _ => None,
-        });
-        let Some(ship) = ship else { return false };
-        if ship.side != side || ship.fleet_ship_id.is_none() ||
-            !self.fleet.get(entity_id)
+        })?;
+        let stationary = |ship: &crate::scene_builder::NativeAuthoredShip| {
+            ship.side == side && ship.policy.is_none() &&
+            !ship.motion.is_policy_controlled &&
+            !ship.motion.is_moving && !ship.motion.has_target_coordinates &&
+            ship.motion.body_velocity.length_squared() == 0.0
+        };
+        if !stationary(parent) || parent.fleet_ship_id.is_none() ||
+            !self.fleet.get(parent_id)
                 .is_some_and(|record| record.has_persistent_fleet_value) ||
-            ship.policy.is_some() || ship.motion.is_policy_controlled ||
-            ship.drone_carrier_id.is_some() ||
+            parent.drone_carrier_id.is_some() ||
+            matches!(&parent.special,
+                Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
+                if carrier.carrier_id.is_some())
+        {
+            return None;
+        }
+        let owner = self.source_squads.iter().find(|squad|
+            squad.side == side && squad.player_permissions.user_controlled &&
+            squad.saved_squad_id.is_some() && squad.members.contains(&parent_id)
+        )?;
+        let attached_to = |ship: &crate::scene_builder::NativeAuthoredShip, id: i64| {
+            ship.drone_carrier_id == Some(id) ||
             matches!(&ship.special,
                 Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
-                if carrier.carrier_id.is_some()) ||
-            ship.motion.is_moving || ship.motion.has_target_coordinates ||
-            ship.motion.body_velocity.length_squared() != 0.0
-        {
-            return false;
+                if carrier.carrier_id == Some(id))
+        };
+        let mut family = vec![parent_id];
+        for entity in &self.entities {
+            if let NativeAuthoredEntity::Ship(ship) = entity {
+                if ship.entity_id != parent_id && attached_to(ship, parent_id) {
+                    if !stationary(ship) || !owner.members.contains(&ship.entity_id) {
+                        return None;
+                    }
+                    family.push(ship.entity_id);
+                }
+            }
         }
-        // The owned ship might be a Carrier with live dependent drones or
-        // Strikers. Transfer the entire family only once source group
-        // ownership is supported; never detach its active children.
-        !self.entities.iter().any(|entity| match entity {
-            NativeAuthoredEntity::Ship(other) =>
-                other.drone_carrier_id == Some(entity_id) ||
-                matches!(&other.special,
-                    Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
-                    if carrier.carrier_id == Some(entity_id)),
-            _ => false,
-        })
+        // A nested carrier graph cannot be moved as a partial family. The
+        // authoritative parenting/command contracts must remain complete.
+        for &child_id in family.iter().skip(1) {
+            if self.entities.iter().any(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) if ship.entity_id != child_id =>
+                    attached_to(ship, child_id),
+                _ => false,
+            }) {
+                return None;
+            }
+        }
+        Some(family)
     }
 
-    /// Apply persisted edits of originally authored player FleetShips.
-    /// Membership changes are made before building any CombatWorld:
-    /// gameplay, policy evaluation and presentation still share the
-    /// exact same ship physics and command implementation.
-    ///
-    /// Entries are (FleetShip ID, original SavedSquad ID, current ID);
-    /// a current ID of zero means an owned hull in the reserve.
+    /// Eligibility used by both the actual fleet-edit operation and the
+    /// native game menu; never advertise a carrier that cannot be moved.
+    pub fn can_reassign_authored_ship(&self, side: i32, entity_id: i64) -> bool {
+        self.movable_authored_family(side, entity_id).is_some()
+    }
+
+    /// Restore saved original FleetShip assignments before building the
+    /// shared CombatWorld. Parent-child families move atomically: physics
+    /// placement, formation and squad command ownership change together;
+    /// original carrier IDs and special-weapon source inputs do not.
     pub fn apply_authored_fleet_roster(
         &mut self, side: i32, assignments: &[(i64, i64, i64)],
     ) -> Result<usize, NativeSnapshotError> {
@@ -1164,113 +1195,133 @@ impl NativePhysicalScene {
         {
             return Err(invalid("saved roster reassignment requires a native gameplay Level"));
         }
-        let mut seen = HashSet::new();
+        let mut seen_fleet = HashSet::new();
+        let mut touched_entities = HashSet::new();
         let mut changes = 0_usize;
         for &(fleet_id, original_id, current_id) in assignments {
             if fleet_id <= 0 || original_id <= 0 || current_id < 0 ||
-                !seen.insert(fleet_id)
+                !seen_fleet.insert(fleet_id)
             {
                 return Err(invalid("invalid original FleetShip reassignment"));
             }
-            let source_ship = self.entities.iter().find_map(|entity| match entity {
+            let parent_id = self.entities.iter().find_map(|entity| match entity {
                 NativeAuthoredEntity::Ship(ship) if ship.side == side &&
                     ship.fleet_ship_id == Some(fleet_id) => Some(ship.entity_id),
                 _ => None,
             }).ok_or(invalid("source FleetShip not found on this campaign route"))?;
             let old_index = self.source_squads.iter().position(|squad|
                 squad.saved_squad_id == Some(original_id) &&
-                squad.side == side && squad.members.contains(&source_ship)
-            ).ok_or(invalid("original FleetShip no longer belongs to its authored SavedSquad"))?;
-            if !self.source_squads[old_index].player_permissions.user_controlled ||
-                !self.fleet.get(source_ship)
-                    .is_some_and(|record| record.has_persistent_fleet_value)
-            {
-                return Err(invalid("only player-owned persistent hulls can be edited"));
+                squad.side == side && squad.members.contains(&parent_id)
+            ).ok_or(invalid("original FleetShip does not belong to its authored SavedSquad"))?;
+            if !self.source_squads[old_index].player_permissions.user_controlled {
+                return Err(invalid("original FleetShip does not belong to the player"));
             }
             if original_id == current_id { continue; }
-            let ship_index = self.entities.iter().position(|entity|
-                matches!(entity, NativeAuthoredEntity::Ship(ship)
-                    if ship.entity_id == source_ship)
-            ).ok_or(invalid("source FleetShip entity was lost"))?;
-            if !self.can_reassign_authored_ship(side, source_ship) {
-                return Err(invalid("FleetShip has active movement, policy or carrier dependencies and cannot be reassigned"));
+            let family = self.movable_authored_family(side, parent_id)
+                .ok_or(invalid("FleetShip family has active policy, movement, or cross-squad carrier dependencies"))?;
+            if family.iter().any(|id| !touched_entities.insert(*id)) {
+                return Err(invalid("overlapping saved FleetShip family assignments"));
             }
-            let to_index = if current_id == 0 { None } else {
+            let family_positions = family.iter().map(|&id| {
+                self.entities.iter().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == id =>
+                        Some((id, ship.motion.position,
+                            ship.game_movement.half_width.max(
+                                ship.game_movement.half_height).max(1.0))),
+                    _ => None,
+                })
+            }).collect::<Option<Vec<_>>>()
+                .ok_or(invalid("original family contains an unknown ship"))?;
+            let parent_position = family_positions[0].1;
+            let destination = if current_id == 0 { None } else {
                 Some(self.source_squads.iter().position(|squad|
                     squad.saved_squad_id == Some(current_id) &&
                     squad.side == side && squad.player_permissions.user_controlled &&
                     !squad.members.is_empty()
                 ).ok_or(invalid("destination SavedSquad has no available anchor"))?)
             };
-            if let Some(destination) = to_index {
-                let anchor_id = self.source_squads[destination].members[0];
-                let anchor_pos = self.entities.iter().find_map(|entity| match entity {
+            if let Some(index) = destination {
+                let anchor_id = self.source_squads[index].members[0];
+                let anchor_position = self.entities.iter().find_map(|entity| match entity {
                     NativeAuthoredEntity::Ship(ship) if ship.entity_id == anchor_id =>
                         Some(ship.motion.position),
                     _ => None,
-                }).ok_or(invalid("destination SavedSquad anchor is missing"))?;
+                }).ok_or(invalid("destination squad anchor ship is missing"))?;
                 let anchor_offset = self.source_formation.get(&anchor_id)
                     .ok_or(invalid("destination squad formation is missing"))?.offset;
-                let radius = match &self.entities[ship_index] {
-                    NativeAuthoredEntity::Ship(ship) =>
-                        ship.game_movement.half_width.max(ship.game_movement.half_height).max(1.0),
-                    _ => unreachable!(),
-                };
-                let spacing = radius * 3.0;
-                let mut spot = None;
+                let cease_fire = self.source_squads[index].cease_fire;
+                let spacing = family_positions.iter().map(|(_, _, radius)| *radius)
+                    .fold(1.0_f32, f32::max) * 3.0;
+                let mut translation = None;
                 'candidate: for ring in 1_i32..=32 {
                     for x in -ring..=ring {
                         for y in -ring..=ring {
                             if x.abs().max(y.abs()) != ring { continue; }
-                            let position = anchor_pos + Vec2::new(
-                                x as f32 * spacing, y as f32 * spacing,
-                            );
-                            if !position.is_finite() ||
-                                position.x - radius < self.bounds.min.x ||
-                                position.x + radius > self.bounds.max.x ||
-                                position.y - radius < self.bounds.min.y ||
-                                position.y + radius > self.bounds.max.y
-                            { continue; }
-                            if self.entities.iter().any(|entity| match entity {
-                                NativeAuthoredEntity::Ship(other) if other.entity_id != source_ship => {
-                                    let other_radius = other.game_movement.half_width.max(
-                                        other.game_movement.half_height);
-                                    (other.motion.position - position).length_squared() <
-                                        (radius + other_radius) * (radius + other_radius)
-                                }
-                                _ => false,
-                            }) { continue; }
-                            spot = Some(position);
-                            break 'candidate;
+                            let delta = anchor_position +
+                                Vec2::new(x as f32 * spacing, y as f32 * spacing) -
+                                parent_position;
+                            let clear = family_positions.iter().all(|&(_, old_pos, radius)| {
+                                let pos = old_pos + delta;
+                                pos.is_finite() &&
+                                pos.x - radius >= self.bounds.min.x &&
+                                pos.x + radius <= self.bounds.max.x &&
+                                pos.y - radius >= self.bounds.min.y &&
+                                pos.y + radius <= self.bounds.max.y &&
+                                !self.entities.iter().any(|entity| match entity {
+                                    NativeAuthoredEntity::Ship(ship)
+                                        if !family.contains(&ship.entity_id) =>
+                                    {
+                                        let other_radius = ship.game_movement.half_width.max(
+                                            ship.game_movement.half_height);
+                                        (ship.motion.position - pos).length_squared() <
+                                            (radius + other_radius) * (radius + other_radius)
+                                    }
+                                    _ => false,
+                                })
+                            });
+                            if clear {
+                                translation = Some(delta);
+                                break 'candidate;
+                            }
                         }
                     }
                 }
-                let position = spot.ok_or(invalid("no safe formation position for reassigned FleetShip"))?;
-                if let NativeAuthoredEntity::Ship(ship) = &mut self.entities[ship_index] {
-                    ship.motion.position = position;
+                let delta = translation.ok_or(invalid(
+                    "no clear authored map placement for the complete FleetShip family",
+                ))?;
+                for &id in &family {
+                    let entity = self.entities.iter_mut().find(|entity|
+                        entity.entity_id() == id)
+                        .ok_or(invalid("family entity vanished while applying roster"))?;
+                    let NativeAuthoredEntity::Ship(ship) = entity else {
+                        return Err(invalid("a FleetShip family member was not a ship"));
+                    };
+                    ship.motion.position += delta;
                     ship.motion.user_controlled = true;
-                    ship.cease_fire = self.source_squads[destination]
-                        .cease_fire.unwrap_or(ship.cease_fire);
+                    ship.cease_fire = cease_fire.unwrap_or(ship.cease_fire);
                     if let Some(bounds) = &mut ship.target_geometry {
                         bounds.bounds_latched = false;
                     }
                     if let Some(activity) = &mut ship.combat_activity {
                         activity.elapsed_seconds = None;
                     }
+                    let formation = self.source_formation.get_mut(&id)
+                        .ok_or(invalid("FleetShip family member lacks formation data"))?;
+                    formation.offset = anchor_offset +
+                        (ship.motion.position - anchor_position);
                 }
-                let formation = self.source_formation.get_mut(&source_ship)
-                    .ok_or(invalid("source FleetShip has no formation metadata"))?;
-                formation.offset = anchor_offset + (position - anchor_pos);
-                self.source_squads[destination].members.push(source_ship);
+                self.source_squads[index].members.extend(family.iter().copied());
             }
-            self.source_squads[old_index].members.retain(|&id| id != source_ship);
-            if to_index.is_none() {
-                self.entities.retain(|entity| entity.entity_id() != source_ship);
-                self.authored_ship_perceptions.remove(&source_ship);
-                self.source_vision.remove(&source_ship);
-                self.source_formation.remove(&source_ship);
-                self.source_policy_inputs.remove(&source_ship);
-                self.fleet.omit_initial_ship(source_ship);
+            self.source_squads[old_index].members.retain(|id| !family.contains(id));
+            if destination.is_none() {
+                self.entities.retain(|entity| !family.contains(&entity.entity_id()));
+                for &id in &family {
+                    self.authored_ship_perceptions.remove(&id);
+                    self.source_vision.remove(&id);
+                    self.source_formation.remove(&id);
+                    self.source_policy_inputs.remove(&id);
+                    self.fleet.omit_initial_ship(id);
+                }
             }
             changes += 1;
         }
@@ -1278,7 +1329,7 @@ impl NativePhysicalScene {
         if !self.source_squads.iter().any(|squad|
             squad.side == side && squad.player_permissions.user_controlled)
         {
-            return Err(invalid("reserve edits would leave no playable player SavedSquad"));
+            return Err(invalid("roster changes would leave no playable player SavedSquad"));
         }
         Ok(changes)
     }
