@@ -123,6 +123,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'local_gpu_collector_count',
         'local_gpu_direct_model_updates',
         'local_lease_native_engines_active',
+        'local_lease_simulation_trial_active',
         'local_gpu_collectors_pending_at_local_end',
         'local_gpu_collectors_ready_at_local_end',
         'collector_auto_balance_adjustments',
