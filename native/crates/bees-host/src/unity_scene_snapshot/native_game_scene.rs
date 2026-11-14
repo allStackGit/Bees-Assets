@@ -334,9 +334,9 @@ impl GameQueenSpawn {
             ![observed.range, observed.rate_of_fire, observed.rotation_rate,
                 observed.projectile_value].iter()
                 .all(|v| v.is_finite() && *v >= 0.0) ||
-            !offset.is_finite() || !sight.enabled && sight.effective_range == 0 ||
-            sight.source_sight < 0 || sight.effective_range <= 0 ||
-            sight.trigger_range <= 0 || !sight.enabled ||
+            !offset.is_finite() || sight.source_sight < 0 ||
+            sight.effective_range < 0 || sight.trigger_range < 0 ||
+            (sight.enabled && sight.trigger_range == 0) ||
             !minion.combat_window_seconds.is_finite() ||
             minion.combat_window_seconds <= 0.0
         { return Err(invalid()); }
