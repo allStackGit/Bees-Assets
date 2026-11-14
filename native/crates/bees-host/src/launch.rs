@@ -1901,7 +1901,8 @@ fn authored_menu_fleet(
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
     use bees_host::presentation::{
         BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
-        NativeTransferMenuRow, NativeCreateSquadMenuRow, select_battle,
+        NativeTransferMenuRow, NativeCreateSquadMenuRow,
+        NativeTacticsMenuRow, select_battle,
     };
 
     let catalog_path = catalog_path.canonicalize()?;
@@ -2050,9 +2051,55 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 template_saved_squad_id: template,
             }
         }).collect::<Vec<_>>();
+        // Read actual source squad preferences rather than inventing
+        // defaults for a campaign that has not yet recorded a battle.
+        // The saved edit, when present, supersedes the scene default.
+        let mut tactic_defaults = HashMap::new();
+        for entry in &catalog.battles {
+            let Some(mission) = entry.mission.as_ref() else { continue };
+            for config in entry.configurations() {
+                let run_path = resolve(root, config);
+                let mut source = load_native_fleet_edit_scene(&run_path)?;
+                source.install_created_squads(
+                    mission.player_side, &progress.created_squads_for_side(mission.player_side),
+                ).map_err(|error| contextual("menu created squad tactics", error))?;
+                for squad in &source.source_squads {
+                    if let (Some(saved_id), Some(cease_fire)) =
+                        (squad.saved_squad_id, squad.cease_fire)
+                    {
+                        if squad.side == mission.player_side &&
+                            squad.player_permissions.user_controlled &&
+                            !squad.hivemind.as_ref()
+                                .is_some_and(|hivemind| hivemind.hivemind_controlled)
+                        {
+                            tactic_defaults.entry((squad.side, saved_id))
+                                .or_insert(NativeSavedSquadTactics {
+                                    side: squad.side, saved_squad_id: saved_id,
+                                    shooting_strategy_id: squad.shooting.id,
+                                    should_chase: squad.should_chase, cease_fire,
+                                });
+                        }
+                    }
+                }
+            }
+        }
+        let mut tactic_defaults = tactic_defaults.into_values().collect::<Vec<_>>();
+        tactic_defaults.sort_unstable_by_key(|row| (row.side, row.saved_squad_id));
+        let tactics_rows = tactic_defaults.into_iter().map(|original| {
+            let tactics = progress.tactics_for_squad(original.side, original.saved_squad_id)
+                .unwrap_or(original);
+            NativeTacticsMenuRow {
+                title: format!("Side {} Squad #{}", tactics.side, tactics.saved_squad_id),
+                side: tactics.side,
+                saved_squad_id: tactics.saved_squad_id,
+                shooting_strategy_id: tactics.shooting_strategy_id,
+                should_chase: tactics.should_chase,
+                cease_fire: tactics.cease_fire,
+            }
+        }).collect::<Vec<_>>();
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
             &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows,
-            &create_rows)?
+            &create_rows, &tactics_rows)?
             else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
@@ -2064,6 +2111,21 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 launch_failed = result.is_err();
                 if let Err(error) = result {
                     eprintln!("Could not create SavedSquad from #{template_saved_squad_id}: {error}");
+                }
+                continue;
+            }
+            NativeBattleMenuAction::Tactics {
+                side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
+            } => {
+                let result = run_set_saved_squad_tactics(
+                    &catalog_path, output_root, NativeSavedSquadTactics {
+                        side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
+                    },
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                if let Err(error) = result {
+                    eprintln!("Could not save tactics for Squad #{saved_squad_id}: {error}");
                 }
                 continue;
             }

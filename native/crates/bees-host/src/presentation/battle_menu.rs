@@ -43,9 +43,20 @@ pub struct NativeCreateSquadMenuRow {
     pub template_saved_squad_id: i64,
 }
 
+pub struct NativeTacticsMenuRow {
+    pub title: String,
+    pub side: i32,
+    pub saved_squad_id: i64,
+    pub shooting_strategy_id: u8,
+    pub should_chase: bool,
+    pub cease_fire: bool,
+}
+
 pub enum NativeBattleMenuAction {
     Play(usize),
     CreateSquad { side: i32, template_saved_squad_id: i64 },
+    Tactics { side: i32, saved_squad_id: i64,
+        shooting_strategy_id: u8, should_chase: bool, cease_fire: bool },
     Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     Reassign { side: i32, fleet_ship_id: i64,
@@ -60,6 +71,7 @@ pub fn select_battle(
     shop_rows: &[NativeShopMenuRow], banked_tsv: u64,
     transfer_rows: &[NativeTransferMenuRow],
     create_rows: &[NativeCreateSquadMenuRow],
+    tactics_rows: &[NativeTacticsMenuRow],
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
     *selected = (*selected).min(rows.len() - 1);
@@ -78,6 +90,11 @@ pub fn select_battle(
     let mut show_shop = false;
     let mut show_transfer = false;
     let mut show_create = false;
+    let mut show_tactics = false;
+    let mut tactic_edit_index: Option<usize> = None;
+    let mut tactic_strategy = 1_u8;
+    let mut tactic_chase = false;
+    let mut tactic_cease_fire = false;
     let mut shop_selected = 0_usize;
     let mut shop_first = 0_usize;
     let mut fleet_selected = 0_usize;
@@ -90,6 +107,7 @@ pub fn select_battle(
             show_shop = false;
             show_transfer = false;
             show_create = false;
+            show_tactics = false;
         }
         if window.is_key_pressed(Key::S, KeyRepeat::No) {
             career_view = if career_view == Some(true) && !show_shop && !show_transfer && !show_create {
@@ -98,28 +116,41 @@ pub fn select_battle(
             show_shop = false;
             show_transfer = false;
             show_create = false;
+            show_tactics = false;
         }
         if window.is_key_pressed(Key::B, KeyRepeat::No) {
             show_shop = !show_shop;
             show_transfer = false;
             show_create = false;
+            show_tactics = false;
             career_view = None;
         }
         if window.is_key_pressed(Key::T, KeyRepeat::No) {
             show_transfer = !show_transfer;
             show_shop = false;
             show_create = false;
+            show_tactics = false;
             career_view = None;
         }
         if window.is_key_pressed(Key::N, KeyRepeat::No) {
             show_create = !show_create;
             show_shop = false;
             show_transfer = false;
+            show_tactics = false;
             career_view = None;
         }
-        if show_shop || show_transfer || show_create {
+        if window.is_key_pressed(Key::P, KeyRepeat::No) {
+            show_tactics = !show_tactics;
+            show_shop = false;
+            show_transfer = false;
+            show_create = false;
+            tactic_edit_index = None;
+            career_view = None;
+        }
+        if show_shop || show_transfer || show_create || show_tactics {
             let count = if show_transfer { transfer_rows.len() }
                 else if show_create { create_rows.len() }
+                else if show_tactics { tactics_rows.len() }
                 else { shop_rows.len() };
             let choose = |index: usize| {
                 if show_transfer {
@@ -139,6 +170,20 @@ pub fn select_battle(
                     create_rows.get(index).map(|row| NativeBattleMenuAction::CreateSquad {
                         side: row.side,
                         template_saved_squad_id: row.template_saved_squad_id,
+                    })
+                } else if show_tactics {
+                    tactics_rows.get(index).map(|row| NativeBattleMenuAction::Tactics {
+                        side: row.side,
+                        saved_squad_id: row.saved_squad_id,
+                        shooting_strategy_id: if tactic_edit_index == Some(index) {
+                            tactic_strategy
+                        } else { row.shooting_strategy_id },
+                        should_chase: if tactic_edit_index == Some(index) {
+                            tactic_chase
+                        } else { row.should_chase },
+                        cease_fire: if tactic_edit_index == Some(index) {
+                            tactic_cease_fire
+                        } else { row.cease_fire },
                     })
                 } else {
                     shop_rows.get(index).filter(|row| row.unlocked)
@@ -161,6 +206,30 @@ pub fn select_battle(
             if shop_selected < shop_first { shop_first = shop_selected; }
             if shop_selected >= shop_first + PAGE_SIZE {
                 shop_first = shop_selected + 1 - PAGE_SIZE;
+            }
+            if show_tactics {
+                if let Some(row) = tactics_rows.get(shop_selected) {
+                    if tactic_edit_index != Some(shop_selected) {
+                        tactic_edit_index = Some(shop_selected);
+                        tactic_strategy = row.shooting_strategy_id;
+                        tactic_chase = row.should_chase;
+                        tactic_cease_fire = row.cease_fire;
+                    }
+                    if window.is_key_pressed(Key::Left, KeyRepeat::Yes) {
+                        tactic_strategy = if tactic_strategy == 1 { 40 }
+                            else { tactic_strategy - 1 };
+                    }
+                    if window.is_key_pressed(Key::Right, KeyRepeat::Yes) {
+                        tactic_strategy = if tactic_strategy == 40 { 1 }
+                            else { tactic_strategy + 1 };
+                    }
+                    if window.is_key_pressed(Key::C, KeyRepeat::No) {
+                        tactic_chase = !tactic_chase;
+                    }
+                    if window.is_key_pressed(Key::V, KeyRepeat::No) {
+                        tactic_cease_fire = !tactic_cease_fire;
+                    }
+                }
             }
             if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
                 if let Some(action) = choose(shop_selected) {
@@ -191,10 +260,12 @@ pub fn select_battle(
             text::draw_centered(&mut pixels, WIDTH, 24,
                 if show_transfer { "Assign fleet" }
                 else if show_create { "Create saved squad" }
+                else if show_tactics { "Saved squad tactics" }
                 else { "Build fleet" }, 2, TEXT);
             text::draw_centered(&mut pixels, WIDTH, 78,
                 if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
                 else if show_create { "Choose a player squad to copy its command settings" }
+                else if show_tactics { "Left/Right shooting strategy, C chase, V cease fire, Enter save" }
                 else { "Buy a source-authored ship" }, 1, MUTED);
             if show_shop {
                 text::draw_centered(&mut pixels, WIDTH, 94,
@@ -204,6 +275,7 @@ pub fn select_battle(
                 text::draw_centered(&mut pixels, WIDTH, 218,
                     if show_transfer { "No transferable owned ships" }
                     else if show_create { "No native player squad templates" }
+                    else if show_tactics { "No editable authored player squads" }
                     else { "Finish a campaign battle to register saved squads" }, 1, MUTED);
             }
             for index in shop_first..(shop_first + PAGE_SIZE).min(count) {
@@ -218,7 +290,21 @@ pub fn select_battle(
                 } else if show_create {
                     (create_rows[index].title.as_str(), true)
                 } else { (shop_rows[index].title.as_str(), shop_rows[index].unlocked) };
-                let title = text::fit(label, 560);
+                let tactical_label = if show_tactics {
+                    let row = &tactics_rows[index];
+                    let (strategy, chase, cease) = if tactic_edit_index == Some(index) {
+                        (tactic_strategy, tactic_chase, tactic_cease_fire)
+                    } else {
+                        (row.shooting_strategy_id, row.should_chase, row.cease_fire)
+                    };
+                    let name = bees_hivemind::protocol::SHOOTING_STRATEGIES[
+                        usize::from(strategy - 1)
+                    ];
+                    format!("{} | {} | Chase {} | Fire {}",
+                        row.title, name, if chase { "on" } else { "off" },
+                        if cease { "hold" } else { "auto" })
+                } else { String::new() };
+                let title = text::fit(if show_tactics { &tactical_label } else { label }, 560);
                 text::draw_centered(&mut pixels, WIDTH, top + 8, &title, 1,
                     if enabled { TEXT } else { MUTED });
             }
@@ -228,7 +314,11 @@ pub fn select_battle(
                 text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
-                "Enter select   B build   T transfer   N new   F fleet   S squads", 1, MUTED);
+                if show_tactics {
+                    "Left/Right strategy   C chase   V fire   Enter save   P close"
+                } else {
+                    "Enter select   B build   T transfer   N new   P tactics"
+                }, 1, MUTED);
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
         }
@@ -327,7 +417,7 @@ pub fn select_battle(
             let page = format!("{}-{} of {} battles", first + 1, (first + PAGE_SIZE).min(titles.len()), titles.len());
             text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
         }
-        text::draw_centered(&mut pixels, WIDTH, 441, "Enter play   B build   T transfer   N new   F fleet   S squads", 1, MUTED);
+        text::draw_centered(&mut pixels, WIDTH, 441, "Enter play   B build   T transfer   N new   P tactics   F fleet   S squads", 1, MUTED);
         if launch_failed {
             text::draw_centered(&mut pixels, WIDTH, 468, "Battle failed. See the console for details.", 1, [247, 172, 131]);
         }
