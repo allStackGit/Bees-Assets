@@ -1160,12 +1160,17 @@ fn launch_catalog_battle(
     interactive: bool,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let config = resolve(catalog_root, entry.config_for(progress));
-    let purchased = entry.mission.as_ref()
+    let mut purchased = entry.mission.as_ref()
         .map(|mission| progress.purchases_for_side(mission.player_side));
     let lost = entry.mission.as_ref()
         .filter(|mission| mission.persist_fleet_losses)
         .map(|mission| progress.lost_player_fleet_ids(mission.player_side))
         .transpose()?;
+    if let (Some(purchased), Some(lost)) = (purchased.as_mut(), lost.as_ref()) {
+        // Previously bought but destroyed hulls stay in the account
+        // ledger, not the next game's entity pool.
+        purchased.retain(|ship| !lost.contains(&ship.fleet_ship_id));
+    }
     let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
         .map(|(campaign_id, mission)| CampaignMission {
             campaign_id, mission_id: &mission.id, player_side: mission.player_side,
@@ -1196,9 +1201,18 @@ fn launch_catalog_battle(
 /// cost table, type collider or silent missing-route purchase is allowed.
 fn preflight_native_ship_purchase(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
+    progress: &battle_catalog::CampaignProgress<'_>,
     side: i32, ship_type: u8, saved_squad_id: i64, price_tsv: u64,
 ) -> Result<i64, Box<dyn Error>> {
     let mut highest_fleet_id = 0_i64;
+    let max_size = catalog.max_squad_ships.ok_or_else(||
+        invalid("native ship shop has no authored maximum squad size"))? as usize;
+    let dead = progress.lost_player_fleet_ids(side)?;
+    let purchased = progress.purchases_for_side(side);
+    let active_purchases = purchased.iter().filter(|ship|
+        ship.saved_squad_id == saved_squad_id &&
+        !dead.contains(&ship.fleet_ship_id)
+    ).count();
     let mut checked = HashSet::new();
     for entry in &catalog.battles {
         if !entry.mission.as_ref().is_some_and(|mission| mission.player_side == side) {
@@ -1224,15 +1238,33 @@ fn preflight_native_ship_purchase(
             }
             let squads = scene.get("squads").and_then(Value::as_array)
                 .ok_or_else(|| invalid("shop needs authored saved squads"))?;
-            if !squads.iter().any(|squad|
+            let squad = squads.iter().find(|squad|
                 squad.get("saved_squad_id").and_then(Value::as_i64) == Some(saved_squad_id) &&
                 squad.get("side").and_then(Value::as_i64) == Some(i64::from(side)) &&
-                squad.get("user_controlled").and_then(Value::as_bool) == Some(true))
-            {
-                return Err(invalid("the purchased ship's saved player squad is absent from a campaign route").into());
-            }
+                squad.get("user_controlled").and_then(Value::as_bool) == Some(true)
+            ).ok_or_else(||
+                || invalid("the purchased ship's saved player squad is absent from a campaign route"))?;
             let ships = scene.get("ships").and_then(Value::as_array)
                 .ok_or_else(|| invalid("shop needs authored source ships"))?;
+            let members = squad.get("members").and_then(Value::as_array)
+                .ok_or_else(|| invalid("saved squad must have its exact authored ship members"))?;
+            let mut live_members = 0_usize;
+            for member in members {
+                let id = member.as_i64().ok_or_else(||
+                    invalid("invalid saved squad ship member ID"))?;
+                let original = ships.iter().find(|ship|
+                    ship.get("entity_id").and_then(Value::as_i64) == Some(id)
+                ).ok_or_else(|| invalid("saved squad has no authored source member"))?;
+                let fleet_id = original.get("fleet_ship_id").and_then(Value::as_i64)
+                    .ok_or_else(|| invalid("saved squad ship lacks persistent FleetShip ID"))?;
+                if !dead.contains(&fleet_id) { live_members += 1; }
+            }
+            if live_members.checked_add(active_purchases)
+                .and_then(|total| total.checked_add(1))
+                .is_none_or(|count| count > max_size)
+            {
+                return Err(invalid("the purchased ship would exceed the authored maximum saved-squad size").into());
+            }
             for ship in ships {
                 if let Some(id) = ship.get("fleet_ship_id").and_then(Value::as_i64) {
                     highest_fleet_id = highest_fleet_id.max(id);
@@ -1286,7 +1318,8 @@ fn run_build_ship(
     let root = catalog_path.parent().ok_or_else(||
         invalid("missing shop catalog parent"))?;
     let highest_authored = preflight_native_ship_purchase(
-        &catalog, root, player_side, ship_type, saved_squad_id, shop.price_tsv,
+        &catalog, root, &progress,
+        player_side, ship_type, saved_squad_id, shop.price_tsv,
     )?;
     let new_fleet_id = highest_authored.max(progress.highest_fleet_id())
         .checked_add(1).ok_or_else(|| invalid("native purchase FleetShip IDs exhausted"))?;
