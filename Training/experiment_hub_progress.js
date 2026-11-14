@@ -330,6 +330,12 @@ class BottleneckEvidence {
         const optimize=seconds('optimization_seconds');
         if(collection!==null&&optimize!==null&&collection+optimize>0) {
             const fraction=collection/(collection+optimize);
+            // Pipeline stages can overlap across PPO updates. A long stage
+            // is not necessarily the throughput-limiting *exposed* stage
+            // when previous policy optimization runs concurrently.
+            const overlap=seconds('overlap_seconds');
+            const exclusiveEvidence=overlap!==null&&
+                overlap<=0.10*(collection+optimize);
             add('pipeline_collection_work_share',fraction);
             add('pipeline_optimization_work_share',1-fraction);
             // Worker straggler waits and learner-side merge are distinct
@@ -505,7 +511,8 @@ class BottleneckEvidence {
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,localShare,mergeShare,stageHints,simHints,
                     joinHints,localGpuIndices,remoteIndices,connectHints,gpuHints,collectorNativeDenials,resourceHints,
-                    scanPressure:scanShare!==null&&scanShare>=0.15&&ramScan>=0.25});
+                    scanPressure:scanShare!==null&&scanShare>=0.15&&ramScan>=0.25,
+                    exclusiveEvidence});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -558,7 +565,11 @@ class BottleneckEvidence {
                 const stable=predicate=>recent.filter(predicate).length>=5;
                 const collectionDominant=stable(x=>x.fraction>=0.70);
                 const optimizationDominant=stable(x=>x.fraction<=0.30);
-                if(optimizationDominant) {
+                const safelyExposed=stable(x=>x.exclusiveEvidence);
+                if(!safelyExposed&&
+                        (collectionDominant||optimizationDominant))
+                    add('pipeline_multiple_delay_evidence',1,'count');
+                else if(optimizationDominant) {
                     add('pipeline_primary_delay_kind',2,'count');
                     add('pipeline_primary_evidence_samples',recent.length,'count');
                 } else if(collectionDominant) {
@@ -795,6 +806,7 @@ class BottleneckEvidence {
                     courierQueue:queueShare!==null&&queueShare>=0.20,
                     // With queued lineages, the last completion may be a
                     // normal admission wave rather than a slow worker.
+                    queueKnown:queueShare!==null,
                     courierTail:gapShare!==null&&gapShare>=0.25&&
                         (queueShare===null||queueShare<=0.10)});
                 if(prior.samples.length>8)prior.samples.shift();
@@ -814,7 +826,9 @@ class BottleneckEvidence {
                 // Queueing plus a late final reply may overlap; in that case
                 // neither is uniquely responsible.
                 const queued=sustained(x=>x.courierQueue);
-                const tailed=sustained(x=>x.courierTail);
+                // Without measured queue wait, the last reply might just
+                // follow a normal queued admission wave.
+                const tailed=sustained(x=>x.courierTail&&x.queueKnown);
                 if(queued&&tailed)
                     add('pipeline_multiple_delay_evidence',1,'count');
                 else if(queued) {
