@@ -133,6 +133,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_remote_request_bytes','training_remote_reply_bytes',
             'training_remote_checkpoint_bytes',
             'training_remote_sync_max_seconds',
+            'training_remote_setup_max_seconds',
             'training_remote_nontraining_max_seconds',
             'training_remote_nontraining_owner',
             'training_simulation_tuner_adjustments',
