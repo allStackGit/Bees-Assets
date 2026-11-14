@@ -204,7 +204,14 @@ where
                 if per_world_actions[index].is_none() { continue; }
                 let world = simulation.world(index)
                     .expect("validated current native world index");
-                if world.state.combat.has_scout_beacon_sources() {
+                // The fixed-step clock is authoritative for the next
+                // policy/game Scout cooldown advance. Only arenas capable
+                // of creating a Stage-owned Beacon lifetime *this tick*
+                // need the source-ordered lane. An exhausted or cooling
+                // Scout cannot allocate an ID on this physics step.
+                let dt = simulation.world_fixed_step_seconds(index)
+                    .expect("registered native world has an authored step");
+                if world.state.combat.may_spawn_scout_beacon_during(dt) {
                     serialized_worlds.push(index);
                 }
             }
