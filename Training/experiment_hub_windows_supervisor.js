@@ -126,6 +126,12 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         artifact_lineage_root_id:root,continuation_of_job_id:predecessor,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
+        ...(job.project_id==='courier'&&
+            job.distributed_courier_managed===true?
+            {courier_remote_lineages:Object.freeze(
+                job.distributed_courier_endpoints.map((endpoint,i)=>
+                    Object.freeze({endpoint,slot:job.distributed_courier_slots[i]}))),
+             courier_remote_key_fingerprint:job.distributed_courier_key_fingerprint}:{}),
         ...(gpu?{gpu_pci_address:gpu.pci_address,gpu_cuda_uuid:gpu.cuda_uuid,
             gpu_mode:gpu.mode,gpu_vram_mb:gpu.vram_mb,
             gpu_total_vram_mb:gpu.total_vram_mb,
