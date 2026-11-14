@@ -50,13 +50,15 @@ pub struct NativeTacticsMenuRow {
     pub shooting_strategy_id: u8,
     pub should_chase: bool,
     pub cease_fire: bool,
+    pub match_speed: bool,
 }
 
 pub enum NativeBattleMenuAction {
     Play(usize),
     CreateSquad { side: i32, template_saved_squad_id: i64 },
     Tactics { side: i32, saved_squad_id: i64,
-        shooting_strategy_id: u8, should_chase: bool, cease_fire: bool },
+        shooting_strategy_id: u8, should_chase: bool, cease_fire: bool,
+        match_speed: bool },
     Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     Reassign { side: i32, fleet_ship_id: i64,
@@ -95,6 +97,7 @@ pub fn select_battle(
     let mut tactic_strategy = 1_u8;
     let mut tactic_chase = false;
     let mut tactic_cease_fire = false;
+    let mut tactic_match_speed = false;
     let mut shop_selected = 0_usize;
     let mut shop_first = 0_usize;
     let mut fleet_selected = 0_usize;
@@ -153,7 +156,8 @@ pub fn select_battle(
                 else if show_tactics { tactics_rows.len() }
                 else { shop_rows.len() };
             let choose = |index: usize, edit_index: Option<usize>,
-                          strategy: u8, chase: bool, cease_fire: bool| {
+                          strategy: u8, chase: bool, cease_fire: bool,
+                          match_speed: bool| {
                 if show_transfer {
                     transfer_rows.get(index).map(|row| match row.authored_from {
                         Some((side, from_saved_squad_id)) => NativeBattleMenuAction::Reassign {
@@ -185,6 +189,9 @@ pub fn select_battle(
                         cease_fire: if edit_index == Some(index) {
                             cease_fire
                         } else { row.cease_fire },
+                        match_speed: if edit_index == Some(index) {
+                            match_speed
+                        } else { row.match_speed },
                     })
                 } else {
                     shop_rows.get(index).filter(|row| row.unlocked)
@@ -215,6 +222,7 @@ pub fn select_battle(
                         tactic_strategy = row.shooting_strategy_id;
                         tactic_chase = row.should_chase;
                         tactic_cease_fire = row.cease_fire;
+                        tactic_match_speed = row.match_speed;
                     }
                     if window.is_key_pressed(Key::Left, KeyRepeat::Yes) {
                         tactic_strategy = if tactic_strategy == 1 { 40 }
@@ -230,11 +238,15 @@ pub fn select_battle(
                     if window.is_key_pressed(Key::V, KeyRepeat::No) {
                         tactic_cease_fire = !tactic_cease_fire;
                     }
+                    if window.is_key_pressed(Key::M, KeyRepeat::No) {
+                        tactic_match_speed = !tactic_match_speed;
+                    }
                 }
             }
             if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
                 if let Some(action) = choose(shop_selected, tactic_edit_index,
-                        tactic_strategy, tactic_chase, tactic_cease_fire) {
+                        tactic_strategy, tactic_chase, tactic_cease_fire,
+                        tactic_match_speed) {
                     return Ok(Some(action));
                 }
             }
@@ -254,7 +266,8 @@ pub fn select_battle(
                                     // selection is not an implicit save.
                                     tactic_edit_index = None;
                                 } else if let Some(action) = choose(index, tactic_edit_index,
-                                    tactic_strategy, tactic_chase, tactic_cease_fire)
+                                    tactic_strategy, tactic_chase, tactic_cease_fire,
+                                    tactic_match_speed)
                                 {
                                     return Ok(Some(action));
                                 }
@@ -273,7 +286,7 @@ pub fn select_battle(
             text::draw_centered(&mut pixels, WIDTH, 78,
                 if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
                 else if show_create { "Choose a player squad to copy its command settings" }
-                else if show_tactics { "Left/Right shooting strategy, C chase, V cease fire, Enter save" }
+                else if show_tactics { "Left/Right strategy, C chase, V cease fire, M speed, Enter save" }
                 else { "Buy a source-authored ship" }, 1, MUTED);
             if show_shop {
                 text::draw_centered(&mut pixels, WIDTH, 94,
@@ -302,17 +315,20 @@ pub fn select_battle(
                 } else { (shop_rows[index].title.as_str(), shop_rows[index].unlocked) };
                 let tactical_label = if show_tactics {
                     let row = &tactics_rows[index];
-                    let (strategy, chase, cease) = if tactic_edit_index == Some(index) {
-                        (tactic_strategy, tactic_chase, tactic_cease_fire)
-                    } else {
-                        (row.shooting_strategy_id, row.should_chase, row.cease_fire)
-                    };
+                    let (strategy, chase, cease, match_speed) =
+                        if tactic_edit_index == Some(index) {
+                            (tactic_strategy, tactic_chase, tactic_cease_fire, tactic_match_speed)
+                        } else {
+                            (row.shooting_strategy_id, row.should_chase,
+                                row.cease_fire, row.match_speed)
+                        };
                     let name = bees_hivemind::protocol::SHOOTING_STRATEGIES[
                         usize::from(strategy - 1)
                     ];
-                    format!("{} | {} | Chase {} | Fire {}",
+                    format!("{} | {} | Chase {} | Fire {} | Speed {}",
                         row.title, name, if chase { "on" } else { "off" },
-                        if cease { "hold" } else { "auto" })
+                        if cease { "hold" } else { "auto" },
+                        if match_speed { "matched" } else { "normal" })
                 } else { String::new() };
                 let title = text::fit(if show_tactics { &tactical_label } else { label }, 560);
                 text::draw_centered(&mut pixels, WIDTH, top + 8, &title, 1,
@@ -325,7 +341,7 @@ pub fn select_battle(
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
-                    "Left/Right strategy   C chase   V fire   Enter save   P close"
+                    "Left/Right strategy   C chase   V fire   M speed   Enter save   P close"
                 } else {
                     "Enter select   B build   T transfer   N new   P tactics"
                 }, 1, MUTED);

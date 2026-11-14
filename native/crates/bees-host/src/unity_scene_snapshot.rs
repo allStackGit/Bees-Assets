@@ -883,6 +883,10 @@ pub struct NativeSavedSquadTactics {
     pub shooting_strategy_id: u8,
     pub should_chase: bool,
     pub cease_fire: bool,
+    /// None in older campaign receipts preserves the authored starting
+    /// speed state. Explicit true/false adopts the saved player preference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_speed: Option<bool>,
 }
 
 
@@ -1030,6 +1034,61 @@ impl NativePhysicalScene {
             squad.cease_fire = Some(entry.cease_fire);
         }
         Ok(settings.len())
+    }
+
+    /// Recompute an explicitly saved match-speed preference only AFTER
+    /// purchased FleetShips, transfers, and permanent casualties are applied.
+    /// Unity Squad.MatchSpeed uses the slowest current member's base Speed,
+    /// not the original squad's composition or its previous CurrentSpeed.
+    /// This changes the same ShipMotion owned by combat and the same
+    /// source Squad metadata consumed by the real game level. Running
+    /// missions never keep a separate training-only speed override.
+    pub fn apply_saved_squad_matching_speeds(
+        &mut self, player_side: i32, settings: &[NativeSavedSquadTactics],
+    ) -> Result<usize, NativeSnapshotError> {
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if !matches!(player_side, 1 | 2) {
+            return Err(invalid("saved matching-speed owner must be a player faction"));
+        }
+        // Preflight all members before modifying any physics or squad data.
+        let mut updates = Vec::new();
+        for entry in settings {
+            let Some(enabled) = entry.match_speed else { continue };
+            if entry.side != player_side {
+                return Err(invalid("saved matching-speed owner changed"));
+            }
+            let index = self.source_squads.iter().position(|squad|
+                squad.saved_squad_id == Some(entry.saved_squad_id) &&
+                squad.side == player_side && squad.player_permissions.user_controlled
+            ).ok_or(invalid("saved matching-speed squad is unavailable"))?;
+            let mut slowest = None::<f32>;
+            for &ship_id in &self.source_squads[index].members {
+                let ship = self.entities.iter().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
+                        Some(ship),
+                    _ => None,
+                }).ok_or(invalid("matching-speed squad contains a missing ship"))?;
+                if !ship.motion.base_speed.is_finite() || ship.motion.base_speed < 0.0 {
+                    return Err(invalid("matching-speed ship lacks a valid authored base speed"));
+                }
+                slowest = Some(slowest.map_or(ship.motion.base_speed,
+                    |existing| existing.min(ship.motion.base_speed)));
+            }
+            // Unity's empty Squad.GetSlowestShipSpeed is zero.
+            updates.push((index, enabled.then_some(slowest.unwrap_or(0.0))));
+        }
+        for (index, speed) in &updates {
+            for &ship_id in &self.source_squads[*index].members {
+                let ship = self.entities.iter_mut().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
+                        Some(ship),
+                    _ => None,
+                }).expect("preflighted saved-squad ship");
+                ship.motion.current_speed = speed.unwrap_or(ship.motion.base_speed);
+            }
+            self.source_squads[*index].matching_speed = *speed;
+        }
+        Ok(updates.len())
     }
 
     /// Instantiate purchased persistent hulls from a genuine native game

@@ -364,13 +364,16 @@ bees transfer native/examples/native-frontier-campaign.json --output-dir native-
 bees transfer native/examples/native-frontier-campaign.json --output-dir native-frontier-save --ship 18 --squad 0
 bees reassign native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --ship 11 --from 1 --squad 2
 bees squad-create native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --template 1
-bees tactics native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --squad 1 --shooting 9 --chase true --cease-fire false
+bees tactics native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --squad 1 --shooting 9 --chase true --cease-fire false --match-speed true
 ```
 
 Use **P** in the campaign battle picker to change a persistent player
 SavedSquad's shooting strategy (Left/Right across the 40 source strategy
-IDs), chase behavior (**C**) and cease-fire preference (**V**), then
-**Enter** to save. `bees tactics` performs the same operation without a
+IDs), chase behavior (**C**), cease-fire preference (**V**) and
+slowest-ship speed matching (**M**), then **Enter** to save.
+A matched fleet recomputes its common speed from the final mission's
+surviving and purchased ships; a vacant SavedSquad matches at zero
+speed until it has members. `bees tactics` performs the same operation without a
 window. These are zero-cost, atomic `tactics-NNNN/tactics.json` edits.
 Every authored campaign mission route is preflighted before publication,
 and saved preferences apply to the *same* Squad/CombatWorld used by

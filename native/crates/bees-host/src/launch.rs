@@ -1089,9 +1089,17 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         if args.next().is_none_or(|flag| flag != "--cease-fire") { return Err(invalid(USAGE).into()); }
         let cease_fire: bool = args.next().ok_or_else(|| invalid(USAGE))?
             .to_string_lossy().parse()?;
+        let match_speed = match args.next() {
+            Some(flag) if flag == "--match-speed" =>
+                Some(args.next().ok_or_else(|| invalid(USAGE))?
+                    .to_string_lossy().parse::<bool>()?),
+            Some(_) => return Err(invalid(USAGE).into()),
+            None => None,
+        };
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_set_saved_squad_tactics(&catalog, &output, NativeSavedSquadTactics {
             side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
+            match_speed,
         });
     }
     if first == "reassign" {
@@ -1450,6 +1458,9 @@ fn preflight_native_fleet_edit(
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
             source.omit_killed_fleet_ships(side, &dead)
                 .map_err(|error| contextual("shop saved-fleet casualties", error))?;
+            source.apply_saved_squad_matching_speeds(
+                side, &progress.tactics_for_side(side),
+            ).map_err(|error| contextual("shop saved matching speed", error))?;
             if target_saved_squad_id > 0 {
                 let squad = source.source_squads.iter().find(|squad|
                     squad.saved_squad_id == Some(target_saved_squad_id) &&
@@ -1698,6 +1709,14 @@ fn run_set_saved_squad_tactics(
     catalog.validate()?;
     let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
     let progress = catalog.load_progress(output_root)?;
+    let mut entry = entry;
+    // Old CLI invocations and historical receipts do not contain this
+    // option. Preserve the last explicit preference rather than clearing
+    // it whenever the user changes a shooting or chase setting.
+    if entry.match_speed.is_none() {
+        entry.match_speed = progress.tactics_for_squad(entry.side, entry.saved_squad_id)
+            .and_then(|saved| saved.match_speed);
+    }
     let root = catalog_path.parent().ok_or_else(|| invalid("missing campaign directory"))?;
     // Qualify the entire authored campaign, including its alternate
     // victory route and newly created vacant squads, before publishing.
@@ -1716,6 +1735,8 @@ fn run_set_saved_squad_tactics(
                 .map_err(|error| contextual("tactics created squad preflight", error))?;
             scene.apply_saved_squad_tactics(entry.side, &effective)
                 .map_err(|error| contextual("tactics native scene preflight", error))?;
+            scene.apply_saved_squad_matching_speeds(entry.side, &effective)
+                .map_err(|error| contextual("tactics matching-speed preflight", error))?;
             checked += 1;
         }
     }
@@ -1734,6 +1755,7 @@ fn run_set_saved_squad_tactics(
         ],
         "should_chase": entry.should_chase,
         "cease_fire": entry.cease_fire,
+        "match_speed": entry.match_speed,
         "validated_configs": checked,
     }));
     Ok(())
@@ -2077,6 +2099,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                                     side: squad.side, saved_squad_id: saved_id,
                                     shooting_strategy_id: squad.shooting.id,
                                     should_chase: squad.should_chase, cease_fire,
+                                    match_speed: Some(squad.matching_speed.is_some()),
                                 });
                         }
                     }
@@ -2095,6 +2118,8 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 shooting_strategy_id: tactics.shooting_strategy_id,
                 should_chase: tactics.should_chase,
                 cease_fire: tactics.cease_fire,
+                match_speed: tactics.match_speed
+                    .unwrap_or(original.match_speed.unwrap_or(false)),
             }
         }).collect::<Vec<_>>();
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
@@ -2116,10 +2141,12 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
             NativeBattleMenuAction::Tactics {
                 side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
+                match_speed,
             } => {
                 let result = run_set_saved_squad_tactics(
                     &catalog_path, output_root, NativeSavedSquadTactics {
                         side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
+                        match_speed: Some(match_speed),
                     },
                 );
                 progress = catalog.load_progress(output_root)?;
@@ -2416,6 +2443,14 @@ fn run_battle(
                     "permanently_lost_ships_omitted": removed,
                 }));
             }
+        }
+        // Speed matching must use the FINAL surviving and purchased roster.
+        // Applying it to the unmodified scene would make a slow replacement
+        // ship move faster than the source's MatchSpeed permits.
+        if let Some(tactics) = mission.and_then(|mission| mission.tactics) {
+            source.apply_saved_squad_matching_speeds(
+                mission.expect("campaign matching-speed owner").player_side, tactics,
+            ).map_err(|error| contextual("restored SavedSquad matching speed", error))?;
         }
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
