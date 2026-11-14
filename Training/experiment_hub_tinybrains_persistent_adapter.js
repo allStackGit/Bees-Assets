@@ -125,6 +125,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'truncated_groups','terminal_groups','collector_count',
         'simulation_prefetch_engine_steps',
         'ppo_minibatches','ppo_microbatches',
+        'ppo_parameter_checks_fused','ppo_parameter_check_final_reads',
         'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
         'ppo_gpu_pixel_budget',
         'ppo_gpu_batch_target_pixels','ppo_gpu_batch_next_target',
