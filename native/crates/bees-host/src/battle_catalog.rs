@@ -533,8 +533,10 @@ impl BattleCatalog {
     ) -> io::Result<NativeCreatedSquad> {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("new SavedSquads require a native campaign"))?;
+        // The caller has already verified the original player template
+        // against each native scene. On a fresh campaign, the physical
+        // SavedSquad does not yet have a career receipt in progress.squads.
         if !matches!(side, 1 | 2) || template_id <= 0 ||
-            !progress.saved_squad_ids_for_side(side).contains(&template_id) ||
             new_id <= progress.highest_saved_squad_id() ||
             new_id <= 0 || new_id == i64::MAX
         {
