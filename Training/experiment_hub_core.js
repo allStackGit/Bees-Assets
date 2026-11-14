@@ -4348,7 +4348,8 @@ class ExperimentHub {
                          machine.execution_capabilities?.cgroup_controllers?.includes(controller)))))
                 throw Error('Bundle member '+(index+1)+' requires a connected, qualified native machine.');
             const job=this.queueIn(next,selection);
-            if(job.project_id==='tinybrains_rollout'||job.project_id==='bees'||
+            if(job.project_id==='tinybrains_rollout'||job.project_id==='courier_remote'||
+                job.distributed_courier_managed===true||job.project_id==='bees'||
                 job.project_id==='ants'||
                 (job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true)||
                 job.status!=='waiting_adapter'||
@@ -4413,8 +4414,9 @@ class ExperimentHub {
                 throw Error('Bundle member '+job.resource_bundle.index+
                     ' / '+job.project_id+' cannot Start: '+readiness.reason);
             if(job.distributed_rollout_managed===true||
-                job.project_id==='tinybrains_rollout')
-                throw Error('Distributed rollout groups use their own verified learner barrier.');
+                job.distributed_courier_managed===true||
+                ['tinybrains_rollout','courier_remote'].includes(job.project_id))
+                throw Error('Distributed worker groups use their own verified learner barrier.');
         }
         const pending=(this.state.bundle_start_plans||[]).find(plan=>
             plan.bundle_id===value.bundle_id&&
