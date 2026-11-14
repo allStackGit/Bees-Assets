@@ -125,7 +125,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_remote_encode_max_seconds',
             'training_remote_decode_max_seconds',
             'training_remote_artifact_max_seconds',
-            'training_remote_critical_gap_ratio'])
+            'training_remote_critical_gap_ratio',
+            'training_remote_prev_encode_max_seconds',
+            'training_remote_prev_send_max_seconds',
+            'training_remote_prev_prep_max_ratio'])
             retain(name,reported[name]);
         // Show measured stage pressure before unrelated high-cardinality
         // project metrics consume the default 96-chart-field cache.
