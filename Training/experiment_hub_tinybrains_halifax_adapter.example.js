@@ -26,10 +26,12 @@ module.exports={
         // Diagnostic-only host-wall PPO stage timings. Does not change
         // checkpoint formats, optimizer settings or the frozen profile digest.
         profilePpo:true,
-        // Dual GPU is OFF by default. Enable only after installing the
-        // matching TinyBrains two-device runtime and verifying both physical
-        // R9700 PCI identities in the Docker ROCm qualification.
-        // enableDualGpu:true,
+        // Dual and 3–8 GPU modes are offered automatically only when
+        // the installed TinyBrains CLI/native collector files support them.
+        // Native Start still verifies every selected R9700 PCI identity
+        // against the fixed exclusive Hub lease. Set either to false to
+        // disable a mode locally; no extra per-experiment tuning needed.
+        // enableDualGpu:false, enableMultiGpu:false,
         profiles:{
             halifax_rocm:{
                 device:'cuda',threads:12,live_matches:16,waves:16,
