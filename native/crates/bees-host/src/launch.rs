@@ -997,6 +997,26 @@ struct CampaignFleetShipOutcome {
     combat: Option<NativeFleetCombatStats>,
 }
 
+/// An authored saved squad is not a transient Stage squad ItemId. Ship IDs
+/// are mapped to persistent FleetShip identities before world construction.
+struct CampaignSquadSource {
+    saved_squad_id: i64,
+    side: i32,
+    fleet_ship_ids: Vec<i64>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignSquadOutcome {
+    saved_squad_id: i64,
+    side: i32,
+    ships_deployed: u64,
+    ships_lost: u64,
+    damage_done: u64,
+    damage_received: u64,
+    kills: u64,
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
     let first = args.next().ok_or_else(|| invalid(USAGE))?;
@@ -1357,6 +1377,7 @@ fn run_battle(
     let mut source_jsons = Vec::with_capacity(config.levels.len());
     let mut source_templates: HashMap<PathBuf, (Arc<str>, String)> = HashMap::new();
     let mut source_digests = Vec::with_capacity(config.levels.len());
+    let mut saved_squad_sources = Vec::new();
     let single_level = config.levels.len() == 1;
     for level in &mut config.levels {
         if level.level_id <= 0 || level.world_id == 0 ||
@@ -1555,6 +1576,38 @@ fn run_battle(
         for binding in source.source_policy_bindings.values() {
             if !level.model_slots.contains_key(&binding.team_id) {
                 return Err(invalid("Level has an unresolved source policy team").into());
+            }
+        }
+        if mission.is_some_and(|mission| mission.record_fleet_stats) {
+            let persistent_ships = source.entities.iter().filter_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
+                _ => None,
+            }).collect::<HashMap<_, _>>();
+            let mut seen_saved_squads = HashSet::new();
+            let mut saved_members = HashSet::new();
+            for squad in &source.source_squads {
+                let Some(saved_squad_id) = squad.saved_squad_id else { continue };
+                if !seen_saved_squads.insert(saved_squad_id) {
+                    return Err(invalid("duplicate persistent SavedSquad ID").into());
+                }
+                let mut fleet_ship_ids = Vec::with_capacity(squad.members.len());
+                for &id in &squad.members {
+                    let ship = persistent_ships.get(&id).ok_or_else(||
+                        invalid("saved squad has a missing authored member"))?;
+                    let fleet = source.fleet.get(id).ok_or_else(||
+                        invalid("saved squad has no FleetShip metadata"))?;
+                    let fleet_id = ship.fleet_ship_id.ok_or_else(||
+                        invalid("saved squad member has no persistent FleetShip identity"))?;
+                    if !fleet.has_persistent_fleet_value || ship.side != squad.side ||
+                        !saved_members.insert(fleet_id)
+                    {
+                        return Err(invalid("saved squad reuses a FleetShip or a transient minion").into());
+                    }
+                    fleet_ship_ids.push(fleet_id);
+                }
+                saved_squad_sources.push(CampaignSquadSource {
+                    saved_squad_id, side: squad.side, fleet_ship_ids,
+                });
             }
         }
         source_levels.push(source);
@@ -2512,6 +2565,47 @@ fn run_battle(
         // campaign stage did not permit recording long-term fleet stats.
         Some(Vec::new())
     } else { None };
+    // Saved-squad career stats are derived from exactly the same verified
+    // FleetShip outcomes. This does not create a second damage, death or
+    // mining ledger in the host, and never mistakes Stage ItemIds for
+    // identities that survive the next mission.
+    let campaign_squads = if let Some(fleet) = &campaign_fleet {
+        let by_id = fleet.iter().map(|ship| (ship.fleet_ship_id, ship))
+            .collect::<HashMap<_, _>>();
+        let mut squads = Vec::with_capacity(saved_squad_sources.len());
+        for source in &saved_squad_sources {
+            let mut outcome = CampaignSquadOutcome {
+                saved_squad_id: source.saved_squad_id,
+                side: source.side,
+                ships_deployed: source.fleet_ship_ids.len() as u64,
+                ships_lost: 0, damage_done: 0, damage_received: 0, kills: 0,
+            };
+            for fleet_id in &source.fleet_ship_ids {
+                let ship = by_id.get(fleet_id).ok_or_else(||
+                    invalid("a recorded saved squad member lacks a finalized FleetShip outcome"))?;
+                if ship.side != source.side {
+                    return Err(invalid("saved squad side changed during battle").into());
+                }
+                if ship.is_dead == Some(true) {
+                    outcome.ships_lost += 1;
+                }
+                if let Some(combat) = ship.combat {
+                    outcome.damage_done = outcome.damage_done
+                        .checked_add(combat.enemy_tsv_damage_done)
+                        .ok_or_else(|| invalid("saved squad damage overflow"))?;
+                    outcome.damage_received = outcome.damage_received
+                        .checked_add(combat.tsv_damage_received)
+                        .ok_or_else(|| invalid("saved squad damage overflow"))?;
+                    outcome.kills = outcome.kills
+                        .checked_add(combat.attributed_enemy_kills)
+                        .ok_or_else(|| invalid("saved squad kill count overflow"))?;
+                }
+            }
+            squads.push(outcome);
+        }
+        squads.sort_unstable_by_key(|row| row.saved_squad_id);
+        Some(squads)
+    } else { None };
     let mut final_summary = json!({
         "kind": "run_final",
         "run_id": config.run_id,
@@ -2554,6 +2648,7 @@ fn run_battle(
         "navigation_raster_work_current_episodes": status.navigation_rasters,
         "campaign_outcome": campaign_outcome,
         "campaign_fleet": campaign_fleet,
+        "campaign_squads": campaign_squads,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
         "running_worlds": status.running_worlds,
