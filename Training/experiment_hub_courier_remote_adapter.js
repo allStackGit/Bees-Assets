@@ -61,11 +61,12 @@ function createCourierRemoteAdapter({
             (isFile?!fs.statSync(source).isFile():!fs.statSync(source).isDirectory()))
             throw Error(name+' must be an installed, non-symlink absolute path.');
     }
-    const relative=path.relative(projectRoot,artifactRoot);
-    if(relative===''||relative==='..'||relative.startsWith('..'+path.sep)===false&&
-        !path.isAbsolute(relative)||path.relative(artifactRoot,projectRoot)===''||
-        (!path.isAbsolute(path.relative(artifactRoot,projectRoot))&&
-         !path.relative(artifactRoot,projectRoot).startsWith('..'+path.sep)))
+    const nested=(root,target)=>{
+        const relative=path.relative(root,target);
+        return relative===''||relative!=='..'&&!relative.startsWith('..'+path.sep)&&
+            !path.isAbsolute(relative);
+    };
+    if(nested(projectRoot,artifactRoot)||nested(artifactRoot,projectRoot))
         throw Error('Courier native service artifacts must be outside its source checkout.');
     const workerScript=path.join(projectRoot,'courier_remote_lineage.py');
     if(!fs.statSync(workerScript).isFile()||fs.realpathSync(workerScript)!==workerScript||
