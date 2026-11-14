@@ -70,6 +70,12 @@ def main():
     if expected_count:
         from experiment_hub_tinybrains_rocm_verify import verify_runtime_devices
         actual_pcis = verify_runtime_devices(args.rocm_pci)
+        # HIP ordinals are NOT the Hub lease order. Preserve the complete
+        # verified map for per-device throughput evidence and checkpoint-
+        # proven inference-width reuse across correct physical GPUs.
+        os.environ["TINYBRAINS_GPU_PHYSICAL_PCI_IDS"] = ",".join(actual_pcis)
+        os.environ["TINYBRAINS_GPU_LEASE_ORDINALS"] = ",".join(
+            str(args.rocm_pci.index(pci)) for pci in actual_pcis)
         if args.device in ("dual", "multi"):
             # The lease fixes physical PCI identities, not HIP ordinal order.
             # GPU 0 owns PPO/Adam, GPU 1 owns the original local collection,
