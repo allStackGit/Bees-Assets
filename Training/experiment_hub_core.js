@@ -293,6 +293,9 @@ function boundedReport(value) {
     const workerEndpoint=value.tinybrains_rollout_endpoint??null;
     const workerFingerprint=value.tinybrains_rollout_key_fingerprint??null;
     const workerThreadLimit=value.tinybrains_rollout_thread_limit??0;
+    const courierEndpoint=value.courier_lineage_endpoint??null;
+    const courierKey=value.courier_lineage_key_fingerprint??null;
+    const courierShards=value.courier_lineage_max_shards??0;
     if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(remoteRollouts).size!==remoteRollouts.length||
