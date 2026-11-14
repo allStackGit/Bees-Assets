@@ -626,7 +626,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
                 ...(design_overrides===undefined?[]:
-                    ['--hub-design-overrides',JSON.stringify(design_overrides)]),
+                    ['--hub-design-overrides-file',
+                        JOBS_IN+'/'+context.job_id+'/hub-design-overrides.json']),
                 ...(remote_rollouts===true?[]:['--adaptive-local-engines']),
                 ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
