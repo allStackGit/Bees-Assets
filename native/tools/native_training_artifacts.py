@@ -85,6 +85,12 @@ def native_source_contract_sha256(path: Path) -> str:
             "python", "policy_worker", "model_manifest",
             "connection_checkpoint", "notifications", "rollout_summary",
             "policy_capture",
+            # These are collector capacity assignments, not gameplay
+            # semantics. Each work order separately pins World indexes,
+            # process count and explicit physics workers; identical native
+            # simulations must be allowed on heterogeneous machines.
+            "rollout_worlds", "rollout_world_start", "rollout_workers",
+            "physics_workers",
         )
     }
     portable["policy_worker_source_sha256"] = sha_file(
