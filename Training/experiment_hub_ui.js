@@ -2881,6 +2881,27 @@ document.addEventListener('DOMContentLoaded', () => {
             if(value===field.default)delete overrides[field.key];
             else overrides[field.key]=value;
         }
+        if(project==='courier') {
+            const effective=Object.fromEntries(choice.entry.fields.map(field=>[
+                field.key,Object.hasOwn(overrides,field.key)
+                    ?overrides[field.key]:field.default,
+            ]));
+            if(effective.colony&&effective.competitive)
+                throw Error('Choose individual competition or colony mode, not both.');
+            if(effective.evolution&&!effective.colony)
+                throw Error('Trait evolution requires colony mode.');
+            if(effective.communication&&!effective.colony)
+                throw Error('Communication requires colony mode.');
+            if(effective.speed_enabled&&!(
+                effective.colony&&effective.evolution&&effective.communication))
+                throw Error('Speed requires colony, evolution and communication.');
+            if(effective.food_spawn_mode==='patches'&&!effective.colony)
+                throw Error('Food patches require colony mode.');
+            if(!effective.evolution&&effective.food_tile_capacity!==1)
+                throw Error('Multiple food items per tile require evolution.');
+            if(effective.initial_energy>effective.max_energy)
+                throw Error('Initial energy cannot exceed maximum energy.');
+        }
         for(const input of runControls) {
             const key=input.dataset.designRun;
             if(input.type==='checkbox') {
