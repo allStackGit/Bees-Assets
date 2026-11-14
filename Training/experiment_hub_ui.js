@@ -3409,8 +3409,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // an experiment was queued. They remain selectable for that exact
         // configuration, but not when CPU-only or mode-specific constraints
         // rule out the measurement.
+        const declared=new Set(matching.flatMap(machine=>
+            Object.values(machine.design_catalog?.[project]?.metric_catalog||{}).flat()));
         for(const name of observed) {
             if(!gpuEnabled&&name.startsWith('host_gpu'))continue;
+            // A metric supported only in another mode is not an option for
+            // this frozen configuration, even if that name was once recorded.
+            if(declared.has(name)&&!available.has(name))continue;
             if(project==='courier'&&matching.length) {
                 const fields=matching[0].design_catalog.courier.fields;
                 const defaults=Object.fromEntries(fields.map(f=>[f.key,f.default]));
