@@ -746,6 +746,9 @@ impl ProjectileBody {
 #[derive(Clone, Debug)]
 pub struct ObstacleBody {
     pub id: i64,
+    /// Immutable source CollisionAsteroid prefab identity. All original
+    /// colliders still come from the same authored asteroid catalog.
+    pub source_asteroid_prefab_number: Option<u8>,
     pub pose: Pose,
     pub linear_velocity: Vec2,
     pub angular_velocity_degrees: f32,
@@ -791,6 +794,7 @@ impl ObstacleBody {
         let primary_vision_radius = shape.maximum_extent();
         let mut body = Self {
             id, pose, linear_velocity, angular_velocity_degrees, layer,
+            source_asteroid_prefab_number: None,
             active: true, tracks_body_contacts: false,
             tracks_ship_contacts: false,
             collider: WorldCollider::new(shape)?,
