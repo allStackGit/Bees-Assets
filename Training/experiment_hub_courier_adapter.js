@@ -210,6 +210,55 @@ function recordedCourierGameplay(root,checkpointRound) {
                     ['mean_births','selection_candidate_mean_births','scalar'],
                 ]);
         }
+        // Recent *training* colony behavior, never cumulative or evaluated
+        // candidate behavior. Suppress these metrics in individual-courier mode.
+        const behavior=saved.behavior;
+        if(saved.config?.colony===true&&Number.isSafeInteger(behavior?.batches)&&
+            behavior.batches>0&&behavior.batches<=20&&
+            behavior.counters&&typeof behavior.counters==='object'&&
+            !Array.isArray(behavior.counters)) {
+            add(behavior,[['batches','colony_window_rounds','count']]);
+            const counters=behavior.counters;
+            // An absent core event counter in a sampled colony window is zero.
+            const coreEvents=[
+                'pickups','deliveries','feedings','births',
+                'courier_deaths','energy_deaths','combat_deaths',
+                'combat_encounters','combat_rounds_won','combat_rounds_lost',
+                'colony_extinctions','opponent_extinctions',
+                'contested_pickup_attempts','opponent_contests_won',
+                'feeding_opportunities','feeding_stay_choices',
+            ];
+            const present=Object.fromEntries(coreEvents.map(key=>[key,counters[key]??0]));
+            add(present,coreEvents.map(key=>[key,'colony_window_'+key,'count']));
+            add(behavior,[
+                ['mean_population','colony_mean_population','scalar'],
+                ['feedings_per_1000_courier_ticks','colony_feedings_per_1000_courier_ticks','rate'],
+                ['births_per_1000_colony_ticks','colony_births_per_1000_colony_ticks','rate'],
+                ['feeding_stay_fraction','colony_feeding_stay_fraction','ratio'],
+                ['mean_energy_gained','colony_mean_energy_gained','scalar'],
+                ['mean_food_storage_ticks','colony_mean_food_storage_ticks','scalar'],
+                ['teammate_food_fraction','colony_teammate_food_fraction','ratio'],
+                ['mean_colony_age_at_birth','colony_mean_colony_age_at_birth','scalar'],
+                ['mean_courier_age_at_death','colony_mean_courier_age_at_death','scalar'],
+            ]);
+            if(saved.config.communication===true&&
+                Object.hasOwn(counters,'messages_written'))
+                add(counters,[['messages_written','colony_window_messages_written','count']]);
+            if(saved.config.evolution===true)
+                add({stat_mutations:counters.stat_mutations??0},
+                    [['stat_mutations','colony_window_stat_mutations','count']]);
+            if(saved.config.speed_enabled===true)
+                add(behavior.speed,[
+                    ['tiles_travelled','colony_window_speed_tiles_travelled','count'],
+                    ['mean_requested_distance','colony_mean_requested_distance','scalar'],
+                ]);
+            if(saved.config.food_spawn_mode==='patches')
+                add(behavior.food_patches,[
+                    ['food_offered','colony_window_patch_food_offered','count'],
+                    ['food_placed','colony_window_patch_food_placed','count'],
+                    ['supply_fraction','colony_patch_supply_fraction','ratio'],
+                ]);
+        }
         // Optional fixed report benchmarks are disabled by default. When
         // recorded, do not silently represent an older report as fresh.
         if(Number.isSafeInteger(saved.benchmark_round)&&
