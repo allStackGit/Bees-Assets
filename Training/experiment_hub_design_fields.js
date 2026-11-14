@@ -28,6 +28,8 @@ function fieldsFor(config,project) {
             ]).has(joined))continue;
             const enums=project==='tinybrains'?{
                 'training.action_reduction':['mean','sum'],
+            }:project==='courier'?{
+                'destination_pattern':['uniform','corners','left','right'],
             }:{};
             const options=enums[joined];
             if(options&&typeof value==='string'&&options.includes(value)) {
@@ -64,10 +66,18 @@ function fieldsFor(config,project) {
                 'self_play.snapshot_every':[1,1000000000],
                 'self_play.max_snapshots':[1,1000000000],
             }[joined]:null;
+            const courierLimits=project==='courier'?{
+                width:[4,32],height:[4,32],
+                initial_energy:[1,100000],max_energy:[1,100000],
+                energy_per_delivery:[1,100000],
+                move_cost:[0.01,100],survival_scale:[1,100000],
+                evaluation_steps:[16,8192],
+            }[joined]:null;
+            const limits=tinyLimits||courierLimits;
             const positive=/(learning_rate|batch_size|buffer_size|epochs|colony_batch_size|turns|timeout|count|size|radius)/.test(leaf);
-            const min=typeof value==='boolean'?undefined:tinyLimits?tinyLimits[0]:
+            const min=typeof value==='boolean'?undefined:limits?limits[0]:
                 positive?(leaf==='learning_rate'?0.000000001:1):value<0?-1000000000:0;
-            const max=typeof value==='boolean'?undefined:tinyLimits?tinyLimits[1]:
+            const max=typeof value==='boolean'?undefined:limits?limits[1]:
                 leaf==='learning_rate'?1:1000000000;
             fields.push({key:joined,section:project==='tinybrains'
                     ?path[0]==='training'?'training':'environment'
