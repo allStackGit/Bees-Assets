@@ -787,6 +787,16 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
             locked_on: false,
         });
         self.player.commands.insert(child, source);
+        // Source Squad.Setup creates an ordinary AI-controlled minion
+        // Squad, not a passive Scout Beacon. Retain its mother's verified
+        // opponent and HiveMind authority, but this wave is mobile even
+        // when the mother Queen itself cannot move.
+        if let Some(&authority) = self.hivemind_squads.get(&mother) {
+            self.hivemind_squads.insert(child,
+                bees_gameplay::level_host::NativeHiveMindSquadSource {
+                    immobile: false, ..authority
+                });
+        }
         if self.player.chasing.contains(&mother) {
             self.player.chasing.insert(child);
         }
@@ -843,6 +853,7 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         self.player.cease_fire.remove(&owner);
         self.player.squads.remove(&owner);
         self.player.commands.remove(&owner);
+        self.hivemind_squads.remove(&owner);
     }
 
     fn player_command_finished(&mut self, owner: SquadLifetime) {
