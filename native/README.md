@@ -341,7 +341,22 @@ bees build native/examples/native-frontier-campaign.json --output-dir native-fro
 bees transfer native/examples/native-frontier-campaign.json --output-dir native-frontier-save --ship 18 --squad 2
 bees transfer native/examples/native-frontier-campaign.json --output-dir native-frontier-save --ship 18 --squad 0
 bees reassign native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --ship 11 --from 1 --squad 2
+bees squad-create native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --template 1
 ```
+
+Press **N** in the native battle picker (or use `bees squad-create`
+headlessly) to create an additional persistent player SavedSquad.
+The new squad inherits the selected original squad's source-authored
+command permissions, starts with no ships, and receives a durable
+`squad-NNNN/squad.json` receipt. Its saved ID is distinct from every
+Level's transient squad ItemId. Select the new saved ID when purchasing
+or transferring ships to deploy them. The shared game builder restores
+new squads before fleet edits, registers only nonempty squads with the
+combat roster, and uses the Stage's authentic faction home coordinate
+to place a ship joining an empty squad. Even when every member has left
+a previously existing squad, that squad's saved identity remains
+available for future assignments. No invented zero-ship battle statistics
+are awarded to vacant squads.
 
 Here `18` is an example purchased FleetShip ID; use the real
 `fleet_ship_id` shown by `bees status`. The `--squad 0` destination
