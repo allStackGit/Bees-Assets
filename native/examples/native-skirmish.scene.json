@@ -684,6 +684,7 @@
   "squads": [
     {
       "item_id": 101,
+      "saved_squad_id": 1,
       "side": 1,
       "members": [
         11,
@@ -710,6 +711,7 @@
     },
     {
       "item_id": 103,
+      "saved_squad_id": 2,
       "side": 1,
       "members": [
         14,
