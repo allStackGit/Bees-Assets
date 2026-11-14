@@ -38,6 +38,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_optimizer_tuner_accepted',
     'training_gpu_optimizer_tuner_settled',
     'training_gpu_metric_readbacks','training_gpu_metric_rows',
+    'training_ppo_integrity_checks',
     'training_gpu_state_reused_lineages',
     'training_gpu_devices_assigned','training_gpu_devices_active']);
 const WINDOWS_ENTRY=[
