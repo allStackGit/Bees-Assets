@@ -3495,6 +3495,16 @@ class ExperimentHub {
                         changed=true;
                     }
                 }
+            for(const plan of disarmed) {
+                const learner=next.jobs.find(j=>j.id===plan.learner_job_id&&
+                    j.project_id==='courier'&&j.status==='waiting_adapter'&&
+                    !j.dispatch_id);
+                if(learner&&!learner.distributed_abort_requested_at) {
+                    learner.distributed_abort_requested_at=now();
+                    changed=true;
+                }
+            }
+            if(this.reconcileCourierAborts(next))changed=true;
             if(changed)this.commit(next);
         }
         for(const id of (this.state.courier_launch_plans||[])
@@ -3508,6 +3518,11 @@ class ExperimentHub {
                     .find(p=>p.id===id&&p.status==='pending');
                 if(!plan)return;
                 plan.status='disarmed';plan.reason=reason;plan.resolved_at=now();
+                const learner=next.jobs.find(j=>
+                    j.id===plan.learner_job_id&&j.project_id==='courier'&&
+                    j.status==='waiting_adapter'&&!j.dispatch_id);
+                if(learner)
+                    learner.distributed_abort_requested_at??=now();
                 for(const [jobId,dispatch] of Object.entries(plan.sidecar_dispatches)) {
                     const worker=next.jobs.find(j=>j.id===jobId&&
                         j.project_id==='courier_lineage'&&
@@ -3606,6 +3621,67 @@ class ExperimentHub {
             }
         }
     }
+    reconcileCourierAborts(next) {
+        let changed=false;
+        for(const learner of next.jobs.filter(job=>
+            job.project_id==='courier'&&job.distributed_courier_managed===true&&
+            job.distributed_abort_requested_at&&
+            job.status==='waiting_adapter'&&!job.dispatch_id)) {
+            const children=next.jobs.filter(job=>
+                job.project_id==='courier_lineage'&&
+                job.frozen_parameters?.learner_job_id===learner.id);
+            for(const child of children) {
+                if(child.status==='start_requested'&&
+                    child.start_first_offered_at===null) {
+                    child.status='waiting_adapter';
+                    delete child.dispatch_id;delete child.start_requested_at;
+                    delete child.start_first_offered_at;
+                    changed=true;
+                }
+                if(child.status==='waiting_adapter'&&!child.dispatch_id) {
+                    if(!gpuProbeHoldsClaim(child)){
+                        this.cancelUnstartedJob(next,child,now());
+                        changed=true;
+                    }
+                    continue;
+                }
+                const owned=next.reservations.find(lease=>
+                    lease.id===child.lease_id&&lease.job_id===child.id&&
+                    lease.machine_id===child.assigned_machine_id&&
+                    lease.project_id==='courier_lineage'&&
+                    lease.issued_by==='experiment-hub');
+                if(['start_requested','launch_requested','running','unverified']
+                        .includes(child.status)) {
+                    if(!owned||owned.status!=='acknowledged'||!child.dispatch_id)
+                        continue;
+                    child.status='stop_requested';child.stop_requested_at=now();
+                    child.status_reason='Aborted Courier group requires verified native remote PPO Stop.';
+                    changed=true;
+                }else if(owned?.status==='acknowledged'&&
+                    ['finished','stopped','failed'].includes(child.status)&&
+                    child.dispatch_id&&child.execution_updated_at&&
+                    (child.status!=='failed'||child.prelaunch_absence_verified===true)){
+                    this.releaseIn(next,owned);
+                    changed=true;
+                }
+            }
+            const safe=children.length>0&&children.every(child=>{
+                const lease=next.reservations.find(item=>
+                    item.id===child.lease_id&&item.job_id===child.id&&
+                    item.project_id==='courier_lineage');
+                return child.status==='cancelled'&&
+                    (!child.lease_id||lease?.status==='released')||
+                    ['finished','stopped','failed'].includes(child.status)&&
+                    child.capacity_released_at&&lease?.status==='released';
+            });
+            if(safe&&!gpuProbeHoldsClaim(learner)) {
+                this.cancelUnstartedJob(next,learner,now());
+                learner.status_reason='Courier group aborted after every remote PPO service was cancelled or verified stopped.';
+                changed=true;
+            }
+        }
+        return changed;
+    }
     abortCourierStartup(value) {
         if(!object(value)||value.confirm_abort!==true||
             !UUID.test(String(value.learner_job_id||'')))
@@ -3643,6 +3719,7 @@ class ExperimentHub {
             }
             child.status_reason='Courier distributed startup aborted; remote service must be stopped and verified.';
         }
+        this.reconcileCourierAborts(next);
         this.commit(next);
         return {learner_job_id:learner.id,abort_requested:true,
             note:'Native sidecars with uncertain ownership remain leased until their actual Stop receipt.'};
@@ -4038,6 +4115,7 @@ class ExperimentHub {
             }
         }
         if(this.reconcileDistributedAborts(next))changed=true;
+        if(this.reconcileCourierAborts(next))changed=true;
         return changed;
     }
     executionOrders(machineId) {
