@@ -127,6 +127,14 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_sim_processes','training_sim_migrations',
             'training_sim_migration_denials','training_sim_migration_owner',
             'training_sim_migration_max_seconds',
+            'training_remote_lineages',
+            'training_remote_roundtrip_max_seconds',
+            'training_remote_roundtrip_owner',
+            'training_remote_request_bytes','training_remote_reply_bytes',
+            'training_remote_checkpoint_bytes',
+            'training_remote_sync_max_seconds',
+            'training_remote_nontraining_max_seconds',
+            'training_remote_nontraining_owner',
             'training_simulation_tuner_adjustments',
             'training_simulation_tuner_accepted',
             'training_simulation_tuner_settled',
@@ -202,6 +210,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_sim_gather_pressure',
             'training_sim_info_pressure','training_sim_info_rebuild_pressure',
             'training_sim_migration_wall_share',
+            'training_remote_nontraining_share',
+            'training_remote_sync_share',
+            'training_remote_nontraining_pressure',
+            'training_remote_sync_pressure',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
@@ -677,6 +689,22 @@ class BottleneckEvidence {
                 Number.isSafeInteger(migrationCount.value)&&migrationCount.value>0);
             if(queueShare!==null)add('training_queue_work_share',queueShare);
             if(gapShare!==null)add('training_reply_gap_work_share',gapShare);
+            const remoteRound=seconds('training_remote_roundtrip_max_seconds');
+            const remoteNontraining=seconds('training_remote_nontraining_max_seconds');
+            const remoteSync=seconds('training_remote_sync_max_seconds');
+            // A remote request's residual includes actual screening,
+            // checkpointing, OS scheduling and network protocol overhead.
+            // Never attribute it to physical network saturation.
+            const remoteResidualShare=remoteRound>0&&
+                remoteNontraining!==null&&remoteNontraining<=remoteRound
+                ?remoteNontraining/remoteRound:null;
+            const remoteSyncShare=remoteRound>0&&
+                remoteSync!==null&&remoteSync<=remoteRound
+                ?remoteSync/remoteRound:null;
+            if(remoteResidualShare!==null)
+                add('training_remote_nontraining_share',remoteResidualShare);
+            if(remoteSyncShare!==null)
+                add('training_remote_sync_share',remoteSyncShare);
             const stageHints=[];
             const shardDispatchHints=[];
             const shardCopyHints=[];
@@ -684,6 +712,7 @@ class BottleneckEvidence {
             const shardInfoHints=[];
             const shardRebuildHints=[];
             const prefetchHints=[];
+            const remoteHints=[];
             // The backend reports its measured worst recurrent-minibatch
             // preparation alongside the *owning* lineage index. Comparing
             // unrelated maxima from different workers is not causal evidence.
@@ -801,6 +830,18 @@ class BottleneckEvidence {
                 if(transfer!==null&&optimize>0&&transfer<=optimize*1.02)
                     add('worker_'+i+'_gpu_prefetch_copy_share',
                         Math.min(1,transfer/optimize));
+                const remoteElapsed=seconds('worker_'+i+'_remote_roundtrip_seconds');
+                const remoteSyncStage=seconds('worker_'+i+'_remote_checkpoint_sync_seconds');
+                const nonTraining=remoteElapsed!==null&&
+                    remoteElapsed>=collect+optimize
+                    ?remoteElapsed-collect-optimize:null;
+                remoteHints[i]={
+                    nonTraining:remoteElapsed>0&&nonTraining!==null&&
+                        nonTraining>=0.5&&nonTraining/remoteElapsed>=0.25,
+                    sync:remoteElapsed>0&&remoteSyncStage!==null&&
+                        remoteSyncStage>=0.5&&remoteSyncStage<=remoteElapsed&&
+                        remoteSyncStage/remoteElapsed>=0.25,
+                };
                 stageHints[i]={
                     collection:fraction>=0.70,
                     optimization:fraction<=0.30,
@@ -828,7 +869,7 @@ class BottleneckEvidence {
                 const lastWorker=(last?.unit==='count'&&
                     Number.isSafeInteger(last.value)&&
                     last.value>=0&&last.value<count)?last.value:null;
-                prior.samples.push({at,stageHints,prefetchHints,shardDispatchHints,
+                prior.samples.push({at,stageHints,prefetchHints,remoteHints,shardDispatchHints,
                     shardCopyHints,shardGatherHints,shardInfoHints,
                     shardRebuildHints,resourceHints,
                     lastWorker,
@@ -836,6 +877,10 @@ class BottleneckEvidence {
                         infoGlobal.value>=0.20,
                     courierSimRebuild:rebuildGlobal?.unit==='ratio'&&
                         rebuildGlobal.value>=0.20,
+                    remoteResidual:remoteResidualShare!==null&&
+                        remoteResidualShare>=0.25&&remoteNontraining>=0.5,
+                    remoteSync:remoteSyncShare!==null&&
+                        remoteSyncShare>=0.25&&remoteSync>=0.5,
                     courierSimCopy:copyGlobal?.unit==='ratio'&&
                         copyGlobal.value>=0.20,
                     courierSimGather:gatherGlobal?.unit==='ratio'&&
@@ -934,6 +979,10 @@ class BottleneckEvidence {
                     add('training_sim_info_pressure',1,'count');
                 if(sustained(x=>x.courierSimRebuild))
                     add('training_sim_info_rebuild_pressure',1,'count');
+                if(sustained(x=>x.remoteResidual))
+                    add('training_remote_nontraining_pressure',1,'count');
+                if(sustained(x=>x.remoteSync))
+                    add('training_remote_sync_pressure',1,'count');
                 for(let i=0;i<count;i++) {
                     if(sustained(x=>x.shardCopyHints?.[i]))
                         add('worker_'+i+'_sim_copy_pressure',1,'count');
