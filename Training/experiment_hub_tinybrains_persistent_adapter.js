@@ -592,15 +592,17 @@ function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
-    enableDualGpu=false,enableMultiGpu=false,remoteCollectors=null,profilePpo=false,
+    enableDualGpu='auto',enableMultiGpu='auto',
+    remoteCollectors=null,profilePpo=false,
     cpuParallelism='allocation',
 }) {
     if(!['profile','allocation'].includes(cpuParallelism))
         throw Error('TinyBrains CPU concurrency must be pinned to its profile or allocated CPU budget.');
     if(typeof profilePpo!=='boolean')
         throw Error('PPO profiling requires an explicit local boolean opt-in.');
-    if(typeof enableDualGpu!=='boolean'||typeof enableMultiGpu!=='boolean')
-        throw Error('Multiple GPU enablement requires explicit local boolean opt-in.');
+    if(![true,false,'auto'].includes(enableDualGpu)||
+        ![true,false,'auto'].includes(enableMultiGpu))
+        throw Error('Multi-GPU capability must be auto, explicitly enabled, or disabled.');
     let remote=null;
     if(remoteCollectors!==null) {
         // A trusted machine-local choice: either pin every Tailnet endpoint,
@@ -632,6 +634,25 @@ function createTinyBrainsPersistentDockerAdapter({
     const project=fullDir(projectRoot),hub=fullDir(hubRoot),
         artifacts=fullDir(artifactRoot),source=fullDir(sourceRunRoot),
         cache=fullDir(engineCacheRoot);
+    // The installed native backend, not a separate resource ratio/profile,
+    // determines whether a selected 2–8-GPU exclusive lease is executable.
+    // Explicit false remains the operator's disable switch. Every GPU
+    // continues through the existing physical PCI/HIP isolation verifier
+    // at Start; file presence alone never licenses running on a device.
+    function installedModule(name) {
+        const file=path.join(project,'src','ants_mapoca',name+'.py');
+        try {
+            return fs.lstatSync(file).isFile()&&fs.realpathSync(file)===file;
+        }catch(error) {
+            if(error.code==='ENOENT')return false;
+            throw error;
+        }
+    }
+    const dualBackendReady=installedModule('pipeline')&&
+        installedModule('engine_pool');
+    const multiBackendReady=dualBackendReady&&installedModule('local_gpu_rollout');
+    const dualEnabled=enableDualGpu==='auto'?dualBackendReady:enableDualGpu;
+    const multiEnabled=enableMultiGpu==='auto'?multiBackendReady:enableMultiGpu;
     if(project===artifacts||project===source||artifacts===source||
         source.startsWith(artifacts+'/')||artifacts.startsWith(source+'/'))
         throw Error('Hub job artifacts and immutable TinyBrains import must not overlap.');
@@ -759,15 +780,15 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_thread_overrides:[...approved.keys()],
         tinybrains_cpu_fallback_profiles:[...approved.keys()],
         tinybrains_required_import_profiles:[...approved.keys()],
-        tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
-        tinybrains_multi_gpu_profiles:enableMultiGpu?[...approved.keys()]:[],
+        tinybrains_dual_gpu_profiles:dualEnabled?[...approved.keys()]:[],
+        tinybrains_multi_gpu_profiles:multiEnabled?[...approved.keys()]:[],
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
         tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
         tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
         tinybrains_remote_rollout_discovery:remote?.discovery===true,
         tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
-        ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
-        ...(enableMultiGpu?{gpu_multi_execution:'ppo-local-collectors'}:{}),
+        ...(dualEnabled?{gpu_dual_execution:'split-ppo'}:{}),
+        ...(multiEnabled?{gpu_multi_execution:'ppo-local-collectors'}:{}),
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
         ])),
@@ -779,7 +800,7 @@ function createTinyBrainsPersistentDockerAdapter({
             const ids=dual||multi?context.gpu_pci_addresses:[context.gpu_pci_address];
             if(!item||item.sha256!==parameters.profile_sha256||
                 (parameters?.device!==undefined&&!['dual','multi'].includes(parameters.device))||
-                (dual&&!enableDualGpu)||(multi&&!enableMultiGpu)||
+                (dual&&!dualEnabled)||(multi&&!multiEnabled)||
                 !Array.isArray(ids)||
                 !(dual?ids.length===2:multi?ids.length>=3&&ids.length<=8:ids.length===1)||
                 ids.some(pci=>!PCI.test(String(pci||'')))||
@@ -840,8 +861,8 @@ function createTinyBrainsPersistentDockerAdapter({
                     context.gpu_pci_addresses||context.gpu_cuda_uuid):
                     device==='dual'||device==='multi'
                         ?context.gpu_mode!=='exclusive'||
-                            (device==='dual'&&!enableDualGpu)||
-                            (device==='multi'&&!enableMultiGpu)||
+                            (device==='dual'&&!dualEnabled)||
+                            (device==='multi'&&!multiEnabled)||
                             !Array.isArray(context.gpu_pci_addresses)||
                             (device==='dual'
                                 ?context.gpu_pci_addresses.length!==2
