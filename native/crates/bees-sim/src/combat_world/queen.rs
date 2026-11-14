@@ -77,12 +77,25 @@ impl QueenSpawnSpec {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct QueenSpawnMeasurements {
     pub waves_started: u64,
     pub minions_spawned: u64,
     pub minions_blocked_by_cap: u64,
     pub max_concurrent_waves: usize,
+}
+
+impl QueenSpawnMeasurements {
+    /// Totals are episode-local; the peak is the largest single-Queen
+    /// world occupancy, not a fabricated simultaneous cross-world peak.
+    pub fn merge(&mut self, other: Self) {
+        self.waves_started = self.waves_started.saturating_add(other.waves_started);
+        self.minions_spawned = self.minions_spawned.saturating_add(other.minions_spawned);
+        self.minions_blocked_by_cap = self.minions_blocked_by_cap
+            .saturating_add(other.minions_blocked_by_cap);
+        self.max_concurrent_waves = self.max_concurrent_waves
+            .max(other.max_concurrent_waves);
+    }
 }
 
 #[derive(Clone, Debug)]
