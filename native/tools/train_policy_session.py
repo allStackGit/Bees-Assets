@@ -384,13 +384,12 @@ def measured_distributed_collection_windows(completed):
 
 
 def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
-    """Derive a stop signal exclusively from completed fixed-reference holdouts.
+    """Stop only on verified, comparable fixed-reference holdout observations.
 
-    Do not stop on training rewards, current self-play opponents, failed
-    evaluations, or a mutable progress cursor. Every round in a resumed
-    checkpoint lineage must have its corresponding verified evaluation.
-    Meaningful gains accumulate relative to the last qualifying holdout,
-    so several smaller real improvements are not discarded.
+    Patience counts evaluations, not optimizer rounds. Skipping a holdout
+    must neither count as a failed policy nor silently reset patience.
+    All scheduled evaluations are required; resumption verifies the same
+    immutable receipts and computes the same decision without a cursor.
     """
     policy = recipe.get("early_stop")
     if policy is None:
@@ -401,19 +400,26 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
     anchor_wins = baseline_holdout["side_victories"]
     best_wins = anchor_wins
     last_meaningful_round = 0
+    last_meaningful_evaluation = 0
+    evaluated = 0
+    every = recipe.get("evaluation_every", 1)
     for index, (directory, _) in enumerate(completed, 1):
         result = evaluations.get(str(directory))
         if result is None:
-            raise ValueError(f"early stopping cannot use an unevaluated round: {directory}")
+            if index % every == 0:
+                raise ValueError(f"missing scheduled native holdout: {directory}")
+            continue
         if (result["episodes"] != episodes or
                 result["learner_side"] != baseline_holdout["learner_side"]):
             raise ValueError("early stopping cannot compare different holdout conditions")
+        evaluated += 1
         wins = result["side_victories"]
         best_wins = max(best_wins, wins)
         if wins >= anchor_wins + policy["minimum_extra_victories"]:
             anchor_wins = wins
             last_meaningful_round = index
-    no_gain = len(completed) - last_meaningful_round
+            last_meaningful_evaluation = evaluated
+    no_gain = evaluated - last_meaningful_evaluation
     stop = (len(completed) >= policy["minimum_rounds"] and
             no_gain >= policy["patience_rounds"])
     return {
@@ -421,14 +427,16 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
         "enabled": True,
         "stop": stop,
         "reason": "fixed_reference_holdout_plateau" if stop else None,
-        "evaluated_rounds": len(completed),
+        "evaluated_rounds": evaluated,
+        "completed_rounds": len(completed),
+        "holdout_interval_rounds": every,
         "minimum_rounds": policy["minimum_rounds"],
         "patience_rounds": policy["patience_rounds"],
         "minimum_extra_victories": policy["minimum_extra_victories"],
         "best_holdout_victories": best_wins,
         "holdout_episodes": episodes,
         "last_meaningful_gain_round": last_meaningful_round,
-        "rounds_without_meaningful_gain": no_gain,
+        "evaluations_without_meaningful_gain": no_gain,
     }
 
 
@@ -459,7 +467,12 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         else "local_rollout_wall_seconds"
     )
     fleet_window = measured_distributed_collection_windows(completed)
-    latest_holdout = evaluations.get(str(completed[-1][0])) if completed else None
+    latest_observed = next((
+        (index, evaluations[str(directory)])
+        for index, (directory, _) in reversed(list(enumerate(completed, 1)))
+        if str(directory) in evaluations
+    ), None)
+    latest_holdout = latest_observed[1] if latest_observed is not None else None
     holdout_win_rate_gain = (
         latest_holdout["side_win_rate"] - baseline_holdout["side_win_rate"]
         if latest_holdout is not None and baseline_holdout is not None
@@ -470,6 +483,7 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         "evaluated_rounds": len(evaluations),
         "baseline_holdout": baseline_holdout,
         "latest_holdout": latest_holdout,
+        "latest_holdout_round": latest_observed[0] if latest_observed else None,
         "latest_holdout_win_rate_gain": holdout_win_rate_gain,
         **({"holdout_stopping": stopping} if stopping is not None else {}),
         **({"best_evaluated": {
