@@ -89,6 +89,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         retain('ant_decisions_per_second',reported.ant_decisions_per_second);
         retain('simulation_match_steps_per_second',
             reported.simulation_match_steps_per_second);
+        for(const name of ['pipeline_primary_delay_kind',
+            'pipeline_primary_collector_index','pipeline_primary_worker_index',
+            'pipeline_primary_lineage_stage_code',
+            'pipeline_primary_evidence_samples','pipeline_multiple_delay_evidence',
+            'pipeline_ram_scan_work_share','pipeline_ram_scan_pressure'])
+            retain(name,reported[name]);
         for(const name of ['ppo_gpu_batch_target_pixels',
             'ppo_gpu_batch_next_target','ppo_gpu_batch_settled',
             'rollout_gpu_batch_target_pixels',
@@ -106,6 +112,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'local_lease_ram_admission_denials',
             'local_lease_admission_denials_delta',
             'local_lease_admission_wait_delta',
+            'local_lease_ram_scan_delta','local_lease_ram_scan_calls_delta',
             'local_gpu_collectors_pending_at_local_end',
             'collector_join_wait_seconds','local_gpu_join_wait_seconds',
             'rollout_onnx_batch_share','rollout_onnx_calls',
@@ -337,6 +344,15 @@ class BottleneckEvidence {
             if(localShare!==null)
                 add('pipeline_local_gpu_wait_work_share',localShare);
             if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
+            // Software accounting consumes exposed wall time. It is not
+            // hardware RAM saturation; the measured scan may overlap other
+            // stages and is only compared with the same update's wall.
+            const ramScan=seconds('local_lease_ram_scan_delta');
+            const updateWall=seconds('update_wall_time');
+            const scanShare=updateWall>0&&ramScan!==null&&
+                ramScan<=updateWall*1.05
+                ?Math.min(1,ramScan/updateWall):null;
+            if(scanShare!==null)add('pipeline_ram_scan_work_share',scanShare);
             // Bounded observational state is neither a scheduler input
             // nor evidence that any particular device is saturated.
             const {at,prior}=history();
@@ -350,6 +366,7 @@ class BottleneckEvidence {
             const stageHints=[];
             const simHints=[];
             const joinHints=[];
+            const localGpuIndices=[];
             const connectHints=[];
             const gpuHints=[];
             for(let i=0;i<17;i++) {
@@ -428,6 +445,8 @@ class BottleneckEvidence {
                 // the job's frozen PCI lease and is therefore the same
                 // physical device as host_gpu_N. Host utilization remains
                 // host-wide and need not be exclusive useful PPO work.
+                localGpuIndices[i]=(metrics['collector_'+i+'_is_local_gpu']?.unit==='count'&&
+                    metrics['collector_'+i+'_is_local_gpu'].value===1);
                 const leaseIndex=metrics['collector_'+i+'_gpu_lease_index'];
                 const ordinal=(eligibleGpu&&leaseIndex?.unit==='count'&&
                     Number.isSafeInteger(leaseIndex.value)&&
@@ -479,7 +498,8 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,localShare,mergeShare,stageHints,simHints,
-                    joinHints,connectHints,gpuHints,collectorNativeDenials,resourceHints});
+                    joinHints,localGpuIndices,connectHints,gpuHints,collectorNativeDenials,resourceHints,
+                    scanPressure:scanShare!==null&&scanShare>=0.15&&ramScan>=0.25});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -517,6 +537,8 @@ class BottleneckEvidence {
                 if(Array.from({length:17},(_,i)=>i).some(i=>
                     recent.filter(x=>x.connectHints?.[i]).length>=5))
                     add('pipeline_connection_setup_pressure',1,'count');
+                if(recent.filter(x=>x.scanPressure).length>=5)
+                    add('pipeline_ram_scan_pressure',1,'count');
                 if(sustained('gpuBusy'))
                     add('pipeline_gpu_host_busy_pressure',1,'count');
                 if(sustained('gpuMixed'))
@@ -527,6 +549,45 @@ class BottleneckEvidence {
                 if(sustained('gpuIdle')&&
                         recent.filter(x=>x.fraction<=0.3).length>=5)
                     add('pipeline_gpu_idle_evidence',1,'count');
+                const stable=predicate=>recent.filter(predicate).length>=5;
+                const collectionDominant=stable(x=>x.fraction>=0.70);
+                const optimizationDominant=stable(x=>x.fraction<=0.30);
+                if(optimizationDominant) {
+                    add('pipeline_primary_delay_kind',2,'count');
+                    add('pipeline_primary_evidence_samples',recent.length,'count');
+                } else if(collectionDominant) {
+                    const remoteDominant=stable(x=>x.waitShare!==null&&x.waitShare>=0.50);
+                    const gpuWaitDominant=stable(x=>x.localShare!==null&&x.localShare>=0.50);
+                    const mergeDominant=stable(x=>x.mergeShare!==null&&x.mergeShare>=0.30);
+                    const subCount=Number(remoteDominant)+Number(gpuWaitDominant)+
+                        Number(mergeDominant);
+                    if(subCount>1)
+                        add('pipeline_multiple_delay_evidence',1,'count');
+                    else if(subCount===1) {
+                        if(mergeDominant) {
+                            add('pipeline_primary_delay_kind',5,'count');
+                            add('pipeline_primary_evidence_samples',recent.length,'count');
+                        } else {
+                            const source=remoteDominant?'remote':'local_gpu';
+                            const owners=Array.from({length:17},(_,i)=>i)
+                                .filter(i=>stable(x=>x.joinHints?.[i]&&
+                                    (source==='remote'
+                                        ?x.localGpuIndices?.[i]!==true
+                                        :x.localGpuIndices?.[i]===true)));
+                            if(owners.length===1) {
+                                add('pipeline_primary_delay_kind',
+                                    remoteDominant?3:4,'count');
+                                add('pipeline_primary_collector_index',owners[0],'count');
+                                add('pipeline_primary_evidence_samples',recent.length,'count');
+                            } else if(owners.length>1) {
+                                add('pipeline_multiple_delay_evidence',1,'count');
+                            }
+                        }
+                    } else {
+                        add('pipeline_primary_delay_kind',1,'count');
+                        add('pipeline_primary_evidence_samples',recent.length,'count');
+                    }
+                }
                 for(let i=0;i<17;i++) {
                     // The reported collector ID is a stable position in
                     // the frozen remote fanout, not an inferred host label.
