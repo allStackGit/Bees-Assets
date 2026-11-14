@@ -18,6 +18,8 @@ const POST_ACTIONS={
     '/api/hub/leases/release':[200,'releaseLease'],
     '/api/hub/jobs':[201,'queueConfiguration'],
     '/api/hub/pipelines':[201,'queuePipeline'],
+    '/api/hub/distributed/courier':[201,'queueDistributedCourier'],
+    '/api/hub/distributed/courier/start':[200,'authorizeCourierGroup'],
     '/api/hub/distributed/tinybrains':[201,'queueDistributedTinyBrains'],
     '/api/hub/distributed/tinybrains/schedule-start':[200,'scheduleDistributedGroup'],
     '/api/hub/distributed/tinybrains/cancel-start-plan':[200,'cancelScheduledDistributedGroup'],
