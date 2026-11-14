@@ -1043,10 +1043,13 @@ function courierLineageHost(snapshot,job,machine) {
         frozen.shards>machine.courier_lineage_max_shards)
         return false;
     if(snapshot.jobs.some(other=>other.id!==job.id&&
-        other.project_id==='courier_lineage'&&other.status!=='cancelled'&&
-        other.frozen_parameters?.learner_job_id===parent.id&&
+        other.project_id==='courier_lineage'&&
         (other.assigned_machine_id===machine.id||
-         other.frozen_parameters?.slot===frozen.slot)))
+         other.frozen_parameters?.learner_job_id===parent.id&&
+             other.frozen_parameters?.slot===frozen.slot)&&
+        !(['cancelled','finished','stopped','failed'].includes(other.status)&&
+            (!other.lease_id||snapshot.reservations.some(lease=>
+                lease.id===other.lease_id&&lease.status==='released')))))
         return false;
     return true;
 }
