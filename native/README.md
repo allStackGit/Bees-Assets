@@ -1104,6 +1104,27 @@ rewritten and an unevaluated/incomplete round cannot become the selection.
 A best score on fixed holdout seeds is **not** proof of generalization,
 Unity parity or a release-qualified policy.
 
+To avoid spending an entire scheduled native training session on an
+unchanging checkpoint, optionally add `--early-stop-patience 6
+--early-stop-minimum-rounds 8` when supplying a pinned evaluation
+suite. Stopping is disabled by default. The controller waits for at
+least eight completed optimizer updates, then stops only after six
+consecutive **verified** fixed-reference holdouts without an improvement
+in the learner's side-victory count. Use
+`--early-stop-minimum-extra-victories N` (default 1) to require
+at least N additional wins over the last meaningful improvement
+before resetting patience. The episode count and seeds remain identical
+across rounds; a changing self-play opponent is never the stopping
+reference. The setting is pinned in the session recipe, so resuming an
+already-stopped session cannot start extra collectors or train a new
+checkpoint. `session-progress.json` reports the stop decision and its
+observed victory counts; `best-evaluated-run.json` remains the
+playable model chosen from all evaluated checkpoints. This option
+works with both the direct session controller and
+`bootstrap_policy.py --train-rounds`, including distributed native
+collection. It prevents waste on a fixed benchmark, not independent
+overfitting or generalization.
+
 For distributed training, the same session now accepts a fixed collector
 allocation (Experiment Hub retains machine/CPU/GPU/RAM ownership):
 
