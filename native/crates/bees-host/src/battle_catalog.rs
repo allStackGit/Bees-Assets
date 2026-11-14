@@ -509,8 +509,8 @@ impl BattleCatalog {
             progress.fleet.get(&fleet_ship_id)
                 .is_none_or(|fleet| fleet.is_dead || fleet.side != side) ||
             (to_saved_squad_id != 0 &&
-                progress.squads.get(&to_saved_squad_id)
-                    .is_none_or(|squad| squad.side != side))
+                !progress.saved_squad_ids_for_side(side)
+                    .contains(&to_saved_squad_id))
         {
             return Err(invalid("transfer needs a live purchased hull and a different owned SavedSquad"));
         }
@@ -806,8 +806,8 @@ impl BattleCatalog {
                 progress.fleet.get(&transfer.fleet_ship_id)
                     .is_some_and(|ship| ship.side != transfer.player_side) ||
                 (transfer.to_saved_squad_id != 0 &&
-                    progress.squads.get(&transfer.to_saved_squad_id)
-                        .is_none_or(|squad| squad.side != transfer.player_side))
+                    !progress.saved_squad_ids_for_side(transfer.player_side)
+                        .contains(&transfer.to_saved_squad_id))
             {
                 return Err(invalid("invalid or stale saved-squad FleetShip transfer receipt"));
             }
