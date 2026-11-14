@@ -1219,7 +1219,9 @@ class ExperimentHub {
             plan.status==='pending');
         const resetQueuedDistributed=(s.distributed_group_plans||[]).some(plan=>
             plan.status==='pending');
-        if(resetBundles||resetDistributed||resetQueuedDistributed) {
+        const resetCourier=(s.courier_launch_plans||[]).some(plan=>
+            plan.status==='pending');
+        if(resetBundles||resetDistributed||resetQueuedDistributed||resetCourier) {
             const next=copy(s);
             for(const plan of next.bundle_start_plans||[])
                 if(plan.status==='pending'&&plan.resume_after_restart!==true) {
@@ -1237,6 +1239,12 @@ class ExperimentHub {
                         plan.reason='Coordinator restarted without explicit learner recovery approval.';
                         plan.resolved_at=now();
                     }
+                }
+            for(const plan of next.courier_launch_plans||[])
+                if(plan.status==='pending') {
+                    plan.status='needs_review';
+                    plan.reason='Coordinator restarted: Courier native service ownership must be reviewed before any new learner Start.';
+                    plan.resolved_at=now();
                 }
             for(const plan of next.distributed_group_plans||[])
                 if(plan.status==='pending') {
@@ -1293,6 +1301,13 @@ class ExperimentHub {
             resume_after_restart:intent.resume_after_restart===true,
         }));
         delete snapshot.distributed_launch_plans;
+        snapshot.courier_launches=(snapshot.courier_launch_plans||[]).map(plan=>({
+            learner_job_id:plan.learner_job_id,
+            worker_job_ids:plan.members.map(member=>member.job_id),
+            status:plan.status,reason:plan.reason,
+            approved_at:plan.approved_at,expires_at:plan.expires_at,
+        }));
+        delete snapshot.courier_launch_plans;
         // Preserve existing Ants-v2 registry provenance without presenting
         // it as a supported executable project.
         snapshot.projects=snapshot.projects.map(project=>project.id==='ants'
