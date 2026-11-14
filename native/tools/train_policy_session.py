@@ -383,8 +383,57 @@ def measured_distributed_collection_windows(completed):
     }
 
 
+def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
+    """Derive a stop signal exclusively from completed fixed-reference holdouts.
+
+    Do not stop on training rewards, current self-play opponents, failed
+    evaluations, or a mutable progress cursor. Every round in a resumed
+    checkpoint lineage must have its corresponding verified evaluation.
+    Meaningful gains accumulate relative to the last qualifying holdout,
+    so several smaller real improvements are not discarded.
+    """
+    policy = recipe.get("early_stop")
+    if policy is None:
+        return None
+    if baseline_holdout is None:
+        raise ValueError("early stopping requires a verified baseline holdout")
+    episodes = baseline_holdout["episodes"]
+    anchor_wins = baseline_holdout["side_victories"]
+    best_wins = anchor_wins
+    last_meaningful_round = 0
+    for index, (directory, _) in enumerate(completed, 1):
+        result = evaluations.get(str(directory))
+        if result is None:
+            raise ValueError(f"early stopping cannot use an unevaluated round: {directory}")
+        if (result["episodes"] != episodes or
+                result["learner_side"] != baseline_holdout["learner_side"]):
+            raise ValueError("early stopping cannot compare different holdout conditions")
+        wins = result["side_victories"]
+        best_wins = max(best_wins, wins)
+        if wins >= anchor_wins + policy["minimum_extra_victories"]:
+            anchor_wins = wins
+            last_meaningful_round = index
+    no_gain = len(completed) - last_meaningful_round
+    stop = (len(completed) >= policy["minimum_rounds"] and
+            no_gain >= policy["patience_rounds"])
+    return {
+        "kind": "native_training_holdout_stopping",
+        "enabled": True,
+        "stop": stop,
+        "reason": "fixed_reference_holdout_plateau" if stop else None,
+        "evaluated_rounds": len(completed),
+        "minimum_rounds": policy["minimum_rounds"],
+        "patience_rounds": policy["patience_rounds"],
+        "minimum_extra_victories": policy["minimum_extra_victories"],
+        "best_holdout_victories": best_wins,
+        "holdout_episodes": episodes,
+        "last_meaningful_gain_round": last_meaningful_round,
+        "rounds_without_meaningful_gain": no_gain,
+    }
+
+
 def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None,
-                      best_evaluated=None):
+                      best_evaluated=None, stopping=None):
     evaluations = evaluations or {}
     world_steps = sum(record["rollout_metrics"]["successful_world_steps"]
                       for _, record in completed)
@@ -422,6 +471,7 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         "baseline_holdout": baseline_holdout,
         "latest_holdout": latest_holdout,
         "latest_holdout_win_rate_gain": holdout_win_rate_gain,
+        **({"holdout_stopping": stopping} if stopping is not None else {}),
         **({"best_evaluated": {
             "round": best_evaluated["selected"]["round"],
             "side_win_rate": best_evaluated["selected"]["win_rate"],
