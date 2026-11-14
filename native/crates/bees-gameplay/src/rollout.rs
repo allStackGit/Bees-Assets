@@ -205,13 +205,13 @@ where
                 let world = simulation.world(index)
                     .expect("validated current native world index");
                 // The fixed-step clock is authoritative for the next
-                // policy/game Scout cooldown advance. Only arenas capable
-                // of creating a Stage-owned Beacon lifetime *this tick*
-                // need the source-ordered lane. An exhausted or cooling
-                // Scout cannot allocate an ID on this physics step.
+                // Scout cooldown or Queen wave advance. Only arenas
+                // capable of creating Stage-owned minion IDs *this tick*
+                // need the source-ordered lane; others stay parallel.
                 let dt = simulation.world_fixed_step_seconds(index)
                     .expect("registered native world has an authored step");
-                if world.state.combat.may_spawn_scout_beacon_during(dt) {
+                if world.state.combat.may_spawn_scout_beacon_during(dt) ||
+                    world.state.combat.may_spawn_queen_minion_during(dt) {
                     serialized_worlds.push(index);
                 }
             }
