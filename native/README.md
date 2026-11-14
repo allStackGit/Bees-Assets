@@ -337,7 +337,19 @@ battle picker, or without a window:
 
 ```sh
 bees build native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --ship-type 21 --squad 1
+bees transfer native/examples/native-frontier-campaign.json --output-dir native-frontier-save --ship 18 --squad 2
+bees transfer native/examples/native-frontier-campaign.json --output-dir native-frontier-save --ship 18 --squad 0
 ```
+
+Here `18` is an example purchased FleetShip ID; use the real
+`fleet_ship_id` shown by `bees status`. The `--squad 0` destination
+places a surviving purchased hull in the reserve fleet. It remains
+owned, keeps its career and purchase cost, does not deploy in battles,
+and can later rejoin any available same-faction saved squad. Press
+**T** in the native battle picker for the same squad/reserve editing
+workflow. Every assignment is an immutable, zero-TSV-cost
+`transfer-NNNN/transfer.json` receipt, applied in sequence to the
+original purchase. The original FleetShip ID never changes.
 
 A purchase is one immutable, atomic `build-NNNN/purchase.json`
 receipt. Its FleetShip ID persists between missions and its TSV cost
@@ -361,9 +373,13 @@ career records but are not redeployed. A failed preflight never
 charges minerals. Only actual completed battle summaries award
 banked TSV, and the saved account's receipt totals reject overdrafts.
 The shop is currently for normal authored hulls; custom
-special-weapon prefabs, transfer between squads, full Unity
-fleet-management screens and recovery of simultaneous external
-shop writers remain outside this first native shop implementation.
+special-weapon prefabs, editing originally authored squad members,
+and the complete Unity fleet-management screens remain separate work.
+Campaign execution and fleet edits share an exclusive per-save
+`campaign-writer.lock`. On Windows and Linux, another writer fails
+rather than using stale funds or roster IDs; if a process crashes and
+leaves the file behind, first verify that no game/editor process is
+still running, then manually remove the stale lock.
 
 Use a compiled headless `bees` binary for automated native campaign
 qualification. Each invocation loads mission unlocks and saved player
