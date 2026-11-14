@@ -1113,13 +1113,23 @@ rewritten and an unevaluated/incomplete round cannot become the selection.
 A best score on fixed holdout seeds is **not** proof of generalization,
 Unity parity or a release-qualified policy.
 
+To reduce fixed-holdout overhead on high-SPS training, optionally
+add `--evaluation-every 4` alongside the pinned holdout suite. The
+session still evaluates the initial model and its final checkpoint, but
+only every fourth intermediate optimizer round. Previously issued
+holdout attempts are recovered and verified after interruption or a
+target-round extension; absent intervals are not treated as failures.
+The progress report identifies the last *actually evaluated* round
+rather than presenting a missing holdout as zero.
+
 To avoid spending an entire scheduled native training session on an
 unchanging checkpoint, optionally add `--early-stop-patience 6
 --early-stop-minimum-rounds 8` when supplying a pinned evaluation
 suite. Stopping is disabled by default. The controller waits for at
 least eight completed optimizer updates, then stops only after six
 consecutive **verified** fixed-reference holdouts without an improvement
-in the learner's side-victory count. Use
+in the learner's side-victory count. Patience counts evaluations, not
+skipped optimizer rounds when `--evaluation-every` is greater than 1. Use
 `--early-stop-minimum-extra-victories N` (default 1) to require
 at least N additional wins over the last meaningful improvement
 before resetting patience. The episode count and seeds remain identical
