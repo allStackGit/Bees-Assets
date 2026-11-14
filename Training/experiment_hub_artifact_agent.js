@@ -123,6 +123,11 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) 
     for(const record of executor.supervisor.snapshot()) {
         if(!TERMINAL.has(record.state))continue;
         const project=record.project_id,adapter=executor.supervisor.adapters?.[project];
+        // Collectors carry binary training experience rather than only
+        // diagnostics. Raise their bounded per-cycle delivery allowance
+        // without changing general telemetry's smaller background budget.
+        const cycleBudget=project==='bees_native_collect'
+            ?128*1024*1024:MAX_CYCLE;
         if(typeof adapter?.artifact_export_dir!=='function')continue;
         if(!executor.projects.includes(project))continue;
         const root=adapter.artifact_export_dir(record.job_id);
@@ -149,7 +154,7 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) 
                 cache.set(key,{...proof,mtimeMs:st.mtimeMs,complete:true});
                 completed++;continue;
             }
-            if(sent>=MAX_CYCLE)return {bytes:sent,files:completed};
+            if(sent>=cycleBudget)return {bytes:sent,files:completed};
             // Each chunk is bounded, resumable by its exact destination
             // offset and tied to a complete source snapshot SHA-256.
             const fd=fs.openSync(file,fs.constants.O_RDONLY|
@@ -159,9 +164,9 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) 
                 if(!opened.isFile()||opened.nlink!==1||
                     opened.dev!==proof.dev||opened.ino!==proof.ino||
                     opened.size<proof.size)continue;
-                while(response.offset<snapshot.size&&sent<MAX_CYCLE) {
+                while(response.offset<snapshot.size&&sent<cycleBudget) {
                     const length=Math.min(MAX_CHUNK,snapshot.size-response.offset,
-                        MAX_CYCLE-sent);
+                        cycleBudget-sent);
                     const block=Buffer.allocUnsafe(length);
                     if(fs.readSync(fd,block,0,length,response.offset)!==length)
                         throw Error('Job log shortened during transfer.');
