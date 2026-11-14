@@ -330,8 +330,9 @@ surviving player-fleet mining at their winning ending, following the
 source campaign's explicit CollectMinedMineralsForPlayer action. Failed
 attempts bank zero. The shared Level owns the mining tally and removes
 unbanked cargo on lethal death. `bees status` shows banked, spent and
-available TSV. The bundled example exposes ordinary hull types 21
-(TSV 100) and 2 (TSV 250) after source verification. After winning and
+available TSV. The bundled example exposes hull types 21
+(TSV 100), 2 (TSV 250), and the real source-authored Scout special
+(type 18, TSV 100) after source verification. After winning and
 earning enough mined TSV, build into a saved squad with **B** in the
 battle picker, or without a window:
 
@@ -361,8 +362,9 @@ preserves its original fleet identity, lifetime stats, and owned hull
 without spending minerals. These `squad-edit-NNNN/assignment.json`
 receipts record ownership changes independently from purchase
 transactions and replay before the shared Level is constructed.
-Initially moving ordinary non-policy, non-special source hulls is
-supported; carriers, authored special ships and ships with active
+Initially moving independent, non-policy source hulls is supported,
+including ships with self-contained authored special weapons and
+abilities. Parent-linked Strikers/Drones and carriers with active
 children are deliberately not detached without their corresponding
 source ownership semantics. Previously killed hulls cannot be moved.
 Scene preflight rejects formations that do not fit the authored map.
@@ -378,9 +380,15 @@ ten-ship maximum. The shop owns one player faction.
 Before charging minerals, the *same native scene builder* preflights
 every upcoming mission route with the actual authored Stage assets,
 native layout, surviving prior purchases and casualty restoration.
-The full-health ordinary source ship must cost its exact
+The full-health source ship must cost its exact
 `max_tsv`, the target `saved_squad_id` must exist, enough map space
 must be available and its squad must remain within its authored size.
+Source-authored independent specials (Scout, Queen, Barge,
+FireBarge, YellowJacket, and unparented Striker, where authentic
+templates exist) retain their native special behavior. Purchased
+Bomb/Charge source weapon contacts receive distinct physical IDs;
+the original game templates remain unchanged. Carrier-linked
+dependencies are excluded until group ownership is supported.
 No fake purchased collider, special ability or extra training
 simulator is constructed. Each battle uses the same installer to
 create the bought ship's physics, turret mounts, sight, formation,
@@ -395,9 +403,10 @@ charges minerals. When all missions are complete, the editor checks
 the authored rematch routes instead, so owned ships can still be
 reorganized. Only actual completed battle summaries award banked TSV,
 and the saved account's receipt totals reject overdrafts.
-The shop is currently for normal authored hulls; custom
-special-weapon prefabs, editing originally authored squad members,
-and the complete Unity fleet-management screens remain separate work.
+The shop supports authenticated ordinary and independent specialist
+source hulls. Custom authoring of entirely new specials, carrier
+families and the complete Unity fleet-management screens remain
+separate work.
 Campaign execution and fleet edits share an exclusive per-save
 `campaign-writer.lock`. On Windows and Linux, another writer fails
 rather than using stale funds or roster IDs; if a process crashes and
