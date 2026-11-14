@@ -1295,7 +1295,9 @@ class ExperimentHub {
             plan.status==='pending');
         const resetQueuedDistributed=(s.distributed_group_plans||[]).some(plan=>
             plan.status==='pending');
-        if(resetBundles||resetDistributed||resetQueuedDistributed) {
+        const resetCourier=(s.courier_launch_plans||[]).some(plan=>
+            plan.status==='pending');
+        if(resetBundles||resetDistributed||resetQueuedDistributed||resetCourier) {
             const next=copy(s);
             for(const plan of next.bundle_start_plans||[])
                 if(plan.status==='pending'&&plan.resume_after_restart!==true) {
@@ -1313,6 +1315,12 @@ class ExperimentHub {
                         plan.reason='Coordinator restarted without explicit learner recovery approval.';
                         plan.resolved_at=now();
                     }
+                }
+            for(const plan of next.courier_launch_plans||[])
+                if(plan.status==='pending') {
+                    plan.status='disarmed';
+                    plan.reason='Coordinator restarted; remote Courier native services require fresh Stop/reconciliation before a new approval.';
+                    plan.resolved_at=now();
                 }
             for(const plan of next.distributed_group_plans||[])
                 if(plan.status==='pending') {
@@ -1351,6 +1359,13 @@ class ExperimentHub {
                     ?'A member changed native status; plan needs review.'
                 :'Waiting for matching fresh machine lease receipts and native Start readiness.'};
         });
+        snapshot.courier_launches=(snapshot.courier_launch_plans||[]).map(plan=>({
+            id:plan.id,learner_job_id:plan.learner_job_id,
+            sidecar_job_ids:Object.keys(plan.sidecar_dispatches),
+            status:plan.status,reason:plan.reason,
+            expires_at:plan.expires_at,
+        }));
+        delete snapshot.courier_launch_plans;
         snapshot.distributed_group_plans=(snapshot.distributed_group_plans||[]).map(plan=>({
             id:plan.id,learner_job_id:plan.learner_job_id,
             collector_job_ids:plan.collector_job_ids.slice(),
