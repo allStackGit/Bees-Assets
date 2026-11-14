@@ -703,14 +703,14 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
             .ok_or(GameCommandError::MissingCombatSnapshot)?;
         let offset = CombatWorld::queen_minion_formation_offset(minion_index)
             .ok_or(GameCommandError::InvalidSquad)?;
-        let permissions = self.player.squads.get(&child)
-            .ok_or(GameCommandError::InvalidSquad)?;
+        if !self.player.squads.contains_key(&child) {
+            return Err(GameCommandError::InvalidSquad);
+        }
         let queen = world.ship(queen_id)
             .ok_or(GameCommandError::MissingCombatSnapshot)?;
         if !world.ship(minion_id).is_some_and(|ship|
             ship.ship_type == 22 && ship.side == queen.side) ||
-            self.player.ships.contains_key(&minion_id) ||
-            permissions.locked_on
+            self.player.ships.contains_key(&minion_id)
         {
             return Err(GameCommandError::InvalidSquad);
         }
