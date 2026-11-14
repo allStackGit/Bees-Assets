@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--live-matches", type=int, required=True)
     parser.add_argument("--waves", type=int, required=True)
     parser.add_argument("--actions", type=int, required=True)
-    parser.add_argument("--device", choices=("cpu", "cuda", "dual"), default="cuda")
+    parser.add_argument("--device", choices=("cpu", "cuda", "dual", "multi"), default="cuda")
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
     parser.add_argument("--remote-rollout-endpoint", action="append", default=[])
@@ -32,9 +32,11 @@ def main():
         parser.error("All training limits must be positive.")
     if args.live_matches % args.waves:
         parser.error("Live matches must divide evenly into waves.")
-    expected_count = {"cpu": 0, "cuda": 1, "dual": 2}[args.device]
-    if len(args.rocm_pci or []) != expected_count:
-        parser.error("The number of frozen ROCm PCI identities must match the execution mode.")
+    expected_count = (len(args.rocm_pci or []) if args.device == "multi"
+                      else {"cpu": 0, "cuda": 1, "dual": 2}[args.device])
+    if (len(args.rocm_pci or []) != expected_count or
+            (args.device == "multi" and not 3 <= expected_count <= 8)):
+        parser.error("The frozen ROCm PCI count must match the execution mode (3–8 for multi).")
     if bool(args.remote_rollout_endpoint) != bool(args.remote_rollout_key_file):
         parser.error("Remote rollout requires locally approved worker endpoints and an HMAC key.")
     if args.remote_rollout_weight and (
@@ -64,14 +66,19 @@ def main():
     # count additional updates from the verified seed checkpoint.
     optimization_device = args.device
     collection_device = None
+    local_gpu_collectors = []
     if expected_count:
         from experiment_hub_tinybrains_rocm_verify import verify_runtime_devices
         actual_pcis = verify_runtime_devices(args.rocm_pci)
-        if args.device == "dual":
+        if args.device in ("dual", "multi"):
             # The lease fixes physical PCI identities, not HIP ordinal order.
-            # Use its first GPU for PPO optimization and second for rollouts.
+            # GPU 0 owns PPO/Adam, GPU 1 owns the original local collection,
+            # and further distinct GPUs own persistent collector sessions.
             optimization_device = f"cuda:{actual_pcis.index(args.rocm_pci[0])}"
             collection_device = f"cuda:{actual_pcis.index(args.rocm_pci[1])}"
+            local_gpu_collectors = [
+                f"cuda:{actual_pcis.index(pci)}" for pci in args.rocm_pci[2:]
+            ]
         if args.gpu_vram_mb is not None:
             # Cooperative allocator limit, not physical GPU memory isolation.
             total = torch.cuda.get_device_properties(0).total_memory
@@ -88,12 +95,16 @@ def main():
     # not the newer conservative balancing runtime. Preserve their existing
     # launch behavior until that trainer version is installed.
     auto_balance = False
-    if args.remote_rollout_endpoint and not args.remote_rollout_weight:
+    if (args.remote_rollout_endpoint or local_gpu_collectors) and not args.remote_rollout_weight:
         auto_balance = find_spec("ants_mapoca.rollout_balance") is not None
         if not auto_balance:
             print("TinyBrains backend lacks automatic collector balancing; "
                   "using existing fixed equal collector targets.", file=sys.stderr)
     auto_env_pool = find_spec("ants_mapoca.engine_pool") is not None
+    if args.device == "multi" and (not auto_env_pool or
+            find_spec("ants_mapoca.local_gpu_rollout") is None or
+            args.ram_budget_mb is None):
+        raise SystemExit("Multi-GPU TinyBrains requires persistent native pools and a fixed RAM lease.")
     sys.argv = [
         "ants_mapoca.learning_path",
         "--config", str(spec),
@@ -101,6 +112,8 @@ def main():
         "--persistent",
         "--self-play-device", optimization_device,
         *(["--self-play-collection-device", collection_device] if collection_device else []),
+        *[arg for device in local_gpu_collectors
+          for arg in ("--self-play-local-gpu-collector", device)],
         "--self-play-threads", str(args.threads),
         *(["--auto-env-pool", "--ram-budget-mb", str(args.ram_budget_mb)]
           if auto_env_pool and args.ram_budget_mb is not None else []),
