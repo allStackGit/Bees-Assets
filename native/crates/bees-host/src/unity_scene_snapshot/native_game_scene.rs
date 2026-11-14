@@ -4,6 +4,8 @@
 //! collider catalogs is explicitly authored here.
 use super::*;
 
+fn default_time_scale() -> f32 { 1.0 }
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GameScene {
@@ -12,6 +14,8 @@ struct GameScene {
     stage_name: String,
     bounds: GameBounds,
     fixed_dt_seconds: f32,
+    #[serde(default = "default_time_scale")]
+    time_scale: f32,
     bee_side: i32,
     human_side: i32,
     command_settings: GameCommandSettings,
@@ -599,6 +603,7 @@ impl NativePhysicalScene {
             raw.bee_side <= 0 || raw.human_side <= 0 ||
             raw.bee_side == raw.human_side ||
             !raw.fixed_dt_seconds.is_finite() || raw.fixed_dt_seconds <= 0.0 ||
+            !raw.time_scale.is_finite() || raw.time_scale <= 0.0 ||
             raw.ships.is_empty() || raw.squads.is_empty()
         {
             return Err(invalid("invalid native game Level identity, bounds or fixed timestep"));
@@ -1341,6 +1346,7 @@ impl NativePhysicalScene {
             bounds,
             starting_positions,
             fixed_dt_seconds: raw.fixed_dt_seconds,
+            time_scale: raw.time_scale,
             shots_harmless: raw.shots_harmless,
             activate_collision_asteroids: raw.activate_collision_asteroids,
             activate_mining: Some(raw.activate_mining),

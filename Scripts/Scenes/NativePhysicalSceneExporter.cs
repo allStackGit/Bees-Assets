@@ -275,12 +275,14 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 33;
+        public int schema_version = 34;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
+        // Actual Stage presentation speed, independent of physics fixed dt.
+        public float time_scale;
         public bool shots_harmless;
         public bool activate_collision_asteroids;
         public bool activate_mining;
@@ -328,6 +330,8 @@ internal static class NativePhysicalSceneExporter
             level.MinX >= level.MaxX || level.MinY >= level.MaxY ||
             !IsFinite(level.Stage.FixedDeltaTime) ||
             level.Stage.FixedDeltaTime <= 0 ||
+            !IsFinite(level.Stage.TimeScale) ||
+            level.Stage.TimeScale <= 0 ||
             level.Map == null || level.Map.Transform == null)
         {
             throw new InvalidOperationException(
@@ -350,6 +354,7 @@ internal static class NativePhysicalSceneExporter
             level_name = !string.IsNullOrEmpty(level.Name)
                 ? level.Name : level.gameObject.name,
             fixed_dt_seconds = level.Stage.FixedDeltaTime,
+            time_scale = level.Stage.TimeScale,
             stage_name = level.Stage.gameObject.name,
             shots_harmless = level.Stage.MakeShotsHarmless,
             activate_collision_asteroids = level.ActivateCollisionAsteroids,

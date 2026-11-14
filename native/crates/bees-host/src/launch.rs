@@ -2503,10 +2503,15 @@ fn run_battle(
     let source_fixed_dt_by_level: Vec<f32> =
         source_levels.iter().map(|source| source.fixed_dt_seconds).collect();
     #[cfg(feature = "client")]
-    let client_fixed_dt_by_level: Vec<std::time::Duration> =
-        source_fixed_dt_by_level.iter().map(|&dt|
-            std::time::Duration::try_from_secs_f32(dt)
-                .map_err(|_| invalid("source fixed duration cannot be represented by the host clock"))
+    // Unity's Stage.TimeScale changes how often fixed ticks execute,
+    // not the physics dt passed to the common CombatWorld. Headless
+    // training and replayed world state remain authored fixed-tick work.
+    #[cfg(feature = "client")]
+    let client_step_interval_by_level: Vec<std::time::Duration> =
+        source_levels.iter().map(|source|
+            std::time::Duration::try_from_secs_f32(
+                source.fixed_dt_seconds / source.time_scale,
+            ).map_err(|_| invalid("source Stage time scale cannot be represented by the host clock"))
         ).collect::<io::Result<_>>()?;
     let client_bounds: Vec<_> = source_levels.iter().map(|scene| scene.bounds).collect();
     #[cfg(feature = "client")]
@@ -2850,7 +2855,7 @@ fn run_battle(
             };
             let tick = current.tick;
             let action = client.poll(current, client_bounds[client.selected_world()],
-                host.simulation().world_count(), client_fixed_dt_by_level[client.selected_world()]);
+                host.simulation().world_count(), client_step_interval_by_level[client.selected_world()]);
             if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input { action: input, .. })) = (&mut input_trace, &action) {
                 if let Err(error) = writeln!(trace, "{}", json!({
                         "kind": "player_input",
@@ -2930,7 +2935,7 @@ fn run_battle(
         rounds += u64::from(counts.rounds);
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
-            client.commit_steps(counts.rounds, client_fixed_dt_by_level[client.selected_world()]);
+            client.commit_steps(counts.rounds, client_step_interval_by_level[client.selected_world()]);
         }
         successful_world_steps += counts.world_steps as u64;
         successful_policy_rows += counts.policy_rows as u64;
@@ -3694,7 +3699,7 @@ fn run_battle(
                 let current = host.render_world(index)
                     .ok_or_else(|| invalid("completed Level disappeared"))?;
                 if matches!(client.poll(current, client_bounds[index], host.simulation().world_count(),
-                    client_fixed_dt_by_level[index])?, bees_host::client::NativeClientAction::Quit) {
+                    client_step_interval_by_level[index])?, bees_host::client::NativeClientAction::Quit) {
                     break;
                 }
                 if let Some(action) = client.result_action() {

@@ -73,7 +73,7 @@ use crate::durable_connection::DurableHiveMindConnection;
 
 mod native_game_scene;
 
-const SNAPSHOT_VERSION: u32 = 33;
+const SNAPSHOT_VERSION: u32 = 34;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -126,6 +126,7 @@ struct UnitySnapshot {
     level_name: String,
     stage_name: String,
     fixed_dt_seconds: f32,
+    time_scale: Option<f32>,
     shots_harmless: bool,
     activate_collision_asteroids: bool,
     activate_mining: Option<bool>,
@@ -707,6 +708,9 @@ pub struct NativePhysicalScene {
     /// Exact Stage-owned home coordinates indexed by source Side-1.
     pub starting_positions: Option<[Vec2; 2]>,
     pub fixed_dt_seconds: f32,
+    /// Authored Stage presentation speed: fixed simulation time per tick
+    /// stays unchanged, but the window can schedule more ticks per second.
+    pub time_scale: f32,
     pub shots_harmless: bool,
     pub activate_collision_asteroids: bool,
     /// Optional only for legacy schema26 exports predating request bans.
@@ -2540,6 +2544,13 @@ impl NativePhysicalScene {
             return Err(NativeSnapshotError::InvalidLevelBounds);
         }
 
+        // Older source scene exports did not carry Stage.TimeScale. They
+        // retain 1x presentation pacing; new exports must be explicit.
+        let time_scale = match raw.time_scale {
+            Some(value) if value.is_finite() && value > 0.0 => value,
+            None if raw.schema_version < 34 => 1.0,
+            _ => return Err(NativeSnapshotError::InvalidLevelBounds),
+        };
         let camera_zoom = match (raw.camera_min_zoom, raw.camera_max_zoom) {
             (None, None) | (Some(0), Some(0)) => None,
             (Some(min), Some(max)) if min > 0 && max >= min =>
@@ -3416,6 +3427,7 @@ impl NativePhysicalScene {
             bounds: Aabb { min, max },
             starting_positions,
             fixed_dt_seconds: raw.fixed_dt_seconds,
+            time_scale,
             shots_harmless: raw.shots_harmless,
             activate_collision_asteroids: raw.activate_collision_asteroids,
             activate_mining: raw.activate_mining,
