@@ -1048,8 +1048,9 @@ impl NativePhysicalScene {
             }
             next_entity = next_entity.checked_add(1)
                 .ok_or(invalid("purchased ship entity identities exhausted"))?;
+            let ship_entity_id = next_entity;
             let mut ship = template.clone();
-            ship.entity_id = next_entity;
+            ship.entity_id = ship_entity_id;
             ship.fleet_ship_id = Some(purchase.fleet_ship_id);
             if let Some(weapon) = &mut ship.special_weapon {
                 // Never copy the immutable authored weapon ID: the native
@@ -1073,10 +1074,10 @@ impl NativePhysicalScene {
                 activity.elapsed_seconds = None;
             }
             if let Some(rank) = &mut ship.weapon_rank_source {
-                rank.stats.ship_id = next_entity;
+                rank.stats.ship_id = ship_entity_id;
                 rank.stats.last_killed = 0;
                 rank.stats.fleet_damage_done = 0;
-                rank.fleet_owner_ship_id = next_entity;
+                rank.fleet_owner_ship_id = ship_entity_id;
             }
             let template_id = template.entity_id;
             let mut perception = *self.authored_ship_perceptions.get(&template_id)
@@ -1094,15 +1095,15 @@ impl NativePhysicalScene {
                 |(_, _, dead_offset)| dead_offset,
             );
             self.fleet.register_spawned_ship(NativeFleetShipValue {
-                ship_id: next_entity,
+                ship_id: ship_entity_id,
                 has_persistent_fleet_value: true,
                 minerals_mined_this_level: 0,
             }).map_err(NativeSnapshotError::Fleet)?;
-            self.authored_ship_perceptions.insert(next_entity, perception);
-            self.source_vision.insert(next_entity, vision);
-            self.source_formation.insert(next_entity, formation);
+            self.authored_ship_perceptions.insert(ship_entity_id, perception);
+            self.source_vision.insert(ship_entity_id, vision);
+            self.source_formation.insert(ship_entity_id, formation);
             self.entities.push(NativeAuthoredEntity::Ship(ship));
-            self.source_squads[owner].members.push(next_entity);
+            self.source_squads[owner].members.push(ship_entity_id);
         }
         Ok(purchases.len())
     }
