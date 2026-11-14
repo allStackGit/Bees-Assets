@@ -1067,6 +1067,8 @@ impl BattleCatalog {
                 ],
                 "should_chase": entry.should_chase,
                 "cease_fire": entry.cease_fire,
+                "match_speed": entry.match_speed,
+                "color_setting": entry.color_setting,
             })).collect::<Vec<_>>(),
             "original_fleet_transfers": progress.authored_transfer_count,
             "original_roster_overrides": progress.authored_roster_for_all(),

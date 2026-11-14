@@ -894,6 +894,17 @@ pub struct NativePurchasedShip {
     pub price_tsv: u64,
 }
 
+/// Source authored coloring, no custom coloring, or a particular player
+/// chosen RGB. None on older receipts means no change; Some(Inherit) is
+/// an explicit return to the mission source's original SavedSquad color.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(tag = "mode", content = "rgb", rename_all = "snake_case")]
+pub enum NativeSquadColorSetting {
+    Inherit,
+    Clear,
+    Custom([u8; 3]),
+}
+
 /// Saved player squad preferences between native campaign missions.
 /// The server shooting ID is distinct from HiveMind command IDs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -908,6 +919,8 @@ pub struct NativeSavedSquadTactics {
     /// speed state. Explicit true/false adopts the saved player preference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub match_speed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_setting: Option<NativeSquadColorSetting>,
 }
 
 
@@ -1056,6 +1069,13 @@ impl NativePhysicalScene {
             };
             squad.should_chase = entry.should_chase;
             squad.cease_fire = Some(entry.cease_fire);
+            match entry.color_setting {
+                Some(NativeSquadColorSetting::Clear) =>
+                    squad.custom_color_rgb = None,
+                Some(NativeSquadColorSetting::Custom(rgb)) =>
+                    squad.custom_color_rgb = Some(rgb),
+                Some(NativeSquadColorSetting::Inherit) | None => (),
+            }
         }
         Ok(settings.len())
     }

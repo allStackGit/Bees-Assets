@@ -35,6 +35,7 @@ use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
 use bees_host::unity_scene_snapshot::{
     NativeExportedPolicyLevelSetup, NativePhysicalScene, NativeLevelLayout,
     NativePurchasedShip, NativeCreatedSquad, NativeSavedSquadTactics,
+    NativeSquadColorSetting,
 };
 use bees_sim::asteroid_fragments::FragmentSpawnSettings;
 use bees_sim::collision::Aabb;
@@ -964,7 +965,7 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
-       bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>]
+       bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>]
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
@@ -1089,17 +1090,24 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         if args.next().is_none_or(|flag| flag != "--cease-fire") { return Err(invalid(USAGE).into()); }
         let cease_fire: bool = args.next().ok_or_else(|| invalid(USAGE))?
             .to_string_lossy().parse()?;
-        let match_speed = match args.next() {
-            Some(flag) if flag == "--match-speed" =>
-                Some(args.next().ok_or_else(|| invalid(USAGE))?
-                    .to_string_lossy().parse::<bool>()?),
-            Some(_) => return Err(invalid(USAGE).into()),
-            None => None,
-        };
-        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        let mut match_speed = None;
+        let mut color_setting = None;
+        while let Some(flag) = args.next() {
+            if flag == "--match-speed" && match_speed.is_none() {
+                match_speed = Some(args.next().ok_or_else(|| invalid(USAGE))?
+                    .to_string_lossy().parse::<bool>()?);
+            } else if flag == "--color" && color_setting.is_none() {
+                let value = args.next().ok_or_else(|| invalid(USAGE))?;
+                color_setting = Some(parse_squad_color_setting(
+                    &value.to_string_lossy(),
+                )?);
+            } else {
+                return Err(invalid(USAGE).into());
+            }
+        }
         return run_set_saved_squad_tactics(&catalog, &output, NativeSavedSquadTactics {
             side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
-            match_speed,
+            match_speed, color_setting,
         });
     }
     if first == "reassign" {
@@ -1700,6 +1708,26 @@ fn run_create_saved_squad(
     Ok(())
 }
 
+/// Accept all user RGB colors (rather than constraining persisted fleets to
+/// a renderer/UI preset). `inherit` restores each mission's source color;
+/// `clear` explicitly disables sprite recoloring.
+fn parse_squad_color_setting(value: &str) -> io::Result<NativeSquadColorSetting> {
+    match value {
+        "inherit" => return Ok(NativeSquadColorSetting::Inherit),
+        "clear" => return Ok(NativeSquadColorSetting::Clear),
+        _ => (),
+    }
+    let hex = value.strip_prefix('#').unwrap_or(value);
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(invalid("squad color must be inherit, clear or six hexadecimal RGB digits"));
+    }
+    let channels = [0, 2, 4].map(|start|
+        u8::from_str_radix(&hex[start..start + 2], 16)
+            .expect("prevalidated hexadecimal RGB value")
+    );
+    Ok(NativeSquadColorSetting::Custom(channels))
+}
+
 fn run_set_saved_squad_tactics(
     catalog_path: &Path, output_root: &Path, entry: NativeSavedSquadTactics,
 ) -> Result<(), Box<dyn Error>> {
@@ -1716,6 +1744,10 @@ fn run_set_saved_squad_tactics(
     if entry.match_speed.is_none() {
         entry.match_speed = progress.tactics_for_squad(entry.side, entry.saved_squad_id)
             .and_then(|saved| saved.match_speed);
+    }
+    if entry.color_setting.is_none() {
+        entry.color_setting = progress.tactics_for_squad(entry.side, entry.saved_squad_id)
+            .and_then(|saved| saved.color_setting);
     }
     let root = catalog_path.parent().ok_or_else(|| invalid("missing campaign directory"))?;
     // Qualify the entire authored campaign, including its alternate
@@ -1756,6 +1788,7 @@ fn run_set_saved_squad_tactics(
         "should_chase": entry.should_chase,
         "cease_fire": entry.cease_fire,
         "match_speed": entry.match_speed,
+        "color_setting": entry.color_setting,
         "validated_configs": checked,
     }));
     Ok(())
@@ -2110,6 +2143,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                                         shooting_strategy_id: squad.shooting.id,
                                         should_chase: squad.should_chase, cease_fire,
                                         match_speed: Some(squad.matching_speed.is_some()),
+                                        color_setting: None,
                                     });
                             }
                         }
@@ -2134,6 +2168,8 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 cease_fire: tactics.cease_fire,
                 match_speed: tactics.match_speed
                     .unwrap_or(original.match_speed.unwrap_or(false)),
+                color_setting: tactics.color_setting
+                    .unwrap_or(NativeSquadColorSetting::Inherit),
             }
         }).collect::<Vec<_>>();
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
@@ -2155,12 +2191,13 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
             NativeBattleMenuAction::Tactics {
                 side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
-                match_speed,
+                match_speed, color_setting,
             } => {
                 let result = run_set_saved_squad_tactics(
                     &catalog_path, output_root, NativeSavedSquadTactics {
                         side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
                         match_speed: Some(match_speed),
+                        color_setting: Some(color_setting),
                     },
                 );
                 progress = catalog.load_progress(output_root)?;

@@ -3,6 +3,30 @@
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 
 use super::text;
+use crate::unity_scene_snapshot::NativeSquadColorSetting;
+
+/// The on-screen palette is a convenience; the CLI accepts any RGB.
+/// Presets affect artwork only, never ship ownership or physics.
+const SQUAD_COLORS: [[u8; 3]; 6] = [
+    [0x75, 0xdb, 0xab], [0x62, 0xb9, 0xff], [0xe1, 0xa3, 0x4b],
+    [0xc2, 0x9b, 0xe8], [0xeb, 0x78, 0x85], [0xed, 0xe1, 0x94],
+];
+
+fn cycle_squad_color(value: NativeSquadColorSetting) -> NativeSquadColorSetting {
+    match value {
+        NativeSquadColorSetting::Inherit => NativeSquadColorSetting::Clear,
+        NativeSquadColorSetting::Clear =>
+            NativeSquadColorSetting::Custom(SQUAD_COLORS[0]),
+        NativeSquadColorSetting::Custom(rgb) =>
+            match SQUAD_COLORS.iter().position(|&item| item == rgb) {
+                Some(index) if index + 1 == SQUAD_COLORS.len() =>
+                    NativeSquadColorSetting::Inherit,
+                Some(index) => NativeSquadColorSetting::Custom(SQUAD_COLORS[index + 1]),
+                None => NativeSquadColorSetting::Inherit,
+            },
+    }
+}
+
 
 const WIDTH: usize = 800;
 const HEIGHT: usize = 496;
@@ -51,6 +75,7 @@ pub struct NativeTacticsMenuRow {
     pub should_chase: bool,
     pub cease_fire: bool,
     pub match_speed: bool,
+    pub color_setting: NativeSquadColorSetting,
 }
 
 pub enum NativeBattleMenuAction {
@@ -58,7 +83,7 @@ pub enum NativeBattleMenuAction {
     CreateSquad { side: i32, template_saved_squad_id: i64 },
     Tactics { side: i32, saved_squad_id: i64,
         shooting_strategy_id: u8, should_chase: bool, cease_fire: bool,
-        match_speed: bool },
+        match_speed: bool, color_setting: NativeSquadColorSetting },
     Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     Reassign { side: i32, fleet_ship_id: i64,
@@ -98,6 +123,7 @@ pub fn select_battle(
     let mut tactic_chase = false;
     let mut tactic_cease_fire = false;
     let mut tactic_match_speed = false;
+    let mut tactic_color = NativeSquadColorSetting::Inherit;
     let mut shop_selected = 0_usize;
     let mut shop_first = 0_usize;
     let mut fleet_selected = 0_usize;
@@ -157,7 +183,7 @@ pub fn select_battle(
                 else { shop_rows.len() };
             let choose = |index: usize, edit_index: Option<usize>,
                           strategy: u8, chase: bool, cease_fire: bool,
-                          match_speed: bool| {
+                          match_speed: bool, color_setting: NativeSquadColorSetting| {
                 if show_transfer {
                     transfer_rows.get(index).map(|row| match row.authored_from {
                         Some((side, from_saved_squad_id)) => NativeBattleMenuAction::Reassign {
@@ -192,6 +218,9 @@ pub fn select_battle(
                         match_speed: if edit_index == Some(index) {
                             match_speed
                         } else { row.match_speed },
+                        color_setting: if edit_index == Some(index) {
+                            color_setting
+                        } else { row.color_setting },
                     })
                 } else {
                     shop_rows.get(index).filter(|row| row.unlocked)
@@ -223,6 +252,7 @@ pub fn select_battle(
                         tactic_chase = row.should_chase;
                         tactic_cease_fire = row.cease_fire;
                         tactic_match_speed = row.match_speed;
+                        tactic_color = row.color_setting;
                     }
                     if window.is_key_pressed(Key::Left, KeyRepeat::Yes) {
                         tactic_strategy = if tactic_strategy == 1 { 40 }
@@ -241,12 +271,15 @@ pub fn select_battle(
                     if window.is_key_pressed(Key::M, KeyRepeat::No) {
                         tactic_match_speed = !tactic_match_speed;
                     }
+                    if window.is_key_pressed(Key::R, KeyRepeat::No) {
+                        tactic_color = cycle_squad_color(tactic_color);
+                    }
                 }
             }
             if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
                 if let Some(action) = choose(shop_selected, tactic_edit_index,
                         tactic_strategy, tactic_chase, tactic_cease_fire,
-                        tactic_match_speed) {
+                        tactic_match_speed, tactic_color) {
                     return Ok(Some(action));
                 }
             }
@@ -267,7 +300,7 @@ pub fn select_battle(
                                     tactic_edit_index = None;
                                 } else if let Some(action) = choose(index, tactic_edit_index,
                                     tactic_strategy, tactic_chase, tactic_cease_fire,
-                                    tactic_match_speed)
+                                    tactic_match_speed, tactic_color)
                                 {
                                     return Ok(Some(action));
                                 }
@@ -286,7 +319,7 @@ pub fn select_battle(
             text::draw_centered(&mut pixels, WIDTH, 78,
                 if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
                 else if show_create { "Choose a player squad to copy its command settings" }
-                else if show_tactics { "Left/Right strategy, C chase, V cease fire, M speed, Enter save" }
+                else if show_tactics { "Left/Right strategy, C chase, V fire, M speed, R color, Enter save" }
                 else { "Buy a source-authored ship" }, 1, MUTED);
             if show_shop {
                 text::draw_centered(&mut pixels, WIDTH, 94,
@@ -315,20 +348,27 @@ pub fn select_battle(
                 } else { (shop_rows[index].title.as_str(), shop_rows[index].unlocked) };
                 let tactical_label = if show_tactics {
                     let row = &tactics_rows[index];
-                    let (strategy, chase, cease, match_speed) =
+                    let (strategy, chase, cease, match_speed, color_setting) =
                         if tactic_edit_index == Some(index) {
-                            (tactic_strategy, tactic_chase, tactic_cease_fire, tactic_match_speed)
+                            (tactic_strategy, tactic_chase, tactic_cease_fire,
+                                tactic_match_speed, tactic_color)
                         } else {
                             (row.shooting_strategy_id, row.should_chase,
-                                row.cease_fire, row.match_speed)
+                                row.cease_fire, row.match_speed, row.color_setting)
                         };
                     let name = bees_hivemind::protocol::SHOOTING_STRATEGIES[
                         usize::from(strategy - 1)
                     ];
-                    format!("{} | {} | Chase {} | Fire {} | Speed {}",
+                    let color = match color_setting {
+                        NativeSquadColorSetting::Inherit => "source".to_owned(),
+                        NativeSquadColorSetting::Clear => "none".to_owned(),
+                        NativeSquadColorSetting::Custom(rgb) =>
+                            format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]),
+                    };
+                    format!("{} | {} | Chase {} | Fire {} | Speed {} | RGB {}",
                         row.title, name, if chase { "on" } else { "off" },
                         if cease { "hold" } else { "auto" },
-                        if match_speed { "matched" } else { "normal" })
+                        if match_speed { "matched" } else { "normal" }, color)
                 } else { String::new() };
                 let title = text::fit(if show_tactics { &tactical_label } else { label }, 560);
                 text::draw_centered(&mut pixels, WIDTH, top + 8, &title, 1,
@@ -341,7 +381,7 @@ pub fn select_battle(
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
-                    "Left/Right strategy   C chase   V fire   M speed   Enter save   P close"
+                    "Left/Right strategy   C chase   V fire   M speed   R color   Enter save   P close"
                 } else {
                     "Enter select   B build   T transfer   N new   P tactics"
                 }, 1, MUTED);
