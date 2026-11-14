@@ -359,30 +359,37 @@ impl BattleCatalog {
         let purchase = CampaignPurchase {
             campaign_id: campaign_id.to_owned(), player_side, ship,
         };
-        fs::create_dir_all(output)?;
-        let mut number = 0_u64;
-        let directory = loop {
-            number = number.checked_add(1)
-                .ok_or_else(|| invalid("campaign purchase slot exhaustion"))?;
-            let directory = output.join(format!("build-{number:04}"));
-            match fs::create_dir(&directory) {
-                Ok(()) => break directory,
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error),
-            }
-        };
-        let pending = directory.join("purchase.json.tmp");
-        let destination = directory.join("purchase.json");
-        let file = fs::OpenOptions::new().create_new(true).write(true)
-            .open(&pending)?;
-        serde_json::to_writer(&file, &purchase)
-            .map_err(|error| invalid(format!("cannot write native purchase: {error}")))?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&pending, &destination)?;
-        #[cfg(unix)]
-        fs::File::open(&directory)?.sync_all()?;
+        commit_campaign_edit(output, "build-", "purchase.json", &purchase)?;
         Ok(ship)
+    }
+
+    /// A purchased ship can join a different SavedSquad between missions.
+    /// Preserve its FleetShip identity, type, TSV cost and career totals;
+    /// never modify a historical battle or the original purchase receipt.
+    pub fn transfer_purchased_ship(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        fleet_ship_id: i64, to_saved_squad_id: i64,
+    ) -> io::Result<NativePurchasedShip> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("squad transfer requires a campaign"))?;
+        let (side, ship) = progress.purchased_ship(fleet_ship_id)
+            .ok_or_else(|| invalid("only previously purchased hulls can be transferred"))?;
+        if to_saved_squad_id <= 0 || to_saved_squad_id == ship.saved_squad_id ||
+            progress.fleet.get(&fleet_ship_id)
+                .is_none_or(|fleet| fleet.is_dead || fleet.side != side) ||
+            progress.squads.get(&to_saved_squad_id)
+                .is_none_or(|squad| squad.side != side)
+        {
+            return Err(invalid("transfer needs a live purchased hull and a different owned SavedSquad"));
+        }
+        commit_campaign_edit(output, "transfer-", "transfer.json", &CampaignTransfer {
+            campaign_id: campaign_id.to_owned(),
+            player_side: side,
+            fleet_ship_id,
+            from_saved_squad_id: ship.saved_squad_id,
+            to_saved_squad_id,
+        })?;
+        Ok(NativePurchasedShip { saved_squad_id: to_saved_squad_id, ..ship })
     }
 
     /// Reconstruct save data from *completed* campaign summaries, not from
@@ -680,6 +687,37 @@ impl BattleCatalog {
             })).collect::<Vec<_>>(),
         })
     }
+}
+
+/// One publication path for player edits. An incomplete write never
+/// appears in a replay, and an existing numbered receipt is never changed.
+fn commit_campaign_edit<T: Serialize>(
+    root: &Path, prefix: &str, filename: &str, value: &T,
+) -> io::Result<()> {
+    fs::create_dir_all(root)?;
+    let mut number = 0_u64;
+    let directory = loop {
+        number = number.checked_add(1)
+            .ok_or_else(|| invalid("campaign edit receipt sequence exhausted"))?;
+        let directory = root.join(format!("{prefix}{number:04}"));
+        match fs::create_dir(&directory) {
+            Ok(()) => break directory,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    };
+    let pending = directory.join(format!("{filename}.tmp"));
+    let final_path = directory.join(filename);
+    let file = fs::OpenOptions::new().create_new(true).write(true)
+        .open(&pending)?;
+    serde_json::to_writer(&file, value)
+        .map_err(|error| invalid(format!("cannot serialize campaign edit: {error}")))?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(pending, final_path)?;
+    #[cfg(unix)]
+    fs::File::open(&directory)?.sync_all()?;
+    Ok(())
 }
 
 fn numbered_directories(root: &Path, prefix: &str) -> io::Result<Vec<PathBuf>> {
