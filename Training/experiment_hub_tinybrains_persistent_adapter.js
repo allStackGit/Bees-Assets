@@ -452,8 +452,19 @@ function createTinyBrainsPersistentDockerAdapter({
     // Do not advertise editable hyperparameters unless the installed project
     // runtime actually consumes overrides from the resumed checkpoint.
     const learningPath=path.join(project,'src/ants_mapoca/learning_path.py');
-    const designEnabled=fs.readFileSync(learningPath,'utf8')
-        .includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
+    const installedLearningPath=fs.readFileSync(learningPath,'utf8');
+    const designEnabled=installedLearningPath.includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
+    // The Hub wrapper must use the flags supported by the *installed*
+    // trusted backend. Older runtimes still accept the original fixed pool
+    // interface; current resource-efficient runtimes use the shared adaptive
+    // pool CLI. Reject unknown contracts instead of launching an invalid job.
+    const optimizedPool=installedLearningPath.includes("'--auto-env-pool'")&&
+        installedLearningPath.includes("'--ram-budget-mb'");
+    const legacyPool=installedLearningPath.includes("'--adaptive-local-engines'")&&
+        installedLearningPath.includes("'--self-play-ram-mb'");
+    if(!optimizedPool&&!legacyPool)
+        throw Error('Installed TinyBrains persistent trainer has no supported CPU/RAM pool contract.');
+    const poolCli=optimizedPool?'optimized':'legacy';
     const designFields=described(originalSpec,'tinybrains');
     const designSourceSha256=crypto.createHash('sha256').update(frozen).digest('hex');
     function approvedDesign(overrides) {
@@ -676,12 +687,14 @@ function createTinyBrainsPersistentDockerAdapter({
             return ['-B',runner,'--run',JOBS_IN+'/'+context.job_id,
                 '--updates',String(updates),'--threads',String(chosenThreads),
                 '--ram-mb',String(context.ram_quota_mb),
+                '--pool-cli',poolCli,
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
                 ...(design_overrides===undefined?[]:
                     ['--hub-design-overrides',JSON.stringify(design_overrides)]),
-                ...(remote_rollouts===true?[]:['--adaptive-local-engines']),
+                ...(poolCli==='optimized'||remote_rollouts!==true
+                    ?['--adaptive-local-engines']:[]),
                 ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
                     '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
