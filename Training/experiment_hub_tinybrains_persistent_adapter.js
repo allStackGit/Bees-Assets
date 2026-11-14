@@ -185,6 +185,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         row.local_lease_admission_wait_seconds,'seconds');
     add('local_lease_admission_wait_delta',
         row.local_lease_admission_wait_delta,'seconds');
+    add('local_lease_ram_scan_delta',
+        row.local_lease_ram_scan_delta,'seconds');
+    add('local_lease_ram_scan_calls_delta',
+        row.local_lease_ram_scan_calls_delta,'count');
     for(const name of [
         'local_lease_ram_admission_denials',
         'local_lease_native_engines_admitted',
