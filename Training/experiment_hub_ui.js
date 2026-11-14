@@ -2056,7 +2056,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const remoteRollouts=tinyBrainsRemote.checked;
         const weightText=tinyBrainsWeights.value.trim();
         const weights=weightText?weightText.split(',').map(s=>Number(s.trim())):[];
-        if(weightText&&(!remoteRollouts||weights.length<2||weights.length>9||
+        if(weightText&&(!remoteRollouts||weights.length<2||weights.length>17||
             weights.some(w=>!Number.isSafeInteger(w)||w<1||w>1024)||
             !(state?.machines||[]).some(machine=>
                 machine.status==='connected'&&
@@ -4320,7 +4320,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const distributedMachine=document.createElement('select');
     const distributedBudgets=document.createElement('textarea');
     distributedBudgets.rows=5;
-    distributedBudgets.placeholder='Keep any 1–8 approved machine_id budgets (any order)';
+    distributedBudgets.placeholder='Keep any 1–16 approved machine_id budgets (any order)';
     const distributedDetails=document.createElement('div');
     const distributedFeedback=document.createElement('div');
     const distributedMachineLabel=document.createElement('label');
