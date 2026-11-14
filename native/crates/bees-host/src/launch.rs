@@ -969,6 +969,7 @@ struct CampaignMission<'a> {
     campaign_id: &'a str,
     mission_id: &'a str,
     player_side: i32,
+    record_fleet_stats: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1103,6 +1104,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
             .map(|(campaign_id, mission)| CampaignMission {
                 campaign_id, mission_id: &mission.id, player_side: mission.player_side,
+                record_fleet_stats: mission.record_fleet_stats,
             });
         // Reserve a parent atomically so another launcher cannot claim the
         // same output. The battle owns creation of its normal run directory.
@@ -2399,7 +2401,8 @@ fn run_battle(
     // An exported FleetShip ID is distinct from its transient entity ID;
     // temporary children and unrelated skirmishes must never earn career
     // progress. The completed run summary is the durable transaction.
-    let campaign_fleet = if campaign_outcome.is_some() {
+    let campaign_fleet = if campaign_outcome.is_some_and(|_| 
+        mission.is_some_and(|value| value.record_fleet_stats)) {
         let state = &host.simulation().world(0)
             .ok_or_else(|| invalid("completed campaign World is unavailable"))?.state;
         let mut seen = HashSet::new();
@@ -2419,6 +2422,10 @@ fn run_battle(
         }
         fleet.sort_unstable_by_key(|ship| ship.fleet_ship_id);
         Some(fleet)
+    } else if campaign_outcome.is_some() {
+        // Explicitly empty (not missing historical data): the authored
+        // campaign stage did not permit recording long-term fleet stats.
+        Some(Vec::new())
     } else { None };
     let mut final_summary = json!({
         "kind": "run_final",
