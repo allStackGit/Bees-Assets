@@ -873,6 +873,19 @@ pub struct NativePurchasedShip {
     pub price_tsv: u64,
 }
 
+/// Saved player squad preferences between native campaign missions.
+/// The server shooting ID is distinct from HiveMind command IDs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeSavedSquadTactics {
+    pub side: i32,
+    pub saved_squad_id: i64,
+    pub shooting_strategy_id: u8,
+    pub should_chase: bool,
+    pub cease_fire: bool,
+}
+
+
 /// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
 /// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
 #[derive(Clone)]
@@ -969,6 +982,54 @@ impl NativePhysicalScene {
             self.source_squads.push(squad);
         }
         Ok(created.len())
+    }
+
+    /// Apply verified persistent tactics to the SAME source Squad used by
+    /// the playable client, the headless game and any model-controlled
+    /// enemy. No independent mutable tactical roster is introduced.
+    /// Validate the entire batch before changing a single squad.
+    pub fn apply_saved_squad_tactics(
+        &mut self, player_side: i32, settings: &[NativeSavedSquadTactics],
+    ) -> Result<usize, NativeSnapshotError> {
+        if settings.is_empty() { return Ok(0); }
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if !matches!(player_side, 1 | 2) ||
+            self.source_episode.is_some() || self.source_policy_group.is_some() ||
+            !self.source_policy_bindings.is_empty() ||
+            !self.active_policy_ship_ids.is_empty()
+        {
+            return Err(invalid("saved tactics require an ordinary native player Level"));
+        }
+        let mut used = HashSet::new();
+        for entry in settings {
+            if entry.side != player_side || entry.saved_squad_id <= 0 ||
+                !(1..=40).contains(&entry.shooting_strategy_id) ||
+                !used.insert(entry.saved_squad_id) ||
+                self.source_squads.iter().filter(|squad|
+                    squad.saved_squad_id == Some(entry.saved_squad_id) &&
+                    squad.side == player_side &&
+                    squad.player_permissions.user_controlled &&
+                    !squad.hivemind.as_ref()
+                        .is_some_and(|hivemind| hivemind.hivemind_controlled)
+                ).count() != 1
+            {
+                return Err(invalid("saved tactics require a unique authorized player SavedSquad"));
+            }
+        }
+        for entry in settings {
+            let squad = self.source_squads.iter_mut().find(|squad|
+                squad.saved_squad_id == Some(entry.saved_squad_id) &&
+                squad.side == player_side,
+            ).expect("prevalidated SavedSquad");
+            let index = usize::from(entry.shooting_strategy_id - 1);
+            squad.shooting = bees_hivemind::protocol::StrategyIdentity {
+                id: entry.shooting_strategy_id,
+                name: bees_hivemind::protocol::SHOOTING_STRATEGIES[index],
+            };
+            squad.should_chase = entry.should_chase;
+            squad.cease_fire = Some(entry.cease_fire);
+        }
+        Ok(settings.len())
     }
 
     /// Instantiate purchased persistent hulls from a genuine native game

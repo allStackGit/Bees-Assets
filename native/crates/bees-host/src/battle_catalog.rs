@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use bees_host::unity_scene_snapshot::{NativePurchasedShip, NativeCreatedSquad};
+use bees_host::unity_scene_snapshot::{NativePurchasedShip, NativeCreatedSquad, NativeSavedSquadTactics};
 use serde_json::{json, Value};
 
 use super::{invalid, CampaignOutcome, CampaignFleetShipOutcome};
@@ -167,6 +167,15 @@ struct CampaignSquadCreation {
     squad: NativeCreatedSquad,
 }
 
+/// One immutable tactical edit. Later numbered edits supersede earlier
+/// preferences without rewriting the receipt for a prior campaign battle.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignTacticsEdit {
+    campaign_id: String,
+    tactics: NativeSavedSquadTactics,
+}
+
 /// Reassignment changes only who commands a purchased persistent hull.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -210,6 +219,8 @@ pub struct CampaignProgress<'a> {
     spent_minerals: u64,
     purchases: Vec<(i32, NativePurchasedShip)>,
     created_squads: Vec<NativeCreatedSquad>,
+    tactics: Vec<NativeSavedSquadTactics>,
+    tactics_edits: u64,
     transfer_count: u64,
     authored_roster: HashMap<i64, AuthoredRosterOwner>,
     authored_transfer_count: u64,
@@ -340,6 +351,19 @@ impl CampaignProgress<'_> {
     pub fn created_squads_for_side(&self, side: i32) -> Vec<NativeCreatedSquad> {
         self.created_squads.iter().copied().filter(|squad|
             squad.side == side).collect()
+    }
+
+    /// One effective edit per SavedSquad, in stable source identity order.
+    pub fn tactics_for_side(&self, side: i32) -> Vec<NativeSavedSquadTactics> {
+        let mut entries = self.tactics.iter().copied()
+            .filter(|entry| entry.side == side).collect::<Vec<_>>();
+        entries.sort_unstable_by_key(|entry| entry.saved_squad_id);
+        entries
+    }
+
+    pub fn tactics_for_squad(&self, side: i32, id: i64) -> Option<NativeSavedSquadTactics> {
+        self.tactics.iter().copied().find(|entry|
+            entry.side == side && entry.saved_squad_id == id)
     }
 
     pub fn highest_saved_squad_id(&self) -> i64 {
@@ -562,6 +586,31 @@ impl BattleCatalog {
         Ok(squad)
     }
 
+    /// Publish an authenticated, zero-cost SavedSquad tactics change.
+    /// The caller has already checked every mission configuration using
+    /// the common native scene installer. No completed battle is mutated.
+    pub fn set_saved_squad_tactics(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        entry: NativeSavedSquadTactics,
+    ) -> io::Result<()> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("saved tactics require a campaign"))?;
+        if !matches!(entry.side, 1 | 2) || entry.saved_squad_id <= 0 ||
+            !(1..=40).contains(&entry.shooting_strategy_id) ||
+            progress.tactics_for_squad(entry.side, entry.saved_squad_id) == Some(entry) ||
+            progress.squads.get(&entry.saved_squad_id)
+                .is_some_and(|squad| squad.side != entry.side) ||
+            progress.created_squads.iter().any(|squad|
+                squad.saved_squad_id == entry.saved_squad_id &&
+                squad.side != entry.side)
+        {
+            return Err(invalid("invalid or unchanged SavedSquad tactics"));
+        }
+        commit_campaign_edit(output, "tactics-", "tactics.json", &CampaignTacticsEdit {
+            campaign_id: campaign_id.to_owned(), tactics: entry,
+        })
+    }
+
     /// Commit an authored (pre-purchase) FleetShip reassignment after
     /// validating the actual upcoming scene with the common builder.
     /// This never changes ship ownership, combat career or TSV balance.
@@ -780,6 +829,36 @@ impl BattleCatalog {
             }
             progress.created_squads.push(squad);
         }
+        for directory in numbered_directories(output, "tactics-")? {
+            let bytes = match fs::read(directory.join("tactics.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let edit: CampaignTacticsEdit = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("invalid SavedSquad tactics: {error}")))?;
+            let entry = edit.tactics;
+            if edit.campaign_id != *campaign ||
+                !matches!(entry.side, 1 | 2) || entry.saved_squad_id <= 0 ||
+                !(1..=40).contains(&entry.shooting_strategy_id) ||
+                progress.tactics_for_squad(entry.side, entry.saved_squad_id) == Some(entry) ||
+                progress.squads.get(&entry.saved_squad_id)
+                    .is_some_and(|squad| squad.side != entry.side) ||
+                progress.created_squads.iter().any(|squad|
+                    squad.saved_squad_id == entry.saved_squad_id &&
+                    squad.side != entry.side) ||
+                progress.tactics.iter().any(|other|
+                    other.saved_squad_id == entry.saved_squad_id &&
+                    other.side != entry.side)
+            {
+                return Err(invalid("invalid, duplicate or unchanged saved squad tactics receipt"));
+            }
+            progress.tactics.retain(|other|
+                other.saved_squad_id != entry.saved_squad_id);
+            progress.tactics.push(entry);
+            progress.tactics_edits = progress.tactics_edits.checked_add(1)
+                .ok_or_else(|| invalid("SavedSquad tactics history overflow"))?;
+        }
         let mut purchased_ids = HashSet::new();
         for build in numbered_directories(output, "build-")? {
             let bytes = match fs::read(build.join("purchase.json")) {
@@ -977,6 +1056,17 @@ impl BattleCatalog {
                 "side": squad.side,
                 "has_recorded_battle": progress.squads.get(&squad.saved_squad_id)
                     .is_some_and(|row| row.battles_fought > 0),
+            })).collect::<Vec<_>>(),
+            "saved_squad_tactics_edits": progress.tactics_edits,
+            "saved_squad_tactics": progress.tactics.iter().map(|entry| json!({
+                "side": entry.side,
+                "saved_squad_id": entry.saved_squad_id,
+                "shooting_strategy_id": entry.shooting_strategy_id,
+                "shooting_strategy": bees_hivemind::protocol::SHOOTING_STRATEGIES[
+                    usize::from(entry.shooting_strategy_id - 1)
+                ],
+                "should_chase": entry.should_chase,
+                "cease_fire": entry.cease_fire,
             })).collect::<Vec<_>>(),
             "original_fleet_transfers": progress.authored_transfer_count,
             "original_roster_overrides": progress.authored_roster_for_all(),

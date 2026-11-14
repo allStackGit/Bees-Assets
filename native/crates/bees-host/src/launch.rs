@@ -34,7 +34,7 @@ use bees_host::scene_assets::NativeSceneAssets;
 use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
 use bees_host::unity_scene_snapshot::{
     NativeExportedPolicyLevelSetup, NativePhysicalScene, NativeLevelLayout,
-    NativePurchasedShip, NativeCreatedSquad,
+    NativePurchasedShip, NativeCreatedSquad, NativeSavedSquadTactics,
 };
 use bees_sim::asteroid_fragments::FragmentSpawnSettings;
 use bees_sim::collision::Aabb;
@@ -964,6 +964,7 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
+       bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false>
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
@@ -982,6 +983,7 @@ struct CampaignMission<'a> {
     lost_fleet_ids: Option<&'a HashSet<i64>>,
     purchased_ships: Option<&'a [NativePurchasedShip]>,
     created_squads: Option<&'a [NativeCreatedSquad]>,
+    tactics: Option<&'a [NativeSavedSquadTactics]>,
     authored_roster: Option<&'a [(i64, i64, i64)]>,
 }
 
@@ -1065,6 +1067,32 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .to_string_lossy().parse()?;
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_create_saved_squad(&catalog, &output, side, template);
+    }
+    if first == "tactics" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") { return Err(invalid(USAGE).into()); }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--squad") { return Err(invalid(USAGE).into()); }
+        let saved_squad_id: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--shooting") { return Err(invalid(USAGE).into()); }
+        let shooting_strategy_id: u8 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--chase") { return Err(invalid(USAGE).into()); }
+        let should_chase: bool = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--cease-fire") { return Err(invalid(USAGE).into()); }
+        let cease_fire: bool = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        return run_set_saved_squad_tactics(&catalog, &output, NativeSavedSquadTactics {
+            side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
+        });
     }
     if first == "reassign" {
         let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
@@ -1245,6 +1273,8 @@ fn launch_catalog_battle(
         .map(|mission| progress.purchases_for_side(mission.player_side));
     let created = entry.mission.as_ref()
         .map(|mission| progress.created_squads_for_side(mission.player_side));
+    let tactics = entry.mission.as_ref()
+        .map(|mission| progress.tactics_for_side(mission.player_side));
     let mut authored = entry.mission.as_ref()
         .map(|mission| progress.authored_roster_for_side(mission.player_side));
     let lost = entry.mission.as_ref()
@@ -1271,6 +1301,7 @@ fn launch_catalog_battle(
             lost_fleet_ids: lost.as_ref(),
             purchased_ships: purchased.as_deref(),
             created_squads: created.as_deref(),
+            tactics: tactics.as_deref(),
             authored_roster: authored.as_deref(),
         });
     // Reserve a unique parent before invoking the shared gameplay runtime.
@@ -1411,6 +1442,8 @@ fn preflight_native_fleet_edit(
             source.install_created_squads(
                 side, &progress.created_squads_for_side(side),
             ).map_err(|error| contextual("shop created SavedSquads", error))?;
+            source.apply_saved_squad_tactics(side, &progress.tactics_for_side(side))
+                .map_err(|error| contextual("shop saved squad tactics", error))?;
             source.apply_authored_fleet_roster(side, &surviving_authored)
                 .map_err(|error| contextual("shop original FleetShip reassignment", error))?;
             source.install_purchased_ships(side, &active, &dead)
@@ -1652,6 +1685,56 @@ fn run_create_saved_squad(
         "template_saved_squad_id": committed.template_saved_squad_id,
         "ships_deployed": 0,
         "cost_tsv": 0,
+    }));
+    Ok(())
+}
+
+fn run_set_saved_squad_tactics(
+    catalog_path: &Path, output_root: &Path, entry: NativeSavedSquadTactics,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    let root = catalog_path.parent().ok_or_else(|| invalid("missing campaign directory"))?;
+    // Qualify the entire authored campaign, including its alternate
+    // victory route and newly created vacant squads, before publishing.
+    let mut effective = progress.tactics_for_side(entry.side);
+    effective.retain(|tactic| tactic.saved_squad_id != entry.saved_squad_id);
+    effective.push(entry);
+    let mut checked = 0usize;
+    for battle in &catalog.battles {
+        if !battle.mission.as_ref().is_some_and(|mission| mission.player_side == entry.side) {
+            continue;
+        }
+        for config in battle.configurations() {
+            let scene_path = resolve(root, config).canonicalize()?;
+            let mut scene = load_native_fleet_edit_scene(&scene_path)?;
+            scene.install_created_squads(entry.side, &progress.created_squads_for_side(entry.side))
+                .map_err(|error| contextual("tactics created squad preflight", error))?;
+            scene.apply_saved_squad_tactics(entry.side, &effective)
+                .map_err(|error| contextual("tactics native scene preflight", error))?;
+            checked += 1;
+        }
+    }
+    if checked == 0 {
+        return Err(invalid("saved tactics require at least one authored player mission").into());
+    }
+    catalog.set_saved_squad_tactics(&progress, output_root, entry)?;
+    println!("{}", json!({
+        "kind": "native_campaign_saved_squad_tactics_updated",
+        "campaign_id": catalog.campaign_id,
+        "side": entry.side,
+        "saved_squad_id": entry.saved_squad_id,
+        "shooting_strategy_id": entry.shooting_strategy_id,
+        "shooting_strategy": bees_hivemind::protocol::SHOOTING_STRATEGIES[
+            usize::from(entry.shooting_strategy_id - 1)
+        ],
+        "should_chase": entry.should_chase,
+        "cease_fire": entry.cease_fire,
+        "validated_configs": checked,
     }));
     Ok(())
 }
@@ -2227,6 +2310,11 @@ fn run_battle(
             source.install_created_squads(
                 mission.expect("campaign squad creation owner").player_side, created,
             ).map_err(|error| contextual("saved native campaign squads", error))?;
+        }
+        if let Some(tactics) = mission.and_then(|mission| mission.tactics) {
+            source.apply_saved_squad_tactics(
+                mission.expect("campaign tactics owner").player_side, tactics,
+            ).map_err(|error| contextual("restored SavedSquad tactics", error))?;
         }
         if let Some(assignments) = mission.and_then(|mission| mission.authored_roster) {
             let reassigned = source.apply_authored_fleet_roster(
