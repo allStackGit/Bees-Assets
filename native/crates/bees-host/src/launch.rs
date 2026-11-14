@@ -1791,6 +1791,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                         ),
                         fleet_ship_id: purchased.fleet_ship_id,
                         to_saved_squad_id: 0,
+                        authored_from: None,
                     });
                 }
                 for &destination in &squads {
@@ -1808,10 +1809,46 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                         ),
                         fleet_ship_id: purchased.fleet_ship_id,
                         to_saved_squad_id: destination,
+                        authored_from: None,
                     });
                 }
             }
             break;
+        }
+        for (side, fleet_id, original_squad) in authored_menu_fleet(
+            &catalog, root, &progress,
+        ) {
+            let current_squad = progress.authored_current_squad(fleet_id)
+                .unwrap_or(original_squad);
+            if current_squad != 0 {
+                transfer_rows.push(NativeTransferMenuRow {
+                    title: format!(
+                        "Original Fleet #{}  Squad #{} -> Reserve",
+                        fleet_id, current_squad,
+                    ),
+                    fleet_ship_id: fleet_id,
+                    to_saved_squad_id: 0,
+                    authored_from: Some((side, current_squad)),
+                });
+            }
+            for destination in progress.saved_squad_ids_for_side(side) {
+                if current_squad == destination { continue; }
+                transfer_rows.push(NativeTransferMenuRow {
+                    title: format!(
+                        "Original Fleet #{}  {} -> Squad #{}",
+                        fleet_id,
+                        if current_squad == 0 {
+                            "Reserve".to_string()
+                        } else {
+                            format!("Squad #{}", current_squad)
+                        },
+                        destination,
+                    ),
+                    fleet_ship_id: fleet_id,
+                    to_saved_squad_id: destination,
+                    authored_from: Some((side, current_squad)),
+                });
+            }
         }
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
             &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows)?
@@ -1839,6 +1876,20 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 launch_failed = result.is_err();
                 if let Err(error) = result {
                     eprintln!("Could not transfer FleetShip #{fleet_ship_id}: {error}");
+                }
+                continue;
+            }
+            NativeBattleMenuAction::Reassign {
+                side, fleet_ship_id, from_saved_squad_id, to_saved_squad_id,
+            } => {
+                let result = run_reassign_authored_ship(
+                    &catalog_path, output_root, side,
+                    fleet_ship_id, from_saved_squad_id, to_saved_squad_id,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                if let Err(error) = result {
+                    eprintln!("Could not reassign original FleetShip #{fleet_ship_id}: {error}");
                 }
                 continue;
             }
