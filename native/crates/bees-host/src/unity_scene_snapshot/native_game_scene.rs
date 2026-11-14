@@ -334,7 +334,8 @@ impl GameQueenSpawn {
         if weapon.slot >= 5 || weapon.weapon_id != 0 ||
             weapon.charge_range.is_some() ||
             (require_observation && (weapon.observation.is_none() ||
-                minion.observed_weapon_type.is_none())) ||
+                minion.observed_weapon_type.is_none() ||
+                minion.max_living_ships_per_side.is_none())) ||
             minion.observed_weapon_type.is_some_and(|kind| kind != 0) ||
             !offset.is_finite() || sight.source_sight < 0 ||
             sight.effective_range < 0 || sight.trigger_range < 0 ||
@@ -346,7 +347,11 @@ impl GameQueenSpawn {
             let weapon_type = minion.observed_weapon_type.ok_or_else(invalid)?;
             if ![observed.range, observed.rate_of_fire, observed.rotation_rate,
                 observed.projectile_value].iter()
-                .all(|v| v.is_finite() && *v >= 0.0) {
+                .all(|v| v.is_finite() && *v >= 0.0) ||
+                observed.projectile_speed.is_some_and(|speed|
+                    !speed.is_finite() || speed < 0.0) ||
+                observed.has_target_ship {
+
                 return Err(invalid());
             }
             observed_weapons[weapon.slot] = Some(ObservedWeapon {
