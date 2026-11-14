@@ -630,7 +630,7 @@ function createTinyBrainsPersistentDockerAdapter({
                         JOBS_IN+'/'+context.job_id+'/hub-design-overrides.json',
                         '--hub-design-overrides-sha256',
                         crypto.createHash('sha256')
-                            .update(JSON.stringify(design_overrides)+'\\n')
+                            .update(JSON.stringify(design_overrides)+'\n')
                             .digest('hex')]),
                 ...(remote_rollouts===true?[]:['--adaptive-local-engines']),
                 ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
