@@ -202,6 +202,11 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         continuation_of_job_id:predecessor,
         artifact_lineage_root_id:lineageRoot,
+        // Frozen at the atomic distributed queue transaction. Only the
+        // trusted learner adapter may turn this subset into endpoints.
+        ...(job.project_id==='tinybrains'&&
+            job.distributed_rollout_endpoints!==undefined
+            ?{distributed_rollout_endpoints:job.distributed_rollout_endpoints}:{}),
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(!cpuOnly?(dual||multi
