@@ -227,6 +227,12 @@ function boundedReport(value) {
         new Set(dualProfiles).size!==dualProfiles.length||
         (dualProfiles.length&&value.platform!=='linux'))
         throw Error('Dual GPU TinyBrains requires locally qualified Linux ROCm profiles.');
+    const multiProfiles=value.tinybrains_multi_gpu_profiles??[];
+    if(!Array.isArray(multiProfiles)||multiProfiles.length>dualProfiles.length||
+        multiProfiles.some(id=>typeof id!=='string'||!dualProfiles.includes(id))||
+        new Set(multiProfiles).size!==multiProfiles.length||
+        (multiProfiles.length&&value.platform!=='linux'))
+        throw Error('Multi-GPU TinyBrains requires a locally qualified persistent ROCm profile.');
     const remoteRollouts=value.tinybrains_remote_rollout_profiles??[];
     const remoteCount=value.tinybrains_remote_rollout_count??0;
     const remoteEndpoints=value.tinybrains_remote_rollout_endpoints??[];
@@ -291,6 +297,7 @@ function boundedReport(value) {
         tinybrains_cpu_fallback_profiles:cpuFallback.slice(),
         tinybrains_required_import_profiles:requiredImports.slice(),
         tinybrains_dual_gpu_profiles:dualProfiles.slice(),
+        tinybrains_multi_gpu_profiles:multiProfiles.slice(),
         tinybrains_remote_rollout_profiles:remoteRollouts.slice(),
         tinybrains_remote_rollout_count:remoteCount,
         tinybrains_remote_rollout_endpoints:remoteEndpoints.slice(),
@@ -334,11 +341,16 @@ function gpuStartBlock(job,lease,machine) {
         machine.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
         r.gpu_count===2&&allocated.gpu_count===2&&
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
+    const multiTiny=machine.agent_platform==='linux'&&
+        job.project_id==='tinybrains'&&job.frozen_parameters?.device==='multi'&&
+        machine.tinybrains_multi_gpu_profiles?.includes(job.frozen_parameters.profile)&&
+        r.gpu_count>=3&&r.gpu_count<=8&&allocated.gpu_count===r.gpu_count&&
+        r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
     const multi=machine.agent_platform==='linux'&&
         job.project_id==='courier'&&r.gpu_count>=2&&r.gpu_count<=8&&
         allocated.gpu_count===r.gpu_count&&
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
-    if(!(single||dual||multi)||allocated.gpus?.length!==r.gpu_count||
+    if(!(single||dual||multiTiny||multi)||allocated.gpus?.length!==r.gpu_count||
         (r.gpus?.length&&r.gpus.some((id,i)=>id!==allocated.gpus[i])))
         return 'Native GPU Start requires the exact approved PCI lease and project GPU execution mode.';
     if(!machine.gpu_projects?.includes(job.project_id))
@@ -383,13 +395,17 @@ function gpuProbeBlock(job,lease,machine) {
         job.frozen_parameters?.device==='dual'&&
         machine?.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
         job.resources.gpu_mode==='exclusive';
+    const multiTiny=job.project_id==='tinybrains'&&count>=3&&count<=8&&
+        job.frozen_parameters?.device==='multi'&&
+        machine?.tinybrains_multi_gpu_profiles?.includes(job.frozen_parameters.profile)&&
+        job.resources.gpu_mode==='exclusive';
     const multi=job.project_id==='courier'&&count>=2&&count<=8&&
         job.resources.gpu_mode==='exclusive';
     if(!gpuProbeWorkerReady(job,lease,machine)||!lease.receipt_fresh||
         !machine.installed_projects?.includes(job.project_id)||
         !(count===1&&(job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&
-                machine.gpu_shared_projects?.includes(job.project_id))||dual||multi)||
+                machine.gpu_shared_projects?.includes(job.project_id))||dual||multiTiny||multi)||
         (job.resources.gpus?.length>0&&
             job.resources.gpus.some((id,i)=>id!==lease?.resources.gpus?.[i]))||
         lease.resources.gpu_mode!==job.resources.gpu_mode||
@@ -906,7 +922,10 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             selected.project_id==='tinybrains'&&selected.frozen_parameters?.device==='dual';
         const courierMulti=r.gpu_count>=2&&r.gpu_count<=8&&
             r.gpu_mode==='exclusive'&&selected.project_id==='courier';
-        if(r.ram_mb<128||(!cpuOnly&&!nativeGpu&&!dualGpu&&!courierMulti))return fits;
+        const tinyMulti=r.gpu_count>=3&&r.gpu_count<=8&&
+            r.gpu_mode==='exclusive'&&selected.project_id==='tinybrains'&&
+            selected.frozen_parameters?.device==='multi';
+        if(r.ram_mb<128||(!cpuOnly&&!nativeGpu&&!dualGpu&&!courierMulti&&!tinyMulti))return fits;
         const ready=new Set(eligible.filter(machine=>
             machine.local_executor_enabled===true&&machine.native_preflight_passed===true&&
             machine.installed_projects?.includes(selected.project_id)&&
@@ -919,11 +938,13 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                     ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1&&
                         (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
                     :(courierMulti||
-                        r.gpu_count===2
-                            ?courierMulti||dualGpu&&machine.tinybrains_dual_gpu_profiles
-                                ?.includes(selected.frozen_parameters.profile)
-                            :r.gpu_mode==='exclusive'||r.gpu_mode==='shared'&&
-                                machine.gpu_shared_projects?.includes(selected.project_id))&&
+                        tinyMulti&&machine.tinybrains_multi_gpu_profiles
+                            ?.includes(selected.frozen_parameters.profile)||
+                        dualGpu&&machine.tinybrains_dual_gpu_profiles
+                            ?.includes(selected.frozen_parameters.profile)||
+                        r.gpu_count===1&&(r.gpu_mode==='exclusive'||
+                            r.gpu_mode==='shared'&&
+                                machine.gpu_shared_projects?.includes(selected.project_id)))&&
                         machine.observed_gpus?.length>=Math.max(2,r.gpu_count)))
         ).map(machine=>machine.id));
         const runnable=fits.filter(p=>ready.has(p.machine_id));
@@ -1251,6 +1272,7 @@ class ExperimentHub {
                 machine.tinybrains_cpu_fallback_profiles=report.tinybrains_cpu_fallback_profiles.slice();
                 machine.tinybrains_required_import_profiles=report.tinybrains_required_import_profiles.slice();
                 machine.tinybrains_dual_gpu_profiles=report.tinybrains_dual_gpu_profiles.slice();
+                machine.tinybrains_multi_gpu_profiles=report.tinybrains_multi_gpu_profiles.slice();
                 machine.tinybrains_remote_rollout_profiles=report.tinybrains_remote_rollout_profiles.slice();
                 machine.tinybrains_remote_rollout_count=report.tinybrains_remote_rollout_count;
                 machine.tinybrains_remote_rollout_endpoints=report.tinybrains_remote_rollout_endpoints.slice();
@@ -1765,6 +1787,12 @@ class ExperimentHub {
                                     job.resources.gpu_count===2&&
                                     job.frozen_parameters?.device==='dual'&&
                                     machine.tinybrains_dual_gpu_profiles
+                                        ?.includes(job.frozen_parameters.profile)||
+                                job.project_id==='tinybrains'&&
+                                    job.resources.gpu_count>=3&&
+                                    job.resources.gpu_count<=8&&
+                                    job.frozen_parameters?.device==='multi'&&
+                                    machine.tinybrains_multi_gpu_profiles
                                         ?.includes(job.frozen_parameters.profile))
                             :job.resources.gpu_count===1&&
                                 (job.resources.gpu_mode==='exclusive'||
@@ -1817,7 +1845,8 @@ class ExperimentHub {
             if(session.probe_exclusive_gpu) {
                 for(const job of pendingClaims) {
                     if(!(job.resources.gpu_count===1||
-                            job.project_id==='tinybrains'&&job.resources.gpu_count===2||
+                            job.project_id==='tinybrains'&&
+                                job.resources.gpu_count>=2&&job.resources.gpu_count<=8||
                             job.project_id==='courier'&&
                                 job.resources.gpu_count>=2&&job.resources.gpu_count<=8)||
                         !(job.resources.gpu_mode==='exclusive'||
@@ -1852,7 +1881,11 @@ class ExperimentHub {
                             job.project_id==='tinybrains'&&
                             job.frozen_parameters?.device==='dual'||
                         r.gpu_count>=2&&r.gpu_count<=8&&
-                            r.gpu_mode==='exclusive'&&job.project_id==='courier'));
+                            r.gpu_mode==='exclusive'&&job.project_id==='courier'||
+                        r.gpu_count>=3&&r.gpu_count<=8&&
+                            r.gpu_mode==='exclusive'&&
+                            job.project_id==='tinybrains'&&
+                            job.frozen_parameters?.device==='multi'));
             };
             for(const [index,job] of pendingClaims.entries()) {
                 if(!claimable(job))continue;
@@ -4222,6 +4255,13 @@ class ExperimentHub {
                 machine.agent_platform==='linux'&&
                 job.resources.gpu_count>=2&&job.resources.gpu_count<=8&&
                 job.resources.gpu_mode==='exclusive';
+            const tinyMulti=job.project_id==='tinybrains'&&
+                machine.agent_platform==='linux'&&
+                job.resources.gpu_count>=3&&job.resources.gpu_count<=8&&
+                job.resources.gpu_mode==='exclusive'&&
+                job.frozen_parameters?.device==='multi'&&
+                machine.tinybrains_multi_gpu_profiles
+                    ?.includes(job.frozen_parameters.profile);
             if(job.resources.ram_mb<128||
                 (job.resources.gpu_count>0&&
                     (!machine.gpu_projects?.includes(job.project_id)||
@@ -4233,7 +4273,7 @@ class ExperimentHub {
                           machine.agent_platform!=='linux'||
                           !machine.tinybrains_dual_gpu_profiles
                               ?.includes(job.frozen_parameters.profile)))||
-                     (job.resources.gpu_count>2&&!courierMulti))))
+                     (job.resources.gpu_count>2&&!courierMulti&&!tinyMulti))))
                 throw Error('Bundle member '+(index+1)+' is not eligible for its requested native CPU/GPU mode.');
             // Use the actual lease allocator, not a separate capacity
             // estimate. Earlier members consume budget in the same draft;
@@ -4911,13 +4951,16 @@ class ExperimentHub {
         const resources = resourceRequest(value.resources);
         // Hardware choice belongs to the lease. A saved TinyBrains policy
         // profile without an explicit device works with a CPU-only, one-GPU
-        // or supported two-GPU lease without requiring a separate profile.
+        // or multi-GPU lease without requiring a separate profile.
         // Keep the derived choice frozen before the job fingerprint and all
         // existing capability, GPU isolation and continuation checks.
         if(project.id==='tinybrains'&&frozen.device===undefined) {
             if(resources.gpu_count===0)frozen.device='cpu';
             else if(resources.gpu_count===2&&resources.gpu_mode==='exclusive')
                 frozen.device='dual';
+            else if(resources.gpu_count>=3&&resources.gpu_count<=8&&
+                resources.gpu_mode==='exclusive')
+                frozen.device='multi';
         }
         // Telemetry selection is independent from optimizer configuration
         // fingerprints. It never influences a model or continuation lineage.
