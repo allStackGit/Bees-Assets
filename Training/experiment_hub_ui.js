@@ -2835,6 +2835,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(state.machines.some(m=>m.id===previousMachine&&m.status==='connected'))
             $('hub-job-machine').value=previousMachine;
         renderDistributedGroup();
+        renderCourierGroup();
         const records=(state.jobs||[]).filter(j=>j.project_id===project);
         $('hub-job-allocate-all').disabled=['bees','ants'].includes(project)||
             !records.some(j=>j.status==='waiting_adapter'&&!j.lease_id);
@@ -4584,8 +4585,111 @@ document.addEventListener('DOMContentLoaded', () => {
                 '. Remove unwanted JSON entries to reserve only the chosen machines. Offline or ambiguous workers are not selected. Budgets are keyed by machine_id in any order; CPU threads follow the lease by default. CPU-only or one exclusive GPU per collector.'
             :'Register the tinybrains_rollout project and connect at least one distinct, authenticated approved worker.';
     }
+    // Courier uses one independent on-policy PPO lineage per remote
+    // machine, not TinyBrains' shared-policy experience collectors.
+    // The operator selects fixed machine budgets; endpoints, keys, and
+    // policy slot numbering are derived from authenticated Hub inventory.
+    const courierPanel=document.createElement('fieldset');
+    const courierLegend=document.createElement('legend');
+    courierLegend.textContent='Distributed Courier PPO · learner + remote lineages';
+    const courierMachine=document.createElement('select');
+    const courierBudget=document.createElement('textarea');
+    courierBudget.rows=5;
+    courierBudget.placeholder='[{"machine_id":"host","cpus":4,"ram_mb":6144,"gpu_count":0}]';
+    const courierDetails=document.createElement('div');
+    const courierFeedback=document.createElement('div');
+    const courierMachineLabel=document.createElement('label');
+    courierMachineLabel.append('Learner machine ',courierMachine);
+    const courierBudgetLabel=document.createElement('label');
+    courierBudgetLabel.append('Remote CPU/RAM allocations (JSON) ',courierBudget);
+    const courierQueue=button('Reserve complete Courier PPO group',async()=>{
+        try {
+            const selected=state?.configurations.find(cfg=>
+                cfg.project_id==='courier'&&
+                cfg.id===$('hub-job-configuration').value);
+            if(project!=='courier'||!selected||!courierMachine.value)
+                throw Error('Select a saved Courier configuration and learner machine.');
+            if($('hub-job-predecessor').value)
+                throw Error('The first managed remote Courier experiment needs a new population, not a checkpoint continuation.');
+            const entries=JSON.parse(courierBudget.value);
+            if(!Array.isArray(entries)||entries.length<1||entries.length>16)
+                throw Error('Select 1–16 distinct remote PPO machines.');
+            const lineages=entries.map(entry=>{
+                if(!entry||typeof entry!=='object'||Array.isArray(entry))
+                    throw Error('Every Courier remote budget needs a machine ID and CPU/RAM values.');
+                const {machine_id,...resources}=entry;
+                if(typeof machine_id!=='string')
+                    throw Error('Remote PPO budgets must identify the selected machine.');
+                return {machine_id,resources};
+            });
+            const resources=JSON.parse($('hub-job-resources').value);
+            if(!confirm('Reserve a new Courier PPO learner and '+lineages.length+
+                ' remote, independently trained policy lineages? All machines get fixed Hub CPU/RAM claims. '+
+                'No native process starts until the separately approved, verified sidecar-first Start.'))return;
+            const result=await action('hub/distributed/courier',{
+                confirm_queue:true,
+                learner:{configuration_id:selected.id,expected_revision:selected.revision,
+                    machine_id:courierMachine.value,resources,
+                    metric_selection:selectedJobMetrics()},
+                lineages,
+            });
+            courierFeedback.textContent='Reserved learner '+result.learner.id+
+                ' with '+result.sidecars.length+' remote PPO services. No process Starts authorized.';
+            await reload();
+        }catch(error){
+            courierFeedback.textContent=String(error.message||error);
+        }
+    });
+    courierPanel.append(courierLegend,courierMachineLabel,
+        courierBudgetLabel,courierDetails,courierQueue,courierFeedback);
+    distributedPanel.insertAdjacentElement('afterend',courierPanel);
+    let courierBudgetHost=null;
+    function renderCourierGroup() {
+        if(!state)return;
+        const selected=state.configurations.find(cfg=>
+            cfg.project_id==='courier'&&cfg.id===$('hub-job-configuration').value);
+        courierPanel.hidden=project!=='courier'||!selected;
+        if(courierPanel.hidden)return;
+        const previously=courierMachine.value;
+        const machines=state.machines.filter(host=>
+            host.status==='connected'&&host.local_executor_enabled&&
+            host.native_preflight_passed&&
+            host.installed_projects?.includes('courier')&&
+            typeof host.courier_remote_key_fingerprint==='string'&&
+            host.courier_remote_key_fingerprint.length===64);
+        courierMachine.replaceChildren(...machines.map(m=>
+            new Option((m.name||m.id)+' ('+m.id+')',m.id)));
+        if(machines.some(m=>m.id===previously))courierMachine.value=previously;
+        const host=machines.find(m=>m.id===courierMachine.value);
+        const available=state.machines.filter(machine=>
+            machine.id!==host?.id&&machine.status==='connected'&&
+            machine.local_executor_enabled&&machine.native_preflight_passed&&
+            machine.installed_projects?.includes('courier_lineage')&&
+            machine.courier_lineage_key_fingerprint===
+                host?.courier_remote_key_fingerprint&&
+            typeof machine.courier_lineage_endpoint==='string'&&
+            machine.courier_lineage_max_shards>=1)
+            .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,16);
+        if(courierBudgetHost!==host?.id){
+            courierBudgetHost=host?.id||null;
+            courierBudget.value=JSON.stringify(available.map(machine=>({
+                machine_id:machine.id,cpus:4,ram_mb:6144,gpu_count:0,
+            })),null,2);
+        }
+        const localPolicies=selected.parameters?.workers??12;
+        courierQueue.disabled=!host||!available.length||
+            !Number.isSafeInteger(localPolicies)||localPolicies<2;
+        courierDetails.textContent=!host
+            ?'Install the Courier learner adapter with an approved private Tailnet key.'
+            :available.length+' verified remote Courier PPO machines share this learner key. '+
+              'Choose any subset in the JSON allocation (one policy per host); '+
+              'the learner retains at least one local PPO lineage. '+
+              'The Hub will pin endpoints and policy slot identities automatically.';
+    }
     $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
+    $('hub-job-configuration').addEventListener('change',renderCourierGroup);
     distributedMachine.addEventListener('change',renderDistributedGroup);
+    courierMachine.addEventListener('change',renderCourierGroup);
     $('hub-job-queue').addEventListener('click',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id===project&&c.id===$('hub-job-configuration').value);
