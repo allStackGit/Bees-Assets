@@ -62,6 +62,16 @@ function createCourierRemoteAdapter({
     if(!fs.statSync(workerScript).isFile()||fs.realpathSync(workerScript)!==workerScript||
         !Number.isSafeInteger(maxShards)||maxShards<1||maxShards>64)
         throw Error('Installed Courier remote backend or map limit is invalid.');
+    const manifest=path.join(projectRoot,'hub-capabilities.json');
+    if(!fs.statSync(manifest).isFile()||fs.realpathSync(manifest)!==manifest||
+        fs.statSync(manifest).size>4096)
+        throw Error('Courier remote service requires an installed bounded backend manifest.');
+    const capabilities=JSON.parse(fs.readFileSync(manifest,'utf8'));
+    if(capabilities?.schema_version!==1||
+        capabilities.courier_remote_lineage_transport!==true||
+        ((enableCuda||enableRocm)&&
+            capabilities.courier_remote_gpu_optimizer!==true))
+        throw Error('Installed Courier remote backend lacks the approved CPU/GPU service capability.');
     const address=endpoint(listenIp,port),secret=privateKey(keyPath);
     const probe=spawnSync(pythonPath,['-B','-c','import courier_remote_lineage'],{
         cwd:projectRoot,timeout:15000,encoding:'utf8',windowsHide:true,
