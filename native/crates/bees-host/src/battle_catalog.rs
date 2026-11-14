@@ -113,6 +113,17 @@ struct CampaignPurchase {
     ship: NativePurchasedShip,
 }
 
+/// Reassignment changes only who commands a purchased persistent hull.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignTransfer {
+    campaign_id: String,
+    player_side: i32,
+    fleet_ship_id: i64,
+    from_saved_squad_id: i64,
+    to_saved_squad_id: i64,
+}
+
 #[derive(Default)]
 pub struct CampaignProgress<'a> {
     missions: HashMap<&'a str, MissionProgress>,
@@ -124,6 +135,7 @@ pub struct CampaignProgress<'a> {
     bank_history_complete: bool,
     spent_minerals: u64,
     purchases: Vec<(i32, NativePurchasedShip)>,
+    transfer_count: u64,
 }
 
 #[derive(Default)]
@@ -196,6 +208,11 @@ impl CampaignProgress<'_> {
 
     pub fn highest_fleet_id(&self) -> i64 {
         self.fleet.keys().copied().max().unwrap_or(0)
+    }
+
+    pub fn purchased_ship(&self, fleet_ship_id: i64) -> Option<(i32, NativePurchasedShip)> {
+        self.purchases.iter().copied()
+            .find(|(_, ship)| ship.fleet_ship_id == fleet_ship_id)
     }
 
     pub fn purchases_for_side(&self, side: i32) -> Vec<NativePurchasedShip> {
@@ -550,6 +567,33 @@ impl BattleCatalog {
             }
             progress.purchases.push((purchase.player_side, purchase.ship));
         }
+        for transfer_dir in numbered_directories(output, "transfer-")? {
+            let bytes = match fs::read(transfer_dir.join("transfer.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let transfer: CampaignTransfer = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("invalid saved squad transfer: {error}")))?;
+            let member = progress.purchases.iter_mut().find(|(_, ship)|
+                ship.fleet_ship_id == transfer.fleet_ship_id
+            ).ok_or_else(|| invalid("transfer references an unpurchased FleetShip"))?;
+            if transfer.campaign_id != *campaign ||
+                member.0 != transfer.player_side ||
+                transfer.to_saved_squad_id <= 0 ||
+                transfer.from_saved_squad_id == transfer.to_saved_squad_id ||
+                member.1.saved_squad_id != transfer.from_saved_squad_id ||
+                progress.fleet.get(&transfer.fleet_ship_id)
+                    .is_none_or(|ship| ship.is_dead || ship.side != transfer.player_side) ||
+                progress.squads.get(&transfer.to_saved_squad_id)
+                    .is_none_or(|squad| squad.side != transfer.player_side)
+            {
+                return Err(invalid("invalid or stale saved-squad FleetShip transfer receipt"));
+            }
+            member.1.saved_squad_id = transfer.to_saved_squad_id;
+            progress.transfer_count = progress.transfer_count.checked_add(1)
+                .ok_or_else(|| invalid("saved squad transfer count overflow"))?;
+        }
         progress.unspent_minerals()?;
         Ok(progress)
     }
@@ -626,6 +670,7 @@ impl BattleCatalog {
                 "unlocked": progress.is_ship_unlocked(shop),
                 "unlocked_after": shop.unlocked_after,
             })).collect::<Vec<_>>(),
+            "squad_transfers": progress.transfer_count,
             "purchased_ships": progress.purchases.iter().map(|(side, ship)| json!({
                 "player_side": side,
                 "fleet_ship_id": ship.fleet_ship_id,
