@@ -2701,7 +2701,7 @@ class ExperimentHub {
             if(member.status!=='waiting_adapter'||member.dispatch_id||
                 !courierLineageHost(snapshot,member,host)||
                 !nativeStartReadiness(snapshot,member).eligible)
-                throw Error('Courier remote service lost its approved, fresh CPU-only native lease or endpoint.');
+                throw Error('Courier remote service lost its approved fresh CPU/GPU native lease or endpoint.');
             seen.add(host.id);
             owners.push({job_id:member.id,machine_id:host.id,
                 lease_id:member.lease_id,endpoint:host.courier_lineage_endpoint,
@@ -4825,14 +4825,17 @@ class ExperimentHub {
                 host.courier_lineage_key_fingerprint!==fingerprint||
                 !Number.isSafeInteger(host.courier_lineage_max_shards)||
                 host.courier_lineage_max_shards<1||
-                resources.ram_mb<2048||
-                resources.gpu_count!==0||
+                resources.ram_mb<(resources.gpu_count?2560:2048)||
+                (resources.gpu_count!==0&&
+                    (resources.gpu_count!==1||
+                     resources.gpu_mode!=='exclusive'||
+                     !host.gpu_projects?.includes('courier_lineage')))||
                 resources.ram_mb<128||
                 (host.agent_platform==='linux'&&(
                     host.execution_capabilities?.cgroup_v2_detected!==true||
                     !['cpu','memory'].every(t=>
                         host.execution_capabilities?.cgroup_controllers?.includes(t)))))
-                throw Error('Remote Courier worker must match the learner key, private Tailnet endpoint and CPU/RAM-only native lease.');
+                throw Error('Remote Courier worker needs the learner key, private Tailnet endpoint and CPU/RAM with at most one approved exclusive GPU.');
             return {host,resources};
         });
         if(new Set(children.map(item=>item.host.id)).size!==children.length||
@@ -5730,8 +5733,11 @@ class ExperimentHub {
                 !parent.distributed_courier_slots.includes(frozen.slot)||
                 parent.distributed_abort_requested_at||
                 ['finished','stopped','failed','cancelled'].includes(parent.status)||
-                resources.gpu_count!==0||ancestorId!==null||afterId!==null)
-                throw Error('Courier remote worker requires an approved CPU-only managed learner and frozen PPO slot.');
+                (resources.gpu_count!==0&&
+                    (resources.gpu_count!==1||
+                     resources.gpu_mode!=='exclusive'))||
+                ancestorId!==null||afterId!==null)
+                throw Error('Courier remote worker requires an approved CPU/RAM, optional exclusive GPU and frozen PPO slot.');
             if(next.jobs.some(j=>j.project_id==='courier_lineage'&&
                 j.status!=='cancelled'&&
                 j.frozen_parameters?.learner_job_id===parent.id&&
