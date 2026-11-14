@@ -1752,18 +1752,31 @@ impl NativeSoftwareRenderer {
             else { hi = hi.min(q / p); }
         }
         if lo > hi { return; }
-        let ax = x0 + dx * lo;
-        let ay = y0 + dy * lo;
-        let bx = x0 + dx * hi;
-        let by = y0 + dy * hi;
-        let steps = ((bx - ax).abs().max((by - ay).abs()).ceil() as usize).max(1);
-        for i in 0..=steps {
-            let t = i as f32 / steps as f32;
-            let x = (ax + (bx - ax) * t).round() as i32;
-            let y = (ay + (by - ay) * t).round() as i32;
-            if x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.height {
-                self.pixels[y as usize * self.width + x as usize] = color;
-            }
+        // Clip in world-to-screen float space once. The source path
+        // divided and interpolated two floats for *every pixel* along
+        // every ship hull, projectile, circle and tactical command line.
+        // Integer Bresenham gives contiguous clipped outlines with only
+        // additions and comparisons in the inner loop; it is independent
+        // of simulation timing, physics and neural inference.
+        let max_x = self.width as i32 - 1;
+        let max_y = self.height as i32 - 1;
+        let mut x = (x0 + dx * lo).round() as i32;
+        let mut y = (y0 + dy * lo).round() as i32;
+        let x_end = ((x0 + dx * hi).round() as i32).clamp(0, max_x);
+        let y_end = ((y0 + dy * hi).round() as i32).clamp(0, max_y);
+        x = x.clamp(0, max_x);
+        y = y.clamp(0, max_y);
+        let delta_x = (x_end - x).abs();
+        let delta_y = -(y_end - y).abs();
+        let step_x = if x < x_end { 1 } else { -1 };
+        let step_y = if y < y_end { 1 } else { -1 };
+        let mut error = delta_x + delta_y;
+        loop {
+            self.pixels[y as usize * self.width + x as usize] = color;
+            if x == x_end && y == y_end { break; }
+            let doubled = error * 2;
+            if doubled >= delta_y { error += delta_y; x += step_x; }
+            if doubled <= delta_x { error += delta_x; y += step_y; }
         }
     }
 }
