@@ -112,7 +112,7 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
         const workers=distributed?allJobs.filter(other=>
             other.project_id==='tinybrains_rollout'&&
             other.frozen_parameters?.learner_job_id===job.id):[];
-        if(distributed&&(workers.length<1||workers.length>8))return null;
+        if(distributed&&(workers.length<1||workers.length>16))return null;
         const pinnedThreads=distributed&&workers.every(worker=>
             Number.isSafeInteger(worker.frozen_parameters?.threads)&&
             worker.frozen_parameters.threads>=1&&
@@ -376,8 +376,8 @@ function hubRolloutWeightRecommendation(run) {
 // Full source telemetry remains in the separate observation archive.
 function hubDistributedMetricSelection(selected,remoteCount) {
     if(!Array.isArray(selected)||!Number.isSafeInteger(remoteCount)||
-        remoteCount<1||remoteCount>8)
-        throw Error('Choose recorded metrics and 1–8 approved collectors.');
+        remoteCount<1||remoteCount>16)
+        throw Error('Choose recorded metrics and 1–16 approved collectors.');
     const total=remoteCount+1;
     const required=['collector_count',...Array.from({length:total},(_,i)=>[
         'collector_'+i+'_decisions_per_second',
@@ -4356,7 +4356,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         selectedMachine.tinybrains_remote_key_fingerprint).length
                 :selectedMachine?.tinybrains_remote_rollout_endpoints?.length;
             if(!Array.isArray(budgets)||!Number.isSafeInteger(approvedCount)||
-                budgets.length<1||budgets.length>Math.min(8,approvedCount)||
+                budgets.length<1||
+                budgets.length>Math.min(16,approvedCount)||
+                budgets.length>16-Math.max(0,
+                    Number(JSON.parse($('hub-job-resources').value).gpu_count||0)-2)||
                 (budgets.length<approvedCount&&budgets.some(item=>
                     typeof item?.machine_id!=='string')))
                 throw Error('Choose 1 to '+approvedCount+' approved remote collectors; selecting a subset requires each machine_id.');
@@ -4445,10 +4448,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Defaults carry the machine ID obtained from authenticated
             // agent reports; operators can reorder entries or vary budgets
             // without having to correlate endpoint list positions manually.
-            // The existing distributed protocol supports at most eight
-            // remote sidecars per learner. More discovered machines remain
-            // selectable by editing machine IDs; no lease is pre-claimed.
-            distributedBudgets.value=JSON.stringify(available.slice(0,8).map(item=>({
+            // Native TinyBrains supports 16 total external collection
+            // clients. An additional local GPU collector (GPU 3 onward)
+            // shares that fixed maximum with remote sidecars.
+            const resources=JSON.parse($('hub-job-resources').value||'{}');
+            const maxRemote=16-Math.max(0,Number(resources.gpu_count||0)-2);
+            distributedBudgets.value=JSON.stringify(available.slice(0,maxRemote).map(item=>({
                 machine_id:item.machine.id,
                 cpus:2,ram_mb:4096,gpu_count:0,
             })),null,2);
