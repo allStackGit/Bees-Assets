@@ -1425,7 +1425,9 @@ fn run_campaign_mission(
 
 #[cfg(feature = "client")]
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
-    use bees_host::presentation::{BattleMenuRow, select_battle};
+    use bees_host::presentation::{
+        BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow, select_battle,
+    };
 
     let catalog_path = catalog_path.canonicalize()?;
     let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(&catalog_path)?)?;
@@ -1448,9 +1450,41 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         }).collect::<Vec<_>>();
         let fleet_rows = progress.fleet_rows();
         let squad_rows = progress.squad_rows();
-        let Some(index) = select_battle(&rows, &mut selected, launch_failed,
-            &fleet_rows, &squad_rows)?
+        let available = progress.unspent_minerals()?;
+        let mut shop_rows = Vec::new();
+        for ship in &catalog.buildable_ships {
+            for squad_id in progress.saved_squad_ids_for_side(ship.player_side) {
+                shop_rows.push(NativeShopMenuRow {
+                    title: format!(
+                        "Type {}  ->  Squad #{}   TSV {}{}",
+                        ship.ship_type, squad_id, ship.price_tsv,
+                        if available < ship.price_tsv { "  [Insufficient]" } else { "" },
+                    ),
+                    unlocked: progress.bank_history_complete() &&
+                        available >= ship.price_tsv,
+                    side: ship.player_side,
+                    ship_type: ship.ship_type,
+                    saved_squad_id: squad_id,
+                });
+            }
+        }
+        let Some(action) = select_battle(&rows, &mut selected, launch_failed,
+            &fleet_rows, &squad_rows, &shop_rows, available)?
             else { break };
+        let index = match action {
+            NativeBattleMenuAction::Play(index) => index,
+            NativeBattleMenuAction::Buy { side, ship_type, saved_squad_id } => {
+                let result = run_build_ship(
+                    &catalog_path, output_root, side, ship_type, saved_squad_id,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                if let Err(error) = result {
+                    eprintln!("Could not build ship type {ship_type}: {error}");
+                }
+                continue;
+            }
+        };
         let entry = &catalog.battles[index];
         let result = launch_catalog_battle(
             &catalog, entry, root, &progress, output_root, &mut number, true,
