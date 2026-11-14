@@ -3439,6 +3439,155 @@ class ExperimentHub {
             }
         }
     }
+    // Heartbeat-driven second stage of an explicitly approved Courier
+    // distributed Start. No metric or persisted status alone is evidence
+    // that the remote service is running. A group never silently rearms
+    // after the coordinator or any native agent loses its identity.
+    advanceCourierLaunches() {
+        for(const id of (this.state.courier_launch_plans||[])
+                .filter(plan=>plan.status==='pending').map(plan=>plan.id)) {
+            const intent=(this.state.courier_launch_plans||[])
+                .find(plan=>plan.id===id&&plan.status==='pending');
+            if(!intent)continue;
+            const abort=reason=>{
+                const next=copy(this.state);
+                const plan=(next.courier_launch_plans||[])
+                    .find(p=>p.id===id&&p.status==='pending');
+                if(!plan)return;
+                plan.status='disarmed';plan.reason=reason;plan.resolved_at=now();
+                for(const [jobId,dispatch] of Object.entries(plan.sidecar_dispatches)) {
+                    const worker=next.jobs.find(j=>j.id===jobId&&
+                        j.project_id==='courier_lineage'&&
+                        j.dispatch_id===dispatch);
+                    const owned=next.reservations.find(l=>
+                        l.id===worker?.lease_id&&l.job_id===worker?.id&&
+                        l.machine_id===worker?.assigned_machine_id&&
+                        l.project_id==='courier_lineage'&&
+                        l.status==='acknowledged');
+                    if(!worker||!owned)continue;
+                    if(worker.status==='start_requested'&&
+                        worker.start_first_offered_at===null) {
+                        worker.status='waiting_adapter';
+                        delete worker.dispatch_id;
+                        delete worker.start_requested_at;
+                        delete worker.start_first_offered_at;
+                        worker.status_reason='Unissued remote PPO Start withdrawn after group failure.';
+                    }else if(['start_requested','launch_requested',
+                            'running','unverified'].includes(worker.status)) {
+                        worker.status='stop_requested';
+                        worker.stop_requested_at=now();
+                        worker.status_reason='Courier learner launch disarmed; verifying remote PPO service Stop.';
+                    }
+                }
+                this.commit(next);
+            };
+            if(Date.now()>=Date.parse(intent.expires_at)) {
+                abort('Courier learner launch approval expired; original remote service owners require Stop.');
+                continue;
+            }
+            const snapshot=this.snapshot();
+            const learner=snapshot.jobs.find(j=>j.id===intent.learner_job_id);
+            if(!learner||learner.project_id!=='courier'||
+                learner.distributed_courier_managed!==true||
+                learner.status!=='waiting_adapter'||learner.dispatch_id||
+                learner.lease_id!==intent.learner_lease_id||
+                learner.assigned_machine_id!==intent.learner_machine_id||
+                learner.distributed_abort_requested_at||
+                JSON.stringify(learner.distributed_courier_endpoints)!==
+                    JSON.stringify(intent.endpoints)||
+                learner.distributed_courier_key_fingerprint!==intent.key_fingerprint||
+                JSON.stringify(learner.distributed_courier_sidecar_job_ids)!==
+                    JSON.stringify(Object.keys(intent.sidecar_dispatches))) {
+                abort('Courier learner or original frozen remote PPO group changed before Start.');
+                continue;
+            }
+            const participants=[learner,...intent.sidecar_owners.map(owner=>
+                snapshot.jobs.find(job=>job.id===owner.job_id))];
+            const hosts=participants.map(job=>
+                snapshot.machines.find(m=>m.id===job?.assigned_machine_id));
+            if(hosts.some(host=>!host||host.status!=='connected'))continue;
+            if(hosts.some(host=>
+                this.agentReports.get(host.id)?.instance_id!==
+                intent.agent_instances[host.id])) {
+                abort('Authenticated Courier native agent identity changed before learner Start.');
+                continue;
+            }
+            const leases=participants.map(job=>snapshot.reservations.find(l=>
+                l.id===job?.lease_id&&l.job_id===job?.id&&
+                l.machine_id===job?.assigned_machine_id&&
+                l.project_id===job?.project_id&&
+                l.status==='acknowledged'&&l.receipt_fresh===true));
+            if(leases.some(l=>!l))continue;
+            const statuses=intent.sidecar_owners.map(owner=>{
+                const job=snapshot.jobs.find(j=>j.id===owner.job_id);
+                const host=snapshot.machines.find(m=>m.id===owner.machine_id);
+                if(!job||!host||job.lease_id!==owner.lease_id||
+                    job.assigned_machine_id!==owner.machine_id||
+                    job.dispatch_id!==intent.sidecar_dispatches[job.id]||
+                    job.frozen_parameters?.slot!==owner.slot||
+                    host.courier_lineage_endpoint!==owner.endpoint||
+                    host.courier_lineage_key_fingerprint!==owner.key_fingerprint||
+                    !courierLineageHost(snapshot,job,host))
+                    return 'changed';
+                if(['failed','stopped','finished','cancelled','unverified',
+                     'stop_requested'].includes(job.status))
+                    return 'failed';
+                return job.status==='running'&&
+                    job.live_execution?.state==='running'&&
+                    job.live_execution?.dispatch_id===job.dispatch_id&&
+                    !job.capacity_released_at?'running':'waiting';
+            });
+            if(statuses.some(s=>s==='changed'||s==='failed')) {
+                abort('A Courier remote PPO service or frozen endpoint failed before learner Start.');
+                continue;
+            }
+            if(statuses.some(s=>s!=='running'))continue;
+            if(!nativeStartReadiness(snapshot,learner).eligible)continue;
+            try {
+                this.authorizeStart({
+                    job_id:learner.id,confirm_start:true,
+                },'courier-distributed');
+            }catch(error) {
+                abort('Courier learner Start authorization failed: '+
+                    String(error.message||error).slice(0,150));
+            }
+        }
+    }
+    abortCourierStartup(value) {
+        if(!object(value)||value.confirm_abort!==true||
+            !UUID.test(String(value.learner_job_id||'')))
+            throw Error('Confirm the Courier learner whose distributed launch is to be aborted.');
+        const next=copy(this.state);
+        const learner=next.jobs.find(job=>
+            job.id===value.learner_job_id&&job.project_id==='courier'&&
+            job.distributed_courier_managed===true);
+        if(!learner||!['waiting_adapter','start_requested'].includes(learner.status)||
+            learner.start_first_offered_at!==null&&learner.start_first_offered_at!==undefined)
+            throw Error('Abort only an unstarted Courier learner; running learners need ordinary checkpoint Stop.');
+        learner.distributed_abort_requested_at=now();
+        for(const plan of next.courier_launch_plans||[]) {
+            if(plan.learner_job_id!==learner.id||plan.status!=='pending')continue;
+            plan.status='disarmed';plan.reason='Operator aborted the Courier distributed startup.';
+            plan.resolved_at=now();
+        }
+        for(const child of next.jobs.filter(job=>
+                job.project_id==='courier_lineage'&&
+                job.frozen_parameters?.learner_job_id===learner.id)) {
+            if(child.status==='start_requested'&&child.start_first_offered_at===null) {
+                child.status='waiting_adapter';
+                delete child.dispatch_id;delete child.start_requested_at;
+                delete child.start_first_offered_at;
+            }else if(['start_requested','launch_requested','running',
+                       'unverified'].includes(child.status)) {
+                child.status='stop_requested';
+                child.stop_requested_at=now();
+            }
+            child.status_reason='Courier distributed startup aborted; remote service must be stopped and verified.';
+        }
+        this.commit(next);
+        return {learner_job_id:learner.id,abort_requested:true,
+            note:'Native sidecars with uncertain ownership remain leased until their actual Stop receipt.'};
+    }
     withdrawStart(value) {
         if(!object(value)||value.confirm_withdraw!==true||
             !UUID.test(String(value.expected_dispatch_id||'')))
