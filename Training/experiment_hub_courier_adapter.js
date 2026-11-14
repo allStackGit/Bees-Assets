@@ -105,6 +105,7 @@ function courierMetrics(source) {
         'training_ppo_data_slowest_worker',
         'training_ppo_integrity_slowest_worker',
         'training_gpu_prefetch_slowest_worker',
+        'training_remote_roundtrip_owner','training_remote_nontraining_owner',
     ];
     const detail=[
         'sim_shard_wall_seconds','sim_dispatch_seconds',
@@ -116,7 +117,7 @@ function courierMetrics(source) {
         'sim_process_migration_seconds','sim_process_migration_denials',
         'sim_priority_active','sim_priority_reorders',
         'sim_priority_steps',
-        'remote_roundtrip_seconds','remote_request_bytes',
+        'is_remote','remote_roundtrip_seconds','remote_request_bytes',
         'remote_reply_bytes','remote_checkpoint_bytes',
         'remote_checkpoint_sync_seconds',
         'ppo_integrity_seconds',
@@ -195,7 +196,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             /^training_gpu_device_[0-7]_lineages$/.test(name)||
-            /^worker_[0-9]{1,2}_(?:sim_(?:shards|active_shards|next_shards|physical_processes|process_migrations|process_migration_denials|priority_active|priority_reorders|priority_steps|sparse_info_events)|gpu_prefetched_batches)$/.test(name))?'count':
+            /^worker_[0-9]{1,2}_(?:is_remote|sim_(?:shards|active_shards|next_shards|physical_processes|process_migrations|process_migration_denials|priority_active|priority_reorders|priority_steps|sparse_info_events)|gpu_prefetched_batches)$/.test(name))?'count':
             name.endsWith('_mb')?'mb':
             name.endsWith('_bytes')?'bytes':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
