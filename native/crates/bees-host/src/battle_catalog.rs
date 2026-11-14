@@ -225,6 +225,7 @@ struct FleetProgress {
     loss_history_complete: bool,
     combat: NativeFleetCombatStats,
     combat_history_complete: bool,
+    special_history_complete: bool,
 }
 
 #[derive(Default)]
@@ -685,6 +686,7 @@ impl BattleCatalog {
                             FleetProgress { side: ship.side,
                                 loss_history_complete: true,
                                 combat_history_complete: true,
+                                special_history_complete: true,
                                 ..FleetProgress::default() }
                         });
                         if let Some(stats) = ship.combat {
@@ -698,8 +700,24 @@ impl BattleCatalog {
                                 add(fleet.combat.tsv_damage_received, stats.tsv_damage_received)?;
                             fleet.combat.attributed_enemy_kills =
                                 add(fleet.combat.attributed_enemy_kills, stats.attributed_enemy_kills)?;
+                            fleet.combat.striker_bombs_dropped =
+                                add(fleet.combat.striker_bombs_dropped, stats.striker_bombs_dropped)?;
+                            fleet.combat.fire_barge_explosions =
+                                add(fleet.combat.fire_barge_explosions, stats.fire_barge_explosions)?;
+                            fleet.combat.yellow_jacket_detonations =
+                                add(fleet.combat.yellow_jacket_detonations, stats.yellow_jacket_detonations)?;
+                            fleet.combat.barge_charges_started =
+                                add(fleet.combat.barge_charges_started, stats.barge_charges_started)?;
+                            fleet.combat.scout_beacons_deployed =
+                                add(fleet.combat.scout_beacons_deployed, stats.scout_beacons_deployed)?;
+                            fleet.combat.queen_minions_spawned =
+                                add(fleet.combat.queen_minions_spawned, stats.queen_minions_spawned)?;
+                            if !stats.special_actions_recorded {
+                                fleet.special_history_complete = false;
+                            }
                         } else {
                             fleet.combat_history_complete = false;
+                            fleet.special_history_complete = false;
                         }
                         if let Some(dead) = ship.is_dead {
                             fleet.is_dead |= dead;
@@ -790,6 +808,7 @@ impl BattleCatalog {
                     side: purchase.player_side,
                     loss_history_complete: true,
                     combat_history_complete: true,
+                    special_history_complete: true,
                     ..FleetProgress::default()
                 });
             if fleet.side != purchase.player_side {
@@ -900,6 +919,19 @@ impl BattleCatalog {
                 "tsv_damage_received": record.combat.tsv_damage_received,
                 "attributed_enemy_kills": record.combat.attributed_enemy_kills,
                 "combat_history_complete": record.combat_history_complete,
+                "special_history_complete": record.special_history_complete,
+                "striker_bombs_dropped": record.special_history_complete
+                    .then_some(record.combat.striker_bombs_dropped),
+                "fire_barge_explosions": record.special_history_complete
+                    .then_some(record.combat.fire_barge_explosions),
+                "yellow_jacket_detonations": record.special_history_complete
+                    .then_some(record.combat.yellow_jacket_detonations),
+                "barge_charges_started": record.special_history_complete
+                    .then_some(record.combat.barge_charges_started),
+                "scout_beacons_deployed": record.special_history_complete
+                    .then_some(record.combat.scout_beacons_deployed),
+                "queen_minions_spawned": record.special_history_complete
+                    .then_some(record.combat.queen_minions_spawned),
             })
         }).collect::<Vec<_>>();
         let mut squad_ids = progress.squads.keys().copied().collect::<Vec<_>>();

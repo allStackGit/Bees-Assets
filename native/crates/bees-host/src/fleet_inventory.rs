@@ -40,6 +40,22 @@ pub struct NativeFleetCombatStats {
     pub enemy_tsv_damage_done: u64,
     pub tsv_damage_received: u64,
     pub attributed_enemy_kills: u64,
+    /// Older career receipts have no special-action observations. A
+    /// false value is UNKNOWN, not proof of zero specials in that match.
+    #[serde(default)]
+    pub special_actions_recorded: bool,
+    #[serde(default)]
+    pub striker_bombs_dropped: u64,
+    #[serde(default)]
+    pub fire_barge_explosions: u64,
+    #[serde(default)]
+    pub yellow_jacket_detonations: u64,
+    #[serde(default)]
+    pub barge_charges_started: u64,
+    #[serde(default)]
+    pub scout_beacons_deployed: u64,
+    #[serde(default)]
+    pub queen_minions_spawned: u64,
 }
 
 /// The owning native Level constructs this from its *real* FleetShip
@@ -93,7 +109,21 @@ impl NativeFleetInventory {
         if !self.career_tracking { return None; }
         self.entries.get(&ship_id)
             .filter(|entry| entry.has_persistent_fleet_value)?;
-        Some(self.combat.get(&ship_id).copied().unwrap_or_default())
+        let mut stats = self.combat.get(&ship_id).copied().unwrap_or_default();
+        stats.special_actions_recorded = true;
+        Some(stats)
+    }
+
+    /// Sparse special actions are authenticated by the same physical
+    /// event buffer as combat. Only persistent FleetShips with campaign
+    /// career tracking enabled have a stored row.
+    fn special_stats(&mut self, ship_id: i64) -> Option<&mut NativeFleetCombatStats> {
+        if !self.entries.get(&ship_id)
+            .is_some_and(|entry| entry.has_persistent_fleet_value)
+        {
+            return None;
+        }
+        Some(self.combat.entry(ship_id).or_default())
     }
 
     /// One pass over the authoritative combat event buffer per completed
@@ -111,6 +141,38 @@ impl NativeFleetInventory {
                         let row = self.combat.entry(*ship_id).or_default();
                         row.observed_turret_shots =
                             row.observed_turret_shots.saturating_add(1);
+                    }
+                }
+                CombatEvent::StrikerBombDropped { ship_id, .. } => {
+                    if let Some(stats) = self.special_stats(*ship_id) {
+                        stats.striker_bombs_dropped = stats.striker_bombs_dropped.saturating_add(1);
+                    }
+                }
+                // Also count death-triggered explosions; not every blast
+                // was a player special-action input.
+                CombatEvent::FireBargeDetonated { ship_id, .. } => {
+                    if let Some(stats) = self.special_stats(*ship_id) {
+                        stats.fire_barge_explosions = stats.fire_barge_explosions.saturating_add(1);
+                    }
+                }
+                CombatEvent::YellowJacketDetonated { ship_id, .. } => {
+                    if let Some(stats) = self.special_stats(*ship_id) {
+                        stats.yellow_jacket_detonations = stats.yellow_jacket_detonations.saturating_add(1);
+                    }
+                }
+                CombatEvent::BargeChargeStarted { ship_id } => {
+                    if let Some(stats) = self.special_stats(*ship_id) {
+                        stats.barge_charges_started = stats.barge_charges_started.saturating_add(1);
+                    }
+                }
+                CombatEvent::ScoutBeaconDropped { scout_id, .. } => {
+                    if let Some(stats) = self.special_stats(*scout_id) {
+                        stats.scout_beacons_deployed = stats.scout_beacons_deployed.saturating_add(1);
+                    }
+                }
+                CombatEvent::QueenMinionSpawned { queen_id, .. } => {
+                    if let Some(stats) = self.special_stats(*queen_id) {
+                        stats.queen_minions_spawned = stats.queen_minions_spawned.saturating_add(1);
                     }
                 }
                 CombatEvent::Hit(hit) => {
