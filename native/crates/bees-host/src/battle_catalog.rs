@@ -374,11 +374,12 @@ impl BattleCatalog {
             .ok_or_else(|| invalid("squad transfer requires a campaign"))?;
         let (side, ship) = progress.purchased_ship(fleet_ship_id)
             .ok_or_else(|| invalid("only previously purchased hulls can be transferred"))?;
-        if to_saved_squad_id <= 0 || to_saved_squad_id == ship.saved_squad_id ||
+        if to_saved_squad_id < 0 || to_saved_squad_id == ship.saved_squad_id ||
             progress.fleet.get(&fleet_ship_id)
                 .is_none_or(|fleet| fleet.is_dead || fleet.side != side) ||
-            progress.squads.get(&to_saved_squad_id)
-                .is_none_or(|squad| squad.side != side)
+            (to_saved_squad_id != 0 &&
+                progress.squads.get(&to_saved_squad_id)
+                    .is_none_or(|squad| squad.side != side))
         {
             return Err(invalid("transfer needs a live purchased hull and a different owned SavedSquad"));
         }
@@ -587,13 +588,14 @@ impl BattleCatalog {
             ).ok_or_else(|| invalid("transfer references an unpurchased FleetShip"))?;
             if transfer.campaign_id != *campaign ||
                 member.0 != transfer.player_side ||
-                transfer.to_saved_squad_id <= 0 ||
+                transfer.to_saved_squad_id < 0 ||
                 transfer.from_saved_squad_id == transfer.to_saved_squad_id ||
                 member.1.saved_squad_id != transfer.from_saved_squad_id ||
                 progress.fleet.get(&transfer.fleet_ship_id)
                     .is_none_or(|ship| ship.is_dead || ship.side != transfer.player_side) ||
-                progress.squads.get(&transfer.to_saved_squad_id)
-                    .is_none_or(|squad| squad.side != transfer.player_side)
+                (transfer.to_saved_squad_id != 0 &&
+                    progress.squads.get(&transfer.to_saved_squad_id)
+                        .is_none_or(|squad| squad.side != transfer.player_side))
             {
                 return Err(invalid("invalid or stale saved-squad FleetShip transfer receipt"));
             }
@@ -680,6 +682,7 @@ impl BattleCatalog {
             "squad_transfers": progress.transfer_count,
             "purchased_ships": progress.purchases.iter().map(|(side, ship)| json!({
                 "player_side": side,
+                "in_reserve": ship.saved_squad_id == 0,
                 "fleet_ship_id": ship.fleet_ship_id,
                 "saved_squad_id": ship.saved_squad_id,
                 "ship_type": ship.ship_type,
