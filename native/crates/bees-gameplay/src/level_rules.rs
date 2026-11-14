@@ -64,6 +64,12 @@ pub trait NativeLevelRewardMetadata {
     /// Existing nonpersistent training metadata can safely ignore this.
     fn retire_mined_credit_on_death(&mut self, _ship_id: i64) {}
 
+    /// Observe the physical event buffer once after the authoritative
+    /// episode/reward consumer, without imposing per-frame ship scans on
+    /// training workloads. Implementations without persistent careers
+    /// can omit this optional observer.
+    fn observe_fleet_combat_tick(&mut self, _world: &CombatWorld) {}
+
     /// Install source-owned fleet/perception/vision for real physical
     /// Scout Beacons and Queen YellowJackets before vision and rewards.
     /// A Level without a spawn adapter must not acknowledge missing data.
@@ -1061,6 +1067,9 @@ where
             |id| metadata.damage_metadata(id),
             |id| metadata.current_mined_tsv(id),
         )?;
+        // The same canonical hit, fire and death events drive persistent
+        // career statistics without an alternate combat rules implementation.
+        state.metadata.observe_fleet_combat_tick(&state.combat);
         // Source Ship.LogKilledStats zeroes MineralsMinedThisLevel when
         // that ship dies. Do this only AFTER the shared episode reward
         // consumer has received pre-death mining values. No allocation,
