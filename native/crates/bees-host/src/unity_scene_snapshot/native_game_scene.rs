@@ -293,6 +293,8 @@ struct GameQueenMinion {
     base_speed: f32,
     rotation_speed: f32,
     height: f32,
+    spawn_rotation_degrees: f32,
+    path_clearance: i32,
     turning_radius: f32,
     sight: GameSight,
     front_offset: f32,
@@ -357,6 +359,8 @@ impl GameQueenSpawn {
                 size_class: minion.size_class,
                 base_speed: minion.base_speed, rotation_speed: minion.rotation_speed,
                 height: minion.height, movement,
+                spawn_rotation_degrees: minion.spawn_rotation_degrees,
+                path_clearance: minion.path_clearance,
                 combat_activity: Some(bees_sim::combat_world::NativeCombatActivity {
                     enabled: true, window_seconds: minion.combat_window_seconds,
                     elapsed_seconds: None,
