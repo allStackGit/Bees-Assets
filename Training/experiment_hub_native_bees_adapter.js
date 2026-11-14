@@ -529,8 +529,8 @@ function createNativeBeesAdapter({
                     ['--torch-threads', String(optimizer_threads)]),
                 ...(rollout_workers === undefined ? [] :
                     ['--rollout-workers', String(rollout_workers)]),
-                ...(rollout_worlds === undefined || collectOnly && collection_id !== undefined ? [] :
-                    ['--rollout-worlds', String(rollout_worlds)]),
+                ...(!collectOnly && rollout_worlds !== undefined ?
+                    ['--rollout-worlds', String(rollout_worlds)] : []),
                 ...(physics_workers === undefined ? [] :
                     ['--physics-workers', String(physics_workers)]),
                 '--seed-offset', String(seed_offset),
