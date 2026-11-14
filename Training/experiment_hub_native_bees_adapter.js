@@ -464,7 +464,15 @@ function createNativeBeesAdapter({
             // own shared physical CPU pool. Both dimensions consume the
             // same fixed machine lease; never advertise more runnable
             // physics threads than the coordinator allocated.
-            const activePhysicsWorkers = physics_workers ?? config.physics_workers ?? 1;
+            // An opt-in allocation mode chooses the largest useful physics
+            // pool that fits both the current CPU lease and the independent
+            // Worlds assigned to each rollout process. It makes no claim of
+            // measured optimality; an explicit count remains available.
+            // Existing jobs without this option retain their old default.
+            const activePhysicsWorkers = physics_workers === 'allocation'
+                ? Math.min(128, Math.floor(context.cpu_quota / activeWorkers),
+                    Math.ceil(activeWorlds / activeWorkers))
+                : physics_workers ?? config.physics_workers ?? 1;
             if (!bundleRound && !inboxLearner &&
                 (!Number.isSafeInteger(activeWorkers) ||
                     activeWorkers < 1 || activeWorkers > 256 ||
@@ -532,7 +540,7 @@ function createNativeBeesAdapter({
                 ...(!collectOnly && rollout_worlds !== undefined ?
                     ['--rollout-worlds', String(rollout_worlds)] : []),
                 ...(physics_workers === undefined ? [] :
-                    ['--physics-workers', String(physics_workers)]),
+                    ['--physics-workers', String(activePhysicsWorkers)]),
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)]),
                 ...(refresh_opponent_slot === undefined ? [] :
