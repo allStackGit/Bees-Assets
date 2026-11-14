@@ -961,6 +961,7 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
        bees campaign <catalog.json> --output-dir <battle-runs> --all
        bees build <catalog.json> --output-dir <battle-runs> --side <n> --ship-type <n> --squad <saved-id>
+       bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
@@ -1041,6 +1042,25 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let progress = catalog.load_progress(&output_root)?;
         println!("{}", catalog.status(&progress));
         return Ok(());
+    }
+    if first == "transfer" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--ship") {
+            return Err(invalid(USAGE).into());
+        }
+        let fleet_ship_id: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--squad") {
+            return Err(invalid(USAGE).into());
+        }
+        let to_saved_squad_id: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        return run_transfer_ship(&catalog, &output, fleet_ship_id, to_saved_squad_id);
     }
     if first == "build" {
         let catalog_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
@@ -1361,6 +1381,52 @@ fn run_build_ship(
         "ship_type": purchased.ship_type,
         "cost_tsv": purchased.price_tsv,
         "remaining_mined_tsv": progress.unspent_minerals()? - purchased.price_tsv,
+    }));
+    Ok(())
+}
+
+fn run_transfer_ship(
+    catalog_path: &Path, output_root: &Path,
+    fleet_ship_id: i64, destination_squad_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let progress = catalog.load_progress(output_root)?;
+    let (side, ship) = progress.purchased_ship(fleet_ship_id)
+        .ok_or_else(|| invalid("only purchased FleetShips can be reassigned"))?;
+    if destination_squad_id == ship.saved_squad_id || destination_squad_id <= 0 ||
+        !progress.saved_squad_ids_for_side(side).contains(&destination_squad_id)
+    {
+        return Err(invalid("destination must be a different saved squad owned by the same faction").into());
+    }
+    let dead = progress.lost_player_fleet_ids(side)?;
+    if dead.contains(&fleet_ship_id) {
+        return Err(invalid("a lost FleetShip cannot be moved to another squad").into());
+    }
+    let mut projected = progress.purchases_for_side(side);
+    projected.retain(|ship| !dead.contains(&ship.fleet_ship_id));
+    let owned = projected.iter_mut().find(|ship| ship.fleet_ship_id == fleet_ship_id)
+        .ok_or_else(|| invalid("the purchased FleetShip is not available"))?;
+    owned.saved_squad_id = destination_squad_id;
+    let root = catalog_path.parent().ok_or_else(||
+        invalid("missing native campaign parent"))?;
+    preflight_native_fleet_edit(
+        &catalog, root, &progress, side, &projected, destination_squad_id,
+    )?;
+    let moved = catalog.transfer_purchased_ship(
+        &progress, output_root, fleet_ship_id, destination_squad_id,
+    )?;
+    println!("{}", json!({
+        "kind": "native_campaign_fleet_transferred",
+        "campaign_id": catalog.campaign_id,
+        "fleet_ship_id": fleet_ship_id,
+        "player_side": side,
+        "from_saved_squad_id": ship.saved_squad_id,
+        "to_saved_squad_id": moved.saved_squad_id,
+        "ship_type": ship.ship_type,
+        "cost_tsv": 0,
     }));
     Ok(())
 }
