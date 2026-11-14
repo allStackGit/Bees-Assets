@@ -543,6 +543,10 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         self.fleet.credit_mined_minerals(ship_id, amount)
     }
 
+    fn retire_mined_credit_on_death(&mut self, ship_id: i64) {
+        self.fleet.retire_mined_credit(ship_id);
+    }
+
     fn collect_hivemind_observers(
         &self, world: &CombatWorld, output: &mut Vec<HiveMindObserver>,
     ) -> Result<(), CombatPerceptionError> {
