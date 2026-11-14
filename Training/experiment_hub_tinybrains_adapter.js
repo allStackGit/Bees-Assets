@@ -59,8 +59,13 @@ function supportsTinyBrainsProfile(machine,job) {
         (job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&
                 machine.gpu_shared_projects?.includes('tinybrains'));
-    const remote=p?.remote_rollouts===true&&p.device!=='cpu'&&
-        machine.agent_platform==='linux'&&job.resources?.gpu_count>=1&&
+    // The remote rollout protocol collects immutable CPU/GPU shards
+    // independently of where the authoritative PPO optimizer runs.
+    // A locally approved CPU fallback may own the learner while remote
+    // workers independently use their chosen CPU/GPU leases.
+    const remote=p?.remote_rollouts===true&&
+        machine.agent_platform==='linux'&&
+        (cpuFallback||job.resources?.gpu_count>=1)&&
         machine.tinybrains_remote_rollout_profiles?.includes(p.profile)===true;
     const imported=p?.import_checkpoint==null?null:
         machine.tinybrains_imports?.[p.import_checkpoint];
