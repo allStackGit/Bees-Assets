@@ -99,6 +99,9 @@ pub struct AuthoredPolicyAgent {
     /// gameplay and legacy scenes with no authenticated group record.
     pub source_group_agent_id: Option<u64>,
     pub route: NativePolicyRoute,
+    /// Authenticated source controller's episode frame, retained even
+    /// if its ship dies on the same tick a Queen births YellowJackets.
+    pub frame: bees_sim::control::PolicyFrame,
     pub controller: ControlledShipPerception,
     pub capability: CapabilitySource,
     pub parent_carrier_id: Option<i64>,
@@ -450,14 +453,20 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             // A Queen's team and its currently loaded model slot are
             // authoritative. Reuse that *team*, not a guessed model index.
             let parent_agent = self.agents.get(&queen_id)
-                .filter(|a| world.policy_frame(a.ship_id).is_some())
                 .or_else(||
                     self.agents.values()
                         .filter(|a| a.side == side &&
                             world.policy_frame(a.ship_id).is_some())
                         .min_by_key(|a| a.ship_id)
                 ).ok_or_else(invalid)?;
-            let frame = world.policy_frame(parent_agent.ship_id).ok_or_else(invalid)?;
+            // Unity's group keeps the controller's episode frame after
+            // the Queen dies. The live world may already have retired its
+            // runtime by the time this newborn is enrolled.
+            let frame = parent_agent.frame;
+            if world.policy_frame(parent_agent.ship_id)
+                .is_some_and(|current| current != frame) {
+                return Err(invalid());
+            }
             let route = parent_agent.route;
             let mut controller = parent_agent.controller;
             controller.effective_vision_range = template.vision.effective_range as f32;
@@ -512,7 +521,7 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             group.register_agent(side, group_id).map_err(|_| invalid())?;
             self.next_dynamic_group_agent_id = next_group_id;
             self.agents.insert(minion_id, AuthoredPolicyAgent {
-                ship_id: minion_id, side, route, controller, capability,
+                ship_id: minion_id, side, route, frame, controller, capability,
                 source_group_agent_id: Some(group_id),
                 parent_carrier_id: None, own_weapons,
             });
