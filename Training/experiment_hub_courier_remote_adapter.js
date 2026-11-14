@@ -76,7 +76,11 @@ function createCourierRemoteAdapter({
             if(privateKey(keyPath).fingerprint!==secret.fingerprint)
                 throw Error('Remote Courier identity changed after machine enrollment.');
             const folder=path.join(artifactRoot,context.job_id);
-            fs.mkdirSync(folder,{mode:0o700,recursive:false});
+            if(!fs.existsSync(folder))
+                fs.mkdirSync(folder,{mode:0o700});
+            else if(!fs.statSync(folder).isDirectory()||
+                    fs.realpathSync(folder)!==folder)
+                throw Error('Previous Courier service directory is not an owned regular directory.');
             return ['-B',workerScript,'--host',listenIp,'--port',String(port),
                 '--key-file',keyPath,'--job-id',parameters.learner_job_id,
                 '--slot',String(parameters.slot),'--work-dir',folder,
