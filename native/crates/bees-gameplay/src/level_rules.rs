@@ -58,6 +58,12 @@ pub trait NativeLevelRewardMetadata {
     /// must not silently acknowledge an action and lose mined resources.
     fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32>;
 
+    /// Only post-reward death finalization clears the saved FleetShip's
+    /// per-Level mining credit. The event consumer must first observe the
+    /// pre-death value for economic rewards and WarpGate attribution.
+    /// Existing nonpersistent training metadata can safely ignore this.
+    fn retire_mined_credit_on_death(&mut self, _ship_id: i64) {}
+
     /// Install source-owned fleet/perception/vision for real physical
     /// Scout Beacons and Queen YellowJackets before vision and rewards.
     /// A Level without a spawn adapter must not acknowledge missing data.
@@ -1055,6 +1061,15 @@ where
             |id| metadata.damage_metadata(id),
             |id| metadata.current_mined_tsv(id),
         )?;
+        // Source Ship.LogKilledStats zeroes MineralsMinedThisLevel when
+        // that ship dies. Do this only AFTER the shared episode reward
+        // consumer has received pre-death mining values. No allocation,
+        // scan of the full fleet, or duplicate gameplay implementation.
+        for event in state.combat.events() {
+            if let CombatEvent::ShipDied { victim_id, .. } = event {
+                state.metadata.retire_mined_credit_on_death(*victim_id);
+            }
+        }
         if let Some(dialogue) = &mut state.campaign_dialogue {
             if let Some(cue) = dialogue.observe_combat(&state.combat) {
                 dialogue.set_cue(cue);
