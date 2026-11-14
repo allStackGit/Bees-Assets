@@ -135,7 +135,7 @@ impl CombatWorld {
         (index < MAX_WAVE_SIZE).then(|| {
             let column = index % 4;
             Vec2::new([-15.0, -7.5, 7.5, 15.0][column as usize],
-                -(index / 4) as f32 * 15.0)
+                -((index / 4) as f32) * 15.0)
         })
     }
 
