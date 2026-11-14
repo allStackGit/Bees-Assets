@@ -1001,7 +1001,8 @@ impl NativePhysicalScene {
             // setup. Compare actual authored hull extents against every
             // live ship; never teleport active gameplay or simulate fake
             // ship movement in the inventory layer.
-            'location: for ring in 1_i32..=32 {
+            if casualty_slot.is_none() {
+                'location: for ring in 1_i32..=32 {
                 for x in -ring..=ring {
                     for y in -ring..=ring {
                         if x.abs().max(y.abs()) != ring { continue; }
@@ -1026,6 +1027,7 @@ impl NativePhysicalScene {
                         placement = Some(candidate);
                         break 'location;
                     }
+                }
                 }
             }
             let position = placement.ok_or(invalid(
