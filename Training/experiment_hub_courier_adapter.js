@@ -595,9 +595,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     ?['--cpu-lease',String(context.cpu_quota),
                       '--simulation-shards',String(simulationShards)]:[]),
                 ...(remote.length?[
-                    ...remote.flatMap(item=>[
-                        '--remote-lineage-endpoint',item.endpoint,
-                        '--remote-lineage-shards',String(item.max_shards)]),
+                    '--remote-lineage-plan',remote.map(item=>
+                        item.endpoint+'@'+item.max_shards).join(','),
                     '--remote-lineage-key-file',remoteSecret,
                     '--remote-job-id',context.job_id,
                 ]:[]),
