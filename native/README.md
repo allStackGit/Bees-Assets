@@ -339,6 +339,7 @@ battle picker, or without a window:
 bees build native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --ship-type 21 --squad 1
 bees transfer native/examples/native-frontier-campaign.json --output-dir native-frontier-save --ship 18 --squad 2
 bees transfer native/examples/native-frontier-campaign.json --output-dir native-frontier-save --ship 18 --squad 0
+bees reassign native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --ship 11 --from 1 --squad 2
 ```
 
 Here `18` is an example purchased FleetShip ID; use the real
@@ -350,6 +351,21 @@ and can later rejoin any available same-faction saved squad. Press
 workflow. Every assignment is an immutable, zero-TSV-cost
 `transfer-NNNN/transfer.json` receipt, applied in sequence to the
 original purchase. The original FleetShip ID never changes.
+
+Native-authored player FleetShips can also be moved between saved
+squads or placed in reserve, using **T** in the picker or `bees
+reassign` headlessly. The `--from` value is the ship's **current**
+SavedSquad ID (zero when already in reserve). For example, authored
+FleetShip 11 in the bundled scene starts in SavedSquad 1. The operation
+preserves its original fleet identity, lifetime stats, and owned hull
+without spending minerals. These `squad-edit-NNNN/assignment.json`
+receipts record ownership changes independently from purchase
+transactions and replay before the shared Level is constructed.
+Initially moving ordinary non-policy, non-special source hulls is
+supported; carriers, authored special ships and ships with active
+children are deliberately not detached without their corresponding
+source ownership semantics. Previously killed hulls cannot be moved.
+Scene preflight rejects formations that do not fit the authored map.
 
 A purchase is one immutable, atomic `build-NNNN/purchase.json`
 receipt. Its FleetShip ID persists between missions and its TSV cost
