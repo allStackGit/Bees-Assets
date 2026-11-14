@@ -46,6 +46,43 @@ function previousHistoryRow(fd,endExclusive) {
     return null;
 }
 
+// Capabilities are a subset of the actual committed-update reader below.
+// A capability means this installed runtime can publish the field, not that
+// every update is guaranteed to contain it. Slot-specific fields appear when
+// observed and need not be guessed for nonexistent workers.
+const TINYBRAINS_METRIC_CATALOG={
+    base:[
+        'total_ppo_updates','engine_steps','engine_steps_per_second',
+        'ant_decisions','ant_decisions_per_second',
+        'group_states','group_states_per_second',
+        'update_wall_time','elapsed_training_seconds',
+        'collection_seconds','optimization_seconds','overlap_seconds',
+        'rollout_model_refresh_seconds','rollout_engine_step_seconds',
+        'rollout_learner_inference_seconds','rollout_observation_encode_seconds',
+        'rollout_opponent_inference_seconds','rollout_result_processing_seconds',
+        'collector_wait_seconds','collector_critical_path_seconds',
+        'rollout_engine_cpu_seconds_total','ppo_minibatches','ppo_microbatches',
+        'loss','policy_loss','value_loss','baseline_loss','entropy',
+        'actor_grad_norm','group_grad_norm','baseline_grad_norm',
+        'states_per_microbatch','learning_rate','gae_lambda','rss_mb',
+        'training_wins','training_losses','training_draws',
+        'training_completed_matches','training_win_rate','training_score_rate',
+        'training_mean_score','training_mean_score_margin',
+        'training_scored_matches','training_opponent_margin_matches',
+        'training_mean_match_turns','food_gathered_exact',
+        'food_gathered_verified_matches','combat_kills_exact',
+        'combat_kills_verified_matches','births_observed','deaths_observed',
+        'population_peak','visible_food_mean','combat_exposure_fraction',
+        'episodes_ended','terminal_rewards','carried_matches',
+        'collector_count','ppo_board_pixel_samples','ppo_max_board_cells',
+        'local_engine_count','local_engine_active_count',
+        'local_engine_actions_per_second','local_engine_wall_seconds',
+        'local_engine_critical_seconds',
+    ],
+    remote_rollouts:[
+        'remote_policy_snapshot_seconds','remote_opponent_snapshot_seconds',
+    ],
+};
 // Derive bounded, project-neutral chart measurements from the trainer's
 // committed update, not from GPU utilization guesses or incomplete rollouts.
 // Keep exact game events distinct from observation-based food/combat proxies.
@@ -496,7 +533,8 @@ function createTinyBrainsPersistentDockerAdapter({
             return path.join(artifacts,jobId);
         },
         gpu_execution:'cuda',
-        ...(designEnabled?{design_catalog:{tinybrains:{...designFields,source_sha256:designSourceSha256,profiles:
+        ...(designEnabled?{design_catalog:{tinybrains:{...designFields,source_sha256:designSourceSha256,
+            metric_catalog:TINYBRAINS_METRIC_CATALOG,profiles:
             Object.fromEntries([...approved].map(([id,item])=>[
                 id,{profile_sha256:item.sha256},
             ]))}}}:{}),
