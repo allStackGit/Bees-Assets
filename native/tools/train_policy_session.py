@@ -314,6 +314,74 @@ def ensure_evaluation(round_directory, manifest, recipe):
                              recipe["evaluation_side"], recipe["evaluation_policy_seed"])
 
 
+
+def measured_distributed_collection_windows(completed):
+    """Only receipt-matched observed fleet windows contribute to fleet SPS.
+
+    A recovered round may have no original order-start timing, and older
+    sessions may have no window record. Neither absence nor a malformed
+    ancillary timing record turns independent worker seconds into fleet SPS.
+    """
+    measured = []
+    missing = []
+    rejected = []
+    distributed = 0
+    for number, (directory, record) in enumerate(completed, 1):
+        if "collection_orders" not in record:
+            continue
+        distributed += 1
+        window_path = directory.parent / f"collection-round-{number:05d}-window.json"
+        if not window_path.is_file():
+            missing.append(number)
+            continue
+        try:
+            window = read_json(window_path)
+            seconds = window.get("work_order_to_last_receipt_wall_seconds")
+            steps = window.get("useful_world_steps")
+            rows = window.get("useful_policy_rows")
+            if (window.get("schema_version") != 1 or
+                    window.get("kind") != "native_distributed_collection_window" or
+                    window.get("round") != number or
+                    window.get("orders_sha256") != record["collection_orders_sha256"] or
+                    window.get("collector_count") != record["rollout_metrics"]["collector_count"] or
+                    type(steps) is not int or steps <= 0 or
+                    type(rows) is not int or rows <= 0 or
+                    steps != record["rollout_metrics"]["successful_world_steps"] or
+                    rows != record["rollout_metrics"]["successful_policy_rows"] or
+                    type(seconds) not in (float, int) or
+                    not math.isfinite(seconds) or seconds <= 0):
+                raise ValueError("window identity or measured work differs from round receipt")
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            rejected.append(number)
+            continue
+        measured.append({
+            "round": number,
+            "world_steps": steps,
+            "policy_rows": rows,
+            "work_order_to_last_receipt_wall_seconds": seconds,
+            "world_steps_per_wall_second": steps / seconds,
+            "policy_rows_per_wall_second": rows / seconds,
+        })
+    if distributed == 0:
+        return None
+    seconds = sum(row["work_order_to_last_receipt_wall_seconds"] for row in measured)
+    steps = sum(row["world_steps"] for row in measured)
+    rows = sum(row["policy_rows"] for row in measured)
+    return {
+        "scope": "work_order_issued_to_final_collector_receipt_including_dispatch_and_transfer",
+        "distributed_rounds": distributed,
+        "measured_rounds": len(measured),
+        "missing_window_rounds": missing,
+        "rejected_window_rounds": rejected,
+        "useful_world_steps": steps,
+        "useful_policy_rows": rows,
+        "measured_wall_seconds": seconds,
+        "world_steps_per_wall_second": steps / seconds if seconds > 0 else None,
+        "policy_rows_per_wall_second": rows / seconds if seconds > 0 else None,
+        "rounds": measured,
+    }
+
+
 def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None,
                       best_evaluated=None):
     evaluations = evaluations or {}
@@ -340,6 +408,7 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         if any("collection_orders" in record for _, record in completed)
         else "local_rollout_wall_seconds"
     )
+    fleet_window = measured_distributed_collection_windows(completed)
     latest_holdout = evaluations.get(str(completed[-1][0])) if completed else None
     holdout_win_rate_gain = (
         latest_holdout["side_win_rate"] - baseline_holdout["side_win_rate"]
@@ -381,6 +450,8 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         ),
         "sum_round_rollout_wall_seconds": rollout_seconds,
         "rollout_wall_seconds_scope": rollout_scope,
+        **({"distributed_collection_wall_time": fleet_window}
+           if fleet_window is not None else {}),
         "sum_round_optimizer_wall_seconds": optimizer_seconds,
         "world_steps_per_rollout_wall_second":
             world_steps / rollout_seconds if rollout_seconds > 0 else None,
