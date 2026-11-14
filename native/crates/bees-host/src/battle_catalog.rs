@@ -31,6 +31,11 @@ impl BattleEntry {
 pub struct Mission {
     pub id: String,
     pub player_side: i32,
+    /// Exactly Unity Stage.RecordStats for this authored mission; a
+    /// successful battle must not invent FleetShip career progression
+    /// if its source stage deliberately disables stat recording.
+    #[serde(default)]
+    pub record_fleet_stats: bool,
     #[serde(default)]
     pub requires: Vec<String>,
     #[serde(default)]
@@ -216,6 +221,7 @@ impl BattleCatalog {
                 "unlocked": mission.requires.iter().all(|id| progress.completed(id)),
                 "completed": progress.completed(&mission.id),
                 "latest_victory": progress.latest_victory(&mission.id),
+                "record_fleet_stats": mission.record_fleet_stats,
             }))
         }).collect::<Vec<_>>();
         let mut ids = progress.fleet.keys().copied().collect::<Vec<_>>();
