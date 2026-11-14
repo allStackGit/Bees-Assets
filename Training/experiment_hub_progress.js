@@ -661,6 +661,8 @@ class BottleneckEvidence {
         // continuous ratios when nine profiled collectors approach the wire
         // limit. Never evict a project-owned source metric for a diagnosis.
         const priority=name=>
+            (name==='pipeline_local_gpu_wait_owner'||
+             name==='pipeline_local_gpu_lease_index')?0:
             name.startsWith('pipeline_')&&(
                 name.endsWith('_pressure')||name.endsWith('_evidence'))?0:
             name.startsWith('pipeline_')&&name.endsWith('_dominant')?0:
