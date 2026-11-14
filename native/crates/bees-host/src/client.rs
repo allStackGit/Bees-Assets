@@ -114,6 +114,10 @@ pub struct NativeClient {
     pub sprite_raster_candidate_pixels: u64,
     pub ship_fallback_hulls: u64,
     pub ship_art_types_loaded: usize,
+    pub asteroid_sprite_draws: u64,
+    pub asteroid_piece_sprite_draws: u64,
+    pub asteroid_fallback_hulls: u64,
+    pub asteroid_art_types_loaded: usize,
     pub projectile_sprite_draws: u64,
     pub projectile_explosion_sprite_draws: u64,
     pub projectile_fallback_hulls: u64,
@@ -172,6 +176,8 @@ impl NativeClient {
             custom_ship_color_draws: 0, ship_color_cache_misses: 0,
             ship_color_cache_variants: 0,
             sprite_raster_candidate_pixels: 0, ship_fallback_hulls: 0, ship_art_types_loaded: 0,
+            asteroid_sprite_draws: 0, asteroid_piece_sprite_draws: 0,
+            asteroid_fallback_hulls: 0, asteroid_art_types_loaded: 0,
             projectile_sprite_draws: 0, projectile_explosion_sprite_draws: 0,
             projectile_fallback_hulls: 0,
             projectile_art_types_loaded: 0,
@@ -1154,6 +1160,13 @@ impl NativeClient {
             .saturating_add(counts.sprite_raster_candidate_pixels);
         self.ship_fallback_hulls = self.ship_fallback_hulls.saturating_add(counts.ship_fallback_hulls as u64);
         self.ship_art_types_loaded = counts.ship_art_types_loaded;
+        self.asteroid_sprite_draws = self.asteroid_sprite_draws
+            .saturating_add(counts.asteroid_sprite_draws as u64);
+        self.asteroid_piece_sprite_draws = self.asteroid_piece_sprite_draws
+            .saturating_add(counts.asteroid_piece_sprite_draws as u64);
+        self.asteroid_fallback_hulls = self.asteroid_fallback_hulls
+            .saturating_add(counts.asteroid_fallback_hulls as u64);
+        self.asteroid_art_types_loaded = counts.asteroid_art_types_loaded;
         self.projectile_sprite_draws = self.projectile_sprite_draws
             .saturating_add(counts.projectile_sprite_draws as u64);
         self.projectile_explosion_sprite_draws = self.projectile_explosion_sprite_draws
