@@ -1818,7 +1818,7 @@ fn authored_menu_fleet(
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
     use bees_host::presentation::{
         BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
-        NativeTransferMenuRow, select_battle,
+        NativeTransferMenuRow, NativeCreateSquadMenuRow, select_battle,
     };
 
     let catalog_path = catalog_path.canonicalize()?;
@@ -1946,11 +1946,44 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 });
             }
         }
+        let mut templates = HashSet::new();
+        for &(side, _, original_squad) in &original_choices {
+            templates.insert((side, original_squad));
+        }
+        for entry in &catalog.battles {
+            if let Some(mission) = &entry.mission {
+                for saved_id in progress.saved_squad_ids_for_side(mission.player_side) {
+                    templates.insert((mission.player_side, saved_id));
+                }
+            }
+        }
+        let mut templates = templates.into_iter().collect::<Vec<_>>();
+        templates.sort_unstable();
+        let create_rows = templates.into_iter().map(|(side, template)| {
+            NativeCreateSquadMenuRow {
+                title: format!("New player Squad (Side {}) from SavedSquad #{}",
+                    side, template),
+                side,
+                template_saved_squad_id: template,
+            }
+        }).collect::<Vec<_>>();
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
-            &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows)?
+            &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows,
+            &create_rows)?
             else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
+            NativeBattleMenuAction::CreateSquad { side, template_saved_squad_id } => {
+                let result = run_create_saved_squad(
+                    &catalog_path, output_root, side, template_saved_squad_id,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                if let Err(error) = result {
+                    eprintln!("Could not create SavedSquad from #{template_saved_squad_id}: {error}");
+                }
+                continue;
+            }
             NativeBattleMenuAction::Buy { side, ship_type, saved_squad_id } => {
                 let result = run_build_ship(
                     &catalog_path, output_root, side, ship_type, saved_squad_id,
