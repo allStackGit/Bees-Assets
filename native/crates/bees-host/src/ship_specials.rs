@@ -1,7 +1,7 @@
 //! Immutable source ship-special inputs shared by scene startup and the
 //! Level's spawned-ship metadata. All execution remains in CombatWorld.
 use std::sync::Arc;
-use bees_sim::combat_world::{CombatWorld, CombatWorldError, GameStrikerCarrier, ScoutBeaconSpec};
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, GameStrikerCarrier, ScoutBeaconSpec, QueenSpawnSpec};
 use bees_sim::combat_perception_bridge::AuthoredShipPerception;
 use crate::policy_only_metadata::NativeSourceVision;
 
@@ -13,12 +13,20 @@ pub struct NativeBeaconTemplate {
 }
 
 #[derive(Clone, Debug)]
+pub struct NativeQueenTemplate {
+    pub physical: QueenSpawnSpec,
+    pub perception: AuthoredShipPerception,
+    pub vision: NativeSourceVision,
+}
+
+#[derive(Clone, Debug)]
 pub enum NativeAuthoredShipSpecial {
     Barge { power: i32, can_override_bounds: Option<bool> },
     FireBarge { power: i32 },
     Striker { power: i32, carrier: GameStrikerCarrier },
     YellowJacket { power: i32 },
     Scout { beacon: Arc<NativeBeaconTemplate>, enabled: bool },
+    Queen { minions: Arc<NativeQueenTemplate> },
 }
 
 impl NativeAuthoredShipSpecial {
@@ -44,6 +52,9 @@ impl NativeAuthoredShipSpecial {
                 // the player-specific bounds capability.
             }
             Self::YellowJacket { power } if policy => world.configure_policy_yellow_jacket(id, power)?,
+            Self::Queen { minions } => {
+                world.configure_queen_spawning(id, Arc::new(minions.physical.clone()))?;
+            }
             Self::Scout { beacon, enabled } => {
                 if policy {
                     world.configure_policy_scout(id, beacon.physical.clone())?;
