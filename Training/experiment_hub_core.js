@@ -3652,6 +3652,7 @@ class ExperimentHub {
             }
         }
         if(this.reconcileDistributedAborts(next))changed=true;
+        if(this.reconcileCourierSidecars(next))changed=true;
         return changed;
     }
     executionOrders(machineId) {
@@ -4238,6 +4239,7 @@ class ExperimentHub {
         // learner on the closing heartbeat when it cannot receive a Start.
         this.advancePendingDistributedGroups();
         this.advanceDistributedLaunches();
+        this.advanceCourierLaunches();
         this.advancePendingResourceBundles();
         // An agent awaiting a slow native Start/Stop/probe can renew
         // authenticated liveness without receiving a second instruction.
@@ -4965,6 +4967,7 @@ class ExperimentHub {
     // terminal report exists, request sidecar Stop, retaining their leases
     // until their own verified terminal receipts release capacity.
     reconcileCourierSidecars(next) {
+        let changed=false;
         for(const learner of next.jobs.filter(job=>job.project_id==='courier'&&
             job.distributed_courier_managed===true&&
             ['finished','stopped','failed'].includes(job.status))) {
@@ -4976,9 +4979,11 @@ class ExperimentHub {
                     child.status='stop_requested';
                     child.stop_requested_at=now();
                     child.status_reason='Courier learner terminal; requesting remote native service shutdown.';
+                    changed=true;
                 }
             }
         }
+        return changed;
     }
 
     // Queue and reserve an entire TinyBrains rollout group as one durable
