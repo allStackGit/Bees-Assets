@@ -2754,6 +2754,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }finally { button.disabled=false; }
     }
     const tinyBrainsPicker=document.createElement('fieldset');
+    tinyBrainsPicker.className='hub-tinybrains-picker';
     tinyBrainsPicker.hidden=true;
     const tinyBrainsLegend=document.createElement('legend');
     tinyBrainsLegend.textContent='TinyBrains CPU / GPU job';
@@ -2866,6 +2867,8 @@ document.addEventListener('DOMContentLoaded', () => {
             (weights.length?'Fixed action weights change rollout work shares, not hardware reservations. ':'')+
             'Save the draft to retain these settings.');
     });
+    const tinyBrainsFields=document.createElement('div');
+    tinyBrainsFields.className='hub-tinybrains-fields';
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
@@ -2873,11 +2876,16 @@ document.addEventListener('DOMContentLoaded', () => {
         ['Fixed rollout action weights (optional; local then remotes) ',tinyBrainsWeights],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
-        label.append(caption,control);
-        tinyBrainsPicker.append(label);
+        if(control===tinyBrainsRemote) {
+            label.className='hub-toggle-row hub-tinybrains-remote';
+            label.append(control,document.createTextNode(caption.trim()));
+        }else label.append(caption,control);
+        tinyBrainsFields.append(label);
     }
-    tinyBrainsPicker.prepend(tinyBrainsLegend);
-    tinyBrainsPicker.append(tinyBrainsUse);
+    const tinyBrainsActions=document.createElement('div');
+    tinyBrainsActions.className='hub-controls';
+    tinyBrainsActions.append(tinyBrainsUse);
+    tinyBrainsPicker.append(tinyBrainsLegend,tinyBrainsFields,tinyBrainsActions);
     $('hub-config-form').prepend(tinyBrainsPicker);
     function displayTinyBrainsImports() {
         const [profile,digest]=tinyBrainsSelect.value.split(':');
