@@ -740,6 +740,41 @@ label.hub-toggle-row > input[type="checkbox"] {
     .hub-metric-picker { padding: 10px; }
     .hub-controls { gap: 8px; }
 }
+
+/* The TinyBrains editor is generated at runtime, but uses the same form grid. */
+#hub-config-form > .formgrid > label:only-child {
+    flex: 0 1 520px;
+    max-width: 100%;
+}
+.hub-tinybrains-picker {
+    min-width: 0;
+    margin: 0 0 16px;
+    padding: 16px;
+}
+.hub-tinybrains-picker legend {
+    padding: 0 6px;
+    font-size: 15px;
+    font-weight: 800;
+}
+.hub-tinybrains-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 16px 20px;
+    max-width: 1100px;
+    align-items: start;
+}
+.hub-tinybrains-fields > label { min-width: 0; }
+.hub-tinybrains-fields > label:first-child,
+.hub-tinybrains-fields > label:last-child { grid-column: 1 / -1; }
+.hub-tinybrains-fields > label.hub-tinybrains-remote {
+    grid-column: 1 / -1;
+    padding: 6px 0;
+    align-items: center;
+}
+.hub-tinybrains-fields > label.hub-tinybrains-remote input[type="checkbox"] {
+    margin: 0;
+}
+.hub-tinybrains-picker > .hub-controls { margin: 16px 0 0; }
 </style>
 </head>
 <body>
