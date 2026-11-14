@@ -93,7 +93,8 @@ class MixedLinuxSupervisor {
             throw Error('Mixed Linux owners must qualify before a new job can start.');
         const project=job?.project_id;
         const owner=project==='tinybrains'?this.docker:
-            Object.hasOwn(this.native.adapters,project||'')?this.native:null;
+            ['courier','bees_native','bees_native_collect'].includes(project)&&
+            Object.hasOwn(this.adapters,project)?this.native:null;
         if(!owner)throw Error('Unknown or uninstalled mixed Linux project.');
         if(owner===this.native&&(job.resources?.gpu_count??0)!==0)
             throw Error('Mixed Linux native jobs require CPU-only execution.');
