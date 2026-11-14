@@ -854,6 +854,14 @@ struct NativeSourcePolicyInputs {
 /// every other ship. Only immutable purchase receipts may supply this.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct NativeCreatedSquad {
+    pub saved_squad_id: i64,
+    pub template_saved_squad_id: i64,
+    pub side: i32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativePurchasedShip {
     pub fleet_ship_id: i64,
     pub saved_squad_id: i64,
@@ -908,6 +916,57 @@ pub struct NativeSourcePolicyGroup {
 }
 
 impl NativePhysicalScene {
+    /// Materialize newly owned, initially empty SavedSquads before applying
+    /// roster edits and purchases. Their runtime Stage ItemIds are
+    /// reallocated separately in every Level; SavedSquad IDs remain stable.
+    /// No empty physical squad is registered with CombatWorld.
+    pub fn install_created_squads(
+        &mut self, side: i32, created: &[NativeCreatedSquad],
+    ) -> Result<usize, NativeSnapshotError> {
+        if created.is_empty() { return Ok(0); }
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if !matches!(side, 1 | 2) ||
+            self.starting_positions.is_none() ||
+            self.source_episode.is_some() || self.source_policy_group.is_some() ||
+            !self.source_policy_bindings.is_empty() ||
+            !self.active_policy_ship_ids.is_empty()
+        {
+            return Err(invalid("new SavedSquads need an ordinary native game Stage with faction starting positions"));
+        }
+        let mut ids = self.source_squads.iter()
+            .filter_map(|squad| squad.saved_squad_id).collect::<HashSet<_>>();
+        let mut next_item_id = self.source_squads.iter()
+            .map(|squad| squad.item_id).max().unwrap_or(0);
+        for new in created {
+            if new.side != side || new.saved_squad_id <= 0 ||
+                new.template_saved_squad_id <= 0 ||
+                !ids.insert(new.saved_squad_id)
+            {
+                return Err(invalid("invalid or duplicate persistent SavedSquad identity"));
+            }
+            let template = self.source_squads.iter().find(|squad|
+                squad.saved_squad_id == Some(new.template_saved_squad_id) &&
+                squad.side == side && squad.player_permissions.user_controlled &&
+                squad.hivemind.is_none()
+            ).ok_or(invalid("new SavedSquad requires an authored player command template"))?;
+            let mut squad = template.clone();
+            next_item_id = next_item_id.checked_add(1)
+                .ok_or(invalid("native Stage squad identities exhausted"))?;
+            squad.item_id = next_item_id;
+            squad.saved_squad_id = Some(new.saved_squad_id);
+            squad.members.clear();
+            squad.hotkey_number = None;
+            squad.original_squad_count = None;
+            squad.hivemind = None;
+            squad.is_carrier_squad = Some(false);
+            squad.matching_speed = None;
+            squad.should_chase = false;
+            squad.cease_fire = Some(false);
+            self.source_squads.push(squad);
+        }
+        Ok(created.len())
+    }
+
     /// Instantiate purchased persistent hulls from a genuine native game
     /// scene template before constructing the common physics/game Level.
     /// A source type provides its collider, turret mounts, sight, movement
