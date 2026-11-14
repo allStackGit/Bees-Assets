@@ -279,6 +279,13 @@ impl CampaignProgress<'_> {
         self.fleet.keys().copied().max().unwrap_or(0)
     }
 
+    pub fn original_fleet_is_editable(&self, side: i32, fleet_id: i64) -> bool {
+        self.fleet.get(&fleet_id)
+            .is_some_and(|record| record.side == side && !record.is_dead &&
+                record.loss_history_complete) &&
+            self.purchased_ship(fleet_id).is_none()
+    }
+
     pub fn purchased_ship(&self, fleet_ship_id: i64) -> Option<(i32, NativePurchasedShip)> {
         self.purchases.iter().copied()
             .find(|(_, ship)| ship.fleet_ship_id == fleet_ship_id)
