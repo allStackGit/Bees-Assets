@@ -72,6 +72,16 @@ pub trait NativeLevelRewardMetadata {
         Ok(())
     }
 
+    /// Bind newly spawned Queen YellowJackets into the SAME native policy
+    /// roster, model route and MA-POCA group as other ships. Native game
+    /// Levels have no group and therefore require no policy enrollment.
+    /// This runs after physical/perception spawn and before inference can
+    /// observe another episode tick.
+    fn register_spawned_policy_ships(
+        &mut self, _world: &mut CombatWorld,
+        _events: &mut NativeLevelEventProcessor,
+    ) -> Result<(), CombatPerceptionError> { Ok(()) }
+
     /// Collect real registered/enabled HiveMindVision observers. A full
     /// rendered Level may instead forward source OnTriggerEnter callbacks;
     /// only Levels with an authoritative observer adapter enable the
@@ -1031,6 +1041,9 @@ where
         state.combat.step_extraction(&self.collision_matrix)?;
         state.combat.consume_weapon_rank_events()?;
         state.metadata.register_scout_beacons(&state.combat, state.combat.events())?;
+        state.metadata.register_spawned_policy_ships(
+            &mut state.combat, &mut state.events,
+        )?;
         counts.vision = state.refresh_vision_and_rewards(completed_tick)
             .map_err(NativeLevelStepError::Vision)?;
         state.credit_mining_since(0)?;
