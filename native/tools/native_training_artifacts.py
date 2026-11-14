@@ -31,7 +31,7 @@ def normalized_python_source_sha256(path: Path) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def native_source_contract_sha256(path: Path) -> str:
+def native_source_contract_sha256(path: Path, *, include_allocation: bool = False) -> str:
     """Content identity for a native collector's *physical* training task.
 
     A learner on Linux and a collector on Windows cannot share literal
@@ -79,19 +79,23 @@ def native_source_contract_sha256(path: Path) -> str:
 
     # Output journals, interpreter installation, and model locations are
     # execution plumbing. No gameplay/simulation property is dropped.
-    portable = {
-        key: value for key, value in source.items()
-        if key not in (
-            "python", "policy_worker", "model_manifest",
-            "connection_checkpoint", "notifications", "rollout_summary",
-            "policy_capture",
-            # These are collector capacity assignments, not gameplay
-            # semantics. Each work order separately pins World indexes,
-            # process count and explicit physics workers; identical native
-            # simulations must be allowed on heterogeneous machines.
+    execution_only = {
+        "python", "policy_worker", "model_manifest",
+        "connection_checkpoint", "notifications", "rollout_summary",
+        "policy_capture",
+    }
+    if not include_allocation:
+        # The v2 identity excludes collector capacity. Each work order
+        # separately pins World indexes, processes and physics workers.
+        execution_only.update((
             "rollout_worlds", "rollout_world_start", "rollout_workers",
             "physics_workers",
-        )
+        ))
+    # Old in-flight orders used the v1 hash, which included those resource
+    # fields. Allow checking that historical value without changing it.
+    portable = {
+        key: value for key, value in source.items()
+        if key not in execution_only
     }
     portable["policy_worker_source_sha256"] = sha_file(
         source.get("policy_worker"), python_source=True,
@@ -158,5 +162,9 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Native Bees source contract identity")
     parser.add_argument("source_contract", type=Path)
+    parser.add_argument("--include-allocation", action="store_true",
+                        help="read legacy v1 portable source identity")
     arguments = parser.parse_args()
-    print(native_source_contract_sha256(arguments.source_contract), flush=True)
+    print(native_source_contract_sha256(
+        arguments.source_contract, include_allocation=arguments.include_allocation,
+    ), flush=True)
