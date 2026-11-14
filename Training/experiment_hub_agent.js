@@ -11,6 +11,7 @@ const {inspectHost,availableMemoryMb}=require('./experiment_hub_host');
 const {discoverAmdGpus,discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const {fromEnvironment}=require('./experiment_hub_execution');
 const {syncArtifacts}=require('./experiment_hub_artifact_agent');
+const {syncNativeBundles}=require('./experiment_hub_native_bundle_transfer');
 const {MAX_BODY_BYTES}=require('./experiment_hub_agent_listener');
 const {request: resourceRequest}=require('./experiment_hub_resources');
 
@@ -358,6 +359,18 @@ async function main() {
                     let result;
                     executingNative=true;
                     try {
+                        // No native service is launched until every requested
+                        // collector receipt and binary capture has been
+                        // authenticated, downloaded and SHA-256 verified.
+                        // Transfer failures leave this Start unreported and
+                        // ownerless; the Hub can safely retry the same order
+                        // after collectors finish mirroring their files.
+                        if(orders[0].action==='start'&&
+                            orders[0].job?.project_id==='bees_native') {
+                            await syncNativeBundles(orders[0].job,
+                                executor.supervisor.adapters?.bees_native,
+                                url,id,token);
+                        }
                         result=await executor.handle(orders[0]);
                     }finally {
                         executingNative=false;
