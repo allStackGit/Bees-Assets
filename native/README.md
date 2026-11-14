@@ -316,17 +316,36 @@ JSON; it also works in a headless build.
 To persist those statistics, a mission must explicitly set
 `"record_fleet_stats": true`, matching its source Unity
 `Stage.RecordStats` setting. Missions that omit it still persist
-completion but do not write ship statistics. Only successfully
-completed campaign battles contribute persistent fleet outcomes, sourced
-from the Level-owned mining inventory. Temporary minions, aborted runs,
-policy rollouts and watched recordings never create career entries.
-Each durable battle summary is the transaction, so reopening or
-interrupted saving cannot double-credit fleet data. Existing summaries
-without this information continue to unlock missions; `status` reports
-how many lack career data rather than fabricating historical counts.
-This covers three Unity `FleetShip` counters; fleet editing, ship
-kill/damage/shot counters, saved squad replacement and account-wide
-progression remain separate parity work.
+completion but do not write ship statistics. A mission may additionally
+enable `"persist_fleet_losses": true` to omit permanently lost
+player-side FleetShips from later authored Levels. The bundled two-mission
+campaign enables both: surviving players and their original squad
+identities carry forward, permanently lost members do not respawn,
+and surviving Strikers/Drones detach from carriers destroyed in a prior
+mission. Saved enemy scenario forces remain unaffected.
+
+Only successfully completed campaign battles contribute persistent
+fleet outcomes. A lethal `ShipDied` marks the FleetShip lost; a
+`ShipExtracted` or `ShipWarped` return in that same tick does not.
+The Level-owned mining inventory first provides its original values to
+the ordinary reward/economic consumer, then clears credit on lethal
+death. Temporary minions, aborted runs, training rollouts and watched
+recordings never create career entries.
+
+Each durable battle summary is the transaction, so reopening cannot
+double-credit fleet data. A new campaign battle must return to the
+picker and reload the committed save first; in-result Enter no longer
+silently replays a pre-battle fleet. A game with no surviving
+player-controlled squad refuses to start its next mission rather
+than resurrecting missing units. Earlier summaries without death
+evidence still unlock missions and contribute known statistics, but
+a mission opting into permanent loss persistence refuses unknown
+historical deaths. Use `bees status` to see saved deaths and whether
+the loss history is complete.
+
+This now covers native fleet battles, victories, mining and permanent
+losses. Fleet purchasing/editing, ship hit/kill/fire counts, stored
+squad statistics and wider account progression still require parity work.
 
 Use `on_victory` to select an alternate run configuration when the named
 prerequisite's latest completed attempt was a victory. Both paths keep the
