@@ -4729,6 +4729,7 @@ class ExperimentHub {
                 throw Error('Each Courier remote worker must name a different, non-learner machine.');
             const machine=machines.find(m=>m.id===selection.machine_id);
             const budget=resourceRequest(selection.resources);
+            if(budget.ram_mb<128)throw Error('Remote Courier RAM lease must support its PPO process.');
             if(!machine||machine.status!=='connected'||
                 !machine.local_executor_enabled||!machine.native_preflight_passed||
                 !['linux','win32'].includes(machine.agent_platform)||
@@ -4761,6 +4762,9 @@ class ExperimentHub {
             throw Error('Distributed Courier learner must be immediately queueable.');
         learner.distributed_courier_managed=true;
         learner.distributed_courier_endpoints=endpoints;
+        learner.distributed_courier_max_shards=Math.min(
+            ...endpoints.map(endpoint=>
+                byEndpoint.get(endpoint).machine.courier_remote_max_shards));
         const leases=[this.claimJobIn(next,learner,host.id,host)];
         const workers=[],at=now();
         for(const [index,endpoint] of endpoints.entries()) {
@@ -4942,6 +4946,8 @@ class ExperimentHub {
                     machine.courier_remote_endpoint===member.endpoint&&
                     machine.courier_remote_service_key_fingerprint===
                         plan.key_fingerprint&&
+                    machine.courier_remote_max_shards>=
+                        learner.distributed_courier_max_shards&&
                     report?.instance_id===member.agent_instance&&
                     lease?.status==='acknowledged'&&lease.receipt_fresh===true;
             });
