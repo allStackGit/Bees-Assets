@@ -5152,6 +5152,27 @@ class ExperimentHub {
         const afterId=value.after_job_id==null?null:value.after_job_id;
         if(afterId!==null&&ancestorId!==null)
             throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
+        if(project.id==='courier_lineage') {
+            const parent=next.jobs.find(j=>j.id===frozen.learner_job_id);
+            if(Object.keys(frozen).some(k=>
+                    !['learner_job_id','slot','shards'].includes(k))||
+                !UUID.test(String(frozen.learner_job_id||''))||
+                !Number.isSafeInteger(frozen.slot)||frozen.slot<1||frozen.slot>=64||
+                !Number.isSafeInteger(frozen.shards)||frozen.shards<1||
+                frozen.shards>64||!parent||parent.project_id!=='courier'||
+                parent.distributed_courier_managed!==true||
+                !Array.isArray(parent.distributed_courier_slots)||
+                !parent.distributed_courier_slots.includes(frozen.slot)||
+                parent.distributed_abort_requested_at||
+                ['finished','stopped','failed','cancelled'].includes(parent.status)||
+                resources.gpu_count!==0||ancestorId!==null||afterId!==null)
+                throw Error('Courier remote worker requires an approved CPU-only managed learner and frozen PPO slot.');
+            if(next.jobs.some(j=>j.project_id==='courier_lineage'&&
+                j.status!=='cancelled'&&
+                j.frozen_parameters?.learner_job_id===parent.id&&
+                j.frozen_parameters?.slot===frozen.slot))
+                throw Error('Courier PPO slot already belongs to another remote service.');
+        }
         if(project.id==='tinybrains_rollout') {
             const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
             if(Object.keys(frozen).some(key=>!['learner_job_id','threads'].includes(key))||
