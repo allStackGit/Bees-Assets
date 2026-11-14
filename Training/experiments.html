@@ -610,6 +610,136 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     #hub-compare-actions { align-items: stretch; }
     #hub-compare-actions label { width: 100%; }
 }
+
+/* Common rhythm: readable labels and distinct form/action groups. */
+:root { --control-height: 40px; }
+body { font-size: 14px; line-height: 1.5; }
+label { font-size: 13px; line-height: 1.4; }
+small { font-size: 12px; line-height: 1.45; }
+.muted, .hub-notice { font-size: 13px; line-height: 1.5; }
+th { font-size: 12px; }
+button { font-size: 13px; }
+.formgrid { gap: 16px 18px; }
+.formgrid > label { min-width: min(100%, 210px); }
+.formgrid > label.wide { flex-basis: 370px; }
+label input:not([type="checkbox"]), label select, label textarea { margin-top: 7px; }
+label small { display: block; margin-top: 6px; font-weight: 500; }
+.hub-standalone { padding: 18px; margin: 16px 0; }
+.hub-standalone h3 { margin-bottom: 12px; }
+.hub-standalone > p { margin: 10px 0 14px; }
+.hub-standalone > label { margin: 12px 0; }
+.hub-standalone > button { margin: 8px 9px 8px 0; }
+.hub-controls { gap: 10px; margin: 14px 0 4px; }
+fieldset { min-width: 0; }
+fieldset > button { margin: 12px 9px 0 0; }
+fieldset > .formgrid { margin-bottom: 12px; }
+.hub-design-editor { gap: 18px; }
+.hub-design-grid { gap: 16px 20px; }
+.hub-design-grid label { font-size: 13px; }
+.hub-design-grid label small { font-size: 12px; line-height: 1.4; }
+.hub-design-grid .hub-design-checkbox input[type="checkbox"] { margin-top: 1px; }
+
+/* Identity, resources, and the tall metric selector occupy independent columns. */
+.hub-job-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(360px, .9fr);
+    gap: 20px;
+    align-items: start;
+}
+.hub-job-primary { display: grid; gap: 18px; min-width: 0; align-content: start; }
+.hub-job-identifiers {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 14px 18px;
+    align-items: start;
+}
+.hub-job-identifiers > label { min-width: 0; }
+.hub-job-json { display: block; min-width: 0; }
+.hub-job-json textarea { min-height: 100px; }
+.hub-resource-builder { min-width: 0; margin: 0; padding: 14px; }
+.hub-resource-builder legend { padding: 0 6px; font-size: 14px; font-weight: 800; }
+.hub-resource-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr));
+    gap: 16px 18px;
+    align-items: stretch;
+}
+.hub-resource-fields > label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    justify-content: flex-end;
+    font-size: 13px;
+}
+.hub-resource-fields > label > input, .hub-resource-fields > label > select {
+    flex: none; margin-top: auto; min-width: 0;
+}
+.hub-resource-builder .hub-controls { margin: 14px 0 6px; }
+.hub-resource-builder p { margin: 10px 0; }
+.hub-job-layout .hub-metric-field { min-width: 0; }
+.hub-job-layout .hub-metric-picker { margin-bottom: 10px; }
+#hub-job-queue-actions { margin: 16px 0 10px; }
+
+/* Metric selection stays legible without excessive height or clipped chips. */
+.hub-metric-picker { padding: 14px; font-size: 14px; }
+.hub-metric-toolbar { gap: 9px; }
+.hub-metric-toolbar button { font-size: 12px; }
+.hub-metric-selected-items { gap: 7px; max-height: 220px; }
+.hub-metric-selected-chip {
+    height: auto;
+    min-height: 32px;
+    padding: 6px 9px;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: normal;
+}
+.hub-metric-options { height: clamp(230px, 32vh, 360px); }
+.hub-metric-choice { gap: 10px; padding: 9px 7px; }
+.hub-metric-count { font-size: 13px; }
+
+/* Explicit checkbox rows and table actions, independent of inline whitespace. */
+.hub-toggle-list { display: grid; gap: 6px; margin: 14px 0 4px; }
+label.hub-toggle-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    min-height: 30px;
+    margin: 0;
+    padding: 6px 0;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.45;
+    cursor: pointer;
+}
+label.hub-toggle-row > input[type="checkbox"] {
+    flex: 0 0 19px;
+    margin: 1px 0 0;
+}
+#hub-automation-machines { margin: 12px 0; }
+#hub-automation-machines label { font-size: 13px; font-weight: 650; line-height: 1.45; }
+#hub-job-rows td:last-child { min-width: 195px; white-space: normal; }
+#hub-job-rows td:last-child button {
+    height: auto;
+    min-height: 36px;
+    margin: 0 8px 9px 0;
+    padding: 7px 10px;
+    white-space: normal;
+    text-align: left;
+    vertical-align: top;
+}
+#hub-config-rows td:last-child button { margin: 0 9px 9px 0; }
+@media (max-width: 1050px) {
+    .hub-job-layout { grid-template-columns: minmax(0, 1fr); }
+    .hub-job-layout .hub-metric-field { max-width: 780px; }
+}
+@media (max-width: 650px) {
+    .hub-standalone { padding: 12px; }
+    .hub-resource-fields { grid-template-columns: minmax(0, 1fr); }
+    .hub-job-identifiers { grid-template-columns: minmax(0, 1fr); }
+    .hub-metric-picker { padding: 10px; }
+    .hub-controls { gap: 8px; }
+}
 </style>
 </head>
 <body>
@@ -759,20 +889,17 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop native jobs on supported Linux or Windows machines with a locally installed, opted-in trusted adapter. Real-host native execution requires qualification. CPU jobs can use enforced CPU/RAM limits; opted-in CUDA/ROCm execution requires verified device identity and platform-specific authorization; dual-GPU TinyBrains uses two exclusively pinned devices and the separately qualified split-PPO runtime. Cooperative Windows CUDA and locally approved Linux ROCm GPU sharing use allocator VRAM budgets; GPU compute shares are advisory and neither backend provides hard GPU memory isolation. Bees training stays under its existing operator.</p>
   <div class="hub-standalone">
     <h3>Queue a saved configuration</h3>
-    <div class="formgrid">
+    <div class="hub-job-layout">
+      <div class="hub-job-primary">
+        <div class="hub-job-identifiers">
       <label>Saved configuration<select id="hub-job-configuration"></select></label>
       <label>Run name (optional)<input id="hub-job-run-name" type="text" maxlength="100" placeholder="e.g. 12 CPUs · gpu1 · baseline" autocomplete="off"><small>Labels this job for Train and Compare. Does not change the saved configuration or training.</small></label>
       <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
-      <div class="hub-metric-field">
-        <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
-        <select id="hub-job-metrics" class="hub-metric-source" multiple size="12" aria-label="Metrics to retain in Hub comparison history"></select>
-        <div id="hub-job-metric-picker" class="hub-metric-picker" aria-label="Search and select job metrics"></div>
-        <small>Only metrics supported by the selected saved configuration and connected trainer, or previously recorded for that same revision, are listed. Simulation-mode and GPU-only metrics appear only when applicable. Supported metrics may still be absent from an individual run. Use <strong>Use project defaults</strong> to restore the preset, or leave all unchecked to prioritize recorded host resources and project measurements within the 96-field chart limit. The underlying project history is unaffected.</small>
-      </div>
-      <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
-      <fieldset class="wide">
+        </div>
+        <label class="hub-job-json">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
+      <fieldset class="hub-resource-builder">
         <legend>Resource allocation builder (optional)</legend>
-        <div class="formgrid">
+        <div class="hub-resource-fields">
           <label>CPU slots<input id="hub-build-cpus" type="number" min="1" max="4096" step="1" value="2"></label>
           <label>RAM MiB<input id="hub-build-ram" type="number" min="128" max="100000000" step="1" value="2048"></label>
           <label>GPU count (native: 0, 1, or approved 2)<input id="hub-build-gpu-count" type="number" min="0" max="2" step="1" value="0"></label>
@@ -785,13 +912,22 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
           <label>Shared VRAM per GPU (MiB)<input id="hub-build-share-vram" type="number" min="1" max="1000000" step="1" value="2048" disabled></label>
           <label>Shared GPU compute budget (%)<input id="hub-build-share-compute" type="number" min="1" max="100" step="1" value="50" disabled></label>
         </div>
-        <button type="button" id="hub-build-resources">Fill resource JSON</button>
+        <div class="hub-controls"><button type="button" id="hub-build-resources">Fill resource JSON</button></div>
         <p class="muted">This replaces only the editable JSON above; it does not queue, reserve or start anything. Exact GPU IDs must match the connected machine registration. Shared compute budgets are advisory, not enforced performance guarantees.</p>
         <p class="hub-notice" id="hub-build-message" role="status"></p>
       </fieldset>
+      </div>
+      <div class="hub-metric-field">
+        <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
+        <select id="hub-job-metrics" class="hub-metric-source" multiple size="12" aria-label="Metrics to retain in Hub comparison history"></select>
+        <div id="hub-job-metric-picker" class="hub-metric-picker" aria-label="Search and select job metrics"></div>
+        <small>Only metrics supported by the selected saved configuration and connected trainer, or previously recorded for that same revision, are listed. Simulation-mode and GPU-only metrics appear only when applicable. Supported metrics may still be absent from an individual run. Use <strong>Use project defaults</strong> to restore the preset, or leave all unchecked to prioritize recorded host resources and project measurements within the 96-field chart limit. The underlying project history is unaffected.</small>
+      </div>
     </div>
-    <button type="button" id="hub-job-queue">Queue job</button>
-    <button type="button" id="hub-job-preview">Preview queued placements</button>
+    <div class="hub-controls" id="hub-job-queue-actions">
+      <button type="button" id="hub-job-queue">Queue job</button>
+      <button type="button" id="hub-job-preview">Preview queued placements</button>
+    </div>
     <p id="hub-job-message" class="hub-notice" role="status">No work scheduled or executing.</p>
     <div class="hub-standalone" id="hub-resource-bundle-panel">
       <h3>Reserve a multi-machine resource bundle</h3>
@@ -837,8 +973,8 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <h3>Coordinate queued workload capacity</h3>
       <p class="muted">These operations only claim capacity within the Hub ledger. They do not isolate CPU/RAM/GPUs, launch a process, or guarantee unused resources on the host. Only presently connected machines are eligible for new claims. Claims survive disconnects and restarts.</p>
       <label>Preferred machine for a new or moved claim<select id="hub-job-machine"></select></label>
-      <label><input type="checkbox" id="hub-native-release-on-terminal"> Release the next started job’s claim after verified finish or Stop</label>
-      <button type="button" id="hub-job-allocate-all">Coordinate all eligible queued jobs</button>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-native-release-on-terminal"> Release the next started job’s claim after verified finish or Stop</label>
+      <div class="hub-controls"><button type="button" id="hub-job-allocate-all">Coordinate all eligible queued jobs</button></div>
       <p class="muted">Use Stage move on each job to review several changes together. Apply staged moves can swap jobs between full hosts.</p>
       <ul id="hub-claim-moves" aria-label="Staged claim moves"></ul>
       <button type="button" id="hub-apply-claim-moves" disabled>Apply staged moves</button>
@@ -849,14 +985,18 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <p class="muted">Optional, disabled by default. Arm specific enrolled machines to automatically claim CPU/RAM budget, start only jobs with fresh authenticated native readiness, and release capacity after confirmed finished/stopped reports. One durable transition per pass. The scheduler stops on uncertain or failed jobs, agent replacement, or disconnect; restart disarms by default unless explicitly authorized below. GPU Starts require the option below. Linux ROCm requires a current kernel device-access proof and supports locally approved exclusive or cooperative GPU use. Windows CUDA uses a pinned physical UUID. Approved TinyBrains jobs can share a GPU with cooperative PyTorch allocator VRAM ceilings; GPU compute budgets are advisory and neither backend provides hard GPU memory isolation. Bees training stays under its existing operator. The Hub does not measure or reserve capacity consumed by unmanaged workloads on a host.</p>
       <p class="muted">Select only machines where you have accounted for existing Bees workers and other processes. Native service execution requires separately installed and verified adapters, including a completed OS preflight.</p>
       <div id="hub-automation-machines" class="hub-notice">No eligible native machines connected.</div>
-      <label><input type="checkbox" id="hub-automation-adopt-running"> Re-adopt previously automated native jobs after a coordinator restart, only after the current agent freshly verifies a running or terminal dispatch</label>
-      <label><input type="checkbox" id="hub-automation-resume-after-restart"> Automatically restore CPU-only automation after coordinator or agent restart, only after fresh native inspection and lease verification; uncertain jobs require review. This does not enable startup after a machine reboot.</label>
-      <label><input type="checkbox" id="hub-automation-rebalance"> Move this session’s queued CPU and unprobed GPU claims when an armed host loses capacity or job compatibility</label>
-      <label><input type="checkbox" id="hub-automation-gpu-claim"> Claim GPU capacity (exclusive, or approved cooperative shares)</label>
-      <label><input type="checkbox" id="hub-automation-gpu-probe"> Probe approved Linux GPU claims made by this session</label>
-      <label><input type="checkbox" id="hub-automation-gpu"> Start eligible GPU jobs (exclusive or approved cooperative share)</label>
-      <button type="button" id="hub-automation-arm">Arm selected machines</button>
-      <button type="button" id="hub-automation-disarm">Disarm automation</button>
+      <div class="hub-toggle-list">
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-adopt-running"> Re-adopt previously automated native jobs after a coordinator restart, only after the current agent freshly verifies a running or terminal dispatch</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-resume-after-restart"> Automatically restore CPU-only automation after coordinator or agent restart, only after fresh native inspection and lease verification; uncertain jobs require review. This does not enable startup after a machine reboot.</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-rebalance"> Move this session’s queued CPU and unprobed GPU claims when an armed host loses capacity or job compatibility</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-gpu-claim"> Claim GPU capacity (exclusive, or approved cooperative shares)</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-gpu-probe"> Probe approved Linux GPU claims made by this session</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-gpu"> Start eligible GPU jobs (exclusive or approved cooperative share)</label>
+      </div>
+      <div class="hub-controls">
+        <button type="button" id="hub-automation-arm">Arm selected machines</button>
+        <button type="button" id="hub-automation-disarm">Disarm automation</button>
+      </div>
       <p id="hub-automation-status" class="hub-notice" role="status">Automation disarmed.</p>
     </div>
   </div>
