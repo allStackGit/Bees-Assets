@@ -22,6 +22,7 @@ from native_training_artifacts import atomic_json, check_learner, file_sha256
 from native_distributed_collection import (
     read_plan, make_orders, wait_for_collections, balanced_round_plan,
 )
+from native_session_selection import publish_best_evaluated
 
 
 ATTEMPT = re.compile(r"round-(\d{5})-attempt-(\d{3})\Z")
@@ -313,7 +314,8 @@ def ensure_evaluation(round_directory, manifest, recipe):
                              recipe["evaluation_side"], recipe["evaluation_policy_seed"])
 
 
-def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None):
+def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None,
+                      best_evaluated=None):
     evaluations = evaluations or {}
     world_steps = sum(record["rollout_metrics"]["successful_world_steps"]
                       for _, record in completed)
@@ -350,6 +352,13 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         "baseline_holdout": baseline_holdout,
         "latest_holdout": latest_holdout,
         "latest_holdout_win_rate_gain": holdout_win_rate_gain,
+        **({"best_evaluated": {
+            "round": best_evaluated["selected"]["round"],
+            "side_win_rate": best_evaluated["selected"]["win_rate"],
+            "checkpoint_sha256": best_evaluated["selected"]["checkpoint_sha256"],
+            "playable_run": best_evaluated["playable_run"],
+            "evaluated_rounds": best_evaluated["evaluated_rounds"],
+        }} if best_evaluated is not None else {}),
         "completed_rounds": len(completed), "target_rounds": target,
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
@@ -629,6 +638,7 @@ def main():
         )
         evaluations = {}
         baseline_holdout = None
+        best_evaluated = None
         if "evaluation_config" in recipe:
             check_native_input_dependencies(recipe)
             # Capture model quality BEFORE the first PPO update, using the
@@ -643,8 +653,11 @@ def main():
                 evaluations[str(directory)] = ensure_evaluation(
                     directory, Path(record["next_manifest"]), recipe,
                 )
+            best_evaluated = publish_best_evaluated(
+                root, recipe, completed, evaluations, baseline_holdout,
+            )
         atomic_json(root / "session-progress.json", progress_snapshot(
-            completed, args.rounds, evaluations, baseline_holdout,
+            completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
         ))
         if len(completed) > args.rounds:
             raise ValueError("target round count is smaller than the completed checkpoint lineage")
@@ -773,13 +786,16 @@ def main():
             # its subsequent holdout run fails. Resume evaluates this exact
             # artifact rather than collecting another training round.
             atomic_json(root / "session-progress.json", progress_snapshot(
-                completed, args.rounds, evaluations, baseline_holdout,
+                completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
             ))
             if "evaluation_config" in recipe:
                 check_native_input_dependencies(recipe)
                 evaluations[str(directory)] = ensure_evaluation(directory, next_manifest, recipe)
+                best_evaluated = publish_best_evaluated(
+                    root, recipe, completed, evaluations, baseline_holdout,
+                )
             snapshot = progress_snapshot(
-                completed, args.rounds, evaluations, baseline_holdout,
+                completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
             )
             atomic_json(root / "session-progress.json", snapshot)
             print(json.dumps({"kind": "native_training_session_round_complete",
