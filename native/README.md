@@ -307,6 +307,22 @@ bees menu native/examples/native-frontier-campaign.json --output-dir native-fron
 bees status native/examples/native-frontier-campaign.json --output-dir native-frontier-save
 ```
 
+The same campaign runtime can execute a selected unlocked mission
+without the graphical client or a separate training simulation:
+
+```sh
+bees campaign native/examples/native-frontier-campaign.json --output-dir native-frontier-save --mission frontier
+bees campaign native/examples/native-frontier-campaign.json --output-dir native-frontier-save --mission assault
+```
+
+Use a compiled headless `bees` binary for automated native campaign
+qualification. Each invocation loads mission unlocks and saved player
+fleet losses, reserves a fresh battle directory, runs the ordinary
+shared physics/command/outcome implementation, and commits the same
+career summary as interactive play. Locked missions are rejected.
+The scripted source orders still determine non-player movement; this
+is not a substitute for replaying real player actions.
+
 After winning the first mission, the second becomes available with a
 different authored enemy formation. Press **F** in the battle picker to
 view cumulative fleet careers. The `status` command prints the same
