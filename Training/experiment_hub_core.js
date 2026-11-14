@@ -4779,6 +4779,9 @@ class ExperimentHub {
                 machine.courier_remote_service_key_fingerprint!==key||
                 !approved.includes(machine.courier_remote_endpoint)||
                 byEndpoint.has(machine.courier_remote_endpoint)||
+                snapshot.jobs.some(job=>job.project_id==='courier_remote'&&
+                    job.assigned_machine_id===machine.id&&
+                    !job.capacity_released_at&&job.status!=='cancelled')||
                 !Number.isSafeInteger(machine.courier_remote_max_shards)||
                 machine.courier_remote_max_shards<1)
                 throw Error('Each leased Courier remote service needs one eligible Tailnet endpoint and matching private identity.');
@@ -4908,8 +4911,12 @@ class ExperimentHub {
             ids[job.id]=job.dispatch_id;
         }
         next.courier_launch_plans??=[];
-        if(next.courier_launch_plans.length>=64)
-            next.courier_launch_plans.shift();
+        if(next.courier_launch_plans.length>=64) {
+            const retired=next.courier_launch_plans.findIndex(plan=>
+                !['pending','needs_review'].includes(plan.status));
+            if(retired<0)throw Error('Resolve older Courier service launch plans before approving another group.');
+            next.courier_launch_plans.splice(retired,1);
+        }
         next.courier_launch_plans.push({
             id:crypto.randomUUID(),learner_job_id:learner.id,
             learner_machine_id:host.id,learner_lease_id:learner.lease_id,
