@@ -51,6 +51,50 @@ function validateCourierModes(c) {
     if(!c.evolution&&c.food_tile_capacity!==1)
         throw Error('Multiple food items per tile require trait evolution.');
 }
+
+const COURIER_METRIC_CATALOG={
+    // Reported by the approved checkpoint reader and selection evaluator.
+    base:[
+        'generation','active_training_time','checkpoint_write_time',
+        'selection_evaluation_round','selection_candidate_survival_score',
+        'selection_incumbent_survival_score','selection_champion_promoted',
+        'training_recent_mean_completed_lifespan','training_recent_deaths',
+        'training_mean_active_age','training_oldest_active_age',
+        'training_active_couriers','training_mean_active_colony_age',
+        'training_active_colonies',
+        'selection_candidate_survival_rate','selection_candidate_mean_lifespan',
+        'selection_candidate_mean_deliveries','selection_candidate_pickup_rate',
+        'selection_candidate_mean_steps_per_delivery',
+        'selection_candidate_gross_energy_per_step',
+    ],
+    colony:[
+        'selection_candidate_mean_feedings','selection_candidate_mean_births',
+        'colony_window_rounds','colony_window_pickups','colony_window_deliveries',
+        'colony_window_feedings','colony_window_births','colony_window_courier_deaths',
+        'colony_window_energy_deaths','colony_window_combat_deaths',
+        'colony_window_combat_encounters','colony_window_combat_rounds_won',
+        'colony_window_combat_rounds_lost','colony_window_colony_extinctions',
+        'colony_window_opponent_extinctions',
+        'colony_window_contested_pickup_attempts','colony_window_opponent_contests_won',
+        'colony_window_feeding_opportunities','colony_window_feeding_stay_choices',
+        'colony_mean_population','colony_feedings_per_1000_courier_ticks',
+        'colony_births_per_1000_colony_ticks','colony_feeding_stay_fraction',
+        'colony_mean_energy_gained','colony_mean_food_storage_ticks',
+        'colony_teammate_food_fraction','colony_mean_colony_age_at_birth',
+        'colony_mean_courier_age_at_death',
+    ],
+    evolution:['colony_window_stat_mutations'],
+    communication:[],
+    speed:['colony_window_speed_tiles_travelled','colony_mean_requested_distance'],
+    patches:['colony_window_patch_food_offered','colony_window_patch_food_placed',
+        'colony_patch_supply_fraction'],
+    reporting:[
+        'benchmark_round','benchmark_survival_rate','benchmark_mean_lifespan',
+        'benchmark_mean_deliveries','benchmark_pickup_rate',
+        'benchmark_mean_steps_per_delivery','benchmark_gross_energy_per_step',
+        'benchmark_mean_feedings','benchmark_mean_births',
+    ],
+};
 const WINDOWS_ENTRY=[
     'import os, runpy, sys',
     "sys.stdout = open(os.devnull, 'w', encoding='utf-8')",
@@ -495,6 +539,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
         design_catalog:{courier:{...designFields,config_sha256:configSha256,
+            metric_catalog:{...COURIER_METRIC_CATALOG,
+                communication:process.env.COURIER_COMMUNICATION_LOGGING?.match(/^(1|true|yes|on)$/i)
+                    ?['colony_window_messages_written']:[]},
             ...(trainingSchemaSha256?{training_schema_sha256:trainingSchemaSha256}:{})}},
         // Private machine-local export root, never an operator HTTP path.
         artifact_export_dir(jobId) {
