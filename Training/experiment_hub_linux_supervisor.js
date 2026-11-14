@@ -67,15 +67,21 @@ function gpuRuntimeProof(adapter,parameters,context) {
         adapter?.gpu_dual_execution==='split-ppo';
     const multi=Array.isArray(ids)&&ids.length>=2&&ids.length<=8&&
         new Set(ids).size===ids.length&&ids.every(p=>pci.test(String(p)))&&
-        adapter?.gpu_multi_execution==='independent-ppo';
+        (adapter?.gpu_multi_execution==='independent-ppo'||
+         ids.length>=3&&adapter?.gpu_multi_execution==='split-ppo-collectors');
     const single=!ids&&pci.test(String(context?.gpu_pci_address||''));
     if(!adapter||typeof adapter.executable!=='string'||
         !path.isAbsolute(adapter.executable)||
         !SAFE_ARG.test(adapter.executable)||
         !(dual||multi||single))
         throw Error('Invalid local ROCm runtime or leased PCI identity.');
-    const rocrUuid=multi?ids.map(p=>adapter.rocr_gpu_uuids?.[p])
-        :dual?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
+    // TinyBrains verifies HIP physical PCI identities for the complete
+    // leased set under the kernel device filter, like its existing dual
+    // mode. Courier's independently owned PPO devices instead use a
+    // separately pinned ROCr UUID selector for every device.
+    const rocrUuid=multi&&adapter.gpu_multi_execution==='independent-ppo'
+        ?ids.map(p=>adapter.rocr_gpu_uuids?.[p])
+        :multi||dual?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
             ?adapter.rocr_gpu_uuids[context.gpu_pci_address]:null;
     if(rocrUuid!==null&&
         (Array.isArray(rocrUuid)
@@ -169,8 +175,11 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     const multi=r.gpu_count>=2&&r.gpu_count<=8&&
         lr.gpu_count===r.gpu_count&&
         r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&
-        job.project_id==='courier'&&
-        adapter.gpu_multi_execution==='independent-ppo';
+        (job.project_id==='courier'&&
+            adapter.gpu_multi_execution==='independent-ppo'||
+         job.project_id==='tinybrains'&&r.gpu_count>=3&&
+            job.frozen_parameters?.device==='multi'&&
+            adapter.gpu_multi_execution==='split-ppo-collectors');
     if(!cpuOnly&&(!gpuEnabled||typeof adapter.gpu_verify_args!=='function'||
         !(single||dual||multi)||bindings.length!==r.gpu_count||
         lr.gpus?.length!==r.gpu_count||
