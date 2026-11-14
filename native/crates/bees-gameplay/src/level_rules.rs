@@ -1067,7 +1067,19 @@ where
         // scan of the full fleet, or duplicate gameplay implementation.
         for event in state.combat.events() {
             if let CombatEvent::ShipDied { victim_id, .. } = event {
-                state.metadata.retire_mined_credit_on_death(*victim_id);
+                // Both extraction and a completed WarpGate departure end
+                // the physical ship's episode, but they are not a lethal
+                // fleet loss. The matching departure event is emitted in
+                // the very same fixed tick before ShipDied. Deaths are
+                // rare; avoid maintaining a second per-step death registry.
+                let returned_safely = state.combat.events().iter().any(|event| match event {
+                    CombatEvent::ShipExtracted { ship_id, .. } |
+                    CombatEvent::ShipWarped { ship_id, .. } => ship_id == victim_id,
+                    _ => false,
+                });
+                if !returned_safely {
+                    state.metadata.retire_mined_credit_on_death(*victim_id);
+                }
             }
         }
         if let Some(dialogue) = &mut state.campaign_dialogue {
