@@ -94,6 +94,20 @@ impl CampaignProgress<'_> {
     fn latest_victory(&self, id: &str) -> bool {
         self.missions.get(id).is_some_and(|mission| mission.latest_victory)
     }
+
+    /// Current native menu presentation of the same durable career record
+    /// exposed by the read-only campaign status API.
+    pub fn fleet_rows(&self) -> Vec<String> {
+        let mut ids = self.fleet.keys().copied().collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.into_iter().map(|id| {
+            let ship = &self.fleet[&id];
+            format!(
+                "Fleet #{id}   Side {}   Won {}/{}   Mined {}",
+                ship.side, ship.battles_won, ship.battles_fought, ship.minerals_mined,
+            )
+        }).collect()
+    }
 }
 
 impl BattleCatalog {
