@@ -973,6 +973,7 @@ struct CampaignMission<'a> {
     mission_id: &'a str,
     player_side: i32,
     record_fleet_stats: bool,
+    bank_player_minerals: bool,
     lost_fleet_ids: Option<&'a HashSet<i64>>,
 }
 
@@ -1140,6 +1141,7 @@ fn launch_catalog_battle(
         .map(|(campaign_id, mission)| CampaignMission {
             campaign_id, mission_id: &mission.id, player_side: mission.player_side,
             record_fleet_stats: mission.record_fleet_stats,
+            bank_player_minerals: mission.bank_player_minerals,
             lost_fleet_ids: lost.as_ref(),
         });
     // Reserve a unique parent before invoking the shared gameplay runtime.
@@ -2707,6 +2709,20 @@ fn run_battle(
         squads.sort_unstable_by_key(|row| row.saved_squad_id);
         Some(squads)
     } else { None };
+    // Only campaign ending actions explicitly configured to collect
+    // player minerals may increase the account balance. Mining credits
+    // lost on ship death have already been retired by the shared Level.
+    let campaign_banked_minerals = if campaign_outcome.is_some() &&
+        mission.is_some_and(|mission| mission.bank_player_minerals) {
+        let side = mission.expect("banked campaign owner").player_side;
+        Some(campaign_fleet.as_ref().ok_or_else(||
+            invalid("banked campaign cannot lack its FleetShip receipt"))?
+            .iter().filter(|ship| ship.side == side).try_fold(0_u64, |total, ship|
+                total.checked_add(u64::try_from(ship.minerals_mined_this_level)
+                    .map_err(|_| invalid("negative mined mineral balance"))?)
+                    .ok_or_else(|| invalid("banked campaign mineral overflow"))
+            )?)
+    } else { None };
     let mut final_summary = json!({
         "kind": "run_final",
         "run_id": config.run_id,
@@ -2750,6 +2766,7 @@ fn run_battle(
         "campaign_outcome": campaign_outcome,
         "campaign_fleet": campaign_fleet,
         "campaign_squads": campaign_squads,
+        "campaign_banked_minerals": campaign_banked_minerals,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
         "running_worlds": status.running_worlds,
