@@ -165,6 +165,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_ppo_data_max_seconds','training_padding_sync_max_seconds',
             'training_gpu_metric_readback_max_seconds',
             'training_gpu_optimizer_peak_allocated_mb',
+            'training_gpu_prefetch_wait_max_seconds',
+            'training_gpu_prefetch_copy_max_seconds',
+            'training_gpu_prefetch_slowest_worker',
             'training_cpu_parallelism','training_queue_max_seconds',
             'training_checkpoint_snapshot_seconds',
             'training_checkpoint_max_worker_seconds',
@@ -645,6 +648,7 @@ class BottleneckEvidence {
             const shardCopyHints=[];
             const shardGatherHints=[];
             const shardInfoHints=[];
+            const prefetchHints=[];
             // The backend reports its measured worst recurrent-minibatch
             // preparation alongside the *owning* lineage index. Comparing
             // unrelated maxima from different workers is not causal evidence.
@@ -739,6 +743,23 @@ class BottleneckEvidence {
                             ?'observation':'simulation';
                     else if(simShare<=0.35)cause='collection_other';
                 }
+                // CPU padding, CUDA copies, and GPU optimization have
+                // overlapping intervals. Foreground consumer WAIT is exposed
+                // delay, not proof that the GPU or CPU is saturated.
+                const wait=seconds('worker_'+i+'_gpu_prefetch_wait_seconds');
+                const transfer=seconds('worker_'+i+'_gpu_prefetch_transfer_seconds');
+                prefetchHints[i]={
+                    wait:optimize>0&&wait!==null&&wait>=0.25&&
+                        wait<=optimize*1.02&&wait/optimize>=0.25,
+                    copy:optimize>0&&transfer!==null&&transfer>=0.25&&
+                        transfer<=optimize*1.02&&transfer/optimize>=0.25,
+                };
+                if(wait!==null&&optimize>0&&wait<=optimize*1.02)
+                    add('worker_'+i+'_gpu_prefetch_wait_share',
+                        Math.min(1,wait/optimize));
+                if(transfer!==null&&optimize>0&&transfer<=optimize*1.02)
+                    add('worker_'+i+'_gpu_prefetch_copy_share',
+                        Math.min(1,transfer/optimize));
                 stageHints[i]={
                     collection:fraction>=0.70,
                     optimization:fraction<=0.30,
@@ -755,8 +776,13 @@ class BottleneckEvidence {
                 const copyGlobal=metrics.training_sim_copy_max_ratio;
                 const gatherGlobal=metrics.training_sim_gather_max_ratio;
                 const infoGlobal=metrics.training_sim_info_max_ratio;
-                prior.samples.push({at,stageHints,shardDispatchHints,
+                const last=metrics.training_last_reply_worker;
+                const lastWorker=(last?.unit==='count'&&
+                    Number.isSafeInteger(last.value)&&
+                    last.value>=0&&last.value<count)?last.value:null;
+                prior.samples.push({at,stageHints,prefetchHints,shardDispatchHints,
                     shardCopyHints,shardGatherHints,shardInfoHints,resourceHints,
+                    lastWorker,
                     courierSimInfo:infoGlobal?.unit==='ratio'&&
                         infoGlobal.value>=0.20,
                     courierSimCopy:copyGlobal?.unit==='ratio'&&
@@ -780,6 +806,51 @@ class BottleneckEvidence {
                     add('training_queue_pressure',1,'count');
                 if(sustained(x=>x.courierTail))
                     add('training_final_join_pressure',1,'count');
+                // Identify one *exposed* critical path rather than choosing
+                // whichever unrelated worker has the largest stage total.
+                // Queueing plus a late final reply may overlap; in that case
+                // neither is uniquely responsible.
+                const queued=sustained(x=>x.courierQueue);
+                const tailed=sustained(x=>x.courierTail);
+                if(queued&&tailed)
+                    add('pipeline_multiple_delay_evidence',1,'count');
+                else if(queued) {
+                    add('pipeline_primary_delay_kind',6,'count');
+                    add('pipeline_primary_evidence_samples',recent.length,'count');
+                } else if(tailed) {
+                    const owners=Array.from({length:count},(_,i)=>i).filter(i=>
+                        sustained(x=>x.courierTail&&x.lastWorker===i));
+                    if(owners.length===1) {
+                        const owner=owners[0];
+                        add('pipeline_primary_delay_kind',7,'count');
+                        add('pipeline_primary_worker_index',owner,'count');
+                        add('pipeline_primary_evidence_samples',recent.length,'count');
+                        // A lineage's stage is only a co-occurring measured
+                        // exposure. Substages are nested in collection or
+                        // optimization; prefer one supported substage over
+                        // its broader parent and withhold ambiguous detail.
+                        const stageCodes={
+                            collection:1,optimization:2,simulation:3,
+                            observation:4,inference:5,ingestion:6,
+                            ppo_data:7,gpu_prefetch_wait:8,
+                            gpu_prefetch_copy:9,collection_other:10};
+                        const precise=['simulation','observation','inference',
+                            'ingestion','collection_other','ppo_data',
+                            'gpu_prefetch_wait','gpu_prefetch_copy'].filter(stage=>
+                            sustained(x=>stage.startsWith('gpu_prefetch_')
+                                ?x.prefetchHints?.[owner]?.[stage.slice(13)]
+                                :x.stageHints?.[owner]?.[stage]));
+                        if(precise.length===1)
+                            add('pipeline_primary_lineage_stage_code',
+                                stageCodes[precise[0]],'count');
+                        else if(precise.length>1)
+                            add('pipeline_multiple_delay_evidence',1,'count');
+                        else if(sustained(x=>x.stageHints?.[owner]?.optimization))
+                            add('pipeline_primary_lineage_stage_code',2,'count');
+                        else if(sustained(x=>x.stageHints?.[owner]?.collection))
+                            add('pipeline_primary_lineage_stage_code',1,'count');
+                    }
+                }
                 if(sustained(x=>x.resourceHints?.cpuBusy))
                     add('pipeline_cpu_lease_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.throttled))
@@ -789,6 +860,12 @@ class BottleneckEvidence {
                 if(sustained(x=>x.resourceHints?.cpuIdle)&&
                     sustained(x=>x.courierQueue))
                     add('training_parallelism_underuse_evidence',1,'count');
+                for(let i=0;i<count;i++) {
+                    if(sustained(x=>x.prefetchHints?.[i]?.wait))
+                        add('worker_'+i+'_gpu_prefetch_wait_pressure',1,'count');
+                    if(sustained(x=>x.prefetchHints?.[i]?.copy))
+                        add('worker_'+i+'_gpu_prefetch_copy_pressure',1,'count');
+                }
                 for(let i=0;i<count;i++)
                     if(sustained(x=>x.shardDispatchHints?.[i]))
                         add('worker_'+i+'_sim_dispatch_pressure',1,'count');
