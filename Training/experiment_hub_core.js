@@ -295,6 +295,7 @@ function boundedReport(value) {
     const workerThreadLimit=value.tinybrains_rollout_thread_limit??0;
     const courierEndpoint=value.courier_lineage_endpoint??null;
     const courierKey=value.courier_lineage_key_fingerprint??null;
+    const courierLearnerKey=value.courier_remote_key_fingerprint??null;
     const courierShards=value.courier_lineage_max_shards??0;
     if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
@@ -328,8 +329,11 @@ function boundedReport(value) {
              !installed.includes('courier_lineage')))||
         installed.includes('courier_lineage')&&courierEndpoint===null||
         !Number.isSafeInteger(courierShards)||courierShards<0||courierShards>64||
-        Boolean(courierShards)!==Boolean(courierEndpoint))
-        throw Error('Courier remote PPO sidecar must advertise one verified Tailnet identity and process ceiling.');
+        Boolean(courierShards)!==Boolean(courierEndpoint)||
+        (courierLearnerKey!==null&&
+            (!SHA256.test(String(courierLearnerKey))||
+             !installed.includes('courier'))))
+        throw Error('Courier remote PPO sidecar or learner identity is not locally approved.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
         requiredImports.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
@@ -381,6 +385,7 @@ function boundedReport(value) {
         courier_lineage_endpoint:courierEndpoint,
         courier_lineage_key_fingerprint:courierKey,
         courier_lineage_max_shards:courierShards,
+        courier_remote_key_fingerprint:courierLearnerKey,
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -1357,6 +1362,7 @@ class ExperimentHub {
                 machine.courier_lineage_endpoint=report.courier_lineage_endpoint;
                 machine.courier_lineage_key_fingerprint=report.courier_lineage_key_fingerprint;
                 machine.courier_lineage_max_shards=report.courier_lineage_max_shards;
+                machine.courier_remote_key_fingerprint=report.courier_remote_key_fingerprint;
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
