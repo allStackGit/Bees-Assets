@@ -9,6 +9,48 @@ const {applyOverrides,described,validateCatalog}=require('./experiment_hub_desig
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+
+const courierFlag=(key,label)=>({key,label,type:'boolean',default:false,section:'environment'});
+const courierNumber=(key,label,type,def,min,max)=>
+    ({key,label,type,default:def,min,max,section:'environment'});
+const COURIER_MODE_FIELDS=[
+    courierFlag('competitive','Competing individual couriers'),
+    courierFlag('colony','Competing colonies (food stores, feeding, births and combat)'),
+    courierFlag('evolution','Inherited and mutated colony traits'),
+    courierFlag('communication','Learned local messages'),
+    courierFlag('speed_enabled','Speed-specialized movement'),
+    {key:'food_spawn_mode',label:'Food distribution',section:'environment',
+        type:'enum',default:'uniform',options:['uniform','patches']},
+    courierNumber('food_spawn_interval','Food spawn interval (ticks)','integer',64,1,4096),
+    courierNumber('food_spawn_multiplier','Food spawn rate multiplier','number',1,0.001,4096),
+    courierNumber('food_tile_capacity','Food items per tile','integer',1,1,4),
+    courierNumber('combat_value','Starting combat value','number',1,1,32),
+    courierNumber('carrying_capacity','Starting carrying capacity','integer',1,1,32),
+    courierNumber('stat_mutation_rate','Newborn trait mutation probability','number',0.5,0,1),
+    courierNumber('founder_default_chance','Default-trait founder probability','number',0.2,0,1),
+    courierNumber('food_patch_count','Number of food patches','integer',3,1,8),
+    courierNumber('food_patch_radius','Food patch radius','integer',2,0,4),
+    courierNumber('food_patch_reserve','Food patch reserve','integer',64,1,4096),
+    courierNumber('food_patch_rest','Food patch rest ticks','integer',128,1,8192),
+    courierNumber('food_patch_lifetime','Food patch lifetime ticks','integer',2048,16,65536),
+    courierNumber('speed_value','Initial speed','integer',1,1,8),
+    courierNumber('speed_maintenance','Speed maintenance energy multiplier','number',0.25,0.01,10),
+    courierNumber('speed_travel_cost','Speed travel energy multiplier','number',0.5,0.01,10),
+];
+const COURIER_MODE_BY_KEY=new Map(COURIER_MODE_FIELDS.map(field=>[field.key,field]));
+const COURIER_MODE_DEFAULTS=Object.fromEntries(COURIER_MODE_FIELDS.map(field=>[field.key,field.default]));
+function validateCourierModes(c) {
+    if(c.colony&&c.competitive)
+        throw Error('Select individual competition or colony competition, not both.');
+    if(c.evolution&&!c.colony)throw Error('Trait evolution requires colony mode.');
+    if(c.communication&&!c.colony)throw Error('Communication requires colony mode.');
+    if(c.speed_enabled&&!(c.colony&&c.evolution&&c.communication))
+        throw Error('Speed mode requires colony, evolution and communication.');
+    if(c.food_spawn_mode==='patches'&&!c.colony)
+        throw Error('Food patches require colony mode.');
+    if(!c.evolution&&c.food_tile_capacity!==1)
+        throw Error('Multiple food items per tile require trait evolution.');
+}
 const WINDOWS_ENTRY=[
     'import os, runpy, sys',
     "sys.stdout = open(os.devnull, 'w', encoding='utf-8')",
@@ -276,32 +318,54 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             config_sha256:configSha256}},['courier']);
         trainingSchemaSha256=crypto.createHash('sha256').update(data).digest('hex');
     }
+    // The installed environment JSON omits optional modes. Advertise the
+    // known courier_env.DEFAULT controls without changing that JSON's digest.
+    // Older jobs only emit the fields they previously overrode.
     const designFields=described(parsed,'courier');
-    designFields.fields.push(...trainingFields);
+    designFields.fields=[
+        ...COURIER_MODE_FIELDS.map(field=>({...field,
+            default:Object.hasOwn(parsed,field.key)?parsed[field.key]:field.default})),
+        ...designFields.fields.filter(field=>!COURIER_MODE_BY_KEY.has(field.key)),
+        ...trainingFields,
+    ];
+    validateCatalog({courier:{...designFields,config_sha256:configSha256}},['courier']);
     const editableTraining=new Map(trainingFields.map(field=>[field.key,field]));
     function splitOverrides(overrides) {
-        if(overrides===undefined)return {environment:{},training:{}};
+        if(overrides===undefined)return {environment:{},modes:{},training:{}};
         if(!overrides||typeof overrides!=='object'||Array.isArray(overrides)||
             Object.keys(overrides).length>128)
             throw Error('Courier Design overrides must be a bounded object.');
-        const environment=Object.create(null),training=Object.create(null);
+        const environment=Object.create(null),modes=Object.create(null),training=Object.create(null);
         for(const [key,value] of Object.entries(overrides)) {
+            const field=COURIER_MODE_BY_KEY.get(key);
+            if(field) {
+                if(field.type==='boolean'?typeof value!=='boolean':
+                    field.type==='enum'?!field.options.includes(value):
+                    typeof value!=='number'||!Number.isFinite(value)||
+                    value<field.min||value>field.max||
+                    field.type==='integer'&&!Number.isSafeInteger(value))
+                    throw Error('Invalid Courier simulation option: '+key);
+                modes[key]=value;
+                continue;
+            }
             if(!key.startsWith('training.')) { environment[key]=value;continue; }
-            const field=editableTraining.get(key);
-            if(!field||typeof value!=='number'||!Number.isFinite(value)||
-                field.type==='integer'&&!Number.isSafeInteger(value)||
-                value<field.min||value>field.max)
+            const field2=editableTraining.get(key);
+            if(!field2||typeof value!=='number'||!Number.isFinite(value)||
+                field2.type==='integer'&&!Number.isSafeInteger(value)||
+                value<field2.min||value>field2.max)
                 throw Error('Invalid or unsupported Courier PPO Design parameter: '+key);
             training[key.slice('training.'.length)]=value;
         }
-        applyOverrides(parsed,'courier',environment);
-        return {environment,training};
+        const adjusted=applyOverrides(parsed,'courier',environment);
+        validateCourierModes({...COURIER_MODE_DEFAULTS,...adjusted,...modes});
+        return {environment,modes,training};
     }
     function effectiveConfig(overrides) {
-        const changes=splitOverrides(overrides).environment;
-        if(!Object.keys(changes).length)return config;
-        return Buffer.from(JSON.stringify(
-            applyOverrides(parsed,'courier',changes),null,2)+'\n');
+        const {environment,modes}=splitOverrides(overrides);
+        if(!Object.keys(environment).length&&!Object.keys(modes).length)return config;
+        return Buffer.from(JSON.stringify({
+            ...applyOverrides(parsed,'courier',environment),...modes,
+        },null,2)+'\n');
     }
     function expectedTraining(overrides) {
         const changes=splitOverrides(overrides).training;
