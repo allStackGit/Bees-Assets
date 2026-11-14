@@ -832,9 +832,10 @@ class BottleneckEvidence {
                         Math.min(1,transfer/optimize));
                 const remoteElapsed=seconds('worker_'+i+'_remote_roundtrip_seconds');
                 const remoteSyncStage=seconds('worker_'+i+'_remote_checkpoint_sync_seconds');
+                const remoteTraining=seconds('worker_'+i+'_training_seconds');
                 const nonTraining=remoteElapsed!==null&&
-                    remoteElapsed>=collect+optimize
-                    ?remoteElapsed-collect-optimize:null;
+                    remoteTraining!==null&&remoteElapsed>=remoteTraining
+                    ?remoteElapsed-remoteTraining:null;
                 remoteHints[i]={
                     nonTraining:remoteElapsed>0&&nonTraining!==null&&
                         nonTraining>=0.5&&nonTraining/remoteElapsed>=0.25,
@@ -983,6 +984,12 @@ class BottleneckEvidence {
                     add('training_remote_nontraining_pressure',1,'count');
                 if(sustained(x=>x.remoteSync))
                     add('training_remote_sync_pressure',1,'count');
+                for(let i=0;i<count;i++) {
+                    if(sustained(x=>x.remoteHints?.[i]?.nonTraining))
+                        add('worker_'+i+'_remote_nontraining_pressure',1,'count');
+                    if(sustained(x=>x.remoteHints?.[i]?.sync))
+                        add('worker_'+i+'_remote_sync_pressure',1,'count');
+                }
                 for(let i=0;i<count;i++) {
                     if(sustained(x=>x.shardCopyHints?.[i]))
                         add('worker_'+i+'_sim_copy_pressure',1,'count');
