@@ -69,7 +69,9 @@ pub struct QueenSpawnSpec {
 impl QueenSpawnSpec {
     pub fn valid(&self) -> bool {
         self.minions_per_wave >= 1 && self.minions_per_wave <= MAX_WAVE_SIZE &&
-            self.spawn_frequency_seconds.is_finite() && self.spawn_frequency_seconds > 0.0 &&
+            // Unity's ScaledTimer accepts a zero interval and fires once
+            // per subsequent frame, never an unbounded catch-up loop.
+            self.spawn_frequency_seconds.is_finite() && self.spawn_frequency_seconds >= 0.0 &&
             self.seconds_between_minions.is_finite() && self.seconds_between_minions >= 0.0 &&
             self.spawn_point.is_finite() && self.minion.valid()
     }
@@ -124,7 +126,7 @@ impl CombatWorld {
         self.game_queens.iter().any(|(&id, runtime)| {
             let live = self.ship(id).is_some_and(|ship| !ship.vitals.is_dead()) &&
                 self.ship_body(id).is_some_and(|body| body.active);
-            live && (runtime.until_next_wave <= dt ||
+            live && (runtime.until_next_wave < dt ||
                 runtime.waves.iter().any(|wave| wave.next_index < runtime.spec.minions_per_wave &&
                     wave.elapsed_seconds + dt >=
                         f32::from(wave.next_index) * runtime.spec.seconds_between_minions))
@@ -231,8 +233,12 @@ impl CombatWorld {
             }
             let mut runtime = self.game_queens.remove(&queen_id)
                 .expect("recorded Queen exists");
+            // Source ScaledTimer.Update invokes a recurring callback at
+            // most once per frame and uses strict elapsed > Length.
+            // Retain overflow for subsequent ticks, even for Length=0.
+            let previously_active = runtime.waves.len();
             runtime.until_next_wave -= dt;
-            while runtime.until_next_wave <= 0.0 {
+            if runtime.until_next_wave < 0.0 {
                 if runtime.waves.len() >= MAX_OVERLAPPING_WAVES {
                     return Err(CombatWorldError::InvalidQueenConfiguration);
                 }
@@ -247,7 +253,12 @@ impl CombatWorld {
             self.queen_spawn_measurements.max_concurrent_waves =
                 self.queen_spawn_measurements.max_concurrent_waves.max(runtime.waves.len());
             for wave_index in 0..runtime.waves.len() {
-                runtime.waves[wave_index].elapsed_seconds += dt;
+                // Unity starts the newly created coroutine immediately.
+                // Its first minion arrives now, but its next yield has not
+                // yet accumulated a frame of Time.deltaTime.
+                if wave_index < previously_active {
+                    runtime.waves[wave_index].elapsed_seconds += dt;
+                }
                 loop {
                     let wave = &runtime.waves[wave_index];
                     if wave.next_index >= runtime.spec.minions_per_wave ||
