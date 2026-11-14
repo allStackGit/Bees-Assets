@@ -908,6 +908,154 @@ pub struct NativeSourcePolicyGroup {
 }
 
 impl NativePhysicalScene {
+    /// Instantiate purchased persistent hulls from a genuine native game
+    /// scene template before constructing the common physics/game Level.
+    /// A source type provides its collider, turret mounts, sight, movement
+    /// and perception; no alternate training or gameplay constructor is
+    /// needed. This is setup-only, never in the simulation hot path.
+    pub fn install_purchased_ships(
+        &mut self, player_side: i32, purchases: &[NativePurchasedShip],
+    ) -> Result<usize, NativeSnapshotError> {
+        if purchases.is_empty() { return Ok(0); }
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if !matches!(player_side, 1 | 2) ||
+            self.source_episode.is_some() || self.source_policy_group.is_some() ||
+            !self.source_policy_bindings.is_empty() ||
+            !self.active_policy_ship_ids.is_empty()
+        {
+            return Err(invalid("purchased ships require an ordinary native game Level"));
+        }
+        let mut used_fleet = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) => ship.fleet_ship_id,
+            _ => None,
+        }).collect::<HashSet<_>>();
+        let mut next_entity = self.entities.iter()
+            .map(NativeAuthoredEntity::entity_id).max().unwrap_or(0);
+        for purchase in purchases {
+            if purchase.fleet_ship_id <= 0 || purchase.saved_squad_id <= 0 ||
+                purchase.price_tsv == 0 ||
+                !used_fleet.insert(purchase.fleet_ship_id)
+            {
+                return Err(invalid("invalid or duplicate purchased FleetShip identity"));
+            }
+            let owner = self.source_squads.iter().position(|squad|
+                squad.saved_squad_id == Some(purchase.saved_squad_id) &&
+                squad.side == player_side && squad.player_permissions.user_controlled
+            ).ok_or(invalid("purchased FleetShip requires its authored player SavedSquad"))?;
+            let anchor_id = *self.source_squads[owner].members.first()
+                .ok_or(invalid("purchased ship requires a nonempty authored squad"))?;
+            let anchor = self.entities.iter().find_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) if ship.entity_id == anchor_id =>
+                    Some(ship),
+                _ => None,
+            }).ok_or(invalid("saved squad anchor ship is missing"))?;
+            let anchor_position = anchor.motion.position;
+            let anchor_offset = self.source_formation.get(&anchor_id)
+                .ok_or(invalid("saved squad anchor formation is missing"))?.offset;
+            let template = self.entities.iter().find_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship)
+                    if ship.side == player_side &&
+                        ship.ship_type == purchase.ship_type &&
+                        ship.fleet_ship_id.is_some() &&
+                        ship.policy.is_none() && !ship.motion.is_policy_controlled &&
+                        ship.special.is_none() && ship.special_weapon.is_none() &&
+                        ship.drone_carrier_id.is_none() &&
+                        !ship.motion.is_moving && !ship.motion.has_target_coordinates &&
+                        ship.motion.body_velocity.length_squared() == 0.0 &&
+                        ship.vitals.health() == ship.vitals.max_health() &&
+                        ship.vitals.mined_cargo() == 0 =>
+                    Some(ship.clone()),
+                _ => None,
+            }).ok_or(invalid("purchased type has no safe ordinary source ship prefab"))?;
+            if template.vitals.tsv() <= 0 ||
+                u64::try_from(template.vitals.tsv()).ok() != Some(purchase.price_tsv)
+            {
+                return Err(invalid("purchase price must equal the authored full-health ship TSV"));
+            }
+            let half_size = template.game_movement.half_width.max(
+                template.game_movement.half_height).max(1.0);
+            let spacing = half_size * 3.0;
+            let mut placement = None;
+            // Local squad-relative grid search, performed once at game
+            // setup. Compare actual authored hull extents against every
+            // live ship; never teleport active gameplay or simulate fake
+            // ship movement in the inventory layer.
+            'location: for ring in 1_i32..=32 {
+                for x in -ring..=ring {
+                    for y in -ring..=ring {
+                        if x.abs().max(y.abs()) != ring { continue; }
+                        let candidate = anchor_position + Vec2::new(
+                            x as f32 * spacing, y as f32 * spacing,
+                        );
+                        if !candidate.is_finite() ||
+                            candidate.x - half_size < self.bounds.min.x ||
+                            candidate.x + half_size > self.bounds.max.x ||
+                            candidate.y - half_size < self.bounds.min.y ||
+                            candidate.y + half_size > self.bounds.max.y
+                        { continue; }
+                        if self.entities.iter().any(|entity| match entity {
+                            NativeAuthoredEntity::Ship(other) => {
+                                let radius = half_size + other.game_movement
+                                    .half_width.max(other.game_movement.half_height);
+                                (other.motion.position - candidate).length_squared() <
+                                    (radius * radius)
+                            }
+                            _ => false,
+                        }) { continue; }
+                        placement = Some(candidate);
+                        break 'location;
+                    }
+                }
+            }
+            let position = placement.ok_or(invalid(
+                "no clear authored map placement near the purchased ship's saved squad",
+            ))?;
+            next_entity = next_entity.checked_add(1)
+                .ok_or(invalid("purchased ship entity identities exhausted"))?;
+            let mut ship = template.clone();
+            ship.entity_id = next_entity;
+            ship.fleet_ship_id = Some(purchase.fleet_ship_id);
+            ship.motion.position = position;
+            ship.motion.user_controlled =
+                self.source_squads[owner].player_permissions.user_controlled;
+            if let Some(bounds) = &mut ship.target_geometry {
+                bounds.bounds_latched = false;
+            }
+            if let Some(activity) = &mut ship.combat_activity {
+                activity.elapsed_seconds = None;
+            }
+            if let Some(rank) = &mut ship.weapon_rank_source {
+                rank.stats.ship_id = next_entity;
+                rank.stats.last_killed = 0;
+                rank.stats.fleet_damage_done = 0;
+                rank.fleet_owner_ship_id = next_entity;
+            }
+            let template_id = template.entity_id;
+            let mut perception = *self.authored_ship_perceptions.get(&template_id)
+                .ok_or(invalid("purchased ship template lacks authored perception"))?;
+            perception.minerals_mined_this_level = 0;
+            if let Some(message) = &mut perception.allied_communication {
+                *message = [0.0; 4];
+            }
+            let vision = *self.source_vision.get(&template_id)
+                .ok_or(invalid("purchased ship template lacks vision"))?;
+            let mut formation = *self.source_formation.get(&template_id)
+                .ok_or(invalid("purchased ship template lacks formation"))?;
+            formation.offset = anchor_offset + (position - anchor_position);
+            self.fleet.register_spawned_ship(NativeFleetShipValue {
+                ship_id: next_entity,
+                has_persistent_fleet_value: true,
+                minerals_mined_this_level: 0,
+            }).map_err(NativeSnapshotError::Fleet)?;
+            self.authored_ship_perceptions.insert(next_entity, perception);
+            self.source_vision.insert(next_entity, vision);
+            self.source_formation.insert(next_entity, formation);
+            self.entities.push(NativeAuthoredEntity::Ship(ship));
+            self.source_squads[owner].members.push(next_entity);
+        }
+        Ok(purchases.len())
+    }
+
     /// Apply previously saved campaign casualties to the actual authored
     /// game Level before constructing CombatWorld or allocating squads.
     /// FleetShip identities (not dense physics/entity IDs) survive across
