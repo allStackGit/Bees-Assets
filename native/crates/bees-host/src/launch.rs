@@ -2910,7 +2910,10 @@ fn run_battle(
         // Player traces require their bitwise checkpoints at exact 64-round
         // boundaries. A catch-up batch must not skip across one. All other
         // interactive rounds still run the ordinary fixed-step host pipeline.
+        #[cfg(feature = "client")]
         let checkpoint_limit = if input_trace.is_some() { 64 - rounds % 64 } else { u64::MAX };
+        #[cfg(not(feature = "client"))]
+        let checkpoint_limit = u64::MAX;
         let count = nonzero(remaining.min(source_pulse_limit).min(checkpoint_limit)
             .min(u64::from(if view || playback.is_some() {
                 client_step_budget
