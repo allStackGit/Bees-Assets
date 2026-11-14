@@ -800,7 +800,7 @@ function createTinyBrainsPersistentDockerAdapter({
                     JSON.stringify(remote.endpoints.filter(endpoint=>
                         selectedEndpoints.includes(endpoint)))))
                 throw Error('Distributed collector subset differs from the machine-local approved endpoint identities.');
-            const selectedWeights=rollout_action_weights
+            const selectedWeights=rollout_action_weights&&remote
                 ?[rollout_action_weights[0],
                     ...selectedEndpoints.map(endpoint=>rollout_action_weights[
                         remote.endpoints.indexOf(endpoint)+1])]
@@ -812,7 +812,7 @@ function createTinyBrainsPersistentDockerAdapter({
                     'threads','device','remote_rollouts','rollout_action_weights',
                     'import_checkpoint','import_checkpoint_sha256'].includes(k))||
                 (remote_rollouts!==undefined&&
-                    (remote_rollouts!==true||!remote||device==='cpu'))||
+                    (remote_rollouts!==true||!remote))||
                 (rollout_action_weights!==undefined&&
                     (remote_rollouts!==true||!Array.isArray(rollout_action_weights)||
                      rollout_action_weights.length!==remote.endpoints.length+1||
