@@ -4656,13 +4656,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const courierMachine=document.createElement('select');
     const courierBudget=document.createElement('textarea');
     courierBudget.rows=5;
-    courierBudget.placeholder='[{"machine_id":"host","cpus":4,"ram_mb":6144,"gpu_count":0}]';
+    courierBudget.placeholder='[{"machine_id":"host","cpus":4,"ram_mb":6144,"gpu_count":0}, {"machine_id":"gpu-host","cpus":6,"ram_mb":8192,"gpu_count":1,"gpu_mode":"exclusive"}]';
     const courierDetails=document.createElement('div');
     const courierFeedback=document.createElement('div');
     const courierMachineLabel=document.createElement('label');
     courierMachineLabel.append('Learner machine ',courierMachine);
     const courierBudgetLabel=document.createElement('label');
-    courierBudgetLabel.append('Remote CPU/RAM allocations (JSON) ',courierBudget);
+    courierBudgetLabel.append('Remote CPU/RAM and optional exclusive GPU allocations (JSON) ',courierBudget);
     const courierQueue=button('Reserve complete Courier PPO group',async()=>{
         try {
             const selected=state?.configurations.find(cfg=>
@@ -4685,7 +4685,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const resources=JSON.parse($('hub-job-resources').value);
             if(!confirm('Reserve a new Courier PPO learner and '+lineages.length+
-                ' remote, independently trained policy lineages? All machines get fixed Hub CPU/RAM claims. '+
+                ' remote, independently trained policy lineages? All machines get fixed Hub CPU/RAM and any explicitly requested exclusive GPU claims. '+
                 'No native process starts until the separately approved, verified sidecar-first Start.'))return;
             const result=await action('hub/distributed/courier',{
                 confirm_queue:true,
@@ -4745,7 +4745,8 @@ document.addEventListener('DOMContentLoaded', () => {
             :available.length+' verified remote Courier PPO machines share this learner key. '+
               'Choose any subset in the JSON allocation (one policy per host); '+
               'the learner retains at least one local PPO lineage. '+
-              'The Hub will pin endpoints and policy slot identities automatically.';
+              'Set gpu_count:1 and gpu_mode:"exclusive" only on a qualified GPU worker; '+
+              'all other machines may use gpu_count:0. The Hub pins endpoints, GPUs and policy slots.';
     }
     $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
     $('hub-job-configuration').addEventListener('change',renderCourierGroup);
