@@ -1060,6 +1060,161 @@ impl NativePhysicalScene {
         Ok(purchases.len())
     }
 
+    /// Apply persisted edits of originally authored player FleetShips.
+    /// Membership changes are made before building any CombatWorld:
+    /// gameplay, policy evaluation and presentation still share the
+    /// exact same ship physics and command implementation.
+    ///
+    /// Entries are (FleetShip ID, original SavedSquad ID, current ID);
+    /// a current ID of zero means an owned hull in the reserve.
+    pub fn apply_authored_fleet_roster(
+        &mut self, side: i32, assignments: &[(i64, i64, i64)],
+    ) -> Result<usize, NativeSnapshotError> {
+        if assignments.is_empty() { return Ok(0); }
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if !matches!(side, 1 | 2) ||
+            self.source_episode.is_some() || self.source_policy_group.is_some() ||
+            !self.source_policy_bindings.is_empty() ||
+            !self.active_policy_ship_ids.is_empty()
+        {
+            return Err(invalid("saved roster reassignment requires a native gameplay Level"));
+        }
+        let mut seen = HashSet::new();
+        let mut changes = 0_usize;
+        for &(fleet_id, original_id, current_id) in assignments {
+            if fleet_id <= 0 || original_id <= 0 || current_id < 0 ||
+                !seen.insert(fleet_id)
+            {
+                return Err(invalid("invalid original FleetShip reassignment"));
+            }
+            let source_ship = self.entities.iter().find_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) if ship.side == side &&
+                    ship.fleet_ship_id == Some(fleet_id) => Some(ship.entity_id),
+                _ => None,
+            }).ok_or(invalid("source FleetShip not found on this campaign route"))?;
+            let old_index = self.source_squads.iter().position(|squad|
+                squad.saved_squad_id == Some(original_id) &&
+                squad.side == side && squad.members.contains(&source_ship)
+            ).ok_or(invalid("original FleetShip no longer belongs to its authored SavedSquad"))?;
+            if !self.source_squads[old_index].player_permissions.user_controlled ||
+                !self.fleet.get(source_ship)
+                    .is_some_and(|record| record.has_persistent_fleet_value)
+            {
+                return Err(invalid("only player-owned persistent hulls can be edited"));
+            }
+            if original_id == current_id { continue; }
+            let ship_index = self.entities.iter().position(|entity|
+                matches!(entity, NativeAuthoredEntity::Ship(ship)
+                    if ship.entity_id == source_ship)
+            ).ok_or(invalid("source FleetShip entity was lost"))?;
+            let ordinary = match &self.entities[ship_index] {
+                NativeAuthoredEntity::Ship(ship) => {
+                    ship.policy.is_none() && !ship.motion.is_policy_controlled &&
+                    ship.special.is_none() && ship.special_weapon.is_none() &&
+                    ship.drone_carrier_id.is_none() &&
+                    !ship.motion.is_moving && !ship.motion.has_target_coordinates &&
+                    ship.motion.body_velocity.length_squared() == 0.0
+                }
+                _ => false,
+            };
+            if !ordinary || self.entities.iter().any(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) =>
+                    ship.drone_carrier_id == Some(source_ship) ||
+                    matches!(&ship.special,
+                        Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
+                        if carrier.carrier_id == Some(source_ship)),
+                _ => false,
+            }) {
+                return Err(invalid("source FleetShip has special, moving or child ownership that cannot be reassigned safely"));
+            }
+            let to_index = if current_id == 0 { None } else {
+                Some(self.source_squads.iter().position(|squad|
+                    squad.saved_squad_id == Some(current_id) &&
+                    squad.side == side && squad.player_permissions.user_controlled &&
+                    !squad.members.is_empty()
+                ).ok_or(invalid("destination SavedSquad has no available anchor"))?)
+            };
+            if let Some(destination) = to_index {
+                let anchor_id = self.source_squads[destination].members[0];
+                let anchor_pos = self.entities.iter().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == anchor_id =>
+                        Some(ship.motion.position),
+                    _ => None,
+                }).ok_or(invalid("destination SavedSquad anchor is missing"))?;
+                let anchor_offset = self.source_formation.get(&anchor_id)
+                    .ok_or(invalid("destination squad formation is missing"))?.offset;
+                let radius = match &self.entities[ship_index] {
+                    NativeAuthoredEntity::Ship(ship) =>
+                        ship.game_movement.half_width.max(ship.game_movement.half_height).max(1.0),
+                    _ => unreachable!(),
+                };
+                let spacing = radius * 3.0;
+                let mut spot = None;
+                'candidate: for ring in 1_i32..=32 {
+                    for x in -ring..=ring {
+                        for y in -ring..=ring {
+                            if x.abs().max(y.abs()) != ring { continue; }
+                            let position = anchor_pos + Vec2::new(
+                                x as f32 * spacing, y as f32 * spacing,
+                            );
+                            if !position.is_finite() ||
+                                position.x - radius < self.bounds.min.x ||
+                                position.x + radius > self.bounds.max.x ||
+                                position.y - radius < self.bounds.min.y ||
+                                position.y + radius > self.bounds.max.y
+                            { continue; }
+                            if self.entities.iter().any(|entity| match entity {
+                                NativeAuthoredEntity::Ship(other) if other.entity_id != source_ship => {
+                                    let other_radius = other.game_movement.half_width.max(
+                                        other.game_movement.half_height);
+                                    (other.motion.position - position).length_squared() <
+                                        (radius + other_radius) * (radius + other_radius)
+                                }
+                                _ => false,
+                            }) { continue; }
+                            spot = Some(position);
+                            break 'candidate;
+                        }
+                    }
+                }
+                let position = spot.ok_or(invalid("no safe formation position for reassigned FleetShip"))?;
+                if let NativeAuthoredEntity::Ship(ship) = &mut self.entities[ship_index] {
+                    ship.motion.position = position;
+                    ship.motion.user_controlled = true;
+                    ship.cease_fire = self.source_squads[destination]
+                        .cease_fire.unwrap_or(ship.cease_fire);
+                    if let Some(bounds) = &mut ship.target_geometry {
+                        bounds.bounds_latched = false;
+                    }
+                    if let Some(activity) = &mut ship.combat_activity {
+                        activity.elapsed_seconds = None;
+                    }
+                }
+                let formation = self.source_formation.get_mut(&source_ship)
+                    .ok_or(invalid("source FleetShip has no formation metadata"))?;
+                formation.offset = anchor_offset + (position - anchor_pos);
+                self.source_squads[destination].members.push(source_ship);
+            }
+            self.source_squads[old_index].members.retain(|&id| id != source_ship);
+            if to_index.is_none() {
+                self.entities.retain(|entity| entity.entity_id() != source_ship);
+                self.authored_ship_perceptions.remove(&source_ship);
+                self.source_vision.remove(&source_ship);
+                self.source_formation.remove(&source_ship);
+                self.source_policy_inputs.remove(&source_ship);
+                self.fleet.omit_initial_ship(source_ship);
+            }
+            changes += 1;
+        }
+        self.source_squads.retain(|squad| !squad.members.is_empty());
+        if !self.source_squads.iter().any(|squad|
+            squad.side == side && squad.player_permissions.user_controlled)
+        {
+            return Err(invalid("reserve edits would leave no playable player SavedSquad"));
+        }
+        Ok(changes)
+    }
+
     /// Apply previously saved campaign casualties to the actual authored
     /// game Level before constructing CombatWorld or allocating squads.
     /// FleetShip identities (not dense physics/entity IDs) survive across
