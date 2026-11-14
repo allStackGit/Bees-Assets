@@ -37,6 +37,11 @@ pub struct Mission {
     /// if its source stage deliberately disables stat recording.
     #[serde(default)]
     pub record_fleet_stats: bool,
+    /// Unity CollectMinedMineralsForPlayer is a stage ending action,
+    /// not a default reward on every completed battle. Only explicitly
+    /// designated authored missions credit the player account.
+    #[serde(default)]
+    pub bank_player_minerals: bool,
     /// Opt-in historical FleetShip deaths on the next authored Level.
     /// Only ships belonging to the player side are removed at setup;
     /// opposing authored forces remain owned by their scenario.
@@ -78,6 +83,8 @@ pub struct CampaignProgress<'a> {
     squads: HashMap<i64, SquadProgress>,
     battles_without_fleet_data: u64,
     battles_without_squad_data: u64,
+    banked_minerals: u64,
+    bank_history_complete: bool,
 }
 
 #[derive(Default)]
@@ -177,7 +184,8 @@ impl BattleCatalog {
         for mission in self.battles.iter().filter_map(|entry| entry.mission.as_ref()) {
             if self.campaign_id.is_none() || mission.id.trim().is_empty() ||
                 !matches!(mission.player_side, 1 | 2) ||
-                (mission.persist_fleet_losses && !mission.record_fleet_stats) ||
+                ((mission.persist_fleet_losses || mission.bank_player_minerals) &&
+                    !mission.record_fleet_stats) ||
                 earlier.contains(mission.id.as_str()) ||
                 mission.requires.iter().any(|id| !earlier.contains(id.as_str()))
             {
@@ -206,7 +214,9 @@ impl BattleCatalog {
     /// one BattlesWon on its side's victory, and its exact settled mineral
     /// tally from that battle's Level-owned FleetShip inventory.
     pub fn load_progress<'a>(&'a self, output: &Path) -> io::Result<CampaignProgress<'a>> {
-        let mut progress = CampaignProgress::default();
+        let mut progress = CampaignProgress {
+            bank_history_complete: true, ..CampaignProgress::default()
+        };
         let Some(campaign) = &self.campaign_id else { return Ok(progress) };
         let record = |directory: &Path, progress: &mut CampaignProgress<'a>| -> io::Result<()> {
             #[derive(Deserialize)]
@@ -216,6 +226,8 @@ impl BattleCatalog {
                 campaign_fleet: Option<Vec<CampaignFleetShipOutcome>>,
                 #[serde(default)]
                 campaign_squads: Option<Vec<super::CampaignSquadOutcome>>,
+                #[serde(default)]
+                campaign_banked_minerals: Option<u64>,
             }
 
             let bytes = match fs::read(directory.join("rollout-summary.json")) {
@@ -225,8 +237,10 @@ impl BattleCatalog {
             };
             // Older interrupted runs may have a partial summary. Only a
             // complete, readable campaign outcome can grant progress.
-            let Ok(Summary { campaign_outcome: Some(outcome), campaign_fleet, campaign_squads }) =
-                serde_json::from_slice(&bytes) else { return Ok(()) };
+            let Ok(Summary {
+                campaign_outcome: Some(outcome), campaign_fleet,
+                campaign_squads, campaign_banked_minerals,
+            }) = serde_json::from_slice(&bytes) else { return Ok(()) };
             if outcome.campaign_id != *campaign { return Ok(()); }
             if let Some(mission) = self.battles.iter().filter_map(|entry| entry.mission.as_ref())
                 .find(|mission| mission.id == outcome.mission_id && mission.player_side == outcome.player_side)
@@ -234,6 +248,17 @@ impl BattleCatalog {
                 let state = progress.missions.entry(&mission.id).or_default();
                 state.latest_victory = outcome.winner_side == mission.player_side;
                 state.completed |= matches!(mission.advance_on, AdvanceOn::Finished) || state.latest_victory;
+                if mission.bank_player_minerals {
+                    if let Some(minerals) = campaign_banked_minerals {
+                        progress.banked_minerals = progress.banked_minerals
+                            .checked_add(minerals)
+                            .ok_or_else(|| invalid("campaign banked mineral overflow"))?;
+                    } else {
+                        progress.bank_history_complete = false;
+                    }
+                } else if campaign_banked_minerals.is_some_and(|minerals| minerals > 0) {
+                    return Err(invalid("campaign minerals were banked without mission authorization"));
+                }
                 if let Some(squads) = campaign_squads.filter(|squads| {
                     let mut seen = HashSet::new();
                     squads.iter().all(|squad| {
@@ -345,6 +370,7 @@ impl BattleCatalog {
                 "completed": progress.completed(&mission.id),
                 "latest_victory": progress.latest_victory(&mission.id),
                 "record_fleet_stats": mission.record_fleet_stats,
+                "bank_player_minerals": mission.bank_player_minerals,
                 "persist_fleet_losses": mission.persist_fleet_losses,
             }))
         }).collect::<Vec<_>>();
@@ -391,6 +417,8 @@ impl BattleCatalog {
             "squads": squads,
             "battles_without_fleet_data": progress.battles_without_fleet_data,
             "battles_without_squad_data": progress.battles_without_squad_data,
+            "banked_minerals": progress.banked_minerals,
+            "bank_history_complete": progress.bank_history_complete,
         })
     }
 }
