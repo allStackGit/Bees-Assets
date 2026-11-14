@@ -266,7 +266,8 @@ function liveCourierProgress(root,allowCheckpointEvent) {
 }
 
 function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,evaluationRoot,evaluationSuites,snapshotRoot,
-    cpuParallelism='allocation',enableGpu=false,rocrGpuUuids={}}) {
+    cpuParallelism='allocation',enableGpu=false,rocrGpuUuids={},
+    remoteLineages=null}) {
     if(typeof enableGpu!=='boolean'||enableGpu&&
         !['linux','win32'].includes(process.platform))
         throw Error('Courier GPU optimization requires an approved Windows CUDA or Linux ROCm owner.');
@@ -278,6 +279,33 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         new Set(Object.values(rocrGpuUuids)).size!==Object.keys(rocrGpuUuids).length)
         throw Error('Courier GPU selectors must map unique, approved ROCr UUIDs to canonical PCI identities.');
     const approvedRocr=Object.freeze({...rocrGpuUuids});
+    let remote=null;
+    if(remoteLineages!==null) {
+        const endpoints=remoteLineages?.endpoints;
+        const keyPath=remoteLineages?.keyPath;
+        if(!Array.isArray(endpoints)||!endpoints.length||endpoints.length>16||
+            endpoints.some(endpoint=>{
+                if(typeof endpoint!=='string')return true;
+                const match=/^100\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3}):(\\d{1,5})$/.exec(endpoint);
+                return !match||Number(match[1])<64||Number(match[1])>127||
+                    Number(match[2])>255||Number(match[3])>255||
+                    Number(match[4])<1024||Number(match[4])>65535;
+            })||new Set(endpoints).size!==endpoints.length||
+            typeof keyPath!=='string'||!path.isAbsolute(keyPath)||
+            fs.realpathSync(keyPath)!==keyPath)
+            throw Error('Courier remote learners need distinct locally approved Tailnet endpoints and a private auth key.');
+        const stat=fs.statSync(keyPath);
+        const hex=fs.readFileSync(keyPath,'utf8').trim();
+        if(!stat.isFile()||stat.size>128||stat.size<64||
+            process.platform!=='win32'&&(stat.mode&0o077)!==0||
+            !/^[0-9a-fA-F]{64}$/.test(hex))
+            throw Error('Courier remote PPO key must be one privately installed 32-byte hex secret.');
+        remote={
+            endpoints:Object.freeze(endpoints.slice()),keyPath,
+            fingerprint:crypto.createHash('sha256')
+                .update(Buffer.from(hex,'hex')).digest('hex'),
+        };
+    }
     if(!['profile','allocation'].includes(cpuParallelism))
         throw Error('Courier CPU concurrency must be explicitly profile-based or follow allocated CPU cores.');
     for(const target of [projectRoot,pythonPath,artifactRoot,configPath]) {
@@ -423,6 +451,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        courier_remote_endpoints:remote?remote.endpoints.slice():[],
+        courier_remote_key_fingerprint:remote?.fingerprint||null,
         ...(enableGpu&&windows?{gpu_execution:'cuda'}:{}),
         ...(enableGpu&&!windows?{
             rocr_gpu_uuids:approvedRocr,
@@ -475,6 +505,21 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             let chosenWorkers=workers===undefined?12:workers;
             if(context.gpu_pci_addresses&&chosenWorkers<context.gpu_pci_addresses.length)
                 throw Error('Courier cannot allocate more GPU optimizers than independent saved lineages.');
+            const remoteEndpoints=context.distributed_courier_endpoints;
+            if(remoteEndpoints!==undefined) {
+                if(!remote||!Array.isArray(remoteEndpoints)||
+                    !remoteEndpoints.length||remoteEndpoints.length>16||
+                    remoteEndpoints.some(endpoint=>!remote.endpoints.includes(endpoint))||
+                    new Set(remoteEndpoints).size!==remoteEndpoints.length||
+                    JSON.stringify(remoteEndpoints)!==
+                        JSON.stringify(remote.endpoints.filter(e=>remoteEndpoints.includes(e)))||
+                    chosenWorkers<=remoteEndpoints.length)
+                    throw Error('Courier distributed group differs from installed remote service allowlist or PPO population.');
+                const hex=fs.readFileSync(remote.keyPath,'utf8').trim();
+                if(crypto.createHash('sha256').update(Buffer.from(hex,'hex'))
+                    .digest('hex')!==remote.fingerprint)
+                    throw Error('Courier remote authentication key changed after enrollment.');
+            }
             const out=jobRoot(context);
             const publish=Boolean(snapshots&&context.evaluation_suite_id);
             if(publish&&(!UUID.test(String(context.dispatch_id||''))||
@@ -520,8 +565,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // The backend's measured parent+descendant admission is still
             // authoritative; this is only the initial safe capacity offer.
             const mapCount=parsed.colony?4:parsed.competitive?32:64;
+            const localWorkerCount=chosenWorkers-(remoteEndpoints?.length||0);
             const ramPerLearner=Math.floor(
-                context.ram_quota_mb/Math.max(1,chosenWorkers));
+                context.ram_quota_mb/Math.max(1,localWorkerCount));
             // The Python-heavy colony and competitive modes use RAM to
             // provision up to one *persistent* process per whole map. A
             // completed-useful-SPS tuner selects concurrent dispatch without
@@ -543,7 +589,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
                 '--seed',String(seed),'--workers',String(chosenWorkers),
                 ...(boundedLearners?['--active-learners',String(Math.min(
-                    chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)))]:[]),
+                    localWorkerCount,fixedCpuParallelism(context.cpu_quota,64)))]:[]),
                 ...(auto?['--auto-active-learners']:[]),
                 ...(simulationShards>1
                     ?['--cpu-lease',String(context.cpu_quota),
@@ -559,6 +605,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                                ['--optimizer-gpu-pci',pci])
                            :gpuPciPin&&!windows
                                ?['--optimizer-gpu-pci',context.gpu_pci_address]:[])]:[]),
+                ...(remoteEndpoints?[
+                    ...remoteEndpoints.flatMap(endpoint=>['--remote-lineage-endpoint',endpoint]),
+                    '--remote-lineage-key-file',remote.keyPath,
+                    '--remote-job-id',context.job_id]:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(predecessor?['--resume']:[])];
         },
