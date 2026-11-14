@@ -138,8 +138,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_gather_max_seconds',
             'training_shared_copy_slowest_worker',
             'training_shared_gather_slowest_worker',
-            'training_info_recv_max_seconds',
+            'training_info_recv_max_seconds','training_info_rebuild_max_seconds',
+            'training_sparse_info_events',
             'training_info_recv_slowest_worker',
+            'training_info_rebuild_slowest_worker',
+            'training_sim_info_rebuild_max_ratio',
+            'training_sim_info_rebuild_ratio_owner',
             'training_sim_info_ratio_owner',
             'training_sim_info_max_ratio',
             'training_sim_copy_ratio_owner',
@@ -193,7 +197,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_sim_dispatch_pressure',
             'training_sim_copy_pressure',
             'training_sim_gather_pressure',
-            'training_sim_info_pressure',
+            'training_sim_info_pressure','training_sim_info_rebuild_pressure',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
@@ -664,6 +668,7 @@ class BottleneckEvidence {
             const shardCopyHints=[];
             const shardGatherHints=[];
             const shardInfoHints=[];
+            const shardRebuildHints=[];
             const prefetchHints=[];
             // The backend reports its measured worst recurrent-minibatch
             // preparation alongside the *owning* lineage index. Comparing
@@ -700,6 +705,12 @@ class BottleneckEvidence {
                 const copy=seconds('worker_'+i+'_sim_shared_copy_seconds');
                 const gather=seconds('worker_'+i+'_sim_shared_gather_seconds');
                 const info=seconds('worker_'+i+'_sim_info_recv_seconds');
+                const rebuild=seconds('worker_'+i+'_sim_info_rebuild_seconds');
+                const rebuildShare=shardStep>0&&rebuild!==null&&
+                    rebuild<=shardStep?rebuild/shardStep:null;
+                if(rebuildShare!==null)
+                    add('worker_'+i+'_sim_info_rebuild_share',rebuildShare);
+                shardRebuildHints[i]=rebuildShare!==null&&rebuildShare>=0.20;
                 const copyShare=shardStep>0&&copy!==null&&
                     copy<=shardStep?copy/shardStep:null;
                 const gatherShare=shardStep>0&&gather!==null&&
@@ -792,15 +803,19 @@ class BottleneckEvidence {
                 const copyGlobal=metrics.training_sim_copy_max_ratio;
                 const gatherGlobal=metrics.training_sim_gather_max_ratio;
                 const infoGlobal=metrics.training_sim_info_max_ratio;
+                const rebuildGlobal=metrics.training_sim_info_rebuild_max_ratio;
                 const last=metrics.training_last_reply_worker;
                 const lastWorker=(last?.unit==='count'&&
                     Number.isSafeInteger(last.value)&&
                     last.value>=0&&last.value<count)?last.value:null;
                 prior.samples.push({at,stageHints,prefetchHints,shardDispatchHints,
-                    shardCopyHints,shardGatherHints,shardInfoHints,resourceHints,
+                    shardCopyHints,shardGatherHints,shardInfoHints,
+                    shardRebuildHints,resourceHints,
                     lastWorker,
                     courierSimInfo:infoGlobal?.unit==='ratio'&&
                         infoGlobal.value>=0.20,
+                    courierSimRebuild:rebuildGlobal?.unit==='ratio'&&
+                        rebuildGlobal.value>=0.20,
                     courierSimCopy:copyGlobal?.unit==='ratio'&&
                         copyGlobal.value>=0.20,
                     courierSimGather:gatherGlobal?.unit==='ratio'&&
@@ -896,6 +911,8 @@ class BottleneckEvidence {
                     add('training_sim_gather_pressure',1,'count');
                 if(sustained(x=>x.courierSimInfo))
                     add('training_sim_info_pressure',1,'count');
+                if(sustained(x=>x.courierSimRebuild))
+                    add('training_sim_info_rebuild_pressure',1,'count');
                 for(let i=0;i<count;i++) {
                     if(sustained(x=>x.shardCopyHints?.[i]))
                         add('worker_'+i+'_sim_copy_pressure',1,'count');
@@ -903,6 +920,8 @@ class BottleneckEvidence {
                         add('worker_'+i+'_sim_gather_pressure',1,'count');
                     if(sustained(x=>x.shardInfoHints?.[i]))
                         add('worker_'+i+'_sim_info_pressure',1,'count');
+                    if(sustained(x=>x.shardRebuildHints?.[i]))
+                        add('worker_'+i+'_sim_info_rebuild_pressure',1,'count');
                 }
                 for(let i=0;i<count;i++)
                     for(const stage of ['collection','optimization','ppo_data',
