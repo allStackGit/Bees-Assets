@@ -30,6 +30,17 @@ function approvedRemoteRolloutEndpoints(job,machine) {
     const allowed=machine?.tinybrains_remote_rollout_endpoints;
     if(!Array.isArray(allowed))return null;
     const chosen=job?.distributed_rollout_endpoints;
+    if(machine?.tinybrains_remote_rollout_discovery===true) {
+        // Discovery is a locally installed learner permission; the durable
+        // job must still freeze 1–8 trusted Tailnet targets at queue time.
+        // Running worker ownership, matching HMAC and native leases are
+        // checked separately by the existing coordinated Start contract.
+        return job?.distributed_rollout_managed===true&&
+            allowed.length===0&&Array.isArray(chosen)&&
+            chosen.length>=1&&chosen.length<=8&&
+            chosen.every(rolloutEndpoint)&&
+            new Set(chosen).size===chosen.length?chosen:null;
+    }
     if(chosen===undefined)return allowed;
     if(job?.distributed_rollout_managed!==true||
         !Array.isArray(chosen)||chosen.length<1||
@@ -251,6 +262,7 @@ function boundedReport(value) {
         throw Error('TinyBrains multi-GPU requires locally qualified Linux ROCm profiles.');
     const remoteRollouts=value.tinybrains_remote_rollout_profiles??[];
     const remoteCount=value.tinybrains_remote_rollout_count??0;
+    const remoteDiscovery=value.tinybrains_remote_rollout_discovery??false;
     const remoteEndpoints=value.tinybrains_remote_rollout_endpoints??[];
     const remoteFingerprint=value.tinybrains_remote_key_fingerprint??null;
     const workerEndpoint=value.tinybrains_rollout_endpoint??null;
@@ -260,12 +272,19 @@ function boundedReport(value) {
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(remoteRollouts).size!==remoteRollouts.length||
         (remoteRollouts.length&&value.platform!=='linux')||
+        typeof remoteDiscovery!=='boolean'||
         !Number.isSafeInteger(remoteCount)||remoteCount<0||remoteCount>8||
-        Boolean(remoteRollouts.length)!==Boolean(remoteCount)||
         !Array.isArray(remoteEndpoints)||remoteEndpoints.length!==remoteCount||
         remoteEndpoints.some(endpoint=>!rolloutEndpoint(endpoint))||
         new Set(remoteEndpoints).size!==remoteEndpoints.length||
-        (remoteCount>0?!SHA256.test(String(remoteFingerprint||'')):remoteFingerprint!==null)||
+        (remoteDiscovery
+            ?(remoteCount!==0||remoteEndpoints.length!==0||
+                !remoteRollouts.length||
+                !SHA256.test(String(remoteFingerprint||'')))
+            :(Boolean(remoteRollouts.length)!==Boolean(remoteCount)||
+                (remoteCount>0
+                    ?!SHA256.test(String(remoteFingerprint||''))
+                    :remoteFingerprint!==null)))||
         (workerEndpoint===null)!==(workerFingerprint===null)||
         (workerEndpoint!==null&&(!rolloutEndpoint(workerEndpoint)||
             !SHA256.test(String(workerFingerprint||''))||
@@ -316,6 +335,7 @@ function boundedReport(value) {
         tinybrains_multi_gpu_profiles:multiProfiles.slice(),
         tinybrains_remote_rollout_profiles:remoteRollouts.slice(),
         tinybrains_remote_rollout_count:remoteCount,
+        tinybrains_remote_rollout_discovery:remoteDiscovery,
         tinybrains_remote_rollout_endpoints:remoteEndpoints.slice(),
         tinybrains_remote_key_fingerprint:remoteFingerprint,
         tinybrains_rollout_endpoint:workerEndpoint,
@@ -1288,6 +1308,7 @@ class ExperimentHub {
                 machine.tinybrains_multi_gpu_profiles=report.tinybrains_multi_gpu_profiles.slice();
                 machine.tinybrains_remote_rollout_profiles=report.tinybrains_remote_rollout_profiles.slice();
                 machine.tinybrains_remote_rollout_count=report.tinybrains_remote_rollout_count;
+                machine.tinybrains_remote_rollout_discovery=report.tinybrains_remote_rollout_discovery;
                 machine.tinybrains_remote_rollout_endpoints=report.tinybrains_remote_rollout_endpoints.slice();
                 machine.tinybrains_remote_key_fingerprint=report.tinybrains_remote_key_fingerprint;
                 machine.tinybrains_rollout_endpoint=report.tinybrains_rollout_endpoint;
