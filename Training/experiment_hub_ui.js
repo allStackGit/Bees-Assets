@@ -4451,8 +4451,17 @@ document.addEventListener('DOMContentLoaded', () => {
             // Native TinyBrains supports 16 total external collection
             // clients. An additional local GPU collector (GPU 3 onward)
             // shares that fixed maximum with remote sidecars.
-            const resources=JSON.parse($('hub-job-resources').value||'{}');
-            const maxRemote=16-Math.max(0,Number(resources.gpu_count||0)-2);
+            let gpuCount=0;
+            try {
+                const request=JSON.parse($('hub-job-resources').value||'{}');
+                if(Number.isSafeInteger(request?.gpu_count)&&
+                    request.gpu_count>=0&&request.gpu_count<=8)
+                    gpuCount=request.gpu_count;
+            }catch {
+                // A partially edited resource field is validated on Queue;
+                // it must not prevent the machine list from rendering.
+            }
+            const maxRemote=16-Math.max(0,gpuCount-2);
             distributedBudgets.value=JSON.stringify(available.slice(0,maxRemote).map(item=>({
                 machine_id:item.machine.id,
                 cpus:2,ram_mb:4096,gpu_count:0,
