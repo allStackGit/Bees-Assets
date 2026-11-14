@@ -165,6 +165,9 @@ pub struct NativePolicyOnlyMetadata {
     source_static_discovery_values: HashMap<i64, i32>,
     explorers: Vec<Explorer>,
     agents: HashMap<i64, AuthoredPolicyAgent>,
+    /// Separate from physical ship IDs. The source ML-Agents runtime
+    /// allocates fresh participant identities for newborn ship agents.
+    next_dynamic_group_agent_id: u64,
     sides: HashMap<i32, AuthoredPolicySide>,
     beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
     queen_templates: HashMap<i64, Arc<NativeQueenTemplate>>,
@@ -284,6 +287,9 @@ impl NativePolicyOnlyMetadata {
                 return Err(PolicyOnlyMetadataError::DuplicateAgent(id));
             }
         }
+        let next_dynamic_group_agent_id = seen_group_agents.iter()
+            .copied().max().unwrap_or(0)
+            .checked_add(1).ok_or(PolicyOnlyMetadataError::InvalidSource)?;
         if beacon_templates.iter().any(|(id, template)|
             !authored_ships.contains_key(id) || !template.perception.valid()
         ) { return Err(PolicyOnlyMetadataError::InvalidSource); }
@@ -312,7 +318,8 @@ impl NativePolicyOnlyMetadata {
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
-            agents: agent_map, sides: side_map, beacon_templates,
+            agents: agent_map, next_dynamic_group_agent_id,
+            sides: side_map, beacon_templates,
             queen_templates: HashMap::new(), player,
             reinforcements: std::collections::VecDeque::new(),
             scripted_queues: Vec::new(),
@@ -410,6 +417,101 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             perception.minerals_mined_this_level = cargo;
             self.authored_ships.insert(*beacon_id, perception);
             self.effective_vision.insert(*beacon_id, template.vision);
+        }
+        Ok(())
+    }
+
+    fn register_spawned_policy_ships(
+        &mut self, world: &mut CombatWorld,
+        events: &mut bees_gameplay::level_events::NativeLevelEventProcessor,
+    ) -> Result<(), CombatPerceptionError> {
+        // Game-only Levels have no policy controllers. The physical Queen
+        // waves and source roster still execute without a learner.
+        if self.agents.is_empty() { return Ok(()); }
+        let born: Vec<_> = world.events().iter().filter_map(|event| {
+            match event {
+                CombatEvent::QueenMinionSpawned { queen_id, minion_id, .. } =>
+                    Some((*queen_id, *minion_id)),
+                _ => None,
+            }
+        }).collect();
+        let invalid = || CombatPerceptionError::InvalidAuthoredMetadata;
+        for (queen_id, minion_id) in born {
+            let child = world.ship(minion_id).ok_or_else(invalid)?;
+            // Source RequiresPolicyControl skips a ship that died before
+            // the next agent-provision pass. Its fleet/reward/roster
+            // metadata is still retained for death attribution.
+            if child.vitals.is_dead() { continue; }
+            let side = child.side;
+            let template = self.queen_templates.get(&queen_id).ok_or_else(invalid)?;
+            let bomb = template.policy_weapon.ok_or_else(invalid)?;
+            // A Queen's team and its currently loaded model slot are
+            // authoritative. Reuse that *team*, not a guessed model index.
+            let parent_agent = self.agents.get(&queen_id).or_else(||
+                self.agents.values()
+                    .filter(|a| a.side == side &&
+                        world.policy_frame(a.ship_id).is_some())
+                    .min_by_key(|a| a.ship_id)
+            ).ok_or_else(invalid)?;
+            let frame = world.policy_frame(parent_agent.ship_id).ok_or_else(invalid)?;
+            let route = parent_agent.route;
+            let mut controller = parent_agent.controller;
+            controller.effective_vision_range = template.vision.effective_range as f32;
+            controller.has_weapons = true;
+            controller.has_turrets = false;
+            controller.has_special_action = true;
+            controller.special_ready = false;
+            let mut capability = parent_agent.capability;
+            capability.special_resource_fraction = 0.0;
+            capability.special_cooldown_fraction = 0.0;
+            capability.special_phase = 0.0;
+            capability.mining_possible = false;
+            capability.is_carrier_child = false;
+            capability.has_living_parent_carrier = false;
+            capability.ship_mined_tsv = 0;
+            let bee = side != self.player.human_side;
+            let yellow = self.ship_catalog.sprite_size(22).ok_or_else(invalid)?;
+            let hive = self.ship_catalog.sprite_size(2).ok_or_else(invalid)?;
+            capability.healing_possible =
+                bee && yellow.x < hive.x && yellow.y < hive.y;
+            capability.warp_possible = !bee;
+            let group_id = self.next_dynamic_group_agent_id;
+            let next_group_id = group_id.checked_add(1).ok_or_else(invalid)?;
+            let group = events.group_delivery_mut().ok_or_else(invalid)?;
+            if group.team_id(side) != Some(route.team_id) ||
+                parent_agent.source_group_agent_id.is_none() ||
+                self.agents.contains_key(&minion_id)
+            { return Err(invalid()); }
+            let mut own_weapons = [None; 5];
+            let slot = template.physical.minion.special_weapon.slot;
+            let mut weapon = bomb;
+            weapon.position = world.special_weapon_origin(minion_id)
+                .ok_or_else(invalid)?;
+            own_weapons[slot] = Some(weapon);
+            // The same CombatWorld binds both the policy controller and
+            // the real Bomb special. Its roster revision automatically
+            // enrolls the ship in the next batched inference cadence.
+            world.bind_policy_ship(minion_id, frame,
+                controller.movement_disabled_for_team).map_err(|_| invalid())?;
+            world.configure_policy_yellow_jacket(minion_id,
+                template.physical.minion.special_weapon.power).map_err(|_| invalid())?;
+            if capability.healing_possible {
+                let px = |value: f32| (value * 8.0).round() as u32;
+                world.configure_policy_healing(minion_id, side,
+                    [px(yellow.x), px(yellow.y)],
+                    [px(hive.x), px(hive.y)]).map_err(|_| invalid())?;
+            }
+            if capability.warp_possible {
+                world.configure_policy_warp(minion_id,
+                    self.player.human_side).map_err(|_| invalid())?;
+            }
+            group.register_agent(side, group_id).map_err(|_| invalid())?;
+            self.next_dynamic_group_agent_id = next_group_id;
+            self.agents.insert(minion_id, AuthoredPolicyAgent {
+                ship_id: minion_id, side, route, controller, capability,
+                source_group_agent_id: Some(group_id),
+                parent_carrier_id: None, own_weapons,
+            });
         }
         Ok(())
     }
