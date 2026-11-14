@@ -945,7 +945,11 @@ process. Copy the pending work order's `collection_id`,
 `bundle_directory` into that Hub job's immutable `frozen_parameters`
 as `collection_id`, `rollout_world_start`, `rollout_worlds`,
 `rollout_workers`, `seed_offset` and `bundle_directory` alongside
-the adapter's already approved `config_sha256`. Hub still owns the
+the adapter's already approved `config_sha256`. For newly issued portable
+work orders, also copy the top-level `source_run_contract_sha256` into
+the collector's frozen parameter of the same name. The Hub adapter verifies
+this value using the shared Python source-contract implementation **before**
+launching the collector; preexisting jobs can omit it. Hub still owns the
 actual job UUID, native process, resource lease, Stop and checkpoints.
 The collector writes its local artifacts under that UUID and publishes
 the pinned bundle under `bundle_directory` in the shared inbox; no
