@@ -2243,7 +2243,8 @@ fn run_battle(
             return Err(invalid("Reinforcements reference an unknown source squad item ID").into());
         }
         if mission.is_some_and(|mission| !source.source_squads.iter().any(|squad|
-            squad.side == mission.player_side && squad.player_permissions.user_controlled))
+            squad.side == mission.player_side && squad.player_permissions.user_controlled &&
+            !squad.members.is_empty()))
         {
             return Err(invalid("The campaign player side has no authored player squad").into());
         }
@@ -2306,6 +2307,10 @@ fn run_battle(
             let mut seen_saved_squads = HashSet::new();
             let mut saved_members = HashSet::new();
             for squad in &source.source_squads {
+                // An empty owned SavedSquad is available to the editor,
+                // not deployed in the physical Level or its career
+                // receipt. Do not fabricate a zero-ship battle result.
+                if squad.members.is_empty() { continue; }
                 let Some(saved_squad_id) = squad.saved_squad_id else { continue };
                 if !seen_saved_squads.insert(saved_squad_id) {
                     return Err(invalid("duplicate persistent SavedSquad ID").into());
