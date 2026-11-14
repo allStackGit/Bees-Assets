@@ -1189,7 +1189,8 @@ fn launch_catalog_battle(
     if let (Some(purchased), Some(lost)) = (purchased.as_mut(), lost.as_ref()) {
         // Previously bought but destroyed hulls stay in the account
         // ledger, not the next game's entity pool.
-        purchased.retain(|ship| !lost.contains(&ship.fleet_ship_id));
+        purchased.retain(|ship| !lost.contains(&ship.fleet_ship_id) &&
+            ship.saved_squad_id > 0);
     }
     let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
         .map(|(campaign_id, mission)| CampaignMission {
@@ -1250,6 +1251,8 @@ fn preflight_native_fleet_edit(
     if projected.iter().any(|ship| dead.contains(&ship.fleet_ship_id)) {
         return Err(invalid("dead purchased hull cannot be assigned to a saved squad").into());
     }
+    let active = projected.iter().copied()
+        .filter(|ship| ship.saved_squad_id > 0).collect::<Vec<_>>();
     let mut highest_fleet_id = 0_i64;
     let mut checked = 0_u64;
     for entry in &catalog.battles {
@@ -1315,18 +1318,20 @@ fn preflight_native_fleet_edit(
                     }
                 }
             }
-            source.install_purchased_ships(side, projected)
+            source.install_purchased_ships(side, &active)
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
             source.omit_killed_fleet_ships(side, &dead)
                 .map_err(|error| contextual("shop saved-fleet casualties", error))?;
-            let squad = source.source_squads.iter().find(|squad|
-                squad.saved_squad_id == Some(target_saved_squad_id) &&
-                squad.side == side && squad.player_permissions.user_controlled
-            ).ok_or_else(|| invalid("new hull's saved squad is missing"))?;
-            if squad.members.len() > max_size {
-                return Err(invalid(
-                    "purchased hull exceeds the source's maximum saved-squad size",
-                ).into());
+            if target_saved_squad_id > 0 {
+                let squad = source.source_squads.iter().find(|squad|
+                    squad.saved_squad_id == Some(target_saved_squad_id) &&
+                    squad.side == side && squad.player_permissions.user_controlled
+                ).ok_or_else(|| invalid("target saved squad is missing"))?;
+                if squad.members.len() > max_size {
+                    return Err(invalid(
+                        "purchased hull exceeds the source's maximum saved-squad size",
+                    ).into());
+                }
             }
             checked += 1;
         }
@@ -1396,10 +1401,11 @@ fn run_transfer_ship(
     let progress = catalog.load_progress(output_root)?;
     let (side, ship) = progress.purchased_ship(fleet_ship_id)
         .ok_or_else(|| invalid("only purchased FleetShips can be reassigned"))?;
-    if destination_squad_id == ship.saved_squad_id || destination_squad_id <= 0 ||
-        !progress.saved_squad_ids_for_side(side).contains(&destination_squad_id)
+    if destination_squad_id == ship.saved_squad_id || destination_squad_id < 0 ||
+        (destination_squad_id != 0 &&
+            !progress.saved_squad_ids_for_side(side).contains(&destination_squad_id))
     {
-        return Err(invalid("destination must be a different saved squad owned by the same faction").into());
+        return Err(invalid("destination must be the reserve or another owned SavedSquad").into());
     }
     let dead = progress.lost_player_fleet_ids(side)?;
     if dead.contains(&fleet_ship_id) {
