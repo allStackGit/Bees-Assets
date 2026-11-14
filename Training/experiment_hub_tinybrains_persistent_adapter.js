@@ -614,7 +614,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 ?Object.keys(remoteCollectors).sort().join(',')!=='discovery,keyDirectory'
                 :Object.keys(remoteCollectors).sort().join(',')!=='endpoints,keyDirectory')||
             (!discover&&(!Array.isArray(remoteCollectors.endpoints)||
-                !remoteCollectors.endpoints.length||remoteCollectors.endpoints.length>8||
+                !remoteCollectors.endpoints.length||remoteCollectors.endpoints.length>16||
                 remoteCollectors.endpoints.some(endpoint=>!approvedTailnetEndpoint(endpoint))||
                 new Set(remoteCollectors.endpoints).size!==remoteCollectors.endpoints.length)))
             throw Error('Remote rollout requires pinned Tailnet endpoints or explicit local HMAC discovery.');
@@ -837,7 +837,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 remote?.endpoints??[];
             const selectedValid=remote?.discovery===true
                 ?Array.isArray(context.distributed_rollout_endpoints)&&
-                    selectedEndpoints.length>=1&&selectedEndpoints.length<=8&&
+                    selectedEndpoints.length>=1&&selectedEndpoints.length<=16&&
                     selectedEndpoints.every(endpoint=>approvedTailnetEndpoint(endpoint))&&
                     new Set(selectedEndpoints).size===selectedEndpoints.length
                 :context.distributed_rollout_endpoints===undefined||
