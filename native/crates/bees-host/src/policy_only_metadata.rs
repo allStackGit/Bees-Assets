@@ -660,6 +660,72 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         Ok(())
     }
 
+    fn player_queen_minion_created(
+        &mut self, world: &mut CombatWorld,
+        mother: SquadLifetime, child: SquadLifetime, queen_id: i64,
+        minion_id: i64, minion_index: u8,
+    ) -> Result<(), GameCommandError> {
+        let parent = *self.player.squads.get(&mother)
+            .ok_or(GameCommandError::InvalidSquad)?;
+        let mut source = *self.player.commands.get(&mother)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        if self.player.squads.contains_key(&child) ||
+            self.player.commands.contains_key(&child) {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        // Queen.CreateMinionSquad copies its source shooting strategy,
+        // cease-fire, matching-speed and chase choices. Unlike the Scout
+        // Beacon, a Queen's child squad retains ordinary player authority.
+        source.is_carrier_squad = Some(false);
+        self.player.squads.insert(child, NativePlayerPermissions {
+            user_controlled: parent.user_controlled,
+            can_accept_input: parent.user_controlled,
+            locked_on: false,
+        });
+        self.player.commands.insert(child, source);
+        if self.player.chasing.contains(&mother) {
+            self.player.chasing.insert(child);
+        }
+        if self.player.matching_speeds.contains_key(&mother) {
+            self.player.matching_speeds.insert(child, 0.0);
+        }
+        if let Some(&enabled) = self.player.cease_fire.get(&mother) {
+            self.player.cease_fire.insert(child, enabled);
+        }
+        self.player_queen_minion_added(world, child, queen_id, minion_id, minion_index)
+    }
+
+    fn player_queen_minion_added(
+        &mut self, world: &mut CombatWorld,
+        child: SquadLifetime, queen_id: i64, minion_id: i64, minion_index: u8,
+    ) -> Result<(), GameCommandError> {
+        let template = self.queen_templates.get(&queen_id)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        let offset = CombatWorld::queen_minion_formation_offset(minion_index)
+            .ok_or(GameCommandError::InvalidSquad)?;
+        let permissions = self.player.squads.get(&child)
+            .ok_or(GameCommandError::InvalidSquad)?;
+        let queen = world.ship(queen_id)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        if !world.ship(minion_id).is_some_and(|ship|
+            ship.ship_type == 22 && ship.side == queen.side) ||
+            self.player.ships.contains_key(&minion_id) ||
+            permissions.locked_on
+        {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        self.player.ships.insert(minion_id, NativeSourceFormation {
+            offset, clearance: template.physical.minion.path_clearance,
+        });
+        if let Some(&enabled) = self.player.cease_fire.get(&child) {
+            if world.ship(minion_id).is_some_and(|ship| !ship.vitals.is_dead()) {
+                world.set_ship_cease_fire(minion_id, enabled)
+                    .map_err(GameCommandError::World)?;
+            }
+        }
+        Ok(())
+    }
+
     fn player_squad_retired(&mut self, owner: SquadLifetime) {
         let before = self.scripted_queues.len();
         self.scripted_queues.retain(|queue| queue.owner != owner);
