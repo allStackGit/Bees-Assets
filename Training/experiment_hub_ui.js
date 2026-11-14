@@ -4418,7 +4418,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // without having to correlate endpoint list positions manually.
             distributedBudgets.value=JSON.stringify(workers.map(matches=>({
                 machine_id:matches[0]?.id||'',
-                cpus:2,ram_mb:4096,gpu_count:0,threads:2,
+                cpus:2,ram_mb:4096,gpu_count:0,
             })),null,2);
         }
         distributedQueue.disabled=!ready;
