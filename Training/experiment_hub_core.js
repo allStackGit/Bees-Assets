@@ -3551,6 +3551,7 @@ class ExperimentHub {
                         worker.status_reason='Courier learner launch disarmed; verifying remote PPO service Stop.';
                     }
                 }
+                this.reconcileCourierAborts(next);
                 this.commit(next);
             };
             if(Date.now()>=Date.parse(intent.expires_at)) {
