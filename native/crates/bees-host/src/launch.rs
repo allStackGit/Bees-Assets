@@ -964,7 +964,7 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
-       bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false>
+       bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>]
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
