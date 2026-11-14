@@ -162,6 +162,10 @@ fn enabled() -> bool { true }
 #[serde(deny_unknown_fields)]
 struct GameSquad {
     item_id: i64,
+    /// SavedSquad identity across missions; temporary pool ItemIds
+    /// are intentionally not reused as persistent player identities.
+    #[serde(default)]
+    saved_squad_id: Option<i64>,
     side: i32,
     members: Vec<i64>,
     shooting_strategy_id: u8,
@@ -1241,9 +1245,12 @@ impl NativePhysicalScene {
         let mut source_squads = Vec::with_capacity(raw.squads.len());
         let mut assigned = HashSet::new();
         let mut squad_ids = HashSet::new();
+        let mut saved_squad_ids = HashSet::new();
         let mut has_player = false;
         for squad in raw.squads {
             if squad.item_id <= 0 || squad.item_id == i64::MAX ||
+                squad.saved_squad_id.is_some_and(|id|
+                    id <= 0 || !saved_squad_ids.insert(id)) ||
                 !squad_ids.insert(squad.item_id) ||
                 !matches!(squad.side, side if side == raw.bee_side || side == raw.human_side) ||
                 squad.members.is_empty() || squad.members.len() > 1024 ||
@@ -1274,6 +1281,7 @@ impl NativePhysicalScene {
             }
             has_player |= squad.user_controlled;
             source_squads.push(NativeSourceSquad {
+                saved_squad_id: squad.saved_squad_id,
                 item_id: squad.item_id, side: squad.side,
                 members: squad.members,
                 command_bans: Some(bans),
