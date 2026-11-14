@@ -68,7 +68,7 @@ use crate::policy_only_metadata::{
 };
 use crate::scene_assets::NativeSceneAssets;
 use crate::runtime::NativeHostRuntime;
-use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
+use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate, NativeQueenTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
 mod native_game_scene;
