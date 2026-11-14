@@ -1,0 +1,26 @@
+{
+  "campaign_id": "native_frontier",
+  "battles": [
+    {
+      "title": "Frontier Fleet Skirmish",
+      "config": "native-skirmish.run.json",
+      "mission": {
+        "id": "frontier",
+        "player_side": 1,
+        "record_fleet_stats": true
+      }
+    },
+    {
+      "title": "Close-Quarters Assault",
+      "config": "native-campaign-assault.run.json",
+      "mission": {
+        "id": "assault",
+        "player_side": 1,
+        "record_fleet_stats": true,
+        "requires": [
+          "frontier"
+        ]
+      }
+    }
+  ]
+}
