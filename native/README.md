@@ -299,6 +299,35 @@ battle outcome. Closing early and watching recordings grant no progress.
 The picker restores progress from completed run summaries in the same
 output directory. Keep those summaries to keep the unlocks.
 
+A Unity-free two-mission fleet campaign is available without any scene
+export or model checkpoint:
+
+```sh
+bees menu native/examples/native-frontier-campaign.json --output-dir native-frontier-save
+bees status native/examples/native-frontier-campaign.json --output-dir native-frontier-save
+```
+
+After winning the first mission, the second becomes available with a
+different authored enemy formation. Press **F** in the battle picker to
+view cumulative fleet careers. The `status` command prints the same
+mission unlocks and per-FleetShip battle, victory and mineral totals as
+JSON; it also works in a headless build.
+
+To persist those statistics, a mission must explicitly set
+`"record_fleet_stats": true`, matching its source Unity
+`Stage.RecordStats` setting. Missions that omit it still persist
+completion but do not write ship statistics. Only successfully
+completed campaign battles contribute persistent fleet outcomes, sourced
+from the Level-owned mining inventory. Temporary minions, aborted runs,
+policy rollouts and watched recordings never create career entries.
+Each durable battle summary is the transaction, so reopening or
+interrupted saving cannot double-credit fleet data. Existing summaries
+without this information continue to unlock missions; `status` reports
+how many lack career data rather than fabricating historical counts.
+This covers three Unity `FleetShip` counters; fleet editing, ship
+kill/damage/shot counters, saved squad replacement and account-wide
+progression remain separate parity work.
+
 Use `on_victory` to select an alternate run configuration when the named
 prerequisite's latest completed attempt was a victory. Both paths keep the
 same mission ID. The example uses Titania II's 330-second defense after a
