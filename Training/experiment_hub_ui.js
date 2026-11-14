@@ -151,6 +151,10 @@ function hubMetricDescription(name,units=[]) {
     if(gpu)return 'Reports '+gpu[2].replace(/_/g,' ')+' of physical GPU '+gpu[1]+'. This is host-wide hardware telemetry, not isolated job usage.';
     const collector=/^collector_(\d+)_(.+)$/.exec(name);
     if(collector)return 'Reports '+collector[2].replace(/_/g,' ')+' for rollout collector '+collector[1]+'. Use this to inspect collector throughput or overhead, not policy strength.';
+    if(/^colony_window_/.test(name))
+        return 'Observed during the latest 1–20 training-round colony behavior window, not a cumulative count. The window can be shorter near checkpoints and resets; use colony_window_rounds when comparing values.';
+    if(name.startsWith('colony_'))
+        return 'Derived from the latest bounded training-colony behavior window, not an independent candidate evaluation. Unreported values are not zeros.';
     const display=name.replace(/_/g,' ');
     const unit=units.length?' (units: '+units.join('/')+')':'';
     return 'Reports '+display+unit+' as published by the trainer or machine agent. This diagnostic value alone does not establish learning quality.';
@@ -1517,6 +1521,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const learningDefaults=['selection_candidate_survival_score',
             'selection_incumbent_survival_score','training_win_rate','training_score_rate',
             'training_mean_score','loss','entropy',
+            'colony_window_deliveries','colony_window_feedings',
+            'colony_window_births','colony_window_combat_deaths',
+            'colony_mean_population',
             'ant_decisions_per_second'].map(name=>'metric:'+name)
             .filter(key=>metricOptions.some(option=>option.key===key));
         const metricChoices=comparisonMetricOverrides.get(project) ??
@@ -2928,6 +2935,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const {entry,machine}=chosen;
         $('hub-design-run-panel').hidden=project!=='courier';
         if(project==='courier') {
+            const instructions=document.createElement('p');
+            instructions.className='muted';
+            instructions.textContent='Optional simulation modes default off. Colony mode enables shared food, feeding, births and combat. Evolution and communication require colonies; speed requires both. Food patches require colonies. Switching neural observation/action modes needs a fresh lineage, not an incompatible checkpoint continuation.';
+            $('hub-design-environment').append(instructions);
+        }
+        if(project==='courier') {
             for(const [key,label,min,max,defaultValue] of [
                 ['seed','Random seed',0,4294967295,42],
                 ['workers','Concurrent environment workers (optional)',1,64,null],
@@ -2995,7 +3008,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     field.default);
             }
             const hint=document.createElement('small');
-            hint.textContent=field.key+' · default '+String(field.default);
+            hint.textContent=field.key+' · default '+String(field.default)+
+                (field.type==='boolean'?' (off unless enabled)':'');
             label.append(input,hint);
             input.addEventListener('change',()=>{
                 try{readDesignControls();feedback('hub-config-message','');}
@@ -3125,6 +3139,9 @@ document.addEventListener('DOMContentLoaded', () => {
             'selection_candidate_mean_lifespan',
             'selection_candidate_gross_energy_per_step',
             'training_recent_mean_completed_lifespan',
+            'colony_window_deliveries','colony_window_feedings',
+            'colony_window_births','colony_window_combat_deaths',
+            'colony_window_colony_extinctions','colony_mean_population',
             'active_training_time','job_cpu_cores','host_cpu_busy_pct',
         ],
         tinybrains_rollout:[
@@ -3159,6 +3176,23 @@ document.addEventListener('DOMContentLoaded', () => {
         'selection_candidate_mean_steps_per_delivery',
         'selection_candidate_gross_energy_per_step',
         'selection_candidate_mean_feedings','selection_candidate_mean_births',
+        'colony_window_rounds','colony_window_pickups','colony_window_deliveries',
+        'colony_window_feedings','colony_window_births','colony_window_courier_deaths',
+        'colony_window_energy_deaths','colony_window_combat_deaths',
+        'colony_window_combat_encounters','colony_window_combat_rounds_won',
+        'colony_window_combat_rounds_lost','colony_window_colony_extinctions',
+        'colony_window_opponent_extinctions',
+        'colony_window_contested_pickup_attempts','colony_window_opponent_contests_won',
+        'colony_window_feeding_opportunities','colony_window_feeding_stay_choices',
+        'colony_window_messages_written','colony_window_stat_mutations',
+        'colony_window_speed_tiles_travelled',
+        'colony_window_patch_food_offered','colony_window_patch_food_placed',
+        'colony_patch_supply_fraction','colony_mean_population',
+        'colony_feedings_per_1000_courier_ticks','colony_births_per_1000_colony_ticks',
+        'colony_feeding_stay_fraction','colony_mean_energy_gained',
+        'colony_mean_food_storage_ticks','colony_teammate_food_fraction',
+        'colony_mean_colony_age_at_birth','colony_mean_courier_age_at_death',
+        'colony_mean_requested_distance',
         'benchmark_round','benchmark_survival_rate','benchmark_mean_lifespan',
         'benchmark_mean_deliveries','benchmark_pickup_rate',
         'benchmark_mean_steps_per_delivery','benchmark_gross_energy_per_step',
