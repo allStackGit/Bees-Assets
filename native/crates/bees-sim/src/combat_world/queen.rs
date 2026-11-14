@@ -184,8 +184,9 @@ impl CombatWorld {
             front_offset: minion.front_offset, bounds_latched: false,
         })?;
         if self.weapon_rank_history.frame.is_some() {
-            let parent = self.weapon_rank_history.ships.get(&queen_id)
-                .ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
+            let fleet_owner_ship_id = self.weapon_rank_history.ships.get(&queen_id)
+                .ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?
+                .fleet_owner_ship_id;
             let mut stats = self.weapon_target_rank_stats(queen_id)?;
             stats.ship_id = id;
             stats.ship_type_letter = minion.ship_type_letter;
@@ -194,7 +195,7 @@ impl CombatWorld {
             stats.max_range = minion.max_weapon_range;
             stats.speed = minion.base_speed;
             self.configure_weapon_rank_source(NativeWeaponRankSource {
-                stats, fleet_owner_ship_id: parent.fleet_owner_ship_id,
+                stats, fleet_owner_ship_id,
             })?;
         }
         self.configure_special_weapon(id, NativeSpecialWeaponSpec {
