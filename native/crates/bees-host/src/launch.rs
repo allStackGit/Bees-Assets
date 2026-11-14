@@ -2873,13 +2873,22 @@ fn run_battle(
     let campaign_banked_minerals = if campaign_outcome.is_some() &&
         mission.is_some_and(|mission| mission.bank_player_minerals) {
         let side = mission.expect("banked campaign owner").player_side;
-        Some(campaign_fleet.as_ref().ok_or_else(||
-            invalid("banked campaign cannot lack its FleetShip receipt"))?
-            .iter().filter(|ship| ship.side == side).try_fold(0_u64, |total, ship|
-                total.checked_add(u64::try_from(ship.minerals_mined_this_level)
-                    .map_err(|_| invalid("negative mined mineral balance"))?)
-                    .ok_or_else(|| invalid("banked campaign mineral overflow"))
-            )?)
+        if campaign_outcome.as_ref().is_some_and(|outcome|
+            outcome.winner_side == outcome.player_side)
+        {
+            Some(campaign_fleet.as_ref().ok_or_else(||
+                invalid("banked campaign cannot lack its FleetShip receipt"))?
+                .iter().filter(|ship| ship.side == side).try_fold(0_u64, |total, ship|
+                    total.checked_add(u64::try_from(ship.minerals_mined_this_level)
+                        .map_err(|_| invalid("negative mined mineral balance"))?)
+                        .ok_or_else(|| invalid("banked campaign mineral overflow"))
+                )?)
+        } else {
+            // Source campaign ending callbacks that bank resources run on
+            // victory. A completed defeat is a valid zero-income receipt,
+            // not a missing or replayable account transaction.
+            Some(0)
+        }
     } else { None };
     let mut final_summary = json!({
         "kind": "run_final",
