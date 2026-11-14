@@ -2200,13 +2200,68 @@ document.addEventListener('DOMContentLoaded', () => {
             const stage=measured.pipeline_collection_dominant?.value===1
                 ?'collection':measured.pipeline_optimization_dominant?.value===1
                     ?'optimization':null;
-            const signal=delay
+            // The primary diagnosis is a measured exposed delay, not proof
+            // of saturation or a scheduler instruction. Without 5-of-6
+            // consistent samples, preserve the existing uncertainty label.
+            const kind=measured.pipeline_primary_delay_kind?.value;
+            const owner=measured.pipeline_primary_worker_index?.value;
+            const collector=measured.pipeline_primary_collector_index?.value;
+            const labels={
+                1:'experience collection',
+                2:'PPO optimization',
+                3:'remote collector join',
+                4:'local GPU collector join',
+                5:'learner rollout merge',
+                6:'Courier policy-lineage dispatch queue',
+                7:'Courier last policy-lineage completion',
+            };
+            const substages={
+                1:'collection',2:'optimization',3:'simulation',
+                4:'observation',5:'policy inference',6:'experience ingestion',
+                7:'PPO minibatch preparation',
+                8:'GPU foreground batch-preparation wait',
+                9:'GPU minibatch transfer',10:'other collection work',
+            };
+            const code=measured.pipeline_primary_lineage_stage_code?.value;
+            let location='';
+            if(Number.isSafeInteger(owner)&&owner>=0&&owner<=63)
+                location=' · lineage '+owner;
+            if(Number.isSafeInteger(collector)&&collector>=0&&collector<=16) {
+                if(collector===0)location=' · learner';
+                else if(kind===4)location=' · local GPU collector '+collector;
+                else {
+                    location=' · collector '+collector;
+                    // Authenticated, Hub-created group members were frozen
+                    // in endpoint order. An absent/ambiguous machine mapping
+                    // remains an indexed collector rather than a guessed host.
+                    const suffix='Rollout '+collector+' for '+job.id.slice(-8);
+                    const matches=(state.jobs||[]).filter(member=>
+                        member.project_id==='tinybrains_rollout'&&
+                        member.frozen_parameters?.learner_job_id===job.id&&
+                        member.configuration_name===suffix&&
+                        member.assigned_machine_id);
+                    if(matches.length===1)
+                        location+=' on '+(state.machines.find(machine=>
+                            machine.id===matches[0].assigned_machine_id)
+                            ?.name||matches[0].assigned_machine_id);
+                }
+            }
+            const primary=Object.hasOwn(labels,kind)
+                ?' · Sustained exposed delay: '+labels[kind]+location+
+                    (Object.hasOwn(substages,code)
+                        ?' ('+substages[code]+')':'')+
+                    ' (cause not proven by hardware activity)'
+                :measured.pipeline_multiple_delay_evidence?.value===1
+                    ?' · Multiple overlapping delays; no unique limiting stage'
+                    :null;
+            const signal=primary??(delay
                 ?' · Sustained collection delay: '+delay+' (not proof of hardware saturation)'
                 :stage
                     ?' · Sustained longest stage: '+stage+' (not a hardware saturation claim)'
-                    :measured.pipeline_timing_sample_count?.value>0
+                    :measured.pipeline_timing_sample_count?.value>0||
+                     measured.training_timing_sample_count?.value>0
                         ?' · Bottleneck stage: insufficient sustained evidence'
-                        :'';
+                        :'');
             const measuredWorkers=[];
             for(let i=0;i<9;i++) {
                 for(const stageName of ['engine','observation','inference','opponent']) {
@@ -2245,7 +2300,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ['pipeline_gpu_host_busy_pressure','allocated GPUs host-busy'],
                 ['pipeline_gpu_mixed_host_evidence','allocated GPUs show mixed host activity'],
                 ['pipeline_cpu_underuse_evidence','CPU lease underused during collection'],
-                ['pipeline_gpu_idle_evidence','allocated GPUs host-idle during optimization']
+                ['pipeline_gpu_idle_evidence','allocated GPUs host-idle during optimization'],
+                ['pipeline_ram_scan_pressure','PSS/USS inspection overhead']
             ].filter(([metric])=>measured[metric]?.value===1)
                 .map(([,name])=>name);
             const resourceSignal=resourceFlags.length
@@ -2318,6 +2374,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const knownPerformanceMetrics=[
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
         'active_training_time',
+        'pipeline_primary_delay_kind','pipeline_primary_collector_index',
+        'pipeline_primary_worker_index','pipeline_primary_lineage_stage_code',
+        'pipeline_primary_evidence_samples','pipeline_multiple_delay_evidence',
+        'pipeline_ram_scan_work_share','pipeline_ram_scan_pressure',
+        'local_lease_ram_scan_delta','local_lease_ram_scan_calls_delta',
         'pipeline_collection_work_share','pipeline_optimization_work_share',
         'pipeline_collection_dominant','pipeline_optimization_dominant',
         'pipeline_remote_wait_work_share','pipeline_merge_work_share',
@@ -2374,6 +2435,10 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
         'ppo_gpu_stream_interval_seconds',
+        'training_gpu_prefetch_wait_max_seconds',
+        'training_gpu_prefetch_copy_max_seconds',
+        'training_gpu_prefetch_slowest_worker',
+        'training_queue_pressure','training_final_join_pressure',
         'simulation_active_matches','simulation_target_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
         'simulation_tuner_settled','simulation_target_restored',
