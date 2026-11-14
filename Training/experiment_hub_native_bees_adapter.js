@@ -397,19 +397,19 @@ function createNativeBeesAdapter({
         cwd: path.dirname(runner),
         stop_policy: 'terminate-group',
         config_sha256: configSha256,
-        ...(!collectOnly ? {
-            gpu_execution: 'cuda',
-            rocr_gpu_uuids,
-            // The existing bounded Hub verifier validates actual HIP ordinal
-            // identity against this frozen PCI lease before any model loads.
-            gpu_verify_args(_parameters, context) {
-                if (!PCI.test(String(context?.gpu_pci_address || '')) ||
-                    context?.gpu_pci_addresses !== undefined)
-                    throw Error('Native Bees ROCm verification requires one leased physical GPU.');
-                return ['-B', path.join(__dirname, 'experiment_hub_tinybrains_rocm_verify.py'),
-                    context.gpu_pci_address];
-            },
-        } : {}),
+        gpu_execution: 'cuda',
+        rocr_gpu_uuids,
+        // Collection and optimization both run the same native model
+        // inference backend. A collector may require GPU inference even
+        // though it does not own an optimizer or the learner checkpoint.
+        // Verify the exact PCI/HIP ordinal before either workload starts.
+        gpu_verify_args(_parameters, context) {
+            if (!PCI.test(String(context?.gpu_pci_address || '')) ||
+                context?.gpu_pci_addresses !== undefined)
+                throw Error('Native Bees ROCm verification requires one leased physical GPU.');
+            return ['-B', path.join(__dirname, 'experiment_hub_tinybrains_rocm_verify.py'),
+                context.gpu_pci_address];
+        },
         args(parameters, context) {
             const output = jobRoot(context);
             const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
@@ -496,7 +496,7 @@ function createNativeBeesAdapter({
             if (context.gpu_pci_addresses !== undefined ||
                 (gpu && (!PCI.test(String(pci)) || context.gpu_mode !== 'exclusive' ||
                     (cudaUuid !== undefined && !CUDA_UUID.test(String(cudaUuid))))) ||
-                (!gpu && cudaUuid !== undefined) || (collectOnly && gpu))
+                (!gpu && cudaUuid !== undefined))
                 throw Error('Native Bees execution requires an exclusive single-GPU lease or CPU-only placement.');
             const inputs = roundInputs(context);
             if (refresh_opponent_slot !== undefined) {
