@@ -4410,26 +4410,30 @@ document.addEventListener('DOMContentLoaded', () => {
             m.tinybrains_rollout_endpoint===endpoint&&
             m.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
             m.installed_projects?.includes('tinybrains_rollout')));
-        const ready=Boolean(machine&&
+        // A subset can run while other preapproved machines are offline.
+        // Ambiguous endpoint owners are excluded rather than guessed.
+        const available=endpoints.flatMap((endpoint,index)=>
+            workers[index].length===1
+                ?[{endpoint,machine:workers[index][0]}]:[]);
+        const ready=Boolean(machine&&available.length>=1&&
             state.projects.some(p=>p.id==='tinybrains_rollout')&&
-            workers.every(m=>m.length===1)&&
-            new Set(workers.map(m=>m[0]?.id)).size===workers.length);
+            new Set(available.map(item=>item.machine.id)).size===available.length);
         if(distributedBudgetHost!==machine?.id) {
             distributedBudgetHost=machine?.id||null;
             // Defaults carry the machine ID obtained from authenticated
             // agent reports; operators can reorder entries or vary budgets
             // without having to correlate endpoint list positions manually.
-            distributedBudgets.value=JSON.stringify(workers.map(matches=>({
-                machine_id:matches[0]?.id||'',
+            distributedBudgets.value=JSON.stringify(available.map(item=>({
+                machine_id:item.machine.id,
                 cpus:2,ram_mb:4096,gpu_count:0,
             })),null,2);
         }
         distributedQueue.disabled=!ready;
         distributedDetails.textContent=ready
-            ?'Approved collectors: '+workers.map((items,i)=>
-                endpoints[i]+' on '+items[0].id).join('; ')+
-                '. Remove unwanted JSON entries to reserve only the chosen machines. Budgets are keyed by machine_id in any order; CPU threads follow the lease by default. CPU-only or one exclusive GPU per collector.'
-            :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
+            ?'Available approved collectors: '+available.map(item=>
+                item.endpoint+' on '+item.machine.id).join('; ')+
+                '. Remove unwanted JSON entries to reserve only the chosen machines. Offline or ambiguous workers are not selected. Budgets are keyed by machine_id in any order; CPU threads follow the lease by default. CPU-only or one exclusive GPU per collector.'
+            :'Register the tinybrains_rollout project and connect at least one distinct, authenticated approved worker.';
     }
     $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
     distributedMachine.addEventListener('change',renderDistributedGroup);
