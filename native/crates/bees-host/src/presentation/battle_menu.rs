@@ -32,12 +32,17 @@ pub struct NativeTransferMenuRow {
     pub title: String,
     pub fleet_ship_id: i64,
     pub to_saved_squad_id: i64,
+    /// Original hulls need source-faction and current SavedSquad
+    /// provenance; purchased hulls use the existing transfer ledger.
+    pub authored_from: Option<(i32, i64)>,
 }
 
 pub enum NativeBattleMenuAction {
     Play(usize),
     Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
+    Reassign { side: i32, fleet_ship_id: i64,
+        from_saved_squad_id: i64, to_saved_squad_id: i64 },
 }
 
 /// Returns a playable battle or purchase request, never applies
@@ -97,9 +102,17 @@ pub fn select_battle(
             let count = if show_transfer { transfer_rows.len() } else { shop_rows.len() };
             let choose = |index: usize| {
                 if show_transfer {
-                    transfer_rows.get(index).map(|row| NativeBattleMenuAction::Transfer {
-                        fleet_ship_id: row.fleet_ship_id,
-                        to_saved_squad_id: row.to_saved_squad_id,
+                    transfer_rows.get(index).map(|row| match row.authored_from {
+                        Some((side, from_saved_squad_id)) => NativeBattleMenuAction::Reassign {
+                            side,
+                            fleet_ship_id: row.fleet_ship_id,
+                            from_saved_squad_id,
+                            to_saved_squad_id: row.to_saved_squad_id,
+                        },
+                        None => NativeBattleMenuAction::Transfer {
+                            fleet_ship_id: row.fleet_ship_id,
+                            to_saved_squad_id: row.to_saved_squad_id,
+                        },
                     })
                 } else {
                     shop_rows.get(index).filter(|row| row.unlocked)
