@@ -2106,8 +2106,8 @@ Each HTTP chunk is limited to 1 MiB, a single file snapshot to 500 MB,
 and the receiving Hub to 256 files / 5 GB per job. The Hub also
 requires at least 2 GB of verified free filesystem space after each chunk
 so optional diagnostics cannot consume the checkpoint/journal disk reserve.
-Each cycle transfers up to 32 MiB, resumes from a verified staging offset,
-and
+Each cycle transfers up to 32 MiB for diagnostics or 128 MiB for native
+collector captures, resumes from a verified staging offset, and
 publishes a file atomically only after its complete SHA-256 matches.
 The coordinator stores private completed snapshots in
 `hub-remote-artifacts/<job-id>/`; unfinished pieces are not export inputs.
