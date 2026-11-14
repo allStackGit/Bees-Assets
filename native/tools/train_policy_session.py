@@ -316,6 +316,20 @@ def ensure_evaluation(round_directory, manifest, recipe):
 
 
 
+def evaluation_due(index, target, recipe):
+    """Always evaluate the final completed candidate, even off cadence.
+
+    Already-issued holdout attempts are also completed on recovery;
+    changing --rounds must not strand a previously committed evaluation.
+    """
+    return index % recipe.get("evaluation_every", 1) == 0 or index == target
+
+
+def evaluation_attempt_exists(directory):
+    return any(EVALUATION_ATTEMPT.fullmatch(path.name)
+               for path in directory.iterdir())
+
+
 def measured_distributed_collection_windows(completed):
     """Only receipt-matched observed fleet windows contribute to fleet SPS.
 
@@ -814,10 +828,11 @@ def main():
             baseline_holdout = ensure_evaluation(
                 root, Path(manifest["path"]), recipe,
             )
-            for directory, record in completed:
-                evaluations[str(directory)] = ensure_evaluation(
-                    directory, Path(record["next_manifest"]), recipe,
-                )
+            for index, (directory, record) in enumerate(completed, 1):
+                if evaluation_due(index, args.rounds, recipe) or evaluation_attempt_exists(directory):
+                    evaluations[str(directory)] = ensure_evaluation(
+                        directory, Path(record["next_manifest"]), recipe,
+                    )
             best_evaluated = publish_best_evaluated(
                 root, recipe, completed, evaluations, baseline_holdout,
             )
@@ -964,7 +979,7 @@ def main():
             atomic_json(root / "session-progress.json", progress_snapshot(
                 completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
             ))
-            if "evaluation_config" in recipe:
+            if "evaluation_config" in recipe and evaluation_due(index, args.rounds, recipe):
                 check_native_input_dependencies(recipe)
                 evaluations[str(directory)] = ensure_evaluation(directory, next_manifest, recipe)
                 best_evaluated = publish_best_evaluated(
