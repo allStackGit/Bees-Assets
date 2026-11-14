@@ -2278,6 +2278,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' (not hardware saturation)'
                 :'';
             const enginePressure=[];
+            if(measured.training_sim_info_rebuild_pressure?.value===1)
+                enginePressure.push('Courier routine info reconstruction overhead');
             for(let i=0;i<9;i++) {
                 if(measured['collector_'+i+'_sim_straggler_pressure']?.value===1)
                     enginePressure.push((i===0?'Learner':'Collector '+i)+
@@ -2438,6 +2440,12 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_gpu_prefetch_wait_max_seconds',
         'training_gpu_prefetch_copy_max_seconds',
         'training_gpu_prefetch_slowest_worker',
+        'training_info_recv_max_seconds','training_info_rebuild_max_seconds',
+        'training_info_recv_slowest_worker',
+        'training_info_rebuild_slowest_worker',
+        'training_sparse_info_events',
+        'training_sim_info_rebuild_max_ratio',
+        'training_sim_info_rebuild_pressure',
         'training_queue_pressure','training_final_join_pressure',
         'simulation_active_matches','simulation_target_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
