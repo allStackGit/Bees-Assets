@@ -4318,7 +4318,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const distributedMachine=document.createElement('select');
     const distributedBudgets=document.createElement('textarea');
     distributedBudgets.rows=5;
-    distributedBudgets.placeholder='Worker resource budgets, in endpoint order';
+    distributedBudgets.placeholder='Worker resource budgets keyed by machine_id (any order)';
     const distributedDetails=document.createElement('div');
     const distributedFeedback=document.createElement('div');
     const distributedMachineLabel=document.createElement('label');
@@ -4366,8 +4366,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 collectors:budgets.map(item=>{
                     if(!item||typeof item!=='object'||Array.isArray(item))
                         throw Error('Each collector budget must be a JSON object.');
-                    const {threads,...resources}=item;
-                    return {resources,...(threads===undefined?{}:{threads})};
+                    const {threads,machine_id,...resources}=item;
+                    return {resources,
+                        ...(threads===undefined?{}:{threads}),
+                        ...(machine_id===undefined?{}:{machine_id})};
                 }),
             });
             distributedFeedback.textContent='Queued learner '+result.learner.id+
@@ -4399,12 +4401,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 m.tinybrains_remote_rollout_endpoints.length+' collectors',m.id)));
         if(machines.some(m=>m.id===prior))distributedMachine.value=prior;
         const machine=machines.find(m=>m.id===distributedMachine.value);
-        if(distributedBudgetHost!==machine?.id) {
-            distributedBudgetHost=machine?.id||null;
-            distributedBudgets.value=JSON.stringify(
-                (machine?.tinybrains_remote_rollout_endpoints||[]).map(()=>
-                    ({cpus:2,ram_mb:4096,gpu_count:0,threads:2})),null,2);
-        }
         const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
         const workers=endpoints.map(endpoint=>state.machines.filter(m=>
             m.status==='connected'&&m.id!==machine.id&&
@@ -4415,11 +4411,21 @@ document.addEventListener('DOMContentLoaded', () => {
             state.projects.some(p=>p.id==='tinybrains_rollout')&&
             workers.every(m=>m.length===1)&&
             new Set(workers.map(m=>m[0]?.id)).size===workers.length);
+        if(distributedBudgetHost!==machine?.id) {
+            distributedBudgetHost=machine?.id||null;
+            // Defaults carry the machine ID obtained from authenticated
+            // agent reports; operators can reorder entries or vary budgets
+            // without having to correlate endpoint list positions manually.
+            distributedBudgets.value=JSON.stringify(workers.map(matches=>({
+                machine_id:matches[0]?.id||'',
+                cpus:2,ram_mb:4096,gpu_count:0,threads:2,
+            })),null,2);
+        }
         distributedQueue.disabled=!ready;
         distributedDetails.textContent=ready
             ?'Approved collectors: '+workers.map((items,i)=>
                 endpoints[i]+' on '+items[0].id).join('; ')+
-                '. Modify each CPU/RAM budget, its independent threads setting, or request an exclusive CUDA GPU.'
+                '. Budgets are bound to machine_id in any order. Adjust CPU/RAM, independent thread counts, or request an exclusive CUDA/ROCm GPU.'
             :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
     }
     $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
