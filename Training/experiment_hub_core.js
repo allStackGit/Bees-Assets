@@ -67,6 +67,20 @@ function remoteCollectorLimit(learner) {
         ?Math.max(0,learner.resources?.gpu_count-2):0;
     return MAX_REMOTE_COLLECTORS-extras;
 }
+// Both ordinary and distributed queues must inspect the SAME immutable
+// lease-derived device choice before checking local native capabilities.
+// A declared device is never overwritten; malformed allocations still fail
+// through their existing capacity and physical device checks.
+function allocatedTinyBrainsParameters(parameters,resources) {
+    const resolved={...parameters};
+    if(resolved.device!==undefined)return resolved;
+    if(resources.gpu_count===0)resolved.device='cpu';
+    else if(resources.gpu_count===2&&resources.gpu_mode==='exclusive')
+        resolved.device='dual';
+    else if(resources.gpu_count>=3&&resources.gpu_count<=8&&
+            resources.gpu_mode==='exclusive')resolved.device='multi';
+    return resolved;
+}
 const FINAL_EVALUATION_GRACE_MS = 24 * 60 * 60 * 1000;
 function fingerprint(machineId, token) {
     return crypto.createHash('sha256').update(machineId + ':' + token).digest('hex');
@@ -4649,8 +4663,7 @@ class ExperimentHub {
         // leaves the device automatic. Validate the eventual frozen device,
         // not the pre-queue draft, before any collector resource is claimed.
         const learnerParameters=config?.parameters&&
-            learnerBudget.gpu_count===0&&config.parameters.device===undefined
-            ?{...config.parameters,device:'cpu'}:config?.parameters;
+            allocatedTinyBrainsParameters(config.parameters,learnerBudget);
         const discovery=learnerMachine?.tinybrains_remote_rollout_discovery===true;
         // Discovery uses the same authenticated machine reports and shared
         // private HMAC identity as the static allowlist. Resolve once at
@@ -5060,14 +5073,8 @@ class ExperimentHub {
         // or supported two-GPU lease without requiring a separate profile.
         // Keep the derived choice frozen before the job fingerprint and all
         // existing capability, GPU isolation and continuation checks.
-        if(project.id==='tinybrains'&&frozen.device===undefined) {
-            if(resources.gpu_count===0)frozen.device='cpu';
-            else if(resources.gpu_count===2&&resources.gpu_mode==='exclusive')
-                frozen.device='dual';
-            else if(resources.gpu_count>=3&&resources.gpu_count<=8&&
-                    resources.gpu_mode==='exclusive')
-                frozen.device='multi';
-        }
+        if(project.id==='tinybrains')
+            Object.assign(frozen,allocatedTinyBrainsParameters(frozen,resources));
         // Telemetry selection is independent from optimizer configuration
         // fingerprints. It never influences a model or continuation lineage.
         const selectedMetrics=value.metric_selection??null;
