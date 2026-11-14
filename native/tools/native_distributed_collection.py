@@ -43,6 +43,14 @@ def _issued_allocations(path, baseline):
                 item.get("physics_workers") != original[item["id"]].get("physics_workers")
                 for item in read_plan_document["collectors"])):
         raise ValueError(f"issued collector resources differ from pinned plan: {path}")
+    initial = sorted(baseline["collectors"], key=lambda row: row["world_start"])
+    actual = sorted(read_plan_document["collectors"], key=lambda row: row["world_start"])
+    if (actual[0]["world_start"] != initial[0]["world_start"] or
+            sum(row["world_count"] for row in actual) !=
+            sum(row["world_count"] for row in initial) or
+            any(left["world_start"] + left["world_count"] != right["world_start"]
+                for left, right in zip(actual, actual[1:]))):
+        raise ValueError(f"issued collector world domain differs from pinned plan: {path}")
     return read_plan_document
 
 
@@ -115,7 +123,7 @@ def balanced_round_plan(root, baseline, completed, round_number):
     ids = {item["id"] for item in current["collectors"]}
     by_id = {item["id"]: item for item in current["collectors"]}
     rates = {name: [] for name in ids}
-    runners = set()
+    runners = {name: set() for name in ids}
     for _, record in completed[-3:]:
         samples = record.get("rollout_metrics", {}).get("collectors")
         if not isinstance(samples, list) or len(samples) != len(ids) or (
@@ -134,9 +142,12 @@ def balanced_round_plan(root, baseline, completed, round_number):
                     seconds < 30.0 or type(steps) is not int or steps < 2000 or
                     not isinstance(row.get("native_runner_sha256"), str)):
                 return current, {"reason": "unrepresentative_collector_measurements"}
-            runners.add(row["native_runner_sha256"])
+            runners[row["id"]].add(row["native_runner_sha256"])
             rates[row["id"]].append(worlds / seconds)
-    if len(runners) != 1 or any(
+    # Windows, Linux and distinct CPU architectures legitimately build
+    # different native executables. Require implementation stability within
+    # each collector, not byte-identical executables across machines.
+    if any(len(hashes) != 1 for hashes in runners.values()) or any(
         max(samples) > min(samples) * 1.15 for samples in rates.values()
     ):
         return current, {"reason": "unstable_collector_measurements"}
