@@ -2404,6 +2404,10 @@ class ExperimentHub {
             if(!job||job.adapter!=='unconfigured'||job.status!=='waiting_adapter'||job.dispatch_id)
                 throw Error('Only an unstarted non-Bees job claim can move.');
             if(job.resource_bundle||job.distributed_rollout_managed===true||
+                job.distributed_courier_managed===true||
+                job.project_id==='courier_lineage'&&next.jobs.some(parent=>
+                    parent.id===job.frozen_parameters?.learner_job_id&&
+                    parent.distributed_courier_managed===true)||
                 job.project_id==='tinybrains_rollout'&&next.jobs.some(parent=>
                     parent.id===job.frozen_parameters?.learner_job_id&&
                     parent.distributed_rollout_managed===true))
@@ -4899,8 +4903,9 @@ class ExperimentHub {
                 throw Error('Bundle member '+job.resource_bundle.index+
                     ' / '+job.project_id+' cannot Start: '+readiness.reason);
             if(job.distributed_rollout_managed===true||
-                job.project_id==='tinybrains_rollout')
-                throw Error('Distributed rollout groups use their own verified learner barrier.');
+                job.distributed_courier_managed===true||
+                ['tinybrains_rollout','courier_lineage'].includes(job.project_id))
+                throw Error('Managed distributed groups use their own verified learner barrier.');
         }
         const pending=(this.state.bundle_start_plans||[]).find(plan=>
             plan.bundle_id===value.bundle_id&&
@@ -5856,6 +5861,26 @@ class ExperimentHub {
             throw Error('Cancel the pending distributed group approval before cancelling an individual native job.');
         if (job.status==='cancelled') return copy(job);
         const cancelledAt=now();
+        if(job.project_id==='courier_lineage'&&
+            next.jobs.some(parent=>
+                parent.id===job.frozen_parameters?.learner_job_id&&
+                parent.distributed_courier_managed===true&&
+                !parent.distributed_abort_requested_at))
+            throw Error('Cancel the managed Courier learner group, not one pinned PPO sidecar.');
+        if(job.project_id==='courier'&&job.distributed_courier_managed===true) {
+            job.distributed_abort_requested_at=cancelledAt;
+            for(const plan of next.courier_launch_plans||[])
+                if(plan.learner_job_id===job.id&&plan.status==='pending') {
+                    plan.status='disarmed';
+                    plan.reason='Unstarted Courier distributed group cancelled.';
+                    plan.resolved_at=cancelledAt;
+                }
+            for(const child of next.jobs.filter(candidate=>
+                candidate.project_id==='courier_lineage'&&
+                candidate.frozen_parameters?.learner_job_id===job.id&&
+                candidate.status!=='cancelled'))
+                this.cancelUnstartedJob(next,child,cancelledAt);
+        }
         if(job.project_id==='tinybrains'&&job.distributed_rollout_managed===true) {
             // The collector jobs are not checkpoint successors: they exist
             // solely for this learner. Cancel every unstarted child before
