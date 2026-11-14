@@ -33,6 +33,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_simulation_tuner_accepted','training_simulation_tuner_settled',
     'training_sim_tuning_pending','training_sim_tuning_lineage',
     'training_simulation_idle_shards',
+    'training_sim_priority_reorders','training_sim_priority_active_lineages',
     'training_gpu_optimizer_lineages','training_gpu_optimizer_next_lineages',
     'training_gpu_optimizer_tuner_adjustments',
     'training_gpu_optimizer_tuner_accepted',
@@ -98,6 +99,7 @@ function courierMetrics(source) {
         'sim_shared_copy_seconds','sim_shared_gather_seconds',
         'sim_info_recv_seconds','sim_shared_transfer_mb','sim_child_cpu_seconds',
         'sim_active_shards','sim_next_shards',
+        'sim_priority_active','sim_priority_reorders',
         'ppo_integrity_seconds',
     ];
     for(const key of ownerKeys) {
@@ -125,6 +127,7 @@ function courierMetrics(source) {
         'training_cpu_parallelism','training_cpu_sum_seconds',
         'training_concurrency_limit','training_concurrency_next_limit',
         'training_simulation_shards','training_simulation_active_shards',
+        'training_sim_priority_reorders','training_sim_priority_active_lineages',
         'training_gpu_optimizer_lineages','training_gpu_devices_assigned',
         'training_gpu_devices_active','training_ppo_integrity_checks',
         'training_ppo_integrity_max_seconds',...ownerKeys,
@@ -152,7 +155,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             /^training_gpu_device_[0-7]_lineages$/.test(name)||
-            /^worker_[0-9]{1,2}_sim_(?:shards|active_shards|next_shards)$/.test(name))?'count':
+            /^worker_[0-9]{1,2}_sim_(?:shards|active_shards|next_shards|priority_active|priority_reorders)$/.test(name))?'count':
             name.endsWith('_mb')?'mb':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
