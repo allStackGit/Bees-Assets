@@ -119,7 +119,13 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_cpu_parallelism','training_queue_max_seconds',
             'training_checkpoint_snapshot_seconds',
             'training_checkpoint_max_worker_seconds',
-            'training_reply_gap_seconds','training_last_reply_worker'])
+            'training_reply_gap_seconds','training_last_reply_worker',
+            'training_remote_roundtrip_max_seconds',
+            'training_remote_service_max_seconds',
+            'training_remote_encode_max_seconds',
+            'training_remote_decode_max_seconds',
+            'training_remote_artifact_max_seconds',
+            'training_remote_critical_gap_ratio'])
             retain(name,reported[name]);
         // Show measured stage pressure before unrelated high-cardinality
         // project metrics consume the default 96-chart-field cache.
@@ -131,6 +137,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_remote_wait_dominant',
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
+            'training_remote_gap_pressure','training_remote_codec_pressure',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
@@ -422,6 +429,28 @@ class BottleneckEvidence {
             if(queueShare!==null)add('training_queue_work_share',queueShare);
             if(gapShare!==null)add('training_reply_gap_work_share',gapShare);
             const stageHints=[];
+            // Only the slowest REMOTE lineage can demonstrate a potential
+            // distributed critical-path delay. A high residual from an
+            // early finishing worker does not limit the completed batch.
+            const remoteWall=seconds('training_remote_roundtrip_max_seconds');
+            const remoteGapMetric=metrics.training_remote_critical_gap_ratio;
+            const remoteGap=remoteGapMetric?.unit==='ratio'&&
+                Number.isFinite(remoteGapMetric.value)
+                ?remoteGapMetric.value:null;
+            const critical=metrics.training_remote_roundtrip_owner?.value;
+            const remoteImportant=remoteWall!==null&&remoteWall>=0.3*wall&&
+                remoteWall>=0.5&&Number.isSafeInteger(critical);
+            const remoteGapHint=remoteImportant&&remoteGap!==null&&
+                remoteGap>=0.35;
+            // Encoding/decoding time is exclusive measured client work.
+            // In contrast, socket receive wall contains worker execution,
+            // remote scheduling, and blocking; it is not link utilization.
+            const remoteCodecHint=remoteImportant&&[
+                ['encode','training_remote_encode_max_seconds'],
+                ['decode','training_remote_decode_max_seconds'],
+            ].some(([stage,field])=>
+                metrics['training_remote_'+stage+'_owner']?.value===critical&&
+                seconds(field)!==null&&seconds(field)/remoteWall>=0.25);
             for(let i=0;i<count;i++) {
                 const collect=seconds('worker_'+i+'_collection_seconds');
                 const optimize=seconds('worker_'+i+'_optimization_seconds');
@@ -466,7 +495,9 @@ class BottleneckEvidence {
                     // With queued lineages, the last completion may be a
                     // normal admission wave rather than a slow worker.
                     courierTail:gapShare!==null&&gapShare>=0.25&&
-                        (queueShare===null||queueShare<=0.10)});
+                        (queueShare===null||queueShare<=0.10),
+                    courierRemoteGap:remoteGapHint,
+                    courierRemoteCodec:remoteCodecHint});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -479,6 +510,10 @@ class BottleneckEvidence {
                     add('training_queue_pressure',1,'count');
                 if(sustained(x=>x.courierTail))
                     add('training_final_join_pressure',1,'count');
+                if(sustained(x=>x.courierRemoteGap))
+                    add('training_remote_gap_pressure',1,'count');
+                if(sustained(x=>x.courierRemoteCodec))
+                    add('training_remote_codec_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.cpuBusy))
                     add('pipeline_cpu_lease_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.throttled))
