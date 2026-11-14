@@ -1377,7 +1377,7 @@ fn preflight_native_fleet_edit(
             }
             source.apply_authored_fleet_roster(side, authored_roster)
                 .map_err(|error| contextual("shop original FleetShip reassignment", error))?;
-            source.install_purchased_ships(side, &active)
+            source.install_purchased_ships(side, &active, &dead)
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
             source.omit_killed_fleet_ships(side, &dead)
                 .map_err(|error| contextual("shop saved-fleet casualties", error))?;
@@ -2113,8 +2113,11 @@ fn run_battle(
             }
         }
         if let Some(purchased) = mission.and_then(|mission| mission.purchased_ships) {
+            let empty_casualties = HashSet::new();
             let installed = source.install_purchased_ships(
                 mission.expect("campaign purchase owner").player_side, purchased,
+                mission.and_then(|mission| mission.lost_fleet_ids)
+                    .unwrap_or(&empty_casualties),
             ).map_err(|error| contextual("purchased campaign ships", error))?;
             if installed != 0 {
                 println!("{}", json!({
