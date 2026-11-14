@@ -1204,17 +1204,32 @@ fn preflight_native_ship_purchase(
     progress: &battle_catalog::CampaignProgress<'_>,
     side: i32, ship_type: u8, saved_squad_id: i64, price_tsv: u64,
 ) -> Result<i64, Box<dyn Error>> {
+    let dead = progress.lost_player_fleet_ids(side)?;
+    let mut projected = progress.purchases_for_side(side);
+    projected.retain(|ship| !dead.contains(&ship.fleet_ship_id));
+    projected.push(NativePurchasedShip {
+        // Probe with a fleet identity outside any authored/native account
+        // range. This preview is discarded before an atomic purchase commit.
+        fleet_ship_id: i64::MAX, saved_squad_id, ship_type, price_tsv,
+    });
+    preflight_native_fleet_edit(catalog, root, progress, side, &projected,
+        saved_squad_id)
+}
+
+/// This is the same source-scene preflight for both ship construction
+/// and between-mission squad reassignment. It does not create a separate
+/// set of combat/formation/policy rules.
+fn preflight_native_fleet_edit(
+    catalog: &battle_catalog::BattleCatalog, root: &Path,
+    progress: &battle_catalog::CampaignProgress<'_>, side: i32,
+    projected: &[NativePurchasedShip], target_saved_squad_id: i64,
+) -> Result<i64, Box<dyn Error>> {
     let max_size = catalog.max_squad_ships.ok_or_else(||
         invalid("native shop needs the source's maximum squad size"))? as usize;
     let dead = progress.lost_player_fleet_ids(side)?;
-    let mut purchases = progress.purchases_for_side(side);
-    purchases.retain(|ship| !dead.contains(&ship.fleet_ship_id));
-    // Probe a new unique identity using the SAME authored scene adapter as
-    // the actual game. This preview is dropped; it does not touch the
-    // player's balance, battle output or physics simulation.
-    purchases.push(NativePurchasedShip {
-        fleet_ship_id: i64::MAX, saved_squad_id, ship_type, price_tsv,
-    });
+    if projected.iter().any(|ship| dead.contains(&ship.fleet_ship_id)) {
+        return Err(invalid("dead purchased hull cannot be assigned to a saved squad").into());
+    }
     let mut highest_fleet_id = 0_i64;
     let mut checked = 0_u64;
     for entry in &catalog.battles {
@@ -1280,12 +1295,12 @@ fn preflight_native_ship_purchase(
                     }
                 }
             }
-            source.install_purchased_ships(side, &purchases)
+            source.install_purchased_ships(side, projected)
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
             source.omit_killed_fleet_ships(side, &dead)
                 .map_err(|error| contextual("shop saved-fleet casualties", error))?;
             let squad = source.source_squads.iter().find(|squad|
-                squad.saved_squad_id == Some(saved_squad_id) &&
+                squad.saved_squad_id == Some(target_saved_squad_id) &&
                 squad.side == side && squad.player_permissions.user_controlled
             ).ok_or_else(|| invalid("new hull's saved squad is missing"))?;
             if squad.members.len() > max_size {
