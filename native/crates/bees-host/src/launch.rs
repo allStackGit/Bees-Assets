@@ -1098,7 +1098,9 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 } else { "" };
             BattleMenuRow { title: entry.title.trim(), status, unlocked }
         }).collect::<Vec<_>>();
-        let Some(index) = select_battle(&rows, &mut selected, launch_failed)? else { break };
+        let fleet_rows = progress.fleet_rows();
+        let Some(index) = select_battle(&rows, &mut selected, launch_failed, &fleet_rows)?
+            else { break };
         let entry = &catalog.battles[index];
         let config = resolve(root, entry.config_for(&progress));
         let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
