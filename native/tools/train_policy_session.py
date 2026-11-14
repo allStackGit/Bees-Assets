@@ -582,6 +582,8 @@ def main():
                         help="source side 1 or 2 whose victories are measured")
     parser.add_argument("--evaluation-policy-seed", type=int, default=0,
                         help="fixed policy action-sampling RNG seed during holdout evaluation")
+    parser.add_argument("--evaluation-every", type=int, default=1,
+                        help="run a pinned holdout every N optimizer rounds and at the final target (default: 1)")
     parser.add_argument("--early-stop-patience", type=int,
                         help="stop after this many evaluated rounds without meaningful fixed-reference victories")
     parser.add_argument("--early-stop-minimum-rounds", type=int, default=3,
@@ -629,6 +631,9 @@ def main():
     if (not 0 <= args.evaluation_policy_seed < (1 << 63) or
             args.evaluation_run_config is None and args.evaluation_policy_seed != 0):
         parser.error("--evaluation-policy-seed requires a holdout and a nonnegative int63 seed")
+    if not 1 <= args.evaluation_every <= 99999 or (
+            args.evaluation_every != 1 and args.evaluation_run_config is None):
+        parser.error("--evaluation-every must be positive and requires a fixed holdout suite")
     if args.early_stop_patience is not None:
         if args.evaluation_run_config is None or not 1 <= args.early_stop_patience <= 99999:
             parser.error("early stopping requires an evaluation suite and positive patience")
@@ -743,6 +748,8 @@ def main():
         recipe["evaluation_config"] = pinned(args.evaluation_run_config)
         recipe["evaluation_side"] = args.evaluation_side
         recipe["evaluation_policy_seed"] = args.evaluation_policy_seed
+        if args.evaluation_every != 1:
+            recipe["evaluation_every"] = args.evaluation_every
     if args.early_stop_patience is not None:
         recipe["early_stop"] = {
             "patience_rounds": args.early_stop_patience,
