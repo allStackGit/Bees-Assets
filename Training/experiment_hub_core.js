@@ -2706,6 +2706,10 @@ class ExperimentHub {
                 key_fingerprint:host.courier_lineage_key_fingerprint});
         }
         const next=copy(this.state),atTime=now(),dispatches={};
+        // The owner-verified terminal report remains authoritative for
+        // releasing the learner's resources. This flag only opts in to
+        // release after the native supervisor proves actual completion.
+        next.jobs.find(job=>job.id===learner.id).release_on_terminal=true;
         for(const id of ids) {
             const member=next.jobs.find(job=>job.id===id);
             member.status='start_requested';
