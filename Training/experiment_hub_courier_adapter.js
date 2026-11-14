@@ -19,7 +19,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_simulated_steps','training_useful_steps',
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
-    'training_environment_version',
+    'training_environment_version','training_sim_early_dispatches',
     'training_tuner_adjustments','training_tuner_accepted',
     'training_tuner_settled',
     'training_gpu_optimizer_lineages','training_gpu_optimizer_next_lineages',
@@ -62,6 +62,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
+            /^worker_[0-9]{1,2}_sim_early_dispatches$/.test(name)||
             /^training_gpu_device_[0-7]_lineages$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':
