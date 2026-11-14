@@ -29,13 +29,14 @@ class MixedLinuxSupervisor {
         // durable job/lineage journal. Do not create a third process owner.
         // Both owners use the same mixed admission lock and cross-check
         // unresolved physical GPU identities before probe or launch.
-        // Only native Bees learners may lease a native GPU here, and only
-        // exclusively: Docker cooperative sharing is confined to Docker.
+        // Only native Bees learners and collectors may lease native GPUs,
+        // and only exclusively: Docker cooperative sharing stays in Docker.
         const nativeAdapters={courier:adapters.courier};
         for(const project of ['bees_native','bees_native_collect']) {
             if(adapters[project])nativeAdapters[project]=adapters[project];
         }
-        const nativeGpuEnabled=gpuEnabled===true&&Boolean(adapters.bees_native);
+        const nativeGpuEnabled=gpuEnabled===true&&
+            Boolean(adapters.bees_native||adapters.bees_native_collect);
         this.native=nativeFactory({root,machineId,adapters:nativeAdapters,
             gpuEnabled:nativeGpuEnabled});
         this.docker=dockerFactory({root,machineId,adapters:{tinybrains:adapters.tinybrains},
@@ -48,7 +49,8 @@ class MixedLinuxSupervisor {
         this.gpuEnabled=gpuEnabled===true;
         this.gpuExecution='rocm';
         this.gpuProjects=['tinybrains',
-            ...(nativeGpuEnabled?['bees_native']:[])];
+            ...(nativeGpuEnabled?['bees_native','bees_native_collect'].filter(
+                project=>Boolean(adapters[project])):[])];
         this.dockerSupervisor=this.docker;
         this.qualifiedAt=null;
         this.snapshot(); // Corrupt or colliding ownership is never silently adopted.
@@ -112,9 +114,10 @@ class MixedLinuxSupervisor {
             throw Error('Mixed Linux GPU qualification requires both ready owners and no pending probe.');
         const project=proof?.project_id;
         const owner=project==='tinybrains'?this.docker:
-            project==='bees_native'&&this.native.gpuEnabled?this.native:null;
+            ['bees_native','bees_native_collect'].includes(project)&&
+                this.native.gpuEnabled&&this.adapters[project]?this.native:null;
         if(!owner||!Array.isArray(bindings)||!bindings.length||
-            project==='bees_native'&&bindings.length!==1||
+            owner===this.native&&bindings.length!==1||
             proof.executable!==this.adapters[project]?.executable)
             throw Error('Mixed Linux GPU probe requires an installed native Bees or Docker TinyBrains GPU adapter.');
         return this.withAdmissionLock(async()=>{
@@ -133,10 +136,10 @@ class MixedLinuxSupervisor {
             Object.hasOwn(this.adapters,project)?this.native:null;
         if(!owner)throw Error('Unknown or uninstalled mixed Linux project.');
         if(owner===this.native&&(job.resources?.gpu_count??0)!==0&&
-            (project!=='bees_native'||!this.native.gpuEnabled||
-                job.resources.gpu_count!==1||
+            (!['bees_native','bees_native_collect'].includes(project)||
+                !this.native.gpuEnabled||job.resources.gpu_count!==1||
                 job.resources.gpu_mode!=='exclusive'))
-            throw Error('Only native Bees learners may use one exclusive GPU in mixed Linux mode.');
+            throw Error('Only native Bees learners and collectors may use one exclusive GPU in mixed Linux mode.');
         // Serialize ownership, CPU/RAM admission, and cross-backend GPU
         // checks across all agents using this same machine-local root.
         // A crash retains the lock for explicit operator reconciliation.
