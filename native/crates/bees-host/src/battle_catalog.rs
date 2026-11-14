@@ -36,6 +36,11 @@ pub struct Mission {
     /// if its source stage deliberately disables stat recording.
     #[serde(default)]
     pub record_fleet_stats: bool,
+    /// Opt-in historical FleetShip deaths on the next authored Level.
+    /// Only ships belonging to the player side are removed at setup;
+    /// opposing authored forces remain owned by their scenario.
+    #[serde(default)]
+    pub persist_fleet_losses: bool,
     #[serde(default)]
     pub requires: Vec<String>,
     #[serde(default)]
@@ -78,6 +83,8 @@ struct FleetProgress {
     battles_fought: u64,
     battles_won: u64,
     minerals_mined: u64,
+    is_dead: bool,
+    loss_history_complete: bool,
 }
 
 #[derive(Default)]
@@ -97,14 +104,28 @@ impl CampaignProgress<'_> {
 
     /// Current native menu presentation of the same durable career record
     /// exposed by the read-only campaign status API.
+    pub fn lost_player_fleet_ids(&self, side: i32) -> io::Result<HashSet<i64>> {
+        if self.battles_without_fleet_data != 0 ||
+            self.fleet.values().any(|ship|
+                ship.side == side && !ship.loss_history_complete)
+        {
+            return Err(invalid(
+                "saved campaign contains older fleet receipts without death evidence; cannot safely restore permanent losses",
+            ));
+        }
+        Ok(self.fleet.iter().filter_map(|(&id, ship)|
+            (ship.side == side && ship.is_dead).then_some(id)).collect())
+    }
+
     pub fn fleet_rows(&self) -> Vec<String> {
         let mut ids = self.fleet.keys().copied().collect::<Vec<_>>();
         ids.sort_unstable();
         ids.into_iter().map(|id| {
             let ship = &self.fleet[&id];
             format!(
-                "Fleet #{id}   Side {}   Won {}/{}   Mined {}",
+                "Fleet #{id}   Side {}   Won {}/{}   Mined {}{}",
                 ship.side, ship.battles_won, ship.battles_fought, ship.minerals_mined,
+                if ship.is_dead { "   Lost" } else { "" },
             )
         }).collect()
     }
@@ -123,7 +144,9 @@ impl BattleCatalog {
         let mut earlier = HashSet::new();
         for mission in self.battles.iter().filter_map(|entry| entry.mission.as_ref()) {
             if self.campaign_id.is_none() || mission.id.trim().is_empty() ||
-                !matches!(mission.player_side, 1 | 2) || earlier.contains(mission.id.as_str()) ||
+                !matches!(mission.player_side, 1 | 2) ||
+                (mission.persist_fleet_losses && !mission.record_fleet_stats) ||
+                earlier.contains(mission.id.as_str()) ||
                 mission.requires.iter().any(|id| !earlier.contains(id.as_str()))
             {
                 return Err(invalid(format!(
@@ -185,8 +208,14 @@ impl BattleCatalog {
                 }) {
                     for ship in ships {
                         let fleet = progress.fleet.entry(ship.fleet_ship_id).or_insert_with(|| {
-                            FleetProgress { side: ship.side, ..FleetProgress::default() }
+                            FleetProgress { side: ship.side,
+                                loss_history_complete: true, ..FleetProgress::default() }
                         });
+                        if let Some(dead) = ship.is_dead {
+                            fleet.is_dead |= dead;
+                        } else {
+                            fleet.loss_history_complete = false;
+                        }
                         if fleet.side != ship.side {
                             return Err(invalid(format!(
                                 "FleetShip {} changed sides between completed campaign battles",
@@ -236,6 +265,7 @@ impl BattleCatalog {
                 "completed": progress.completed(&mission.id),
                 "latest_victory": progress.latest_victory(&mission.id),
                 "record_fleet_stats": mission.record_fleet_stats,
+                "persist_fleet_losses": mission.persist_fleet_losses,
             }))
         }).collect::<Vec<_>>();
         let mut ids = progress.fleet.keys().copied().collect::<Vec<_>>();
@@ -248,6 +278,8 @@ impl BattleCatalog {
                 "battles_fought": record.battles_fought,
                 "battles_won": record.battles_won,
                 "minerals_mined": record.minerals_mined,
+                "is_dead": record.is_dead,
+                "loss_history_complete": record.loss_history_complete,
             })
         }).collect::<Vec<_>>();
         json!({
