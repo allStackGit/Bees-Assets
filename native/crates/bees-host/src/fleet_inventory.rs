@@ -52,6 +52,7 @@ pub struct NativeFleetInventory {
     /// WarpGate departure is not a persistent fleet death.
     killed: HashSet<i64>,
     combat: HashMap<i64, NativeFleetCombatStats>,
+    career_tracking: bool,
 }
 
 impl NativeFleetInventory {
@@ -67,7 +68,10 @@ impl NativeFleetInventory {
                 return Err(NativeFleetInventoryError::DuplicateShip(value.ship_id));
             }
         }
-        Ok(Self { entries, killed: HashSet::new(), combat: HashMap::new() })
+        Ok(Self {
+            entries, killed: HashSet::new(), combat: HashMap::new(),
+            career_tracking: false,
+        })
     }
 
     pub fn get(&self, ship_id: i64) -> Option<NativeFleetShipValue> {
@@ -78,7 +82,15 @@ impl NativeFleetInventory {
         self.killed.contains(&ship_id)
     }
 
+    /// Career statistics are an opt-in game feature. Headless PPO
+    /// collectors keep this ledger disabled to avoid per-event HashMap
+    /// traffic and unneeded allocations in the hot training loop.
+    pub fn enable_career_tracking(&mut self) {
+        self.career_tracking = true;
+    }
+
     pub fn combat_stats(&self, ship_id: i64) -> Option<NativeFleetCombatStats> {
+        if !self.career_tracking { return None; }
         self.entries.get(&ship_id)
             .filter(|entry| entry.has_persistent_fleet_value)?;
         Some(self.combat.get(&ship_id).copied().unwrap_or_default())
@@ -88,6 +100,7 @@ impl NativeFleetInventory {
     /// tick. No extra full-fleet scan, independent damage ledger, or work
     /// in quiet ticks. All three source gameplay paths share these events.
     pub fn record_combat_events(&mut self, world: &CombatWorld) {
+        if !self.career_tracking { return; }
         for event in world.events() {
             match event {
                 CombatEvent::GameWeaponFired { ship_id, .. } |
