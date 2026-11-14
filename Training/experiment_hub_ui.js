@@ -2311,6 +2311,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     (resourceFlags.length>2?' (+'+(resourceFlags.length-2)+' more)':'')+
                     ' (not proof of a causal hardware bottleneck)'
                 :'';
+            const physical=measured.training_sim_processes?.value;
+            const shards=measured.training_simulation_shards?.value;
+            const migrationCount=measured.training_sim_migrations?.value;
+            const processSignal=(Number.isSafeInteger(physical)&&physical>=1&&
+                Number.isSafeInteger(shards)&&shards>=physical)
+                ?' · Courier simulation: '+physical+' physical CPU processes / '+
+                    shards+' persistent logical shards'+
+                    (migrationCount>0?' · state-preserving process migration':'')
+                :'';
             const preferred=['total_ppo_updates','update_wall_time',
                 'ant_decisions_per_second','collection_seconds','optimization_seconds'];
             const priority=preferred.filter(key=>Object.hasOwn(p.metrics,key));
@@ -2325,7 +2334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
-                enginePressureSignal+resourceSignal+
+                enginePressureSignal+resourceSignal+processSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2440,6 +2449,10 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_gpu_prefetch_wait_max_seconds',
         'training_gpu_prefetch_copy_max_seconds',
         'training_gpu_prefetch_slowest_worker',
+        'training_sim_processes','training_sim_migrations',
+        'training_sim_migration_denials','training_sim_migration_owner',
+        'training_sim_migration_max_seconds',
+        'training_sim_migration_wall_share',
         'training_info_recv_max_seconds','training_info_rebuild_max_seconds',
         'training_info_recv_slowest_worker',
         'training_info_rebuild_slowest_worker',
