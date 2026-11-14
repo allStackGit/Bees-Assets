@@ -39,6 +39,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_optimizer_tuner_settled',
     'training_gpu_metric_readbacks','training_gpu_metric_rows',
     'training_ppo_integrity_checks',
+    'training_ppo_integrity_slowest_worker',
     'training_gpu_state_reused_lineages',
     'training_gpu_devices_assigned','training_gpu_devices_active']);
 const WINDOWS_ENTRY=[
@@ -90,12 +91,14 @@ function courierMetrics(source) {
         'training_simulation_slowest_worker',
         'training_inference_slowest_worker',
         'training_ppo_data_slowest_worker',
+        'training_ppo_integrity_slowest_worker',
     ];
     const detail=[
         'sim_shard_wall_seconds','sim_dispatch_seconds',
         'sim_shared_copy_seconds','sim_shared_gather_seconds',
         'sim_info_recv_seconds','sim_shared_transfer_mb','sim_child_cpu_seconds',
         'sim_active_shards','sim_next_shards',
+        'ppo_integrity_seconds',
     ];
     for(const key of ownerKeys) {
         const i=stats[key];
