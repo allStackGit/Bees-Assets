@@ -551,7 +551,15 @@ function createNativeBeesAdapter({
                 ...(refresh_opponent_slot === undefined ? [] :
                     ['--refresh-opponent-slot', String(refresh_opponent_slot)])];
         },
-        ...(collectOnly ? {} : {
+        ...(collectOnly ? {
+            // Transport is machine-owned. Neither the Hub nor a frozen job
+            // supplies filesystem roots or executable paths.
+            artifact_export_dir(jobId) {
+                if (!UUID.test(String(jobId))) throw Error('Invalid collector job identity.');
+                return path.join(artifacts, jobId);
+            },
+        } : {
+            ...(inbox ? {bundle_inbox_dir() { return inbox; }} : {}),
             checkpoint_ready(context) {
                 return Boolean(verifiedOutput(jobRound(context), jobRoot(context)));
             },
