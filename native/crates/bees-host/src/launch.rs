@@ -1513,7 +1513,7 @@ fn run_reassign_authored_ship(
         return Err(invalid("use bees transfer for purchased FleetShips").into());
     }
     if from_squad == to_squad || from_squad < 0 || to_squad < 0 ||
-        !progress.lost_player_fleet_ids(side)?.is_disjoint(&HashSet::from([fleet_ship_id]))
+        progress.lost_player_fleet_ids(side)?.contains(&fleet_ship_id)
     {
         return Err(invalid("original FleetShip must be a living hull moving to a different assignment").into());
     }
@@ -1815,9 +1815,8 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
             break;
         }
-        for (side, fleet_id, original_squad) in authored_menu_fleet(
-            &catalog, root, &progress,
-        ) {
+        let original_choices = authored_menu_fleet(&catalog, root, &progress);
+        for &(side, fleet_id, original_squad) in &original_choices {
             let current_squad = progress.authored_current_squad(fleet_id)
                 .unwrap_or(original_squad);
             if current_squad != 0 {
@@ -1831,7 +1830,14 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                     authored_from: Some((side, current_squad)),
                 });
             }
-            for destination in progress.saved_squad_ids_for_side(side) {
+            let mut destinations = progress.saved_squad_ids_for_side(side);
+            // Before the first battle there are no saved career receipts,
+            // but the native authored scene already names its SavedSquads.
+            destinations.extend(original_choices.iter().filter_map(|&(owner, _, squad)|
+                (owner == side).then_some(squad)));
+            destinations.sort_unstable();
+            destinations.dedup();
+            for destination in destinations {
                 if current_squad == destination { continue; }
                 transfer_rows.push(NativeTransferMenuRow {
                     title: format!(
