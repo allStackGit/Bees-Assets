@@ -1549,6 +1549,14 @@ impl NativePhysicalScene {
 
         let squads = self.squads_for_level(setup.level_id)
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        let queen_templates = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) => match &ship.special {
+                Some(NativeAuthoredShipSpecial::Queen { minions }) =>
+                    Some((ship.entity_id, Arc::clone(minions))),
+                _ => None,
+            },
+            _ => None,
+        }).collect();
         let beacon_templates = self.entities.iter().filter_map(|entity| match entity {
             NativeAuthoredEntity::Ship(ship) => match &ship.special {
                 Some(NativeAuthoredShipSpecial::Scout { beacon, .. }) =>
@@ -1593,6 +1601,8 @@ impl NativePhysicalScene {
                     .collect(),
             },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
+        metadata.install_queen_templates(queen_templates)
+            .map_err(NativePolicyOnlyLevelError::Metadata)?;
         metadata.targeting_context = self.targeting_context;
         metadata.activate_mining = self.activate_mining;
         metadata.activate_fog_of_war = self.activate_fog_of_war;
