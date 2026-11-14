@@ -160,16 +160,20 @@ async function downloadFile(endpoint,machineId,token,learnerId,collectorId,
                         response.statusCode));
                 }
                 const size=Number(response.headers['content-length']);
+                const abort=message=>{
+                    response.destroy();
+                    reject(Error(message));
+                };
                 if(!Number.isSafeInteger(size)||size<1||size>MAX_FILE||
                     response.headers['x-native-bundle-sha256']!==expectedSha)
-                    return reject(Error('Invalid native bundle file identity.'));
+                    return abort('Invalid native bundle file identity.');
                 let free;
                 try {
                     const volume=fs.statfsSync(folder,{bigint:true});
                     free=BigInt(volume.bavail)*BigInt(volume.bsize);
-                }catch{return reject(Error('Native bundle requires verified free disk space.'));}
+                }catch{return abort('Native bundle requires verified free disk space.');}
                 if(free<RESERVE+BigInt(size))
-                    return reject(Error('Native bundle transfer violates disk reserve.'));
+                    return abort('Native bundle transfer violates disk reserve.');
                 const digest=crypto.createHash('sha256');
                 let offset=0;
                 try {
