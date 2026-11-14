@@ -34,6 +34,7 @@ use bees_host::scene_assets::NativeSceneAssets;
 use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
 use bees_host::unity_scene_snapshot::{
     NativeExportedPolicyLevelSetup, NativePhysicalScene, NativeLevelLayout,
+    NativePurchasedShip,
 };
 use bees_sim::asteroid_fragments::FragmentSpawnSettings;
 use bees_sim::collision::Aabb;
@@ -959,6 +960,7 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
        bees campaign <catalog.json> --output-dir <battle-runs> --all
+       bees build <catalog.json> --output-dir <battle-runs> --side <n> --ship-type <n> --squad <saved-id>
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
@@ -975,6 +977,7 @@ struct CampaignMission<'a> {
     record_fleet_stats: bool,
     bank_player_minerals: bool,
     lost_fleet_ids: Option<&'a HashSet<i64>>,
+    purchased_ships: Option<&'a [NativePurchasedShip]>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1038,6 +1041,30 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let progress = catalog.load_progress(&output_root)?;
         println!("{}", catalog.status(&progress));
         return Ok(());
+    }
+    if first == "build" {
+        let catalog_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output_root = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") {
+            return Err(invalid(USAGE).into());
+        }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--ship-type") {
+            return Err(invalid(USAGE).into());
+        }
+        let ship_type: u8 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--squad") {
+            return Err(invalid(USAGE).into());
+        }
+        let saved_squad_id: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        return run_build_ship(&catalog_path, &output_root, side, ship_type, saved_squad_id);
     }
     if first == "campaign" {
         let catalog_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
@@ -1133,6 +1160,8 @@ fn launch_catalog_battle(
     interactive: bool,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let config = resolve(catalog_root, entry.config_for(progress));
+    let purchased = entry.mission.as_ref()
+        .map(|mission| progress.purchases_for_side(mission.player_side));
     let lost = entry.mission.as_ref()
         .filter(|mission| mission.persist_fleet_losses)
         .map(|mission| progress.lost_player_fleet_ids(mission.player_side))
@@ -1143,6 +1172,7 @@ fn launch_catalog_battle(
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             lost_fleet_ids: lost.as_ref(),
+            purchased_ships: purchased.as_deref(),
         });
     // Reserve a unique parent before invoking the shared gameplay runtime.
     // Failed/interrupted launches never overwrite an earlier career receipt.
@@ -1504,6 +1534,18 @@ fn run_battle(
                 layout, assets.box_catalog(), assets.polygon_catalog(),
             )
                 .map_err(|error| contextual("native Level layout", error))?;
+        }
+        if let Some(purchased) = mission.and_then(|mission| mission.purchased_ships) {
+            let installed = source.install_purchased_ships(
+                mission.expect("campaign purchase owner").player_side, purchased,
+            ).map_err(|error| contextual("purchased campaign ships", error))?;
+            if installed != 0 {
+                println!("{}", json!({
+                    "kind": "native_campaign_purchased_ships_installed",
+                    "level_id": level.level_id,
+                    "purchased_hulls_installed": installed,
+                }));
+            }
         }
         if let Some(dead_ids) = mission.and_then(|mission| mission.lost_fleet_ids) {
             let removed = source.omit_killed_fleet_ships(
