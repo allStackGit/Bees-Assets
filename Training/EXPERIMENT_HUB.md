@@ -1449,7 +1449,7 @@ waits for the trainer to flush a checkpoint and exit, and does not kill
 unfinished PPO updates. Containers remain available for inspect/recovery;
 the supervisor does not delete a container whose ownership is ambiguous.
 
-### Halifax mixed native CPU projects + TinyBrains ROCm Docker owner (opt-in)
+### Halifax mixed native + TinyBrains ROCm execution (opt-in)
 
 To run both projects under the **same enrolled Halifax machine**, select
 `EXPERIMENT_HUB_LINUX_BACKEND=mixed`. This is an explicit third execution
