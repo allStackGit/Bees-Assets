@@ -92,7 +92,38 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     if type(episodes_per_world) is not int or not 1 <= episodes_per_world <= 1000000:
         raise ValueError("episodes_per_world must be between 1 and 1000000")
 
+    # Reject stale/mismatched authored scenarios and missing Rust tooling
+    # before importing heavyweight learner libraries or allocating a GPU.
     trainer_config = trainer_config.resolve(strict=True)
+    if shutil.which(cargo) is None:
+        raise ValueError(f"native bootstrap requires an installed Rust cargo executable: {cargo}")
+    example_dir = ROOT / "native" / "examples"
+    source_scene = example_dir / f"native-{scenario}.policy.scene.json"
+    source_run = example_dir / f"native-{scenario}.run.json"
+    scene = json.loads(source_scene.read_text(encoding="utf-8"))
+    run = json.loads(source_run.read_text(encoding="utf-8"))
+    if (not isinstance(scene, dict) or not isinstance(run, dict) or
+            not isinstance(scene.get("stage_name"), str) or
+            not scene["stage_name"] or
+            not isinstance(run.get("levels"), list) or len(run["levels"]) != 1 or
+            not isinstance(run.get("native_stage"), dict)):
+        raise ValueError("native bootstrap requires a one-Level native-authored policy scene")
+    if not isinstance(scene.get("ships"), list):
+        raise ValueError("native bootstrap requires authored policy ships")
+    real_teams = {}
+    for ship in scene["ships"]:
+        if not isinstance(ship, dict):
+            raise ValueError("native bootstrap has invalid ship metadata")
+        policy = ship.get("policy")
+        if policy is None:
+            continue
+        if not isinstance(policy, dict) or type(policy.get("team_id")) is not int:
+            raise ValueError("native bootstrap has an invalid policy agent")
+        real_teams.setdefault(policy["team_id"], set()).add(ship.get("side"))
+    if (set(real_teams) != {0, 1} or
+            len(real_teams[0]) != 1 or len(real_teams[1]) != 1 or
+            real_teams[0] == real_teams[1]):
+        raise ValueError("native bootstrap requires authentic policy agents on distinct sides")
     import torch
     import yaml
     from mlagents.plugins.trainer_type import register_trainer_plugins
@@ -132,14 +163,7 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     # Keep the entire native source scenario as an immutable per-run input:
     # later changes to the repository's example scenes cannot silently
     # alter the learning task for this checkpoint generation.
-    example_dir = ROOT / "native" / "examples"
-    source_scene = example_dir / f"native-{scenario}.policy.scene.json"
-    source_run = example_dir / f"native-{scenario}.run.json"
     shutil.copyfile(source_scene, output / "scene.json")
-    scene = json.loads((output / "scene.json").read_text(encoding="utf-8"))
-    run = json.loads(source_run.read_text(encoding="utf-8"))
-    if len(run.get("levels", [])) != 1 or run.get("native_stage") is None:
-        raise ValueError("native bootstrap requires a one-Level, entirely native run configuration")
     run.update({
         "run_id": f"native-{scenario}-bootstrap-{seed}",
         "stage_name": scene["stage_name"],
