@@ -313,15 +313,9 @@ impl GameQueenSpawn {
     fn into_native(self, catalog: &ShipAssetCatalog, require_observation: bool)
         -> Result<NativeAuthoredShipSpecial, NativeSnapshotError>
     {
-        // Newborn Queen minions must be dynamically enrolled in the policy
-        // decision/group roster before a policy Level can claim MA-POCA
-        // parity. Do not run an apparently valid training episode with
-        // ordinary, non-policy-controlled YellowJackets instead.
-        if require_observation {
-            return Err(NativeSnapshotError::InvalidNativeLayout(
-                "Queen waves require dynamic policy-agent enrollment for a native MA-POCA Level",
-            ));
-        }
+        // Dynamic YellowJacket controllers use the real team frame and
+        // loaded model route when the first spawned ship joins the Level.
+        // A policy scene must supply exact Bomb observation inputs.
         let invalid = || NativeSnapshotError::InvalidNativeLayout(
             "Queen requires exact source YellowJacket spawn and Bomb inputs",
         );
@@ -341,7 +335,7 @@ impl GameQueenSpawn {
             weapon.charge_range.is_some() ||
             (require_observation && (weapon.observation.is_none() ||
                 minion.observed_weapon_type.is_none())) ||
-            minion.observed_weapon_type.is_some_and(|kind| kind >= 10) ||
+            minion.observed_weapon_type.is_some_and(|kind| kind != 0) ||
             !offset.is_finite() || sight.source_sight < 0 ||
             sight.effective_range < 0 || sight.trigger_range < 0 ||
             (sight.enabled && sight.trigger_range == 0) ||
@@ -356,12 +350,25 @@ impl GameQueenSpawn {
                 return Err(invalid());
             }
             observed_weapons[weapon.slot] = Some(ObservedWeapon {
-                weapon_type, range: observed.range, power: weapon.power,
+                weapon_type, range: observed.range, power: weapon.power as f32,
                 rate_of_fire: observed.rate_of_fire,
             });
         } else if minion.observed_weapon_type.is_some() {
             return Err(invalid());
         }
+        let policy_weapon = weapon.observation.map(|observed|
+            SelfWeapon {
+                weapon_type: 0,
+                // Replaced with the live physical muzzle when the newborn
+                // ship is enrolled. This is the authored local Bomb mount.
+                position: offset, range: observed.range,
+                power: weapon.power as f32,
+                rate_of_fire: observed.rate_of_fire,
+                rotation_rate: observed.rotation_rate,
+                projectile_value: observed.projectile_value,
+                projectile_speed: observed.projectile_speed,
+                turret: None, has_target_ship: observed.has_target_ship,
+            });
         let physical = bees_sim::combat_world::QueenSpawnSpec {
             minions_per_wave: self.minions_per_wave,
             spawn_frequency_seconds: self.spawn_frequency_seconds,
@@ -409,7 +416,7 @@ impl GameQueenSpawn {
         { return Err(invalid()); }
         Ok(NativeAuthoredShipSpecial::Queen {
             minions: Arc::new(NativeQueenTemplate {
-                physical, perception,
+                physical, perception, policy_weapon,
                 vision: NativeSourceVision {
                     source_sight: Some(sight.source_sight),
                     effective_range: sight.effective_range,
