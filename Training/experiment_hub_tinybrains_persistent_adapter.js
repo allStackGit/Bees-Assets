@@ -490,6 +490,11 @@ function createTinyBrainsPersistentDockerAdapter({
         remote.keyDirectory.startsWith(folder+path.sep)||
         folder.startsWith(remote.keyDirectory+path.sep)))
         throw Error('Private rollout key directory must not overlap a project, checkpoint, Hub or writable Docker mount.');
+    // The same explicit multi-device opt-in used for dual GPUs may
+    // advertise additional independent collector GPUs only when the
+    // mounted backend actually contains that native collector mechanism.
+    const enableMultiGpu=enableDualGpu&&fs.existsSync(
+        path.join(project,'src/ants_mapoca/local_gpu_rollout.py'));
     const engine=path.join(project,'tools/tinybrains-0.5.0/tinybrains');
     const result=spawnSync(engine,['--version'],{
         timeout:5000,encoding:'utf8',windowsHide:true,
@@ -610,11 +615,13 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_cpu_fallback_profiles:[...approved.keys()],
         tinybrains_required_import_profiles:[...approved.keys()],
         tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
+        tinybrains_multi_gpu_profiles:enableMultiGpu?[...approved.keys()]:[],
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
         tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
         tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
         tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
+        ...(enableMultiGpu?{gpu_multi_execution:'split-ppo-collectors'}:{}),
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
         ])),
@@ -622,10 +629,17 @@ function createTinyBrainsPersistentDockerAdapter({
         gpu_verify_args(parameters,context){
             const item=approved.get(parameters?.profile);
             const dual=parameters?.device==='dual';
-            const ids=dual?context.gpu_pci_addresses:[context.gpu_pci_address];
+            const multi=parameters?.device==='multi';
+            const ids=context.gpu_pci_addresses??[context.gpu_pci_address];
+            // A multi-device group is also individually qualified one
+            // physical GPU at a time by the existing Linux supervisor.
+            const lengthOk=multi
+                ?enableMultiGpu&&(context.gpu_pci_addresses
+                    ?ids.length>=3&&ids.length<=8:ids.length===1)
+                :ids.length===(dual?2:1);
             if(!item||item.sha256!==parameters.profile_sha256||
-                (parameters?.device!==undefined&&parameters.device!=='dual')||
-                !Array.isArray(ids)||ids.length!==(dual?2:1)||
+                (parameters?.device!==undefined&&!dual&&!multi)||
+                !Array.isArray(ids)||!lengthOk||
                 ids.some(pci=>!PCI.test(String(pci||'')))||
                 new Set(ids).size!==ids.length)
                 throw Error('Invalid approved TinyBrains ROCm proof.');
@@ -648,17 +662,21 @@ function createTinyBrainsPersistentDockerAdapter({
                      rollout_action_weights.length!==remote.endpoints.length+1||
                      rollout_action_weights.some(w=>
                          !Number.isSafeInteger(w)||w<1||w>1024)))||
-                (device!==undefined&&!['cpu','dual'].includes(device))||
+                (device!==undefined&&!['cpu','dual','multi'].includes(device))||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
                 (device==='cpu'?Boolean(context.gpu_pci_address||
                     context.gpu_pci_addresses||context.gpu_cuda_uuid):
-                    device==='dual'
+                    device==='dual'||device==='multi'
                         ?context.gpu_mode!=='exclusive'||
+                            (device==='multi'&&!enableMultiGpu)||
                             !Array.isArray(context.gpu_pci_addresses)||
-                            context.gpu_pci_addresses.length!==2||
+                            (device==='dual'
+                                ?context.gpu_pci_addresses.length!==2
+                                :context.gpu_pci_addresses.length<3||
+                                    context.gpu_pci_addresses.length>8)||
                             context.gpu_pci_addresses.some(pci=>!PCI.test(String(pci||'')))||
-                            new Set(context.gpu_pci_addresses).size!==2
+                            new Set(context.gpu_pci_addresses).size!==context.gpu_pci_addresses.length
                         :!PCI.test(String(context.gpu_pci_address||''))||
                             context.gpu_pci_addresses!==undefined)||
                 (device!=='cpu'&&context.gpu_mode==='shared'&&
@@ -727,8 +745,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 ...(rollout_action_weights?rollout_action_weights.flatMap(w=>
                     ['--remote-rollout-weight',String(w)]):[]),
                 ...(device==='cpu'?['--device','cpu']:
-                    device==='dual'
-                        ?['--device','dual',...context.gpu_pci_addresses.flatMap(pci=>
+                    device==='dual'||device==='multi'
+                        ?['--device',device,...context.gpu_pci_addresses.flatMap(pci=>
                             ['--rocm-pci',pci])]
                         :['--rocm-pci',context.gpu_pci_address,
                             ...(context.gpu_mode==='shared'?
