@@ -1,6 +1,6 @@
 # Resource-efficient training workstream
 
-Updated 2026-11-13. Branch: `feat/hub-resource-efficiency-20261112`.
+Updated 2026-11-14. Branch: `feat/hub-resource-efficiency-20261112`.
 Scope: TinyBrains, Courier, future native projects; Bees remains with the unified native rewrite.
 The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimize useful training throughput inside those leases. Benchmarks below are not implied: these are source-level changes awaiting real workload qualification.
 
@@ -35,6 +35,8 @@ The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimiz
 - **2026-11-13 GPU PPO correctness and checkpoint costs:** Courier's already-added one-to-eight assigned CUDA/ROCm GPU optimizer path independently tunes policy-lineage fanout within fixed GPU/CPU/RAM leases; CPU simulation and recurrent inference keep the exact saved environment/PPO batch. Finiteness, bounded policy ratios and KL decisions are checked at the original safety boundaries with grouped device flags and detailed pre-clipping invalid-gradient attribution. Logging-only policy/value/entropy/clip scalars are read back once per update instead of four times per minibatch. The existing Hub reports useful SPS, GPU transfer/stream time, device-lineage counts and diagnostic readback cost; no measured training gain is claimed. TinyBrains now serializes a complete model/optimizer/RNG checkpoint once and archives the exact committed bytes via a hard link or atomic copy. Periodic archive method/bytes and checkpoint stalls are reported through the existing Hub metrics.
 
 - **2026-11-13 multi-collector policy snapshot fanout:** The TinyBrains learner now encodes its immutable actor/critic CPU snapshot just once per PPO collection and shares those authenticated snapshot bytes across all remote collectors that explicitly advertised this transport capability in a prior successful reply. Legacy remote workers continue receiving original tensor dictionaries and never encounter a new request form. Collectors verify decoded CPU tensor structure and strict actor/critic state compatibility before collecting an episode; policy-version and completion barriers are unchanged. Cached representation is scoped to exactly one frozen policy version/update. The existing Hub receives learner encode seconds/bytes/reuse count and per-collector negotiated coverage. A synthetic nine-collector report with 503 total measured/derived fields validated below 32 KiB; this is not a live SPS benchmark.
+
+- **2026-11-14 remote Courier critical-path attribution:** The trusted remote PPO transport now times request serialization/socket send, reply socket receive/deserialization, server-side worker response, server checkpoint artifact reads and local atomic checkpoint sync without changing the on-policy protocol. Per-lineage and stage-owner maxima use the existing Courier `hub-metrics-v1` source; the Hub recognizes sustained critical remote turnaround gaps and client-side codec expense only when the slowest remote lineage is material to the completed batch. Byte counts and owner indices retain correct units. Socket receive and unexplained turnaround remain inclusive measurements, **not** claims of physical network saturation. No new telemetry service or PPO execution mode was introduced.
 
 ## Significant remaining development
 
