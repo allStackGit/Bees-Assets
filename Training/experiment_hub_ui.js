@@ -1947,7 +1947,7 @@ document.addEventListener('DOMContentLoaded', () => {
             averageLabel.append(average,document.createTextNode(' Show sample mean'));
             const rollingLabel=document.createElement('label');
             rollingLabel.className='hub-plot-average-toggle';
-            rollingLabel.title='Mean of up to N consecutive retained chart samples. Downsampling makes older samples farther apart; missing measurements or training segment breaks restart the window.';
+            rollingLabel.title='Mean of up to N observations containing this metric. Other metrics may be reported between observations; explicit segment breaks and progress resets restart the window.';
             const rolling=document.createElement('input');
             rolling.type='checkbox';
             const rollingId=project+'|'+key;
@@ -2209,7 +2209,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const step=point.steps_completed;
                     const axis=hubComparisonAxisValue(point,xKey);
                     const valid=usable(point)&&Number.isSafeInteger(step)&&step>=0;
-                    if(point.break_before||!valid)reset();
+                    if(point.break_before)reset();
+                    // Metrics can be published less often than CPU/host telemetry.
+                    // An unrelated observation is not a discontinuity for this series.
                     if(!valid)continue;
                     if(lastStep!==null&&
                         (step<=lastStep||!Number.isFinite(axis)||
@@ -2254,13 +2256,12 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             for(const point of run.valid) {
                 const currentX=hubComparisonAxisValue(point,xKey);
-                if(point.break_before||!usable(point)||
-                    previousX!==null&&currentX!==null&&currentX<previousX)
-                    flush();
-                if(!usable(point)) {
-                    previousX=null;
-                    continue;
-                }
+                if(point.break_before)flush();
+                // Connect consecutive *recorded values for this metric*, not
+                // adjacent multi-metric Hub observations. Missing values are
+                // not interpolated; explicit segment breaks remain separate.
+                if(!usable(point))continue;
+                if(previousX!==null&&currentX<=previousX)flush();
                 previousX=currentX;
                 part.push(point);
                 if(showPoints)
