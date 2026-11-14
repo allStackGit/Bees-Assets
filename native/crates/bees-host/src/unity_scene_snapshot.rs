@@ -892,6 +892,87 @@ pub struct NativeSourcePolicyGroup {
 }
 
 impl NativePhysicalScene {
+    /// Apply previously saved campaign casualties to the actual authored
+    /// game Level before constructing CombatWorld or allocating squads.
+    /// FleetShip identities (not dense physics/entity IDs) survive across
+    /// different missions. Enemy fleets, nonpersistent minions, policies
+    /// and explicitly authored unrelated ships are not modified.
+    pub fn omit_killed_fleet_ships(
+        &mut self, player_side: i32, lost_fleet_ids: &HashSet<i64>,
+    ) -> Result<usize, NativeSnapshotError> {
+        if lost_fleet_ids.is_empty() {
+            return Ok(0);
+        }
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if !matches!(player_side, 1 | 2) {
+            return Err(invalid("campaign casualties require a valid player side"));
+        }
+        let removed: HashSet<i64> = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if ship.side == player_side &&
+                ship.fleet_ship_id.is_some_and(|id| lost_fleet_ids.contains(&id)) =>
+                Some(ship.entity_id),
+            _ => None,
+        }).collect();
+        if removed.is_empty() { return Ok(0); }
+        // An imported ML-Agents scenario owns frozen group membership,
+        // initial TSV and discovery baselines. Never turn permanent game
+        // deaths into an altered training episode or fabricated metadata.
+        if self.source_episode.is_some() || self.source_policy_group.is_some() ||
+            !self.source_policy_bindings.is_empty() ||
+            !self.active_policy_ship_ids.is_empty()
+        {
+            return Err(invalid("saved campaign casualties cannot alter an authored policy episode"));
+        }
+        for &ship_id in &removed {
+            if !self.fleet.get(ship_id)
+                .is_some_and(|record| record.has_persistent_fleet_value)
+            {
+                return Err(invalid("a casualty is not a persistent FleetShip"));
+            }
+        }
+        if !self.source_squads.iter().any(|squad| {
+            squad.side == player_side && squad.player_permissions.user_controlled &&
+            squad.members.iter().any(|id| !removed.contains(id))
+        }) {
+            return Err(invalid(
+                "the saved campaign fleet has no surviving player-controlled squad",
+            ));
+        }
+        // A surviving Striker or Drone may be orphaned by the loss of its
+        // Carrier in a previous mission. The normal game already supports
+        // carrier death; detach the historical relationship here, rather
+        // than resurrecting a carrier or leaving a dangling live link.
+        for entity in &mut self.entities {
+            if let NativeAuthoredEntity::Ship(ship) = entity {
+                if !removed.contains(&ship.entity_id) {
+                    if ship.drone_carrier_id.is_some_and(|id| removed.contains(&id)) {
+                        ship.drone_carrier_id = None;
+                    }
+                    if let Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) =
+                        &mut ship.special
+                    {
+                        if carrier.carrier_id.is_some_and(|id| removed.contains(&id)) {
+                            carrier.carrier_id = None;
+                        }
+                    }
+                }
+            }
+        }
+        self.entities.retain(|entity| !removed.contains(&entity.entity_id()));
+        for squad in &mut self.source_squads {
+            squad.members.retain(|id| !removed.contains(id));
+        }
+        self.source_squads.retain(|squad| !squad.members.is_empty());
+        for ship_id in &removed {
+            self.authored_ship_perceptions.remove(ship_id);
+            self.source_vision.remove(ship_id);
+            self.source_formation.remove(ship_id);
+            self.source_policy_inputs.remove(ship_id);
+            self.fleet.omit_initial_ship(*ship_id);
+        }
+        Ok(removed.len())
+    }
+
     /// Apply an explicitly native game layout before any world is created.
     /// Retain the original source asset types, ship identities, formation
     /// offsets and Stage home positions. Each translated squad moves as one
