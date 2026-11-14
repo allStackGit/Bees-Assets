@@ -490,6 +490,36 @@ impl BattleCatalog {
         Ok(NativePurchasedShip { saved_squad_id: to_saved_squad_id, ..ship })
     }
 
+    /// Commit an authored (pre-purchase) FleetShip reassignment after
+    /// validating the actual upcoming scene with the common builder.
+    /// This never changes ship ownership, combat career or TSV balance.
+    pub fn reassign_authored_ship(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        side: i32, fleet_ship_id: i64, from_squad: i64, to_squad: i64,
+    ) -> io::Result<()> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("authored roster changes require a campaign"))?;
+        if !matches!(side, 1 | 2) || fleet_ship_id <= 0 ||
+            from_squad < 0 || to_squad < 0 || from_squad == to_squad ||
+            progress.purchased_ship(fleet_ship_id).is_some() ||
+            progress.authored_current_squad(fleet_ship_id)
+                .is_some_and(|saved| saved != from_squad) ||
+            progress.fleet.get(&fleet_ship_id)
+                .is_none_or(|fleet| fleet.is_dead || fleet.side != side) ||
+            (to_squad != 0 && !progress.saved_squad_ids_for_side(side).contains(&to_squad))
+        {
+            return Err(invalid("invalid, unavailable or stale authored FleetShip assignment"));
+        }
+        commit_campaign_edit(output, "squad-edit-", "assignment.json",
+            &CampaignAuthoredAssignment {
+                campaign_id: campaign_id.to_owned(),
+                player_side: side, fleet_ship_id,
+                from_saved_squad_id: from_squad,
+                to_saved_squad_id: to_squad,
+            },
+        )
+    }
+
     /// Reconstruct save data from *completed* campaign summaries, not from
     /// mutable UI state. A crashed game cannot half-credit minerals or a
     /// rematch, and re-opening the menu cannot credit the same run twice.
