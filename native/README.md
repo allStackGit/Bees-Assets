@@ -384,8 +384,13 @@ must be available and its squad must remain within its authored size.
 No fake purchased collider, special ability or extra training
 simulator is constructed. Each battle uses the same installer to
 create the bought ship's physics, turret mounts, sight, formation,
-movement and perception. Previously killed bought ships remain in
-career records but are not redeployed. A failed preflight never
+movement and perception. When a purchased hull matches a permanently
+lost member of its assigned SavedSquad by ship type, it takes that
+member's authored formation offset and starting position (one
+replacement per vacancy), consistent with Unity's dead-ship
+replacement behavior. Otherwise, the installer finds a free nearby
+formation position. Previously killed bought ships remain in career
+records but are not redeployed. A failed preflight never
 charges minerals. When all missions are complete, the editor checks
 the authored rematch routes instead, so owned ships can still be
 reorganized. Only actual completed battle summaries award banked TSV,
