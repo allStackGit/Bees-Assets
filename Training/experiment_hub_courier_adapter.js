@@ -117,7 +117,7 @@ function courierMetrics(source) {
         'sim_process_migration_seconds','sim_process_migration_denials',
         'sim_priority_active','sim_priority_reorders',
         'sim_priority_steps',
-        'is_remote','remote_roundtrip_seconds','remote_request_bytes',
+        'training_seconds','is_remote','remote_roundtrip_seconds','remote_request_bytes',
         'remote_reply_bytes','remote_checkpoint_bytes',
         'remote_checkpoint_sync_seconds',
         'ppo_integrity_seconds',
