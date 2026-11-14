@@ -3034,8 +3034,8 @@ fn run_battle(
     // An exported FleetShip ID is distinct from its transient entity ID;
     // temporary children and unrelated skirmishes must never earn career
     // progress. The completed run summary is the durable transaction.
-    let campaign_fleet = if campaign_outcome.is_some_and(|_| 
-        mission.is_some_and(|value| value.record_fleet_stats)) {
+    let campaign_fleet = if campaign_outcome.is_some() &&
+        mission.is_some_and(|value| value.record_fleet_stats) {
         let state = &host.simulation().world(0)
             .ok_or_else(|| invalid("completed campaign World is unavailable"))?.state;
         let mut seen = HashSet::new();
