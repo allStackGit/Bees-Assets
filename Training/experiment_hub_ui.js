@@ -2942,7 +2942,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(project==='courier') {
             const instructions=document.createElement('p');
             instructions.className='muted';
-            instructions.textContent='Optional simulation modes follow the connected worker's defaults. Colony mode enables shared food, feeding, births and combat. Evolution and communication require colonies; speed requires both. Food patches require colonies. Switching neural observation/action modes needs a fresh lineage, not an incompatible checkpoint continuation.';
+            instructions.textContent='Optional simulation modes follow connected worker defaults. Colony mode enables shared food, feeding, births and combat. Evolution and communication require colonies; speed requires both. Food patches require colonies. Switching neural observation/action modes needs a fresh lineage, not an incompatible checkpoint continuation.';
             $('hub-design-environment').append(instructions);
         }
         if(project==='courier') {
