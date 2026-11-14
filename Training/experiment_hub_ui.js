@@ -3340,6 +3340,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'host_cpu_busy_pct'],
     };
     const jobMetricChoicesByProject=new Map();
+    let metricDefaultsSaving=false;
     // Availability is adapter-driven. These are discoverable requests, not a
     // promise that every project provides every physical/game measurement.
     const knownLearningMetrics=[
@@ -3451,8 +3452,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const configuration=state.configurations.find(c=>
             c.project_id===project&&c.id===$('hub-job-configuration').value);
         const params=configuration?.parameters||{};
+        const settings=state.projects.find(item=>item.id===project);
+        const savedDefaults=Array.isArray(settings?.default_metric_selection)
+            ?settings.default_metric_selection:null;
+        const defaultSelection=savedDefaults??defaultJobMetrics[project]??
+            defaultJobMetrics.other;
         const requested=jobMetricChoicesByProject.get(project) ??
-            new Set(defaultJobMetrics[project]||defaultJobMetrics.other);
+            new Set(defaultSelection);
         const available=new Set();
         const observed=new Set();
         let resourceGpuCount=0;
@@ -3573,12 +3579,68 @@ document.addEventListener('DOMContentLoaded', () => {
             return option;
         }));
         renderMetricPicker('hub-job-metrics','hub-job-metric-picker');
+        $('hub-job-save-metric-defaults').disabled=metricDefaultsSaving||!configuration;
+        $('hub-job-reset-metric-defaults').disabled=metricDefaultsSaving||
+            savedDefaults===null;
+        const inScope=defaultSelection.filter(key=>available.has(key)).length;
+        const unavailable=defaultSelection.length-inScope;
+        $('hub-job-metric-default-status').textContent=
+            (savedDefaults===null
+                ?'Built-in '+project+' defaults: '
+                :'Saved '+project+' defaults: ')+
+            defaultSelection.length+' metrics ('+inScope+' currently available'+
+            (unavailable?', '+unavailable+' unavailable for this configuration':'')+
+            ').'+(jobMetricChoicesByProject.has(project)
+                ?' This job has unsaved selection changes.':'')+
+            ' Only newly queued jobs inherit updated project defaults.';
     }
     function selectedJobMetrics() {
         return [...$('hub-job-metrics').selectedOptions].map(o=>o.value);
     }
     $('hub-job-metrics').addEventListener('change',()=>{
         jobMetricChoicesByProject.set(project,new Set(selectedJobMetrics()));
+        const stateLabel=$('hub-job-metric-default-status');
+        if(stateLabel)stateLabel.textContent='This job has a temporary metric selection. '+
+            'Save it as project defaults to reuse it for future jobs.';
+    });
+    async function saveMetricDefaults(selection) {
+        const current=state?.projects.find(item=>item.id===project);
+        if(!current||metricDefaultsSaving)return;
+        const projectId=current.id;
+        const reset=selection===null;
+        if(!confirm(reset
+            ?'Restore built-in metric defaults for '+current.name+
+                '? Saved job preferences and already queued jobs will not change.'
+            :'Save '+selection.length+' selected metrics as project-wide defaults for '+
+                current.name+'? New jobs across all configurations of this project will '+
+                'inherit applicable selections. Already queued jobs remain unchanged.'))
+            return;
+        metricDefaultsSaving=true;
+        try {
+            await action('hub/projects/metric-defaults',{
+                project_id:projectId,
+                expected_revision:current.metric_defaults_revision||0,
+                metric_selection:selection,
+            });
+            jobMetricChoicesByProject.delete(projectId);
+            await reload();
+            if(project===projectId)
+                feedback('hub-job-metric-default-status',reset
+                    ?'Restored built-in project metric defaults. Existing jobs unchanged.'
+                    :'Saved '+selection.length+
+                        ' project metric defaults. Future jobs will inherit them.');
+        }catch(error){
+            feedback('hub-job-metric-default-status',error.message);
+        }finally{
+            metricDefaultsSaving=false;
+            renderJobMetricSelection();
+        }
+    }
+    $('hub-job-save-metric-defaults').addEventListener('click',()=>{
+        saveMetricDefaults(selectedJobMetrics());
+    });
+    $('hub-job-reset-metric-defaults').addEventListener('click',()=>{
+        saveMetricDefaults(null);
     });
     function display() {
         if(!state)return;
@@ -5626,7 +5688,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 resources:JSON.parse($('hub-job-resources').value),
                 ...($('hub-job-run-name').value.trim()
                     ?{run_name:$('hub-job-run-name').value.trim()}:{}),
-                ...(metrics.length?{metric_selection:metrics}:{}),
+                // [] explicitly suppresses inherited defaults for this job.
+                metric_selection:metrics,
                 ...(predecessor?{continuation_of_job_id:predecessor}:{}),
             });
             $('hub-job-run-name').value='';
