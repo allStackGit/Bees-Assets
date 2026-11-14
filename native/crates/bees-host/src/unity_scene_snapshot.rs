@@ -524,7 +524,6 @@ impl From<UnityCommandSettings> for bees_gameplay::commands::HiveMindCommandSett
     }
 }
 
-#[derive(Deserialize)]
 #[derive(Clone, Copy, Deserialize)]
 struct UnityColor {
     r: f32,
@@ -544,6 +543,7 @@ impl UnityColor {
     }
 }
 
+#[derive(Deserialize)]
 struct UnitySquad {
     banned_strategies: Option<Vec<String>>,
     is_carrier_squad: Option<bool>,
