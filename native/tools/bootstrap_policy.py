@@ -124,6 +124,8 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
             len(real_teams[0]) != 1 or len(real_teams[1]) != 1 or
             real_teams[0] == real_teams[1]):
         raise ValueError("native bootstrap requires authentic policy agents on distinct sides")
+    source_scene_digest = file_sha256(source_scene)
+    trainer_config_digest = file_sha256(trainer_config)
     import torch
     import yaml
     from mlagents.plugins.trainer_type import register_trainer_plugins
@@ -159,11 +161,15 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     torch.manual_seed(seed)
     output.mkdir(parents=True)
     shutil.copyfile(trainer_config, output / "trainer-config.yaml")
+    if file_sha256(output / "trainer-config.yaml") != trainer_config_digest:
+        raise ValueError("trainer settings changed while initializing the native model")
 
     # Keep the entire native source scenario as an immutable per-run input:
     # later changes to the repository's example scenes cannot silently
     # alter the learning task for this checkpoint generation.
     shutil.copyfile(source_scene, output / "scene.json")
+    if file_sha256(output / "scene.json") != source_scene_digest:
+        raise ValueError("native game scene changed while initializing the model")
     run.update({
         "run_id": f"native-{scenario}-bootstrap-{seed}",
         "stage_name": scene["stage_name"],
