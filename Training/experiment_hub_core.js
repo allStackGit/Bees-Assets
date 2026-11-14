@@ -4762,6 +4762,8 @@ class ExperimentHub {
             host.courier_lineage_endpoint);
         learner.distributed_courier_slots=children.map((_,i)=>
             count-children.length+i);
+        learner.distributed_courier_shard_limits=children.map(({host})=>
+            host.courier_lineage_max_shards);
         learner.distributed_courier_key_fingerprint=fingerprint;
         learner.distributed_courier_sidecar_job_ids=[];
         const learnerLease=this.claimJobIn(next,learner,learnerHost.id,learnerHost);
