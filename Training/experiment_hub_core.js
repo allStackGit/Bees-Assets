@@ -2556,7 +2556,7 @@ class ExperimentHub {
     }
 
     authorizeStart(value,origin='operator') {
-        if(!['operator','automation','distributed'].includes(origin))
+        if(!['operator','automation','distributed','courier-distributed'].includes(origin))
             throw Error('Unknown native Start authorization source.');
         if(!object(value)||value.confirm_start!==true||
             typeof value.job_id!=='string')
@@ -2575,6 +2575,10 @@ class ExperimentHub {
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible)
             throw Error(readiness.reason);
+        if(job.project_id==='courier_lineage'||
+            job.distributed_courier_managed===true&&
+                origin!=='courier-distributed')
+            throw Error('Courier managed PPO groups require one coordinated native Start approval.');
         if(origin==='automation'&&(
             (job.resources.gpu_count!==0&&!this.automation.start_qualified_gpu)||!this.automation.enabled||
             !this.automation.machine_ids.includes(job.assigned_machine_id)||
@@ -2584,7 +2588,12 @@ class ExperimentHub {
             ?(this.state.distributed_launch_plans||[]).find(plan=>
                 plan.learner_job_id===job.id&&plan.status==='pending')
             :null;
-        if(origin==='distributed'&&!pendingPlan)
+        const courierPlan=origin==='courier-distributed'
+            ?(this.state.courier_launch_plans||[]).find(plan=>
+                plan.learner_job_id===job.id&&plan.status==='pending')
+            :null;
+        if(origin==='distributed'&&!pendingPlan||
+            origin==='courier-distributed'&&!courierPlan)
             throw Error('No live, approved distributed learner Start plan was found.');
         const next=copy(this.state);
         const selected=next.jobs.find(j=>j.id===job.id);
@@ -2601,6 +2610,12 @@ class ExperimentHub {
             const resolved=next.distributed_launch_plans.find(plan=>plan.id===pendingPlan.id);
             resolved.status='authorized';
             resolved.reason='All remote native owners freshly verified; one learner Start durably authorized.';
+            resolved.resolved_at=now();
+        }
+        if(origin==='courier-distributed') {
+            const resolved=next.courier_launch_plans.find(plan=>plan.id===courierPlan.id);
+            resolved.status='authorized';
+            resolved.reason='All fixed remote PPO lineages verified running; one Courier learner Start authorized.';
             resolved.resolved_at=now();
         }
         this.commit(next);
