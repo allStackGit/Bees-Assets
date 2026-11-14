@@ -513,8 +513,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     new Set(remoteEndpoints).size!==remoteEndpoints.length||
                     JSON.stringify(remoteEndpoints)!==
                         JSON.stringify(remote.endpoints.filter(e=>remoteEndpoints.includes(e)))||
-                    chosenWorkers<=remoteEndpoints.length)
-                    throw Error('Courier distributed group differs from installed remote service allowlist or PPO population.');
+                    chosenWorkers<=remoteEndpoints.length||
+                    !Number.isSafeInteger(context.distributed_courier_max_shards)||
+                    context.distributed_courier_max_shards<1||
+                    context.distributed_courier_max_shards>64)
+                    throw Error('Courier distributed group differs from installed remote service allowlist, map capacity or PPO population.');
                 const hex=fs.readFileSync(remote.keyPath,'utf8').trim();
                 if(crypto.createHash('sha256').update(Buffer.from(hex,'hex'))
                     .digest('hex')!==remote.fingerprint)
@@ -575,8 +578,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // already vectorize tiny steps; avoid unnecessary process IPC.
             const simulationShards=auto&&parallelWorlds&&
                     (parsed.colony||parsed.competitive)
-                ?Math.min(mapCount,maximumMapShards,Math.max(1,
-                    Math.floor((ramPerLearner-768)/768)))
+                ?Math.min(mapCount,maximumMapShards,
+                    context.distributed_courier_max_shards??maximumMapShards,
+                    Math.max(1,Math.floor((ramPerLearner-768)/768)))
                 :1;
             if(auto&&(!within(context.ram_quota_mb,128,1000000)))
                 throw Error('Courier automatic execution requires a fixed RAM lease.');
