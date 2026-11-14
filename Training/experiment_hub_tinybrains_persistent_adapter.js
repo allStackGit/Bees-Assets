@@ -189,6 +189,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         row.pipeline_slowest_collector_ratio,'scalar');
     add('pipeline_slowest_collector_id',
         row.pipeline_slowest_collector_id,'count');
+    // Client-observed roundtrip minus worker service includes transport,
+    // decoding, queueing and coordination. It is NOT observed network busy %.
+    // Only populated when the same slow remote collector had both durations.
+    add('pipeline_remote_service_fraction',
+        row.pipeline_remote_service_fraction,'ratio');
+    add('pipeline_remote_nonservice_fraction',
+        row.pipeline_remote_nonservice_fraction,'ratio');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
