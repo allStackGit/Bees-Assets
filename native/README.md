@@ -225,6 +225,28 @@ no second training-only combat implementation is introduced.
 
 ## Native tactical view (development)
 
+To display source ship and projectile artwork without Unity, run this
+one-time, platform-independent asset conversion from the repository root:
+
+```sh
+python3 -m pip install Pillow
+python3 native/tools/import-ship-sprites.py
+```
+
+The converter reads the tracked source PNGs and Unity texture metadata and
+writes `native/assets/ship-sprites.rgba` and
+`native/assets/projectile-sprites.rgba`. These compact, per-type native
+atlases retain the source pixels-per-world-unit scale; available projectile
+animation slices cycle in presentation time without changing combat ticks.
+To package a game, copy both atlases into an `assets/` directory beside
+`bees` or `bees.exe`, or point `BEES_NATIVE_ASSETS` at their directory.
+Neither Python nor Pillow is needed to run the compiled game; headless
+simulation/inference never loads art. Absent or invalid optional artwork
+falls back to the real physical hulls. The Queen animation and unsupported
+projectile effects still use their geometry fallback rather than displaying
+an arbitrary whole sprite sheet. `presentation_final` distinguishes
+sprite draws, fallback hulls and the number of art types loaded.
+
 The `bees` executable opens a native Windows/Linux-X11 window around the
 same `NativeHostRuntime`, model inference, and fixed-step Levels used
 headlessly. Build it with the client feature:
@@ -469,10 +491,10 @@ attributed enemy kills. These event-derived figures share the gameplay
 and training combat event stream. Career accounting is enabled only
 on campaign Levels with `record_fleet_stats`, and its event ledger is
 disabled by default in parallel native training worlds; PPO collectors
-do not pay to accumulate unused long-term career counters. Special
-chain-reaction kill credit and ability-specific fire counts may differ
-from Unity's full FleetShip career counters until that attribution is
-completed. Earlier
+do not pay to accumulate unused long-term career counters. The native career ledger also credits an external Fire Barge killer's
+friendly-fire chain damage and records physical specialist deployments
+and detonations. Other source-only visual, audio and career effects
+remain unported. Earlier
 receipts without the observations remain usable and report incomplete
 combat history instead of fabricating counters.
 
