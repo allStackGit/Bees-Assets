@@ -731,7 +731,7 @@ impl BattleCatalog {
                 transfer.from_saved_squad_id == transfer.to_saved_squad_id ||
                 member.1.saved_squad_id != transfer.from_saved_squad_id ||
                 progress.fleet.get(&transfer.fleet_ship_id)
-                    .is_none_or(|ship| ship.is_dead || ship.side != transfer.player_side) ||
+                    .is_some_and(|ship| ship.side != transfer.player_side) ||
                 (transfer.to_saved_squad_id != 0 &&
                     progress.squads.get(&transfer.to_saved_squad_id)
                         .is_none_or(|squad| squad.side != transfer.player_side))
@@ -757,7 +757,7 @@ impl BattleCatalog {
                 progress.purchases.iter().any(|(_, ship)|
                     ship.fleet_ship_id == edit.fleet_ship_id) ||
                 progress.fleet.get(&edit.fleet_ship_id)
-                    .is_some_and(|ship| ship.side != edit.player_side || ship.is_dead)
+                    .is_some_and(|ship| ship.side != edit.player_side)
             {
                 return Err(invalid("invalid original FleetShip reassignment receipt"));
             }
