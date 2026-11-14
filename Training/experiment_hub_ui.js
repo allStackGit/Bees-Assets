@@ -2088,11 +2088,13 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
             return;
         }
-        if(remoteRollouts&&(cpuFallback||!(state?.machines||[]).some(machine=>
+        if(remoteRollouts&&!(state?.machines||[]).some(machine=>
             machine.status==='connected'&&machine.agent_platform==='linux'&&
             machine.tinybrains_profiles?.[profile]===digest&&
-            machine.tinybrains_remote_rollout_profiles?.includes(profile)))) {
-            feedback('hub-config-message','Remote CPU rollouts require an approved Linux GPU learner and a locally installed tailnet worker configuration.');
+            machine.tinybrains_remote_rollout_profiles?.includes(profile)&&
+            (!cpuFallback||
+                machine.tinybrains_cpu_fallback_profiles?.includes(profile)))) {
+            feedback('hub-config-message','Remote rollouts need an approved Linux learner, authenticated key and either pinned endpoints or local worker discovery.');
             return;
         }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
@@ -4344,9 +4346,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const budgets=JSON.parse(distributedBudgets.value);
             const selectedMachine=state.machines.find(m=>m.id===distributedMachine.value);
-            const approvedCount=selectedMachine?.tinybrains_remote_rollout_endpoints?.length;
+            const discover=selectedMachine?.tinybrains_remote_rollout_discovery===true;
+            const approvedCount=discover
+                ?state.machines.filter(m=>m.id!==selectedMachine.id&&
+                    m.status==='connected'&&
+                    m.installed_projects?.includes('tinybrains_rollout')&&
+                    m.tinybrains_rollout_endpoint&&
+                    m.tinybrains_rollout_key_fingerprint===
+                        selectedMachine.tinybrains_remote_key_fingerprint).length
+                :selectedMachine?.tinybrains_remote_rollout_endpoints?.length;
             if(!Array.isArray(budgets)||!Number.isSafeInteger(approvedCount)||
-                budgets.length<1||budgets.length>approvedCount||
+                budgets.length<1||budgets.length>Math.min(8,approvedCount)||
                 (budgets.length<approvedCount&&budgets.some(item=>
                     typeof item?.machine_id!=='string')))
                 throw Error('Choose 1 to '+approvedCount+' approved remote collectors; selecting a subset requires each machine_id.');
@@ -4398,13 +4408,25 @@ document.addEventListener('DOMContentLoaded', () => {
             m.native_preflight_passed&&m.tinybrains_profiles?.[selected.parameters.profile]===
                 selected.parameters.profile_sha256&&
             m.tinybrains_remote_rollout_profiles?.includes(selected.parameters.profile)&&
-            m.tinybrains_remote_rollout_endpoints?.length);
+            (m.tinybrains_remote_rollout_endpoints?.length||
+                m.tinybrains_remote_rollout_discovery===true));
         distributedMachine.replaceChildren(...machines.map(m=>new Option(
             (m.name||m.id)+' ('+m.id+') · '+
-                m.tinybrains_remote_rollout_endpoints.length+' collectors',m.id)));
+                (m.tinybrains_remote_rollout_discovery===true
+                    ?'authenticated agent discovery'
+                    :m.tinybrains_remote_rollout_endpoints.length+' pinned collectors'),m.id)));
         if(machines.some(m=>m.id===prior))distributedMachine.value=prior;
         const machine=machines.find(m=>m.id===distributedMachine.value);
-        const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
+        const endpoints=machine?.tinybrains_remote_rollout_discovery===true
+            ?state.machines.filter(m=>m.id!==machine.id&&
+                m.status==='connected'&&
+                m.installed_projects?.includes('tinybrains_rollout')&&
+                m.tinybrains_rollout_key_fingerprint===
+                    machine.tinybrains_remote_key_fingerprint&&
+                typeof m.tinybrains_rollout_endpoint==='string')
+                .sort((a,b)=>a.id.localeCompare(b.id))
+                .map(m=>m.tinybrains_rollout_endpoint)
+            :machine?.tinybrains_remote_rollout_endpoints||[];
         const workers=endpoints.map(endpoint=>state.machines.filter(m=>
             m.status==='connected'&&m.id!==machine.id&&
             m.tinybrains_rollout_endpoint===endpoint&&
