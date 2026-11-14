@@ -103,7 +103,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'local_gpu_direct_model_updates',
             'local_gpu_direct_model_tensor_bytes',
             'local_gpu_join_wait_seconds',
-            'local_gpu_collectors_pending_at_local_end'])
+            'local_gpu_collectors_pending_at_local_end',
+            'local_lease_native_engines_active',
+            'pipeline_local_gpu_wait_work_share',
+            'pipeline_local_gpu_wait_dominant',
+            'pipeline_local_gpu_wait_owner',
+            'pipeline_local_gpu_lease_index'])
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
@@ -269,6 +274,41 @@ class BottleneckEvidence {
                 ?merge/collection:null;
             if(waitShare!==null)add('pipeline_remote_wait_work_share',waitShare);
             if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
+            const localGpuWait=seconds('local_gpu_wait_after_local_max_seconds');
+            const localGpuShare=(collection>0&&localGpuWait!==null&&
+                localGpuWait<=collection)?localGpuWait/collection:null;
+            if(localGpuShare!==null)
+                add('pipeline_local_gpu_wait_work_share',localGpuShare);
+            // Physical attribution requires the COMPLETE collection of
+            // local GPU receipts in this update, not whichever metric happened
+            // to fit the bounded source envelope. Inconclusive/tied results
+            // leave owner unknown rather than inventing a slow GPU.
+            const localGpuCount=metrics.local_gpu_collector_count?.value;
+            const gpuSamples=[];
+            for(let i=0;i<9;i++) {
+                if(metrics['collector_'+i+'_is_local_gpu']?.value!==1)
+                    continue;
+                const waited=seconds('collector_'+i+'_wait_after_local_seconds');
+                const leaseIndex=metrics['collector_'+i+'_gpu_lease_index']?.value;
+                if(waited!==null)
+                    gpuSamples.push({index:i,waited,
+                        leaseIndex:Number.isSafeInteger(leaseIndex)&&
+                            leaseIndex>=0&&leaseIndex<gpuCount?leaseIndex:null});
+            }
+            let localGpuOwner=null,localGpuLease=null;
+            if(localGpuShare!==null&&localGpuShare>=0.25&&
+                localGpuWait>=0.25&&
+                Number.isSafeInteger(localGpuCount)&&localGpuCount>0&&
+                gpuSamples.length===localGpuCount) {
+                gpuSamples.sort((a,b)=>b.waited-a.waited||a.index-b.index);
+                const first=gpuSamples[0],second=gpuSamples[1];
+                if(first.waited>=0.95*localGpuWait&&
+                    (!second||(first.waited>=second.waited*1.15&&
+                        first.waited-second.waited>=0.05))) {
+                    localGpuOwner=first.index;
+                    localGpuLease=first.leaseIndex;
+                }
+            }
             // Bounded observational state is neither a scheduler input
             // nor evidence that any particular device is saturated.
             const {at,prior}=history();
@@ -370,8 +410,9 @@ class BottleneckEvidence {
                     stageHints[i]=stage;
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,fraction,waitShare,mergeShare,stageHints,simHints,
-                    resourceHints});
+                prior.samples.push({at,fraction,waitShare,mergeShare,
+                    localGpuShare,localGpuOwner,localGpuLease,
+                    stageHints,simHints,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -387,6 +428,22 @@ class BottleneckEvidence {
                     add('pipeline_optimization_dominant',1,'count');
                 if(recent.filter(x=>x.waitShare!==null&&x.waitShare>=0.5).length>=5)
                     add('pipeline_remote_wait_dominant',1,'count');
+                if(recent.filter(x=>x.localGpuShare!==null&&
+                    x.localGpuShare>=0.5).length>=5) {
+                    add('pipeline_local_gpu_wait_dominant',1,'count');
+                    // A physical owner is meaningful only when the same
+                    // collector dominates five of six sustained samples.
+                    const owner=recent.at(-1).localGpuOwner;
+                    const lease=recent.at(-1).localGpuLease;
+                    if(owner!==null&&recent.filter(x=>
+                        x.localGpuOwner===owner&&x.localGpuShare>=0.5).length>=5) {
+                        add('pipeline_local_gpu_wait_owner',owner,'count');
+                        if(lease!==null&&recent.filter(x=>
+                            x.localGpuOwner===owner&&
+                            x.localGpuLease===lease&&x.localGpuShare>=0.5).length>=5)
+                            add('pipeline_local_gpu_lease_index',lease,'count');
+                    }
+                }
                 if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
                     add('pipeline_merge_dominant',1,'count');
                 // Cross-stage capacity evidence requires *sustained* host
