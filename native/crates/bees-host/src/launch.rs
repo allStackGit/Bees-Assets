@@ -34,7 +34,7 @@ use bees_host::scene_assets::NativeSceneAssets;
 use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
 use bees_host::unity_scene_snapshot::{
     NativeExportedPolicyLevelSetup, NativePhysicalScene, NativeLevelLayout,
-    NativePurchasedShip,
+    NativePurchasedShip, NativeCreatedSquad,
 };
 use bees_sim::asteroid_fragments::FragmentSpawnSettings;
 use bees_sim::collision::Aabb;
@@ -980,6 +980,7 @@ struct CampaignMission<'a> {
     bank_player_minerals: bool,
     lost_fleet_ids: Option<&'a HashSet<i64>>,
     purchased_ships: Option<&'a [NativePurchasedShip]>,
+    created_squads: Option<&'a [NativeCreatedSquad]>,
     authored_roster: Option<&'a [(i64, i64, i64)]>,
 }
 
@@ -1222,6 +1223,8 @@ fn launch_catalog_battle(
     let config = resolve(catalog_root, entry.config_for(&progress));
     let mut purchased = entry.mission.as_ref()
         .map(|mission| progress.purchases_for_side(mission.player_side));
+    let created = entry.mission.as_ref()
+        .map(|mission| progress.created_squads_for_side(mission.player_side));
     let mut authored = entry.mission.as_ref()
         .map(|mission| progress.authored_roster_for_side(mission.player_side));
     let lost = entry.mission.as_ref()
@@ -1247,6 +1250,7 @@ fn launch_catalog_battle(
             bank_player_minerals: mission.bank_player_minerals,
             lost_fleet_ids: lost.as_ref(),
             purchased_ships: purchased.as_deref(),
+            created_squads: created.as_deref(),
             authored_roster: authored.as_deref(),
         });
     // Reserve a unique parent before invoking the shared gameplay runtime.
@@ -1384,6 +1388,9 @@ fn preflight_native_fleet_edit(
                     }
                 }
             }
+            source.install_created_squads(
+                side, &progress.created_squads_for_side(side),
+            ).map_err(|error| contextual("shop created SavedSquads", error))?;
             source.apply_authored_fleet_roster(side, &surviving_authored)
                 .map_err(|error| contextual("shop original FleetShip reassignment", error))?;
             source.install_purchased_ships(side, &active, &dead)
@@ -2097,6 +2104,11 @@ fn run_battle(
                 layout, assets.box_catalog(), assets.polygon_catalog(),
             )
                 .map_err(|error| contextual("native Level layout", error))?;
+        }
+        if let Some(created) = mission.and_then(|mission| mission.created_squads) {
+            source.install_created_squads(
+                mission.expect("campaign squad creation owner").player_side, created,
+            ).map_err(|error| contextual("saved native campaign squads", error))?;
         }
         if let Some(assignments) = mission.and_then(|mission| mission.authored_roster) {
             let reassigned = source.apply_authored_fleet_roster(
