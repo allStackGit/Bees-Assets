@@ -54,6 +54,7 @@ class LocalExecution {
             courier_lineage_endpoint:this.supervisor.adapters?.courier_lineage?.courier_lineage_endpoint||null,
             courier_lineage_key_fingerprint:this.supervisor.adapters?.courier_lineage?.courier_lineage_key_fingerprint||null,
             courier_lineage_max_shards:this.supervisor.adapters?.courier_lineage?.courier_lineage_max_shards||0,
+            courier_remote_key_fingerprint:this.supervisor.adapters?.courier?.courier_remote_key_fingerprint||null,
             tinybrains_dual_gpu_profiles:this.supervisor.gpuEnabled===true&&
                 this.supervisor instanceof DockerSupervisor&&
                 this.supervisor.adapters?.tinybrains?.gpu_dual_execution==='split-ppo'
