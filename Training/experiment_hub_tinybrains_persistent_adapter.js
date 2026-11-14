@@ -232,10 +232,6 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             'collector_learner_ingestion_seconds','collector_client_send_seconds',
             'collector_client_receive_seconds'])
             add('collector_'+i+'_'+name,worker[name],'seconds');
-        add('collector_'+i+'_simulation_total_charged_memory_mb',
-            worker.simulation_total_charged_memory_mb,'mb');
-        add('collector_'+i+'_rollout_gpu_batch_used_pixels',
-            worker.rollout_gpu_batch_used_pixels,'count');
         add('collector_'+i+'_rollout_gpu_batch_vram_capped',
             worker.rollout_gpu_batch_vram_capped,'count');
         add('collector_'+i+'_model_prepare_seconds',
