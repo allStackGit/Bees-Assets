@@ -148,18 +148,29 @@ impl CombatWorld {
         self.game_scout_runtime.contains_key(&scout_id)
     }
 
-    /// Fast conservative Stage-allocation guard used by the batched
-    /// simulation scheduler. Only configured Scouts can spawn a Beacon,
-    /// and registration/death update this map at the same authoritative
-    /// CombatWorld boundary as the gameplay roster. Deliberately does
-    /// not use the per-ship readiness clock: scripted/player callbacks
-    /// can run later in the same Level tick.
+    /// True when a Scout could still request a Stage-owned Squad ID.
+    /// The scheduler must serialize those worlds to preserve the source's
+    /// global minion lifetime allocation order across CPU workers.
     ///
-    /// Exhausted or temporarily disabled Scouts may cause an unnecessary
-    /// serial lane, but never an unsafe concurrent Stage ID allocation.
+    /// A Scout with all five Beacons spent can never spawn another this
+    /// episode, even if another callback re-enables it or lowers its
+    /// cooldown. This is the one safe dynamic exclusion: temporary
+    /// disablement, cooldowns and current side-population caps can change
+    /// during a fixed tick and must not permit parallel ID allocation.
+    /// Unknown/partially configured entries remain conservative.
     #[inline]
     pub fn has_scout_beacon_sources(&self) -> bool {
-        !self.scout_beacon_specs.is_empty()
+        self.scout_beacon_specs.keys().any(|id| {
+            if let Some(runtime) = self.game_scout_runtime.get(id) {
+                return runtime.dropped < MAX_BEACONS;
+            }
+            if let Some(runtime) = self.policy_ship_runtime.get(id) {
+                if let Some(PolicyShipSpecial::Scout(scout)) = runtime.special {
+                    return scout.dropped < MAX_BEACONS;
+                }
+            }
+            true
+        })
     }
 
     /// Read only, suitable for a sparse ten-second Scouting callback.
