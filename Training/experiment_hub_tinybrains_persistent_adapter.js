@@ -196,6 +196,22 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
     add('remote_policy_shared_bytes',row.remote_policy_shared_bytes,'bytes');
     add('remote_policy_shared_collectors',row.remote_policy_shared_collectors,'count');
+    // Advisory completed-update exposure measurements; these don't change
+    // the Hub's sustained evidence thresholds or infer hardware saturation.
+    add('pipeline_collection_exposure_fraction',
+        row.pipeline_collection_exposure_fraction,'ratio');
+    add('pipeline_collector_stage_fraction',
+        row.pipeline_collector_stage_fraction,'ratio');
+    add('pipeline_slowest_collector_ratio',
+        row.pipeline_slowest_collector_ratio,'scalar');
+    add('pipeline_slowest_collector_id',
+        row.pipeline_slowest_collector_id,'count');
+    // A remote roundtrip minus measured worker service covers transport,
+    // framing, queueing and coordination, not confirmed network bandwidth.
+    add('pipeline_remote_service_fraction',
+        row.pipeline_remote_service_fraction,'ratio');
+    add('pipeline_remote_nonservice_fraction',
+        row.pipeline_remote_nonservice_fraction,'ratio');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
