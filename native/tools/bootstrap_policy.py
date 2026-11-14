@@ -14,6 +14,7 @@ import random
 import shutil
 import subprocess
 import sys
+import tempfile
 
 import numpy as np
 
@@ -494,10 +495,35 @@ def main() -> None:
             args.holdout_worlds, args.holdout_seed, args.holdout_episodes,
         )
     else:
-        result = bootstrap(output, args.trainer_config,
-                           args.seed, args.slots, args.inference_device, args.cargo,
-                           args.scenario, args.episodes_per_world,
-                           args.holdout_worlds, args.holdout_seed, args.holdout_episodes)
+        if output.exists():
+            raise FileExistsError(
+                f"native bootstrap destination already exists: {output}; "
+                "use --resume only for completed bootstrap receipts"
+            )
+        if not output.parent.is_dir():
+            raise ValueError("native bootstrap output parent must already exist")
+        # Model initialization, ABI manifest generation and inference loading
+        # can each fail. Never expose a half-built run or checkpoint under
+        # the final experiment path. Stage on the same filesystem so the
+        # complete, fsynced directory is published with one atomic rename.
+        # All generated references are relative to the completed directory,
+        # and the resident model loader verifies them before publication.
+        with tempfile.TemporaryDirectory(
+            prefix=f".{output.name}.bootstrap-", dir=output.parent,
+        ) as temporary:
+            staged = Path(temporary) / "initialized"
+            result = bootstrap(
+                staged, args.trainer_config, args.seed, args.slots,
+                args.inference_device, args.cargo, args.scenario,
+                args.episodes_per_world, args.holdout_worlds,
+                args.holdout_seed, args.holdout_episodes,
+            )
+            if output.exists():
+                raise FileExistsError(
+                    f"native bootstrap destination appeared during initialization: {output}"
+                )
+            os.rename(staged, output)
+            sync_directory(output.parent)
     print(json.dumps(result, sort_keys=True), flush=True)
     if args.train_rounds is not None:
         learner_slot = chosen_learner
