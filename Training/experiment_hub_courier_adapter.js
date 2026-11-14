@@ -142,7 +142,7 @@ function courierMetrics(source) {
         'training_gpu_devices_active','training_ppo_integrity_checks',
         'training_gpu_prefetched_batches','training_gpu_prefetch_active_lineages',
         'training_gpu_prefetch_wait_max_seconds',
-        'training_gpu_prefetch_transfer_max_seconds',
+        'training_gpu_prefetch_copy_max_seconds',
         'training_ppo_integrity_max_seconds',...ownerKeys,
     ]);
     const ordered=[
