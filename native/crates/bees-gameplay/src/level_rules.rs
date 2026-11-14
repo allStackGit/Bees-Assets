@@ -58,13 +58,15 @@ pub trait NativeLevelRewardMetadata {
     /// must not silently acknowledge an action and lose mined resources.
     fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32>;
 
-    /// Install source-owned fleet/perception/vision data for real physical
-    /// Beacon spawns before this tick's vision and reward consumers run.
+    /// Install source-owned fleet/perception/vision for real physical
+    /// Scout Beacons and Queen YellowJackets before vision and rewards.
     /// A Level without a spawn adapter must not acknowledge missing data.
     fn register_scout_beacons(
         &mut self, _world: &CombatWorld, events: &[CombatEvent],
     ) -> Result<(), CombatPerceptionError> {
-        if events.iter().any(|event| matches!(event, CombatEvent::ScoutBeaconDropped { .. })) {
+        if events.iter().any(|event| matches!(event,
+            CombatEvent::ScoutBeaconDropped { .. } |
+            CombatEvent::QueenMinionSpawned { .. })) {
             return Err(CombatPerceptionError::InvalidAuthoredMetadata);
         }
         Ok(())
@@ -279,6 +281,21 @@ pub trait NativeLevelCommandContext {
     fn player_scout_minion_created(
         &mut self, _world: &mut CombatWorld,
         _mother: SquadLifetime, _child: SquadLifetime, _beacon_id: i64,
+    ) -> Result<(), GameCommandError> { Ok(()) }
+
+    /// Queen.CreateMinionSquad copies the source shooting/stance choices,
+    /// then each YellowJacket joins that live wave's formation. New squads
+    /// follow ordinary player authority; unlike Scout Beacons they can
+    /// accept user commands on their side.
+    fn player_queen_minion_created(
+        &mut self, _world: &mut CombatWorld,
+        _mother: SquadLifetime, _child: SquadLifetime,
+        _minion_id: i64, _minion_index: u8,
+    ) -> Result<(), GameCommandError> { Ok(()) }
+
+    fn player_queen_minion_added(
+        &mut self, _world: &mut CombatWorld,
+        _child: SquadLifetime, _minion_id: i64, _minion_index: u8,
     ) -> Result<(), GameCommandError> { Ok(()) }
 
     /// The original Squad.CheckChase runs a 1-second source timer.
@@ -1075,6 +1092,22 @@ where
                 } => state.metadata.player_scout_minion_created(
                     &mut state.combat, mother_squad, squad, beacon_id,
                 )?,
+                SquadRosterChange::QueenMinionCreated {
+                    squad, mother_squad, minion_id, minion_index, ..
+                } => state.metadata.player_queen_minion_created(
+                    &mut state.combat, mother_squad, squad,
+                    minion_id, minion_index,
+                )?,
+                SquadRosterChange::QueenMinionAdded {
+                    squad, minion_id, minion_index,
+                } => {
+                    state.metadata.player_queen_minion_added(
+                        &mut state.combat, squad, minion_id, minion_index,
+                    )?;
+                    if state.formation_changed_seen.insert(squad) {
+                        state.formation_changed_squads.push(squad);
+                    }
+                }
                 _ => {}
             }
         }
