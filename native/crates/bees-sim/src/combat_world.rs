@@ -96,6 +96,9 @@ mod fire_barge;
 mod yellow_jacket;
 mod barge;
 mod scout;
+mod queen;
+pub use self::queen::{QueenSpawnSpec, QueenMinionSpec, QueenSpawnMeasurements};
+use self::queen::QueenRuntime;
 mod healing;
 mod mining;
 mod warp;
@@ -308,6 +311,12 @@ pub enum CombatEvent {
     /// the parent's persistent FleetShip identity (not its runtime ID).
     ScoutBeaconDropped {
         scout_id: i64, beacon_id: i64, parent_fleet_id: i64,
+    },
+    /// One authored YellowJacket born from the Queen's timed wave. The
+    /// Level owns one minion squad per wave and its source formation.
+    QueenMinionSpawned {
+        queen_id: i64, minion_id: i64, wave_sequence: u64,
+        minion_index: u8, parent_fleet_id: i64,
     },
     /// A real health restoration at an authored Beehive.HealCollider.
     /// This is NOT a damage hit and never changes kill attribution.
@@ -775,6 +784,11 @@ pub struct CombatWorld {
     /// Prefab-derived Beacon health, motion and collider, supplied at setup.
     /// An RL Scout never invents missing authored prefab data at runtime.
     scout_beacon_specs: HashMap<i64, ScoutBeaconSpec>,
+    /// Timed Queen waves share the same physical spawn and event pipeline
+    /// as gameplay Scouts; BTreeMap preserves stable cross-Queen ID order.
+    game_queens: BTreeMap<i64, QueenRuntime>,
+    queen_spawn_ids: Vec<i64>,
+    queen_spawn_measurements: QueenSpawnMeasurements,
     /// Non-policy gameplay Scouts retain charges/cooldown across HiveMind
     /// command replacement, rather than each Scouting command resetting it.
     game_scout_runtime: HashMap<i64, PolicyScoutRuntime>,
@@ -969,6 +983,9 @@ impl CombatWorld {
             live_mobile_ships_by_side: HashMap::new(),
             beacon_parent_by_id: HashMap::new(),
             scout_beacon_specs: HashMap::new(),
+            game_queens: BTreeMap::new(),
+            queen_spawn_ids: Vec::new(),
+            queen_spawn_measurements: QueenSpawnMeasurements::default(),
             game_scout_runtime: HashMap::new(),
             pending_player_scout_beacons: Vec::new(),
             navigation_requests: NavigationRequests::new(),
@@ -4043,6 +4060,7 @@ impl CombatWorld {
         self.apply_pending_policy_healing()?;
         self.apply_pending_policy_warp()?;
         self.advance_scout_beacon_cooldowns(dt);
+        self.advance_queen_waves(dt)?;
         self.advance_game_warp_gate_animations(dt);
         self.advance_policy_barge_phases(dt)?;
         self.advance_game_barge_phases(dt)?;
