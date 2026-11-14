@@ -569,6 +569,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // authoritative; this is only the initial safe capacity offer.
             const mapCount=parsed.colony?4:parsed.competitive?32:64;
             const localWorkerCount=chosenWorkers-(remoteEndpoints?.length||0);
+            if(context.gpu_pci_addresses&&
+                context.gpu_pci_addresses.length>localWorkerCount)
+                throw Error('Courier remote services cannot own GPUs from the learner machine allocation.');
             const ramPerLearner=Math.floor(
                 context.ram_quota_mb/Math.max(1,localWorkerCount));
             // The Python-heavy colony and competitive modes use RAM to
