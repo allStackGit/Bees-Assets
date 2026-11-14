@@ -1612,13 +1612,29 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             let Ok(lost) = progress.lost_player_fleet_ids(side) else { continue };
             for purchased in progress.purchases_for_side(side) {
                 if lost.contains(&purchased.fleet_ship_id) { continue; }
+                if purchased.saved_squad_id != 0 {
+                    transfer_rows.push(NativeTransferMenuRow {
+                        title: format!(
+                            "Fleet #{} (Type {})  Squad #{} -> Reserve",
+                            purchased.fleet_ship_id, purchased.ship_type,
+                            purchased.saved_squad_id,
+                        ),
+                        fleet_ship_id: purchased.fleet_ship_id,
+                        to_saved_squad_id: 0,
+                    });
+                }
                 for &destination in &squads {
                     if purchased.saved_squad_id == destination { continue; }
                     transfer_rows.push(NativeTransferMenuRow {
                         title: format!(
-                            "Fleet #{} (Type {})  Squad #{} -> #{}",
+                            "Fleet #{} (Type {})  {} -> Squad #{}",
                             purchased.fleet_ship_id, purchased.ship_type,
-                            purchased.saved_squad_id, destination,
+                            if purchased.saved_squad_id == 0 {
+                                "Reserve".to_string()
+                            } else {
+                                format!("Squad #{}", purchased.saved_squad_id)
+                            },
+                            destination,
                         ),
                         fleet_ship_id: purchased.fleet_ship_id,
                         to_saved_squad_id: destination,
