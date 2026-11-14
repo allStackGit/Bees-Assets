@@ -852,6 +852,9 @@ struct NativeSourcePolicyInputs {
 /// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
 #[derive(Clone)]
 pub struct NativeSourceSquad {
+    /// Stable native SavedSquad.Id, distinct from the transient Stage
+    /// squad ItemId. Older Unity exports have no durable saved identity.
+    pub saved_squad_id: Option<i64>,
     pub command_bans: Option<Vec<bees_hivemind::dispatch::LocalCommandKind>>,
     pub is_carrier_squad: Option<bool>,
     /// Exact source shortcut index; generated minion squads are unnumbered.
@@ -1218,6 +1221,8 @@ impl NativePhysicalScene {
             }
             let mut squad = template.clone();
             squad.item_id = clone.new_squad_item_id;
+            // A scenario clone is not the player's stored SavedSquad.
+            squad.saved_squad_id = None;
             squad.members = clone.ship_ids.clone();
             // The source's hotkey belongs to the original fleet. New native
             // squads remain selectable by actual roster identity instead
@@ -2781,6 +2786,7 @@ impl NativePhysicalScene {
                 _ => return Err(NativeSnapshotError::MissingHiveMindSource),
             };
             source_squads.push(NativeSourceSquad {
+                saved_squad_id: None,
                 command_bans,
                 hivemind,
                 is_carrier_squad: squad.is_carrier_squad,
