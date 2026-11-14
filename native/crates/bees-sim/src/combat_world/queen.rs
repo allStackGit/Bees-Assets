@@ -43,7 +43,7 @@ impl QueenMinionSpec {
                 self.max_weapon_range, self.firepower].iter()
                 .all(|value| value.is_finite() && *value >= 0.0) &&
             self.height > 0.0 && self.movement.valid() &&
-            self.max_weapon_range <= i32::MAX as f32 &&
+            self.max_weapon_range < i32::MAX as f32 &&
             self.max_weapon_range.fract() == 0.0 &&
             self.spawn_rotation_degrees.is_finite() && self.path_clearance >= 0 &&
             self.front_offset.is_finite() && self.ship_type_letter < 24 &&
