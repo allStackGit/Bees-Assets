@@ -313,7 +313,17 @@ without the graphical client or a separate training simulation:
 ```sh
 bees campaign native/examples/native-frontier-campaign.json --output-dir native-frontier-save --mission frontier
 bees campaign native/examples/native-frontier-campaign.json --output-dir native-frontier-save --mission assault
+bees campaign native/examples/native-frontier-campaign.json --output-dir native-frontier-save --all
 ```
+
+The `--all` variant runs incomplete missions in catalog order, enforcing
+their prerequisites and victory/finished advancement rules. It stops on
+the first failed advancement and prints a structured, measured
+`native_campaign_batch_mission` record per attempt, followed by a
+completion or stalled summary with total world steps, episodes and wall
+time. It never fabricates progress, replay results or training rewards.
+Already completed missions are skipped. This is a headless full-campaign
+qualification path using the identical gameplay, not an alternate AI.
 
 Use a compiled headless `bees` binary for automated native campaign
 qualification. Each invocation loads mission unlocks and saved player
@@ -325,9 +335,23 @@ is not a substitute for replaying real player actions.
 
 After winning the first mission, the second becomes available with a
 different authored enemy formation. Press **F** in the battle picker to
-view cumulative fleet careers. The `status` command prints the same
-mission unlocks and per-FleetShip battle, victory and mineral totals as
-JSON; it also works in a headless build.
+view FleetShip careers or **S** to view saved-squad careers. The native
+skirmish scene assigns stable `saved_squad_id` values to two player
+squads; these are not transient Stage `item_id` values. A scenario
+clone never inherits an original saved-squad identity. Per-squad
+battle counts, wins, losses of individual ships, damage and kills are
+derived from the same completed battle's FleetShip records.
+
+The `status` command prints the same campaign unlocks and machine-readable
+FleetShip and SavedSquad career statistics. Besides victories, mined
+minerals and permanent losses, each FleetShip reports observed turret
+fire, direct enemy TSV damage, received TSV damage and physically
+attributed enemy kills. These event-derived figures share the gameplay
+and training combat event stream; special chain-reaction kill credit
+and ability-specific fire counts may differ from Unity's full
+FleetShip career counters until that attribution is completed. Earlier
+receipts without the observations remain usable and report incomplete
+combat history instead of fabricating counters.
 
 To persist those statistics, a mission must explicitly set
 `"record_fleet_stats": true`, matching its source Unity
@@ -359,9 +383,11 @@ a mission opting into permanent loss persistence refuses unknown
 historical deaths. Use `bees status` to see saved deaths and whether
 the loss history is complete.
 
-This now covers native fleet battles, victories, mining and permanent
-losses. Fleet purchasing/editing, ship hit/kill/fire counts, stored
-squad statistics and wider account progression still require parity work.
+This now covers native fleet battles, victories, mining, permanent
+losses, physical combat observations and saved-squad careers. Fleet
+purchasing/editing, full special-weapon attribution, source-correct
+account economy, campaign dialogues and wider account progression
+still require parity work.
 
 Use `on_victory` to select an alternate run configuration when the named
 prerequisite's latest completed attempt was a victory. Both paths keep the
