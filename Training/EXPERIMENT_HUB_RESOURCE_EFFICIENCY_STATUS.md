@@ -1,8 +1,14 @@
 # Resource-efficient training workstream
 
-Updated 2026-11-13. Branch: `feat/hub-resource-efficiency-20261112`.
+Updated 2026-11-14. Current Hub branch: `feat/hub-critical-path-attribution-20261114` (based on `feat/hub-courier-gpu-ppo-overlap-20261113`).
 Scope: TinyBrains, Courier, future native projects; Bees remains with the unified native rewrite.
 The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimize useful training throughput inside those leases. Benchmarks below are not implied: these are source-level changes awaiting real workload qualification.
+
+## Current continuation
+
+- **Hub:** On top of Courier GPU PPO minibatch prefetch and priority dispatch, this branch also consumes the TinyBrains shared-lease RAM scan seconds/calls from `allStackGit/TinyBrains:feat/tinybrains-shared-admission-snapshot-20261113`. It reports sustained software inspection pressure through the existing `hub-metrics-v1` archive, default charts and exports.
+- **Conservative primary delay evidence:** After at least five consistent samples in a six-sample / two-minute window, identify a unique observed stage (collection/optimization, remote or local-GPU collector join, rollout merge, Courier queue, or Courier final lineage barrier) and a responsible immutable collector/lineage index only when actually supported. Courier GPU minibatch prefetch wait/copy has independent measured stage pressure and can narrow a stable final-lineage delay. Overlapping PPO updates, missing overlap/queue profiling, multiple simultaneous pressure sources and changing straggler owners remain unresolved rather than assigned a fictional hardware cause. The Train/Monitor summary decodes numeric stage codes and resolves a distributed collector machine only from one matching managed Hub group member.
+- **Largest remaining backend work:** Courier automatic process-count resizing without episode resets; cross-machine on-policy Courier execution; capacity-aware GPU placement and device assignment; improved measured inference/optimizer efficiency where multiple GPUs are leased; meaningful causal GPU/CPU contention evidence. Preserve fixed leases, exact PPO behavior, stable tuning and existing telemetry. Real comparative SPS qualification remains deferred.
 
 ## Implemented code, not yet live-system qualified
 
