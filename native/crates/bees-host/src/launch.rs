@@ -1936,6 +1936,11 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
     let mut selected = 0;
     let mut number = 0_u64;
     let mut launch_failed = false;
+    // Scene parsing installs physical colliders, weapons, perception and
+    // campaign snapshots. Those immutable defaults do not change when a
+    // battle finishes, a ship is purchased or a tactic is edited. Rebuild
+    // this menu-only cache solely when an authored SavedSquad is created.
+    let mut tactic_source_cache: Option<(usize, Vec<NativeSavedSquadTactics>)> = None;
     loop {
         let rows = catalog.battles.iter().map(|entry| {
             let unlocked = entry.mission.as_ref().is_none_or(|mission|
@@ -2076,39 +2081,48 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         // Read actual source squad preferences rather than inventing
         // defaults for a campaign that has not yet recorded a battle.
         // The saved edit, when present, supersedes the scene default.
-        let mut tactic_defaults = HashMap::new();
-        for entry in &catalog.battles {
-            let Some(mission) = entry.mission.as_ref() else { continue };
-            for config in entry.configurations() {
-                let run_path = resolve(root, config);
-                let mut source = load_native_fleet_edit_scene(&run_path)?;
-                source.install_created_squads(
-                    mission.player_side, &progress.created_squads_for_side(mission.player_side),
-                ).map_err(|error| contextual("menu created squad tactics", error))?;
-                for squad in &source.source_squads {
-                    if let (Some(saved_id), Some(cease_fire)) =
-                        (squad.saved_squad_id, squad.cease_fire)
-                    {
-                        if squad.side == mission.player_side &&
-                            squad.player_permissions.user_controlled &&
-                            !squad.hivemind.as_ref()
-                                .is_some_and(|hivemind| hivemind.hivemind_controlled)
+        let created_count = progress.created_squads_for_side(1).len() +
+            progress.created_squads_for_side(2).len();
+        if tactic_source_cache.as_ref()
+            .is_none_or(|(count, _)| *count != created_count)
+        {
+            let mut tactic_defaults = HashMap::new();
+            for entry in &catalog.battles {
+                let Some(mission) = entry.mission.as_ref() else { continue };
+                for config in entry.configurations() {
+                    let run_path = resolve(root, config);
+                    let mut source = load_native_fleet_edit_scene(&run_path)?;
+                    source.install_created_squads(
+                        mission.player_side, &progress.created_squads_for_side(mission.player_side),
+                    ).map_err(|error| contextual("menu created squad tactics", error))?;
+                    for squad in &source.source_squads {
+                        if let (Some(saved_id), Some(cease_fire)) =
+                            (squad.saved_squad_id, squad.cease_fire)
                         {
-                            tactic_defaults.entry((squad.side, saved_id))
-                                .or_insert(NativeSavedSquadTactics {
-                                    side: squad.side, saved_squad_id: saved_id,
-                                    shooting_strategy_id: squad.shooting.id,
-                                    should_chase: squad.should_chase, cease_fire,
-                                    match_speed: Some(squad.matching_speed.is_some()),
-                                });
+                            if squad.side == mission.player_side &&
+                                squad.player_permissions.user_controlled &&
+                                !squad.hivemind.as_ref()
+                                    .is_some_and(|hivemind| hivemind.hivemind_controlled)
+                            {
+                                tactic_defaults.entry((squad.side, saved_id))
+                                    .or_insert(NativeSavedSquadTactics {
+                                        side: squad.side, saved_squad_id: saved_id,
+                                        shooting_strategy_id: squad.shooting.id,
+                                        should_chase: squad.should_chase, cease_fire,
+                                        match_speed: Some(squad.matching_speed.is_some()),
+                                    });
+                            }
                         }
                     }
                 }
             }
+            let mut tactic_defaults = tactic_defaults.into_values().collect::<Vec<_>>();
+            tactic_defaults.sort_unstable_by_key(|row| (row.side, row.saved_squad_id));
+            tactic_source_cache = Some((created_count, tactic_defaults));
         }
-        let mut tactic_defaults = tactic_defaults.into_values().collect::<Vec<_>>();
-        tactic_defaults.sort_unstable_by_key(|row| (row.side, row.saved_squad_id));
-        let tactics_rows = tactic_defaults.into_iter().map(|original| {
+        let tactics_rows = tactic_source_cache.as_ref()
+            .expect("saved tactics source cache initialized").1
+            .iter().copied().map(|original| {
             let tactics = progress.tactics_for_squad(original.side, original.saved_squad_id)
                 .unwrap_or(original);
             NativeTacticsMenuRow {
