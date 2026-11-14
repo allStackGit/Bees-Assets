@@ -76,7 +76,8 @@ pub enum SquadRosterChange {
         queen_id: i64, minion_id: i64, minion_index: u8,
     },
     QueenMinionAdded {
-        squad: SquadLifetime, minion_id: i64, minion_index: u8,
+        squad: SquadLifetime, queen_id: i64,
+        minion_id: i64, minion_index: u8,
     },
 }
 
@@ -408,7 +409,8 @@ impl NativeSquadRoster {
             self.owner_by_ship.insert(*minion_id, owner);
             self.measurements.ships_added_to_existing += 1;
             return Ok(SquadRosterChange::QueenMinionAdded {
-                squad: owner, minion_id: *minion_id, minion_index: *minion_index,
+                squad: owner, queen_id: *queen_id,
+                minion_id: *minion_id, minion_index: *minion_index,
             });
         }
         let owner = allocate(mother, *minion_id)?;
