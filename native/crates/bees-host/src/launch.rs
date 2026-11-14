@@ -958,6 +958,7 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees menu <catalog.json> --output-dir <battle-runs>
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
+       bees campaign <catalog.json> --output-dir <battle-runs> --all
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
@@ -1043,9 +1044,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             return Err(invalid(USAGE).into());
         }
         let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
-        if args.next().is_none_or(|flag| flag != "--mission") {
-            return Err(invalid(USAGE).into());
+        let selector = args.next().ok_or_else(|| invalid(USAGE))?;
+        if selector == "--all" {
+            if args.next().is_some() { return Err(invalid(USAGE).into()); }
+            return run_all_campaign_missions(&catalog_path, &output);
         }
+        if selector != "--mission" { return Err(invalid(USAGE).into()); }
         let mission_id = args.next().ok_or_else(|| invalid(USAGE))?;
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_campaign_mission(&catalog_path, &output,
@@ -1126,7 +1130,7 @@ fn launch_catalog_battle(
     output_root: &Path,
     next_number: &mut u64,
     interactive: bool,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<PathBuf, Box<dyn Error>> {
     let config = resolve(catalog_root, entry.config_for(progress));
     let lost = entry.mission.as_ref()
         .filter(|mission| mission.persist_fleet_losses)
@@ -1150,7 +1154,99 @@ fn launch_catalog_battle(
             Err(error) => return Err(error.into()),
         }
     };
-    run_session(&config, interactive, interactive, Some(output), None, None, mission)
+    run_session(&config, interactive, interactive, Some(output.clone()), None, None, mission)?;
+    Ok(output)
+}
+
+fn run_all_campaign_missions(
+    catalog_path: &Path, output_root: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    if catalog.campaign_id.is_none() {
+        return Err(invalid("campaign batch requires a campaign catalog").into());
+    }
+    let root = catalog_path.parent().ok_or_else(|| invalid("missing catalog directory"))?;
+    fs::create_dir_all(output_root)?;
+    let started = Instant::now();
+    let mut number = 0_u64;
+    let mut played = 0_u64;
+    let mut world_steps = 0_u64;
+    let mut episode_count = 0_u64;
+    let mut completed = Vec::new();
+    // The original catalog defines mission order, dependencies and route
+    // selection. Keep that one source of truth; never simulate or advance
+    // a campaign through an alternate training-only state machine.
+    for entry in &catalog.battles {
+        let Some(mission) = &entry.mission else { continue };
+        let progress = catalog.load_progress(output_root)?;
+        if progress.completed(&mission.id) { continue; }
+        if !mission.requires.iter().all(|id| progress.completed(id)) {
+            return Err(invalid(format!(
+                "campaign batch cannot unlock mission {}: an earlier prerequisite is incomplete",
+                mission.id,
+            )).into());
+        }
+        let run = launch_catalog_battle(
+            &catalog, entry, root, &progress, output_root, &mut number, false,
+        )?;
+        let summary: Value = serde_json::from_slice(
+            &fs::read(run.join("rollout-summary.json"))?,
+        )?;
+        let steps = summary["throughput"]["successful_world_steps"].as_u64()
+            .ok_or_else(|| invalid("completed campaign has no measured world steps"))?;
+        let episodes = summary["completed_episodes"].as_u64()
+            .ok_or_else(|| invalid("completed campaign has no episode receipt"))?;
+        world_steps = world_steps.checked_add(steps)
+            .ok_or_else(|| invalid("campaign total steps overflow"))?;
+        episode_count = episode_count.checked_add(episodes)
+            .ok_or_else(|| invalid("campaign episode count overflow"))?;
+        played += 1;
+        let latest = catalog.load_progress(output_root)?;
+        let advanced = latest.completed(&mission.id);
+        print_campaign_batch_progress(&mission.id, advanced, steps, episodes, &run);
+        if !advanced {
+            println!("{}", json!({
+                "kind": "native_campaign_batch_stalled",
+                "mission_id": mission.id,
+                "played_missions": played,
+                "successful_world_steps": world_steps,
+                "completed_episodes": episode_count,
+                "wall_seconds": started.elapsed().as_secs_f64(),
+            }));
+            return Err(invalid("native campaign mission did not meet its authored advancement condition").into());
+        }
+        completed.push(mission.id.as_str());
+    }
+    let seconds = started.elapsed().as_secs_f64();
+    println!("{}", json!({
+        "kind": "native_campaign_batch_complete",
+        "campaign_id": catalog.campaign_id,
+        "newly_completed_missions": completed,
+        "played_missions": played,
+        "successful_world_steps": world_steps,
+        "completed_episodes": episode_count,
+        "wall_seconds": seconds,
+        "world_steps_per_wall_second": (seconds > 0.0)
+            .then_some(world_steps as f64 / seconds),
+    }));
+    Ok(())
+}
+
+fn print_campaign_batch_progress(
+    mission_id: &str, completed: bool, world_steps: u64, episodes: u64,
+    run: &Path,
+) {
+    println!("{}", json!({
+        "kind": "native_campaign_batch_mission",
+        "mission_id": mission_id,
+        "advanced": completed,
+        "successful_world_steps": world_steps,
+        "completed_episodes": episodes,
+        "run": run,
+    }));
 }
 
 fn run_campaign_mission(
@@ -1176,7 +1272,7 @@ fn run_campaign_mission(
     }
     let mut number = 0_u64;
     launch_catalog_battle(&catalog, entry, root, &progress,
-        output_root, &mut number, false)
+        output_root, &mut number, false).map(|_| ())
 }
 
 #[cfg(feature = "client")]
