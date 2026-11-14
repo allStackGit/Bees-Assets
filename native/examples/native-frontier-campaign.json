@@ -38,5 +38,6 @@
       "ship_type": 2,
       "price_tsv": 250
     }
-  ]
+  ],
+  "max_squad_ships": 10
 }
