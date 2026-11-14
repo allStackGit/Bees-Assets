@@ -22,7 +22,10 @@ pub(crate) mod campaign_dialogue;
 #[cfg(feature = "client")]
 mod battle_menu;
 #[cfg(feature = "client")]
-pub use battle_menu::{BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow, select_battle};
+pub use battle_menu::{
+    BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
+    NativeTransferMenuRow, select_battle,
+};
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
 pub use tactical_hud::HudAction;
