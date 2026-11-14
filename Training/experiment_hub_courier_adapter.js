@@ -529,7 +529,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         ...evaluator,
         args(parameters,context) {
             const {config_sha256,seed,workers,max_rounds,checkpoint_rounds,
-                design_overrides,training_schema_sha256}=parameters;
+                design_overrides,training_schema_sha256,reporting_benchmarks}=parameters;
             const environment=effectiveConfig(design_overrides);
             const training=expectedTraining(design_overrides);
             if(training!==null
@@ -538,7 +538,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 throw Error('Courier training overrides require the exact installed training schema digest.');
             if(Object.keys(parameters).some(key=>
                 !['config_sha256','seed','workers','max_rounds','checkpoint_rounds','design_overrides',
-                    'training_schema_sha256'].includes(key))||
+                    'training_schema_sha256','reporting_benchmarks'].includes(key))||
+                (reporting_benchmarks!==undefined&&typeof reporting_benchmarks!=='boolean')||
                 config_sha256!==configSha256||!within(seed,0,4294967295)||
                 !(workers===undefined&&cpuParallelism==='allocation')&&
                     !within(workers,1,64)||
@@ -591,6 +592,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(training!==null?['--hub-training-config',
                     path.join(out,'hub-training-overrides.json')]:[]),
+                ...(reporting_benchmarks===true?['--reporting-benchmarks']:[]),
                 ...(predecessor?['--resume']:[])];
         },
         readProgress(context) {
