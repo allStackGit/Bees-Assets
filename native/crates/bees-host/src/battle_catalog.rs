@@ -6,8 +6,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde_json::{json, Value};
 
-use super::{invalid, CampaignOutcome};
+use super::{invalid, CampaignOutcome, CampaignFleetShipOutcome};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -62,6 +63,16 @@ pub struct BattleCatalog {
 #[derive(Default)]
 pub struct CampaignProgress<'a> {
     missions: HashMap<&'a str, MissionProgress>,
+    fleet: HashMap<i64, FleetProgress>,
+    battles_without_fleet_data: u64,
+}
+
+#[derive(Default)]
+struct FleetProgress {
+    side: i32,
+    battles_fought: u64,
+    battles_won: u64,
+    minerals_mined: u64,
 }
 
 #[derive(Default)]
@@ -114,12 +125,22 @@ impl BattleCatalog {
         Ok(())
     }
 
+    /// Reconstruct save data from *completed* campaign summaries, not from
+    /// mutable UI state. A crashed game cannot half-credit minerals or a
+    /// rematch, and re-opening the menu cannot credit the same run twice.
+    /// Every FleetShip in a finished battle contributes one BattlesFought,
+    /// one BattlesWon on its side's victory, and its exact settled mineral
+    /// tally from that battle's Level-owned FleetShip inventory.
     pub fn load_progress<'a>(&'a self, output: &Path) -> io::Result<CampaignProgress<'a>> {
         let mut progress = CampaignProgress::default();
         let Some(campaign) = &self.campaign_id else { return Ok(progress) };
         let record = |directory: &Path, progress: &mut CampaignProgress<'a>| -> io::Result<()> {
             #[derive(Deserialize)]
-            struct Summary { campaign_outcome: Option<CampaignOutcome> }
+            struct Summary {
+                campaign_outcome: Option<CampaignOutcome>,
+                #[serde(default)]
+                campaign_fleet: Option<Vec<CampaignFleetShipOutcome>>,
+            }
 
             let bytes = match fs::read(directory.join("rollout-summary.json")) {
                 Ok(bytes) => bytes,
@@ -128,7 +149,8 @@ impl BattleCatalog {
             };
             // Older interrupted runs may have a partial summary. Only a
             // complete, readable campaign outcome can grant progress.
-            let Ok(Summary { campaign_outcome: Some(outcome) }) = serde_json::from_slice(&bytes) else { return Ok(()) };
+            let Ok(Summary { campaign_outcome: Some(outcome), campaign_fleet }) =
+                serde_json::from_slice(&bytes) else { return Ok(()) };
             if outcome.campaign_id != *campaign { return Ok(()); }
             if let Some(mission) = self.battles.iter().filter_map(|entry| entry.mission.as_ref())
                 .find(|mission| mission.id == outcome.mission_id && mission.player_side == outcome.player_side)
@@ -136,6 +158,37 @@ impl BattleCatalog {
                 let state = progress.missions.entry(&mission.id).or_default();
                 state.latest_victory = outcome.winner_side == mission.player_side;
                 state.completed |= matches!(mission.advance_on, AdvanceOn::Finished) || state.latest_victory;
+                if let Some(ships) = campaign_fleet.filter(|ships| {
+                    let mut seen = HashSet::new();
+                    ships.iter().all(|ship| ship.fleet_ship_id > 0 &&
+                        ship.side > 0 && ship.minerals_mined_this_level >= 0 &&
+                        seen.insert(ship.fleet_ship_id))
+                }) {
+                    for ship in ships {
+                        let fleet = progress.fleet.entry(ship.fleet_ship_id).or_insert_with(|| {
+                            FleetProgress { side: ship.side, ..FleetProgress::default() }
+                        });
+                        if fleet.side != ship.side {
+                            return Err(invalid(format!(
+                                "FleetShip {} changed sides between completed campaign battles",
+                                ship.fleet_ship_id,
+                            )));
+                        }
+                        fleet.battles_fought = fleet.battles_fought.checked_add(1)
+                            .ok_or_else(|| invalid("campaign fleet battle count overflow"))?;
+                        if outcome.winner_side == ship.side {
+                            fleet.battles_won = fleet.battles_won.checked_add(1)
+                                .ok_or_else(|| invalid("campaign fleet victory count overflow"))?;
+                        }
+                        fleet.minerals_mined = fleet.minerals_mined
+                            .checked_add(ship.minerals_mined_this_level as u64)
+                            .ok_or_else(|| invalid("campaign fleet mineral count overflow"))?;
+                    }
+                } else {
+                    // Pre-fleet-receipt runs still unlock missions, but do
+                    // not invent fleet statistics for unavailable history.
+                    progress.battles_without_fleet_data += 1;
+                }
             }
             Ok(())
         };
@@ -149,6 +202,42 @@ impl BattleCatalog {
             }
         }
         Ok(progress)
+    }
+
+    /// Read-only, complete campaign view for the game menu and external
+    /// tooling. No sidecar save file is ever more authoritative than the
+    /// original successful battle summaries.
+    pub fn status(&self, progress: &CampaignProgress<'_>) -> Value {
+        let missions = self.battles.iter().filter_map(|entry| {
+            let mission = entry.mission.as_ref()?;
+            Some(json!({
+                "id": mission.id,
+                "title": entry.title,
+                "unlocked": mission.requires.iter().all(|id| progress.completed(id)),
+                "completed": progress.completed(&mission.id),
+                "latest_victory": progress.latest_victory(&mission.id),
+            }))
+        }).collect::<Vec<_>>();
+        let mut ids = progress.fleet.keys().copied().collect::<Vec<_>>();
+        ids.sort_unstable();
+        let fleet = ids.into_iter().map(|id| {
+            let record = &progress.fleet[&id];
+            json!({
+                "fleet_ship_id": id,
+                "side": record.side,
+                "battles_fought": record.battles_fought,
+                "battles_won": record.battles_won,
+                "minerals_mined": record.minerals_mined,
+            })
+        }).collect::<Vec<_>>();
+        json!({
+            "schema_version": 1,
+            "kind": "native_campaign_status",
+            "campaign_id": self.campaign_id,
+            "missions": missions,
+            "fleet": fleet,
+            "battles_without_fleet_data": progress.battles_without_fleet_data,
+        })
     }
 }
 
