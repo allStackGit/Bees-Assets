@@ -163,6 +163,28 @@ function validateCatalog(raw,installed=[],approved={}) {
             throw Error('Invalid project Design field definitions.');
         return {version:1,fields:entry.fields.map(field=>({...field}))};
     };
+    // Metric capabilities are advertised by the installed adapter, never
+    // inferred from generic metric names or previously selected job settings.
+    const metricGroups=new Set(['base','colony','evolution','communication',
+        'speed','patches','reporting','remote_rollouts','gpu']);
+    const metricCatalog=value=>{
+        if(value===undefined)return {};
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+            Object.keys(value).some(key=>!metricGroups.has(key)))
+            throw Error('Invalid installed metric capability catalogue.');
+        const entries=Object.entries(value),seen=new Set();
+        let total=0;
+        for(const [group,names] of entries) {
+            if(!Array.isArray(names)||names.length>256||
+                names.some(name=>typeof name!=='string'||
+                    !/^[a-z][a-z0-9_]{0,63}$/.test(name)||
+                    seen.has(name)||!(seen.add(name))))
+                throw Error('Invalid or duplicate metric capability in '+group+'.');
+            total+=names.length;
+        }
+        if(total>384)throw Error('Metric capability catalogue exceeds the bound.');
+        return Object.fromEntries(entries.map(([key,names])=>[key,names.slice()]));
+    };
     const result={};
     if(raw.courier!==undefined) {
         if(!installed.includes('courier')||!/^[0-9a-f]{64}$/.test(raw.courier.config_sha256))
@@ -172,6 +194,7 @@ function validateCatalog(raw,installed=[],approved={}) {
             throw Error('Courier PPO Design settings require an approved training schema digest.');
         result.courier={...validateFields(raw.courier),
             config_sha256:raw.courier.config_sha256,
+            metric_catalog:metricCatalog(raw.courier.metric_catalog),
             ...(raw.courier.training_schema_sha256
                 ?{training_schema_sha256:raw.courier.training_schema_sha256}:{})};
     }
@@ -187,6 +210,7 @@ function validateCatalog(raw,installed=[],approved={}) {
             throw Error('TinyBrains Design requires its frozen source run specification.');
         result.tinybrains={...validateFields(raw.tinybrains),
             source_sha256:raw.tinybrains.source_sha256,
+            metric_catalog:metricCatalog(raw.tinybrains.metric_catalog),
             profiles:Object.fromEntries(Object.entries(profiles).map(([id,entry])=>
                 [id,{profile_sha256:entry.profile_sha256}]))};
     }
