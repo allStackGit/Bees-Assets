@@ -784,6 +784,27 @@ function createTinyBrainsPersistentDockerAdapter({
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
                 rollout_action_weights,import_checkpoint,import_checkpoint_sha256}=parameters;
             const item=approved.get(profile);
+            // The coordinator freezes which *approved* remote workers were
+            // actually leased. A subset must preserve the locally installed
+            // allowlist's ordering; a different endpoint/key cannot be
+            // injected into the Docker network command by a job request.
+            const selectedEndpoints=context.distributed_rollout_endpoints??
+                remote?.endpoints??[];
+            if(context.distributed_rollout_endpoints!==undefined&&(
+                remote_rollouts!==true||
+                !Array.isArray(selectedEndpoints)||selectedEndpoints.length<1||
+                selectedEndpoints.length>remote.endpoints.length||
+                selectedEndpoints.some(endpoint=>!remote.endpoints.includes(endpoint))||
+                new Set(selectedEndpoints).size!==selectedEndpoints.length||
+                JSON.stringify(selectedEndpoints)!==
+                    JSON.stringify(remote.endpoints.filter(endpoint=>
+                        selectedEndpoints.includes(endpoint)))))
+                throw Error('Distributed collector subset differs from the machine-local approved endpoint identities.');
+            const selectedWeights=rollout_action_weights
+                ?[rollout_action_weights[0],
+                    ...selectedEndpoints.map(endpoint=>rollout_action_weights[
+                        remote.endpoints.indexOf(endpoint)+1])]
+                :null;
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
@@ -875,10 +896,10 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
-                ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
+                ...(remote_rollouts===true?[...selectedEndpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
                     '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
-                ...(rollout_action_weights?rollout_action_weights.flatMap(w=>
+                ...(selectedWeights?selectedWeights.flatMap(w=>
                     ['--remote-rollout-weight',String(w)]):[]),
                 ...(device==='cpu'?['--device','cpu']:
                     device==='dual'||device==='multi'
