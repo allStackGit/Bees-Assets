@@ -449,12 +449,14 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             let bomb = template.policy_weapon.ok_or_else(invalid)?;
             // A Queen's team and its currently loaded model slot are
             // authoritative. Reuse that *team*, not a guessed model index.
-            let parent_agent = self.agents.get(&queen_id).or_else(||
-                self.agents.values()
-                    .filter(|a| a.side == side &&
-                        world.policy_frame(a.ship_id).is_some())
-                    .min_by_key(|a| a.ship_id)
-            ).ok_or_else(invalid)?;
+            let parent_agent = self.agents.get(&queen_id)
+                .filter(|a| world.policy_frame(a.ship_id).is_some())
+                .or_else(||
+                    self.agents.values()
+                        .filter(|a| a.side == side &&
+                            world.policy_frame(a.ship_id).is_some())
+                        .min_by_key(|a| a.ship_id)
+                ).ok_or_else(invalid)?;
             let frame = world.policy_frame(parent_agent.ship_id).ok_or_else(invalid)?;
             let route = parent_agent.route;
             let mut controller = parent_agent.controller;
