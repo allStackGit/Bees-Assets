@@ -27,15 +27,17 @@ class MixedLinuxSupervisor {
             throw Error('Mixed Linux execution requires native Courier, Docker TinyBrains and optional native Bees adapters.');
         // Bees collectors and learners share the same systemd owner and its
         // durable job/lineage journal. Do not create a third process owner.
-        // Mixed mode deliberately offers CPU-only native work: allowing a
-        // native ROCm lease alongside Docker would require coordinated
-        // device access/VRAM ownership, not merely combined CPU admission.
+        // Both owners use the same mixed admission lock and cross-check
+        // unresolved physical GPU identities before probe or launch.
+        // Only native Bees learners may lease a native GPU here, and only
+        // exclusively: Docker cooperative sharing is confined to Docker.
         const nativeAdapters={courier:adapters.courier};
         for(const project of ['bees_native','bees_native_collect']) {
             if(adapters[project])nativeAdapters[project]=adapters[project];
         }
+        const nativeGpuEnabled=gpuEnabled===true&&Boolean(adapters.bees_native);
         this.native=nativeFactory({root,machineId,adapters:nativeAdapters,
-            gpuEnabled:false});
+            gpuEnabled:nativeGpuEnabled});
         this.docker=dockerFactory({root,machineId,adapters:{tinybrains:adapters.tinybrains},
             gpuEnabled,dockerSudo,allowNativePeer:true});
         this.root=fsApi.realpathSync(root);
@@ -45,7 +47,8 @@ class MixedLinuxSupervisor {
         this.adapters=adapters;
         this.gpuEnabled=gpuEnabled===true;
         this.gpuExecution='rocm';
-        this.gpuProjects=['tinybrains'];
+        this.gpuProjects=['tinybrains',
+            ...(nativeGpuEnabled?['bees_native']:[])];
         this.dockerSupervisor=this.docker;
         this.qualifiedAt=null;
         this.snapshot(); // Corrupt or colliding ownership is never silently adopted.
@@ -77,16 +80,49 @@ class MixedLinuxSupervisor {
     gpuProbeCleanupPending() {
         return this.native.gpuProbeCleanupPending()||this.docker.gpuProbeCleanupPending();
     }
-    assertNoNativeGpuOwner() {
-        if(this.native.snapshot().some(r=>unresolved(r)&&
-            (r.gpu_pci_address||r.gpu_pci_addresses?.length||r.project_id==='tinybrains')))
-            throw Error('An unresolved native GPU owner blocks mixed Docker GPU execution.');
+    // Check the *other* owner, including quarantined terminal records.
+    // A stale/missing PCI identity on an unresolved GPU record must block
+    // every device: it is not safe to infer that the GPU is free.
+    assertPeerGpuAvailable(owner,bindings) {
+        const peer=owner===this.native?this.docker:this.native;
+        const selected=new Set(bindings.map(binding=>binding.pci_address));
+        for(const record of peer.snapshot()) {
+            if(!unresolved(record))continue;
+            const pci=record.gpu_pci_addresses||
+                [record.gpu_pci_address].filter(Boolean);
+            const gpuRecord=Boolean(record.gpu_node||
+                record.gpu_nodes?.length||pci.length);
+            if(!gpuRecord)continue;
+            if(!pci.length||pci.some(id=>selected.has(id)))
+                throw Error('Unresolved GPU ownership in the other mixed Linux backend blocks this physical device.');
+        }
+    }
+    async withAdmissionLock(operation) {
+        let fd;
+        try{fd=this.fs.openSync(this.lock,'wx',0o600);}
+        catch{throw Error('Mixed launch or GPU probe already in progress or requires ownership recovery.');}
+        try{return await operation();}
+        finally {
+            this.fs.closeSync(fd);
+            this.fs.unlinkSync(this.lock);
+        }
     }
     async qualifyGpuDeviceAccess(bindings,proof) {
         if(!this.qualifiedAt||this.gpuProbeCleanupPending())
             throw Error('Mixed Linux GPU qualification requires both ready owners and no pending probe.');
-        this.assertNoNativeGpuOwner();
-        return this.docker.qualifyGpuDeviceAccess(bindings,proof);
+        const project=proof?.project_id;
+        const owner=project==='tinybrains'?this.docker:
+            project==='bees_native'&&this.native.gpuEnabled?this.native:null;
+        if(!owner||!Array.isArray(bindings)||!bindings.length||
+            project==='bees_native'&&bindings.length!==1||
+            proof.executable!==this.adapters[project]?.executable)
+            throw Error('Mixed Linux GPU probe requires an installed native Bees or Docker TinyBrains GPU adapter.');
+        return this.withAdmissionLock(async()=>{
+            if(this.gpuProbeCleanupPending())
+                throw Error('Unresolved mixed Linux GPU probe blocks qualification.');
+            this.assertPeerGpuAvailable(owner,bindings);
+            return owner.qualifyGpuDeviceAccess(bindings,proof);
+        });
     }
     async start(job,lease) {
         if(!this.qualifiedAt||this.gpuProbeCleanupPending())
@@ -96,27 +132,30 @@ class MixedLinuxSupervisor {
             ['courier','bees_native','bees_native_collect'].includes(project)&&
             Object.hasOwn(this.adapters,project)?this.native:null;
         if(!owner)throw Error('Unknown or uninstalled mixed Linux project.');
-        if(owner===this.native&&(job.resources?.gpu_count??0)!==0)
-            throw Error('Mixed Linux native jobs require CPU-only execution.');
-        // Serialize admission and the durable owner launch across mixed agents.
-        // A crash leaves this lock behind for deliberate, manual reconciliation.
-        let fd;
-        try{fd=this.fs.openSync(this.lock,'wx',0o600);}
-        catch{throw Error('Mixed launch already in progress or requires ownership recovery.');}
-        try {
+        if(owner===this.native&&(job.resources?.gpu_count??0)!==0&&
+            (project!=='bees_native'||!this.native.gpuEnabled||
+                job.resources.gpu_count!==1||
+                job.resources.gpu_mode!=='exclusive'))
+            throw Error('Only native Bees learners may use one exclusive GPU in mixed Linux mode.');
+        // Serialize ownership, CPU/RAM admission, and cross-backend GPU
+        // checks across all agents using this same machine-local root.
+        // A crash retains the lock for explicit operator reconciliation.
+        return this.withAdmissionLock(async()=>{
             const records=this.snapshot();
             if(records.some(r=>r.job_id===job.id))
                 throw Error('Job already has a native or Docker ownership record; reconcile instead.');
-            if(owner===this.docker)this.assertNoNativeGpuOwner();
+            if((job.resources?.gpu_count??0)>0) {
+                const bindings=lease?.gpu_bindings;
+                if(!Array.isArray(bindings)||bindings.length!==job.resources.gpu_count)
+                    throw Error('GPU launch requires the acknowledged physical PCI bindings.');
+                this.assertPeerGpuAvailable(owner,bindings);
+            }
             ensureLocalCpuRamCapacity(records,job.resources.cpus,job.resources.ram_mb,
                 typeof this.hostOs.availableParallelism==='function'
                     ?this.hostOs.availableParallelism():this.hostOs.cpus().length,
                 Math.floor(this.hostOs.totalmem()/1048576));
-            return await owner.start(job,lease);
-        }finally {
-            this.fs.closeSync(fd);
-            this.fs.unlinkSync(this.lock);
-        }
+            return owner.start(job,lease);
+        });
     }
     async reconcile(jobId) {
         const owner=this.ownerForJob(jobId);
