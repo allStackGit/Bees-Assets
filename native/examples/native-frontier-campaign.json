@@ -31,12 +31,18 @@
     {
       "player_side": 1,
       "ship_type": 21,
-      "price_tsv": 100
+      "price_tsv": 100,
+      "unlocked_after": [
+        "frontier"
+      ]
     },
     {
       "player_side": 1,
       "ship_type": 2,
-      "price_tsv": 250
+      "price_tsv": 250,
+      "unlocked_after": [
+        "frontier"
+      ]
     }
   ],
   "max_squad_ships": 10
