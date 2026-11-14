@@ -930,8 +930,16 @@ impl NativePhysicalScene {
             NativeAuthoredEntity::Ship(ship) => ship.fleet_ship_id,
             _ => None,
         }).collect::<HashSet<_>>();
+        // Special Bomb/Charge weapons own distinct physical contact IDs.
+        // Reserve above both entity IDs and authored weapon IDs so the
+        // normal CombatWorld identity authority cannot collide with a
+        // copied specialist when setting up future projectiles/minions.
         let mut next_entity = self.entities.iter()
-            .map(NativeAuthoredEntity::entity_id).max().unwrap_or(0);
+            .map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) => ship.entity_id.max(
+                    ship.special_weapon.map_or(0, |weapon| weapon.weapon_id)),
+                _ => entity.entity_id(),
+            }).max().unwrap_or(0);
         let mut filled_casualty_slots = HashSet::new();
         for purchase in purchases {
             if purchase.fleet_ship_id <= 0 || purchase.saved_squad_id <= 0 ||
@@ -960,8 +968,10 @@ impl NativePhysicalScene {
                         ship.ship_type == purchase.ship_type &&
                         ship.fleet_ship_id.is_some() &&
                         ship.policy.is_none() && !ship.motion.is_policy_controlled &&
-                        ship.special.is_none() && ship.special_weapon.is_none() &&
                         ship.drone_carrier_id.is_none() &&
+                        !matches!(&ship.special,
+                            Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
+                            if carrier.carrier_id.is_some()) &&
                         !ship.motion.is_moving && !ship.motion.has_target_coordinates &&
                         ship.motion.body_velocity.length_squared() == 0.0 &&
                         ship.vitals.health() == ship.vitals.max_health() &&
@@ -1041,6 +1051,14 @@ impl NativePhysicalScene {
             let mut ship = template.clone();
             ship.entity_id = next_entity;
             ship.fleet_ship_id = Some(purchase.fleet_ship_id);
+            if let Some(weapon) = &mut ship.special_weapon {
+                // Never copy the immutable authored weapon ID: the native
+                // special-contact map treats that as a unique physical
+                // identity separate from the owning ship.
+                next_entity = next_entity.checked_add(1)
+                    .ok_or(invalid("native special weapon IDs exhausted"))?;
+                weapon.weapon_id = next_entity;
+            }
             ship.motion.position = position;
             ship.motion.user_controlled =
                 self.source_squads[owner].player_permissions.user_controlled;
