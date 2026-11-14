@@ -508,7 +508,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     remote.some((item,i)=>!item||
                         Object.keys(item).some(k=>!['endpoint','slot','max_shards'].includes(k))||
                         typeof item.endpoint!=='string'||
-                        !/^100\\.(?:[6-9][0-9]|1[01][0-9]|12[0-7])\\.\\d{1,3}\\.\\d{1,3}:[1-9]\\d{0,4}$/.test(item.endpoint)||
+                        !/^100\.(?:[6-9][0-9]|1[01][0-9]|12[0-7])\.\d{1,3}\.\d{1,3}:[1-9]\d{0,4}$/.test(item.endpoint)||
                         !Number.isSafeInteger(item.slot)||
                         item.slot!==chosenWorkers-remote.length+i||
                         !Number.isSafeInteger(item.max_shards)||
