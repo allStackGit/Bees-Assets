@@ -1283,6 +1283,62 @@ fn preflight_native_ship_purchase(
 /// This is the same source-scene preflight for both ship construction
 /// and between-mission squad reassignment. It does not create a separate
 /// set of combat/formation/policy rules.
+/// Read precisely the same authored Stage and native layout for
+/// campaign fleet editing that run_battle loads for gameplay. Shared by
+/// full fleet preflight and the read-only squad picker.
+fn load_native_fleet_edit_scene(run_path: &Path) -> Result<NativePhysicalScene, Box<dyn Error>> {
+    let run: RunConfig = serde_json::from_slice(&fs::read(&run_path)?)?;
+    if run.levels.len() != 1 || run.episodes_per_world != 1 {
+        return Err(invalid("native shop requires one physical episode per campaign Level").into());
+    }
+    let level = &run.levels[0];
+    let bounds = &run.fragment_spawn.map_bounds;
+    let fragments = FragmentSpawnSettings {
+        map_bounds: Aabb {
+            min: vec2(bounds.min), max: vec2(bounds.max),
+        },
+        half_map_extents: vec2(run.fragment_spawn.half_map_extents),
+        asteroid_max_speed_exclusive:
+            run.fragment_spawn.asteroid_max_speed_exclusive,
+        training_health_ratio: run.fragment_spawn.training_health_ratio,
+    };
+    if !fragments.valid() {
+        return Err(invalid("invalid native purchased Level fragmentation settings").into());
+    }
+    let config_root = run_path.parent().ok_or_else(||
+        invalid("missing native shop run directory"))?;
+    let assets = match (
+        run.native_stage.as_ref(),
+        run.collision_matrix.as_ref(),
+        run.stage_palette.as_ref(),
+    ) {
+        (Some(native), None, None) => NativeSceneAssets::from_native_stage(
+            native.collision_matrix_rows,
+            &native.asteroid_prefab_numbers,
+            &run.stage_name, fragments,
+        ),
+        (None, Some(matrix), Some(palette)) => NativeSceneAssets::load(
+            &resolve(config_root, matrix), &resolve(config_root, palette),
+            &run.stage_name, fragments,
+        ),
+        _ => return Err(invalid(
+            "shop Level needs the same source Stage assets as ordinary native gameplay",
+        ).into()),
+    }.map_err(|error| contextual("shop Stage assets", error))?;
+    let scene_path = resolve(config_root, &level.scene).canonicalize()?;
+    let scene_json = fs::read_to_string(&scene_path)?;
+    let mut source = NativePhysicalScene::parse_scene_with_assets(
+        &scene_json, &assets,
+    ).map_err(|error| contextual("shop authored Level", error))?;
+    if let Some(layout) = &level.native_layout {
+        source.apply_native_layout(
+            layout, assets.box_catalog(), assets.polygon_catalog(),
+        ).map_err(|error| contextual("shop native Level layout", error))?;
+    }
+
+    Ok(source)
+}
+
 fn preflight_native_fleet_edit(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>, side: i32,
@@ -1311,54 +1367,7 @@ fn preflight_native_fleet_edit(
         }
         for config in entry.configurations() {
             let run_path = resolve(root, config).canonicalize()?;
-            let run: RunConfig = serde_json::from_slice(&fs::read(&run_path)?)?;
-            if run.levels.len() != 1 || run.episodes_per_world != 1 {
-                return Err(invalid("native shop requires one physical episode per campaign Level").into());
-            }
-            let level = &run.levels[0];
-            let bounds = &run.fragment_spawn.map_bounds;
-            let fragments = FragmentSpawnSettings {
-                map_bounds: Aabb {
-                    min: vec2(bounds.min), max: vec2(bounds.max),
-                },
-                half_map_extents: vec2(run.fragment_spawn.half_map_extents),
-                asteroid_max_speed_exclusive:
-                    run.fragment_spawn.asteroid_max_speed_exclusive,
-                training_health_ratio: run.fragment_spawn.training_health_ratio,
-            };
-            if !fragments.valid() {
-                return Err(invalid("invalid native purchased Level fragmentation settings").into());
-            }
-            let config_root = run_path.parent().ok_or_else(||
-                invalid("missing native shop run directory"))?;
-            let assets = match (
-                run.native_stage.as_ref(),
-                run.collision_matrix.as_ref(),
-                run.stage_palette.as_ref(),
-            ) {
-                (Some(native), None, None) => NativeSceneAssets::from_native_stage(
-                    native.collision_matrix_rows,
-                    &native.asteroid_prefab_numbers,
-                    &run.stage_name, fragments,
-                ),
-                (None, Some(matrix), Some(palette)) => NativeSceneAssets::load(
-                    &resolve(config_root, matrix), &resolve(config_root, palette),
-                    &run.stage_name, fragments,
-                ),
-                _ => return Err(invalid(
-                    "shop Level needs the same source Stage assets as ordinary native gameplay",
-                ).into()),
-            }.map_err(|error| contextual("shop Stage assets", error))?;
-            let scene_path = resolve(config_root, &level.scene).canonicalize()?;
-            let scene_json = fs::read_to_string(&scene_path)?;
-            let mut source = NativePhysicalScene::parse_scene_with_assets(
-                &scene_json, &assets,
-            ).map_err(|error| contextual("shop authored Level", error))?;
-            if let Some(layout) = &level.native_layout {
-                source.apply_native_layout(
-                    layout, assets.box_catalog(), assets.polygon_catalog(),
-                ).map_err(|error| contextual("shop native Level layout", error))?;
-            }
+            let mut source = load_native_fleet_edit_scene(&run_path)?;
             for entity in &source.entities {
                 if let NativeAuthoredEntity::Ship(ship) = entity {
                     if let Some(id) = ship.fleet_ship_id {
