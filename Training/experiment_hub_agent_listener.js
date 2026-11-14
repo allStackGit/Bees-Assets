@@ -4,7 +4,9 @@
 // and isolated Hub transport qualification. The caller binds to loopback;
 // neither project administration nor Bees training routes are available here.
 const http=require('node:http');
+const fs=require('node:fs');
 const {ArtifactMirror,MAX_CHUNK}=require('./experiment_hub_artifact_sync');
+const {authorizedBundleFile}=require('./experiment_hub_native_bundle_transfer');
 const AGENT_HOST='127.0.0.1';
 const AGENT_PORT=7149;
 // A heartbeat includes machine/lease reports beyond the separately
@@ -50,6 +52,44 @@ function createAgentServer(getHub) {
         if((host!==AGENT_HOST+':'+AGENT_PORT&&
             host!=='localhost:'+AGENT_PORT)||req.headers.origin)
             return respond(res,404,{error:'Agent endpoint only.'});
+        // A learner may retrieve only a completed collector bundle pinned
+        // in its own frozen job. Authentication and relative capture paths
+        // are checked against the durable Hub and mirrored receipt.
+        if(req.method==='GET'&&
+            req.url?.startsWith('/api/hub/agent/native-bundle-file?')) {
+            try {
+                if(req.url.length>1024||
+                    Number(req.headers['content-length']||0)!==0)
+                    return respond(res,404,{error:'Agent endpoint only.'});
+                const url=new URL(req.url,'http://'+AGENT_HOST+':'+AGENT_PORT);
+                const keys=[...url.searchParams.keys()];
+                const required=['machine_id','learner_job_id','collector_job_id','file'];
+                if(url.pathname!=='/api/hub/agent/native-bundle-file'||
+                    url.hash||keys.length!==4||new Set(keys).size!==4||
+                    required.some(key=>!url.searchParams.has(key)))
+                    return respond(res,404,{error:'Agent endpoint only.'});
+                const source=authorizedBundleFile(getHub(),
+                    url.searchParams.get('machine_id'),
+                    req.headers['x-hub-agent-token'],
+                    url.searchParams.get('learner_job_id'),
+                    url.searchParams.get('collector_job_id'),
+                    url.searchParams.get('file'));
+                const stream=fs.createReadStream(source.file,{highWaterMark:MAX_CHUNK});
+                stream.on('error',()=>res.destroy());
+                res.writeHead(200,{
+                    'Content-Type':'application/octet-stream',
+                    'Content-Length':source.size,
+                    'X-Native-Bundle-SHA256':source.sha,
+                    'Cache-Control':'no-store',
+                    'X-Content-Type-Options':'nosniff',
+                });
+                stream.pipe(res);
+                return;
+            }catch(error) {
+                return respond(res,[401,409,413].includes(error.status)
+                    ?error.status:400,{error:String(error.message||error)});
+            }
+        }
         // Separate bounded binary transfers from the 64-KiB heartbeat.
         // Worker credentials are machine-scoped; job ownership and each
         // relative telemetry path are verified before accepting bytes.
