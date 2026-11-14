@@ -334,6 +334,11 @@ impl UnityShipSpecial {
         let invalid = || NativeSnapshotError::InvalidShip(id);
         if self.power < 0 { return Err(invalid()); }
         let special = match (self.kind.as_str(), ship_type) {
+            // Prior Unity exports omitted Queen's autonomous minion timer.
+            // Importing one as a regular inert hull would silently corrupt
+            // gameplay and training parity. Standalone native Queen scenes
+            // require an exact authored YellowJacket spawn template instead.
+            ("none", 17) => return Err(invalid()),
             ("none", kind) if !matches!(kind, 0 | 10 | 18 | 19 | 22) => return Ok(None),
             ("barge", 0) if schema >= 30 && self.can_override_bounds.is_none() =>
                 return Err(invalid()),
