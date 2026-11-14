@@ -831,6 +831,49 @@ function nativeStartReadiness(snapshot, job) {
             matchedEndpoints.add(host.tinybrains_rollout_endpoint);
         }
     }
+    if(job.project_id==='courier'&&job.distributed_courier_managed===true) {
+        const endpoints=job.distributed_courier_endpoints;
+        const slots=job.distributed_courier_slots;
+        const ids=job.distributed_courier_sidecar_job_ids;
+        if(!Array.isArray(endpoints)||endpoints.length<1||endpoints.length>16||
+            !Array.isArray(slots)||!Array.isArray(ids)||
+            endpoints.length!==slots.length||ids.length!==slots.length||
+            new Set(endpoints).size!==endpoints.length||
+            new Set(slots).size!==slots.length||
+            new Set(ids).size!==ids.length||
+            !SHA256.test(String(job.distributed_courier_key_fingerprint||''))||
+            machine.courier_remote_key_fingerprint!==
+                job.distributed_courier_key_fingerprint)
+            return block('Courier learner has no complete, approved remote PPO group identity.');
+        const seen=new Set([machine.id]);
+        for(const [index,id] of ids.entries()) {
+            const worker=snapshot.jobs.find(item=>item.id===id&&
+                item.project_id==='courier_lineage'&&
+                item.frozen_parameters?.learner_job_id===job.id&&
+                item.frozen_parameters?.slot===slots[index]);
+            const host=snapshot.machines.find(item=>
+                item.id===worker?.assigned_machine_id);
+            const owned=snapshot.reservations.find(lease=>
+                lease.id===worker?.lease_id&&lease.job_id===worker.id&&
+                lease.machine_id===host?.id&&
+                lease.project_id==='courier_lineage'&&
+                lease.issued_by==='experiment-hub'&&
+                lease.status==='acknowledged'&&lease.receipt_fresh===true);
+            if(!worker||!host||!owned||seen.has(host.id)||
+                host.status!=='connected'||
+                host.courier_lineage_endpoint!==endpoints[index]||
+                host.courier_lineage_key_fingerprint!==
+                    job.distributed_courier_key_fingerprint||
+                !courierLineageHost(snapshot,worker,host)||
+                nativeResourceBlock(worker,owned)||gpuStartBlock(worker,owned,host)||
+                worker.status!=='running'||!worker.dispatch_id||
+                worker.live_execution?.state!=='running'||
+                worker.live_execution?.dispatch_id!==worker.dispatch_id||
+                worker.capacity_released_at)
+                return block('Every Courier remote PPO lineage must have a fresh verified running native service on its frozen machine.');
+            seen.add(host.id);
+        }
+    }
     if(!supportsEvaluation(machine.evaluation_suites,job))
         return block('The assigned adapter does not advertise all required evaluation suites.');
     const r=job.resources;
