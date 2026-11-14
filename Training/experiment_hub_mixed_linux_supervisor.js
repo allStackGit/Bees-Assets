@@ -21,9 +21,20 @@ class MixedLinuxSupervisor {
         hostOs=os,fsApi=fs}={}) {
         if(!adapters||typeof adapters!=='object'||Array.isArray(adapters)||
             !adapters.tinybrains?.docker||!adapters.courier||adapters.courier.docker||
-            Object.keys(adapters).some(name=>!['tinybrains','courier'].includes(name)))
-            throw Error('Mixed Linux execution requires installed native Courier and Docker TinyBrains adapters.');
-        this.native=nativeFactory({root,machineId,adapters:{courier:adapters.courier},
+            Object.keys(adapters).some(name=>
+                !['tinybrains','courier','bees_native','bees_native_collect'].includes(name))||
+            ['bees_native','bees_native_collect'].some(name=>adapters[name]?.docker))
+            throw Error('Mixed Linux execution requires native Courier, Docker TinyBrains and optional native Bees adapters.');
+        // Bees collectors and learners share the same systemd owner and its
+        // durable job/lineage journal. Do not create a third process owner.
+        // Mixed mode deliberately offers CPU-only native work: allowing a
+        // native ROCm lease alongside Docker would require coordinated
+        // device access/VRAM ownership, not merely combined CPU admission.
+        const nativeAdapters={courier:adapters.courier};
+        for(const project of ['bees_native','bees_native_collect']) {
+            if(adapters[project])nativeAdapters[project]=adapters[project];
+        }
+        this.native=nativeFactory({root,machineId,adapters:nativeAdapters,
             gpuEnabled:false});
         this.docker=dockerFactory({root,machineId,adapters:{tinybrains:adapters.tinybrains},
             gpuEnabled,dockerSudo,allowNativePeer:true});
@@ -80,11 +91,12 @@ class MixedLinuxSupervisor {
     async start(job,lease) {
         if(!this.qualifiedAt||this.gpuProbeCleanupPending())
             throw Error('Mixed Linux owners must qualify before a new job can start.');
-        const owner=job?.project_id==='courier'?this.native:
-            job?.project_id==='tinybrains'?this.docker:null;
-        if(!owner)throw Error('Unknown mixed Linux project.');
+        const project=job?.project_id;
+        const owner=project==='tinybrains'?this.docker:
+            Object.hasOwn(this.native.adapters,project||'')?this.native:null;
+        if(!owner)throw Error('Unknown or uninstalled mixed Linux project.');
         if(owner===this.native&&(job.resources?.gpu_count??0)!==0)
-            throw Error('Courier must use native CPU-only execution.');
+            throw Error('Mixed Linux native jobs require CPU-only execution.');
         // Serialize admission and the durable owner launch across mixed agents.
         // A crash leaves this lock behind for deliberate, manual reconciliation.
         let fd;
