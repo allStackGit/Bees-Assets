@@ -373,11 +373,25 @@ class DockerSupervisor {
     }
     async qualifyGpuDeviceAccess(bindings,proof) {
         if(!this.qualifiedAt||!this.gpuEnabled||!proof||
-            !Array.isArray(bindings)||![1,2].includes(bindings.length)||
+            !Array.isArray(bindings)||bindings.length<1||bindings.length>8||
             (bindings.length===2&&
                 this.adapters.tinybrains?.gpu_dual_execution!=='split-ppo')||
+            (bindings.length>=3&&
+                this.adapters.tinybrains?.gpu_multi_execution!=='split-ppo-collectors')||
             this.gpuProbeCleanupPending())
-            throw Error('Approved Docker one- or two-GPU proof is unavailable.');
+            throw Error('Approved Docker GPU proof is unavailable.');
+        if(bindings.length>=3) {
+            // Docker's separate device-filtered probes prove each PCI GPU
+            // in isolation, then the full union is verified before Start.
+            // A missing or ambiguous single-device attestation fails
+            // closed, preserving the existing unresolved-probe journal.
+            if(!Array.isArray(proof.singleProofs)||
+                proof.singleProofs.length!==bindings.length)
+                throw Error('Multi-GPU Docker proof requires one immutable verification per PCI device.');
+            for(let i=0;i<bindings.length;i++)
+                await this.qualifyGpuDeviceAccess(
+                    [bindings[i]],proof.singleProofs[i]);
+        }
         const plan=resolveRocmDevices(bindings);
         if(bindings.length===1&&!plan.unselected.length)
             throw Error('Single-GPU Docker proof requires an excluded peer GPU.');
@@ -476,7 +490,7 @@ class DockerSupervisor {
                     project_id:job.project_id,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     continuation_of_job_id:job.continuation_of_job_id||null,
-                    ...(bindings.length===2
+                    ...(bindings.length>=2
                         ?{gpu_pci_addresses:bindings.map(b=>b.pci_address)}
                         :{gpu_pci_address:bindings[0].pci_address})});
             await this.qualifyGpuDeviceAccess(bindings,proof);
