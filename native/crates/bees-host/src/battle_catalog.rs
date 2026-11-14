@@ -9,6 +9,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{invalid, CampaignOutcome, CampaignFleetShipOutcome};
+use bees_host::fleet_inventory::NativeFleetCombatStats;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -85,6 +86,8 @@ struct FleetProgress {
     minerals_mined: u64,
     is_dead: bool,
     loss_history_complete: bool,
+    combat: NativeFleetCombatStats,
+    combat_history_complete: bool,
 }
 
 #[derive(Default)]
@@ -123,9 +126,11 @@ impl CampaignProgress<'_> {
         ids.into_iter().map(|id| {
             let ship = &self.fleet[&id];
             format!(
-                "Fleet #{id}   Side {}   Won {}/{}   Mined {}{}",
-                ship.side, ship.battles_won, ship.battles_fought, ship.minerals_mined,
-                if ship.is_dead { "   Lost" } else { "" },
+                "#{id} S{} W{}/{} M{} Hit{} Taken{} Kill{}{}",
+                ship.side, ship.battles_won, ship.battles_fought,
+                ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
+                ship.combat.tsv_damage_received, ship.combat.attributed_enemy_kills,
+                if ship.is_dead { " LOST" } else { "" },
             )
         }).collect()
     }
@@ -209,8 +214,24 @@ impl BattleCatalog {
                     for ship in ships {
                         let fleet = progress.fleet.entry(ship.fleet_ship_id).or_insert_with(|| {
                             FleetProgress { side: ship.side,
-                                loss_history_complete: true, ..FleetProgress::default() }
+                                loss_history_complete: true,
+                                combat_history_complete: true,
+                                ..FleetProgress::default() }
                         });
+                        if let Some(stats) = ship.combat {
+                            let add = |left: u64, right: u64| left.checked_add(right)
+                                .ok_or_else(|| invalid("campaign combat counter overflow"));
+                            fleet.combat.observed_turret_shots =
+                                add(fleet.combat.observed_turret_shots, stats.observed_turret_shots)?;
+                            fleet.combat.enemy_tsv_damage_done =
+                                add(fleet.combat.enemy_tsv_damage_done, stats.enemy_tsv_damage_done)?;
+                            fleet.combat.tsv_damage_received =
+                                add(fleet.combat.tsv_damage_received, stats.tsv_damage_received)?;
+                            fleet.combat.attributed_enemy_kills =
+                                add(fleet.combat.attributed_enemy_kills, stats.attributed_enemy_kills)?;
+                        } else {
+                            fleet.combat_history_complete = false;
+                        }
                         if let Some(dead) = ship.is_dead {
                             fleet.is_dead |= dead;
                         } else {
@@ -280,6 +301,11 @@ impl BattleCatalog {
                 "minerals_mined": record.minerals_mined,
                 "is_dead": record.is_dead,
                 "loss_history_complete": record.loss_history_complete,
+                "observed_turret_shots": record.combat.observed_turret_shots,
+                "enemy_tsv_damage_done": record.combat.enemy_tsv_damage_done,
+                "tsv_damage_received": record.combat.tsv_damage_received,
+                "attributed_enemy_kills": record.combat.attributed_enemy_kills,
+                "combat_history_complete": record.combat_history_complete,
             })
         }).collect::<Vec<_>>();
         json!({
