@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
     parser.add_argument("--adaptive-local-engines", action="store_true")
+    parser.add_argument("--pool-cli", choices=("legacy", "optimized"), default="legacy")
     parser.add_argument("--remote-rollout-endpoint", action="append", default=[])
     parser.add_argument("--remote-rollout-weight", action="append", type=int, default=[])
     parser.add_argument("--remote-rollout-key-file")
@@ -88,11 +89,14 @@ def main():
         "--config", str(spec),
         "--out", str(run),
         "--persistent",
-        *(["--adaptive-local-engines"] if args.adaptive_local_engines else []),
+        *(['--auto-env-pool'] if args.adaptive_local_engines and args.pool_cli == "optimized"
+          else ['--adaptive-local-engines'] if args.adaptive_local_engines else []),
         "--self-play-device", optimization_device,
         *(["--self-play-collection-device", collection_device] if collection_device else []),
         "--self-play-threads", str(args.threads),
-        *(["--self-play-ram-mb", str(args.ram_mb)] if args.ram_mb else []),
+        *(['--ram-budget-mb' if args.pool_cli == "optimized" else '--self-play-ram-mb',
+           str(args.ram_mb)] if args.ram_mb and
+          (args.pool_cli == "legacy" or args.adaptive_local_engines) else []),
         "--live-matches", str(args.live_matches),
         "--waves", str(args.waves),
         "--rollout-actions", str(args.actions),
@@ -103,6 +107,8 @@ def main():
           for arg in ("--remote-rollout-endpoint", endpoint)],
         *[arg for weight in args.remote_rollout_weight
           for arg in ("--remote-rollout-weight", str(weight))],
+        *(['--auto-rollout-weights'] if args.pool_cli == "optimized" and
+          args.remote_rollout_endpoint and not args.remote_rollout_weight else []),
         *(["--remote-rollout-key-file", args.remote_rollout_key_file,
            "--remote-rollout-job-id", run.name] if args.remote_rollout_endpoint else []),
     ]
