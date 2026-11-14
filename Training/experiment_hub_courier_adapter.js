@@ -61,7 +61,9 @@ function courierMetrics(source) {
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
+            name.endsWith('_owner')||
             /^training_gpu_device_[0-7]_lineages$/.test(name))?'count':
+            name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
