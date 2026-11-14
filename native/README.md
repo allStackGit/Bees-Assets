@@ -234,8 +234,9 @@ python3 native/tools/import-ship-sprites.py
 ```
 
 The converter reads the tracked source PNGs, Unity texture metadata and
-`ConfigData.ChangeableShipColors` palettes and writes `native/assets/ship-sprites.rgba` and
-`native/assets/projectile-sprites.rgba`. These compact, per-type native
+`ConfigData.ChangeableShipColors` palettes and writes `native/assets/ship-sprites.rgba`,
+`native/assets/projectile-sprites.rgba` and
+`native/assets/asteroid-sprites.rgba`. These compact, per-type native
 atlases retain the source pixels-per-world-unit scale; available projectile
 animation slices advance from each projectile's first visible tick without
 changing combat physics or training clocks. Rocket and Fire Barge explosion
@@ -246,7 +247,10 @@ To package a game, copy both atlases into an `assets/` directory beside
 `bees` or `bees.exe`, or point `BEES_NATIVE_ASSETS` at their directory.
 The native renderer recolors only the same source-matched ship pixels for
 squads with authored custom colors, preserving original alpha and unaffected
-details. Recolored sprites are cached per ship type/color and measured in
+details. Source-numbered collision asteroids, spawned shards and fading
+pieces draw the corresponding Asteroid 1..28 art through the same physical
+bodies. Mining rocks and other obstacles still use their real hull outlines.
+Recolored sprites are cached per ship type/color and measured in
 `presentation_final`; no recoloring or art loading happens in headless
 training. Existing BSS1 atlases remain readable without color overrides.
 Neither Python nor Pillow is needed to run the compiled game; headless
