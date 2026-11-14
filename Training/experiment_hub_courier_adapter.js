@@ -28,6 +28,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_optimizer_tuner_settled',
     'training_gpu_metric_readbacks','training_gpu_metric_rows',
     'training_gpu_guard_readbacks',
+    'training_gpu_h2d_async_batches',
     'training_gpu_prefetched_batches',
     'training_gpu_prefetch_active_lineages',
     'training_gpu_prefetch_validated_batches',
