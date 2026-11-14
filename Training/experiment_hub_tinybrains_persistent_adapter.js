@@ -120,6 +120,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'local_gpu_collector_count',
+        'local_gpu_direct_model_updates',
         'local_gpu_collectors_pending_at_local_end',
         'local_gpu_collectors_ready_at_local_end',
         'collector_auto_balance_adjustments',
@@ -147,6 +148,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
     add('remote_policy_shared_bytes',row.remote_policy_shared_bytes,'bytes');
+    // Logical immutable tensor size multiplied by completed on-host
+    // consumers. This is not a physical PCIe bandwidth measurement.
+    add('local_gpu_direct_model_tensor_bytes',
+        row.local_gpu_direct_model_tensor_bytes,'bytes');
     add('remote_policy_shared_collectors',row.remote_policy_shared_collectors,'count');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
