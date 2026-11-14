@@ -43,6 +43,8 @@ impl QueenMinionSpec {
                 self.max_weapon_range, self.firepower].iter()
                 .all(|value| value.is_finite() && *value >= 0.0) &&
             self.height > 0.0 && self.movement.valid() &&
+            self.max_weapon_range <= i32::MAX as f32 &&
+            self.max_weapon_range.fract() == 0.0 &&
             self.spawn_rotation_degrees.is_finite() && self.path_clearance >= 0 &&
             self.front_offset.is_finite() && self.ship_type_letter < 24 &&
             self.combat_activity.is_none_or(|value| value.valid()) &&
@@ -190,9 +192,10 @@ impl CombatWorld {
             let mut stats = self.weapon_target_rank_stats(queen_id)?;
             stats.ship_id = id;
             stats.ship_type_letter = minion.ship_type_letter;
-            stats.last_killed = 0;
+            // The source minion points its FleetShip at the Queen's
+            // persistent parent. Keep the parent's kill-history values.
             stats.firepower = minion.firepower;
-            stats.max_range = minion.max_weapon_range;
+            stats.max_range = minion.max_weapon_range as i32;
             stats.speed = minion.base_speed;
             self.configure_weapon_rank_source(NativeWeaponRankSource {
                 stats, fleet_owner_ship_id,
