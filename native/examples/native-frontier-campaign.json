@@ -7,7 +7,8 @@
       "mission": {
         "id": "frontier",
         "player_side": 1,
-        "record_fleet_stats": true
+        "record_fleet_stats": true,
+        "persist_fleet_losses": true
       }
     },
     {
@@ -19,7 +20,8 @@
         "record_fleet_stats": true,
         "requires": [
           "frontier"
-        ]
+        ],
+        "persist_fleet_losses": true
       }
     }
   ]
