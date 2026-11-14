@@ -145,7 +145,7 @@ struct GameShip {
     drone_carrier_id: Option<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GameSight {
     source_sight: i32,
@@ -242,7 +242,7 @@ impl GameFirePattern {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GameWeaponRange {
     offset: [f32; 2],
@@ -273,7 +273,7 @@ enum GameShipSpecial {
 /// Exact native YellowJacket prefab inputs for a Queen's *future* waves.
 /// No initial ship, weapon or FleetShip ID is claimed for this template:
 /// CombatWorld assigns distinct live identities at each actual spawn.
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GameQueenSpawn {
     minions_per_wave: u8,
@@ -283,7 +283,7 @@ struct GameQueenSpawn {
     minion: GameQueenMinion,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GameQueenMinion {
     health: i32,
@@ -464,7 +464,7 @@ struct GameMapObject {
     linked_obstacle_id: Option<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GameSpecialWeapon {
     weapon_id: i64,
@@ -728,7 +728,7 @@ impl NativePhysicalScene {
                         },
                     }),
                 Some(GameShipSpecial::Queen { spawn }) if ship.ship_type == 17 =>
-                    Some(spawn.into_native(catalog)?),
+                    Some(spawn.clone().into_native(catalog)?),
                 Some(GameShipSpecial::Scout { enabled, beacon }) if ship.ship_type == 18 => {
                     if beacon.health <= 0 || beacon.original_health < beacon.health ||
                         beacon.max_tsv < 0 || !beacon.size_class.is_finite() ||
