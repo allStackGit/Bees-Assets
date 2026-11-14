@@ -5,7 +5,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use bees_host::unity_scene_snapshot::NativePurchasedShip;
 use serde_json::{json, Value};
 
 use super::{invalid, CampaignOutcome, CampaignFleetShipOutcome};
@@ -20,6 +21,13 @@ pub struct BattleEntry {
 }
 
 impl BattleEntry {
+    pub fn configurations(&self) -> impl Iterator<Item = &Path> {
+        std::iter::once(self.config.as_path()).chain(
+            self.mission.as_ref().and_then(|mission| mission.on_victory.as_ref())
+                .map(|route| route.config.as_path()),
+        )
+    }
+
     pub fn config_for(&self, progress: &CampaignProgress<'_>) -> &Path {
         self.mission.as_ref().and_then(|mission| mission.on_victory.as_ref())
             .filter(|route| progress.latest_victory(&route.mission))
@@ -74,6 +82,27 @@ enum AdvanceOn {
 pub struct BattleCatalog {
     pub campaign_id: Option<String>,
     pub battles: Vec<BattleEntry>,
+    /// An explicitly authored ship shop. Prices are the source
+    /// ConfigData.GetShipInfo(type).Tsv and must match the canonical
+    /// full-health ship prototype on every native campaign scene.
+    #[serde(default)]
+    pub buildable_ships: Vec<BuildableShip>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildableShip {
+    pub player_side: i32,
+    pub ship_type: u8,
+    pub price_tsv: u64,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignPurchase {
+    campaign_id: String,
+    player_side: i32,
+    ship: NativePurchasedShip,
 }
 
 #[derive(Default)]
@@ -85,6 +114,8 @@ pub struct CampaignProgress<'a> {
     battles_without_squad_data: u64,
     banked_minerals: u64,
     bank_history_complete: bool,
+    spent_minerals: u64,
+    purchases: Vec<(i32, NativePurchasedShip)>,
 }
 
 #[derive(Default)]
@@ -140,6 +171,16 @@ impl CampaignProgress<'_> {
             (ship.side == side && ship.is_dead).then_some(id)).collect())
     }
 
+    pub fn unspent_minerals(&self) -> io::Result<u64> {
+        self.banked_minerals.checked_sub(self.spent_minerals)
+            .ok_or_else(|| invalid("campaign purchases exceed banked minerals"))
+    }
+
+    pub fn purchases_for_side(&self, side: i32) -> Vec<NativePurchasedShip> {
+        self.purchases.iter().filter_map(|&(owner, ship)|
+            (owner == side).then_some(ship)).collect()
+    }
+
     pub fn squad_rows(&self) -> Vec<String> {
         let mut ids = self.squads.keys().copied().collect::<Vec<_>>();
         ids.sort_unstable();
@@ -179,6 +220,18 @@ impl BattleCatalog {
         }
         if self.campaign_id.as_ref().is_some_and(|id| id.trim().is_empty()) {
             return Err(invalid("campaign_id must not be blank"));
+        }
+        let mut available = HashSet::new();
+        for ship in &self.buildable_ships {
+            if self.campaign_id.is_none() ||
+                !matches!(ship.player_side, 1 | 2) ||
+                ship.price_tsv == 0 || ship.ship_type >= 32 ||
+                !available.insert((ship.player_side, ship.ship_type)) ||
+                !self.battles.iter().any(|entry| entry.mission.as_ref()
+                    .is_some_and(|mission| mission.player_side == ship.player_side))
+            {
+                return Err(invalid("invalid native campaign ship catalog or duplicate price"));
+            }
         }
         let mut earlier = HashSet::new();
         for mission in self.battles.iter().filter_map(|entry| entry.mission.as_ref()) {
@@ -354,6 +407,42 @@ impl BattleCatalog {
                 record(&rematch, &mut progress)?;
             }
         }
+        let mut purchased_ids = HashSet::new();
+        for build in numbered_directories(output, "build-")? {
+            let bytes = match fs::read(build.join("purchase.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let purchase: CampaignPurchase = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("invalid campaign purchase: {error}")))?;
+            if purchase.campaign_id != *campaign ||
+                purchase.ship.fleet_ship_id <= 0 ||
+                purchase.ship.saved_squad_id <= 0 ||
+                !purchased_ids.insert(purchase.ship.fleet_ship_id) ||
+                !self.buildable_ships.iter().any(|shop|
+                    shop.player_side == purchase.player_side &&
+                    shop.ship_type == purchase.ship.ship_type &&
+                    shop.price_tsv == purchase.ship.price_tsv)
+            {
+                return Err(invalid("campaign purchase has an unknown type, cost, or identity"));
+            }
+            progress.spent_minerals = progress.spent_minerals
+                .checked_add(purchase.ship.price_tsv)
+                .ok_or_else(|| invalid("campaign purchase total overflow"))?;
+            let fleet = progress.fleet.entry(purchase.ship.fleet_ship_id)
+                .or_insert_with(|| FleetProgress {
+                    side: purchase.player_side,
+                    loss_history_complete: true,
+                    combat_history_complete: true,
+                    ..FleetProgress::default()
+                });
+            if fleet.side != purchase.player_side {
+                return Err(invalid("purchased FleetShip changed its authoritative side"));
+            }
+            progress.purchases.push((purchase.player_side, purchase.ship));
+        }
+        progress.unspent_minerals()?;
         Ok(progress)
     }
 
@@ -418,7 +507,16 @@ impl BattleCatalog {
             "battles_without_fleet_data": progress.battles_without_fleet_data,
             "battles_without_squad_data": progress.battles_without_squad_data,
             "banked_minerals": progress.banked_minerals,
+            "spent_minerals": progress.spent_minerals,
+            "available_minerals": progress.unspent_minerals().expect("validated account balance"),
             "bank_history_complete": progress.bank_history_complete,
+            "purchased_ships": progress.purchases.iter().map(|(side, ship)| json!({
+                "player_side": side,
+                "fleet_ship_id": ship.fleet_ship_id,
+                "saved_squad_id": ship.saved_squad_id,
+                "ship_type": ship.ship_type,
+                "cost_tsv": ship.price_tsv,
+            })).collect::<Vec<_>>(),
         })
     }
 }
