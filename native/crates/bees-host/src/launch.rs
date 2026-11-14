@@ -44,7 +44,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-#[cfg(feature = "client")]
 #[path = "battle_catalog.rs"]
 mod battle_catalog;
 
@@ -956,6 +955,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
 
 const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
        bees menu <catalog.json> --output-dir <battle-runs>
+       bees status <catalog.json> --output-dir <battle-runs>
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
@@ -979,11 +979,32 @@ struct CampaignOutcome {
     winner_side: i32,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignFleetShipOutcome {
+    fleet_ship_id: i64,
+    side: i32,
+    minerals_mined_this_level: i32,
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
     let first = args.next().ok_or_else(|| invalid(USAGE))?;
     if first == "--help" || first == "-h" {
         println!("{USAGE}");
+        return Ok(());
+    }
+    if first == "status" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output_root = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(catalog)?)?;
+        catalog.validate()?;
+        let progress = catalog.load_progress(&output_root)?;
+        println!("{}", catalog.status(&progress));
         return Ok(());
     }
     if first == "menu" {
@@ -2372,6 +2393,33 @@ fn run_battle(
                 player_side: mission.player_side, winner_side: result.winner_side,
             })
         });
+    // Source FleetShip statistics are committed only for a finished,
+    // successful campaign battle. Read the SAME Level-owned mining ledger
+    // used by rewards, not ship visuals or the raw combat cargo gauge.
+    // An exported FleetShip ID is distinct from its transient entity ID;
+    // temporary children and unrelated skirmishes must never earn career
+    // progress. The completed run summary is the durable transaction.
+    let campaign_fleet = if campaign_outcome.is_some() {
+        let state = &host.simulation().world(0)
+            .ok_or_else(|| invalid("completed campaign World is unavailable"))?.state;
+        let mut seen = HashSet::new();
+        let mut fleet = Vec::new();
+        for ship in state.combat.ships() {
+            let Some(value) = state.metadata.fleet.get(ship.entity_id) else { continue };
+            if !value.has_persistent_fleet_value { continue; }
+            let fleet_ship_id = state.combat.ship_fleet_identity(ship.entity_id)
+                .ok_or_else(|| invalid("persistent ship lacks its authored FleetShip identity"))?;
+            if fleet_ship_id <= 0 || !seen.insert(fleet_ship_id) {
+                return Err(invalid("duplicate or invalid persistent FleetShip in completed campaign").into());
+            }
+            fleet.push(CampaignFleetShipOutcome {
+                fleet_ship_id, side: ship.side,
+                minerals_mined_this_level: value.minerals_mined_this_level,
+            });
+        }
+        fleet.sort_unstable_by_key(|ship| ship.fleet_ship_id);
+        Some(fleet)
+    } else { None };
     let mut final_summary = json!({
         "kind": "run_final",
         "run_id": config.run_id,
@@ -2413,6 +2461,7 @@ fn run_battle(
         "navigation_current_episodes": status.navigation_workers,
         "navigation_raster_work_current_episodes": status.navigation_rasters,
         "campaign_outcome": campaign_outcome,
+        "campaign_fleet": campaign_fleet,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
         "running_worlds": status.running_worlds,
