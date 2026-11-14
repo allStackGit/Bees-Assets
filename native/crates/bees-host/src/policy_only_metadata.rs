@@ -551,6 +551,10 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         self.fleet.record_combat_events(world);
     }
 
+    fn observe_fire_barge_chain_damage(&mut self, killer_ship_id: i64, tsv_loss: i32) {
+        self.fleet.record_fire_barge_chain_damage(killer_ship_id, tsv_loss);
+    }
+
     fn collect_hivemind_observers(
         &self, world: &CombatWorld, output: &mut Vec<HiveMindObserver>,
     ) -> Result<(), CombatPerceptionError> {

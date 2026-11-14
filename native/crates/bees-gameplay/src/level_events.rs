@@ -392,6 +392,12 @@ impl NativeLevelEventProcessor {
         }
     }
 
+    /// Original external killer of this Fire Barge, retained after its
+    /// death while its delayed explosion can still damage allies.
+    pub fn fire_barge_external_killer(&self, ship_id: i64) -> Option<i64> {
+        self.fire_barge_killers.get(&ship_id).map(|killer| killer.ship_id)
+    }
+
     pub fn has_active_commands(&self) -> bool {
         self.commands.active_count() > 0
     }

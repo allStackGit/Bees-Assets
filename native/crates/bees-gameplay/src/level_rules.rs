@@ -70,6 +70,11 @@ pub trait NativeLevelRewardMetadata {
     /// can omit this optional observer.
     fn observe_fleet_combat_tick(&mut self, _world: &CombatWorld) {}
 
+    /// A death-triggered Fire Barge explosion can credit the original
+    /// external killer for damage to its allies. Persistent FleetShip
+    /// accounting uses the event processor's existing death-time owner.
+    fn observe_fire_barge_chain_damage(&mut self, _killer_ship_id: i64, _tsv_loss: i32) {}
+
     /// Install source-owned fleet/perception/vision for real physical
     /// Scout Beacons and Queen YellowJackets before vision and rewards.
     /// A Level without a spawn adapter must not acknowledge missing data.
@@ -1070,6 +1075,23 @@ where
         // The same canonical hit, fire and death events drive persistent
         // career statistics without an alternate combat rules implementation.
         state.metadata.observe_fleet_combat_tick(&state.combat);
+        // Source Ship.LogHitStats gives the original killer of a dead
+        // Fire Barge extra FleetShip credit when its blast hurts allies.
+        // Keep the original Hit attacker unchanged for command penalties,
+        // physical attribution and PPO reward parity.
+        for event in state.combat.events() {
+            if let CombatEvent::Hit(hit) = event {
+                if hit.attacker_side == hit.target_side && hit.delta.tsv_loss > 0 {
+                    if let Some(killer_id) =
+                        state.events.fire_barge_external_killer(hit.attacker_id)
+                    {
+                        state.metadata.observe_fire_barge_chain_damage(
+                            killer_id, hit.delta.tsv_loss,
+                        );
+                    }
+                }
+            }
+        }
         // Source Ship.LogKilledStats zeroes MineralsMinedThisLevel when
         // that ship dies. Do this only AFTER the shared episode reward
         // consumer has received pre-death mining values. No allocation,

@@ -160,6 +160,21 @@ impl NativeFleetInventory {
         }
     }
 
+    /// The same source account also credits the Fire Barge's external
+    /// killer for any later explosion damage to that Barge's own side.
+    /// This is an opt-in career counter, not a second combat/reward path.
+    pub fn record_fire_barge_chain_damage(&mut self, killer_id: i64, tsv_loss: i32) {
+        if !self.career_tracking || tsv_loss <= 0 ||
+            !self.entries.get(&killer_id)
+                .is_some_and(|entry| entry.has_persistent_fleet_value)
+        {
+            return;
+        }
+        let row = self.combat.entry(killer_id).or_default();
+        row.enemy_tsv_damage_done = row.enemy_tsv_damage_done
+            .saturating_add(tsv_loss as u64);
+    }
+
     /// Native initial scene composition can omit ships before the Level is
     /// constructed. This removes only the episode-local FleetShip lookup,
     /// never the external player's persistent fleet/account record.
@@ -237,5 +252,9 @@ impl NativeLevelRewardMetadata for NativeFleetInventory {
 
     fn observe_fleet_combat_tick(&mut self, world: &CombatWorld) {
         self.record_combat_events(world);
+    }
+
+    fn observe_fire_barge_chain_damage(&mut self, killer_ship_id: i64, tsv_loss: i32) {
+        self.record_fire_barge_chain_damage(killer_ship_id, tsv_loss);
     }
 }
