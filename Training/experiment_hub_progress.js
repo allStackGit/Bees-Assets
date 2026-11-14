@@ -106,6 +106,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'local_lease_ram_admission_denials',
             'local_lease_admission_denials_delta',
             'local_lease_admission_wait_delta',
+            'local_lease_ram_scan_delta','local_lease_ram_scan_calls_delta',
+            'pipeline_ram_scan_work_share','pipeline_ram_scan_pressure',
             'local_gpu_collectors_pending_at_local_end',
             'collector_join_wait_seconds','local_gpu_join_wait_seconds',
             'rollout_onnx_batch_share','rollout_onnx_calls',
@@ -326,6 +328,18 @@ class BottleneckEvidence {
             if(localShare!==null)
                 add('pipeline_local_gpu_wait_work_share',localShare);
             if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
+            // PSS/USS scanning is software accounting overhead, not useful
+            // native simulation, device occupancy or RAM capacity pressure.
+            // The scanner runs at update boundaries and during admission;
+            // it may overlap other measured host intervals. Compare the
+            // completed-update delta to that update's own measured wall.
+            const ramScan=seconds('local_lease_ram_scan_delta');
+            const updateWall=seconds('update_wall_time');
+            const scanShare=updateWall>0&&ramScan!==null&&
+                ramScan<=updateWall*1.05
+                ?Math.min(1,ramScan/updateWall):null;
+            if(scanShare!==null)
+                add('pipeline_ram_scan_work_share',scanShare);
             // Bounded observational state is neither a scheduler input
             // nor evidence that any particular device is saturated.
             const {at,prior}=history();
@@ -457,7 +471,8 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,localShare,mergeShare,stageHints,simHints,
-                    joinHints,gpuHints,resourceHints});
+                    joinHints,gpuHints,resourceHints,
+                    scanPressure:scanShare!==null&&scanShare>=0.15&&ramScan>=0.25});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -490,6 +505,10 @@ class BottleneckEvidence {
                     add('pipeline_ram_lease_pressure',1,'count');
                 if(sustained('nativeAdmission'))
                     add('pipeline_native_admission_pressure',1,'count');
+                // Sustained measurable profiler overhead is distinct from
+                // RAM exhaustion, CPU saturation, or unproductive GPU work.
+                if(recent.filter(x=>x.scanPressure).length>=5)
+                    add('pipeline_ram_scan_pressure',1,'count');
                 if(sustained('gpuBusy'))
                     add('pipeline_gpu_host_busy_pressure',1,'count');
                 if(sustained('gpuMixed'))
