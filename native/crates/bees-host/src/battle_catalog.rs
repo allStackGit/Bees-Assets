@@ -280,10 +280,14 @@ impl CampaignProgress<'_> {
     }
 
     pub fn original_fleet_is_editable(&self, side: i32, fleet_id: i64) -> bool {
+        // A fresh account has no battle receipts yet; the source scene
+        // still owns its original player FleetShips. Never require a
+        // fictitious played battle just to enable its fleet editor.
+        self.battles_without_fleet_data == 0 &&
         self.fleet.get(&fleet_id)
-            .is_some_and(|record| record.side == side && !record.is_dead &&
+            .is_none_or(|record| record.side == side && !record.is_dead &&
                 record.loss_history_complete) &&
-            self.purchased_ship(fleet_id).is_none()
+        self.purchased_ship(fleet_id).is_none()
     }
 
     pub fn purchased_ship(&self, fleet_ship_id: i64) -> Option<(i32, NativePurchasedShip)> {
@@ -512,8 +516,9 @@ impl BattleCatalog {
             progress.authored_current_squad(fleet_ship_id)
                 .is_some_and(|saved| saved != from_squad) ||
             progress.fleet.get(&fleet_ship_id)
-                .is_none_or(|fleet| fleet.is_dead || fleet.side != side) ||
-            (to_squad != 0 && !progress.saved_squad_ids_for_side(side).contains(&to_squad))
+                .is_some_and(|fleet| fleet.is_dead || fleet.side != side) ||
+            (to_squad != 0 &&
+                progress.squads.get(&to_squad).is_some_and(|squad| squad.side != side))
         {
             return Err(invalid("invalid, unavailable or stale authored FleetShip assignment"));
         }
@@ -752,7 +757,7 @@ impl BattleCatalog {
                 progress.purchases.iter().any(|(_, ship)|
                     ship.fleet_ship_id == edit.fleet_ship_id) ||
                 progress.fleet.get(&edit.fleet_ship_id)
-                    .is_none_or(|ship| ship.side != edit.player_side || ship.is_dead)
+                    .is_some_and(|ship| ship.side != edit.player_side || ship.is_dead)
             {
                 return Err(invalid("invalid original FleetShip reassignment receipt"));
             }
@@ -766,7 +771,7 @@ impl BattleCatalog {
                 owner.current_saved_squad_id != edit.from_saved_squad_id ||
                 (edit.to_saved_squad_id != 0 &&
                     progress.squads.get(&edit.to_saved_squad_id)
-                        .is_none_or(|squad| squad.side != edit.player_side))
+                        .is_some_and(|squad| squad.side != edit.player_side))
             {
                 return Err(invalid("stale original FleetShip squad assignment"));
             }
