@@ -55,6 +55,177 @@ def read_plan(path):
     return plan
 
 
+
+def _issued_allocations(path, baseline):
+    """Recover the immutable allocations of an issued round, including on resume."""
+    orders = json.loads(path.read_text(encoding="utf-8"))
+    if (orders.get("kind") != "native_distributed_collection_orders" or
+            orders.get("schema_version") != 1 or
+            not isinstance(orders.get("jobs"), list)):
+        raise ValueError(f"invalid issued native collection order: {path}")
+    keys = ("id", "world_start", "world_count", "rollout_workers", "physics_workers")
+    previous = {"collectors": [
+        {key: job[key] for key in keys if key in job} for job in orders["jobs"]
+    ]}
+    read_plan_document = _validate_collector_plan(previous)
+    original = {item["id"]: item for item in baseline["collectors"]}
+    if (len(read_plan_document["collectors"]) != len(original) or
+            any(item["id"] not in original or
+                item["rollout_workers"] != original[item["id"]]["rollout_workers"] or
+                item.get("physics_workers") != original[item["id"]].get("physics_workers")
+                for item in read_plan_document["collectors"])):
+        raise ValueError(f"issued collector resources differ from pinned plan: {path}")
+    return read_plan_document
+
+
+def _validate_collector_plan(plan):
+    # One authority for all plan invariants, including nonoverlapping windows.
+    if not isinstance(plan, dict) or set(plan) != {"collectors"}:
+        raise ValueError("invalid distributed collector plan")
+    # Validate in memory using the same rules as read_plan, with no file I/O.
+    collectors = plan["collectors"]
+    if not isinstance(collectors, list) or not 1 <= len(collectors) <= 256:
+        raise ValueError("invalid distributed collector count")
+    seen = set()
+    ranges = []
+    for item in collectors:
+        required = {"id", "world_start", "world_count", "rollout_workers"}
+        if not isinstance(item, dict) or not required.issubset(item) or (
+                set(item) - required - {"physics_workers"}):
+            raise ValueError("invalid distributed collector entry")
+        name, start, count, workers = (item[k] for k in
+                                       ("id", "world_start", "world_count", "rollout_workers"))
+        if (not isinstance(name, str) or not COLLECTOR_ID.fullmatch(name) or
+                name in seen or type(start) is not int or type(count) is not int or
+                type(workers) is not int or start < 0 or start + count > (1 << 63) or
+                not 1 <= count <= 1024 or not 1 <= workers <= min(count, 256) or
+                ("physics_workers" in item and
+                 (type(item["physics_workers"]) is not int or
+                  not 1 <= item["physics_workers"] <= 128))):
+            raise ValueError(f"invalid distributed collector allocation: {name!r}")
+        seen.add(name)
+        ranges.append((start, start + count))
+    if any(left[1] > right[0] for left, right in
+           zip(sorted(ranges), sorted(ranges)[1:])):
+        raise ValueError("overlapping distributed collector allocations")
+    return plan
+
+
+def balanced_round_plan(root, baseline, completed, round_number):
+    """Choose only the next unissued collector window from verified round receipts.
+
+    Machine/process/physics resources remain exactly as allocated. Across a
+    contiguous world interval, transfer at most 10% of either participant's
+    worlds between rounds, once per four rounds, after three sustained
+    measurements. An interrupted round reuses its *issued* order verbatim.
+    This is straggler reduction, not process/concurrency autotuning.
+    """
+    _validate_collector_plan(baseline)
+    ordered = sorted(baseline["collectors"], key=lambda item: item["world_start"])
+    if any(left["world_start"] + left["world_count"] != right["world_start"]
+           for left, right in zip(ordered, ordered[1:])):
+        raise ValueError("automatic collector balancing requires contiguous world windows")
+    issued = root / f"collection-round-{round_number:05d}.json"
+    if issued.exists():
+        return _issued_allocations(issued, baseline), {"reason": "issued_order_reused"}
+
+    current = baseline
+    if completed:
+        last = root / f"collection-round-{len(completed):05d}.json"
+        if not last.is_file():
+            raise ValueError(f"completed distributed round has no pinned order: {last}")
+        current = _issued_allocations(last, baseline)
+    if len(ordered) < 2 or round_number < 4 or round_number % 4 != 0:
+        return current, {"reason": "stable_allocation"}
+
+    # Only three *completed*, independently measured rounds can move work.
+    # Recent structural changes to process counts or the runtime invalidate
+    # comparability; small/short startup-bound samples do not drive changes.
+    if len(completed) < 3:
+        return current, {"reason": "insufficient_history"}
+    ids = {item["id"] for item in current["collectors"]}
+    by_id = {item["id"]: item for item in current["collectors"]}
+    rates = {name: [] for name in ids}
+    runners = set()
+    for _, record in completed[-3:]:
+        samples = record.get("rollout_metrics", {}).get("collectors")
+        if not isinstance(samples, list) or len(samples) != len(ids) or (
+                {row.get("id") for row in samples if isinstance(row, dict)} != ids):
+            return current, {"reason": "incomplete_collector_measurements"}
+        for row in samples:
+            job = by_id[row["id"]]
+            partition = row.get("partition")
+            worlds = partition.get("world_count") if isinstance(partition, dict) else None
+            seconds = row.get("wall_seconds")
+            steps = row.get("world_steps")
+            if (worlds != job["world_count"] or
+                    row.get("rollout_processes") != job["rollout_workers"] or
+                    row.get("physics_workers_per_process") != job.get("physics_workers", 1) or
+                    type(seconds) not in (float, int) or not math.isfinite(seconds) or
+                    seconds < 30.0 or type(steps) is not int or steps < 2000 or
+                    not isinstance(row.get("native_runner_sha256"), str)):
+                return current, {"reason": "unrepresentative_collector_measurements"}
+            runners.add(row["native_runner_sha256"])
+            rates[row["id"]].append(worlds / seconds)
+    if len(runners) != 1 or any(
+        max(samples) > min(samples) * 1.15 for samples in rates.values()
+    ):
+        return current, {"reason": "unstable_collector_measurements"}
+
+    # Median worlds/second is the observed time to complete real arenas,
+    # not CPU clock rate or the misleading sum of parallel worker wall times.
+    medians = {name: sorted(samples)[1] for name, samples in rates.items()}
+    slow = max(ids, key=lambda name: (by_id[name]["world_count"] / medians[name], name))
+    fast = min(ids, key=lambda name: (by_id[name]["world_count"] / medians[name], name))
+    if slow == fast:
+        return current, {"reason": "balanced"}
+    giver, taker = by_id[slow], by_id[fast]
+    limit = min(
+        giver["world_count"] - giver["rollout_workers"],
+        1024 - taker["world_count"],
+        max(1, giver["world_count"] // 10),
+        max(1, taker["world_count"] // 10),
+    )
+    if limit < 1:
+        return current, {"reason": "allocation_limits"}
+    old_makespan = max(by_id[name]["world_count"] / medians[name] for name in ids)
+    best_move, best_makespan = 0, old_makespan
+    for moved in range(1, limit + 1):
+        candidate = max(
+            (by_id[name]["world_count"] - (moved if name == slow else 0)
+             + (moved if name == fast else 0)) / medians[name]
+            for name in ids
+        )
+        if candidate < best_makespan:
+            best_move, best_makespan = moved, candidate
+    if best_move == 0 or best_makespan > old_makespan * 0.98:
+        return current, {"reason": "insufficient_predicted_improvement"}
+
+    counts = {name: by_id[name]["world_count"] for name in ids}
+    counts[slow] -= best_move
+    counts[fast] += best_move
+    # Preserve the full, deterministic global world-index set, even when
+    # its original base is nonzero. Only the collector partitions change.
+    start = ordered[0]["world_start"]
+    intervals = {}
+    for item in sorted(current["collectors"], key=lambda row: row["world_start"]):
+        intervals[item["id"]] = start
+        start += counts[item["id"]]
+    plan = {"collectors": [
+        {**item, "world_start": intervals[item["id"]],
+         "world_count": counts[item["id"]]}
+        for item in current["collectors"]
+    ]}
+    _validate_collector_plan(plan)
+    return plan, {
+        "reason": "measured_straggler_reduction", "from": slow, "to": fast,
+        "worlds_transferred": best_move,
+        "predicted_longest_seconds_before": old_makespan,
+        "predicted_longest_seconds_after": best_makespan,
+        "collector_worlds_per_second": medians,
+    }
+
+
 def make_orders(root, round_number, seed_offset, plan, run, checkpoint, manifest, learner_slot):
     if type(round_number) is not int or round_number <= 0:
         raise ValueError("distributed round number must be positive")
