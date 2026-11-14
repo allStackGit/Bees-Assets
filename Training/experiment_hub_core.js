@@ -323,6 +323,20 @@ function config(value) {
     if (serialized.length > 65536) throw Error('Configuration exceeds 64 KiB.');
     return JSON.parse(serialized);
 }
+// Validate the persisted capability pin at configuration save and job freeze,
+// not only during placement. A stale Design page must not queue jobs that can
+// never be admitted by a worker supporting the requested PPO overrides.
+function requireCourierTrainingPin(projectId,parameters) {
+    if(projectId!=='courier')return;
+    const changes=parameters?.design_overrides;
+    if(changes!==undefined&&(!object(changes)||Object.keys(changes).length>128))
+        throw Error('Courier Design overrides must be a bounded object.');
+    const hasTraining=Object.keys(changes||{}).some(key=>key.startsWith('training.'));
+    if(hasTraining&&!SHA256.test(String(parameters.training_schema_sha256||'')))
+        throw Error('Courier PPO overrides require a frozen training schema SHA-256. Reopen the configuration in Design and save a new revision.');
+    if(!hasTraining&&parameters.training_schema_sha256!==undefined)
+        throw Error('Courier training schema must only be pinned with PPO overrides. Reopen the configuration in Design and save a new revision.');
+}
 function gpuStartBlock(job,lease,machine) {
     const r=job.resources,allocated=lease.resources;
     if(r.gpu_count===0&&allocated.gpu_count===0&&
@@ -4141,6 +4155,7 @@ class ExperimentHub {
         const project = this.project(value.project_id);
         if(project.id==='ants')throw Error('Ants-v2 Hub integration is retired.');
         const params = config(value.parameters);
+        requireCourierTrainingPin(project.id,params);
         const stop=evaluationPolicy(value.evaluation_stop);
         if(stop&&project.adapter==='bees')
             throw Error('Bees evaluation targets use the existing Bees experiment configuration.');
@@ -4921,6 +4936,7 @@ class ExperimentHub {
         // Freeze the exact input and resources. No executable, shell snippet,
         // directory, or process arguments can be supplied in the job request.
         const frozen = config(selected.parameters);
+        requireCourierTrainingPin(project.id,frozen);
         const resources = resourceRequest(value.resources);
         const runName=value.run_name==null||value.run_name===''
             ?null:name(value.run_name,'Run name');
