@@ -3513,6 +3513,9 @@ document.addEventListener('DOMContentLoaded', () => {
         jobSelect.replaceChildren(...configs.map(c=>new Option(
             c.name+' · revision '+c.revision,c.id)));
         if(configs.some(c=>c.id===former)) jobSelect.value=former;
+        // The Train capability list belongs to this saved revision, not to
+        // whichever project/configuration was selected on the previous render.
+        renderJobMetricSelection();
         const predecessorSelect=$('hub-job-predecessor');
         const previousParent=predecessorSelect.value;
         const successors=new Set((state.jobs||[])
@@ -5313,6 +5316,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             $('hub-job-resources').value=JSON.stringify(resources,null,2);
+            renderJobMetricSelection();
             feedback('hub-build-message','Resource JSON filled. Review it before queueing; no work was started.');
         }catch(error){
             feedback('hub-build-message',String(error.message||error));
@@ -5431,7 +5435,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 '. Modify each CPU/RAM budget, its independent threads setting, or request an exclusive CUDA GPU.'
             :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
     }
-    $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
+    $('hub-job-configuration').addEventListener('change',()=>{
+        renderJobMetricSelection();
+        renderDistributedGroup();
+    });
+    $('hub-job-resources').addEventListener('change',renderJobMetricSelection);
     distributedMachine.addEventListener('change',renderDistributedGroup);
     $('hub-job-queue').addEventListener('click',async()=>{
         const selected=state?.configurations.find(c=>
