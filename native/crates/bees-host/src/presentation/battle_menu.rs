@@ -48,6 +48,11 @@ pub fn select_battle(
         }
         if let Some(show_squads) = career_view {
             let career_rows = if show_squads { squad_rows } else { fleet_rows };
+            // Each screen has a different set of persisted identities.
+            // Clamp when switching between long ship lists and short
+            // squad lists, rather than rendering an apparently empty page.
+            fleet_selected = fleet_selected.min(career_rows.len().saturating_sub(1));
+            fleet_first = fleet_first.min(fleet_selected);
             if window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
                 fleet_selected = fleet_selected.saturating_sub(1);
             }
