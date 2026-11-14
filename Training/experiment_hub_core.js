@@ -4920,9 +4920,18 @@ class ExperimentHub {
                 // its original machine/lease instead of freeing capacity.
                 for(const member of plan.members) {
                     const child=next.jobs.find(job=>job.id===member.job_id);
-                    if(child&&['start_requested','launch_requested','running','unverified']
-                        .includes(child.status)&&child.dispatch_id&&
-                        child.start_first_offered_at!==null) {
+                    if(!child)continue;
+                    if(child.status==='start_requested'&&
+                        child.start_first_offered_at===null) {
+                        // The offer never left the Hub; withdraw it rather
+                        // than inventing an unowned Stop service.
+                        child.status='waiting_adapter';
+                        delete child.dispatch_id;
+                        delete child.start_requested_at;
+                        delete child.start_first_offered_at;
+                        this.cancelUnstartedJob(next,child,now());
+                    } else if(['start_requested','launch_requested','running','unverified']
+                        .includes(child.status)&&child.dispatch_id) {
                         child.status='stop_requested';
                         child.stop_requested_at=now();
                         child.status_reason='Courier learner Start aborted; native remote service Stop required.';
@@ -4975,12 +4984,33 @@ class ExperimentHub {
     reconcileCourierSidecars(next) {
         let changed=false;
         for(const learner of next.jobs.filter(job=>job.project_id==='courier'&&
-            job.distributed_courier_managed===true&&
-            ['finished','stopped','failed'].includes(job.status))) {
-            for(const child of next.jobs.filter(job=>
+            job.distributed_courier_managed===true)) {
+            const children=next.jobs.filter(job=>
                 job.project_id==='courier_remote'&&
-                job.frozen_parameters?.learner_job_id===learner.id)) {
-                if(['start_requested','launch_requested','running','unverified']
+                job.frozen_parameters?.learner_job_id===learner.id);
+            if(['running','launch_requested','unverified'].includes(learner.status)&&
+                children.some(child=>['failed','stopped','cancelled'].includes(child.status))) {
+                // A missing remote PPO lineage makes the frozen population
+                // incomplete. Stop at the learner's existing checkpoint
+                // boundary; never silently train a smaller population.
+                if(learner.dispatch_id) {
+                    learner.status='stop_requested';
+                    learner.stop_requested_at=now();
+                    learner.status_reason='Frozen Courier remote policy lineage terminated; stopping learner safely.';
+                    changed=true;
+                }
+            }
+            if(!['finished','stopped','failed'].includes(learner.status))continue;
+            for(const child of children) {
+                if(child.status==='start_requested'&&
+                    child.start_first_offered_at===null) {
+                    child.status='waiting_adapter';
+                    delete child.dispatch_id;
+                    delete child.start_requested_at;
+                    delete child.start_first_offered_at;
+                    this.cancelUnstartedJob(next,child,now());
+                    changed=true;
+                } else if(['start_requested','launch_requested','running','unverified']
                     .includes(child.status)&&child.dispatch_id) {
                     child.status='stop_requested';
                     child.stop_requested_at=now();
