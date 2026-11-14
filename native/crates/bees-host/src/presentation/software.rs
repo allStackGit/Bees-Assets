@@ -1093,7 +1093,12 @@ impl NativeSoftwareRenderer {
                 *seen = view.tick;
                 let age = view.tick.saturating_sub(*born) as f32
                     * view.fixed_step_seconds;
-                let index = ((age * 8.0).floor() as usize).min(art.frames.len() - 1);
+                let elapsed_frame = (age * 8.0).floor() as usize;
+                let index = if matches!(projectile.projectile_type, 13 | 14) {
+                    elapsed_frame.min(art.frames.len() - 1)
+                } else {
+                    elapsed_frame % art.frames.len()
+                };
                 self.draw_sprite(&art.frames[index], position,
                     body.rotation_degrees.to_radians(),
                     self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
