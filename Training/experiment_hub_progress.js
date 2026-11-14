@@ -120,6 +120,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_metric_readback_max_seconds',
             'training_gpu_optimizer_peak_allocated_mb',
             'training_cpu_parallelism','training_queue_max_seconds',
+            'training_sim_early_dispatches',
             'training_checkpoint_snapshot_seconds',
             'training_checkpoint_max_worker_seconds',
             'training_reply_gap_seconds','training_last_reply_worker',
