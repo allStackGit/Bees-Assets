@@ -125,7 +125,8 @@ def balanced_round_plan(root, baseline, completed, round_number):
     rates = {name: [] for name in ids}
     runners = {name: set() for name in ids}
     for _, record in completed[-3:]:
-        samples = record.get("rollout_metrics", {}).get("collectors")
+        metrics = record.get("rollout_metrics")
+        samples = metrics.get("collectors") if isinstance(metrics, dict) else None
         if not isinstance(samples, list) or len(samples) != len(ids) or (
                 {row.get("id") for row in samples if isinstance(row, dict)} != ids):
             return current, {"reason": "incomplete_collector_measurements"}
@@ -163,8 +164,8 @@ def balanced_round_plan(root, baseline, completed, round_number):
     limit = min(
         giver["world_count"] - giver["rollout_workers"],
         1024 - taker["world_count"],
-        max(1, giver["world_count"] // 10),
-        max(1, taker["world_count"] // 10),
+        giver["world_count"] // 10,
+        taker["world_count"] // 10,
     )
     if limit < 1:
         return current, {"reason": "allocation_limits"}
