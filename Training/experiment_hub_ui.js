@@ -3315,34 +3315,124 @@ document.addEventListener('DOMContentLoaded', () => {
         ]).flat()];
     function renderJobMetricSelection() {
         const select=$('hub-job-metrics');
-        if(!select)return;
-        const prior=jobMetricChoicesByProject.get(project) ??
+        if(!select||!state)return;
+        const configuration=state.configurations.find(c=>
+            c.project_id===project&&c.id===$('hub-job-configuration').value);
+        const params=configuration?.parameters||{};
+        const requested=jobMetricChoicesByProject.get(project) ??
             new Set(defaultJobMetrics[project]||defaultJobMetrics.other);
+        const available=new Set();
         const observed=new Set();
-        for(const job of state?.jobs||[]) {
-            if(job.project_id!==project)continue;
-            for(const name of Object.keys(job.live_execution?.progress?.metrics||
-                job.final_progress?.metrics||{}))observed.add(name);
-            for(const name of job.metric_selection||[])observed.add(name);
+        let resourceGpuCount=0;
+        try {
+            const resources=JSON.parse($('hub-job-resources').value);
+            resourceGpuCount=resources.gpu_count??resources.gpus?.length??0;
+        }catch {} // An unfinished resource edit cannot create GPU capabilities.
+        const gpuEnabled=Number.isSafeInteger(resourceGpuCount)&&resourceGpuCount>0;
+        const machines=state.machines.filter(machine=>
+            machine.status==='connected'&&machine.local_executor_enabled===true&&
+            machine.installed_projects?.includes(project));
+        const matching=machines.filter(machine=>{
+            const entry=machine.design_catalog?.[project];
+            if(!entry)return false;
+            return project==='courier'
+                ?entry.config_sha256===params.config_sha256&&
+                    (!params.training_schema_sha256||
+                        params.training_schema_sha256===entry.training_schema_sha256)
+                :project==='tinybrains'
+                    ?entry.profiles?.[params.profile]?.profile_sha256===params.profile_sha256
+                    :false;
+        });
+        for(const machine of matching) {
+            const entry=machine.design_catalog[project];
+            const catalog=entry.metric_catalog||{};
+            const add=group=>{for(const name of catalog[group]||[])available.add(name);};
+            add('base');
+            if(project==='courier') {
+                const defaults=Object.fromEntries(entry.fields.map(field=>[
+                    field.key,field.default,
+                ]));
+                const setting=key=>params.design_overrides?.[key]??defaults[key];
+                if(setting('colony')===true)add('colony');
+                if(setting('colony')===true&&setting('evolution')===true)add('evolution');
+                if(setting('colony')===true&&setting('communication')===true)add('communication');
+                if(setting('speed_enabled')===true)add('speed');
+                if(setting('food_spawn_mode')==='patches')add('patches');
+                if(params.reporting_benchmarks===true)add('reporting');
+            }
+            if(project==='tinybrains'&&params.remote_rollouts===true)
+                add('remote_rollouts');
+            if(gpuEnabled)add('gpu');
         }
-        if(comparisonProject===project)
-            for(const item of comparisonData?.samples||[])
+        // Archived observations are genuine evidence only for the exact saved
+        // configuration revision, not another project's/mode's runs. Do not
+        // turn previously requested but never reported keys into capabilities.
+        if(configuration)for(const job of state.jobs) {
+            if(job.configuration_id!==configuration.id||
+                job.configuration_revision!==configuration.revision)continue;
+            for(const name of Object.keys(job.live_execution?.progress?.metrics||{}))
+                observed.add(name);
+            for(const name of Object.keys(job.final_progress?.metrics||{}))
+                observed.add(name);
+        }
+        if(configuration&&comparisonProject===project)
+            for(const item of comparisonData?.samples||[]) {
+                const job=state.jobs.find(j=>j.id===item.job_id);
+                if(job?.configuration_id!==configuration.id||
+                    job.configuration_revision!==configuration.revision)continue;
                 for(const point of item.points||[])
                     for(const name of Object.keys(point.metrics||{}))observed.add(name);
-        const all=[...new Set([...knownLearningMetrics,...knownPerformanceMetrics,
-            ...observed])].filter(key=>/^[a-z][a-z0-9_]{0,63}$/.test(key))
+            }
+        // Host/job measurements are independent of which trainer metrics a
+        // project publishes. GPU counters only exist for GPU-bound jobs.
+        if(configuration&&machines.length) {
+            for(const name of ['job_cpu_cores','job_cpu_lease_utilization_pct',
+                'job_memory_mb','job_peak_memory_mb','job_process_tasks',
+                'job_memory_lease_utilization_pct','host_cpu_busy_pct'])
+                available.add(name);
+            if(machines.some(machine=>machine.agent_platform==='linux'))
+                for(const name of ['job_cpu_throttled_seconds',
+                    'job_cpu_throttle_events','job_cpu_quota_periods',
+                    'job_cpu_quota_throttled_periods_pct'])
+                    available.add(name);
+            if(gpuEnabled&&machines.some(machine=>(machine.verified_gpus||[]).length)) {
+                for(const name of ['host_gpu_busy_pct','host_gpu_vram_mb',
+                    'host_gpu_power_w','host_gpu_temperature_c',
+                    'host_gpu_hotspot_temperature_c'])available.add(name);
+                for(let i=0;i<Math.min(2,resourceGpuCount);i++)
+                    for(const suffix of ['busy_pct','used_vram_mb','power_w',
+                        'temperature_c','hotspot_temperature_c'])
+                        available.add('host_gpu_'+i+'_'+suffix);
+            }
+        }
+        // Earlier recordings may contain metrics added to an adapter after
+        // an experiment was queued. They remain selectable for that exact
+        // configuration, but not when CPU-only or mode-specific constraints
+        // rule out the measurement.
+        for(const name of observed) {
+            if(!gpuEnabled&&name.startsWith('host_gpu'))continue;
+            if(project==='courier'&&matching.length) {
+                const fields=matching[0].design_catalog.courier.fields;
+                const defaults=Object.fromEntries(fields.map(f=>[f.key,f.default]));
+                const setting=key=>params.design_overrides?.[key]??defaults[key];
+                if(name.startsWith('colony_')&&setting('colony')!==true)continue;
+                if(name.startsWith('benchmark_')&&params.reporting_benchmarks!==true)continue;
+            }
+            available.add(name);
+        }
+        const all=[...available].filter(key=>/^[a-z][a-z0-9_]{0,63}$/.test(key))
             .sort();
         select.replaceChildren(...all.map(key=>{
             const option=new Option(key+(observed.has(key)
-                ?' · recorded':' · not yet observed'),key);
+                ?' · recorded':' · supported'),key);
             option.dataset.description=hubMetricDescription(key);
             option.title=option.dataset.description+'\n'+(observed.has(key)
-                ?'This metric has been published by a job in this project.'
-                :'Selecting a metric does not install missing project instrumentation.');
-            option.selected=prior.has(key);
+                ?'Previously recorded by this saved configuration revision.'
+                :'Supported for this configuration; an individual run may not emit it.');
+            option.selected=requested.has(key);
             option.dataset.category=knownLearningMetrics.includes(key)
                 ?'Learning outcomes':knownPerformanceMetrics.includes(key)
-                    ?'Performance and resources':'Other observed metrics';
+                    ?'Performance and resources':'Other supported metrics';
             return option;
         }));
         renderMetricPicker('hub-job-metrics','hub-job-metric-picker');
