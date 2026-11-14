@@ -960,6 +960,14 @@ and why they did or did not change. Actual useful SPS and optimizer
 performance still need measurement; this option does not rebalance the
 Hub's CPU/GPU/RAM leases or the per-collector rollout process counts.
 
+The session progress report also separates each collector's *summed*
+independent wall time from genuine distributed fleet SPS. Its
+`distributed_collection_wall_time` section uses only completed,
+receipt-matched `collection-round-NNNNN-window.json` records measured
+from work-order issuance through the last collector receipt, including
+dispatch and transfer. It reports missing or rejected historical windows
+without claiming that their worker-time averages are fleet throughput.
+
 The session publishes `collection-round-NNNNN.json` each round, naming
 the exact learner checkpoint, manifest, seed offset, source run fingerprint,
 nonoverlapping World windows, optional per-process physics CPU allocations,
