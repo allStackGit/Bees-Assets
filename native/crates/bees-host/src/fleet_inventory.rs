@@ -75,6 +75,15 @@ impl NativeFleetInventory {
         Ok(())
     }
 
+    /// Unity Ship.LogKilledStats clears temporary per-Level mining credit on
+    /// death; only surviving saved ships contribute it at SaveAndEnd.
+    /// Keep the dead FleetShip record for attribution and future diagnostics.
+    pub fn retire_mined_credit(&mut self, ship_id: i64) {
+        if let Some(value) = self.entries.get_mut(&ship_id) {
+            value.minerals_mined_this_level = 0;
+        }
+    }
+
     pub fn credit(
         &mut self,
         ship_id: i64,
@@ -111,5 +120,9 @@ impl NativeLevelRewardMetadata for NativeFleetInventory {
 
     fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32> {
         self.credit(ship_id, amount).ok()
+    }
+
+    fn retire_mined_credit_on_death(&mut self, ship_id: i64) {
+        self.retire_mined_credit(ship_id);
     }
 }
