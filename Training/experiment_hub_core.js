@@ -4632,16 +4632,44 @@ class ExperimentHub {
         learner.distributed_rollout_managed=true;
         const learnerLease=this.claimJobIn(next,learner,learnerMachine.id,learnerMachine);
         const workers=[],leases=[learnerLease],seen=new Set([learnerMachine.id]);
+        // A caller may name collector machines instead of learning the
+        // learner's endpoint-list ordering. Bind each selected CPU/RAM/GPU
+        // budget to its authenticated worker endpoint, then keep the
+        // preapproved endpoint order for immutable rollout slots, identities
+        // and subsequent distributed Start/recovery transactions.
+        const machineBound=value.collectors.every(selection=>
+            object(selection)&&Object.hasOwn(selection,'machine_id'));
+        if(!machineBound&&value.collectors.some(selection=>
+            object(selection)&&Object.hasOwn(selection,'machine_id')))
+            throw Error('Either name every distributed collector machine or use the approved endpoint order.');
+        let orderedSelections=value.collectors;
+        if(machineBound) {
+            const byEndpoint=new Map();
+            for(const selection of value.collectors) {
+                if(!ID.test(String(selection.machine_id||'')))
+                    throw Error('Distributed collector machine ID is invalid.');
+                const host=machines.find(m=>m.id===selection.machine_id);
+                if(!host||!endpoints.includes(host.tinybrains_rollout_endpoint)||
+                    byEndpoint.has(host.tinybrains_rollout_endpoint))
+                    throw Error('Collector machines must each match a different preapproved learner endpoint.');
+                byEndpoint.set(host.tinybrains_rollout_endpoint,selection);
+            }
+            if(byEndpoint.size!==endpoints.length)
+                throw Error('All original preapproved collector endpoints must have one machine budget.');
+            orderedSelections=endpoints.map(endpoint=>byEndpoint.get(endpoint));
+        }
         for(const [index,endpoint] of endpoints.entries()) {
-            const selection=value.collectors[index];
+            const selection=orderedSelections[index];
             if(!object(selection)||Object.keys(selection).some(key=>
-                !['resources','threads'].includes(key)))
-                throw Error('Each distributed collector supplies only a CPU/RAM and optional exclusive GPU resource budget.');
+                !['resources','threads','machine_id'].includes(key))||
+                (selection.machine_id!==undefined&&!machineBound))
+                throw Error('Each distributed collector supplies a CPU/RAM and optional exclusive GPU budget, plus an optional machine ID on every member.');
             const budget=resourceRequest(selection.resources);
             if(budget.gpu_count>1||
                 (budget.gpu_count===1&&budget.gpu_mode!=='exclusive'))
                 throw Error('A remote collector may use CPU only or one exclusively leased CUDA/ROCm GPU.');
             const eligible=machines.filter(host=>
+                (selection.machine_id===undefined||host.id===selection.machine_id)&&
                 host.status==='connected'&&host.tinybrains_rollout_endpoint===endpoint&&
                 host.tinybrains_rollout_key_fingerprint===
                     learnerMachine.tinybrains_remote_key_fingerprint&&
