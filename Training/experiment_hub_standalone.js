@@ -158,6 +158,7 @@ async function main(argv=process.argv.slice(2)) {
     if(!existed) {
         hub.addProject({id:'tinybrains',name:'TinyBrains Ants-MAPOCA'});
         hub.addProject({id:'courier',name:'Courier Ants'});
+        hub.addProject({id:'courier_remote',name:'Courier Remote PPO Service'});
     }
     const html=renderPage(fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8'));
     const ui=fs.readFileSync(path.join(__dirname,'experiment_hub_ui.js'),'utf8');
