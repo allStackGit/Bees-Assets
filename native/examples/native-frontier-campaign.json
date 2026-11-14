@@ -8,7 +8,8 @@
         "id": "frontier",
         "player_side": 1,
         "record_fleet_stats": true,
-        "persist_fleet_losses": true
+        "persist_fleet_losses": true,
+        "bank_player_minerals": true
       }
     },
     {
@@ -21,8 +22,21 @@
         "requires": [
           "frontier"
         ],
-        "persist_fleet_losses": true
+        "persist_fleet_losses": true,
+        "bank_player_minerals": true
       }
+    }
+  ],
+  "buildable_ships": [
+    {
+      "player_side": 1,
+      "ship_type": 21,
+      "price_tsv": 100
+    },
+    {
+      "player_side": 1,
+      "ship_type": 2,
+      "price_tsv": 250
     }
   ]
 }
