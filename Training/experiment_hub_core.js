@@ -2606,6 +2606,107 @@ class ExperimentHub {
         this.commit(next);
         return {id:selected.id,status:selected.status,dispatch_id:selected.dispatch_id};
     }
+    // One durable authorization for the *services*. The learner remains
+    // unstarted until every authenticated native sidecar reports running;
+    // no user-visible Start can override the actual worker ownership check.
+    authorizeCourierSidecars(value) {
+        if(!object(value)||value.confirm_start!==true||
+            value.confirm_learner_start!==true||
+            Object.keys(value).some(k=>![
+                'learner_job_id','expected_sidecar_job_ids',
+                'confirm_start','confirm_learner_start',
+            ].includes(k))||
+            !UUID.test(String(value.learner_job_id||''))||
+            !Array.isArray(value.expected_sidecar_job_ids)||
+            value.expected_sidecar_job_ids.length<1||
+            value.expected_sidecar_job_ids.length>16||
+            value.expected_sidecar_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_sidecar_job_ids).size!==
+                value.expected_sidecar_job_ids.length)
+            throw Error('Confirm exact Courier learner and sidecars, including future learner Start.');
+        const snapshot=this.snapshot();
+        const learner=snapshot.jobs.find(job=>job.id===value.learner_job_id);
+        const ids=learner?.distributed_courier_sidecar_job_ids;
+        if(!learner||learner.project_id!=='courier'||
+            learner.distributed_courier_managed!==true||
+            learner.distributed_abort_requested_at||
+            learner.status!=='waiting_adapter'||learner.dispatch_id||
+            !Array.isArray(ids)||ids.length!==value.expected_sidecar_job_ids.length||
+            ids.some((id,index)=>id!==value.expected_sidecar_job_ids[index])||
+            !learner.lease_id||predecessorBlock(snapshot,learner)||
+            (this.state.courier_launch_plans||[]).some(plan=>
+                plan.learner_job_id===learner.id&&plan.status==='pending'))
+            throw Error('Only the original complete, unstarted Courier group can authorize sidecar Starts.');
+        const parentHost=snapshot.machines.find(m=>m.id===learner.assigned_machine_id);
+        const parentLease=snapshot.reservations.find(l=>
+            l.id===learner.lease_id&&l.job_id===learner.id&&
+            l.machine_id===parentHost?.id&&l.status==='acknowledged'&&
+            l.receipt_fresh===true&&l.issued_by==='experiment-hub');
+        if(!parentHost||!parentLease||
+            !parentHost.installed_projects?.includes('courier')||
+            parentHost.courier_remote_key_fingerprint!==
+                learner.distributed_courier_key_fingerprint||
+            nativeResourceBlock(learner,parentLease)||
+            gpuStartBlock(learner,parentLease,parentHost))
+            throw Error('Courier learner has no fresh original CPU/GPU claim or operator-approved remote key.');
+        const members=ids.map(id=>snapshot.jobs.find(job=>job.id===id));
+        const agentInstances={};
+        const owners=[];
+        const seen=new Set([parentHost.id]);
+        for(const member of [learner,...members]) {
+            const host=snapshot.machines.find(m=>m.id===member?.assigned_machine_id);
+            if(!host||seen.has(host.id)&&member!==learner||
+                !UUID.test(String(this.agentReports.get(host.id)?.instance_id||'')))
+                throw Error('Courier group requires distinct live native agent identities on every machine.');
+            agentInstances[host.id]=this.agentReports.get(host.id).instance_id;
+            if(member===learner)continue;
+            const position=ids.indexOf(member.id);
+            if(member.status!=='waiting_adapter'||member.dispatch_id||
+                !courierLineageHost(snapshot,member,host)||
+                !nativeStartReadiness(snapshot,member).eligible)
+                throw Error('Courier remote service lost its approved, fresh CPU-only native lease or endpoint.');
+            seen.add(host.id);
+            owners.push({job_id:member.id,machine_id:host.id,
+                lease_id:member.lease_id,endpoint:host.courier_lineage_endpoint,
+                slot:learner.distributed_courier_slots[position],
+                key_fingerprint:host.courier_lineage_key_fingerprint});
+        }
+        const next=copy(this.state),atTime=now(),dispatches={};
+        for(const id of ids) {
+            const member=next.jobs.find(job=>job.id===id);
+            member.status='start_requested';
+            member.dispatch_id=crypto.randomUUID();
+            member.start_requested_at=atTime;
+            member.start_first_offered_at=null;
+            member.release_on_terminal=true;
+            member.status_reason='Frozen Courier remote PPO sidecar Start; learner remains gated on authenticated running receipts.';
+            dispatches[id]=member.dispatch_id;
+        }
+        const plans=next.courier_launch_plans||[];
+        if(plans.length>=64) {
+            const old=plans.findIndex(plan=>plan.status!=='pending');
+            if(old<0)throw Error('Resolve earlier Courier distributed group Starts before approving another.');
+            plans.splice(old,1);
+        }
+        const t=Date.now();
+        plans.push({id:crypto.randomUUID(),status:'pending',
+            learner_job_id:learner.id,
+            learner_lease_id:learner.lease_id,
+            learner_machine_id:parentHost.id,
+            endpoints:learner.distributed_courier_endpoints.slice(),
+            key_fingerprint:learner.distributed_courier_key_fingerprint,
+            sidecar_dispatches:dispatches,sidecar_owners:owners,
+            agent_instances:agentInstances,approved_at:new Date(t).toISOString(),
+            expires_at:new Date(t+DISTRIBUTED_LAUNCH_TTL_MS).toISOString(),
+            reason:'Waiting for fresh, verified running Courier remote PPO services.'});
+        next.courier_launch_plans=plans;
+        this.commit(next);
+        return {learner_job_id:learner.id,sidecar_job_ids:ids.slice(),
+            sidecar_starts_authorized:ids.length,
+            learner_start_pending:true,
+            note:'Native Start for the learner requires every original remote PPO service running under the same machine leases and key.'};
+    }
+
     // One frozen operator approval bridges group reservation to complete
     // collector/learner authorization. No native owner is created until all
     // original machine claims have fresh authenticated readiness.
