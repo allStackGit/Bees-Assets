@@ -2303,13 +2303,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 ['pipeline_gpu_mixed_host_evidence','allocated GPUs show mixed host activity'],
                 ['pipeline_cpu_underuse_evidence','CPU lease underused during collection'],
                 ['pipeline_gpu_idle_evidence','allocated GPUs host-idle during optimization'],
-                ['pipeline_ram_scan_pressure','PSS/USS inspection overhead']
+                ['pipeline_ram_scan_pressure','PSS/USS inspection overhead'],
+                ['training_remote_nontraining_pressure',
+                    'Courier remote nontraining/transport interval'],
+                ['training_remote_sync_pressure',
+                    'Courier remote checkpoint synchronization']
             ].filter(([metric])=>measured[metric]?.value===1)
                 .map(([,name])=>name);
             const resourceSignal=resourceFlags.length
                 ?' · Sustained resource evidence: '+resourceFlags.slice(0,2).join('; ')+
                     (resourceFlags.length>2?' (+'+(resourceFlags.length-2)+' more)':'')+
                     ' (not proof of a causal hardware bottleneck)'
+                :'';
+            const remoteCount=measured.training_remote_lineages?.value;
+            const remoteResidual=measured.training_remote_nontraining_max_seconds?.value;
+            const remoteIndicator=(Number.isSafeInteger(remoteCount)&&remoteCount>0)
+                ?' · Remote Courier PPO lineages: '+remoteCount+
+                    (Number.isFinite(remoteResidual)
+                        ?' · Largest nontraining/transport interval: '+
+                            remoteResidual.toFixed(2)+' s':'')
                 :'';
             const physical=measured.training_sim_processes?.value;
             const shards=measured.training_simulation_shards?.value;
@@ -2335,7 +2347,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
                 enginePressureSignal+resourceSignal+processSignal+
-                ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
+                remoteIndicator+' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
             return 'Local progress unavailable: '+live.progress_issue;
@@ -2453,6 +2465,17 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_sim_migration_denials','training_sim_migration_owner',
         'training_sim_migration_max_seconds',
         'training_sim_migration_wall_share',
+        'training_remote_lineages','training_remote_roundtrip_max_seconds',
+        'training_remote_roundtrip_owner',
+        'training_remote_request_bytes','training_remote_reply_bytes',
+        'training_remote_checkpoint_bytes',
+        'training_remote_sync_max_seconds',
+        'training_remote_nontraining_max_seconds',
+        'training_remote_nontraining_owner',
+        'training_remote_nontraining_share',
+        'training_remote_sync_share',
+        'training_remote_nontraining_pressure',
+        'training_remote_sync_pressure',
         'training_info_recv_max_seconds','training_info_rebuild_max_seconds',
         'training_info_recv_slowest_worker',
         'training_info_rebuild_slowest_worker',
