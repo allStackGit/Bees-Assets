@@ -910,6 +910,27 @@ optimizer steps, and learning outcomes across verified rounds. Original
 round receipts and checkpoint hashes, not that derived progress snapshot,
 are the source of truth for safe resumption.
 
+With a fixed-seed `--evaluation-run-config` and `--evaluation-side`,
+the session also publishes `best-evaluated.json` and
+`best-evaluated-run.json`. These rank the initial checkpoint and every
+completed, verified holdout checkpoint by *victories on the same pinned
+evaluation Levels*, retaining the earliest model on a tie. The runnable
+configuration points to the exact evaluated manifest (including the
+original fixed opponent during self-play) and uses the same shared
+`CombatWorld` as the learner. Its scene, policy worker and Stage asset
+paths are resolved independently of the session directory. Play a selected
+model using:
+
+```sh
+bees play native-session/best-evaluated-run.json --output-dir new-native-battle
+```
+
+The selected checkpoint's full path, SHA-256, observed win counts and
+selection criterion remain in `best-evaluated.json`. No model weights are
+rewritten and an unevaluated/incomplete round cannot become the selection.
+A best score on fixed holdout seeds is **not** proof of generalization,
+Unity parity or a release-qualified policy.
+
 For distributed training, the same session now accepts a fixed collector
 allocation (Experiment Hub retains machine/CPU/GPU/RAM ownership):
 
