@@ -32,12 +32,12 @@ function approvedRemoteRolloutEndpoints(job,machine) {
     const chosen=job?.distributed_rollout_endpoints;
     if(machine?.tinybrains_remote_rollout_discovery===true) {
         // Discovery is a locally installed learner permission; the durable
-        // job must still freeze 1–8 trusted Tailnet targets at queue time.
+        // job must still freeze 1–16 trusted Tailnet targets at queue time.
         // Running worker ownership, matching HMAC and native leases are
         // checked separately by the existing coordinated Start contract.
         return job?.distributed_rollout_managed===true&&
             allowed.length===0&&Array.isArray(chosen)&&
-            chosen.length>=1&&chosen.length<=8&&
+            chosen.length>=1&&chosen.length<=MAX_REMOTE_COLLECTORS&&
             chosen.every(rolloutEndpoint)&&
             new Set(chosen).size===chosen.length?chosen:null;
     }
@@ -56,6 +56,17 @@ const CUDA_UUID = /^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const now = () => new Date().toISOString();
 const AGENT_HEARTBEAT_TTL_MS = 45000;
 const DISTRIBUTED_LAUNCH_TTL_MS = 20 * 60 * 1000;
+const MAX_REMOTE_COLLECTORS = 16;
+// Native TinyBrains supports at most sixteen other collection clients
+// (remote endpoints plus additional local GPU collectors). The first two
+// GPUs are reserved for the optimizer/local collection split; GPUs 3–8
+// contribute one additional native collector apiece.
+function remoteCollectorLimit(learner) {
+    const extras=learner?.project_id==='tinybrains'&&
+        learner.frozen_parameters?.device==='multi'
+        ?Math.max(0,learner.resources?.gpu_count-2):0;
+    return MAX_REMOTE_COLLECTORS-extras;
+}
 const FINAL_EVALUATION_GRACE_MS = 24 * 60 * 60 * 1000;
 function fingerprint(machineId, token) {
     return crypto.createHash('sha256').update(machineId + ':' + token).digest('hex');
@@ -273,7 +284,7 @@ function boundedReport(value) {
         new Set(remoteRollouts).size!==remoteRollouts.length||
         (remoteRollouts.length&&value.platform!=='linux')||
         typeof remoteDiscovery!=='boolean'||
-        !Number.isSafeInteger(remoteCount)||remoteCount<0||remoteCount>8||
+        !Number.isSafeInteger(remoteCount)||remoteCount<0||remoteCount>MAX_REMOTE_COLLECTORS||
         !Array.isArray(remoteEndpoints)||remoteEndpoints.length!==remoteCount||
         remoteEndpoints.some(endpoint=>!rolloutEndpoint(endpoint))||
         new Set(remoteEndpoints).size!==remoteEndpoints.length||
@@ -2484,7 +2495,7 @@ class ExperimentHub {
             !UUID.test(String(value.learner_job_id||''))||
             !Array.isArray(value.expected_collector_job_ids)||
             value.expected_collector_job_ids.length<1||
-            value.expected_collector_job_ids.length>8||
+            value.expected_collector_job_ids.length>MAX_REMOTE_COLLECTORS||
             value.expected_collector_job_ids.some(id=>!UUID.test(String(id)))||
             new Set(value.expected_collector_job_ids).size!==
                 value.expected_collector_job_ids.length||
@@ -2516,6 +2527,7 @@ class ExperimentHub {
             machine.id===learner.assigned_machine_id);
         const endpoints=approvedRemoteRolloutEndpoints(learner,host);
         if(!host||host.status!=='connected'||!Array.isArray(endpoints)||
+            endpoints.length>remoteCollectorLimit(learner)||
             endpoints.length!==value.expected_collector_job_ids.length||
             !SHA256.test(String(host.tinybrains_remote_key_fingerprint||''))||
             !host.installed_projects?.includes('tinybrains'))
@@ -2748,11 +2760,11 @@ class ExperimentHub {
             !UUID.test(String(value.learner_job_id||''))||
             !Array.isArray(value.expected_collector_job_ids)||
             value.expected_collector_job_ids.length<1||
-            value.expected_collector_job_ids.length>8||
+            value.expected_collector_job_ids.length>MAX_REMOTE_COLLECTORS||
             value.expected_collector_job_ids.some(id=>!UUID.test(String(id)))||
             new Set(value.expected_collector_job_ids).size!==
                 value.expected_collector_job_ids.length)
-            throw Error('Confirm the learner and exact 1–8 remote collector jobs to start.');
+            throw Error('Confirm the learner and exact 1–16 remote collector jobs to start.');
         const snapshot=this.snapshot();
         const learner=snapshot.jobs.find(job=>job.id===value.learner_job_id);
         if(!learner||learner.project_id!=='tinybrains'||
@@ -2778,7 +2790,8 @@ class ExperimentHub {
             gpuStartBlock(learner,learnerLease,learnerHost)||
             !supportsTinyBrainsProfile(learnerHost,learner)||
             !Array.isArray(endpoints)||endpoints.length<1||
-            endpoints.length>8||new Set(endpoints).size!==endpoints.length)
+            endpoints.length>remoteCollectorLimit(learner)||
+            new Set(endpoints).size!==endpoints.length)
             throw Error('The learner must retain its fresh native resource claim, GPU access qualification and pinned remote endpoints.');
         const workers=snapshot.jobs.filter(job=>
             job.project_id==='tinybrains_rollout'&&
@@ -2976,7 +2989,7 @@ class ExperimentHub {
             !UUID.test(String(value.learner_job_id||''))||
             !Array.isArray(value.expected_collector_job_ids)||
             value.expected_collector_job_ids.length<1||
-            value.expected_collector_job_ids.length>8||
+            value.expected_collector_job_ids.length>MAX_REMOTE_COLLECTORS||
             value.expected_collector_job_ids.some(id=>!UUID.test(String(id)))||
             new Set(value.expected_collector_job_ids).size!==
                 value.expected_collector_job_ids.length||
@@ -4676,8 +4689,11 @@ class ExperimentHub {
                 continuation_of_job_id:ancestorId,
             })||
             !Array.isArray(endpoints)||!endpoints.length||
-            (!discovery&&endpoints.length>8)||
-            value.collectors.length<1||value.collectors.length>8||
+            (!discovery&&endpoints.length>MAX_REMOTE_COLLECTORS)||
+            value.collectors.length<1||
+            value.collectors.length>MAX_REMOTE_COLLECTORS||
+            value.collectors.length>MAX_REMOTE_COLLECTORS-
+                Math.max(0,learnerBudget.gpu_count-2)||
             value.collectors.length>endpoints.length||
             !SHA256.test(String(learnerMachine.tinybrains_remote_key_fingerprint||'')))
             throw Error('The selected Linux GPU learner must approve this profile and exactly the supplied remote collector count.');
@@ -5083,7 +5099,8 @@ class ExperimentHub {
                 throw Error('Remote collector requires an active or queued distributed TinyBrains learner, CPU-only or one exclusive GPU, and no separate predecessor.');
             if(next.jobs.filter(j=>j.project_id==='tinybrains_rollout'&&
                 j.status!=='cancelled'&&
-                j.frozen_parameters?.learner_job_id===learner.id).length>=8)
+                j.frozen_parameters?.learner_job_id===learner.id).length>=
+                    remoteCollectorLimit(learner))
                 throw Error('Only eight separately leased remote collectors may join a TinyBrains learner.');
         }
         if(ancestorId!==null&&project.id==='tinybrains'&&
