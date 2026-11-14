@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use bees_host::unity_scene_snapshot::NativePurchasedShip;
+use bees_host::unity_scene_snapshot::{NativePurchasedShip, NativeCreatedSquad};
 use serde_json::{json, Value};
 
 use super::{invalid, CampaignOutcome, CampaignFleetShipOutcome};
@@ -160,6 +160,13 @@ struct CampaignPurchase {
     ship: NativePurchasedShip,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignSquadCreation {
+    campaign_id: String,
+    squad: NativeCreatedSquad,
+}
+
 /// Reassignment changes only who commands a purchased persistent hull.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -202,6 +209,7 @@ pub struct CampaignProgress<'a> {
     bank_history_complete: bool,
     spent_minerals: u64,
     purchases: Vec<(i32, NativePurchasedShip)>,
+    created_squads: Vec<NativeCreatedSquad>,
     transfer_count: u64,
     authored_roster: HashMap<i64, AuthoredRosterOwner>,
     authored_transfer_count: u64,
@@ -328,10 +336,25 @@ impl CampaignProgress<'_> {
         self.authored_roster.get(&fleet_id).map(|owner| owner.current_saved_squad_id)
     }
 
+    pub fn created_squads_for_side(&self, side: i32) -> Vec<NativeCreatedSquad> {
+        self.created_squads.iter().copied().filter(|squad|
+            squad.side == side).collect()
+    }
+
+    pub fn highest_saved_squad_id(&self) -> i64 {
+        self.squads.keys().copied().chain(
+            self.created_squads.iter().map(|squad| squad.saved_squad_id)
+        ).max().unwrap_or(0)
+    }
+
     pub fn saved_squad_ids_for_side(&self, side: i32) -> Vec<i64> {
         let mut ids = self.squads.iter().filter_map(|(&id, squad)|
-            (squad.side == side).then_some(id)).collect::<Vec<_>>();
+            (squad.side == side).then_some(id))
+            .chain(self.created_squads.iter().filter_map(|squad|
+                (squad.side == side).then_some(squad.saved_squad_id)))
+            .collect::<Vec<_>>();
         ids.sort_unstable();
+        ids.dedup();
         ids
     }
 
@@ -499,6 +522,33 @@ impl BattleCatalog {
             to_saved_squad_id,
         })?;
         Ok(NativePurchasedShip { saved_squad_id: to_saved_squad_id, ..ship })
+    }
+
+    /// Append a player-owned SavedSquad without borrowing a transient
+    /// Level ItemId. An empty squad remains in the campaign editor and
+    /// only becomes a live SquadLifetime after a real ship joins it.
+    pub fn create_saved_squad(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        side: i32, template_id: i64, new_id: i64,
+    ) -> io::Result<NativeCreatedSquad> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("new SavedSquads require a native campaign"))?;
+        if !matches!(side, 1 | 2) || template_id <= 0 ||
+            !progress.saved_squad_ids_for_side(side).contains(&template_id) ||
+            new_id <= progress.highest_saved_squad_id() ||
+            new_id <= 0 || new_id == i64::MAX
+        {
+            return Err(invalid("new SavedSquad requires an owned template and unused persistent ID"));
+        }
+        let squad = NativeCreatedSquad {
+            saved_squad_id: new_id, template_saved_squad_id: template_id,
+            side,
+        };
+        commit_campaign_edit(output, "squad-", "squad.json",
+            &CampaignSquadCreation {
+                campaign_id: campaign_id.to_owned(), squad,
+            })?;
+        Ok(squad)
     }
 
     /// Commit an authored (pre-purchase) FleetShip reassignment after
