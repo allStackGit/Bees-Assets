@@ -5119,6 +5119,22 @@ class ExperimentHub {
         const afterId=value.after_job_id==null?null:value.after_job_id;
         if(afterId!==null&&ancestorId!==null)
             throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
+        if(project.id==='courier_remote') {
+            const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
+            if(Object.keys(frozen).some(key=>!['learner_job_id','slot'].includes(key))||
+                !UUID.test(String(frozen.learner_job_id||''))||
+                !Number.isSafeInteger(frozen.slot)||frozen.slot<1||frozen.slot>63||
+                !learner||learner.project_id!=='courier'||
+                learner.distributed_courier_managed!==true||
+                !['waiting_adapter','start_requested','launch_requested','running'].includes(learner.status)||
+                resources.gpu_count!==0||ancestorId!==null||afterId!==null)
+                throw Error('Courier remote service requires a frozen learner, CPU-only lease and approved lineage slot.');
+            if(next.jobs.some(j=>j.project_id==='courier_remote'&&
+                j.status!=='cancelled'&&
+                j.frozen_parameters?.learner_job_id===learner.id&&
+                j.frozen_parameters?.slot===frozen.slot))
+                throw Error('Duplicate Courier remote lineage slot is not permitted.');
+        }
         if(project.id==='tinybrains_rollout') {
             const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
             if(Object.keys(frozen).some(key=>!['learner_job_id','threads'].includes(key))||
