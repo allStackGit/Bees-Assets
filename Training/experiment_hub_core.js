@@ -2480,7 +2480,7 @@ class ExperimentHub {
     }
 
     authorizeStart(value,origin='operator') {
-        if(!['operator','automation','distributed'].includes(origin))
+        if(!['operator','automation','distributed','courier'].includes(origin))
             throw Error('Unknown native Start authorization source.');
         if(!object(value)||value.confirm_start!==true||
             typeof value.job_id!=='string')
@@ -2496,6 +2496,16 @@ class ExperimentHub {
             throw Error('Cancel the frozen distributed group plan before individually starting one of its members.');
         const snapshot=this.snapshot();
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
+        if(job?.project_id==='courier'&&
+            job.distributed_courier_managed===true&&origin!=='courier')
+            throw Error('Managed Courier PPO learners Start only after their verified remote services are running.');
+        if(job?.project_id==='courier_remote')
+            throw Error('Courier sidecars Start exclusively through one frozen group authorization.');
+        if(origin==='courier'&&
+            !(job?.project_id==='courier'&&job.distributed_courier_managed===true&&
+              (this.state.courier_launch_plans||[]).some(plan=>
+                  plan.learner_job_id===job.id&&plan.status==='pending')))
+            throw Error('No verified Courier distributed learner Start intent exists.');
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible)
             throw Error(readiness.reason);
@@ -2521,6 +2531,13 @@ class ExperimentHub {
         if(origin==='operator'&&value.release_on_terminal===true)
             selected.release_on_terminal=true;
         selected.status_reason='Start authorized; waiting for machine-local OS resource enforcement verification.';
+        if(origin==='courier') {
+            const resolved=next.courier_launch_plans.find(plan=>
+                plan.learner_job_id===job.id&&plan.status==='pending');
+            resolved.status='authorized';
+            resolved.resolved_at=now();
+            resolved.reason='All remote native Courier service owners verified running.';
+        }
         if(origin==='distributed') {
             const resolved=next.distributed_launch_plans.find(plan=>plan.id===pendingPlan.id);
             resolved.status='authorized';
