@@ -3009,7 +3009,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const hint=document.createElement('small');
             hint.textContent=field.key+' · default '+String(field.default)+
-                (field.type==='boolean'?' (off unless enabled)':'');
+                (field.type==='boolean'?(field.default?' (on by default)':' (off by default)'):'');
             label.append(input,hint);
             input.addEventListener('change',()=>{
                 try{readDesignControls();feedback('hub-config-message','');}
