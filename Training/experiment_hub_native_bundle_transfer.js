@@ -13,8 +13,8 @@ const {safeLogPath,safeNativeCollectorPath,MAX_FILE,MAX_CHUNK}=
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const SHA=/^[a-f0-9]{64}$/;
-const CAPTURE=/^(?:rollout-(?:0|[1-9][0-9]{0,2})\/)?decisions\.bin$/;
-const JOURNAL=/^(?:rollout-(?:0|[1-9][0-9]{0,2})\/)?events\.jsonl$/;
+const CAPTURE=/^(?:rollout-(?:0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\/)?decisions\.bin$/;
+const JOURNAL=/^(?:rollout-(?:0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\/)?events\.jsonl$/;
 const RESERVE=2_000_000_000n;
 
 function fail(message,status=409) {
