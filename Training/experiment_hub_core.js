@@ -24,6 +24,22 @@ function rolloutEndpoint(value) {
         Number(octets[0])===100&&Number(octets[1])>=64&&Number(octets[1])<=127&&
         Number(parts[1])>=1&&Number(parts[1])<=65535;
 }
+// One group may lease a subset of preapproved collectors. Preserve the
+// trusted endpoint order and verify the frozen selection at every Start.
+function approvedRemoteRolloutEndpoints(job,machine) {
+    const allowed=machine?.tinybrains_remote_rollout_endpoints;
+    if(!Array.isArray(allowed))return null;
+    const chosen=job?.distributed_rollout_endpoints;
+    if(chosen===undefined)return allowed;
+    if(job?.distributed_rollout_managed!==true||
+        !Array.isArray(chosen)||chosen.length<1||
+        chosen.length>allowed.length||
+        chosen.some(endpoint=>!allowed.includes(endpoint))||
+        new Set(chosen).size!==chosen.length||
+        JSON.stringify(chosen)!==JSON.stringify(allowed.filter(e=>chosen.includes(e))))
+        return null;
+    return chosen;
+}
 const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const CUDA_UUID = /^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const now = () => new Date().toISOString();
@@ -700,8 +716,8 @@ function nativeStartReadiness(snapshot, job) {
     if(!distributedRolloutHost(snapshot,job,machine))
         return block('The remote collector is not assigned to an active learner and its pinned physical endpoint.');
     if(job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true) {
-        const count=machine.tinybrains_remote_rollout_count;
-        const expectedEndpoints=machine.tinybrains_remote_rollout_endpoints;
+        const expectedEndpoints=approvedRemoteRolloutEndpoints(job,machine);
+        const count=expectedEndpoints?.length;
         const keyFingerprint=machine.tinybrains_remote_key_fingerprint;
         if(!Number.isSafeInteger(count)||count<1||count>8||
             !Array.isArray(expectedEndpoints)||expectedEndpoints.length!==count||
@@ -872,7 +888,7 @@ function distributedRolloutHost(snapshot,job,machine) {
         !machine.installed_projects?.includes('tinybrains_rollout'))return false;
     const learner=snapshot.machines.find(m=>m.id===parent.assigned_machine_id);
     if(!learner||learner.status!=='connected'||
-        !learner.tinybrains_remote_rollout_endpoints?.includes(machine.tinybrains_rollout_endpoint)||
+        !approvedRemoteRolloutEndpoints(parent,learner)?.includes(machine.tinybrains_rollout_endpoint)||
         learner.tinybrains_remote_key_fingerprint!==machine.tinybrains_rollout_key_fingerprint)
         return false;
     if(!Number.isSafeInteger(machine.tinybrains_rollout_thread_limit)||
@@ -2477,7 +2493,7 @@ class ExperimentHub {
             throw Error('Cancel the existing distributed Start approval before scheduling another.');
         const host=snapshot.machines.find(machine=>
             machine.id===learner.assigned_machine_id);
-        const endpoints=host?.tinybrains_remote_rollout_endpoints;
+        const endpoints=approvedRemoteRolloutEndpoints(learner,host);
         if(!host||host.status!=='connected'||!Array.isArray(endpoints)||
             endpoints.length!==value.expected_collector_job_ids.length||
             !SHA256.test(String(host.tinybrains_remote_key_fingerprint||''))||
@@ -2618,7 +2634,7 @@ class ExperimentHub {
             const learnerHost=snapshot.machines.find(host=>
                 host.id===learner.assigned_machine_id);
             if(learnerHost?.tinybrains_remote_key_fingerprint!==plan.key_fingerprint||
-                JSON.stringify(learnerHost?.tinybrains_remote_rollout_endpoints)!==
+                JSON.stringify(approvedRemoteRolloutEndpoints(learner,learnerHost))!==
                     JSON.stringify(plan.learner_endpoints)||
                 members.slice(1).some((worker,index)=>{
                     const host=snapshot.machines.find(item=>
@@ -2726,7 +2742,7 @@ class ExperimentHub {
             throw Error('Only an unstarted, checkpoint-eligible distributed TinyBrains learner can authorize its collectors.');
         const learnerHost=snapshot.machines.find(host=>
             host.id===learner.assigned_machine_id);
-        const endpoints=learnerHost?.tinybrains_remote_rollout_endpoints;
+        const endpoints=approvedRemoteRolloutEndpoints(learner,learnerHost);
         const learnerLease=snapshot.reservations.find(lease=>
             lease.id===learner.lease_id&&lease.job_id===learner.id&&
             lease.project_id==='tinybrains'&&
@@ -3123,7 +3139,7 @@ class ExperimentHub {
             }
             const learnerHost=snapshot.machines.find(host=>
                 host.id===learner.assigned_machine_id);
-            const endpoints=learnerHost?.tinybrains_remote_rollout_endpoints||[];
+            const endpoints=approvedRemoteRolloutEndpoints(learner,learnerHost)||[];
             if(learnerHost?.tinybrains_remote_key_fingerprint!==intent.key_fingerprint||
                 JSON.stringify(endpoints)!==JSON.stringify(intent.learner_endpoints)||
                 endpoints.length!==workers.length||
@@ -4617,7 +4633,8 @@ class ExperimentHub {
                 continuation_of_job_id:ancestorId,
             })||
             !Array.isArray(endpoints)||!endpoints.length||endpoints.length>8||
-            value.collectors.length!==endpoints.length||
+            value.collectors.length<1||
+            value.collectors.length>endpoints.length||
             !SHA256.test(String(learnerMachine.tinybrains_remote_key_fingerprint||'')))
             throw Error('The selected Linux GPU learner must approve this profile and exactly the supplied remote collector count.');
         const rolloutProject=snapshot.projects.find(p=>p.id==='tinybrains_rollout');
@@ -4642,7 +4659,9 @@ class ExperimentHub {
         if(!machineBound&&value.collectors.some(selection=>
             object(selection)&&Object.hasOwn(selection,'machine_id')))
             throw Error('Either name every distributed collector machine or use the approved endpoint order.');
-        let orderedSelections=value.collectors;
+        if(!machineBound&&value.collectors.length!==endpoints.length)
+            throw Error('Selecting a subset requires a machine ID for every chosen collector.');
+        let orderedSelections=value.collectors,selectedEndpoints=endpoints;
         if(machineBound) {
             const byEndpoint=new Map();
             for(const selection of value.collectors) {
@@ -4654,11 +4673,14 @@ class ExperimentHub {
                     throw Error('Collector machines must each match a different preapproved learner endpoint.');
                 byEndpoint.set(host.tinybrains_rollout_endpoint,selection);
             }
-            if(byEndpoint.size!==endpoints.length)
-                throw Error('All original preapproved collector endpoints must have one machine budget.');
-            orderedSelections=endpoints.map(endpoint=>byEndpoint.get(endpoint));
+            selectedEndpoints=endpoints.filter(endpoint=>byEndpoint.has(endpoint));
+            orderedSelections=selectedEndpoints.map(endpoint=>byEndpoint.get(endpoint));
         }
-        for(const [index,endpoint] of endpoints.entries()) {
+        // The learner's durable group freezes the chosen HMAC endpoint set.
+        // Legacy all-endpoint jobs need no new field.
+        if(selectedEndpoints.length!==endpoints.length)
+            learner.distributed_rollout_endpoints=selectedEndpoints.slice();
+        for(const [index,endpoint] of selectedEndpoints.entries()) {
             const selection=orderedSelections[index];
             if(!object(selection)||Object.keys(selection).some(key=>
                 !['resources','threads','machine_id'].includes(key))||
