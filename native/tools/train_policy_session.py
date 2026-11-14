@@ -481,6 +481,28 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         else "local_rollout_wall_seconds"
     )
     fleet_window = measured_distributed_collection_windows(completed)
+    # An optimizer round cannot overlap its own collection window. Local
+    # rollout wall seconds are directly measured; multi-machine collector
+    # seconds overlap and are NEVER interchangeable with whole-fleet time.
+    # The latter is known only if every round has a receipt-matched order
+    # issuance-to-last-delivery window. Do not silently extrapolate missing
+    # historical windows, not even from worker utilization.
+    fully_measured = (fleet_window is None or (
+        fleet_window["measured_rounds"] ==
+        fleet_window["distributed_rounds"] == len(completed) and
+        not fleet_window["missing_window_rounds"] and
+        not fleet_window["rejected_window_rounds"]
+    ))
+    training_wall_seconds = (
+        (fleet_window["measured_wall_seconds"] if fleet_window else rollout_seconds)
+        + optimizer_seconds
+        if fully_measured and completed else None
+    )
+    training_wall_scope = (
+        "distributed_order_to_last_receipt_plus_optimizer"
+        if fleet_window is not None else
+        "local_rollout_plus_optimizer"
+    )
     latest_observed = next((
         (index, evaluations[str(directory)])
         for index, (directory, _) in reversed(list(enumerate(completed, 1)))
@@ -554,6 +576,26 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         **({"distributed_collection_wall_time": fleet_window}
            if fleet_window is not None else {}),
         "sum_round_optimizer_wall_seconds": optimizer_seconds,
+        "useful_training_throughput": {
+            "scope": training_wall_scope,
+            "complete_round_coverage": fully_measured,
+            "completed_rounds": len(completed),
+            "measured_collection_rounds":
+                fleet_window["measured_rounds"] if fleet_window else len(completed),
+            "measured_collection_plus_optimizer_wall_seconds":
+                training_wall_seconds,
+            "successful_world_steps": world_steps,
+            "successful_policy_rows": policy_rows,
+            "world_steps_per_training_wall_second":
+                (world_steps / training_wall_seconds
+                 if training_wall_seconds is not None and training_wall_seconds > 0
+                 else None),
+            "policy_rows_per_training_wall_second":
+                (policy_rows / training_wall_seconds
+                 if training_wall_seconds is not None and training_wall_seconds > 0
+                 else None),
+            "excludes_holdout_and_setup": True,
+        },
         "world_steps_per_rollout_wall_second":
             world_steps / rollout_seconds if rollout_seconds > 0 else None,
         "policy_rows_per_rollout_wall_second":
