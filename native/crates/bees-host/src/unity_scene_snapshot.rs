@@ -525,6 +525,25 @@ impl From<UnityCommandSettings> for bees_gameplay::commands::HiveMindCommandSett
 }
 
 #[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize)]
+struct UnityColor {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+}
+
+impl UnityColor {
+    fn valid(self) -> bool {
+        [self.r, self.g, self.b, self.a].iter()
+            .all(|v| v.is_finite() && (0.0..=1.0).contains(v))
+    }
+
+    fn rgb8(self) -> [u8; 3] {
+        [self.r, self.g, self.b].map(|v| (v * 255.0).round() as u8)
+    }
+}
+
 struct UnitySquad {
     banned_strategies: Option<Vec<String>>,
     is_carrier_squad: Option<bool>,
@@ -543,6 +562,8 @@ struct UnitySquad {
     is_matching_speed: Option<bool>,
     current_speed: Option<f32>,
     cease_fire: Option<bool>,
+    has_custom_color: Option<bool>,
+    custom_color: Option<UnityColor>,
     shooting_strategy: String,
 }
 
@@ -897,6 +918,9 @@ pub struct NativeSourceSquad {
     /// Stable native SavedSquad.Id, distinct from the transient Stage
     /// squad ItemId. Older Unity exports have no durable saved identity.
     pub saved_squad_id: Option<i64>,
+    /// Optional authored SavedSquad.Color. None preserves original art;
+    /// neither simulator physics nor policy observation depends on color.
+    pub custom_color_rgb: Option<[u8; 3]>,
     pub command_bans: Option<Vec<bees_hivemind::dispatch::LocalCommandKind>>,
     pub is_carrier_squad: Option<bool>,
     /// Exact source shortcut index; generated minion squads are unnumbered.
@@ -2349,6 +2373,11 @@ impl NativePhysicalScene {
                     .filter_map(|(source, squad)| source.cease_fire
                         .map(|enabled| (squad.owner, enabled)))
                     .collect(),
+                squad_colors: self.source_squads.iter()
+                    .filter(|source| !source.members.is_empty()).zip(&squads)
+                    .filter_map(|(source, squad)| source.custom_color_rgb
+                        .map(|rgb| (squad.owner, rgb)))
+                    .collect(),
             },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         metadata.install_queen_templates(queen_templates)
@@ -3455,8 +3484,16 @@ impl NativePhysicalScene {
                 (None, None, None) if raw.schema_version < 27 => None,
                 _ => return Err(NativeSnapshotError::MissingHiveMindSource),
             };
+            let custom_color_rgb = match (squad.has_custom_color, squad.custom_color) {
+                (Some(true), Some(color)) if color.valid() => Some(color.rgb8()),
+                (Some(true), _) => return Err(NativeSnapshotError::InvalidSquad(squad.item_id)),
+                (_, Some(color)) if !color.valid() =>
+                    return Err(NativeSnapshotError::InvalidSquad(squad.item_id)),
+                _ => None,
+            };
             source_squads.push(NativeSourceSquad {
                 saved_squad_id: None,
+                custom_color_rgb,
                 command_bans,
                 hivemind,
                 is_carrier_squad: squad.is_carrier_squad,

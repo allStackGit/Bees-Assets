@@ -170,6 +170,10 @@ struct GameSquad {
     /// are intentionally not reused as persistent player identities.
     #[serde(default)]
     saved_squad_id: Option<i64>,
+    /// Optional appearance of a SavedSquad (RGB 0..255); never a physics
+    /// or neural-network input.
+    #[serde(default)]
+    custom_color_rgb: Option<[u8; 3]>,
     side: i32,
     members: Vec<i64>,
     shooting_strategy_id: u8,
@@ -1287,6 +1291,7 @@ impl NativePhysicalScene {
             has_player |= squad.user_controlled;
             source_squads.push(NativeSourceSquad {
                 saved_squad_id: squad.saved_squad_id,
+                custom_color_rgb: squad.custom_color_rgb,
                 item_id: squad.item_id, side: squad.side,
                 members: squad.members,
                 command_bans: Some(bans),

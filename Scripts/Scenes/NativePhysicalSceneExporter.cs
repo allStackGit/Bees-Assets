@@ -224,6 +224,11 @@ internal static class NativePhysicalSceneExporter
         public bool is_matching_speed;
         public float current_speed;
         public bool cease_fire;
+        // Sprite recoloring is a presentation-only authoring property.
+        // Export actual squad ownership rather than deriving a palette
+        // from a ship's side or its default sprite.
+        public bool has_custom_color;
+        public Color custom_color;
         public bool is_hivemind_controlled, is_immobile;
         // Preserve ulong exactly; JsonUtility's numeric roundtrips can
         // lose 64-bit client identity through JavaScript intermediaries.
@@ -713,6 +718,8 @@ internal static class NativePhysicalSceneExporter
                 is_matching_speed = squad.IsMatchingSpeed,
                 current_speed = squad.CurrentSpeed,
                 cease_fire = squad.CeaseFire,
+                has_custom_color = squad.HasCustomColor,
+                custom_color = squad.Color,
                 is_carrier_squad = squad.IsCarrierSquad,
                 is_hivemind_controlled = squad.IsHiveMindControlled,
                 is_immobile = squad.IsImmobile,

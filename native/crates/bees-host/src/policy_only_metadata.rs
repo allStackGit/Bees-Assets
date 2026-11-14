@@ -75,6 +75,9 @@ pub struct NativeSourcePlayerInputs {
     /// The real source Squad.CeaseFire, separate from individual authored
     /// Ship.IsCeaseFire. Older exports intentionally leave this unknown.
     pub cease_fire: HashMap<SquadLifetime, bool>,
+    /// Authored SavedSquad appearance, never duplicated into combat or
+    /// the headless policy observation. Dynamic children inherit colors.
+    pub squad_colors: HashMap<SquadLifetime, [u8; 3]>,
     pub ships: HashMap<i64, NativeSourceFormation>,
 }
 
@@ -307,6 +310,8 @@ impl NativePolicyOnlyMetadata {
                 !speed.is_finite() || speed < 0.0 ||
                 !player.squads.contains_key(owner)) ||
             player.cease_fire.keys().any(|owner|
+                !player.squads.contains_key(owner)) ||
+            player.squad_colors.keys().any(|owner|
                 !player.squads.contains_key(owner)) {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
@@ -766,6 +771,9 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
             can_accept_input: false, locked_on: false,
         });
         self.player.commands.insert(child, inherited);
+        if let Some(&rgb) = self.player.squad_colors.get(&mother) {
+            self.player.squad_colors.insert(child, rgb);
+        }
         self.player.ships.insert(beacon_id, NativeSourceFormation {
             offset: Vec2::ZERO, clearance: 0,
         });
@@ -810,6 +818,9 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
             locked_on: false,
         });
         self.player.commands.insert(child, source);
+        if let Some(&rgb) = self.player.squad_colors.get(&mother) {
+            self.player.squad_colors.insert(child, rgb);
+        }
         // Source Squad.Setup creates an ordinary AI-controlled minion
         // Squad, not a passive Scout Beacon. Retain its mother's verified
         // opponent and HiveMind authority, but this wave is mobile even
@@ -874,6 +885,7 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         self.player.chasing.remove(&owner);
         self.player.matching_speeds.remove(&owner);
         self.player.cease_fire.remove(&owner);
+        self.player.squad_colors.remove(&owner);
         self.player.squads.remove(&owner);
         self.player.commands.remove(&owner);
         self.hivemind_squads.remove(&owner);
@@ -1163,6 +1175,9 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     }
     fn player_cease_fire(&self, owner: SquadLifetime) -> Option<bool> {
         self.player.cease_fire.get(&owner).copied()
+    }
+    fn player_squad_color_rgb(&self, owner: SquadLifetime) -> Option<[u8; 3]> {
+        self.player.squad_colors.get(&owner).copied()
     }
 }
 

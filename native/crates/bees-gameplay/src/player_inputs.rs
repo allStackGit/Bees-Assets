@@ -62,6 +62,9 @@ pub trait NativePlayerAuthority {
     /// squad is moving at its own ship speeds (not an unknown value).
     fn player_matched_speed(&self, _owner: SquadLifetime) -> Option<f32> { None }
     fn player_cease_fire(&self, _owner: SquadLifetime) -> Option<bool> { None }
+    /// Optional source-authored SavedSquad RGB, read by the renderer
+    /// for the same live squad lifetime. Not an authorization grant.
+    fn player_squad_color_rgb(&self, _owner: SquadLifetime) -> Option<[u8; 3]> { None }
 }
 
 pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerAuthority {
