@@ -19,7 +19,9 @@ import sys
 import time
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256
-from native_distributed_collection import read_plan, make_orders, wait_for_collections
+from native_distributed_collection import (
+    read_plan, make_orders, wait_for_collections, balanced_round_plan,
+)
 
 
 ATTEMPT = re.compile(r"round-(\d{5})-attempt-(\d{3})\Z")
@@ -450,6 +452,8 @@ def main():
                         help="explicit multi-machine collector windows; Experiment Hub executes orders")
     parser.add_argument("--bundle-inbox", type=Path,
                         help="shared directory for collector deliveries in distributed mode")
+    parser.add_argument("--auto-balance-collectors", action="store_true",
+                        help="redistribute contiguous native arena windows conservatively between verified distributed rounds")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0,
                         help="time to await each distributed round (0 means no deadline)")
     parser.add_argument("--seed-offset-start", type=int, default=0)
@@ -491,6 +495,8 @@ def main():
         parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds cannot be negative")
+    if args.auto_balance_collectors and args.distributed_plan is None:
+        parser.error("--auto-balance-collectors requires --distributed-plan")
     if args.distributed_plan is not None and any(
         value is not None for value in (
             args.rollout_workers, args.rollout_worlds, args.rollout_world_start,
@@ -570,6 +576,8 @@ def main():
         recipe["bundle_inbox"] = str(args.bundle_inbox.resolve(strict=True))
         recipe["collector_timeout_seconds"] = args.collector_timeout_seconds
         read_plan(Path(recipe["distributed_plan"]["path"]))
+        if args.auto_balance_collectors:
+            recipe["auto_balance_collectors"] = True
     if args.evaluation_run_config is not None:
         recipe["evaluation_config"] = pinned(args.evaluation_run_config)
         recipe["evaluation_side"] = args.evaluation_side
@@ -681,8 +689,18 @@ def main():
                     root / f"collection-round-{index:05d}.json"
                 ).exists()
                 collection_start = time.monotonic()
+                allocation_plan = read_plan(plan_path)
+                if recipe.get("auto_balance_collectors"):
+                    allocation_plan, balancing = balanced_round_plan(
+                        root, allocation_plan, completed, index,
+                    )
+                    print(json.dumps({
+                        "kind": "native_distributed_allocation_selected",
+                        "round": index, **balancing,
+                        "allocations": allocation_plan["collectors"],
+                    }), flush=True)
                 orders, order_path = make_orders(
-                    root, index, seed_offset, read_plan(plan_path),
+                    root, index, seed_offset, allocation_plan,
                     run, next_checkpoint, next_manifest, args.learner_slot,
                 )
                 print(json.dumps({"kind": "native_distributed_collection_orders_ready",
