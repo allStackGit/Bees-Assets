@@ -1174,12 +1174,20 @@ fn launch_catalog_battle(
     catalog: &battle_catalog::BattleCatalog,
     entry: &battle_catalog::BattleEntry,
     catalog_root: &Path,
-    progress: &battle_catalog::CampaignProgress<'_>,
     output_root: &Path,
     next_number: &mut u64,
     interactive: bool,
 ) -> Result<PathBuf, Box<dyn Error>> {
-    let config = resolve(catalog_root, entry.config_for(progress));
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    // Reconstruct progress after obtaining exclusive ownership so a menu
+    // cannot launch a stale roster if another client edited the account.
+    let progress = catalog.load_progress(output_root)?;
+    if entry.mission.as_ref().is_some_and(|mission|
+        mission.requires.iter().any(|id| !progress.completed(id)))
+    {
+        return Err(invalid("the chosen campaign mission is no longer unlocked").into());
+    }
+    let config = resolve(catalog_root, entry.config_for(&progress));
     let mut purchased = entry.mission.as_ref()
         .map(|mission| progress.purchases_for_side(mission.player_side));
     let lost = entry.mission.as_ref()
@@ -1350,6 +1358,7 @@ fn run_build_ship(
     let catalog: battle_catalog::BattleCatalog =
         serde_json::from_slice(&fs::read(&catalog_path)?)?;
     catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
     let progress = catalog.load_progress(output_root)?;
     let shop = catalog.buildable_ships.iter().find(|shop|
         shop.player_side == player_side && shop.ship_type == ship_type
@@ -1398,6 +1407,7 @@ fn run_transfer_ship(
     let catalog: battle_catalog::BattleCatalog =
         serde_json::from_slice(&fs::read(&catalog_path)?)?;
     catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
     let progress = catalog.load_progress(output_root)?;
     let (side, ship) = progress.purchased_ship(fleet_ship_id)
         .ok_or_else(|| invalid("only purchased FleetShips can be reassigned"))?;
@@ -1469,7 +1479,7 @@ fn run_all_campaign_missions(
             )).into());
         }
         let run = launch_catalog_battle(
-            &catalog, entry, root, &progress, output_root, &mut number, false,
+            &catalog, entry, root, output_root, &mut number, false,
         )?;
         let summary: Value = serde_json::from_slice(
             &fs::read(run.join("rollout-summary.json"))?,
@@ -1550,7 +1560,7 @@ fn run_campaign_mission(
         return Err(invalid("campaign mission is still locked").into());
     }
     let mut number = 0_u64;
-    launch_catalog_battle(&catalog, entry, root, &progress,
+    launch_catalog_battle(&catalog, entry, root,
         output_root, &mut number, false).map(|_| ())
 }
 
@@ -1675,7 +1685,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         };
         let entry = &catalog.battles[index];
         let result = launch_catalog_battle(
-            &catalog, entry, root, &progress, output_root, &mut number, true,
+            &catalog, entry, root, output_root, &mut number, true,
         );
         if entry.mission.is_some() { progress = catalog.load_progress(output_root)?; }
         launch_failed = result.is_err();
