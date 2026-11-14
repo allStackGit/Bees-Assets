@@ -729,6 +729,29 @@ impl BattleCatalog {
                 record(&rematch, &mut progress)?;
             }
         }
+        let mut created_ids = HashSet::new();
+        for created_dir in numbered_directories(output, "squad-")? {
+            let bytes = match fs::read(created_dir.join("squad.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let creation: CampaignSquadCreation = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("invalid SavedSquad creation: {error}")))?;
+            let squad = creation.squad;
+            if creation.campaign_id != *campaign ||
+                !matches!(squad.side, 1 | 2) || squad.saved_squad_id <= 0 ||
+                squad.saved_squad_id == i64::MAX ||
+                squad.template_saved_squad_id <= 0 ||
+                squad.template_saved_squad_id == squad.saved_squad_id ||
+                !created_ids.insert(squad.saved_squad_id) ||
+                progress.squads.get(&squad.saved_squad_id)
+                    .is_some_and(|record| record.side != squad.side)
+            {
+                return Err(invalid("campaign created an invalid or duplicated SavedSquad"));
+            }
+            progress.created_squads.push(squad);
+        }
         let mut purchased_ids = HashSet::new();
         for build in numbered_directories(output, "build-")? {
             let bytes = match fs::read(build.join("purchase.json")) {
@@ -906,6 +929,13 @@ impl BattleCatalog {
                 "unlocked_after": shop.unlocked_after,
             })).collect::<Vec<_>>(),
             "squad_transfers": progress.transfer_count,
+            "created_squads": progress.created_squads.iter().map(|squad| json!({
+                "saved_squad_id": squad.saved_squad_id,
+                "template_saved_squad_id": squad.template_saved_squad_id,
+                "side": squad.side,
+                "deployed": progress.squads.get(&squad.saved_squad_id)
+                    .is_some_and(|row| row.battles_fought > 0),
+            })).collect::<Vec<_>>(),
             "original_fleet_transfers": progress.authored_transfer_count,
             "original_roster_overrides": progress.authored_roster_for_all(),
             "purchased_ships": progress.purchases.iter().map(|(side, ship)| json!({
