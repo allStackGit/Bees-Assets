@@ -4329,6 +4329,109 @@ class ExperimentHub {
         this.commit(next);
         return copy(job);
     }
+    // One atomic, machine-pinned allocation of a Courier policy population.
+    // Sidecar hosts own their leases; no native process starts here. Only
+    // complete PPO lineages migrate across machines, never a live rollout
+    // buffer, incomplete update or learner-owned checkpoint publication.
+    queueDistributedCourier(value) {
+        if(!object(value)||value.confirm_queue!==true||
+            Object.keys(value).some(k=>!['confirm_queue','learner','lineages'].includes(k))||
+            !object(value.learner)||
+            Object.keys(value.learner).some(k=>
+                !['configuration_id','expected_revision','machine_id','resources','metric_selection'].includes(k))||
+            !ID.test(String(value.learner.machine_id||''))||
+            !Array.isArray(value.lineages)||value.lineages.length<1||
+            value.lineages.length>16)
+            throw Error('Confirm a saved Courier learner and 1–16 separately leased remote policy machines.');
+        const snapshot=this.snapshot();
+        const machines=new Map(snapshot.machines.map(host=>[host.id,host]));
+        const learnerHost=machines.get(value.learner.machine_id);
+        const fingerprint=learnerHost?.courier_remote_key_fingerprint;
+        if(!learnerHost||learnerHost.status!=='connected'||
+            learnerHost.local_executor_enabled!==true||
+            learnerHost.native_preflight_passed!==true||
+            !learnerHost.installed_projects?.includes('courier')||
+            !SHA256.test(String(fingerprint||'')))
+            throw Error('Courier learner must explicitly install and advertise a trusted remote PPO key.');
+        const children=value.lineages.map(selection=>{
+            if(!object(selection)||Object.keys(selection).some(k=>
+                    !['machine_id','resources'].includes(k))||
+                !ID.test(String(selection.machine_id||'')))
+                throw Error('Remote Courier lineages require one machine ID and fixed CPU/RAM budget each.');
+            const host=machines.get(selection.machine_id);
+            const resources=resourceRequest(selection.resources);
+            if(!host||host.id===learnerHost.id||
+                host.status!=='connected'||host.local_executor_enabled!==true||
+                host.native_preflight_passed!==true||
+                !host.installed_projects?.includes('courier_lineage')||
+                !rolloutEndpoint(host.courier_lineage_endpoint)||
+                host.courier_lineage_key_fingerprint!==fingerprint||
+                !Number.isSafeInteger(host.courier_lineage_max_shards)||
+                host.courier_lineage_max_shards<1||
+                resources.gpu_count!==0||
+                resources.ram_mb<128||
+                (host.agent_platform==='linux'&&(
+                    host.execution_capabilities?.cgroup_v2_detected!==true||
+                    !['cpu','memory'].every(t=>
+                        host.execution_capabilities?.cgroup_controllers?.includes(t)))))
+                throw Error('Remote Courier worker must match the learner key, private Tailnet endpoint and CPU/RAM-only native lease.');
+            return {host,resources};
+        });
+        if(new Set(children.map(item=>item.host.id)).size!==children.length||
+            new Set(children.map(item=>item.host.courier_lineage_endpoint)).size!==children.length)
+            throw Error('Each Courier PPO lineage needs a distinct physical machine and endpoint.');
+        const next=copy(this.state);
+        const learner=this.queueIn(next,value.learner);
+        const count=learner.frozen_parameters.workers===undefined
+            ?12:learner.frozen_parameters.workers;
+        if(learner.project_id!=='courier'||learner.status!=='waiting_adapter'||
+            learner.continuation_of_job_id||learner.after_job_id||
+            !Number.isSafeInteger(count)||count<=children.length||count>64)
+            throw Error('Distributed Courier requires a new fixed PPO population with at least one local lineage.');
+        if(learner.resources.gpu_count>count-children.length)
+            throw Error('Remote Courier PPO workers cannot occupy locally leased GPU optimizer slots.');
+        learner.distributed_courier_managed=true;
+        learner.distributed_courier_endpoints=children.map(({host})=>
+            host.courier_lineage_endpoint);
+        learner.distributed_courier_slots=children.map((_,i)=>
+            count-children.length+i);
+        learner.distributed_courier_key_fingerprint=fingerprint;
+        learner.distributed_courier_sidecar_job_ids=[];
+        const learnerLease=this.claimJobIn(next,learner,learnerHost.id,learnerHost);
+        if(!next.projects.some(p=>p.id==='courier_lineage'))
+            next.projects.push({id:'courier_lineage',
+                name:'Courier remote PPO lineage',adapter:'unconfigured',
+                description:'Separately leased, managed on-policy Courier worker',
+                created_at:now()});
+        const sidecars=[],leases=[learnerLease];
+        for(const [index,{host,resources}] of children.entries()) {
+            const created=now(),cfg={
+                id:crypto.randomUUID(),project_id:'courier_lineage',
+                name:'Courier lineage '+learner.distributed_courier_slots[index]+
+                    ' for '+learner.id.slice(-8),
+                parameters:{
+                    learner_job_id:learner.id,
+                    slot:learner.distributed_courier_slots[index],
+                    shards:host.courier_lineage_max_shards,
+                },revision:1,created_at:created,updated_at:created,
+            };
+            next.configurations.push(cfg);
+            const child=this.queueIn(next,{
+                configuration_id:cfg.id,expected_revision:1,resources,
+            });
+            child.release_on_terminal=true;
+            const lease=this.claimJobIn(next,child,host.id,host);
+            learner.distributed_courier_sidecar_job_ids.push(child.id);
+            sidecars.push(child);
+            leases.push(lease);
+        }
+        this.commit(next);
+        return {learner:copy(learner),sidecars:sidecars.map(copy),
+            leases:leases.map(item=>({...copy(item),receipt_fresh:false})),
+            starts_authorized:0,
+            note:'All physical CPU/RAM claims are reserved; separately authorize sidecars before the verified PPO learner Start.'};
+    }
+
     // Atomically reserve fixed resources for independently executable jobs
     // across projects and machines. This is the common *control-plane*
     // foundation for distributed workloads, not a data-plane protocol or a
