@@ -6,7 +6,7 @@
 //! conflated; the common reward coordinator demands the values by ship ID.
 //! One registration per actual source ship, no per-step scans or telemetry.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use bees_gameplay::level_rules::NativeLevelRewardMetadata;
 use bees_sim::rl_shaping::DamageRewardMetadata;
 
@@ -32,6 +32,9 @@ pub enum NativeFleetInventoryError {
 /// until the Level itself is retired.
 pub struct NativeFleetInventory {
     entries: HashMap<i64, NativeFleetShipValue>,
+    /// Fatal losses for the current Level. A successful extraction or
+    /// WarpGate departure is not a persistent fleet death.
+    killed: HashSet<i64>,
 }
 
 impl NativeFleetInventory {
@@ -47,17 +50,22 @@ impl NativeFleetInventory {
                 return Err(NativeFleetInventoryError::DuplicateShip(value.ship_id));
             }
         }
-        Ok(Self { entries })
+        Ok(Self { entries, killed: HashSet::new() })
     }
 
     pub fn get(&self, ship_id: i64) -> Option<NativeFleetShipValue> {
         self.entries.get(&ship_id).copied()
     }
 
+    pub fn was_killed(&self, ship_id: i64) -> bool {
+        self.killed.contains(&ship_id)
+    }
+
     /// Native initial scene composition can omit ships before the Level is
     /// constructed. This removes only the episode-local FleetShip lookup,
     /// never the external player's persistent fleet/account record.
     pub fn omit_initial_ship(&mut self, ship_id: i64) -> bool {
+        self.killed.remove(&ship_id);
         self.entries.remove(&ship_id).is_some()
     }
 
@@ -81,6 +89,7 @@ impl NativeFleetInventory {
     pub fn retire_mined_credit(&mut self, ship_id: i64) {
         if let Some(value) = self.entries.get_mut(&ship_id) {
             value.minerals_mined_this_level = 0;
+            self.killed.insert(ship_id);
         }
     }
 
