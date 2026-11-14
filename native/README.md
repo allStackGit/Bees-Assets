@@ -969,9 +969,13 @@ source digest, model SHA-256, seed offset, partition and process
 allocation. The digest binds source run properties, model routing, seeded
 Levels, scene and Stage JSON values, and the normalized policy-worker
 source, but allows machine-local interpreter, model and output paths to
-differ between Windows and Linux. Previously issued byte-pinned orders
-remain valid only under their original exact-byte contract. The receipt
-also records each
+differ between Windows and Linux. New version-2 work orders also exclude
+per-machine rollout Worlds, process count and physics-worker allocations
+from the shared source digest; those resources are pinned separately in
+each collector's work order. Previously issued portable version-1 orders
+and older byte-pinned orders retain their exact original checks.
+Receipts include both portable digests for in-flight compatibility.
+The receipt also records each
 native executable's SHA-256 for cross-platform diagnostics and rejects
 mixed policy-worker source implementations (with Git CRLF/LF differences
 normalized). These fingerprints do not certify runtime-library parity.
