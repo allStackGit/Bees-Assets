@@ -4731,12 +4731,15 @@ class ExperimentHub {
                 throw Error('Each Courier remote worker must name a different, non-learner machine.');
             const machine=machines.find(m=>m.id===selection.machine_id);
             const budget=resourceRequest(selection.resources);
-            if(budget.ram_mb<128)throw Error('Remote Courier RAM lease must support its PPO process.');
+            if(budget.ram_mb<128||budget.gpu_count>1||
+                budget.gpu_count===1&&budget.gpu_mode!=='exclusive')
+                throw Error('Remote Courier PPO service requires CPU/RAM and at most one exclusive GPU.');
             if(!machine||machine.status!=='connected'||
                 !machine.local_executor_enabled||!machine.native_preflight_passed||
                 !['linux','win32'].includes(machine.agent_platform)||
                 !machine.installed_projects?.includes('courier_remote')||
-                budget.gpu_count!==0||
+                (budget.gpu_count===1&&
+                    !machine.gpu_projects?.includes('courier_remote'))||
                 !rolloutEndpoint(machine.courier_remote_endpoint)||
                 machine.courier_remote_service_key_fingerprint!==key||
                 !approved.includes(machine.courier_remote_endpoint)||
@@ -5482,8 +5485,11 @@ class ExperimentHub {
                 !learner||learner.project_id!=='courier'||
                 learner.distributed_courier_managed!==true||
                 !['waiting_adapter','start_requested','launch_requested','running'].includes(learner.status)||
-                resources.gpu_count!==0||ancestorId!==null||afterId!==null)
-                throw Error('Courier remote service requires a frozen learner, CPU-only lease and approved lineage slot.');
+                (resources.gpu_count!==0&&
+                    (resources.gpu_count!==1||
+                     resources.gpu_mode!=='exclusive'))||
+                ancestorId!==null||afterId!==null)
+                throw Error('Courier remote service requires a frozen learner, CPU/RAM and optional exclusive GPU lease, and approved lineage slot.');
             if(next.jobs.some(j=>j.project_id==='courier_remote'&&
                 j.status!=='cancelled'&&
                 j.frozen_parameters?.learner_job_id===learner.id&&
