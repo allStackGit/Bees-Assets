@@ -1527,6 +1527,29 @@ or an adaptive performance tuner. Leaving it unset preserves the source
 run's existing physics-worker setting (one by default). The Hub reports actual
 `rollout_parallel_physics_rounds`, Stage-serialized arenas and summed worker
 CPU-wall time only when a completed native runner supplies those measurements.
+Cross-machine native collection transport uses the existing private Hub
+agent listener, not a shared network filesystem. On each collector machine,
+enable `EXPERIMENT_HUB_SYNC_ARTIFACTS=1` with its installed
+`bees_native_collect` adapter. Once the collector's native service finishes,
+its approved `rollout-bundle.json`, `events.jsonl`, and `decisions.bin`
+captures are mirrored to the Hub with chunk offsets and verified SHA-256.
+The learner needs a trusted `bees_native` adapter configured with
+`bundleInbox` and frozen `rollout_bundles` entries pinning each completed
+collector job ID and **exact receipt SHA-256**. Before native Start, the
+learner agent fetches only those declared captures over its authenticated
+loopback/SSH-forwarded Hub connection, verifies every file, and atomically
+publishes `bundleInbox/<collector-job-id>/`. A missing, changed, or
+incomplete artifact prevents the learner from starting; subsequent dispatch
+attempts can reuse verified files. No model, checkpoint, executable, or
+arbitrary worker file is accepted by this transport.
+
+The current mirrored-file ceiling is **500 MB per capture** and **5 GB per
+collector job**, with a 2 GB free-space reserve at the Hub and learner.
+Larger captures require a separately qualified transport allocation rather
+than silently truncating the learning input. Collector model weights must
+still be locally installed and pinned; the transport moves completed
+experience only, not arbitrary training binaries.
+
 Existing continuation and collection receipts remain in the same native
 systemd owner ledger and combined CPU/RAM budget as Courier. A native
 Bees GPU learner or collector uses an exclusive one-GPU lease and the adapter's
@@ -2073,8 +2096,8 @@ missing. An optional, authenticated artifact mirror can collect selected
 finished-job text histories without a shared filesystem mount.
 
 Set `EXPERIMENT_HUB_SYNC_ARTIFACTS=1` on a machine already configured with
-`EXPERIMENT_HUB_ENABLE_EXECUTION=1` and an installed Courier or persistent
-TinyBrains adapter. The adapter—not the Hub or a saved configuration—selects
+`EXPERIMENT_HUB_ENABLE_EXECUTION=1` and an installed Courier, persistent
+TinyBrains or native Bees collector adapter. The adapter—not the Hub or a saved configuration—selects
 the job's private artifact directory. After the local native owner reaches a
 terminal state, the agent sends approved log snapshots to the existing
 loopback/SSH-forwarded machine endpoint on port 7149. Heartbeats and native
