@@ -176,6 +176,10 @@ impl CampaignProgress<'_> {
             .ok_or_else(|| invalid("campaign purchases exceed banked minerals"))
     }
 
+    pub fn bank_history_complete(&self) -> bool {
+        self.bank_history_complete
+    }
+
     pub fn highest_fleet_id(&self) -> i64 {
         self.fleet.keys().copied().max().unwrap_or(0)
     }
