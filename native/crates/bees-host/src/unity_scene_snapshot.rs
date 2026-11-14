@@ -952,16 +952,24 @@ impl NativePhysicalScene {
                 squad.saved_squad_id == Some(purchase.saved_squad_id) &&
                 squad.side == player_side && squad.player_permissions.user_controlled
             ).ok_or(invalid("purchased FleetShip requires its authored player SavedSquad"))?;
-            let anchor_id = *self.source_squads[owner].members.first()
-                .ok_or(invalid("purchased ship requires a nonempty authored squad"))?;
-            let anchor = self.entities.iter().find_map(|entity| match entity {
-                NativeAuthoredEntity::Ship(ship) if ship.entity_id == anchor_id =>
-                    Some(ship),
-                _ => None,
-            }).ok_or(invalid("saved squad anchor ship is missing"))?;
-            let anchor_position = anchor.motion.position;
-            let anchor_offset = self.source_formation.get(&anchor_id)
-                .ok_or(invalid("saved squad anchor formation is missing"))?.offset;
+            let (anchor_position, anchor_offset) =
+                if let Some(&anchor_id) = self.source_squads[owner].members.first() {
+                    let anchor = self.entities.iter().find_map(|entity| match entity {
+                        NativeAuthoredEntity::Ship(ship) if ship.entity_id == anchor_id =>
+                            Some(ship),
+                        _ => None,
+                    }).ok_or(invalid("saved squad anchor ship is missing"))?;
+                    (anchor.motion.position, self.source_formation.get(&anchor_id)
+                        .ok_or(invalid("saved squad anchor formation is missing"))?.offset)
+                } else {
+                    // SavedSquad.StartingPosition has a faction-level
+                    // fallback in the original game. Restore an empty
+                    // squad at that exact authored Stage home coordinate
+                    // rather than losing its ID or inventing a collider.
+                    let home = self.starting_positions
+                        .ok_or(invalid("vacant saved squad has no authored Stage home"))?;
+                    (home[(player_side - 1) as usize], Vec2::ZERO)
+                };
             let template = self.entities.iter().find_map(|entity| match entity {
                 NativeAuthoredEntity::Ship(ship)
                     if ship.side == player_side &&
@@ -1248,19 +1256,24 @@ impl NativePhysicalScene {
             let destination = if current_id == 0 { None } else {
                 Some(self.source_squads.iter().position(|squad|
                     squad.saved_squad_id == Some(current_id) &&
-                    squad.side == side && squad.player_permissions.user_controlled &&
-                    !squad.members.is_empty()
+                    squad.side == side && squad.player_permissions.user_controlled
                 ).ok_or(invalid("destination SavedSquad has no available anchor"))?)
             };
             if let Some(index) = destination {
-                let anchor_id = self.source_squads[index].members[0];
-                let anchor_position = self.entities.iter().find_map(|entity| match entity {
-                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == anchor_id =>
-                        Some(ship.motion.position),
-                    _ => None,
-                }).ok_or(invalid("destination squad anchor ship is missing"))?;
-                let anchor_offset = self.source_formation.get(&anchor_id)
-                    .ok_or(invalid("destination squad formation is missing"))?.offset;
+                let (anchor_position, anchor_offset) =
+                    if let Some(&anchor_id) = self.source_squads[index].members.first() {
+                        let position = self.entities.iter().find_map(|entity| match entity {
+                            NativeAuthoredEntity::Ship(ship) if ship.entity_id == anchor_id =>
+                                Some(ship.motion.position),
+                            _ => None,
+                        }).ok_or(invalid("destination squad anchor ship is missing"))?;
+                        (position, self.source_formation.get(&anchor_id)
+                            .ok_or(invalid("destination squad formation is missing"))?.offset)
+                    } else {
+                        let home = self.starting_positions
+                            .ok_or(invalid("vacant destination squad has no authored Stage home"))?;
+                        (home[(side - 1) as usize], Vec2::ZERO)
+                    };
                 let cease_fire = self.source_squads[index].cease_fire;
                 let spacing = family_positions.iter().map(|(_, _, radius)| *radius)
                     .fold(1.0_f32, f32::max) * 3.0;
