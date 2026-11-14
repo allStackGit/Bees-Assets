@@ -100,6 +100,9 @@ pub struct BuildableShip {
     pub player_side: i32,
     pub ship_type: u8,
     pub price_tsv: u64,
+    /// Campaign prerequisites for this class to enter the source shop.
+    #[serde(default)]
+    pub unlocked_after: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -185,6 +188,12 @@ impl CampaignProgress<'_> {
         self.bank_history_complete
     }
 
+    pub fn is_ship_unlocked(
+        &self, shop: &BuildableShip,
+    ) -> bool {
+        shop.unlocked_after.iter().all(|mission| self.completed(mission))
+    }
+
     pub fn highest_fleet_id(&self) -> i64 {
         self.fleet.keys().copied().max().unwrap_or(0)
     }
@@ -265,6 +274,10 @@ impl BattleCatalog {
                 !available.insert((ship.player_side, ship.ship_type)) ||
                 !self.battles.iter().any(|entry| entry.mission.as_ref()
                     .is_some_and(|mission| mission.player_side == ship.player_side)) ||
+                ship.unlocked_after.iter().any(|required|
+                    !self.battles.iter().any(|entry| entry.mission.as_ref()
+                        .is_some_and(|mission| mission.player_side == ship.player_side &&
+                            mission.id == *required))) ||
                 self.battles.iter().filter_map(|entry| entry.mission.as_ref())
                     .any(|mission| mission.player_side == ship.player_side &&
                         (!mission.record_fleet_stats || !mission.persist_fleet_losses))
@@ -316,6 +329,7 @@ impl BattleCatalog {
             entry.player_side == player_side && entry.ship_type == ship_type
         ).ok_or_else(|| invalid("requested ship type is not unlocked in this campaign shop"))?;
         if !progress.bank_history_complete ||
+            !progress.is_ship_unlocked(shop) ||
             progress.unspent_minerals()? < shop.price_tsv ||
             fleet_ship_id <= 0 || fleet_ship_id <= progress.highest_fleet_id() ||
             saved_squad_id <= 0
@@ -605,6 +619,13 @@ impl BattleCatalog {
             "available_minerals": progress.unspent_minerals().expect("validated account balance"),
             "bank_history_complete": progress.bank_history_complete,
             "max_squad_ships": self.max_squad_ships,
+            "shop": self.buildable_ships.iter().map(|shop| json!({
+                "player_side": shop.player_side,
+                "ship_type": shop.ship_type,
+                "price_tsv": shop.price_tsv,
+                "unlocked": progress.is_ship_unlocked(shop),
+                "unlocked_after": shop.unlocked_after,
+            })).collect::<Vec<_>>(),
             "purchased_ships": progress.purchases.iter().map(|(side, ship)| json!({
                 "player_side": side,
                 "fleet_ship_id": ship.fleet_ship_id,
