@@ -515,6 +515,11 @@ function createNativeBeesAdapter({
             }
             if (!gpu && inputs.requiresGpuInference)
                 throw Error('Native Bees GPU inference requires an exclusive GPU lease.');
+            // Collect-only jobs run no optimizer. A GPU lease cannot help a
+            // manifest whose every inference model is CPU-bound, so refuse
+            // that placement rather than silently wasting the assigned GPU.
+            if (collectOnly && gpu && !inputs.requiresGpuInference)
+                throw Error('Native Bees GPU collection requires a GPU-pinned inference model.');
             if (context.continuation_of_job_id &&
                 context.expected_parent_model_sha256 !== inputs.checkpointDigest)
                 throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
