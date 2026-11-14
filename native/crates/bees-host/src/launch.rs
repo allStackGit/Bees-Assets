@@ -1203,7 +1203,9 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             BattleMenuRow { title: entry.title.trim(), status, unlocked }
         }).collect::<Vec<_>>();
         let fleet_rows = progress.fleet_rows();
-        let Some(index) = select_battle(&rows, &mut selected, launch_failed, &fleet_rows)?
+        let squad_rows = progress.squad_rows();
+        let Some(index) = select_battle(&rows, &mut selected, launch_failed,
+            &fleet_rows, &squad_rows)?
             else { break };
         let entry = &catalog.battles[index];
         let result = launch_catalog_battle(
