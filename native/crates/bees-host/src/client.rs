@@ -107,6 +107,9 @@ pub struct NativeClient {
     /// CPU software rendering time.
     pub window_update_wall_seconds: f64,
     pub culled_ship_draws: u64,
+    pub ship_sprite_draws: u64,
+    pub ship_fallback_hulls: u64,
+    pub ship_art_types_loaded: usize,
     pub culled_obstacle_draws: u64,
     pub culled_projectile_draws: u64,
     pub culled_piece_draws: u64,
@@ -157,7 +160,9 @@ impl NativeClient {
             max_steps_per_frame: 0, pacing_lag_clamps: 0,
             rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
-            culled_ship_draws: 0, culled_obstacle_draws: 0,
+            culled_ship_draws: 0, ship_sprite_draws: 0,
+            ship_fallback_hulls: 0, ship_art_types_loaded: 0,
+            culled_obstacle_draws: 0,
             culled_projectile_draws: 0, culled_piece_draws: 0,
             weapon_geometry_queries: 0, weapon_range_candidates_culled: 0,
             viewport_resizes: 0,
@@ -1126,6 +1131,9 @@ impl NativeClient {
             (width as u64).saturating_mul(height as u64)
         );
         self.culled_ship_draws = self.culled_ship_draws.saturating_add(counts.culled_ships as u64);
+        self.ship_sprite_draws = self.ship_sprite_draws.saturating_add(counts.ship_sprite_draws as u64);
+        self.ship_fallback_hulls = self.ship_fallback_hulls.saturating_add(counts.ship_fallback_hulls as u64);
+        self.ship_art_types_loaded = counts.ship_art_types_loaded;
         self.culled_obstacle_draws = self.culled_obstacle_draws.saturating_add(counts.culled_obstacles as u64);
         self.culled_projectile_draws = self.culled_projectile_draws.saturating_add(counts.culled_projectiles as u64);
         self.culled_piece_draws = self.culled_piece_draws.saturating_add(counts.culled_pieces as u64);

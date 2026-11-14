@@ -90,6 +90,11 @@ impl NativeCamera {
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct NativeRenderCounts {
     pub ships: usize,
+    /// Source PNG sprites rendered instead of the fallback hull outline.
+    pub ship_sprite_draws: usize,
+    pub ship_fallback_hulls: usize,
+    /// Loaded source-art types, not the number of active ship entities.
+    pub ship_art_types_loaded: usize,
     pub obstacles: usize,
     pub culled_ships: usize,
     pub culled_obstacles: usize,
@@ -237,6 +242,108 @@ impl SpriteAtlas {
         assert!(rest.is_empty() && count > 0 && pixels_per_unit > 0.0);
         Self { pixels_per_unit, sprites }
     }
+}
+
+const SOURCE_SHIP_TYPES: usize = 24;
+
+struct SourceShipArt {
+    pixels_per_unit: f32,
+    sprite: NativeSprite,
+}
+
+/// The conversion format is deliberately small and independently validated.
+/// A malformed or absent optional artwork file can never change combat or
+/// prevent the tactical client from rendering its physical hull fallback.
+struct SourceShipAtlas {
+    sprites: [Option<SourceShipArt>; SOURCE_SHIP_TYPES],
+    loaded: usize,
+}
+
+impl SourceShipAtlas {
+    fn decode(bytes: &[u8]) -> io::Result<Self> {
+        let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+            "invalid native ship sprite atlas");
+        if bytes.get(..4) != Some(&b"BSS1"[..]) { return Err(invalid()); }
+        let mut at = 4usize;
+        let read_u16 = |at: &mut usize| -> Option<usize> {
+            let raw = bytes.get(*at..at.checked_add(2)?)?;
+            *at += 2;
+            Some(usize::from(u16::from_le_bytes([raw[0], raw[1]])))
+        };
+        let count = read_u16(&mut at).ok_or_else(invalid)?;
+        if count > SOURCE_SHIP_TYPES { return Err(invalid()); }
+        let mut sprites = std::array::from_fn(|_| None);
+        for _ in 0..count {
+            let ty = usize::from(*bytes.get(at).ok_or_else(invalid)?);
+            at += 1;
+            let ppu = read_u16(&mut at).ok_or_else(invalid)?;
+            let width = read_u16(&mut at).ok_or_else(invalid)?;
+            let height = read_u16(&mut at).ok_or_else(invalid)?;
+            if ty >= SOURCE_SHIP_TYPES || sprites[ty].is_some() ||
+                ppu == 0 || width == 0 || height == 0 ||
+                width > 2048 || height > 2048
+            {
+                return Err(invalid());
+            }
+            let expected = width.checked_mul(height)
+                .and_then(|pixels| pixels.checked_mul(4))
+                .ok_or_else(invalid)?;
+            let mut pixels = Vec::with_capacity(expected);
+            while pixels.len() < expected {
+                let run = bytes.get(at..at.checked_add(6).ok_or_else(invalid)?)
+                    .ok_or_else(invalid)?;
+                at += 6;
+                let length = usize::from(u16::from_le_bytes([run[0], run[1]]));
+                let bytes_to_write = length.checked_mul(4).ok_or_else(invalid)?;
+                if length == 0 || pixels.len() + bytes_to_write > expected {
+                    return Err(invalid());
+                }
+                for _ in 0..length { pixels.extend_from_slice(&run[2..6]); }
+            }
+            sprites[ty] = Some(SourceShipArt {
+                pixels_per_unit: ppu as f32,
+                sprite: NativeSprite { width, height, pixels },
+            });
+        }
+        if at != bytes.len() { return Err(invalid()); }
+        Ok(Self { sprites, loaded: count })
+    }
+}
+
+/// Load once on first render, never from the gameplay or training hot path.
+/// For packaged clients put the generated atlas in assets/ beside bees(.exe),
+/// or set BEES_NATIVE_ASSETS to its directory. Checkout-local paths are
+/// conveniences for Windows and Linux development without a build step.
+fn source_ship_art() -> Option<&'static SourceShipAtlas> {
+    static ATLAS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| {
+        let requested = std::env::var_os("BEES_NATIVE_ASSETS")
+            .map(|dir| std::path::PathBuf::from(dir).join("ship-sprites.rgba"));
+        let mut candidates = Vec::new();
+        if let Some(requested) = requested {
+            candidates.push(requested);
+        } else {
+            candidates.push(std::path::PathBuf::from("native/assets/ship-sprites.rgba"));
+            candidates.push(std::path::PathBuf::from("assets/ship-sprites.rgba"));
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(parent) = exe.parent() {
+                    candidates.push(parent.join("assets/ship-sprites.rgba"));
+                }
+            }
+            candidates.push(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets/ship-sprites.rgba"));
+        }
+        let Some(path) = candidates.into_iter().find(|path| path.is_file()) else {
+            return None;
+        };
+        match std::fs::read(&path).and_then(|bytes| SourceShipAtlas::decode(&bytes)) {
+            Ok(atlas) => Some(atlas),
+            Err(error) => {
+                eprintln!("Ignoring invalid native ship artwork at {}: {error}", path.display());
+                None
+            }
+        }
+    }).as_ref()
 }
 
 fn fire_tank_debris_atlas() -> &'static SpriteAtlas {
@@ -686,6 +793,8 @@ impl NativeSoftwareRenderer {
             self.cross(position, 1.0, c * 0x010101);
         }
         self.render_obstacle_debris(view, &mut counts);
+        let ship_art = source_ship_art();
+        counts.ship_art_types_loaded = ship_art.map_or(0, |atlas| atlas.loaded);
         self.command_target_ship_ids.clear();
         for &owner in self.selection.squads() {
             let Some(selection) = view.commands.current_selection(owner) else { continue };
@@ -722,9 +831,29 @@ impl NativeSoftwareRenderer {
                 continue;
             }
             let color = side_color(ship.side);
-            self.shape(body.shape(), Pose { position: body.motion.position,
-                rotation_degrees: body.motion.rotation_degrees }, color);
-            self.cross(body.motion.position, 1.5, color);
+            let pose = Pose { position: body.motion.position,
+                rotation_degrees: body.motion.rotation_degrees };
+            // Only presentation pixels change: the exact ship collider is
+            // still used for collision, selection, range and fog. The
+            // source PNG's own Unity PPU controls its rendered world size.
+            let drew_art = ship_art
+                .and_then(|atlas| atlas.sprites.get(usize::from(ship.ship_type)))
+                .and_then(Option::as_ref)
+                .is_some_and(|art| self.draw_sprite(
+                    &art.sprite, pose.position, pose.rotation_degrees.to_radians(),
+                    self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
+                ));
+            if drew_art {
+                counts.ship_sprite_draws += 1;
+            } else {
+                counts.ship_fallback_hulls += 1;
+            }
+            // Keep geometry visible for selected ships and when artwork
+            // is absent; do not redraw outlines over every rendered sprite.
+            if !drew_art || selected_ship {
+                self.shape(body.shape(), pose, color);
+                self.cross(body.motion.position, 1.5, color);
+            }
             let (x, y) = self.project(body.motion.position);
             if view.survival.is_some_and(|survival| survival.protected_ship_id == ship.entity_id) {
                 let marker = 0xffd873;
