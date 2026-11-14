@@ -424,7 +424,7 @@ function createNativeBeesAdapter({
                         'collection_id', 'rollout_world_start', 'rollout_worlds',
                         'bundle_directory', 'source_run_contract_sha256']
                     : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers',
-                        'physics_workers', 'refresh_opponent_slot'];
+                        'physics_workers', 'rollout_worlds', 'refresh_opponent_slot'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
                 (bundleRound && seed_offset !== 0))
@@ -458,8 +458,7 @@ function createNativeBeesAdapter({
                         source_run_contract_sha256 !== sourceContract))
             ))
                 throw Error('Native distributed work order needs an exact ID, bounded World window and safe inbox name.');
-            const activeWorlds = collectOnly && rollout_worlds !== undefined
-                ? rollout_worlds : config.rollout_worlds ?? config.levels?.length;
+            const activeWorlds = rollout_worlds ?? config.rollout_worlds ?? config.levels?.length;
             const activeWorkers = rollout_workers ?? config.rollout_workers ?? 1;
             // Rollout processes each retain a model worker and run their
             // own shared physical CPU pool. Both dimensions consume the
@@ -475,7 +474,8 @@ function createNativeBeesAdapter({
                     activePhysicsWorkers < 1 || activePhysicsWorkers > 128 ||
                     activeWorkers * activePhysicsWorkers > context.cpu_quota ||
                     !Number.isSafeInteger(activeWorlds) ||
-                    activeWorkers < 1 || activeWorkers > activeWorlds))
+                    activeWorlds < 1 || activeWorlds > 1024 ||
+                    activeWorkers > activeWorlds))
                 throw Error('Effective rollout processes and per-process physics threads must fit the fixed Hub CPU quota and allocated World count.');
             for (const [file, digest] of pins) {
                 if (sha256(fs.readFileSync(file)) !== digest)
@@ -529,6 +529,8 @@ function createNativeBeesAdapter({
                     ['--torch-threads', String(optimizer_threads)]),
                 ...(rollout_workers === undefined ? [] :
                     ['--rollout-workers', String(rollout_workers)]),
+                ...(rollout_worlds === undefined || collectOnly && collection_id !== undefined ? [] :
+                    ['--rollout-worlds', String(rollout_worlds)]),
                 ...(physics_workers === undefined ? [] :
                     ['--physics-workers', String(physics_workers)]),
                 '--seed-offset', String(seed_offset),
