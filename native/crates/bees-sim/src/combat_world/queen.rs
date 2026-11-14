@@ -176,6 +176,10 @@ impl CombatWorld {
         let spawn_position = Pose {
             position: motion.position, rotation_degrees: motion.rotation_degrees,
         }.transform_point(runtime.spec.spawn_point);
+        // Unity's minion Ship.Setup inherits the new Squad's human
+        // ownership. Do not leave a player Queen's offspring as
+        // automated-only physical ships in the shared world.
+        let user_controlled = motion.user_controlled;
         let id = self.next_entity_id;
         let weapon_id = id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
         if weapon_id == i64::MAX {
@@ -187,6 +191,8 @@ impl CombatWorld {
             spawn_position, minion.spawn_rotation_degrees, minion.rotation_speed,
             minion.base_speed, minion.height,
         );
+        let mut minion_motion = minion_motion;
+        minion_motion.user_controlled = user_controlled;
         self.spawn_ship(&minion.asset, id, side, minion.vitals, minion_motion)?;
         self.configure_ship_game_movement(id, minion.movement)?;
         self.configure_game_ship_original_health(id, minion.original_health)?;
