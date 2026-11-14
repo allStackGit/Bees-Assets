@@ -2986,6 +2986,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 j.distributed_rollout_managed===true
                 ?state.jobs.filter(worker=>worker.project_id==='tinybrains_rollout'&&
                     worker.frozen_parameters?.learner_job_id===j.id):[];
+            const courierGroupWorkers=j.project_id==='courier'&&
+                j.distributed_courier_managed===true
+                ?(j.distributed_courier_sidecar_job_ids||[]).map(id=>
+                    state.jobs.find(worker=>worker.id===id)).filter(Boolean):[];
+            const courierLaunch=(state.courier_launches||[])
+                .filter(plan=>plan.learner_job_id===j.id).at(-1);
+            const courierGroupSummary=courierGroupWorkers.length
+                ?' · Remote PPO lineages: '+courierGroupWorkers.map(worker=>
+                    'slot '+worker.frozen_parameters?.slot+' on '+
+                    (worker.assigned_machine_id||'unknown')+' '+worker.status).join('; ')+
+                  (courierLaunch?' · Group Start '+courierLaunch.status+
+                    ': '+courierLaunch.reason:'')
+                :'';
             const scheduledGroup=(state.distributed_group_plans||[])
                 .filter(plan=>plan.learner_job_id===j.id).at(-1);
             const unresolvedScheduledGroup=scheduledGroup&&
@@ -3015,7 +3028,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
                 :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+launchText+scheduleText+abortText+bundleLabel+
+                checkpointRecovery+noTrainer+distributedSummary+courierGroupSummary+
+                launchText+scheduleText+abortText+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
@@ -3265,7 +3279,54 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){feedback('hub-job-message',error.message);}
                     await reload();
                 }));
-            if(j.status==='waiting_adapter'&&readiness?.eligible===true)
+            if(j.project_id==='courier'&&j.distributed_courier_managed===true&&
+                j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&courierGroupWorkers.length&&
+                !courierLaunch&&courierGroupWorkers.every(worker=>
+                    worker.status==='waiting_adapter'&&!worker.dispatch_id&&
+                    worker.native_start_readiness?.eligible===true)) {
+                actions.append(button('Start coordinated Courier group',async()=>{
+                    const cpus=courierGroupWorkers.reduce((n,w)=>n+w.resources.cpus,0);
+                    if(!confirm('Authorize '+courierGroupWorkers.length+
+                        ' remote Courier PPO services on fixed machine leases ('+
+                        cpus+' remote CPUs)? The learner Start is separately gated on all '+
+                        'native services reporting running with matching agent/lease/key identities. '+
+                        'This approval expires after 20 minutes and is disarmed on coordinator restart.'))return;
+                    try {
+                        const result=await action('hub/distributed/courier/start-sidecars',{
+                            learner_job_id:j.id,
+                            expected_sidecar_job_ids:
+                                j.distributed_courier_sidecar_job_ids.slice(),
+                            confirm_start:true,confirm_learner_start:true,
+                        });
+                        feedback('hub-job-message',result.sidecar_starts_authorized+
+                            ' native Courier sidecar Starts authorized; learner awaiting verified owners.');
+                    }catch(error){
+                        feedback('hub-job-message',String(error.message||error));
+                    }
+                    await reload();
+                }));
+            }
+            if(j.project_id==='courier'&&j.distributed_courier_managed===true&&
+                j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&courierGroupWorkers.length)
+                actions.append(button('Abort Courier startup',async()=>{
+                    if(!confirm('Abort the unstarted Courier learner and revoke any pending '+
+                        'remote PPO Starts? Services that may have launched receive native Stop. '+
+                        'All original machine claims remain held until verified termination.'))return;
+                    try {
+                        await action('hub/distributed/courier/abort-startup',{
+                            learner_job_id:j.id,confirm_abort:true,
+                        });
+                        feedback('hub-job-message',
+                            'Courier group aborted; remote native Stop/reconciliation pending.');
+                    }catch(error){
+                        feedback('hub-job-message',String(error.message||error));
+                    }
+                    await reload();
+                }));
+            if(j.status==='waiting_adapter'&&readiness?.eligible===true&&
+                !j.distributed_courier_managed&&j.project_id!=='courier_lineage')
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
                     const gpu=j.resources.gpu_count>0;
