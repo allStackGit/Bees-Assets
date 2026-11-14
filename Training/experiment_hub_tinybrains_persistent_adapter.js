@@ -77,7 +77,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_prefetch_overlap_seconds',
         'optimization_seconds','checkpoint_seconds',
         'remote_collector_join_wait_seconds','collection_merge_seconds',
-        'overlap_seconds','remote_policy_snapshot_seconds',
+        'overlap_seconds','local_gpu_join_wait_seconds',
+        'local_gpu_wait_after_local_max_seconds',
+        'remote_policy_snapshot_seconds',
         'remote_policy_shared_encode_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
@@ -117,6 +119,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'local_gpu_collector_count',
+        'local_gpu_collectors_pending_at_local_end',
+        'local_gpu_collectors_ready_at_local_end',
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_next_update',
@@ -265,6 +270,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_opponent_readbacks',
             worker.rollout_opponent_readbacks,'count');
         add('collector_'+i+'_action_target',worker.action_target,'count');
+        // Only a verified HIP ordinal/physical PCI mapping may identify
+        // the operator's leased GPU in host observations and comparisons.
+        if(worker.mode==='local_gpu') {
+            add('collector_'+i+'_gpu_ordinal',worker.gpu_ordinal,'count');
+            add('collector_'+i+'_gpu_lease_index',worker.gpu_lease_index,'count');
+        }
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
