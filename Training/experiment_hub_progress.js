@@ -98,7 +98,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_gpu_stream_work_share',
             'remote_policy_shared_collectors',
             'remote_policy_shared_encode_seconds',
-            'remote_policy_shared_bytes'])
+            'remote_policy_shared_bytes',
+            'local_gpu_collector_count',
+            'local_gpu_join_wait_seconds',
+            'local_gpu_collectors_pending_at_local_end'])
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
