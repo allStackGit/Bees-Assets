@@ -148,7 +148,11 @@ class LocalExecution {
                             :{gpu_pci_address:lease.gpu_bindings[0].pci_address}),
                     }));
                 const result=await this.supervisor.qualifyGpuDeviceAccess(
-                    lease.gpu_bindings,{...runtime,ram_mb:job.resources.ram_mb});
+                    lease.gpu_bindings,{...runtime,ram_mb:job.resources.ram_mb,
+                        // Select the already installed physical owner.
+                        // The project comes from the authenticated leased
+                        // job, never from the GPU probe's executable path.
+                        project_id:job.project_id});
                 if(!Array.isArray(result?.selected)||
                     result.selected.length!==count||
                     result.selected.some((pci,i)=>
