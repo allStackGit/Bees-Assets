@@ -10,6 +10,7 @@ const SHA=/^[0-9a-f]{64}$/;
 const MAX_CHUNK=1024*1024;
 const MAX_FILE=500000000;
 const MAX_FILES=256;
+const MAX_COLLECTOR_FILES=1024;
 const MAX_JOB=5000000000;
 const FREE_SPACE_RESERVE=2_000_000_000n;
 const SUFFIXES=new Set(['.json','.jsonl','.ndjson','.csv','.tsv','.txt','.log']);
@@ -134,6 +135,8 @@ class ArtifactMirror {
             parts[parts.length-1]);
         const key=crypto.createHash('sha256').update(relative).digest('hex');
         return {storage,staging,destination,
+            fileLimit:job.project_id==='bees_native_collect'
+                ?MAX_COLLECTOR_FILES:MAX_FILES,
             metaFile:path.join(staging,key+'.json'),
             partFile:path.join(staging,key+'.part'),relative,sha,size,jobId};
     }
@@ -159,7 +162,7 @@ class ArtifactMirror {
                 fail('Invalid artifact budget metadata.',409);
             if(name!==path.basename(info.metaFile)){size+=meta.size;count++;}
         }
-        if(count>=MAX_FILES||size+info.size>MAX_JOB)
+        if(count>=info.fileLimit||size+info.size>MAX_JOB)
             fail('Job artifact storage limit reached.',413);
     }
     async finalize(info) {
