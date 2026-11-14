@@ -516,6 +516,9 @@ pub struct NativeRuntimeStatus {
     /// not only player buttons. They reset on episode recycling and must
     /// never be interpreted as host-lifetime counter deltas.
     pub special_scout_beacons_spawned: u64,
+    /// Source-timed Queen waves from the same shared CombatWorld.
+    /// Episode-local observations, never monotonic host-wide deltas.
+    pub queen_spawning: bees_sim::combat_world::QueenSpawnMeasurements,
     pub special_fire_barge_self_detonations: u64,
     pub special_game_barge_charges_started: u64,
     pub special_game_barge_charge_hits: u64,
@@ -1215,6 +1218,7 @@ impl NativeLevelBatchDriver {
             spatial_grid_active_buckets: 0,
             spatial_grid_retained_buckets: 0,
             special_scout_beacons_spawned: 0,
+            queen_spawning: Default::default(),
             special_fire_barge_self_detonations: 0,
             special_game_barge_charges_started: 0,
             special_game_barge_charge_hits: 0,
@@ -1291,6 +1295,9 @@ impl NativeLevelBatchDriver {
             let policy_specials = world.state.combat.policy_special_measurements();
             let game_barges = world.state.combat.game_barge_measurements();
             status.special_scout_beacons_spawned += policy_specials.scout_beacons_spawned;
+            status.queen_spawning.merge(
+                world.state.combat.queen_spawn_measurements(),
+            );
             status.special_fire_barge_self_detonations += policy_specials.fire_barge_detonations;
             status.special_game_barge_charges_started += game_barges.starts;
             status.special_game_barge_charge_hits += game_barges.hits;
