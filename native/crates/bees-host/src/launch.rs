@@ -2719,6 +2719,10 @@ fn run_battle(
     let mut next_status_round = status_every_rounds;
     #[cfg(feature = "client")]
     let mut user_closed = false;
+    #[cfg(feature = "client")]
+    let mut client_step_budget = 1_u32;
+    #[cfg(not(feature = "client"))]
+    let client_step_budget = 1_u32;
     #[cfg(not(feature = "client"))]
     let user_closed = false;
     // A world may finish before other arenas and remain paused at a
@@ -2861,7 +2865,9 @@ fn run_battle(
             match action {
                 Ok(bees_host::client::NativeClientAction::Wait |
                     bees_host::client::NativeClientAction::WorldChanged) => continue,
-                Ok(bees_host::client::NativeClientAction::Step) => {},
+                Ok(bees_host::client::NativeClientAction::Step) => {
+                    client_step_budget = client.pending_steps();
+                },
                 Ok(bees_host::client::NativeClientAction::Input { action: input, step }) => {
                     match apply_player_input(&mut host, input) {
                         Ok(feedback) => client.report_move(feedback),
@@ -2871,6 +2877,7 @@ fn run_battle(
                         },
                     }
                     if !step { continue; }
+                    client_step_budget = client.pending_steps();
                 },
                 Ok(bees_host::client::NativeClientAction::Quit) => { user_closed = true; break; },
                 Err(error) => { failed_window = Some(format!("native window: {error}")); break; },
@@ -2895,8 +2902,14 @@ fn run_battle(
                 }
             }
         } else { u64::MAX };
-        let count = nonzero(remaining.min(source_pulse_limit)
-            .min(u64::from(if view || playback.is_some() { 1 } else { window.get() })) as u32, "window")?;
+        // Player traces require their bitwise checkpoints at exact 64-round
+        // boundaries. A catch-up batch must not skip across one. All other
+        // interactive rounds still run the ordinary fixed-step host pipeline.
+        let checkpoint_limit = if input_trace.is_some() { 64 - rounds % 64 } else { u64::MAX };
+        let count = nonzero(remaining.min(source_pulse_limit).min(checkpoint_limit)
+            .min(u64::from(if view || playback.is_some() {
+                client_step_budget
+            } else { window.get() })) as u32, "window")?;
         let physical_result = if !view && playback.is_none() &&
             physical_workers.get() > 1 && config.levels.len() > 1
         {
@@ -2915,6 +2928,10 @@ fn run_battle(
             }
         };
         rounds += u64::from(counts.rounds);
+        #[cfg(feature = "client")]
+        if let Some(client) = &mut client {
+            client.commit_steps(counts.rounds, client_fixed_dt_by_level[client.selected_world()]);
+        }
         successful_world_steps += counts.world_steps as u64;
         successful_policy_rows += counts.policy_rows as u64;
         parallel_physics_rounds += u64::from(counts.parallel_physics_rounds);
@@ -3603,6 +3620,10 @@ fn run_battle(
     if let Some(client) = &client {
         println!("{}", json!({ "kind": "presentation_final", "run_id": config.run_id,
             "rendered_frames": client.rendered_frames,
+            "fixed_steps_executed": client.fixed_steps_executed,
+            "multi_step_frames": client.multi_step_frames,
+            "max_steps_per_frame": client.max_steps_per_frame,
+            "pacing_lag_clamps": client.pacing_lag_clamps,
             "rendered_pixels": client.rendered_pixels,
             "render_wall_seconds": client.render_wall_seconds,
             "ui_wall_seconds": client.ui_wall_seconds,

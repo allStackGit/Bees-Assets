@@ -65,6 +65,8 @@ pub struct NativeClient {
     /// Source per-Level Map.MinZoom/MaxZoom. No gameplay-state copy.
     source_zoom_by_world: Vec<Option<(f32, f32)>>,
     next_step: Instant,
+    /// Fixed ticks approved for the current client frame, not yet executed.
+    pending_steps: u32,
     previous_frame: Instant,
     left_was_down: bool,
     right_was_down: bool,
@@ -93,6 +95,10 @@ pub struct NativeClient {
     shooting_focus: u8,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
+    pub fixed_steps_executed: u64,
+    pub multi_step_frames: u64,
+    pub max_steps_per_frame: u32,
+    pub pacing_lag_clamps: u64,
     /// Total software framebuffer pixels actually drawn across changing sizes.
     pub rendered_pixels: u64,
     pub render_wall_seconds: f64,
@@ -135,7 +141,7 @@ impl NativeClient {
         Ok(Self { window, renderer, bounds, selected_world: 0, selection_owner: None,
             paused: false, edge_scroll_enabled: false,
             source_zoom_by_world: Vec::new(),
-            next_step: now, previous_frame: now, left_was_down: false,
+            next_step: now, pending_steps: 0, previous_frame: now, left_was_down: false,
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
             input_feedback: "",
             result_controls: None,
@@ -147,7 +153,9 @@ impl NativeClient {
             selection_drag: None, minimap_dragging: false,
             hud_press: None, squad_tab_press: None, shooting_press: None,
             shooting_focus: 1, support_mode: None,
-            rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
+            rendered_frames: 0, fixed_steps_executed: 0, multi_step_frames: 0,
+            max_steps_per_frame: 0, pacing_lag_clamps: 0,
+            rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, culled_obstacle_draws: 0,
             culled_projectile_draws: 0, culled_piece_draws: 0,
@@ -237,6 +245,25 @@ impl NativeClient {
 
     pub fn selected_world(&self) -> usize { self.selected_world }
 
+    pub fn pending_steps(&self) -> u32 { self.pending_steps }
+
+    /// Commit only ticks actually executed by the common simulation. Model
+    /// boundaries, source command pulses and trace checkpoints can shorten
+    /// a frame's planned catch-up without losing the remaining clock debt.
+    pub fn commit_steps(&mut self, executed: u32, fixed_dt: Duration) {
+        debug_assert!(executed > 0 && executed <= self.pending_steps);
+        if self.paused {
+            // Explicit N stepping must not accumulate realtime clock debt.
+            self.next_step = Instant::now();
+        } else {
+            self.next_step += fixed_dt.saturating_mul(executed);
+        }
+        self.fixed_steps_executed += u64::from(executed);
+        self.multi_step_frames += u64::from(executed > 1);
+        self.max_steps_per_frame = self.max_steps_per_frame.max(executed);
+        self.pending_steps = 0;
+    }
+
     pub fn viewport_size(&self) -> (usize, usize) { self.renderer.size() }
 
     pub fn report_move(&mut self, feedback: &'static str) { self.input_feedback = feedback; }
@@ -263,6 +290,7 @@ impl NativeClient {
     pub fn poll(
         &mut self, view: NativeRenderWorldView<'_>, bounds: Aabb, world_count: usize, fixed_dt: Duration,
     ) -> Result<NativeClientAction, Box<dyn std::error::Error>> {
+        self.pending_steps = 0;
         if !self.window.is_open() {
             return Ok(NativeClientAction::Quit);
         }
@@ -1129,13 +1157,24 @@ impl NativeClient {
             if let Some(action) = action { return Ok(NativeClientAction::Input { action, step: false }); }
         }
         let after_frame = Instant::now();
-        let step = !briefing && (single_step || (!self.paused && after_frame >= self.next_step));
-        if step {
-            // At most one authoritative step per poll. A slow inference or
-            // render pass slows playback instead of changing dt or skipping
-            // battle ticks. Preserve fractional pacing when running on time.
-            self.next_step = (self.next_step + fixed_dt).max(after_frame);
+        // Render and fixed-tick simulation have independent cadences. Catch
+        // up with no more than four authoritative ticks per drawn frame.
+        // Cap wall-clock debt rather than entering an unbounded catch-up
+        // spiral when rendering, inference or the OS stalls for a long time.
+        const MAX_STEPS_PER_FRAME: u32 = 4;
+        let max_lag = fixed_dt.saturating_mul(MAX_STEPS_PER_FRAME - 1);
+        if !self.paused && after_frame.saturating_duration_since(self.next_step) > max_lag {
+            self.next_step = after_frame.checked_sub(max_lag).unwrap_or(after_frame);
+            self.pacing_lag_clamps += 1;
         }
+        let due = if briefing { 0 } else if single_step { 1 }
+            else if !self.paused && after_frame >= self.next_step {
+                (1 + after_frame.duration_since(self.next_step).as_nanos()
+                    / fixed_dt.as_nanos().max(1))
+                    .min(u128::from(MAX_STEPS_PER_FRAME)) as u32
+            } else { 0 };
+        self.pending_steps = due;
+        let step = due > 0;
         if let Some(action) = held_fire {
             let input = NativePlayerHeldFire { world_id: view.world_id, episode_revision: view.episode_revision, action };
             Ok(NativeClientAction::Input { action: NativePlayerInput::HeldFire(input), step })
