@@ -37,6 +37,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_simulation_idle_shards',
     'training_sim_priority_reorders','training_sim_priority_active_lineages',
     'training_sim_priority_applied_steps',
+    'training_sim_processes','training_sim_migrations',
+    'training_sim_migration_denials','training_sim_migration_owner',
     'training_lineage_priority_reorders','training_lineage_priority_active',
     'training_gpu_optimizer_lineages','training_gpu_optimizer_next_lineages',
     'training_gpu_optimizer_tuner_adjustments',
@@ -108,6 +110,8 @@ function courierMetrics(source) {
         'sim_info_recv_seconds','sim_info_rebuild_seconds',
         'sim_sparse_info_events','sim_shared_transfer_mb','sim_child_cpu_seconds',
         'sim_active_shards','sim_next_shards',
+        'sim_physical_processes','sim_process_migrations',
+        'sim_process_migration_seconds','sim_process_migration_denials',
         'sim_priority_active','sim_priority_reorders',
         'sim_priority_steps',
         'ppo_integrity_seconds',
@@ -141,12 +145,15 @@ function courierMetrics(source) {
         'training_simulation_shards','training_simulation_active_shards',
         'training_sim_priority_reorders','training_sim_priority_active_lineages',
     'training_sim_priority_applied_steps',
+    'training_sim_processes','training_sim_migrations',
+    'training_sim_migration_denials','training_sim_migration_owner',
     'training_lineage_priority_reorders','training_lineage_priority_active',
         'training_gpu_optimizer_lineages','training_gpu_devices_assigned',
         'training_gpu_devices_active','training_ppo_integrity_checks',
         'training_gpu_prefetched_batches','training_gpu_prefetch_active_lineages',
         'training_gpu_prefetch_wait_max_seconds',
         'training_gpu_prefetch_copy_max_seconds',
+        'training_sim_migration_max_seconds',
         'training_info_rebuild_max_seconds','training_sparse_info_events',
         'training_sim_info_rebuild_max_ratio',
         'training_ppo_integrity_max_seconds',...ownerKeys,
@@ -174,7 +181,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             /^training_gpu_device_[0-7]_lineages$/.test(name)||
-            /^worker_[0-9]{1,2}_(?:sim_(?:shards|active_shards|next_shards|priority_active|priority_reorders|priority_steps|sparse_info_events)|gpu_prefetched_batches)$/.test(name))?'count':
+            /^worker_[0-9]{1,2}_(?:sim_(?:shards|active_shards|next_shards|physical_processes|process_migrations|process_migration_denials|priority_active|priority_reorders|priority_steps|sparse_info_events)|gpu_prefetched_batches)$/.test(name))?'count':
             name.endsWith('_mb')?'mb':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
@@ -298,6 +305,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
               capabilities.courier_max_simulation_shards<2||
               capabilities.courier_max_simulation_shards>64||
               capabilities.courier_parallel_worlds!==true))||
+            (capabilities.courier_episode_safe_process_groups!==undefined&&
+             (typeof capabilities.courier_episode_safe_process_groups!=='boolean'||
+              capabilities.courier_episode_safe_process_groups===true&&
+              (capabilities.courier_parallel_worlds!==true||
+               capabilities.courier_auto_active_learners!==true)))||
             (capabilities.courier_gpu_pci_pin===true&&
              capabilities.courier_gpu_optimizer!==true)||
             (capabilities.courier_gpu_multi_optimizer===true&&
