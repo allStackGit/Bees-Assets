@@ -127,7 +127,8 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         ...(job.project_id==='courier'&&
             Array.isArray(job.distributed_courier_endpoints)
             ?{distributed_courier_endpoints:Object.freeze(
-                job.distributed_courier_endpoints.slice())}:{}),
+                job.distributed_courier_endpoints.slice()),
+                distributed_courier_max_shards:job.distributed_courier_max_shards}:{}),
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(gpu?{gpu_pci_address:gpu.pci_address,gpu_cuda_uuid:gpu.cuda_uuid,
