@@ -324,7 +324,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
     let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false,gpuMulti=false;
-    let parallelWorlds=false,maximumMapShards=8;
+    let parallelWorlds=false,maximumMapShards=8,remoteSupported=false;
     if(fs.existsSync(capabilitiesFile)) {
         if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
             !fs.statSync(capabilitiesFile).isFile()||
@@ -354,6 +354,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
               capabilities.courier_episode_safe_process_groups===true&&
               (capabilities.courier_parallel_worlds!==true||
                capabilities.courier_auto_active_learners!==true)))||
+            (capabilities.courier_remote_lineage_transport!==undefined&&
+             typeof capabilities.courier_remote_lineage_transport!=='boolean')||
+            (capabilities.courier_remote_gpu_optimizer!==undefined&&
+             (typeof capabilities.courier_remote_gpu_optimizer!=='boolean'||
+              capabilities.courier_remote_gpu_optimizer===true&&
+              capabilities.courier_remote_lineage_transport!==true))||
             (capabilities.courier_gpu_pci_pin===true&&
              capabilities.courier_gpu_optimizer!==true)||
             (capabilities.courier_gpu_multi_optimizer===true&&
@@ -365,11 +371,14 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         optimizerGpu=capabilities.courier_gpu_optimizer===true;
         gpuPciPin=optimizerGpu&&capabilities.courier_gpu_pci_pin===true;
         gpuMulti=gpuPciPin&&capabilities.courier_gpu_multi_optimizer===true;
+        remoteSupported=capabilities.courier_remote_lineage_transport===true;
         parallelWorlds=boundedLearners&&autoLearners&&
             capabilities.courier_parallel_worlds===true;
         if(parallelWorlds)
             maximumMapShards=capabilities.courier_max_simulation_shards??8;
     }
+    if(remote&&!remoteSupported)
+        throw Error('Installed Courier learner does not advertise authenticated remote PPO lineage support.');
     if(enableGpu) {
         if(!optimizerGpu)
             throw Error('The installed Courier backend does not advertise safe optimizer-only GPU migration.');
