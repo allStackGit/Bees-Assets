@@ -943,7 +943,7 @@ impl BattleCatalog {
                 "saved_squad_id": squad.saved_squad_id,
                 "template_saved_squad_id": squad.template_saved_squad_id,
                 "side": squad.side,
-                "deployed": progress.squads.get(&squad.saved_squad_id)
+                "has_recorded_battle": progress.squads.get(&squad.saved_squad_id)
                     .is_some_and(|row| row.battles_fought > 0),
             })).collect::<Vec<_>>(),
             "original_fleet_transfers": progress.authored_transfer_count,
