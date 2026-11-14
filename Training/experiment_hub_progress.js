@@ -100,6 +100,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'remote_policy_shared_encode_seconds',
             'remote_policy_shared_bytes',
             'local_gpu_collector_count',
+            'local_gpu_direct_model_updates',
+            'local_gpu_direct_model_tensor_bytes',
             'local_gpu_join_wait_seconds',
             'local_gpu_collectors_pending_at_local_end'])
             retain(name,reported[name]);
