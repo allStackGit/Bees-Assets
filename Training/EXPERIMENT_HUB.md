@@ -1507,7 +1507,12 @@ before the agent can execute or advertise them. The optional frozen
 process (1–128). It may be combined with `rollout_workers` to run several
 model/rollout processes; their product must fit the job's allocated CPU count.
 One process with several physics threads shares one batched model worker, while
-several processes have separate model workers. The Hub reports actual
+several processes have separate model workers. A frozen `rollout_worlds`
+parameter (1–1024) can replicate the actual authored Level into more
+independent, deterministically seeded arenas without changing the scene or
+creating another combat implementation. Use it to give a larger CPU lease
+enough independent simulation work; `rollout_workers` and
+`physics_workers` are separately bounded by the same lease. The Hub reports actual
 `rollout_parallel_physics_rounds`, Stage-serialized arenas and summed worker
 CPU-wall time only when a completed native runner supplies those measurements.
 Existing continuation and collection receipts remain in the same native
