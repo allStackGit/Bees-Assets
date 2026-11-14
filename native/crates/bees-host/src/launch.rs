@@ -1708,6 +1708,9 @@ fn run_battle(
                 });
             }
         }
+        if mission.is_some_and(|mission| mission.record_fleet_stats) {
+            source.fleet.enable_career_tracking();
+        }
         source_levels.push(source);
         source_sides.push(sides);
         source_jsons.push(source_json);
