@@ -10,6 +10,7 @@ const {spawnSync}=require('node:child_process');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]$/;
 const NVIDIA=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const TAILNET=/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
 function privateKey(filename) {
@@ -47,7 +48,9 @@ function createCourierRemoteAdapter({
         Array.isArray(rocrGpuUuids)||
         Object.keys(rocrGpuUuids).length>32||
         !enableRocm&&Object.keys(rocrGpuUuids).length||
-        Object.keys(rocrGpuUuids).some(pci=>!PCI.test(pci)))
+        Object.entries(rocrGpuUuids).some(([pci,id])=>
+            !PCI.test(pci)||typeof id!=='string'||!ROCM_UUID.test(id))||
+        new Set(Object.values(rocrGpuUuids)).size!==Object.keys(rocrGpuUuids).length)
         throw Error('Courier remote GPU PPO requires one installed CUDA/ROCm runtime and physical device allowlist.');
     const approvedRocr=Object.freeze({...rocrGpuUuids});
     for(const [name,source,isFile] of [
@@ -58,6 +61,12 @@ function createCourierRemoteAdapter({
             (isFile?!fs.statSync(source).isFile():!fs.statSync(source).isDirectory()))
             throw Error(name+' must be an installed, non-symlink absolute path.');
     }
+    const relative=path.relative(projectRoot,artifactRoot);
+    if(relative===''||relative==='..'||relative.startsWith('..'+path.sep)===false&&
+        !path.isAbsolute(relative)||path.relative(artifactRoot,projectRoot)===''||
+        (!path.isAbsolute(path.relative(artifactRoot,projectRoot))&&
+         !path.relative(artifactRoot,projectRoot).startsWith('..'+path.sep)))
+        throw Error('Courier native service artifacts must be outside its source checkout.');
     const workerScript=path.join(projectRoot,'courier_remote_lineage.py');
     if(!fs.statSync(workerScript).isFile()||fs.realpathSync(workerScript)!==workerScript||
         !Number.isSafeInteger(maxShards)||maxShards<1||maxShards>64)
