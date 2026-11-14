@@ -8,6 +8,8 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]$/;
+const NVIDIA=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const TAILNET=/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
 function privateKey(filename) {
@@ -35,7 +37,19 @@ function endpoint(ip,port) {
 
 function createCourierRemoteAdapter({
     projectRoot,pythonPath,artifactRoot,keyPath,listenIp,port,maxShards=64,
+    enableCuda=false,enableRocm=false,rocrGpuUuids={},
 }) {
+    if(typeof enableCuda!=='boolean'||typeof enableRocm!=='boolean'||
+        enableCuda&&enableRocm||
+        enableCuda&&process.platform!=='win32'||
+        enableRocm&&process.platform!=='linux'||
+        !rocrGpuUuids||typeof rocrGpuUuids!=='object'||
+        Array.isArray(rocrGpuUuids)||
+        Object.keys(rocrGpuUuids).length>32||
+        !enableRocm&&Object.keys(rocrGpuUuids).length||
+        Object.keys(rocrGpuUuids).some(pci=>!PCI.test(pci)))
+        throw Error('Courier remote GPU PPO requires one installed CUDA/ROCm runtime and physical device allowlist.');
+    const approvedRocr=Object.freeze({...rocrGpuUuids});
     for(const [name,source,isFile] of [
         ['Courier installation',projectRoot,false],['Courier Python',pythonPath,true],
         ['Courier artifacts',artifactRoot,false]]) {
@@ -53,11 +67,32 @@ function createCourierRemoteAdapter({
         cwd:projectRoot,timeout:15000,encoding:'utf8',windowsHide:true,
     });
     if(probe.status!==0)throw Error('Courier remote service backend import failed.');
+    if(enableCuda||enableRocm) {
+        const gpuProbe=spawnSync(pythonPath,['-B','-c',enableCuda
+            ?'import torch; assert torch.version.cuda and torch.cuda.is_available()'
+            :'import torch; assert torch.version.hip and torch.cuda.is_available()'],{
+            cwd:projectRoot,timeout:15000,encoding:'utf8',windowsHide:true,
+        });
+        if(gpuProbe.status!==0)
+            throw Error('Courier remote optimizer cannot use its installed CUDA/ROCm PyTorch.');
+    }
     return {
         executable:pythonPath,cwd:projectRoot,stop_policy:'terminate-group',
         courier_remote_endpoint:address,
         courier_remote_key_fingerprint:secret.fingerprint,
         courier_remote_max_shards:maxShards,
+        ...(enableCuda?{gpu_execution:'cuda'}:{}),
+        ...(enableRocm?{
+            rocr_gpu_uuids:approvedRocr,
+            gpu_verify_args(_parameters,context) {
+                if(!PCI.test(String(context?.gpu_pci_address||''))||
+                    context.gpu_pci_addresses!==undefined)
+                    throw Error('Remote Courier ROCm PPO requires one assigned physical PCI identity.');
+                return ['-B',path.join(__dirname,
+                    'experiment_hub_tinybrains_rocm_verify.py'),
+                    context.gpu_pci_address];
+            },
+        }:{}),
         args(parameters,context) {
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
                 Object.keys(parameters).some(k=>!['learner_job_id','slot'].includes(k))||
@@ -70,9 +105,16 @@ function createCourierRemoteAdapter({
                 context.cpu_quota>256||
                 !Number.isSafeInteger(context.ram_quota_mb)||
                 context.ram_quota_mb<128||context.ram_quota_mb>1000000||
-                context.gpu_pci_address!==undefined||
-                context.gpu_pci_addresses!==undefined)
-                throw Error('Remote Courier PPO service requires one approved CPU/RAM-only lineage lease.');
+                context.gpu_pci_addresses!==undefined||
+                (context.gpu_pci_address!==undefined&&
+                    (!PCI.test(context.gpu_pci_address)||
+                     context.gpu_mode!=='exclusive'||
+                     !(enableCuda||enableRocm)))||
+                (context.gpu_cuda_uuid!==undefined&&
+                    (!enableCuda||!NVIDIA.test(context.gpu_cuda_uuid)))||
+                (context.gpu_pci_address===undefined&&
+                    context.gpu_cuda_uuid!==undefined))
+                throw Error('Remote Courier PPO service requires one approved CPU/RAM and optional exclusive GPU lease.');
             if(privateKey(keyPath).fingerprint!==secret.fingerprint)
                 throw Error('Remote Courier identity changed after machine enrollment.');
             const folder=path.join(artifactRoot,context.job_id);
@@ -86,7 +128,12 @@ function createCourierRemoteAdapter({
                 '--slot',String(parameters.slot),'--work-dir',folder,
                 '--cpu-lease',String(context.cpu_quota),
                 '--ram-lease-mb',String(context.ram_quota_mb),
-                '--max-shards',String(maxShards)];
+                '--max-shards',String(maxShards),
+                ...(context.gpu_pci_address!==undefined
+                    ?enableCuda
+                        ?['--gpu-cuda-uuid',context.gpu_cuda_uuid]
+                        :['--gpu-pci',context.gpu_pci_address]
+                    :[])];
         },
     };
 }
