@@ -153,6 +153,7 @@ pub enum CombatWorldError {
     DuplicateEntity,
     InvalidSide,
     InvalidLiveShipSpawn,
+    InvalidQueenConfiguration,
     InvalidLiveProjectileSpawn,
     InvalidProjectilePower,
     InvalidProjectileType(u8),
