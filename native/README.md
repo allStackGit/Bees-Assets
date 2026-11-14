@@ -325,6 +325,35 @@ time. It never fabricates progress, replay results or training rewards.
 Already completed missions are skipped. This is a headless full-campaign
 qualification path using the identical gameplay, not an alternate AI.
 
+Native campaign missions may set `bank_player_minerals: true` to bank
+surviving player-fleet mining at their winning ending, following the
+source campaign's explicit CollectMinedMineralsForPlayer action. Failed
+attempts bank zero. The shared Level owns the mining tally and removes
+unbanked cargo on lethal death. `bees status` shows banked, spent and
+available TSV. The bundled example exposes ordinary hull types 21
+(TSV 100) and 2 (TSV 250) after source verification. After winning and
+earning enough mined TSV, build into a saved squad with **B** in the
+battle picker, or without a window:
+
+```sh
+bees build native/examples/native-frontier-campaign.json --output-dir native-frontier-save --side 1 --ship-type 21 --squad 1
+```
+
+A purchase is one immutable, atomic `build-NNNN/purchase.json`
+receipt. Its FleetShip ID persists between missions and its TSV cost
+is deducted exactly once. Every eligible route must contain a
+full-health, ordinary native ship of the purchased type at the same
+source `max_tsv` price and a matching player `saved_squad_id`.
+Before each battle, the same native scene builder instantiates the
+real ship's hull, turret mounts, sight, formation, movement and
+perception into its saved squad; dead bought ships are later omitted
+by the normal permanent-loss filter. Purchased ship combat and career
+records use the same authoritative world and campaign receipt as
+original authored hulls. The shop refuses unaffordable or unverified
+purchases rather than minting fictional equipment. This does not yet
+cover custom special-weapon prefab construction, transfer between
+squads, or the full Unity fleet-management screens.
+
 Use a compiled headless `bees` binary for automated native campaign
 qualification. Each invocation loads mission unlocks and saved player
 fleet losses, reserves a fresh battle directory, runs the ordinary
@@ -388,10 +417,10 @@ historical deaths. Use `bees status` to see saved deaths and whether
 the loss history is complete.
 
 This now covers native fleet battles, victories, mining, permanent
-losses, physical combat observations and saved-squad careers. Fleet
-purchasing/editing, full special-weapon attribution, source-correct
-account economy, campaign dialogues and wider account progression
-still require parity work.
+losses, basic TSV-priced hull purchases, physical combat observations
+and saved-squad careers. Full fleet editing, more ship/purchase types,
+special-weapon attribution, source campaign unlocks/mission rewards,
+and broader account progression remain parity work.
 
 Use `on_victory` to select an alternate run configuration when the named
 prerequisite's latest completed attempt was a victory. Both paths keep the
