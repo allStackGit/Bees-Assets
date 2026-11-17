@@ -52,9 +52,9 @@ pub struct RemoteOrder {
     pub action: NativePlayerInput,
 }
 
-/// A single shared-world held-fire gesture belongs to one authenticated
-/// peer. The native Level already owns the actual selected live ships and
-/// their continuous weapon targets: no second gesture/weapon state here.
+/// One authenticated peer's gesture, independent of every other peer.
+/// The native Level owns the actual live weapons keyed by the same peer ID,
+/// never a duplicate target cache or independent physics simulation.
 #[derive(Clone, Copy)]
 struct HeldFireLease {
     peer: u64,
@@ -77,6 +77,7 @@ impl HeldFireLease {
             action: NativePlayerInput::HeldFire(NativePlayerHeldFire {
                 world_id: self.world_id,
                 episode_revision: self.episode_revision,
+                controller_id: self.peer,
                 action: NativeHeldFireAction::End,
             }),
         }
@@ -188,6 +189,7 @@ pub struct RemotePlayMeasurements {
     pub held_fire_rejected: u64,
     pub held_fire_disconnect_releases: u64,
     pub held_fire_no_live_weapons_releases: u64,
+    pub concurrent_held_fire_peak: usize,
 }
 
 pub struct NativeRemotePlay {
@@ -196,7 +198,7 @@ pub struct NativeRemotePlay {
     peers: Vec<Peer>,
     next_peer: u64,
     last_state: Option<(u64, u64)>,
-    held_fire: Option<HeldFireLease>,
+    held_fire: HashMap<u64, HeldFireLease>,
     pending_releases: Vec<RemoteOrder>,
     measurements: RemotePlayMeasurements,
 }
@@ -246,7 +248,7 @@ impl NativeRemotePlay {
         Ok(Some(Self {
             listener, side_tokens, peers: Vec::new(),
             next_peer: 1, last_state: None,
-            held_fire: None, pending_releases: Vec::new(),
+            held_fire: HashMap::new(), pending_releases: Vec::new(),
             measurements: RemotePlayMeasurements::default(),
         }))
     }
@@ -263,17 +265,19 @@ impl NativeRemotePlay {
     /// episode cannot retain a peer's old gesture lease. Disconnect releases
     /// are returned as canonical inputs before newly received player orders.
     pub fn poll(&mut self, world_id: WorldId, revision: u64,
-                live_held_weapons: bool) -> Vec<RemoteOrder> {
-        if self.held_fire.is_some_and(|lease|
-            lease.world_id != world_id || lease.episode_revision != revision) {
-            self.held_fire = None;
-        } else if self.held_fire.is_some() && !live_held_weapons {
-            // The world has already retired the final ship held by this
-            // controller. A dead weapon must not exclude other players
-            // from starting their own gesture during the same episode.
-            self.held_fire = None;
-            self.measurements.held_fire_no_live_weapons_releases += 1;
-        }
+                live_controllers: &[u64]) -> Vec<RemoteOrder> {
+        let mut retired_no_live = 0;
+        self.held_fire.retain(|&peer, lease| {
+            if lease.world_id != world_id || lease.episode_revision != revision {
+                return false;
+            }
+            if !live_controllers.contains(&peer) {
+                retired_no_live += 1;
+                return false;
+            }
+            true
+        });
+        self.measurements.held_fire_no_live_weapons_releases += retired_no_live;
         let mut orders = std::mem::take(&mut self.pending_releases);
         orders.retain(|order| order.action.episode() == (world_id, revision));
         // A connection flood must not monopolize the authoritative game
@@ -354,7 +358,7 @@ impl NativeRemotePlay {
                             peer.closed = true;
                         }
                     }
-                    Ok(WireInput::Input { request_id, action }) if peer.side.is_some() => {
+                    Ok(WireInput::Input { request_id, mut action }) if peer.side.is_some() => {
                         // No delayed/doubled request may reissue a movement
                         // or special under the same authenticated connection.
                         if request_id <= peer.last_request_id {
@@ -373,29 +377,37 @@ impl NativeRemotePlay {
                             break;
                         }
                         let side = peer.side.expect("checked authenticated peer");
-                        if let NativePlayerInput::HeldFire(input) = &action {
+                        if let NativePlayerInput::HeldFire(input) = &mut action {
+                            // Wire-supplied controller identifiers are never
+                            // trusted. The server binds gesture identity to
+                            // the authenticated TCP peer before dispatch and
+                            // before the deterministic player trace records it.
+                            input.controller_id = peer.id;
                             self.measurements.held_fire_requests += 1;
                             let permitted = match &input.action {
                                 NativeHeldFireAction::Begin { squads, target } => {
                                     if squads.is_empty() || !target.is_finite() ||
                                         input.world_id != world_id ||
                                         input.episode_revision != revision ||
-                                        self.held_fire.is_some() { false }
+                                        self.held_fire.contains_key(&peer.id) { false }
                                     else {
-                                        self.held_fire = Some(HeldFireLease {
+                                        self.held_fire.insert(peer.id, HeldFireLease {
                                             peer: peer.id, side, world_id, episode_revision: revision,
                                             begin_request_id: request_id,
                                         });
+                                        self.measurements.concurrent_held_fire_peak =
+                                            self.measurements.concurrent_held_fire_peak
+                                                .max(self.held_fire.len());
                                         true
                                     }
                                 }
                                 NativeHeldFireAction::Aim { target } =>
-                                    target.is_finite() && self.held_fire.is_some_and(|lease|
-                                        lease.matches(peer.id, side, input)),
+                                    target.is_finite() && self.held_fire.get(&peer.id)
+                                        .is_some_and(|lease| lease.matches(peer.id, side, input)),
                                 NativeHeldFireAction::End => {
-                                    if self.held_fire.is_some_and(|lease|
-                                        lease.matches(peer.id, side, input)) {
-                                        self.held_fire = None;
+                                    if self.held_fire.get(&peer.id)
+                                        .is_some_and(|lease| lease.matches(peer.id, side, input)) {
+                                        self.held_fire.remove(&peer.id);
                                         true
                                     } else { false }
                                 }
@@ -431,16 +443,16 @@ impl NativeRemotePlay {
         orders
     }
 
-    pub fn held_fire_active(&self) -> bool { self.held_fire.is_some() }
+    pub fn held_fire_active(&self) -> bool { !self.held_fire.is_empty() }
 
     pub fn reply(&mut self, peer_id: u64, request_id: u64, result: Result<&str, &str>) {
         // Authoritative Begin rejection must revoke its provisional lease,
         // or one invalid squad selection could lock out all other clients.
-        if self.held_fire.is_some_and(|lease|
-            lease.peer == peer_id && lease.begin_request_id == request_id) &&
+        if self.held_fire.get(&peer_id).is_some_and(|lease|
+            lease.begin_request_id == request_id) &&
             (result.is_err() ||
              matches!(result, Ok("No selected weapons accepted held fire"))) {
-            self.held_fire = None;
+            self.held_fire.remove(&peer_id);
         }
         let Some(peer) = self.peers.iter_mut()
             .find(|peer| peer.id == peer_id && peer.side.is_some()) else { return };
@@ -487,15 +499,17 @@ impl NativeRemotePlay {
     }
 
     fn reap(&mut self) {
-        if let Some(lease) = self.held_fire {
-            if self.peers.iter().any(|peer| peer.id == lease.peer && peer.closed) {
-                // Next authoritative tick releases the exact native weapon
-                // targets. Never allow a disconnected socket to leave them
-                // firing, and never apply gameplay from the transport thread.
-                self.pending_releases.push(lease.release());
-                self.held_fire = None;
-                self.measurements.held_fire_disconnect_releases += 1;
-            }
+        let disconnected: Vec<_> = self.held_fire.keys().copied()
+            .filter(|&owner| self.peers.iter().any(|peer|
+                peer.id == owner && peer.closed))
+            .collect();
+        for owner in disconnected {
+            let lease = self.held_fire.remove(&owner)
+                .expect("disconnected owner was present");
+            // Queued on the authoritative thread, never on the socket.
+            // Each release clears only its owner's real live weapons.
+            self.pending_releases.push(lease.release());
+            self.measurements.held_fire_disconnect_releases += 1;
         }
         let before = self.peers.len();
         self.peers.retain(|peer| !peer.closed);
