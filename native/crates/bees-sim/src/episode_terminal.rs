@@ -191,6 +191,10 @@ pub struct NativeEpisodeTerminal {
     survival: Option<ArmedSurvival>,
     elapsed_seconds: f32,
     completed: Option<EpisodeTerminalResult>,
+    /// A SquadRetired event would have eliminated an active side, but
+    /// the source Stage still reserves future reinforcement hulls.
+    /// Recheck precisely once those reserved ships actually deploy.
+    deferred_elimination: bool,
     measurements: EpisodeTerminalMeasurements,
 }
 
@@ -217,6 +221,7 @@ impl NativeEpisodeTerminal {
         Ok(Self {
             bee_side, human_side, timeout_seconds, survival: None,
             elapsed_seconds: 0.0, completed: None,
+            deferred_elimination: false,
             measurements: EpisodeTerminalMeasurements::default(),
         })
     }
@@ -444,9 +449,21 @@ impl NativeEpisodeTerminal {
         }
 
         let extraction_outcome = world.extraction_outcome();
-        if squad_was_retired || extraction_outcome.is_some() {
+        let future_hulls = world.has_reserved_future_ships();
+        // The common physics world has already reserved every authentic
+        // deferred ship ID. An empty currently deployed side is not a
+        // final elimination while those real hulls still await deployment.
+        // Extraction has its own terminal condition and always wins
+        // independently of pending waves.
+        let check_elimination = squad_was_retired ||
+            (self.deferred_elimination && !future_hulls);
+        if check_elimination || extraction_outcome.is_some() {
             self.measurements.elimination_checks += 1;
-            let elimination = || if bee_dead || human_dead {
+            let would_eliminate = bee_dead || human_dead;
+            if check_elimination {
+                self.deferred_elimination = future_hulls && would_eliminate;
+            }
+            let elimination = || if !future_hulls && would_eliminate {
                 Some((if bee_dead == human_dead { 0 } else if bee_dead {
                     self.human_side
                 } else {

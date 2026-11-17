@@ -95,9 +95,14 @@ Each `SECONDS:SIDE:TYPE:COUNT` allocation reserves exactly that many
 already-authored physical ships for a later arrival, splitting them into
 separate squads without mixing deployed and deferred members. The source
 Level owns deployment and starts each deferred enemy's scripted command
-only after it actually arrives. Waves retain unique stable physical IDs,
-the existing formation and collision rules, and the same headless
-gameplay result as windowed play. Both factions need some initially
+only after it actually arrives. Ordinary elimination now waits while
+the authoritative combat world still reserves future reinforcement
+hulls, rechecking the final roster once the last wave deploys; otherwise
+a killed initial squad could end a battle before its reinforcement
+arrived. Survival still uses its explicit protected-target/deadline
+condition, and extraction still wins immediately on its real trigger.
+Waves retain unique stable physical IDs, the existing formation and
+collision rules, and the same headless gameplay result as windowed play. Both factions need some initially
 deployed ships; wave times must precede the battle end.
 
 A wave can also be triggered by the death of an initially deployed

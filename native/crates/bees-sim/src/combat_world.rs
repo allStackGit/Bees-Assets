@@ -1694,6 +1694,15 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// A reserved hull belongs to a real authored future reinforcement
+    /// wave. Its ID is already owned by this CombatWorld, but the ship is
+    /// not yet living in the active combat roster. An elimination result
+    /// must not misinterpret that absence as the permanent defeat of
+    /// the waiting faction.
+    pub fn has_reserved_future_ships(&self) -> bool {
+        !self.reserved_ship_ids.is_empty()
+    }
+
     pub fn spawn_reserved_ship(
         &mut self, asset: &ShipAsset, entity_id: i64, side: i32, vitals: ShipVitals, motion: ShipMotion,
     ) -> Result<(), CombatWorldError> {
