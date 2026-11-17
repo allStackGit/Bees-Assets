@@ -161,7 +161,11 @@ bees library my-native-campaign/library.json --output-dir my-native-saves
 
 Mission order controls prerequisites. The publisher retains the complete
 source-authored physical map, ships and scripted opponents, while assigning
-stable persistent SavedSquad identities. It rejects player fleet ID,
+stable persistent SavedSquad identities. Generated battle IDs are
+partitioned by faction, so either side's player fleet and SavedSquads
+stay stable even when the opposing force changes between missions.
+For a side-2 campaign use `--control humans` on the battle author and
+`--player-side 2` on the campaign publisher. It rejects player fleet ID,
 ship-class or squad-membership changes between missions rather than
 quietly resetting a player's losses or purchased-ship authority. All
 missions publish real native combat/fleet statistics, bank mined minerals

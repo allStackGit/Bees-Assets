@@ -187,17 +187,21 @@ def author(args) -> tuple[dict, dict, dict]:
         [polygon["entity_id"] for polygon in
          scene.get("layout", {}).get("add_static_polygons", [])]
     )
-    ship_id = max(SHIP_ID_START, max_reserved + 1)
-    weapon_id = max(WEAPON_ID_START, ship_id + sum(
-        count for units in requested.values() for _, count in units
-    ) + 1)
-    squad_id = max(SQUAD_ID_START, ship_id + sum(
-        count for units in requested.values() for _, count in units
-    ) + 1)
+    # IDs are partitioned by faction, not allocated sequentially across
+    # opposing armies. Campaign missions can now vary either opponent
+    # freely while retaining the player's durable FleetShip and SavedSquad
+    # identities, including when the player commands side 2.
+    # Each side is bounded to 1024 ships and at most 1024 weapons/squads.
+    side_span = 2048
+    ship_base = max(SHIP_ID_START, max_reserved + 1)
+    squad_base = max(SQUAD_ID_START, ship_base + 2 * side_span)
+    weapon_base = max(WEAPON_ID_START, squad_base + 2 * side_span)
     new_ships = []
     new_squads = []
     by_side: dict[int, list[dict]] = {1: [], 2: []}
     for side, units in requested.items():
+        ship_id = ship_base + (side - 1) * side_span
+        weapon_id = weapon_base + (side - 1) * side_span
         positions = placements(
             scene["bounds"], scene["starting_positions"][side - 1],
             side, sum(count for _, count in units), args.spacing,
@@ -238,6 +242,7 @@ def author(args) -> tuple[dict, dict, dict]:
 
     by_side_squads: dict[int, list[dict]] = {1: [], 2: []}
     for side, units in requested.items():
+        squad_id = squad_base + (side - 1) * side_span
         for kind, _ in units:
             matching = [ship["entity_id"] for ship in by_side[side]
                         if ship["ship_type"] == kind]
@@ -291,7 +296,9 @@ def author(args) -> tuple[dict, dict, dict]:
     run["run_id"] = slug
     run["stage_name"] = name
     run["max_rounds"] = rounds
-    run["next_squad_item_id"] = max(squad_id, ship_id, weapon_id) + 1
+    # Runtime minions/child squads allocate only above all original
+    # authored entity ranges; they never reuse a side's reserved identity.
+    run["next_squad_item_id"] = weapon_base + 2 * side_span
     run["connection_checkpoint"] = "battle-connection.json"
     run["notifications"] = "battle-notifications.jsonl"
     run["levels"] = [{
