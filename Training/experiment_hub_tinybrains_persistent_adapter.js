@@ -421,6 +421,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('collector_'+i+'_'+suffix,worker[name],'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
+        // GPU stream interval from the frozen device-policy copy; unlike
+        // host prepare time, this includes device-stream waits and copies.
+        // It is not exclusive peer-link activity or PCIe bandwidth.
+        add('collector_'+i+'_model_copy_gpu_stream_seconds',
+            worker.model_copy_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_snapshot_cache_files',
             worker.snapshot_cache_files,'count');
         add('collector_'+i+'_snapshot_cache_bytes',
@@ -503,6 +508,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'supports_weight_blob','weight_blob_used',
                 'gpu_ordinal','gpu_batch_used_pixels',
                 'gpu_batch_vram_capped','model_prepare_seconds',
+                'model_copy_gpu_stream_seconds',
                 // Preserve the physical lease index, live simulation count,
                 // effective throughput, critical stage and join wait ahead
                 // of secondary resource details under maximum fanout.
