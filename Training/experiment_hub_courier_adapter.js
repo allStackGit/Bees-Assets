@@ -54,6 +54,9 @@ const CURRICULUM_MUTABLE_KEYS=new Set([
 const COURIER_MODE_BY_KEY=new Map(COURIER_MODE_FIELDS.map(field=>[field.key,field]));
 const COURIER_MODE_DEFAULTS=Object.fromEntries(COURIER_MODE_FIELDS.map(field=>[field.key,field.default]));
 function validateCourierModes(c) {
+    if(typeof c.initial_energy==='number'&&typeof c.max_energy==='number'&&
+        c.initial_energy>c.max_energy)
+        throw Error('Courier initial energy cannot exceed maximum energy.');
     if(c.colony&&c.competitive)
         throw Error('Select individual competition or colony competition, not both.');
     if(c.evolution&&!c.colony)throw Error('Trait evolution requires colony mode.');
