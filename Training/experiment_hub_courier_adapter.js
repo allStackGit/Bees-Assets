@@ -30,6 +30,10 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_optimizer_tuner_adjustments',
     'training_gpu_optimizer_tuner_accepted',
     'training_gpu_optimizer_tuner_settled',
+    'training_gpu_placement_trial','training_gpu_placement_settled',
+    'training_gpu_placement_adjustments','training_gpu_placement_accepted',
+    'training_gpu_placement_rejected','training_gpu_placement_changed_next',
+    'training_gpu_placement_devices','training_gpu_placement_moved_lineage',
     'training_gpu_metric_readbacks','training_gpu_metric_rows',
     'training_gpu_guard_readbacks',
     'training_gpu_h2d_async_batches',
@@ -103,8 +107,8 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused)$/.test(name)||
-            /^training_gpu_device_[0-7]_lineages$/.test(name))?'count':
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device)$/.test(name)||
+            /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
