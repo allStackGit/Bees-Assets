@@ -639,15 +639,36 @@ impl NativeSoftwareRenderer {
     }
 
     #[cfg(feature = "client")]
+    pub(super) fn remote_ship_recolor_cache_size(&self) -> usize {
+        self.custom_ship_art.len()
+    }
+
+    #[cfg(feature = "client")]
     pub(super) fn remote_ship_art(
         &mut self, ship_type: u8, point: Vec2, rotation_degrees: f32,
+        color_rgb: Option<[u8; 3]>,
     ) -> bool {
         let Some(art) = source_ship_art()
             .and_then(|atlas| atlas.sprites.get(usize::from(ship_type)))
             .and_then(Option::as_ref)
         else { return false };
+        // Same cache key, 96-variant memory bound and source recolor-mask
+        // transform as local gameplay's original ship rendering pass.
+        let recolored = color_rgb.filter(|_| art.recolor_mask.is_some())
+            .map(|rgb| {
+                let key = (ship_type, rgb);
+                if !self.custom_ship_art.contains_key(&key) {
+                    if self.custom_ship_art.len() >= 96 {
+                        self.custom_ship_art.clear();
+                    }
+                    self.custom_ship_art.insert(key, Arc::new(art.recolored(rgb)));
+                }
+                Arc::clone(self.custom_ship_art.get(&key)
+                    .expect("installed native squad recolor"))
+            });
+        let sprite = recolored.as_deref().unwrap_or(&art.sprite);
         self.draw_sprite(
-            &art.sprite, point, rotation_degrees.to_radians(),
+            sprite, point, rotation_degrees.to_radians(),
             self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
         )
     }
