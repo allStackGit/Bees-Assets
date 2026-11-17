@@ -159,13 +159,27 @@ select[multiple].hub-metric-source.is-enhanced { display: none; }
     position: sticky;
     top: 0;
     z-index: 1;
-    padding: 7px 8px;
+    display: block;
+    width: 100%;
+    min-height: 36px;
+    height: auto;
+    padding: 8px 10px;
     margin: 7px 0 3px;
     background: var(--paper);
+    border: 0;
     border-bottom: 1px solid var(--ink);
+    text-align: left;
+    white-space: normal;
     font-size: 13px;
-    font-weight: 900;
+    line-height: 1.45;
+    font-weight: 800;
+    text-transform: none;
+    letter-spacing: normal;
+    cursor: pointer;
 }
+.hub-metric-group-title:hover,
+.hub-metric-group-title:focus-visible { background: #ebebeb; }
+.hub-metric-group-title[aria-pressed="true"] { border-bottom-width: 2px; }
 .hub-metric-choice {
     display: flex;
     align-items: center;
