@@ -12,7 +12,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use bees_gameplay::campaign_dialogue::CampaignCue;
-use bees_sim::collision::Aabb;
+use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use serde_json::{json, Value};
@@ -111,7 +111,7 @@ impl RemoteArtwork {
                 obstacle["asteroid_prefab"].as_u64().and_then(|id| u8::try_from(id).ok()),
                 visual.position(obstacle, 2, fraction),
             ) else { continue };
-            let angle = obstacle["rotation"].as_f64().unwrap_or(0.0) as f32;
+            let angle = visual.heading_for(obstacle, 2, fraction);
             if self.raster.remote_asteroid_art(prefab, point, angle) {
                 self.asteroids.insert(id);
                 stats.asteroid_sprite_draws += 1;
@@ -127,7 +127,7 @@ impl RemoteArtwork {
                 .or_insert((tick, tick));
             *last = tick;
             let age = tick.saturating_sub(*first) as f32 * dt.max(0.0);
-            let angle = shot["rotation"].as_f64().unwrap_or(0.0) as f32;
+            let angle = visual.heading_for(shot, 1, fraction);
             if self.raster.remote_projectile_art(kind, point, angle, age) {
                 self.projectiles.insert(id);
                 stats.projectile_sprite_draws += 1;
@@ -225,15 +225,20 @@ impl RemoteVisual {
         Some(previous.position + (current - previous.position) * fraction)
     }
 
-    fn heading(&self, item: &Value, fraction: f32) -> f32 {
+    fn heading_for(&self, item: &Value, kind: u8, fraction: f32) -> f32 {
         let now = item["rotation"].as_f64().unwrap_or(0.0) as f32;
         let Some(before) = item["id"].as_i64().and_then(|id|
-            self.previous.get(&(0, id))).and_then(|pose| pose.rotation)
+            self.previous.get(&(kind, id))).and_then(|pose| pose.rotation)
         else { return now };
-        // Shortest signed turn across 0/360, with no ship steering on the
-        // client. The source rotation still comes exclusively from the host.
+        // Shortest signed turn across 0/360, with no client steering.
+        // Ships, projectiles and moving asteroid colliders all follow
+        // authoritative consecutive host snapshot rotations.
         let delta = (now - before + 180.0).rem_euclid(360.0) - 180.0;
         before + delta * fraction
+    }
+
+    fn heading(&self, item: &Value, fraction: f32) -> f32 {
+        self.heading_for(item, 0, fraction)
     }
 }
 
