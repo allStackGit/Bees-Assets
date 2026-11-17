@@ -2392,6 +2392,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'remote_transport_reused_collectors',
         'remote_transport_connect_max_seconds',
         'remote_transport_connect_owner',
+        'local_lease_ram_charged_mb',
+        'local_lease_ram_headroom_mb',
         'remote_snapshot_cache_hits',
         'remote_snapshot_staged_bytes',
         'remote_snapshot_unstaged_bytes',
