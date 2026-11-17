@@ -67,6 +67,16 @@ class RemoteBattleWindow:
         self.squad_detail = tk.StringVar(value="Select a squad")
         ttk.Label(self.sidebar, textvariable=self.squad_detail, wraplength=200,
                   justify="left").pack(anchor="w", pady=(8, 0))
+        ttk.Label(self.sidebar, text="Shooting priority (1-40)").pack(
+            anchor="w", pady=(10, 0))
+        self.strategy = tk.StringVar(value="1")
+        self.strategy_picker = ttk.Combobox(
+            self.sidebar, textvariable=self.strategy, width=7, state="readonly",
+            values=[str(i) for i in range(1, 41)],
+        )
+        self.strategy_picker.pack(anchor="w")
+        ttk.Button(self.sidebar, text="Apply shooting priority",
+                   command=self.apply_shooting).pack(anchor="w", pady=(4, 0))
         self.footer = ttk.Frame(self.frame, padding=6)
         self.footer.pack(fill="x")
         self.status = tk.StringVar(value="Connecting to native host...")
@@ -101,6 +111,8 @@ class RemoteBattleWindow:
             ("Match speed", lambda: self.send("match_speed", {"match_speed": True})),
             ("Own speed", lambda: self.send("match_speed", {"match_speed": False})),
             ("Hold", lambda: self.send("support", {"action": "Hold"})),
+            ("Lock on", lambda: self.send("lock_on", {"locked": True})),
+            ("Unlock", lambda: self.send("lock_on", {"locked": False})),
             ("Beacon", lambda: self.send("special", {"kind": "DropBeacon"})),
             ("Detonate", lambda: self.send("special", {"kind": "Detonate"})),
             ("Charge", lambda: self.send("special", {"kind": "Charge"})),
@@ -135,6 +147,9 @@ class RemoteBattleWindow:
         self.mode = mode
         self.notice(f"Select a {'map point' if mode in ('move', 'fire') else 'visible target'}"
                     f" for {mode}" if mode else "Order mode cancelled")
+
+    def apply_shooting(self):
+        self.send("shooting", {"strategy_id": int(self.strategy.get())})
 
     def fit(self):
         self.zoom = 1.0
@@ -282,11 +297,13 @@ class RemoteBattleWindow:
                 self.squad_detail.set("\n".join(
                     f"Squad {s['owner']['squad_id']}: {s.get('command') or 'Idle'}; "
                     f"cease {s.get('cease_fire')}; chase {s.get('chasing')}; "
-                    f"shooting {s.get('shooting')}"
+                    f"lock {s.get('locked_on')}; shooting {s.get('shooting')}"
                     for s in details[:3]
                 ))
             else:
                 self.squad_detail.set("Select a friendly squad to issue orders")
+            if details and details[0].get("shooting") is not None:
+                self.strategy.set(str(details[0]["shooting"]))
         finally:
             self.sidebar_updating = False
 
@@ -459,6 +476,11 @@ class RemoteBattleWindow:
             if ship["id"] in selected_ship_ids:
                 self.canvas.create_oval(x-14, y-14, x+14, y+14, outline="#ffffff", width=2)
             health = max(0.0, min(1.0, ship["health"] / max(1, ship["max_health"])))
+            if ship["id"] in selected_ship_ids and ship.get("destination"):
+                tx, ty = self.to_screen(*ship["destination"])
+                self.canvas.create_line(x, y, tx, ty, fill="#748aaf", dash=(3, 4))
+                self.canvas.create_line(tx-5, ty, tx+5, ty, fill="#d3e5ff")
+                self.canvas.create_line(tx, ty-5, tx, ty+5, fill="#d3e5ff")
             self.canvas.create_rectangle(x-10, y+15, x+10, y+18, fill="#422d3b", outline="")
             self.canvas.create_rectangle(x-10, y+15, x-10+20*health, y+18, fill="#75d79c", outline="")
         if self.drag_box:
