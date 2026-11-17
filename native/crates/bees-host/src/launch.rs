@@ -2128,15 +2128,21 @@ fn new_library_battle_output(save_root: &Path, game_id: &str)
 
 #[cfg(feature = "client")]
 fn run_library_host(settings_path: &Path, save_root: &Path,
-    library: &NativeLibrary, games: &[PathBuf]) -> Result<(), Box<dyn Error>> {
+    library: &NativeLibrary, games: &[PathBuf],
+    trained: &[trained_library::TrainedGame]) -> Result<(), Box<dyn Error>> {
     let settings:NativeSavedHost=serde_json::from_slice(&fs::read(settings_path)?)?;
     if settings.listen.is_empty() || settings.listen.len()>255 ||
         settings.listen.chars().any(char::is_control) {
         return Err(invalid("native multiplayer host requires a private-network listen address").into());
     }
-    let index=library.games.iter().position(|entry|
-        entry.id==settings.game_id && entry.kind=="battle")
-        .ok_or_else(|| invalid("multiplayer host game ID is not a playable battle"))?;
+    let game_source = if let Some(index)=library.games.iter().position(|entry|
+        entry.id==settings.game_id && entry.kind=="battle") {
+        games[index].clone()
+    } else {
+        trained.iter().find(|model| model.id==settings.game_id)
+            .ok_or_else(|| invalid("multiplayer host game ID is neither a native battle nor a registered trained checkpoint"))?
+            .verified_run()?
+    };
     let token_file=if settings.tokens_file.is_absolute(){
         settings.tokens_file
     }else{save_root.join(settings.tokens_file)};
@@ -2167,7 +2173,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // parent UI and keeps one battle runtime / one source physics engine.
     let output=new_library_battle_output(save_root,&settings.game_id)?;
     let outcome=std::process::Command::new(env::current_exe()?)
-        .arg("play").arg(&games[index])
+        .arg("play").arg(&game_source)
         .arg("--output-dir").arg(output)
         .env("BEES_NATIVE_REMOTE_LISTEN",&settings.listen)
         .env("BEES_NATIVE_REMOTE_SIDE_TOKENS",&token_map)
@@ -2318,7 +2324,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 )
             })()
         } else if hosting {
-            run_library_host(&saved_host,save_root,&library,&games)
+            run_library_host(&saved_host,save_root,&library,&games,&trained)
         } else if let Some(trained_index) = trained_index {
             // Verify the original checkpoint immediately before each game,
             // including after returning from a prior game to the library.
