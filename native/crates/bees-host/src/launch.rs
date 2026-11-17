@@ -1008,6 +1008,7 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
        bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>]
   play  Open the native battle window (requires the client feature)
+  library  Open packaged native campaigns and quick battles
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
 
@@ -1073,7 +1074,42 @@ struct CampaignSquadOutcome {
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
-    let first = args.next().ok_or_else(|| invalid(USAGE))?;
+    let first = match args.next() {
+        Some(value) => value,
+        None => {
+            #[cfg(feature = "client")]
+            {
+                // A packaged desktop binary launches its library directly.
+                // Explicit CLI run/play commands retain their original cwd.
+                let executable = env::current_exe()?.canonicalize()?;
+                if let Some(folder) = executable.parent() {
+                    let library = folder.join("examples").join("native-library.json");
+                    if library.is_file() {
+                        let saves = {
+                            #[cfg(windows)]
+                            {
+                                env::var_os("LOCALAPPDATA").or_else(|| env::var_os("USERPROFILE"))
+                                    .map(PathBuf::from).unwrap_or_else(|| folder.to_path_buf())
+                                    .join("BeesNative")
+                            }
+                            #[cfg(not(windows))]
+                            {
+                                let xdg = env::var_os("XDG_DATA_HOME")
+                                    .map(PathBuf::from).filter(|path| path.is_absolute());
+                                xdg.or_else(|| env::var_os("HOME")
+                                    .map(|home| PathBuf::from(home).join(".local").join("share")))
+                                    .unwrap_or_else(|| folder.to_path_buf())
+                                    .join("bees-native")
+                            }
+                        };
+                        env::set_current_dir(folder)?;
+                        return run_library(&library, &saves);
+                    }
+                }
+            }
+            return Err(invalid(USAGE).into());
+        }
+    };
     if first == "--help" || first == "-h" {
         println!("{USAGE}");
         return Ok(());
