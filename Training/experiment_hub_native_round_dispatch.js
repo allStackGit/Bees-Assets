@@ -14,13 +14,13 @@ const fs=require('node:fs');
 const crypto=require('node:crypto');
 const {parseArgs}=require('node:util');
 const {request:normalizeResources}=require('./experiment_hub_resources');
+const {PORTABLE_CONFIG_SHA256}=require('./experiment_hub_native_portable_adapter');
 
 const SHA=/^[0-9a-f]{64}$/;
 const ID=/^[A-Za-z0-9_-]{1,48}$/;
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const sha256=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const stable=value=>JSON.stringify(value);
-const CONFIG_SHA256=sha256(stable(['bees_native_collect','portable-collector-v1']));
 
 function loadJson(path) {
     if(typeof path!=='string'||!path)return null;
@@ -87,7 +87,7 @@ function checkPlan(plan,orders) {
 }
 function parameters(orders,job) {
     return {
-        config_sha256:CONFIG_SHA256,
+        config_sha256:PORTABLE_CONFIG_SHA256,
         collector_id:job.id,
         collection_id:job.collection_id,
         seed_offset:orders.seed_offset,
