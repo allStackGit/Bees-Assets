@@ -393,8 +393,8 @@ Linux graphical builds using the audio backend may need
 `sudo apt install libasound2-dev pkg-config`.
 
 To create a complete portable Windows/Linux game bundle with the
-compiled executable, converted source sprites, original MP3s, sample
-native battles and checksum manifest, run from the repository root:
+compiled executable, converted source sprites, original MP3s, a playable
+native campaign, quick battles and checksum manifest, run from the repository root:
 
 ```sh
 python3 native/tools/package-native-game.py \
@@ -403,8 +403,28 @@ python3 native/tools/package-native-game.py \
 
 Use the corresponding `bees.exe` binary on Windows. The packager
 requires Pillow only during asset preparation, refuses to overwrite an
-existing release and creates `play-native-duel`, `play-native-skirmish` and
-`play-native-two-player` launchers for the target platform.
+existing release and creates `play-bees.sh` on Linux or
+`play-bees.cmd` on Windows as the main desktop entry point. The former
+battle-specific `play-native-duel`, `play-native-skirmish` and
+`play-native-two-player` launchers remain available.
+The primary launcher opens a Unity-free game library with the persistent
+Frontier fleet campaign and three quick battles. Campaigns use the same
+mission unlock, saved-squad, ship-purchase, tactics and fleet-loss
+implementation as `bees menu`; battles use the same native simulation
+and renderer as training. Closing a campaign or battle returns to the
+library. Launching the packaged `bees` / `bees.exe` executable with no
+arguments opens this library too, provided the packaged
+`examples/native-library.json` is installed beside it.
+
+Career saves and battle journals are stored outside the release directory:
+`$XDG_DATA_HOME/bees-native` (or `~/.local/share/bees-native`) on
+Linux, `%LOCALAPPDATA%\\BeesNative` on Windows. Existing native command-line
+usage is unchanged. For custom libraries, run
+`bees library /path/to/native-library.json --output-dir /path/to/saves`.
+The library lists explicit `campaign` and `battle` entries with stable
+IDs and relative JSON configuration paths; it does not scan arbitrary
+installed files or copy Unity scenes.
+
 The package also includes `clients/remote_play_client.py` and
 `clients/remote_play_window.py` for optional remote players. The packaged
 game requires neither Python nor Unity to run. The current audio
