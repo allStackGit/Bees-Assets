@@ -25,6 +25,29 @@ ROOT = Path(__file__).resolve().parents[2]
 AUDIO_SOURCE = ROOT / "native/crates/bees-host/src/game_audio.rs"
 CONVERTER = ROOT / "native/tools/import-ship-sprites.py"
 EXAMPLES = ("native-duel", "native-skirmish", "native-two-player")
+CAMPAIGN = "native-frontier-campaign"
+CAMPAIGN_RUNS = ("native-campaign-assault.run.json",)
+
+
+def write_game_library(output: Path) -> None:
+    """One native UI entry point for persistent campaigns and quick battles."""
+    catalog = {
+        "library_schema": 1,
+        "games": [
+            {"id": "frontier", "title": "Frontier Fleet Campaign",
+             "kind": "campaign", "config": CAMPAIGN + ".json"},
+            {"id": "duel", "title": "Native Duel",
+             "kind": "battle", "config": "native-duel.run.json"},
+            {"id": "skirmish", "title": "Native Skirmish",
+             "kind": "battle", "config": "native-skirmish.run.json"},
+            {"id": "two-player", "title": "Native Two-Player Duel",
+             "kind": "battle", "config": "native-two-player.run.json"},
+        ],
+    }
+    (output / "native-library.json").write_text(
+        json.dumps(catalog, indent=2) + "\n", encoding="utf-8",
+    )
+
 
 
 def original_audio_paths() -> list[tuple[Path, Path]]:
@@ -87,6 +110,34 @@ def write_launchers(output: Path, binary_name: str) -> None:
                 encoding="utf-8",
             )
             launcher.chmod(0o755)
+    # Primary entry point: persistent player saves live outside the
+    # immutable game distribution on both operating systems.
+    if binary_name.endswith(".exe"):
+        launcher = output / "play-bees.cmd"
+        launcher.write_text(
+            "@echo off\r\n"
+            "setlocal\r\n"
+            'cd /d "%~dp0"\r\n'
+            'if defined LOCALAPPDATA (set "BEES_SAVE=%LOCALAPPDATA%\\BeesNative") '
+            'else (set "BEES_SAVE=%USERPROFILE%\\BeesNative")\r\n'
+            'if not exist "%BEES_SAVE%" mkdir "%BEES_SAVE%"\r\n'
+            f'"%~dp0{binary_name}" library "examples\\native-library.json" '
+            '--output-dir "%BEES_SAVE%" %*\r\n',
+            encoding="utf-8",
+        )
+    else:
+        launcher = output / "play-bees.sh"
+        launcher.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            'cd "$(dirname "$0")"\n'
+            'save="${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\n'
+            'mkdir -p "$save"\n'
+            f'exec "./{binary_name}" library "examples/native-library.json" '
+            '--output-dir "$save" "$@"\n',
+            encoding="utf-8",
+        )
+        launcher.chmod(0o755)
 
 
 def create_manifest(output: Path) -> None:
@@ -150,6 +201,11 @@ def main() -> None:
             for ext in ("run.json", "scene.json"):
                 shutil.copy2(ROOT / "native/examples" / f"{name}.{ext}",
                              examples / f"{name}.{ext}")
+        shutil.copy2(ROOT / "native/examples" / (CAMPAIGN + ".json"),
+                     examples / (CAMPAIGN + ".json"))
+        for name in CAMPAIGN_RUNS:
+            shutil.copy2(ROOT / "native/examples" / name, examples / name)
+        write_game_library(examples)
         # Remote controllers are optional Python/Tk tools. The actual
         # packaged native game and training core remain Python-free.
         clients = staging / "clients"
