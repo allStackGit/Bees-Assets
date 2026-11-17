@@ -29,27 +29,6 @@ CAMPAIGN = "native-frontier-campaign"
 CAMPAIGN_RUNS = ("native-campaign-assault.run.json",)
 
 
-def write_game_library(output: Path) -> None:
-    """One native UI entry point for persistent campaigns and quick battles."""
-    catalog = {
-        "library_schema": 1,
-        "games": [
-            {"id": "frontier", "title": "Frontier Fleet Campaign",
-             "kind": "campaign", "config": CAMPAIGN + ".json"},
-            {"id": "duel", "title": "Native Duel",
-             "kind": "battle", "config": "native-duel.run.json"},
-            {"id": "skirmish", "title": "Native Skirmish",
-             "kind": "battle", "config": "native-skirmish.run.json"},
-            {"id": "two-player", "title": "Native Two-Player Duel",
-             "kind": "battle", "config": "native-two-player.run.json"},
-        ],
-    }
-    (output / "native-library.json").write_text(
-        json.dumps(catalog, indent=2) + "\n", encoding="utf-8",
-    )
-
-
-
 def original_audio_paths() -> list[tuple[Path, Path]]:
     """The native client source owns the actual clip list.
 
@@ -209,7 +188,8 @@ def main() -> None:
                      examples / (CAMPAIGN + ".json"))
         for name in CAMPAIGN_RUNS:
             shutil.copy2(ROOT / "native/examples" / name, examples / name)
-        write_game_library(examples)
+        shutil.copy2(ROOT / "native/examples/native-library.json",
+                     examples / "native-library.json")
         # Remote controllers are optional Python/Tk tools. The actual
         # packaged native game and training core remain Python-free.
         clients = staging / "clients"
