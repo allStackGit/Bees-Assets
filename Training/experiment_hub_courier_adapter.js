@@ -460,23 +460,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const auto=autoLearners&&cpuParallelism==='allocation';
             if(auto&&(!within(context.ram_quota_mb,128,1000000)))
                 throw Error('Courier automatic execution requires a fixed RAM lease.');
-            // The backend already has checkpoint-aligned, episode-preserving
-            // process-group tuning. The Hub supplies a bounded number of
-            // *logical* complete map shards and the actual leased CPU count,
-            // not an operator-selected optimal process population.
-            //
-            // Preserve the original PPO observation/vector batch size:
-            // colony = four complete maps; competition = 32; ordinary = 64.
-            // A one-core-per-lineage lease retains the efficient old VecEnv
-            // instead of multiplying threads/shared-memory segments.
-            const localLineages=chosenWorkers-(useRemote?remote.endpoints.length:0);
-            const mapCount=parsed.colony?4:parsed.competitive?32:64;
-            const share=auto&&persistentWorlds
-                ?Math.floor(context.cpu_quota/Math.max(1,Math.min(
-                    localLineages,fixedCpuParallelism(context.cpu_quota,64))))
-                :1;
-            const logicalShards=share<=1?1:Math.min(
-                maxSimulationShards,mapCount,4*share);
+            // The Hub owns the CPU/RAM lease and supplies the installed
+            // backend's declared shard ceiling. Courier alone derives
+            // whole-map capacity from the CPU share and tunes physical
+            // processes using completed useful-SPS measurements. It never
+            // changes the recurrent PPO observation/batch contract.
             // The wrapper provides the same checkpoint-boundary Stop request
             // on both platforms; systemd remains the sole Linux service owner.
             const launch=[path.join(__dirname,'experiment_hub_courier_train.py'),
@@ -490,8 +478,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(auto?['--auto-active-learners']:[]),
                 ...(auto&&persistentWorlds?[
                     '--cpu-lease',String(context.cpu_quota),
-                    ...(logicalShards>1
-                        ?['--simulation-shards',String(logicalShards)]:[]),
+                    ...(maxSimulationShards>1
+                        ?['--simulation-shards',String(maxSimulationShards)]:[]),
                 ]:[]),
                 ...(auto||context.gpu_pci_address!==undefined||
                     context.gpu_pci_addresses!==undefined
