@@ -308,8 +308,10 @@ This opens the built-in cross-platform minifb tactical window; **Python
 and Tkinter are not required**. Select one or multiple owned squads by
 clicking/dragging (Shift adds), right-click to move, attack, guard or mine,
 or use F point fire, T attack, G guard, M mine, H hold, Z cease fire,
-C chase, L lock on, V speed match and A select all. Mouse wheel/arrow keys
-adjust the camera, and Esc disconnects. The client renders only the ships,
+C chase, L lock on, V speed match, A select all, E heal, W retreat,
+P two-corner patrol, B beacon, D detonate, Q charge, and Page Up/Down
+to choose shooting strategy 1–40. Mouse wheel/arrow keys adjust the
+camera, and Esc disconnects. The client renders only the ships,
 obstacles, projectiles, health, orders and fog-limited coordinates that the
 authoritative host transmitted. It never runs client-side physics.
 Connect/return statistics include received bytes, snapshots and order
@@ -386,6 +388,29 @@ resolved inside the player's save directory. Keep the token file private;
 on Linux the native client requires its permissions to be owner-only.
 The packaged multiplayer option returns to the game library on disconnect
 or battle completion. A missing configuration never blocks offline play.
+
+To **host** the authored independent-player battle from the packaged game
+library, add `multiplayer-host.json` to the same player save directory:
+
+```json
+{
+  "game_id": "two-player",
+  "listen": "127.0.0.1:7284",
+  "tokens_file": "/absolute/private/path/to/host-side-tokens.json"
+}
+```
+
+Keep a separate private `host-side-tokens.json` (mode 0600 on Linux),
+whose contents are the host's usual
+`{"1":"<unique-long-secret>","2":"<different-long-secret>"}` mapping.
+Only the host reads both secrets; each player receives **only their
+individual** secret in their own private token file. The library's
+**Host Multiplayer** action launches the existing native
+`bees play` simulation with this binding in a separate child process
+and returns to the library when the battle ends. The child process avoids
+mutating the parent game's environment. No game state, model or simulated
+physics is duplicated. The multiplayer server remains plain TCP, so bind
+only to a private network/VPN interface or use a secured tunnel.
 
 The host selects the player's side from the authenticated token; `--side`
 is a client-side check that the server selected the intended side, not a
