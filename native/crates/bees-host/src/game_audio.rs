@@ -379,6 +379,37 @@ impl NativeGameAudio {
         self.voices.retain(|sink| !sink.empty());
         let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
         let mut effects = Vec::new();
+        // Explicit server launch events take precedence over observing the
+        // corresponding still-live shot in the same snapshot. No double
+        // weapon sound when both forms of evidence are present.
+        for event in state["audio_events"].as_array().into_iter().flatten() {
+            if let Some(id) = event["projectile_id"].as_i64() {
+                self.seen_projectiles.insert(id, tick);
+            }
+            let effect = match event["effect"].as_str() {
+                Some("explosion") => Some(Effect::Explosion),
+                Some("huge_explosion") => Some(Effect::HugeExplosion),
+                Some("striker_bomb") => Some(Effect::StrikerBomb),
+                Some("warp") => Some(Effect::Warp),
+                Some("projectile") => event["projectile_type"].as_u64()
+                    .and_then(|kind| u8::try_from(kind).ok())
+                    .and_then(Effect::projectile),
+                _ => None,
+            };
+            let (Some(effect), Some(x), Some(y)) =
+                (effect, event["x"].as_f64(), event["y"].as_f64())
+                else { continue };
+            if !x.is_finite() || !y.is_finite() ||
+                !on_screen(visible, Vec2::new(x as f32, y as f32)) {
+                continue;
+            }
+            if budget > 0 {
+                budget -= 1;
+                effects.push(effect);
+            } else { self.measurements.sound_effects_dropped += 1; }
+        }
+        // The fallback still supports earlier hosts that only transmit
+        // projectile state, without inventing projectile spawn events.
         for shot in state["projectiles"].as_array().into_iter().flatten() {
             let (Some(id), Some(kind), Some(x), Some(y)) = (
                 shot["id"].as_i64(), shot["type"].as_u64(),
@@ -397,25 +428,6 @@ impl NativeGameAudio {
             } else { self.measurements.sound_effects_dropped += 1; }
         }
         self.seen_projectiles.retain(|_, seen| *seen == tick);
-        for event in state["audio_events"].as_array().into_iter().flatten() {
-            let effect = match event["effect"].as_str() {
-                Some("explosion") => Effect::Explosion,
-                Some("huge_explosion") => Effect::HugeExplosion,
-                Some("striker_bomb") => Effect::StrikerBomb,
-                Some("warp") => Effect::Warp,
-                _ => continue,
-            };
-            let (Some(x), Some(y)) = (event["x"].as_f64(), event["y"].as_f64())
-                else { continue };
-            if !x.is_finite() || !y.is_finite() ||
-                !on_screen(visible, Vec2::new(x as f32, y as f32)) {
-                continue;
-            }
-            if budget > 0 {
-                budget -= 1;
-                effects.push(effect);
-            } else { self.measurements.sound_effects_dropped += 1; }
-        }
         for effect in effects { self.play(effect); }
     }
 

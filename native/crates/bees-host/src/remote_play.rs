@@ -541,10 +541,23 @@ impl NativeRemotePlay {
         // This runs at each physical tick, including the four ticks with no
         // state frame. Carry short-lived sounds to the next presentation frame.
         if !view.combat.events().is_empty() {
+            // Build an event-local physical lookup once across all player
+            // sides, not once for each simultaneous weapon launch and peer.
+            let needs_shots = view.combat.events().iter().any(|event| matches!(event,
+                CombatEvent::PolicyWeaponFired { .. } |
+                CombatEvent::GameWeaponFired { .. } |
+                CombatEvent::FireTankExploded { .. } |
+                CombatEvent::BombDetonated { .. }));
+            let shot_positions: HashMap<i64, (u8, Vec2)> = if needs_shots {
+                view.combat.render_projectiles()
+                    .map(|(shot, body)| (
+                        shot.entity_id, (shot.projectile_type, body.motion.position),
+                    )).collect()
+            } else { HashMap::new() };
             let mut sides = HashSet::new();
             for side in self.peers.iter().filter_map(|peer| peer.side) {
                 if sides.insert(side) {
-                    collect_remote_audio(view, side,
+                    collect_remote_audio(view, side, &shot_positions,
                         self.pending_audio.entry(side).or_default(),
                         &mut self.measurements);
                 }
@@ -735,12 +748,14 @@ fn remote_fog_sources(
 /// Host-only ephemeral cues, restricted to the same visibility as combat
 /// geometry. Unlocalized events are deliberately not sent to opponents.
 fn collect_remote_audio(
-    view: &NativeRenderWorldView<'_>, side: i32, pending: &mut Vec<Value>,
+    view: &NativeRenderWorldView<'_>, side: i32,
+    shots: &HashMap<i64, (u8, Vec2)>, pending: &mut Vec<Value>,
     measurements: &mut RemotePlayMeasurements,
 ) {
     let sources = view.player_authority.player_fog_of_war_enabled()
         .then(|| remote_fog_sources(view, side, measurements));
     for event in view.combat.events() {
+        let mut launched = None;
         let (effect, point) = match event {
             CombatEvent::ShipDied { victim_id, .. } => (
                 if view.combat.ship(*victim_id)
@@ -758,15 +773,42 @@ fn collect_remote_audio(
                 "warp",
                 view.combat.ship_body(*ship_id).map(|body| body.motion.position),
             ),
+            // Captures real launches even when a shot dies between two
+            // five-tick presentation snapshots. The existing client sound
+            // table remains the one authority for projectile sound families.
+            CombatEvent::GameWeaponFired { projectile_id, .. } |
+            CombatEvent::PolicyWeaponFired { projectile_id, .. } => {
+                let Some(&(kind, point)) = shots.get(projectile_id) else { continue };
+                launched = Some((*projectile_id, kind));
+                ("projectile", Some(point))
+            },
+            CombatEvent::FireTankExploded { explosion_projectile_id, .. } => (
+                "huge_explosion",
+                shots.get(explosion_projectile_id).map(|shot| shot.1),
+            ),
+            CombatEvent::BombDetonated { projectile_id, .. } => (
+                "huge_explosion",
+                shots.get(projectile_id).map(|shot| shot.1),
+            ),
             _ => continue,
         };
         let Some(point) = point.filter(|point| point.is_finite()) else { continue };
         if sources.as_ref().is_some_and(|sources|
             !sources.covers(point, measurements)) { continue; }
+        if let Some((id, _)) = launched {
+            if pending.iter().any(|cue| cue["projectile_id"].as_i64() == Some(id)) {
+                continue;
+            }
+        }
         if pending.len() < MAX_PENDING_AUDIO_EVENTS {
-            pending.push(json!({
+            let mut cue = json!({
                 "effect": effect, "x": point.x, "y": point.y, "tick": view.tick,
-            }));
+            });
+            if let Some((id, kind)) = launched {
+                cue["projectile_id"] = json!(id);
+                cue["projectile_type"] = json!(kind);
+            }
+            pending.push(cue);
             measurements.audio_events_queued += 1;
         } else { measurements.audio_events_dropped += 1; }
     }
