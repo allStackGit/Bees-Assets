@@ -95,6 +95,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             // Report exposed CPU-prep wait, not concurrent background work
             // as a separate portion of whole-update wall.
             'ppo_prep_wait_seconds','ppo_prep_cpu_seconds',
+            'ppo_prep_wait_work_share',
+            'pipeline_ppo_prep_wait_pressure',
             'ppo_prep_async_h2d_bytes',
             'rollout_gpu_batch_target_pixels',
             'rollout_gpu_batch_next_target','rollout_gpu_batch_settled',
