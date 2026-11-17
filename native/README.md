@@ -318,7 +318,11 @@ ships remain visibly allied but are not player-commandable. Esc first
 cancels a pending tactical target, then disconnects. In supported
 campaign missions, the same authored dialogue cues appear in the remote
 window; Enter advances the visible line and Backspace reviews the
-previous line without changing the host's campaign progression.
+previous line without changing the host's campaign progression. Native
+mission views also report the authoritative survival/evacuation clock,
+reinforcement arrivals, and actual win, draw or extraction result. Only
+the compact cue identity crosses the network; both game builds use
+the same authored dialogue table.
 The client renders only the ships,
 obstacles, projectiles, health, orders and fog-limited coordinates that the
 authoritative host transmitted. It never runs client-side physics.
