@@ -189,7 +189,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_guard_readback_work_share',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_sim_queue_work_share','training_sim_queue_pressure',
-            'training_sim_parallelism_underuse_evidence',
+            'training_sim_cpu_underuse_evidence',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
             'pipeline_optimization_dominant','pipeline_remote_wait_work_share',
@@ -708,7 +708,7 @@ class BottleneckEvidence {
                     add('training_sim_queue_pressure',1,'count');
                 if(sustained(x=>x.courierSimQueue)&&
                     sustained(x=>x.resourceHints?.cpuIdle))
-                    add('training_sim_parallelism_underuse_evidence',1,'count');
+                    add('training_sim_cpu_underuse_evidence',1,'count');
                 if(sustained(x=>x.courierTail))
                     add('training_final_join_pressure',1,'count');
                 if(sustained(x=>x.courierRemoteGap))
