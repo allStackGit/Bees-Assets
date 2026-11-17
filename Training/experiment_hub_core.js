@@ -731,6 +731,54 @@ function nativeStartReadiness(snapshot, job) {
         return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
     if(!distributedRolloutHost(snapshot,job,machine))
         return block('The remote collector is not assigned to an active learner and its pinned physical endpoint.');
+    if(!courierLineageHost(snapshot,job,machine))
+        return block('The Courier remote lineage is not assigned to its pinned learner, slot and private endpoint.');
+    if(job.project_id==='courier'&&job.frozen_parameters?.remote_lineages===true) {
+        const endpoints=machine.courier_remote_lineage_endpoints;
+        const shards=machine.courier_remote_max_shards;
+        const key=machine.courier_remote_key_fingerprint;
+        const workers=snapshot.jobs.filter(worker=>
+            worker.project_id==='courier_lineage'&&
+            worker.frozen_parameters?.learner_job_id===job.id&&
+            worker.status!=='cancelled');
+        if(!Array.isArray(endpoints)||!endpoints.length||endpoints.length>16||
+            !Array.isArray(shards)||shards.length!==endpoints.length||
+            !SHA256.test(String(key||''))||
+            workers.length!==endpoints.length)
+            return block('The Courier learner needs its exact locally pinned remote PPO population.');
+        const hosts=new Set([machine.id]);
+        const total=job.frozen_parameters.workers;
+        if(!Number.isSafeInteger(total)||total<=endpoints.length||total>64)
+            return block('Courier remote PPO workers require a frozen population with one local learner.');
+        for(let index=0;index<endpoints.length;index++) {
+            const endpoint=endpoints[index];
+            const slot=total-endpoints.length+index;
+            const worker=workers.find(item=>item.frozen_parameters?.slot===slot);
+            if(!worker||worker.status!=='running'||
+                worker.live_execution?.state!=='running'||
+                worker.live_execution?.dispatch_id!==worker.dispatch_id||
+                !worker.dispatch_id||worker.capacity_released_at||
+                !worker.assigned_machine_id||hosts.has(worker.assigned_machine_id))
+                return block('Every Courier PPO lineage needs an independently running Hub worker.');
+            hosts.add(worker.assigned_machine_id);
+            const host=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
+            const owned=snapshot.reservations.find(lease=>
+                lease.id===worker.lease_id&&lease.job_id===worker.id&&
+                lease.project_id==='courier_lineage'&&
+                lease.machine_id===worker.assigned_machine_id&&
+                lease.issued_by==='experiment-hub'&&
+                lease.status==='acknowledged'&&lease.receipt_fresh===true);
+            if(!host||host.status!=='connected'||
+                !host.local_executor_enabled||!host.native_preflight_passed||
+                !host.installed_projects?.includes('courier_lineage')||
+                host.courier_lineage_endpoint!==endpoint||
+                host.courier_lineage_key_fingerprint!==key||
+                host.courier_lineage_max_shards!==shards[index]||
+                !owned||nativeResourceBlock(worker,owned)||
+                gpuStartBlock(worker,owned,host))
+                return block('Courier PPO remote endpoint, identity, GPU proof or fresh independent lease differs from its learner.');
+        }
+    }
     if(job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true) {
         const count=machine.tinybrains_remote_rollout_count;
         const expectedEndpoints=machine.tinybrains_remote_rollout_endpoints;
@@ -920,6 +968,43 @@ function distributedRolloutHost(snapshot,job,machine) {
         other.frozen_parameters?.learner_job_id===parent.id&&
         other.assigned_machine_id===machine.id))return false;
     return true;
+}
+// The same native Start gate is used for individual remote-lineage worker
+// claims, so a generic job cannot start a service for an unrelated learner.
+// The coordinator, not the job payload, pins the original endpoint and slot.
+function courierLineageHost(snapshot,job,machine) {
+    if(job.project_id!=='courier_lineage')return true;
+    const learner=snapshot.jobs.find(item=>
+        item.id===job.frozen_parameters?.learner_job_id);
+    if(!learner||learner.project_id!=='courier'||
+        learner.frozen_parameters?.remote_lineages!==true||
+        !['waiting_adapter','start_requested','launch_requested','running'].includes(learner.status)||
+        !learner.assigned_machine_id||!machine||
+        machine.id===learner.assigned_machine_id||
+        machine.status!=='connected'||
+        !machine.installed_projects?.includes('courier_lineage'))
+        return false;
+    const parent=snapshot.machines.find(host=>host.id===learner.assigned_machine_id);
+    const endpoints=parent?.courier_remote_lineage_endpoints;
+    if(!parent||parent.status!=='connected'||!Array.isArray(endpoints)||
+        !endpoints.length||endpoints.length>16||
+        !SHA256.test(String(parent.courier_remote_key_fingerprint||''))||
+        !Array.isArray(parent.courier_remote_max_shards)||
+        parent.courier_remote_max_shards.length!==endpoints.length||
+        machine.courier_lineage_key_fingerprint!==parent.courier_remote_key_fingerprint)
+        return false;
+    const index=endpoints.indexOf(machine.courier_lineage_endpoint);
+    const total=learner.frozen_parameters.workers;
+    if(index<0||!Number.isSafeInteger(total)||total<=endpoints.length||
+        total>64||job.frozen_parameters?.slot!==total-endpoints.length+index||
+        parent.courier_remote_max_shards[index]!==machine.courier_lineage_max_shards)
+        return false;
+    return !snapshot.jobs.some(other=>other.id!==job.id&&
+        other.project_id==='courier_lineage'&&
+        other.status!=='cancelled'&&
+        other.frozen_parameters?.learner_job_id===learner.id&&
+        (other.assigned_machine_id===machine.id||
+            other.frozen_parameters?.slot===job.frozen_parameters.slot));
 }
 function allocationBlockReason(machines,job,preferredMachineId=null) {
     const candidates=preferredMachineId
@@ -5012,6 +5097,30 @@ class ExperimentHub {
         const afterId=value.after_job_id==null?null:value.after_job_id;
         if(afterId!==null&&ancestorId!==null)
             throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
+        if(project.id==='courier'&&frozen.remote_lineages===true&&
+            (!Number.isSafeInteger(frozen.workers)||frozen.workers<2||
+                frozen.workers>64))
+            throw Error('Distributed Courier requires an explicit, frozen population of at least two PPO lineages.');
+        if(project.id==='courier_lineage') {
+            const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
+            if(Object.keys(frozen).some(key=>!['learner_job_id','slot'].includes(key))||
+                !UUID.test(String(frozen.learner_job_id||''))||
+                !Number.isSafeInteger(frozen.slot)||frozen.slot<0||frozen.slot>=64||
+                !learner||learner.project_id!=='courier'||
+                learner.frozen_parameters?.remote_lineages!==true||
+                !Number.isSafeInteger(learner.frozen_parameters?.workers)||
+                frozen.slot>=learner.frozen_parameters.workers||
+                ['finished','stopped','failed','cancelled'].includes(learner.status)||
+                (resources.gpu_count!==0&&
+                    (resources.gpu_count!==1||resources.gpu_mode!=='exclusive'))||
+                ancestorId!==null||afterId!==null)
+                throw Error('Courier remote lineage needs a frozen parent, unique slot and separate CPU or exclusive single-GPU lease.');
+            if(next.jobs.filter(j=>j.project_id==='courier_lineage'&&
+                j.status!=='cancelled'&&
+                j.frozen_parameters?.learner_job_id===learner.id&&
+                j.frozen_parameters?.slot===frozen.slot).length)
+                throw Error('One Courier remote PPO lineage may own each policy slot.');
+        }
         if(project.id==='tinybrains_rollout') {
             const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
             if(Object.keys(frozen).some(key=>!['learner_job_id','threads'].includes(key))||
