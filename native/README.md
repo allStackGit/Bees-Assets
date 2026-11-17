@@ -290,14 +290,35 @@ export BEES_NATIVE_REMOTE_LISTEN=127.0.0.1:7284
 bees play /absolute/path/to/run.json --output-dir /path/to/new-run
 ```
 
-From another terminal or machine, set the **same token** in that client's
-environment and connect to the host. For a remote machine, tunnel port
-7284 over SSH or use a private authenticated overlay network and bind the
-host to its private interface:
+From another terminal or machine, use the **compiled native desktop**
+multiplayer client. Put only that player's token in a private UTF-8 file
+(`chmod 600` on Linux), and connect over SSH tunneling or a private
+authenticated overlay. The host must bind its private interface for
+direct LAN/VPN connections:
+
+```sh
+# Use the same token the host generated, without putting it in argv.
+mkdir -p ~/.config/bees
+printf '%s\n' "$BEES_NATIVE_REMOTE_TOKEN" > ~/.config/bees/player.token
+chmod 600 ~/.config/bees/player.token
+bees connect 127.0.0.1:7284 --token-file ~/.config/bees/player.token --side 1
+```
+
+This opens the built-in cross-platform minifb tactical window; **Python
+and Tkinter are not required**. Select one or multiple owned squads by
+clicking/dragging (Shift adds), right-click to move, attack, guard or mine,
+or use F point fire, T attack, G guard, M mine, H hold, Z cease fire,
+C chase, L lock on, V speed match and A select all. Mouse wheel/arrow keys
+adjust the camera, and Esc disconnects. The client renders only the ships,
+obstacles, projectiles, health, orders and fog-limited coordinates that the
+authoritative host transmitted. It never runs client-side physics.
+Connect/return statistics include received bytes, snapshots and order
+acknowledgments, without adding work to the headless training loop.
+
+Existing Python clients remain available for a terminal or Tk alternative:
 
 ```sh
 python3 native/tools/remote_play_client.py 127.0.0.1 7284
-# Or open a graphical tactical client from the same connection:
 python3 native/tools/remote_play_window.py 127.0.0.1 7284
 ```
 
@@ -307,9 +328,9 @@ snapshot cadence. It offers selection, drag selection, right-click
 attack/guard/mining/move, an editable tactical toolbar, Lock On,
 shooting strategies 1-40 and middle-drag / wheel camera controls.
 It is a lightweight 2D **remote view**, not a separate physics engine or
-the source-art native local renderer. The graphical client requires Python
-and Tkinter (`python3-tk` on Debian systems without Tk preinstalled);
-the compiled local game and headless learner still require neither.
+the source-art native local renderer. The optional Python/Tk implementation
+requires Python and Tkinter (`python3-tk` on Debian); the new built-in
+native window, compiled local game and headless learner do not.
 The server rejects remote held-fire gestures until per-connection release
 semantics exist, but explicit point fire works. Up to four connections
 share **one** player-side authority.
@@ -336,12 +357,35 @@ bees play native/examples/native-two-player.run.json --output-dir /path/to/new-r
 ```
 
 Give each remote player **only their own token** from the host-side map.
-Each client sets `BEES_NATIVE_REMOTE_TOKEN` to that token and connects:
+Each player saves only their own token to a private file and opens
+the native desktop remote client:
 
 ```sh
+bees connect 127.0.0.1:7284 --token-file ~/.config/bees/side1.token --side 1
+# Optional Python alternative:
 python3 native/tools/remote_play_window.py 127.0.0.1 7284 --side 1
-# Terminal alternative: python3 native/tools/remote_play_client.py 127.0.0.1 7284 --side 1
 ```
+
+The packaged game also offers **Join Multiplayer** on its native home screen
+when a user-specific `multiplayer.json` exists in the saved game directory
+(`~/.local/share/bees-native` on Linux or
+`%LOCALAPPDATA%\\BeesNative` on Windows). The file stores connection
+settings, never authentication secrets:
+
+```json
+{
+  "address": "127.0.0.1:7284",
+  "side": 1,
+  "token_file": "/absolute/private/path/to/side1.token"
+}
+```
+
+On Windows, use an absolute Windows path for `token_file` (with
+backslashes escaped as `\\\\` inside JSON). Relative token paths are
+resolved inside the player's save directory. Keep the token file private;
+on Linux the native client requires its permissions to be owner-only.
+The packaged multiplayer option returns to the game library on disconnect
+or battle completion. A missing configuration never blocks offline play.
 
 The host selects the player's side from the authenticated token; `--side`
 is a client-side check that the server selected the intended side, not a
