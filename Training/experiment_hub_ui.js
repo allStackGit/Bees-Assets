@@ -1027,7 +1027,9 @@ document.addEventListener('DOMContentLoaded', () => {
             row.remove();
             renderPipelineStages();
         });
-        row.append(configLabel,resourceLabel,curriculumLabel,remove);
+        const resourceGroup=document.createElement('div');
+        resourceGroup.append(resourceLabel,curriculumLabel);
+        row.append(configLabel,resourceGroup,remove);
         container.append(row);
     }
     function renderPipelineStages() {
@@ -5800,6 +5802,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const curriculumChoiceLabel=document.createElement('label');
     const curriculumChoice=document.createElement('input');
     curriculumChoice.type='checkbox';
+    curriculumChoiceLabel.className='hub-curriculum-choice';
     curriculumChoiceLabel.append(curriculumChoice,
         document.createTextNode(' Curriculum transition: preserve the trained model while allowing adapter-approved environment changes (Courier map resize only for now)'));
     $('hub-job-predecessor').closest('label')
