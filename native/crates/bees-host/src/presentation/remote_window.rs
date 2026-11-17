@@ -11,6 +11,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use bees_gameplay::campaign_dialogue::CampaignCue;
 use bees_sim::collision::Aabb;
 use bees_sim::geometry::Vec2;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
@@ -346,10 +347,11 @@ fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
 /// The remote window presents the host's authored dialogue, never a second
 /// mission progression state. Peers choose which line to read locally.
 fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) {
-    let Some(lines)=state["campaign_dialogue"]["lines"].as_array() else {return;};
-    let Some(line)=lines.get(line_index) else{return;};
-    let speaker=line["speaker"].as_str().unwrap_or("Mission");
-    let message=line["message"].as_str().unwrap_or("");
+    let Ok(cue)=serde_json::from_value::<CampaignCue>(
+        state["campaign_dialogue"]["cue"].clone(),
+    ) else {return;};
+    let lines=super::campaign_dialogue::lines(cue);
+    let Some(&(speaker,message))=lines.get(line_index) else{return;};
     for scanline in pixels.chunks_exact_mut(WIDTH).skip(HEIGHT-160).take(96) {
         scanline[..FIELD].fill(0x1c3045);
     }
@@ -637,7 +639,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 state["episode_revision"].as_u64().unwrap_or(0),sequence,
             ));
             if cue!=dialogue_key {dialogue_key=cue;dialogue_line=0;}
-            let count=state["campaign_dialogue"]["lines"].as_array().map_or(0,Vec::len);
+            let count=state["campaign_dialogue"]["line_count"]
+                .as_u64().unwrap_or(0).min(100) as usize;
             if count>0 {
                 if window.is_key_pressed(Key::Enter,KeyRepeat::No){
                     dialogue_line=(dialogue_line+1).min(count-1);
