@@ -90,8 +90,8 @@ class RemoteBattleWindow:
         self.view_height = 1
 
         for title in ("Move", "Attack", "Guard", "Mine", "Heal", "Retreat", "Point fire"):
-            ttk.Button(self.toolbar, text=title, command=lambda t=title: self.set_mode(MODES[t])
-                       ).pack(in_=self.toolbar_main, side="left", padx=2)
+            ttk.Button(self.toolbar_main, text=title, command=lambda t=title: self.set_mode(MODES[t])
+                       ).pack(side="left", padx=2)
         for title, action in [
             ("Stop fire", lambda: self.send("fire", {"target": None})),
             ("Cease", lambda: self.send("cease_fire", {"cease_fire": True})),
