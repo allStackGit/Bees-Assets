@@ -2899,6 +2899,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'';
             const distributedSummary=groupWorkers.length
                 ?' · Distributed '+(courierGroup?'PPO lineages':'collectors')+': '+groupWorkers.map(worker=>
+                    (courierGroup?'slot '+worker.frozen_parameters?.slot+' @ ':'')+
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
                     (worker.capacity_released_at?' (released)':'')).join('; ')
                 :'';
