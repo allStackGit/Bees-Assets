@@ -853,6 +853,12 @@ def main():
         parser.error("--library-save-root and --library-game-id must be used together")
     if args.library_game_title is not None and args.library_game_id is None:
         parser.error("--library-game-title requires --library-game-id")
+    if args.library_game_id is not None and (
+            not 1 <= len(args.library_game_id) <=
+                (35 if args.evaluation_run_config is not None else 40) or
+            any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+                for c in args.library_game_id)):
+        parser.error("invalid native game ID (1..40 ASCII characters; max 35 with best holdout)")
     if not 1 <= args.rounds <= 99999:
         parser.error("--rounds must be between 1 and 99999")
     if (args.self_play_opponent_slot is None) != (args.self_play_refresh_every is None):
