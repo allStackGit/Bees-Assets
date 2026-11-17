@@ -1580,6 +1580,20 @@ fn launch_catalog_battle(
             Err(error) => return Err(error.into()),
         }
     };
+    if interactive {
+        if let Some(mission) = mission {
+            let setup = CampaignReplaySetup::capture(&config, mission)?;
+            let path = output.parent().expect("created campaign battle directory")
+                .join("campaign-replay-setup.json");
+            // The source career projection was read under the writer lease;
+            // commit it before gameplay begins, not after the career changes.
+            let file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+            serde_json::to_writer(&file, &setup)?;
+            file.sync_all()?;
+            #[cfg(unix)]
+            fs::File::open(path.parent().expect("campaign battle parent"))?.sync_all()?;
+        }
+    }
     run_session(&config, interactive, interactive, Some(output.clone()), None, None, mission)?;
     Ok(output)
 }
