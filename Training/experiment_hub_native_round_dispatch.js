@@ -13,6 +13,7 @@
 const fs=require('node:fs');
 const crypto=require('node:crypto');
 const {parseArgs}=require('node:util');
+const {request:normalizeResources}=require('./experiment_hub_resources');
 
 const SHA=/^[0-9a-f]{64}$/;
 const ID=/^[A-Za-z0-9_-]{1,48}$/;
@@ -158,7 +159,8 @@ async function dispatch(ordersFile,planFile,port) {
                 item.resource_bundle.size!==found.length||
                 item.project_id!=='bees_native_collect'||
                 item.assigned_machine_id!==allocations[index].machine_id||
-                !sameJson(item.resources,allocations[index].resources)||
+                !sameJson(normalizeResources(item.resources),
+                    normalizeResources(allocations[index].resources))||
                 !sameJson(item.frozen_parameters,allocations[index].configuration.parameters)))
             throw Error('Existing native Hub bundle differs from issued immutable work.');
         memberIds=found.map(item=>item.id);
