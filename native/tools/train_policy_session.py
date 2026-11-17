@@ -30,6 +30,7 @@ from native_distributed_collection import (
     derive_hub_resource_plan,
 )
 from native_session_selection import publish_best_evaluated, publish_latest_playable
+from native_game_registration import register_playable
 from native_curriculum import (load_curriculum, selected_curriculum_run,
                                curriculum_stage_metrics)
 
@@ -841,7 +842,17 @@ def main():
     parser.add_argument("--torch-threads", type=int)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--stage-diagnostics", action="store_true")
+    parser.add_argument("--library-save-root", type=Path,
+                        help="opt-in native player save directory for playable training publications")
+    parser.add_argument("--library-game-id",
+                        help="stable per-job game ID; fixed while the session advances")
+    parser.add_argument("--library-game-title",
+                        help="game library display title (defaults to native run ID)")
     args = parser.parse_args()
+    if (args.library_save_root is None) != (args.library_game_id is None):
+        parser.error("--library-save-root and --library-game-id must be used together")
+    if args.library_game_title is not None and args.library_game_id is None:
+        parser.error("--library-game-title requires --library-game-id")
     if not 1 <= args.rounds <= 99999:
         parser.error("--rounds must be between 1 and 99999")
     if (args.self_play_opponent_slot is None) != (args.self_play_refresh_every is None):
@@ -1101,6 +1112,10 @@ def main():
         latest_playable = publish_latest_playable(
             root, recipe, completed, next_manifest, next_checkpoint,
         )
+        if args.library_save_root is not None:
+            display_title = args.library_game_title or config["run_id"]
+            register_playable(args.library_save_root, args.library_game_id,
+                              display_title, root / "latest-playable.json")
         evaluations = {}
         baseline_holdout = None
         best_evaluated = None
@@ -1122,6 +1137,13 @@ def main():
             best_evaluated = publish_best_evaluated(
                 root, recipe, completed, evaluations, baseline_holdout,
             )
+            if args.library_save_root is not None:
+                display_title = args.library_game_title or config["run_id"]
+                register_playable(
+                    args.library_save_root, args.library_game_id + "-best",
+                    display_title[:104] + " (Best holdout)",
+                    root / "best-evaluated.json",
+                )
         stop_state = early_stop_decision(
             completed, evaluations, baseline_holdout, recipe,
         )
