@@ -771,7 +771,8 @@ function hubComparisonCsv(exported) {
     const fields=[
         'slot','job_id','project_id','configuration_name','run_name','configuration_sha256',
         'selected_x_axis','selected_metric','selected_metrics','assigned_machine_id',
-        'artifact_lineage_root_id','continuation_of_job_id','status',
+        'artifact_lineage_root_id','continuation_of_job_id','continuation_mode',
+        'environment_overrides_json','status',
         'observed_at','source_modified_at','experiment_id','segment_id',
         'break_before','steps_completed','x_value',
         'trial_batch_id','trial_batch_index','trial_batch_size',
@@ -804,6 +805,8 @@ function hubComparisonCsv(exported) {
         assigned_machine_id:run.assigned_machine_id,
         artifact_lineage_root_id:run.artifact_lineage_root_id,
         continuation_of_job_id:run.continuation_of_job_id,
+        continuation_mode:run.continuation_mode,
+        environment_overrides_json:JSON.stringify(run.environment_overrides||{}),
         trial_batch_id:run.trial_batch?.id,
         trial_batch_index:run.trial_batch?.index,
         trial_batch_size:run.trial_batch?.size,
@@ -1687,7 +1690,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     hubJobLabel(j)+
                     trialBatchLabel(j)+
                     ' · job '+(jobs.indexOf(j)+1)+
-                    (j.continuation_of_job_id?' · continuation':' · initial run')+
+                    (j.continuation_of_job_id
+                        ?j.continuation_mode==='curriculum'
+                            ?' · curriculum stage':' · continuation'
+                        :' · initial run')+
                     ' · '+j.status+
                     ' · '+new Date(j.created_at).toLocaleDateString(),j.id)));
             const desired=chooseDefaults&&i<2
@@ -1894,7 +1900,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr=document.createElement('tr');
             cell(tr,run.slot+' · '+hubJobLabel(j)+
                 trialBatchLabel(j)+
-                (j.continuation_of_job_id?' (continuation)':''));
+                (j.continuation_of_job_id
+                    ?j.continuation_mode==='curriculum'
+                        ?' (curriculum stage)':' (continuation)'
+                    :''));
             cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned')+
                 (j.execution_diagnostic?' · '+j.execution_diagnostic:''));
             cell(tr,p?.steps_completed?.toLocaleString()||'—');
@@ -2755,6 +2764,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 assigned_machine_id:job.assigned_machine_id||null,
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 continuation_of_job_id:job.continuation_of_job_id||null,
+                continuation_mode:job.continuation_of_job_id
+                    ?job.continuation_mode||'exact':null,
+                // Export only explicitly frozen environment overrides;
+                // fields omitted here use the adapter's pinned base defaults.
+                environment_overrides:Object.fromEntries(
+                    Object.entries(job.frozen_parameters?.design_overrides||{})
+                        .filter(([key])=>!key.startsWith('training.'))),
                 trial_batch:job.trial_batch||null,
                 resource_bundle:job.resource_bundle||null,
                 status:job.status,
@@ -3907,7 +3923,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 summary.root.configuration_name+' · '+
                 summary.root.id.slice(-8));
             cell(tr,summary.chain.map(job=>
-                (job.continuation_of_job_id?'Resume ':job.after_job_id?'Fresh ':'')+
+                (job.continuation_of_job_id
+                    ?job.continuation_mode==='curriculum'?'Curriculum ':'Resume '
+                    :job.after_job_id?'Fresh ':'')+
                 job.project_id+' / '+job.configuration_name.slice(0,28))
                 .join(' → '));
             const position=summary.chain.indexOf(summary.current)+1;
