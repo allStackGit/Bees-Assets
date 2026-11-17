@@ -297,7 +297,22 @@ host to its private interface:
 
 ```sh
 python3 native/tools/remote_play_client.py 127.0.0.1 7284
+# Or open a graphical tactical client from the same connection:
+python3 native/tools/remote_play_window.py 127.0.0.1 7284
 ```
+
+The graphical client renders the authoritative host's visible ships,
+projectiles, map obstacles, active squad orders and health at the native
+snapshot cadence. It offers selection, drag selection, right-click
+attack/guard/mining/move, an editable tactical toolbar, Lock On,
+shooting strategies 1-40 and middle-drag / wheel camera controls.
+It is a lightweight 2D **remote view**, not a separate physics engine or
+the source-art native local renderer. The graphical client requires Python
+and Tkinter (`python3-tk` on Debian systems without Tk preinstalled);
+the compiled local game and headless learner still require neither.
+The server rejects remote held-fire gestures until per-connection release
+semantics exist, but explicit point fire works. Up to four connections
+share **one** player-side authority.
 
 The terminal client provides `status`, `ships`, `squads`,
 `select ID`, `move X Y`, `attack ID`, `guard ID`, `fire X Y`,
@@ -311,8 +326,8 @@ off the training hot path. `run_final.remote_play` reports session
 connections, orders, frame and byte counts.
 
 This is **cooperative control of one host-owned player side**, not
-independent opposing-player authority, graphical streaming, matchmaking or
-Internet-hardened multiplayer. Local play and headless simulation without
+independent opposing-player authority, source-art graphical streaming,
+matchmaking or Internet-hardened multiplayer. Local play and headless simulation without
 these environment variables are unchanged. Remote commands accepted in
 a recorded interactive offline battle also enter the authoritative player
 input trace.
