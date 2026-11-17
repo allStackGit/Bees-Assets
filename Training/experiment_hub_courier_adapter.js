@@ -152,7 +152,7 @@ function liveCourierProgress(root,allowCheckpointEvent) {
 }
 
 function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,evaluationRoot,evaluationSuites,snapshotRoot,
-    cpuParallelism='allocation',enableGpu=false,rocrGpuUuids={}}) {
+    cpuParallelism='allocation',enableGpu=false,rocrGpuUuids={},remoteLineages=null}) {
     if(typeof enableGpu!=='boolean'||enableGpu&&
         !['linux','win32'].includes(process.platform))
         throw Error('Courier GPU optimization requires an approved Windows CUDA or Linux ROCm owner.');
@@ -228,6 +228,53 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         throw Error('Courier environment configuration must be a JSON object.');
     const configSha256=crypto.createHash('sha256').update(config).digest('hex');
     const windows=process.platform==='win32';
+    // Endpoint order determines the last N immutable PPO lineage slots.
+    // Only the machine operator can install these private peer identities;
+    // experiment parameters never supply network addresses or secrets.
+    let remote=null;
+    if(remoteLineages!==null) {
+        if(!remoteLineages||typeof remoteLineages!=='object'||
+            Array.isArray(remoteLineages)||
+            Object.keys(remoteLineages).sort().join(',')!=='endpoints,keyPath'||
+            !Array.isArray(remoteLineages.endpoints)||
+            !remoteLineages.endpoints.length||remoteLineages.endpoints.length>16)
+            throw Error('Courier remote execution requires 1–16 locally pinned lineage endpoints.');
+        const keyFile=remoteLineages.keyPath;
+        if(typeof keyFile!=='string'||!path.isAbsolute(keyFile)||
+            fs.realpathSync(keyFile)!==keyFile)
+            throw Error('Courier remote lineage key must be an installed absolute file.');
+        const stat=fs.statSync(keyFile);
+        if(!stat.isFile()||stat.size<64||stat.size>128||
+            (!windows&&(stat.mode&0o077)!==0)||
+            !/^[0-9a-fA-F]{64}$/.test(fs.readFileSync(keyFile,'utf8').trim()))
+            throw Error('Courier remote lineage requires a private 32-byte hexadecimal key.');
+        const endpoints=remoteLineages.endpoints.map(worker=>{
+            if(!worker||typeof worker!=='object'||Array.isArray(worker)||
+                Object.keys(worker).sort().join(',')!=='endpoint,maxShards'||
+                typeof worker.endpoint!=='string'||
+                !/^100\\.(?:\\d{1,3}\\.){2}\\d{1,3}:\\d{1,5}$/.test(worker.endpoint)||
+                !Number.isSafeInteger(worker.maxShards)||worker.maxShards<1||
+                worker.maxShards>64)
+                throw Error('Courier remote worker requires a pinned Tailnet endpoint and 1–64 process ceiling.');
+            const [ip,portText]=worker.endpoint.split(':');
+            const octets=ip.split('.');
+            if(octets.some(v=>String(Number(v))!==v||Number(v)>255)||
+                Number(octets[1])<64||Number(octets[1])>127||
+                Number(portText)<1024||Number(portText)>65535)
+                throw Error('Courier remote endpoint must be a canonical Tailscale IPv4 listener.');
+            return Object.freeze({endpoint:worker.endpoint,maxShards:worker.maxShards});
+        });
+        if(new Set(endpoints.map(item=>item.endpoint)).size!==endpoints.length)
+            throw Error('Each Courier lineage requires a distinct remote endpoint.');
+        const probe=spawnSync(executable,['-B','-c',
+            'import courier_remote_lineage as r; assert hasattr(r, "remote_proxy")'],{
+            cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+        });
+        if(probe.status!==0)
+            throw Error('Installed Courier learner has no authenticated remote lineage transport.');
+        remote={keyFile,endpoints,
+            fingerprint:crypto.createHash('sha256').update(fs.readFileSync(keyFile)).digest('hex')};
+    }
     const evaluator=evaluationReader('courier',evaluationRoot,evaluationSuites,[project,artifacts]);
     let snapshots=null;
     if(snapshotRoot!=null) {
@@ -292,6 +339,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        ...(remote?{
+            courier_remote_lineage_endpoints:remote.endpoints.map(item=>item.endpoint),
+            courier_remote_key_fingerprint:remote.fingerprint,
+            courier_remote_max_shards:remote.endpoints.map(item=>item.maxShards),
+        }:{}),
         ...(enableGpu&&windows?{gpu_execution:'cuda'}:{}),
         ...(enableGpu&&!windows?{
             rocr_gpu_uuids:approvedRocr,
@@ -331,20 +383,28 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         args(parameters,context) {
             const {config_sha256,seed,workers,max_rounds,checkpoint_rounds}=parameters;
             if(Object.keys(parameters).some(key=>
-                !['config_sha256','seed','workers','max_rounds','checkpoint_rounds'].includes(key))||
+                !['config_sha256','seed','workers','max_rounds','checkpoint_rounds','remote_lineages'].includes(key))||
                 config_sha256!==configSha256||!within(seed,0,4294967295)||
                 !(workers===undefined&&cpuParallelism==='allocation')&&
                     !within(workers,1,64)||
                 !within(max_rounds,0,10000000)||
-                !within(checkpoint_rounds,1,10000000))
-                throw Error('Courier requires the approved configuration digest and valid seed, worker and round counts.');
+                !within(checkpoint_rounds,1,10000000)||
+                (parameters.remote_lineages!==undefined&&
+                    typeof parameters.remote_lineages!=='boolean')||
+                parameters.remote_lineages===true!==Boolean(remote))
+                throw Error('Courier requires a pinned environment, valid worker settings and the locally approved remote-lineage mode.');
             // Courier workers own separate PPO policies and population
             // lineages, not parallel simulators for one shared policy.
             // Keep population size independent of CPU lease changes.
             let chosenWorkers=workers===undefined?12:workers;
+            if(remote&&remote.endpoints.length>=chosenWorkers)
+                throw Error('Courier requires at least one local PPO lineage beside its remote workers.');
             if(context.gpu_pci_addresses&&chosenWorkers<context.gpu_pci_addresses.length)
                 throw Error('Courier cannot allocate more GPU optimizers than independent saved lineages.');
             const out=jobRoot(context);
+            if(remote&&crypto.createHash('sha256')
+                .update(fs.readFileSync(remote.keyFile)).digest('hex')!==remote.fingerprint)
+                throw Error('Courier remote lineage key differs from its approved identity.');
             const publish=Boolean(snapshots&&context.evaluation_suite_id);
             if(publish&&(!UUID.test(String(context.dispatch_id||''))||
                 !evaluator.evaluation_suites.includes(context.evaluation_suite_id)))
@@ -402,6 +462,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                                ['--optimizer-gpu-pci',pci])
                            :gpuPciPin&&!windows
                                ?['--optimizer-gpu-pci',context.gpu_pci_address]:[])]:[]),
+                ...(remote?[
+                    '--remote-lineage-plan',remote.endpoints.map(item=>
+                        item.endpoint+'@'+item.maxShards).join(','),
+                    '--remote-lineage-key-file',remote.keyFile,
+                    '--remote-job-id',context.job_id,
+                ]:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(predecessor?['--resume']:[])];
         },
