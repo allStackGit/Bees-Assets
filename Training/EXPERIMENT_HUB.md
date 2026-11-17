@@ -2538,6 +2538,46 @@ audit; existing reports are never silently overwritten. This first tiny-map
 comparison is a sanity benchmark, not proof of wider-map competence. Expand
 the held-out suite only after establishing a reproducible baseline.
 
+### TinyBrains strength-first curriculum
+
+The trusted TinyBrains persistent adapter supports an optional frozen
+`training_stage` parameter in the **Design** TinyBrains profile picker.
+No stage means legacy training unchanged. This requires the matching
+`feat/tinybrains-strength-curriculum-20261117` TinyBrains runtime; older
+runtimes reject staged jobs before launch, never silently train full maps.
+
+| Stage | Training maps | Match limit |
+| --- | --- | --- |
+| `basic_tiny` | `basic-tiny-2p` only | Up to 300 turns |
+| `tiny_two_player` | Tiny/tinywide two-player boards | Up to 300 |
+| `small_two_player` | Tiny and small two-player boards | Up to 500 |
+| `all_two_player` | All approved two-player boards | Up to 750 |
+| `full_multiplayer` | Original approved source map inventory | Original limit |
+
+Maps are **subsets of the pinned source/checkpoint inventory**. A new job
+stores `hub-curriculum-stage.json` alongside its immutable profile, source
+checkpoint and Design overrides. The runtime checks the staged file SHA-256
+and the checkpoint's map inventory before any simulation. Training keeps
+the original actor, critics, Adam state and policy-version discipline.
+A new Hub job provides an explicit stage boundary; it never mutates the
+previous job's run specification or checkpoint.
+
+Use **Compare** and the independent benchmark audit to choose a checkpoint,
+then in Design create a **new saved configuration** with `basic_tiny`
+and a conservative bounded update count (e.g. 250). Continue only from a
+verified completed Hub checkpoint or an explicitly approved import.
+After its checkpoint is available, evaluate it on the *same* held-out
+Nano/Micro suites as the starting checkpoint. Advancement requires a
+repeatable playing-strength improvement; PPO loss, entropy and SPS do not
+qualify. Repeat with `tiny_two_player`, then wider stages, adding held-out
+evaluation maps before making claims about wider-map skill.
+
+Training stage is a trusted map/horizon input, **not an automatic promotion
+or stopping rule**. Hub evaluation_stop v1 uses outright wins only, whereas
+the standalone baseline audit reports wins, draws, losses and half-draw
+score rate. Do not interpret a Hub success-rate threshold as draw-adjusted
+score or silently select the highest self-play training metric.
+
 A legacy Nano-only suite (still supported) is:
 
 ```json
