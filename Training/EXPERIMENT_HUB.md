@@ -1543,6 +1543,75 @@ incomplete artifact prevents the learner from starting; subsequent dispatch
 attempts can reuse verified files. No model, checkpoint, executable, or
 arbitrary worker file is accepted by this transport.
 
+#### Hub-managed portable native Bees collectors (opt-in)
+
+The normal `bees_native_collect` adapter above expects the source scene,
+manifest and model artifacts already installed on each machine. For a
+standalone native learner using `train_policy_session.py
+--collector-input-outbox ... --bundle-receiver-listen ...`, a trusted
+machine can instead install
+`createNativeBeesPortableCollectorAdapter` from
+`Training/experiment_hub_native_portable_adapter.js` under that same
+`bees_native_collect` project ID. Do not install two competing adapters
+for this project on one agent.
+
+The adapter is a transport/execution bridge, **not another scheduler or
+learner**. It uses the existing Hub CPU/RAM lease, optional one exclusive
+GPU with the same native hardware preflight, stop ownership, artifact
+mirroring and progress schema. Each worker downloads the exact issued
+round inputs from the learner, verifies the original scene/model hashes
+and its frozen work allocation, runs the existing compiled native
+`policy_rollout`, publishes its capture bundle under the Hub job UUID,
+and uploads the result to the learner.
+
+Machine-owned adapter setup (merge the resulting entry into the trusted
+local adapter map that the agent already loads):
+
+```js
+const {createNativeBeesPortableCollectorAdapter} =
+  require('./experiment_hub_native_portable_adapter');
+const bees_native_collect=createNativeBeesPortableCollectorAdapter({
+  pythonPath:'/home/worker/ai/venv/bin/python',
+  rolloutBinary:'/home/worker/ai/native/bin/policy_rollout',
+  artifactRoot:'/home/worker/ai/hub/native-jobs',
+  scratchRoot:'/home/worker/ai/hub/native-scratch',
+  tokenFile:'/home/worker/.config/bees/collector.token',
+  receiverUrl:'http://127.0.0.1:7391',
+  // rocrGpuUuids: {'0000:xx:yy.z':'GPU-...'}  // optional local AMD PCI binding
+});
+```
+
+Both directories must exist; the secret file must be private (mode 0600
+on Linux). The receiver must be reached through a private overlay or
+tunnel (or verified HTTPS), not an unprotected public listener. No
+secret is stored in Hub parameters or process arguments. On Windows,
+replace the sample paths with the local Python executable, PE
+`policy_rollout`, directories and ACL-restricted token file.
+
+After the learner publishes `collection-round-NNNNN.json`, save a Hub
+`bees_native_collect` configuration with exactly these frozen values:
+`config_sha256` from the installed adapter,
+`collector_id` from the issued job's `id`,
+`collection_id` from its `collection_id`,
+`seed_offset` and `source_run_contract_sha256` from the top-level
+round order, `rollout_world_start` from `world_start`,
+`rollout_worlds` from `world_count`,
+`rollout_workers` and `physics_workers` from the issued job
+(use 1 when optional physics workers are absent), and
+`bundle_directory` from the same issued job. Choose a Hub CPU
+allocation of at least `rollout_workers * physics_workers` and a
+suitable RAM/GPU allocation. The Hub-generated job UUID is **not**
+the collector ID; the adapter owns mapping its immutable Hub job
+artifacts to the correct learner-issued collector work order.
+
+An incorrect, stale or mismatched remote order fails **before any native
+simulation runs**. Completed collector captures follow the established
+Hub `bees_native_collect` artifact sync for comparison and observation;
+the separate learner receiver remains the direct PPO input-delivery path.
+Issuing and queuing a new Hub job for each training round is still a
+control-plane operation; this adapter does not silently launch jobs
+without Hub authorization.
+
 The current mirrored-file ceiling is **500 MB per capture**, **1,024 files**
 (enough for 256 two-file rollout shards plus receipts and diagnostics), and
 **5 GB per collector job**, with a 2 GB free-space reserve at the Hub and learner.
