@@ -21,6 +21,7 @@ import time
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256
 from native_bundle_receiver import BundleReceiver
+from transfer_policy_inputs import export_inputs
 from native_distributed_collection import (
     read_plan, make_orders, wait_for_collections, balanced_round_plan,
 )
@@ -688,6 +689,8 @@ def main():
                         help="optional directory receiving atomically uploaded *.tar collector archives")
     parser.add_argument("--bundle-receiver-listen",
                         help="start an authenticated native collector upload receiver on HOST:PORT; requires BEES_NATIVE_BUNDLE_TOKEN")
+    parser.add_argument("--collector-input-outbox", type=Path,
+                        help="automatically export a portable verified input bundle per issued remote collector")
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="redistribute contiguous native arena windows conservatively between verified distributed rounds")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0,
@@ -746,6 +749,10 @@ def main():
         parser.error("--bundle-archive-inbox requires --distributed-plan and --bundle-inbox")
     if args.bundle_receiver_listen is not None and args.distributed_plan is None:
         parser.error("--bundle-receiver-listen requires --distributed-plan and --bundle-inbox")
+    if args.collector_input_outbox is not None and args.distributed_plan is None:
+        parser.error("--collector-input-outbox requires --distributed-plan and --bundle-inbox")
+    if args.collector_input_outbox is not None and not args.collector_input_outbox.is_dir():
+        parser.error("--collector-input-outbox must be an existing directory")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds cannot be negative")
     if args.auto_balance_collectors and args.distributed_plan is None:
@@ -998,6 +1005,49 @@ def main():
                 )
                 if receiver is not None:
                     receiver.activate(orders)
+                if args.collector_input_outbox is not None:
+                    outbox = args.collector_input_outbox.resolve(strict=True)
+                    order_digest = file_sha256(order_path)
+                    for job in orders["jobs"]:
+                        archive = outbox / (job["bundle_directory"] + ".inputs.tar")
+                        receipt_path = outbox / (job["bundle_directory"] + ".inputs.json")
+                        identity = {
+                            "kind": "native_distributed_collector_input_archive",
+                            "collector_id": job["id"],
+                            "collection_id": job["collection_id"],
+                            "orders_sha256": order_digest,
+                            "checkpoint_sha256": orders["input_checkpoint_sha256"],
+                            "manifest_sha256": orders["input_manifest_sha256"],
+                        }
+                        if archive.exists() or receipt_path.exists():
+                            if not archive.is_file() or not receipt_path.is_file():
+                                raise ValueError("previous native collector input export is incomplete")
+                            previous = read_json(receipt_path)
+                            if (any(previous.get(key) != value
+                                    for key, value in identity.items()) or
+                                    previous.get("archive_sha256") != file_sha256(archive)):
+                                raise ValueError("previous collector input export changed; cannot reuse it")
+                            result = {
+                                "archive": str(archive),
+                                "archive_sha256": previous["archive_sha256"],
+                                "archive_bytes": archive.stat().st_size,
+                                "reused": True,
+                            }
+                        else:
+                            result = export_inputs(
+                                order_path, job["id"], Path(run["path"]),
+                                Path(trainer["path"]), Path(next_checkpoint),
+                                Path(next_manifest), archive,
+                            )
+                            atomic_json(receipt_path, {
+                                **identity,
+                                "archive_sha256": result["archive_sha256"],
+                            })
+                        print(json.dumps({
+                            "kind": "native_distributed_collector_inputs_ready",
+                            "round": index, "collector_id": job["id"],
+                            **result,
+                        }, sort_keys=True), flush=True)
                 print(json.dumps({"kind": "native_distributed_collection_orders_ready",
                                   "round": index, "orders": str(order_path),
                                   "jobs": orders["jobs"]}), flush=True)
