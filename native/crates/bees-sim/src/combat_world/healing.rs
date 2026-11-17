@@ -141,7 +141,7 @@ impl CombatWorld {
                 .is_some_and(|ids| ids.binary_search(&beehive_id).is_ok()) {
             return Err(CombatWorldError::InvalidPolicyHealing);
         }
-        if let Some(&existing) = self.healing_hive_by_ship.get(&ship_id) {
+        if let Some(&(existing, _)) = self.healing_hive_by_ship.get(&ship_id) {
             return Ok(existing == beehive_id);
         }
         let used = self.healing_slots_used_by_hive
@@ -150,14 +150,14 @@ impl CombatWorld {
             return Ok(false);
         }
         *used += 1;
-        self.healing_hive_by_ship.insert(ship_id, beehive_id);
+        self.healing_hive_by_ship.insert(ship_id, (beehive_id, false));
         Ok(true)
     }
 
     /// Release on healing completion, cancellation, supersession, or death.
     /// No scans of unrelated squads are needed for an ordinary release.
     pub fn release_beehive_healing_slot(&mut self, ship_id: i64) -> bool {
-        let Some(hive_id) = self.healing_hive_by_ship.remove(&ship_id)
+        let Some((hive_id, _)) = self.healing_hive_by_ship.remove(&ship_id)
         else { return false; };
         if let Some(used) = self.healing_slots_used_by_hive.get_mut(&hive_id) {
             debug_assert!(*used > 0);
@@ -174,7 +174,7 @@ impl CombatWorld {
     pub(super) fn release_beehive_healing_slots_for_hive(
         &mut self, beehive_id: i64,
     ) {
-        self.healing_hive_by_ship.retain(|_, hive_id|
+        self.healing_hive_by_ship.retain(|_, (hive_id, _)|
             *hive_id != beehive_id,
         );
         self.healing_slots_used_by_hive.remove(&beehive_id);
@@ -204,7 +204,35 @@ impl CombatWorld {
     }
 
     pub fn reserved_healing_beehive(&self, ship_id: i64) -> Option<i64> {
-        self.healing_hive_by_ship.get(&ship_id).copied()
+        self.healing_hive_by_ship.get(&ship_id).map(|&(hive, _)| hive)
+    }
+
+    /// Only the committed Heal command may mark physical arrival. An
+    /// in-flight replacement order cannot change a previous command's
+    /// activity marker before it successfully takes ownership.
+    pub fn set_command_healing_active(
+        &mut self, ship_id: i64, beehive_id: i64, active: bool,
+    ) -> bool {
+        let Some((hive, healing)) = self.healing_hive_by_ship.get_mut(&ship_id)
+        else { return false };
+        if *hive != beehive_id { return false; }
+        *healing = active;
+        true
+    }
+
+    /// Beehive.Kill kills only actively healing ships, not ships whose
+    /// command has reserved capacity while they are still en route.
+    /// Sorted IDs preserve deterministic side effects across OSes and
+    /// independent training arena schedules. No scan on ordinary ticks.
+    pub(super) fn active_command_healers_at_beehive(
+        &self, beehive_id: i64,
+    ) -> Vec<i64> {
+        let mut ids: Vec<_> = self.healing_hive_by_ship.iter()
+            .filter_map(|(&id, &(hive, active))|
+                (hive == beehive_id && active).then_some(id))
+            .collect();
+        ids.sort_unstable();
+        ids
     }
 
     /// Shared Beehive healing transaction for policy decisions and
