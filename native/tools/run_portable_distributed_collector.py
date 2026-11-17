@@ -49,6 +49,7 @@ def main():
     parser.add_argument("--cpu-quota", type=int,
                         help="Hub's acknowledged CPU quota for this job")
     parser.add_argument("--expected-collection-id")
+    parser.add_argument("--expected-bundle-directory")
     parser.add_argument("--expected-source-contract")
     parser.add_argument("--expected-seed-offset", type=int)
     parser.add_argument("--expected-world-start", type=int)
@@ -59,18 +60,18 @@ def main():
     if args.input_url and not args.collector_id:
         parser.error("--collector-id is required with --input-url")
     if args.hub_job_id is not None:
-        if (args.collector_id != args.hub_job_id or
+        if (args.collector_id is None or
                 args.bundle_inbox is None or
                 args.cpu_quota is None or args.cpu_quota < 1 or
                 not all(value is not None for value in (
-                    args.expected_collection_id, args.expected_source_contract,
-                    args.expected_seed_offset, args.expected_world_start,
+                    args.expected_collection_id, args.expected_bundle_directory,
+                    args.expected_source_contract, args.expected_seed_offset, args.expected_world_start,
                     args.expected_worlds, args.expected_workers,
                     args.expected_physics_workers))):
             parser.error("Hub collector requires an exact job identity, inbox, quota and frozen work order")
     elif any(value is not None for value in (
-            args.cpu_quota, args.expected_collection_id, args.expected_source_contract,
-            args.expected_seed_offset, args.expected_world_start, args.expected_worlds,
+            args.cpu_quota, args.expected_collection_id, args.expected_bundle_directory,
+            args.expected_source_contract, args.expected_seed_offset, args.expected_world_start, args.expected_worlds,
             args.expected_workers, args.expected_physics_workers)):
         parser.error("frozen Hub allocation checks require --hub-job-id")
     # Local archives may be dedicated to one collector or shared by
@@ -108,8 +109,8 @@ def main():
                                  args.policy_worker, args.python, args.collector_id)
         print(json.dumps(imported, sort_keys=True), flush=True)
         if args.hub_job_id is not None:
-            orders, job = checked_order(inputs / "orders.json", args.hub_job_id)
-            if (job["bundle_directory"] != args.hub_job_id or
+            orders, job = checked_order(inputs / "orders.json", args.collector_id)
+            if (job["bundle_directory"] != args.expected_bundle_directory or
                     job["collection_id"] != args.expected_collection_id or
                     orders.get("source_run_contract_sha256") != args.expected_source_contract or
                     orders.get("seed_offset") != args.expected_seed_offset or
@@ -143,6 +144,9 @@ def main():
             "--rollout-binary", str(binary),
             *([] if args.archive_output is None else ["--archive-output", str(args.archive_output)]),
             *([] if upload_url is None else ["--upload-url", upload_url]),
+            *([] if args.hub_job_id is None else [
+                "--hub-artifact-job-id", args.hub_job_id,
+            ]),
             *([] if not args.stage_diagnostics else ["--stage-diagnostics"]),
         ]
         env = os.environ.copy()
