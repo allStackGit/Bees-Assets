@@ -190,6 +190,11 @@ pub struct RemotePlayMeasurements {
     pub held_fire_disconnect_releases: u64,
     pub held_fire_no_live_weapons_releases: u64,
     pub concurrent_held_fire_peak: usize,
+    /// Work for side-filtered snapshots, never physics or policy perception.
+    /// Includes only distinct side snapshots, not repeated cooperative peers.
+    pub fog_visibility_queries: u64,
+    pub fog_visibility_candidate_checks: u64,
+    pub fog_visibility_sources_indexed: u64,
 }
 
 pub struct NativeRemotePlay {
@@ -518,16 +523,19 @@ impl NativeRemotePlay {
         // Encode each player's side-filtered snapshot only once, then fan it
         // out to peers on the same side. Never send another side's packet.
         let mut snapshots = HashMap::<i32, Vec<u8>>::new();
+        // Reborrow disjoint fields: peer sockets cannot mutate snapshot
+        // measurements, and cooperative same-side peers share one projection.
+        let measurements = &mut self.measurements;
         for peer in &mut self.peers {
             let Some(side) = peer.side else { continue };
             let encoded = snapshots.entry(side).or_insert_with(||
-                serde_json::to_vec(&current_state(view, bounds, side))
+                serde_json::to_vec(&current_state(view, bounds, side, measurements))
                     .unwrap_or_default());
             if peer.enqueue_state(encoded) {
-                self.measurements.states_superseded += 1;
+                measurements.states_superseded += 1;
             }
             if !peer.closed {
-                self.measurements.state_bytes += peer.flush();
+                measurements.state_bytes += peer.flush();
             }
         }
         self.measurements.state_frames += 1;
@@ -561,6 +569,54 @@ fn constant_time_matches(expected: &[u8], actual: &[u8]) -> bool {
     difference == 0
 }
 
+/// The remote snapshot has no camera-specific fog framebuffer: visible
+/// enemy/object/shot positions must be checked in world space. Sort live
+/// source centers once by X per authenticated side; then query only source
+/// centers inside the maximum possible sight radius. Small formations use
+/// the direct scan to avoid sorting overhead. This is precisely the prior
+/// union-of-circles predicate, NOT a replacement for source vision rules,
+/// discovery, or the local graphical fog stencil.
+struct RemoteFogSources {
+    sources: Vec<(Vec2, f32)>,
+    largest_radius: f32,
+    indexed: bool,
+}
+
+impl RemoteFogSources {
+    fn new(mut sources: Vec<(Vec2, f32)>, stats: &mut RemotePlayMeasurements) -> Self {
+        let indexed = sources.len() > 8;
+        let largest_radius = sources.iter().fold(0.0_f32, |radius, source|
+            radius.max(source.1));
+        if indexed {
+            sources.sort_unstable_by(|left, right|
+                left.0.x.total_cmp(&right.0.x));
+            stats.fog_visibility_sources_indexed += sources.len() as u64;
+        }
+        Self { sources, largest_radius, indexed }
+    }
+
+    fn covers(&self, target: Vec2, stats: &mut RemotePlayMeasurements) -> bool {
+        stats.fog_visibility_queries += 1;
+        if !target.is_finite() { return false; }
+        let candidates = if self.indexed {
+            let lower = target.x - self.largest_radius;
+            let upper = target.x + self.largest_radius;
+            let first = self.sources.partition_point(|(center, _)| center.x < lower);
+            let last = self.sources.partition_point(|(center, _)| center.x <= upper);
+            &self.sources[first..last]
+        } else {
+            &self.sources
+        };
+        for &(center, radius) in candidates {
+            stats.fog_visibility_candidate_checks += 1;
+            if (target - center).length_squared() <= radius * radius {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 /// State snapshots are a read-only projection of the same live CombatWorld.
 /// Source FogOfWar restricts ship coordinates to ships actually within live
 /// friendly sight masks; previous discoveries alone do not reveal position.
@@ -570,7 +626,10 @@ fn owns_player_side(view: &NativeRenderWorldView<'_>, owner: SquadLifetime, side
             .is_some_and(|permission| permission.user_controlled))
 }
 
-fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> Value {
+fn current_state(
+    view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
+    measurements: &mut RemotePlayMeasurements,
+) -> Value {
     let viewer = Some(side);
     let fog = view.player_authority.player_fog_of_war_enabled();
     let sources: Vec<(Vec2, f32)> = if fog {
@@ -581,12 +640,13 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
             (radius > 0.0 && radius.is_finite()).then_some((body.motion.position, radius))
         }).collect()
     } else { Vec::new() };
+    let sources = RemoteFogSources::new(sources, measurements);
     let mut visible_ids = HashSet::<i64>::new();
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
         let owned = view.roster.owning_squad(ship.entity_id)
             .is_some_and(|owner| owns_player_side(view, owner, side));
-        let visible = owned || !fog || sources.iter().any(|&(position, radius)|
-            (body.motion.position - position).length_squared() <= radius * radius);
+        let visible = owned || !fog ||
+            sources.covers(body.motion.position, measurements);
         if !visible { return None; }
         visible_ids.insert(ship.entity_id);
         let discovered = viewer.is_some_and(|side|
@@ -608,8 +668,7 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
         }))
     }).collect();
     let obstacles: Vec<_> = view.combat.render_obstacles().filter_map(|(object, body)| {
-        if fog && !sources.iter().any(|&(position, radius)|
-            (body.pose.position - position).length_squared() <= radius * radius) {
+        if fog && !sources.covers(body.pose.position, measurements) {
             return None;
         }
         // These are canonical collision/level objects, not an approximate
@@ -630,8 +689,7 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
     // The source fog restricts shots just as it restricts enemy hulls.
     let projectiles: Vec<_> = view.combat.render_projectiles().filter_map(|(shot, body)| {
         let position = body.motion.position;
-        if fog && !sources.iter().any(|&(center, radius)|
-            (position - center).length_squared() <= radius * radius) {
+        if fog && !sources.covers(position, measurements) {
             return None;
         }
         Some(json!({
