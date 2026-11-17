@@ -92,6 +92,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             reported.simulation_match_steps_per_second);
         for(const name of ['ppo_gpu_batch_target_pixels',
             'ppo_gpu_batch_next_target','ppo_gpu_batch_settled',
+            // Report exposed CPU-prep wait, not concurrent background work
+            // as a separate portion of whole-update wall.
+            'ppo_prep_wait_seconds','ppo_prep_cpu_seconds',
+            'ppo_prep_async_h2d_bytes',
             'rollout_gpu_batch_target_pixels',
             'rollout_gpu_batch_next_target','rollout_gpu_batch_settled',
             'rollout_gpu_batch_proven_target',
@@ -310,6 +314,10 @@ class BottleneckEvidence {
         };
         const collection=seconds('collection_seconds');
         const optimize=seconds('optimization_seconds');
+        const prepWait=seconds('ppo_prep_wait_seconds');
+        const prepShare=(optimize>0&&prepWait!==null&&prepWait<=optimize)
+            ?prepWait/optimize:null;
+        if(prepShare!==null)add('ppo_prep_wait_work_share',prepShare);
         if(collection!==null&&optimize!==null&&collection+optimize>0) {
             const workShare=collection/(collection+optimize);
             add('pipeline_collection_work_share',workShare);
@@ -524,6 +532,7 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,mergeShare,
+                    prepShare,
                     localGpuShare,localGpuOwner,localGpuLease,remoteOwner,remoteCompeting,
                     remoteConnectCritical,
                     stageHints,simHints,resourceHints});
@@ -540,6 +549,13 @@ class BottleneckEvidence {
                     add('pipeline_collection_dominant',1,'count');
                 else if(recent.filter(x=>x.fraction<=0.3).length>=5)
                     add('pipeline_optimization_dominant',1,'count');
+                // A foreground CPU-preparation stall matters for end-to-end
+                // PPO only when optimizing is already exposure-dominant.
+                // Producer CPU time can overlap GPU kernels and cannot be
+                // added to the wall as if it were serial critical work.
+                if(recent.filter(x=>x.fraction<=0.5&&
+                    x.prepShare!==null&&x.prepShare>=0.30).length>=5)
+                    add('pipeline_ppo_prep_wait_pressure',1,'count');
                 if(recent.filter(x=>x.waitShare!==null&&x.waitShare>=0.5).length>=5) {
                     add('pipeline_remote_wait_dominant',1,'count');
                     // Require five of six completed measurements to name
