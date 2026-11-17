@@ -1021,7 +1021,7 @@ document.addEventListener('DOMContentLoaded', () => {
         curriculum.type='checkbox';
         curriculum.className='hub-pipeline-curriculum';
         curriculumLabel.append(curriculum,
-            document.createTextNode(' Curriculum stage (compatible environment changes)'));
+            document.createTextNode(' Curriculum stage (Courier map size, movement cost, or food distribution)'));
         const remove=button('Remove',()=>{
             if(container.children.length<=2)return;
             row.remove();
@@ -3972,7 +3972,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ?'Prequeue checkpoint-continuation stages'
             :trialBatch?'Queue independent trials together':'Queue fresh project jobs in sequence';
         $('hub-pipeline-description').textContent=checkpointPipeline
-            ?'Two to sixteen stages with the same approved configuration digest, on the original worker. Natural completion advances only with a verified saved checkpoint; evaluation-triggered Stop additionally requires native checkpoint-preserving shutdown. Manual Stops and failures hold later stages for review.'
+            ?'Two to sixteen stages with the same approved base configuration digest, on the original worker. Courier curriculum transitions may change map size, movement cost, or food distribution without changing policy architecture. Natural completion advances only with a verified saved checkpoint; evaluation-triggered Stop additionally requires native checkpoint-preserving shutdown. Manual Stops and failures hold later stages for review.'
             :trialBatch?'Two to sixteen fresh jobs with separate artifact lineages. Select saved configurations for each seed or parameter variant. The jobs are eligible independently as qualified capacity becomes available.':
                 'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finish or an evaluation-driven Stop can advance the next job after capacity release. Manual Stops and failures do not advance. Queueing never starts training.';
         $('hub-pipeline-predecessor-label').textContent=checkpointPipeline
@@ -5804,7 +5804,7 @@ document.addEventListener('DOMContentLoaded', () => {
     curriculumChoice.type='checkbox';
     curriculumChoiceLabel.className='hub-curriculum-choice';
     curriculumChoiceLabel.append(curriculumChoice,
-        document.createTextNode(' Curriculum transition: preserve the trained model while allowing adapter-approved environment changes (Courier map resize only for now)'));
+        document.createTextNode(' Curriculum transition: preserve the trained model; allow compatible Courier map size, movement cost, or food distribution changes'));
     $('hub-job-predecessor').closest('label')
         .insertAdjacentElement('afterend',curriculumChoiceLabel);
     function renderCurriculumChoice() {
