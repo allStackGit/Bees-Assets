@@ -17,7 +17,7 @@ use bees_sim::geometry::Vec2;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use serde_json::{json, Value};
 
-use super::{NativeCamera, text};
+use super::{NativeCamera, NativeSoftwareRenderer, text};
 
 const WIDTH: usize = 1180;
 const HEIGHT: usize = 720;
@@ -43,12 +43,104 @@ struct WireCounts {
     /// Render-only smoothing; no simulation or network side-effects.
     snapshot_pairs_interpolated: u64,
     interpolated_draw_frames: u64,
+    ship_sprite_draws: u64,
+    projectile_sprite_draws: u64,
+    asteroid_sprite_draws: u64,
 }
 
 /// Presentation-only interpolation between two authenticated snapshots.
 /// The host still owns every position and all click targets refer to the
 /// latest authoritative entity IDs. Old poses never create ships or reveal
 /// fogged entities in the current packet.
+/// The existing native source-art renderer, reused for authenticated
+/// remote snapshots. Its framebuffer is composited behind remote HUD
+/// controls; it never creates CombatWorld, ShipVitals or any gameplay actor.
+struct RemoteArtwork {
+    raster: NativeSoftwareRenderer,
+    ships: HashSet<i64>,
+    projectiles: HashSet<i64>,
+    asteroids: HashSet<i64>,
+    shot_first_seen: HashMap<i64, (u64, u64)>,
+    episode: Option<(u64, u64)>,
+}
+
+impl RemoteArtwork {
+    fn new() -> io::Result<Self> {
+        let map = Aabb {
+            min: Vec2::new(-1.0, -1.0),
+            max: Vec2::new(1.0, 1.0),
+        };
+        Ok(Self {
+            raster: NativeSoftwareRenderer::new(FIELD, HEIGHT, map)?,
+            ships: HashSet::new(), projectiles: HashSet::new(),
+            asteroids: HashSet::new(), shot_first_seen: HashMap::new(),
+            episode: None,
+        })
+    }
+
+    /// One draw pass over currently authenticated, fog-filtered entities.
+    /// IDs from a previous world or episode are never rendered or reused
+    /// for projectile animation. All sprite scaling/pivots/frames use
+    /// the same native source artwork already loaded for local play.
+    fn paint(&mut self, state: &Value, camera: NativeCamera,
+             visual: &RemoteVisual, fraction: f32, stats: &mut WireCounts) {
+        self.raster.begin_remote_art(camera);
+        self.ships.clear();
+        self.projectiles.clear();
+        self.asteroids.clear();
+        let episode = (
+            state["world_id"].as_u64().unwrap_or(0),
+            state["episode_revision"].as_u64().unwrap_or(0),
+        );
+        if self.episode != Some(episode) {
+            self.shot_first_seen.clear();
+            self.episode = Some(episode);
+        }
+        let tick = state["tick"].as_u64().unwrap_or(0);
+        let dt = state["fixed_step_seconds"].as_f64().unwrap_or(0.0) as f32;
+        for obstacle in state["obstacles"].as_array().into_iter().flatten() {
+            let (Some(id), Some(prefab), Some(point)) = (
+                obstacle["id"].as_i64(),
+                obstacle["asteroid_prefab"].as_u64().and_then(|id| u8::try_from(id).ok()),
+                visual.position(obstacle, 2, fraction),
+            ) else { continue };
+            let angle = obstacle["rotation"].as_f64().unwrap_or(0.0) as f32;
+            if self.raster.remote_asteroid_art(prefab, point, angle) {
+                self.asteroids.insert(id);
+                stats.asteroid_sprite_draws += 1;
+            }
+        }
+        for shot in state["projectiles"].as_array().into_iter().flatten() {
+            let (Some(id), Some(kind), Some(point)) = (
+                shot["id"].as_i64(),
+                shot["type"].as_u64().and_then(|kind| u8::try_from(kind).ok()),
+                visual.position(shot, 1, fraction),
+            ) else { continue };
+            let (first, last) = self.shot_first_seen.entry(id)
+                .or_insert((tick, tick));
+            *last = tick;
+            let age = tick.saturating_sub(*first) as f32 * dt.max(0.0);
+            let angle = shot["rotation"].as_f64().unwrap_or(0.0) as f32;
+            if self.raster.remote_projectile_art(kind, point, angle, age) {
+                self.projectiles.insert(id);
+                stats.projectile_sprite_draws += 1;
+            }
+        }
+        self.shot_first_seen.retain(|_, &mut (_, last)| last == tick);
+        for ship in state["ships"].as_array().into_iter().flatten() {
+            let (Some(id), Some(kind), Some(point)) = (
+                ship["id"].as_i64(),
+                ship["ship_type"].as_u64().and_then(|kind| u8::try_from(kind).ok()),
+                visual.position(ship, 0, fraction),
+            ) else { continue };
+            if self.raster.remote_ship_art(kind, point, visual.heading(ship, fraction)) {
+                self.ships.insert(id);
+                stats.ship_sprite_draws += 1;
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct RemotePose {
     position: Vec2,
