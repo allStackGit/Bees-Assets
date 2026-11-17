@@ -4584,11 +4584,12 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const budgets=JSON.parse(courierBudgets.value);
             const machine=state.machines.find(item=>item.id===courierMachine.value);
-            if(!Array.isArray(budgets)||budgets.length!==
-                machine?.courier_remote_lineage_endpoints?.length||
+            if(!Array.isArray(budgets)||!budgets.length||
+                (machine?.courier_lineage_subset!==true&&budgets.length!==
+                    machine?.courier_remote_lineage_endpoints?.length)||
                 budgets.some(item=>!item||typeof item!=='object'||
                     Array.isArray(item)))
-                throw Error('Provide one CPU/RAM/GPU budget per approved Courier remote lineage.');
+                throw Error('Provide one CPU/RAM/GPU budget for each selected Courier worker.');
             const resources=JSON.parse($('hub-job-resources').value);
             const predecessor=$('hub-job-predecessor').value;
             if(predecessor) {
