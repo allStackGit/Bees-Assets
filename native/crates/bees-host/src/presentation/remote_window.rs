@@ -471,9 +471,12 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             text::draw_at(pixels,WIDTH,FIELD+14,435,
                 text::fit(&flags,WIDTH-FIELD-24),1,MUTED);
         }
-        if !state["terminal_result"].is_null() {
+        let outcome=state["terminal_outcome"]["label"].as_str().map(str::to_owned)
+            .or_else(||(!state["terminal_result"].is_null()).then(||
+                format!("Winner side {}",state["terminal_result"])));
+        if let Some(outcome)=outcome {
             text::draw_at(pixels,WIDTH,16,20,
-                &format!("Result: winner side {}",state["terminal_result"]),2,[255,210,129]);
+                &format!("Result: {outcome}"),2,[255,210,129]);
         } else if let Some(objective)=state["campaign_objective"].as_object() {
             let remaining=objective.get("seconds_remaining").and_then(Value::as_f64);
             let elapsed=objective.get("elapsed_seconds").and_then(Value::as_f64);
