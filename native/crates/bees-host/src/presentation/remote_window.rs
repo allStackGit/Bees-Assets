@@ -31,7 +31,7 @@ const RED: u32 = 0xed7e85;
 const GOLD: u32 = 0xe7be69;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum TargetMode { Fire, Attack, Guard, Mine }
+enum TargetMode { Fire, Attack, Guard, Mine, Heal, Retreat }
 
 #[derive(Default)]
 struct WireCounts {
@@ -272,6 +272,12 @@ fn outline(pixels: &mut [u32], x: i32,y: i32, w: i32,h: i32,color: u32) {
     line(pixels,(x,y+h),(x,y),color);
 }
 
+fn first_selected<'a>(state: Option<&'a Value>, selected: &[i64]) -> Option<&'a Value> {
+    state?.get("squads")?.as_array()?.iter().find(|squad|
+        squad["owned"] == true && squad["owner"]["squad_id"]
+            .as_i64().is_some_and(|id| selected.contains(&id)))
+}
+
 fn squad_for_ship<'a>(state: &'a Value, id: i64, owned: bool) -> Option<&'a Value> {
     state["squads"].as_array()?.iter().find(|squad|
         squad["owned"] == owned &&
@@ -388,9 +394,11 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         "A all     F point fire",
         "G guard  M mine  T attack",
         "H hold   Z cease fire",
-        "C chase  L lock on",
-        "V speed  R reset camera",
-        "+/- zoom   Arrows pan",
+        "C chase  L lock  V speed",
+        "PgUp/Dn shooting (1-40)",
+        "B beacon D detonate Q charge",
+        "E heal  W retreat",
+        "R reset  +/- zoom  Arrows pan",
         "Esc disconnect",
     ];
     for (index,label) in instructions.iter().enumerate(){
@@ -403,6 +411,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 TargetMode::Attack=>"Click visible enemy squad to ATTACK",
                 TargetMode::Guard=>"Click friendly squad to GUARD",
                 TargetMode::Mine=>"Click mining asteroid to MINE",
+                TargetMode::Heal=>"Click friendly Beehive to HEAL",
+                TargetMode::Retreat=>"Click friendly WarpGate to RETREAT",
             },1,[255,221,151]);
     }
     text::draw_at(pixels,WIDTH,10,HEIGHT-25,text::fit(notice,FIELD-20),1,TEXT);
@@ -434,7 +444,14 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
         (None,Some(("obstacle",target))) if target["mining"]==true => {
             ("support",json!({"action":{"Mining":{"asteroid_id":target["id"]}}}))
         }
-        (Some(TargetMode::Attack|TargetMode::Guard|TargetMode::Mine),_) =>
+        (Some(TargetMode::Heal),Some(("ship",target))) if target["owned"]==true => {
+            ("support",json!({"action":{"Heal":{"beehive_ids":[target["id"]]}}}))
+        }
+        (Some(TargetMode::Retreat),Some(("ship",target))) if target["owned"]==true => {
+            ("support",json!({"action":{"FullRetreat":{"warp_gate_id":target["id"]}}}))
+        }
+        (Some(TargetMode::Attack|TargetMode::Guard|TargetMode::Mine|
+              TargetMode::Heal|TargetMode::Retreat),_) =>
             return Err(invalid("select a matching visible target").into()),
         (Some(TargetMode::Fire),_) => {
             let point=camera.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
@@ -517,6 +534,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     Key::T=>{mode=Some(TargetMode::Attack);None}
                     Key::G=>{mode=Some(TargetMode::Guard);None}
                     Key::M=>{mode=Some(TargetMode::Mine);None}
+                    Key::E=>{mode=Some(TargetMode::Heal);None}
+                    Key::W=>{mode=Some(TargetMode::Retreat);None}
                     Key::R=>{
                         if let Some(map)=peer.state.as_ref().and_then(bounds) {
                             cam=NativeCamera::fit(map,FIELD,HEIGHT);
@@ -525,19 +544,32 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     }
                     Key::H=>Some(("support",json!({"action":"Hold"}))),
                     Key::Z=>Some(("cease_fire",json!({
-                        "cease_fire": !selected.iter().filter_map(|id|
-                            peer.state.as_ref()?.get("squads")?.as_array()?.iter().find(|s|
-                                s["owner"]["squad_id"].as_i64()==Some(*id)))
-                            .next().and_then(|s|s["cease_fire"].as_bool()).unwrap_or(false)
+                        "cease_fire":!first_selected(peer.state.as_ref(),&selected)
+                            .and_then(|s|s["cease_fire"].as_bool()).unwrap_or(false)
                     }))),
                     Key::C=>Some(("chase",json!({
-                        "chasing": !selected.iter().filter_map(|id|
-                            peer.state.as_ref()?.get("squads")?.as_array()?.iter().find(|s|
-                                s["owner"]["squad_id"].as_i64()==Some(*id)))
-                            .next().and_then(|s|s["chasing"].as_bool()).unwrap_or(false)
+                        "chasing":!first_selected(peer.state.as_ref(),&selected)
+                            .and_then(|s|s["chasing"].as_bool()).unwrap_or(false)
                     }))),
-                    Key::L=>Some(("lock_on",json!({"locked":true}))),
-                    Key::V=>Some(("match_speed",json!({"match_speed":true}))),
+                    Key::L=>Some(("lock_on",json!({
+                        "locked":!first_selected(peer.state.as_ref(),&selected)
+                            .and_then(|s|s["locked_on"].as_bool()).unwrap_or(false)
+                    }))),
+                    Key::V=>Some(("match_speed",json!({
+                        "match_speed":!first_selected(peer.state.as_ref(),&selected)
+                            .and_then(|s|s["match_speed"].as_bool()).unwrap_or(false)
+                    }))),
+                    Key::B=>Some(("special",json!({"kind":"DropBeacon"}))),
+                    Key::D=>Some(("special",json!({"kind":"Detonate"}))),
+                    Key::Q=>Some(("special",json!({"kind":"Charge"}))),
+                    Key::PageUp|Key::PageDown=>{
+                        let previous=first_selected(peer.state.as_ref(),&selected)
+                            .and_then(|s|s["shooting"].as_u64()).unwrap_or(1).clamp(1,40);
+                        let next=if key==Key::PageUp{
+                            (previous+1).min(40)
+                        }else{previous.saturating_sub(1).max(1)};
+                        Some(("shooting",json!({"strategy_id":next})))
+                    }
                     _=>None,
                 };
                 if let Some((name,fields))=send {
