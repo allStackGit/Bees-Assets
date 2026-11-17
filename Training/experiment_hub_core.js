@@ -668,6 +668,39 @@ function predecessorBlock(snapshot,job) {
     }
     return null;
 }
+// Read-only admission check: the trusted machine advertises which
+// curriculum fields its installed trainer can actually apply. Compare frozen
+// Design values against the same pinned defaults on both stages; training.*
+// settings never change the simulation environment.
+function courierCurriculumBlock(snapshot,job,machine) {
+    if(job.project_id!=='courier'||job.continuation_mode!=='curriculum')
+        return null;
+    const parent=snapshot.jobs.find(j=>j.id===job.continuation_of_job_id);
+    const catalog=machine.design_catalog?.courier;
+    if(!parent||!catalog||parent.frozen_parameters?.config_sha256!==
+        job.frozen_parameters?.config_sha256)
+        return 'Curriculum predecessor or installed Courier environment identity is missing.';
+    const fields=catalog.fields.filter(field=>field.section==='environment');
+    const defaults=new Map(fields.map(field=>[field.key,field.default]));
+    const before=parent.frozen_parameters?.design_overrides||{};
+    const after=job.frozen_parameters?.design_overrides||{};
+    const selectedKeys=new Set([...Object.keys(before),...Object.keys(after)]
+        .filter(key=>!key.startsWith('training.')));
+    if([...selectedKeys].some(key=>!defaults.has(key)))
+        return 'The installed Courier trainer does not describe every frozen curriculum setting.';
+    const allowed=new Set(catalog.curriculum_fields||[]);
+    const changes=fields.filter(field=>{
+        const old=Object.hasOwn(before,field.key)?before[field.key]:defaults.get(field.key);
+        const next=Object.hasOwn(after,field.key)?after[field.key]:defaults.get(field.key);
+        return !Object.is(old,next);
+    });
+    const unsupported=changes.filter(field=>!allowed.has(field.key));
+    return unsupported.length
+        ?'The assigned Courier trainer cannot apply curriculum changes to: '+
+            unsupported.map(field=>field.key).sort().join(', ')+
+            '. Update the approved local trainer and restart its agent.'
+        :null;
+}
 // Pure, non-authorizing readiness projection. The dashboard and the actual
 // start authorization share one eligibility contract; displaying readiness
 // does not claim a reservation or dispatch any native process.
@@ -707,6 +740,8 @@ function nativeStartReadiness(snapshot, job) {
         return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
     if(!supportsDesign(machine.design_catalog,job.project_id,job.frozen_parameters))
         return block('The assigned worker has not approved this exact Design configuration.');
+    const curriculum=courierCurriculumBlock(snapshot,job,machine);
+    if(curriculum)return block(curriculum);
     if(!distributedRolloutHost(snapshot,job,machine))
         return block('The remote collector is not assigned to an active learner and its pinned physical endpoint.');
     if(job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true) {
@@ -934,6 +969,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             supportsEvaluation(machine.evaluation_suites,selected)&&
             supportsTinyBrainsProfile(machine,selected)&&
             supportsDesign(machine.design_catalog,selected.project_id,selected.frozen_parameters)&&
+            (!snapshot||!courierCurriculumBlock(snapshot,selected,machine))&&
             (!snapshot||distributedRolloutHost(snapshot,selected,machine))&&
             (!preferred||preferred===machine.id)&&
             (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
