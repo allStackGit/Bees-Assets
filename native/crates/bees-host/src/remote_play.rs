@@ -1,0 +1,335 @@
+//! Opt-in authenticated LAN co-op transport for the authoritative native Level.
+//!
+//! Remote peers observe the host's currently authorized player side and submit
+//! the SAME typed NativePlayerInput as the local window and replay. This file
+//! owns only nonblocking sockets and bounded wire buffers: no remote physics,
+//! command director, policy state, or shadow squad selection.
+//!
+//! Protocol: newline-delimited JSON. Hello {kind:"hello", token}; then
+//! {kind:"input", request_id:u64, action:NativePlayerInput}. Host replies
+//! with kind:"input_result" and broadcasts kind:"world_state". The remote
+//! interface shares the local player's authority (co-op, not opposing sides).
+use std::io::{self, Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::time::Instant;
+
+use bees_gameplay::player_inputs::NativePlayerAuthority;
+use bees_sim::level_discovery::DiscoveryKind;
+use bees_sim::geometry::Vec2;
+use serde::Deserialize;
+use serde_json::{json, Value};
+
+use crate::player_trace::NativePlayerInput;
+use crate::presentation::NativeRenderWorldView;
+
+const MAX_PEERS: usize = 4;
+const MAX_LINE: usize = 64 * 1024;
+const MAX_PENDING: usize = 4 * 1024 * 1024;
+const READ_BYTES_PER_POLL: usize = 128 * 1024;
+const STATE_EVERY_TICKS: u64 = 5;
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum WireInput {
+    Hello { token: String },
+    Input { request_id: u64, action: NativePlayerInput },
+}
+
+pub struct RemoteOrder {
+    pub peer: u64,
+    pub request_id: u64,
+    pub action: NativePlayerInput,
+}
+
+struct Peer {
+    id: u64,
+    socket: TcpStream,
+    authenticated: bool,
+    incoming: Vec<u8>,
+    outgoing: Vec<u8>,
+    written: usize,
+    closed: bool,
+    accepted_at: Instant,
+}
+
+impl Peer {
+    fn enqueue(&mut self, message: &Value) -> io::Result<()> {
+        let data = serde_json::to_vec(message)?;
+        if self.outgoing.len().saturating_sub(self.written) +
+            data.len() + 1 > MAX_PENDING {
+            self.closed = true;
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "remote peer cannot keep up with world snapshots"));
+        }
+        if self.written == self.outgoing.len() {
+            self.outgoing.clear();
+            self.written = 0;
+        } else if self.written > MAX_PENDING / 2 {
+            self.outgoing.drain(..self.written);
+            self.written = 0;
+        }
+        self.outgoing.extend_from_slice(&data);
+        self.outgoing.push(b'\n');
+        Ok(())
+    }
+
+    fn flush(&mut self) {
+        while self.written < self.outgoing.len() {
+            match self.socket.write(&self.outgoing[self.written..]) {
+                Ok(0) => { self.closed = true; break; }
+                Ok(n) => self.written += n,
+                Err(ref error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(ref error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => { self.closed = true; break; }
+            }
+        }
+        if self.written == self.outgoing.len() {
+            self.outgoing.clear();
+            self.written = 0;
+        }
+    }
+}
+
+#[derive(Default, serde::Serialize)]
+pub struct RemotePlayMeasurements {
+    pub connections_accepted: u64,
+    pub authenticated_peers: u64,
+    pub rejected_connections: u64,
+    pub orders_received: u64,
+    pub state_frames: u64,
+    pub state_bytes: u64,
+    pub disconnected_peers: u64,
+}
+
+pub struct NativeRemotePlay {
+    listener: TcpListener,
+    token: String,
+    peers: Vec<Peer>,
+    next_peer: u64,
+    last_state: Option<(u64, u64)>,
+    measurements: RemotePlayMeasurements,
+}
+
+impl NativeRemotePlay {
+    pub fn from_environment() -> io::Result<Option<Self>> {
+        let Ok(address) = std::env::var("BEES_NATIVE_REMOTE_LISTEN") else {
+            return Ok(None);
+        };
+        let token = std::env::var("BEES_NATIVE_REMOTE_TOKEN").map_err(|_|
+            io::Error::new(io::ErrorKind::InvalidInput,
+                "BEES_NATIVE_REMOTE_TOKEN must be set for remote play"))?;
+        if token.len() < 24 || token.len() > 256 ||
+            token.chars().any(|ch| ch.is_control()) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                "remote play requires a nonempty 24-256 character non-control token"));
+        }
+        let listener = TcpListener::bind(&address)?;
+        listener.set_nonblocking(true)?;
+        println!("{}", json!({
+            "kind": "native_remote_listening",
+            "address": listener.local_addr()?.to_string(),
+            "max_peers": MAX_PEERS,
+            "mode": "shared_player_authority",
+        }));
+        Ok(Some(Self {
+            listener, token, peers: Vec::new(),
+            next_peer: 1, last_state: None,
+            measurements: RemotePlayMeasurements::default(),
+        }))
+    }
+
+    pub fn measurements(&self) -> &RemotePlayMeasurements {
+        &self.measurements
+    }
+
+    /// Poll at an authoritative tick boundary before advancing the Level.
+    /// Never block simulation on a slow network or remote client.
+    pub fn poll(&mut self) -> Vec<RemoteOrder> {
+        while let Ok((socket, _)) = self.listener.accept() {
+            if self.peers.len() >= MAX_PEERS || socket.set_nonblocking(true).is_err() {
+                self.measurements.rejected_connections += 1;
+                continue;
+            }
+            let id = self.next_peer;
+            self.next_peer += 1;
+            self.measurements.connections_accepted += 1;
+            self.peers.push(Peer {
+                id, socket, authenticated: false, incoming: Vec::new(),
+                outgoing: Vec::new(), written: 0, closed: false,
+                accepted_at: Instant::now(),
+            });
+        }
+
+        let mut orders = Vec::new();
+        for peer in &mut self.peers {
+            if peer.closed { continue; }
+            // Never allow an unauthenticated socket to occupy a slot forever.
+            if !peer.authenticated && peer.accepted_at.elapsed().as_secs() > 10 {
+                peer.closed = true;
+                continue;
+            }
+            let mut budget = READ_BYTES_PER_POLL;
+            let mut chunk = [0u8; 8192];
+            while budget > 0 {
+                match peer.socket.read(&mut chunk[..budget.min(chunk.len())]) {
+                    Ok(0) => { peer.closed = true; break; }
+                    Ok(n) => {
+                        budget -= n;
+                        peer.incoming.extend_from_slice(&chunk[..n]);
+                        if peer.incoming.len() > MAX_LINE * 2 {
+                            peer.closed = true;
+                            break;
+                        }
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(_) => { peer.closed = true; break; }
+                }
+            }
+            let mut start = 0;
+            while !peer.closed {
+                let Some(end) = peer.incoming[start..].iter()
+                    .position(|&c| c == b'\n').map(|i| start + i) else { break };
+                if end - start > MAX_LINE {
+                    peer.closed = true;
+                    break;
+                }
+                let message: Result<WireInput, _> =
+                    serde_json::from_slice(&peer.incoming[start..end]);
+                start = end + 1;
+                match message {
+                    Ok(WireInput::Hello { token }) if !peer.authenticated &&
+                        constant_time_matches(self.token.as_bytes(), token.as_bytes()) => {
+                        peer.authenticated = true;
+                        self.measurements.authenticated_peers += 1;
+                        let _ = peer.enqueue(&json!({
+                            "kind": "welcome", "protocol": 1, "mode": "cooperative",
+                        }));
+                    }
+                    Ok(WireInput::Input { request_id, action }) if peer.authenticated => {
+                        self.measurements.orders_received += 1;
+                        orders.push(RemoteOrder {
+                            peer: peer.id, request_id, action,
+                        });
+                    }
+                    _ => { peer.closed = true; break; }
+                }
+            }
+            if start > 0 { peer.incoming.drain(..start); }
+            if peer.incoming.len() > MAX_LINE { peer.closed = true; }
+            if !peer.closed { peer.flush(); }
+        }
+        self.reap();
+        orders
+    }
+
+    pub fn reply(&mut self, peer_id: u64, request_id: u64, result: Result<&str, &str>) {
+        let Some(peer) = self.peers.iter_mut()
+            .find(|peer| peer.id == peer_id && peer.authenticated) else { return };
+        let reply = match result {
+            Ok(feedback) => json!({
+                "kind": "input_result", "request_id": request_id,
+                "accepted": true, "feedback": feedback,
+            }),
+            Err(message) => json!({
+                "kind": "input_result", "request_id": request_id,
+                "accepted": false, "feedback": message,
+            }),
+        };
+        let _ = peer.enqueue(&reply);
+        peer.flush();
+    }
+
+    pub fn broadcast(&mut self, view: &NativeRenderWorldView<'_>) {
+        if !self.peers.iter().any(|peer| peer.authenticated) { return; }
+        let episode = (view.world_id.0, view.episode_revision);
+        if self.last_state == Some(episode) &&
+            view.tick % STATE_EVERY_TICKS != 0 { return; }
+        self.last_state = Some(episode);
+        let state = current_state(view);
+        let Ok(encoded) = serde_json::to_vec(&state) else { return };
+        if encoded.len() > MAX_PENDING / 2 { return; }
+        for peer in &mut self.peers {
+            if !peer.authenticated { continue; }
+            if peer.outgoing.len().saturating_sub(peer.written) + encoded.len() > MAX_PENDING {
+                // Drop a lagging observer rather than accumulating unbounded
+                // snapshots or slowing the authoritative fixed-step loop.
+                peer.closed = true;
+                continue;
+            }
+            if peer.written == peer.outgoing.len() {
+                peer.outgoing.clear();
+                peer.written = 0;
+            }
+            peer.outgoing.extend_from_slice(&encoded);
+            peer.outgoing.push(b'\n');
+            peer.flush();
+            self.measurements.state_bytes += encoded.len() as u64;
+        }
+        self.measurements.state_frames += 1;
+        self.reap();
+    }
+
+    fn reap(&mut self) {
+        let before = self.peers.len();
+        self.peers.retain(|peer| !peer.closed);
+        self.measurements.disconnected_peers += (before - self.peers.len()) as u64;
+    }
+}
+
+fn constant_time_matches(expected: &[u8], actual: &[u8]) -> bool {
+    let mut difference = expected.len() ^ actual.len();
+    for index in 0..expected.len() {
+        difference |= usize::from(expected[index] != actual.get(index).copied().unwrap_or(0));
+    }
+    difference == 0
+}
+
+/// State snapshots are a read-only projection of the same live CombatWorld.
+/// Source FogOfWar restricts ship coordinates to ships actually within live
+/// friendly sight masks; previous discoveries alone do not reveal position.
+fn current_state(view: &NativeRenderWorldView<'_>) -> Value {
+    let viewer = view.player_authority.player_viewer_side();
+    let fog = view.player_authority.player_fog_of_war_enabled();
+    let sources: Vec<(Vec2, f32)> = if fog {
+        view.combat.render_ships().filter_map(|(ship, body)| {
+            let owner = view.roster.owning_squad(ship.entity_id)?;
+            if !view.is_local_player_squad(owner) { return None; }
+            let radius = view.player_authority.player_fog_vision_radius(ship.entity_id)?;
+            (radius > 0.0 && radius.is_finite()).then_some((body.motion.position, radius))
+        }).collect()
+    } else { Vec::new() };
+    let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
+        let owned = view.roster.owning_squad(ship.entity_id)
+            .is_some_and(|owner| view.is_local_player_squad(owner));
+        let visible = owned || !fog || sources.iter().any(|&(position, radius)|
+            (body.motion.position - position).length_squared() <= radius * radius);
+        if !visible { return None; }
+        let discovered = viewer.is_some_and(|side|
+            view.combat.discovery().has(side, DiscoveryKind::Ship, ship.entity_id));
+        Some(json!({
+            "id": ship.entity_id,
+            "side": ship.side, "ship_type": ship.ship_type,
+            "x": body.motion.position.x, "y": body.motion.position.y,
+            "health": ship.vitals.health(), "max_health": ship.vitals.max_health(),
+            "owned": owned, "discovered": discovered,
+        }))
+    }).collect();
+    let squads: Vec<_> = view.roster.active_lifetimes().filter_map(|owner| {
+        if !view.is_local_player_squad(owner) { return None; }
+        let squad = view.roster.get(owner)?;
+        Some(json!({
+            "owner": owner, "side": squad.side,
+            "members": squad.members, "source_number": squad.source_hotkey_number,
+        }))
+    }).collect();
+    json!({
+        "kind": "world_state", "protocol": 1,
+        "world_id": view.world_id.0,
+        "episode_revision": view.episode_revision,
+        "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
+        "viewer_side": viewer,
+        "terminal_result": view.terminal_result.map(|result| result.winner_side),
+        "ships": ships, "squads": squads,
+    })
+}
