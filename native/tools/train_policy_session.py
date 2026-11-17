@@ -14,6 +14,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -1081,8 +1082,14 @@ def main():
                         node, str(bridge), "--orders", str(order_path),
                         "--plan", pinned_plan["path"],
                         "--port", str(args.hub_dispatch_port),
-                    ], check=True, capture_output=True, text=True, timeout=120)
-                    for line in dispatched.stdout.splitlines():
+                    ], capture_output=True, text=True, timeout=120)
+                    if dispatched.returncode != 0:
+                        raise ValueError("native Hub round dispatch failed: " +
+                                         dispatched.stderr.strip()[-1200:])
+                    lines = dispatched.stdout.splitlines()
+                    if len(lines) != 1:
+                        raise ValueError("native Hub dispatcher returned no unique frozen round receipt")
+                    for line in lines:
                         report = json.loads(line)
                         if (report.get("kind") != "native_hub_collection_round_dispatched" or
                                 report.get("round") != index or
