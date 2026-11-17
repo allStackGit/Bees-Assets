@@ -658,8 +658,13 @@ The remote window plays the original weapon, death, warp and Striker Bomb
 sounds and the authored Level soundtrack through the same bounded native
 audio mixer as local play. The server buffers short-lived event cues between
 snapshot intervals and filters them by each player's real fog before sending.
-F7 mutes audio; Space pauses or resumes the soundtrack. Missing audio
-assets or an output device do not block play. Client audio measurements
+F7 mutes audio; Space pauses or resumes the soundtrack. F8 toggles
+the native game's live one-second performance readout: actual rendered
+FPS, committed simulation steps/second, realtime factor, measured
+software-render and display/pacing costs, and dropped clock-debt resets.
+These values use completed frames and fixed ticks rather than requested
+steps or nominal 60 FPS, and the overlay does no work when disabled.
+Missing audio assets or an output device do not block play. Client audio measurements
 appear in the multiplayer session summary; headless simulation and PPO
 never initialize this audio path.
 The remote window now uses the **same native ship, projectile and asteroid

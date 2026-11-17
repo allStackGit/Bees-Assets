@@ -2059,6 +2059,26 @@ impl NativeSoftwareRenderer {
             left + 10, top + 6, message, 1, [231, 237, 248]);
     }
 
+    /// F8 toggles measurements on the actual player window. Keep a small,
+    /// fixed top-right readout separate from the authoritative combat world,
+    /// its simulation RNG and recorded player actions. The HUD consumes only
+    /// completed tick and finished framebuffer timings, never a target FPS.
+    #[cfg(feature = "client")]
+    pub fn draw_live_performance(&mut self, label: &str) {
+        if self.width < 460 || self.height < 200 { return; }
+        let label = text::fit(label, self.width.saturating_sub(36));
+        let width = text::width(label, 1) + 16;
+        let left = self.width.saturating_sub(width + 12);
+        let top = 12_usize;
+        let bottom = (top + text::HEIGHT + 12).min(self.height);
+        for y in top..bottom {
+            self.pixels[y * self.width + left
+                ..y * self.width + left + width].fill(0x16263a);
+        }
+        text::draw_at(&mut self.pixels, self.width,
+            left + 8, top + 6, label, 1, [235, 244, 252]);
+    }
+
     fn draw_battle_result(
         &mut self, view: &NativeRenderWorldView<'_>, result: bees_sim::episode_terminal::EpisodeTerminalResult,
     ) {

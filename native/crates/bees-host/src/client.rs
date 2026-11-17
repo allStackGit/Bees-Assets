@@ -54,6 +54,59 @@ struct RightPress {
     minimap: bool,
 }
 
+/// Rolling measured presentation throughput, never inferred from target FPS.
+/// Counters come from the authoritative completed-tick and rendered-frame
+/// paths, so a paused game reports zero SPS rather than invented progress.
+struct NativeLivePerformance {
+    enabled: bool,
+    started: Instant,
+    frames_at_start: u64,
+    steps_at_start: u64,
+    render_at_start: f64,
+    present_at_start: f64,
+    clamps_at_start: u64,
+    fps: f64,
+    sps: f64,
+    render_ms: f64,
+    present_ms: f64,
+    lag_clamps: u64,
+    sampled: bool,
+}
+
+impl NativeLivePerformance {
+    fn new(now: Instant) -> Self {
+        Self { enabled: false, started: now, frames_at_start: 0,
+            steps_at_start: 0, render_at_start: 0.0, present_at_start: 0.0,
+            clamps_at_start: 0, fps: 0.0, sps: 0.0, render_ms: 0.0,
+            present_ms: 0.0, lag_clamps: 0, sampled: false }
+    }
+
+    fn sample(&mut self, now: Instant, frames: u64, steps: u64,
+        render_seconds: f64, present_seconds: f64, lag_clamps: u64,
+    ) {
+        if !self.enabled { return; }
+        let elapsed = now.saturating_duration_since(self.started).as_secs_f64();
+        if elapsed < 1.0 { return; }
+        let frames_seen = frames.saturating_sub(self.frames_at_start);
+        self.fps = frames_seen as f64 / elapsed;
+        self.sps = steps.saturating_sub(self.steps_at_start) as f64 / elapsed;
+        self.render_ms = if frames_seen != 0 {
+            (render_seconds - self.render_at_start).max(0.0) * 1000.0 / frames_seen as f64
+        } else { 0.0 };
+        self.present_ms = if frames_seen != 0 {
+            (present_seconds - self.present_at_start).max(0.0) * 1000.0 / frames_seen as f64
+        } else { 0.0 };
+        self.lag_clamps = lag_clamps.saturating_sub(self.clamps_at_start);
+        self.frames_at_start = frames;
+        self.steps_at_start = steps;
+        self.render_at_start = render_seconds;
+        self.present_at_start = present_seconds;
+        self.clamps_at_start = lag_clamps;
+        self.started = now;
+        self.sampled = true;
+    }
+}
+
 pub struct NativeClient {
     window: Window,
     renderer: NativeSoftwareRenderer,
@@ -63,6 +116,7 @@ pub struct NativeClient {
     selected_world: usize,
     selection_owner: Option<(WorldId, u64)>,
     paused: bool,
+    performance: NativeLivePerformance,
     /// The Unity game exposes mouse-edge scrolling as a user preference.
     /// F6 toggles it locally without adding a gameplay or persisted setting.
     edge_scroll_enabled: bool,
@@ -160,7 +214,8 @@ impl NativeClient {
         Ok(Self { window, renderer, audio: NativeGameAudio::new(),
             music_locations: Vec::new(), bounds,
             selected_world: 0, selection_owner: None,
-            paused: false, edge_scroll_enabled: false,
+            paused: false, performance: NativeLivePerformance::new(now),
+            edge_scroll_enabled: false,
             source_zoom_by_world: Vec::new(),
             next_step: now, pending_steps: 0, previous_frame: now, left_was_down: false,
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
@@ -425,6 +480,17 @@ impl NativeClient {
             self.input_feedback = if self.audio.toggle_muted() {
                 "Audio muted"
             } else { "Audio enabled" };
+        }
+        if self.window.is_active() && self.window.is_key_pressed(Key::F8, KeyRepeat::No) {
+            self.performance.enabled = !self.performance.enabled;
+            // A disabled interval must not dilute the next measured SPS.
+            self.performance.sampled = false;
+            self.performance.started = now;
+            self.performance.frames_at_start = self.rendered_frames;
+            self.performance.steps_at_start = self.fixed_steps_executed;
+            self.performance.render_at_start = self.render_wall_seconds;
+            self.performance.present_at_start = self.window_update_wall_seconds;
+            self.performance.clamps_at_start = self.pacing_lag_clamps;
         }
         if self.window.is_key_pressed(Key::B, KeyRepeat::No) {
             self.renderer.show_weapon_ranges = !self.renderer.show_weapon_ranges;
@@ -1114,6 +1180,13 @@ impl NativeClient {
         if self.renderer.camera.constrain_to_map(self.bounds, width, height) {
             self.camera_boundary_clamps += 1;
         }
+        // Sampling uses completed values from the preceding frames; never
+        // read an uncommitted step or attribute a requested tick as done.
+        self.performance.sample(
+            now, self.rendered_frames, self.fixed_steps_executed,
+            self.render_wall_seconds, self.window_update_wall_seconds,
+            self.pacing_lag_clamps,
+        );
         let render_started = Instant::now();
         let counts = self.renderer.render(&view, self.bounds);
         // This is the visible viewport, after camera clamp/zoom and before
@@ -1127,6 +1200,18 @@ impl NativeClient {
         });
         if accepts_orders {
             self.renderer.draw_tactical_feedback(self.input_feedback);
+        }
+        if self.performance.enabled {
+            let label = if self.performance.sampled {
+                format!(
+                    "FPS {:.1} | Sim {:.1} SPS ({:.0}% realtime) | Render {:.1}ms | Present+pace {:.1}ms | Lag resets {}",
+                    self.performance.fps, self.performance.sps,
+                    self.performance.sps * fixed_dt.as_secs_f64() * 100.0,
+                    self.performance.render_ms, self.performance.present_ms,
+                    self.performance.lag_clamps,
+                )
+            } else { "Measuring native gameplay throughput...".to_owned() };
+            self.renderer.draw_live_performance(&label);
         }
         if let Some((_, speaker, line)) = dialogue {
             self.renderer.draw_campaign_dialogue(speaker, line);
@@ -1171,7 +1256,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, O lock, E chase, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, F7 mute, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, O lock, E chase, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, F7 mute, F8 metrics, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
