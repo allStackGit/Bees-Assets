@@ -1537,10 +1537,17 @@ recipe or policy-identity inputs, so a resumed session may change machine
 or bind port. The receiver is plain HTTP: **never expose it to the public
 Internet**, send the token over untrusted networks, or bypass a private
 overlay/SSH tunnel or TLS-terminating reverse proxy. The uploader also
-supports an HTTPS URL with ordinary certificate verification. Machine leases and execution remain owned by Experiment Hub. With an
-explicitly preapproved `--hub-dispatch-plan`, the learner can now submit
-each issued native collection round to the Hub's existing atomic resource
-bundle and scheduled-Start APIs, including restart-safe duplicate detection.
+supports an HTTPS URL with ordinary certificate verification.
+
+Machine leases and execution remain owned by Experiment Hub. With an
+explicitly preapproved `--hub-dispatch-plan`, the learner submits each
+issued native collection round to the Hub's existing atomic resource bundle
+and scheduled-Start APIs, including restart-safe duplicate detection.
+Add `--hub-auto-worlds N` and omit `--distributed-plan` to derive the
+initial physical World partitions from the Hub plan's fixed CPU budgets.
+The total N is the number of arenas per collection round; the learner pins
+that initial allocation and rebalances conservatively from three stable
+measurements, without reallocating machines, CPUs, GPUs or RAM.
 See `Training/EXPERIMENT_HUB.md` for machine allocation JSON and GPU
 approval requirements. Without that option, collectors remain manually
 queued or externally orchestrated. Both inputs and outputs can transfer
