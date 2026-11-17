@@ -100,9 +100,35 @@ pub fn select_battle(
     create_rows: &[NativeCreateSquadMenuRow],
     tactics_rows: &[NativeTacticsMenuRow],
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
+    select_battle_inner(rows, selected, launch_failed, fleet_rows, squad_rows,
+        shop_rows, banked_tsv, transfer_rows, create_rows, tactics_rows, false)
+}
+
+/// The packaged-game launcher uses the same list renderer without exposing
+/// campaign-only FleetShip, purchase or SavedSquad tools until a career opens.
+pub fn select_library(
+    rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
+) -> Result<Option<usize>, minifb::Error> {
+    match select_battle_inner(rows, selected, launch_failed,
+        &[], &[], &[], 0, &[], &[], &[], true)? {
+        Some(NativeBattleMenuAction::Play(index)) => Ok(Some(index)),
+        _ => Ok(None),
+    }
+}
+
+fn select_battle_inner(
+    rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
+    fleet_rows: &[String], squad_rows: &[String],
+    shop_rows: &[NativeShopMenuRow], banked_tsv: u64,
+    transfer_rows: &[NativeTransferMenuRow],
+    create_rows: &[NativeCreateSquadMenuRow],
+    tactics_rows: &[NativeTacticsMenuRow],
+    library_mode: bool,
+) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
     *selected = (*selected).min(rows.len() - 1);
-    let mut window = Window::new("Bees | Battles", WIDTH, HEIGHT, WindowOptions::default())?;
+    let mut window = Window::new(if library_mode { "Bees | Game Library" } else { "Bees | Battles" },
+        WIDTH, HEIGHT, WindowOptions::default())?;
     window.set_target_fps(30);
     let mut pixels = vec![0; WIDTH * HEIGHT];
     let titles = rows.iter().map(|row| {
@@ -129,7 +155,7 @@ pub fn select_battle(
     let mut fleet_selected = 0_usize;
     let mut fleet_first = 0_usize;
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        if window.is_key_pressed(Key::F, KeyRepeat::No) {
+        if !library_mode && window.is_key_pressed(Key::F, KeyRepeat::No) {
             career_view = if career_view == Some(false) && !show_shop && !show_transfer && !show_create {
                 None
             } else { Some(false) };
@@ -138,7 +164,7 @@ pub fn select_battle(
             show_create = false;
             show_tactics = false;
         }
-        if window.is_key_pressed(Key::S, KeyRepeat::No) {
+        if !library_mode && window.is_key_pressed(Key::S, KeyRepeat::No) {
             career_view = if career_view == Some(true) && !show_shop && !show_transfer && !show_create {
                 None
             } else { Some(true) };
@@ -147,28 +173,28 @@ pub fn select_battle(
             show_create = false;
             show_tactics = false;
         }
-        if window.is_key_pressed(Key::B, KeyRepeat::No) {
+        if !library_mode && window.is_key_pressed(Key::B, KeyRepeat::No) {
             show_shop = !show_shop;
             show_transfer = false;
             show_create = false;
             show_tactics = false;
             career_view = None;
         }
-        if window.is_key_pressed(Key::T, KeyRepeat::No) {
+        if !library_mode && window.is_key_pressed(Key::T, KeyRepeat::No) {
             show_transfer = !show_transfer;
             show_shop = false;
             show_create = false;
             show_tactics = false;
             career_view = None;
         }
-        if window.is_key_pressed(Key::N, KeyRepeat::No) {
+        if !library_mode && window.is_key_pressed(Key::N, KeyRepeat::No) {
             show_create = !show_create;
             show_shop = false;
             show_transfer = false;
             show_tactics = false;
             career_view = None;
         }
-        if window.is_key_pressed(Key::P, KeyRepeat::No) {
+        if !library_mode && window.is_key_pressed(Key::P, KeyRepeat::No) {
             show_tactics = !show_tactics;
             show_shop = false;
             show_transfer = false;
@@ -468,8 +494,11 @@ pub fn select_battle(
         mouse_down = pressed;
 
         pixels.fill(0x080e19);
-        text::draw_centered(&mut pixels, WIDTH, 24, "Battles", 2, TEXT);
-        text::draw_centered(&mut pixels, WIDTH, 78, "Choose a battle to play", 1, MUTED);
+        text::draw_centered(&mut pixels, WIDTH, 24,
+            if library_mode { "Bees Native" } else { "Battles" }, 2, TEXT);
+        text::draw_centered(&mut pixels, WIDTH, 78,
+            if library_mode { "Campaigns and quick battles" }
+            else { "Choose a battle to play" }, 1, MUTED);
         for (row, title) in titles.iter().skip(first).take(PAGE_SIZE).enumerate() {
             let top = LIST_TOP + row * ROW_HEIGHT;
             let color = if first + row == *selected { 0x294a66 } else { 0x142235 };
@@ -480,12 +509,19 @@ pub fn select_battle(
             text::draw_centered(&mut pixels, WIDTH, top + 8, title, 1, text_color);
         }
         if titles.len() > PAGE_SIZE {
-            let page = format!("{}-{} of {} battles", first + 1, (first + PAGE_SIZE).min(titles.len()), titles.len());
+            let page = format!("{}-{} of {} {}", first + 1,
+                (first + PAGE_SIZE).min(titles.len()), titles.len(),
+                if library_mode { "games" } else { "battles" });
             text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
         }
-        text::draw_centered(&mut pixels, WIDTH, 441, "Enter play   B build   T transfer   N new   P tactics   F fleet   S squads", 1, MUTED);
+        text::draw_centered(&mut pixels, WIDTH, 441,
+            if library_mode { "Enter open   Up / Down navigate   Esc exit" }
+            else { "Enter play   B build   T transfer   N new   P tactics   F fleet   S squads" },
+            1, MUTED);
         if launch_failed {
-            text::draw_centered(&mut pixels, WIDTH, 468, "Battle failed. See the console for details.", 1, [247, 172, 131]);
+            text::draw_centered(&mut pixels, WIDTH, 468,
+                if library_mode { "Game failed. See the console for details." }
+                else { "Battle failed. See the console for details." }, 1, [247, 172, 131]);
         }
         window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
     }
