@@ -1324,8 +1324,9 @@ rename after the copy completes so the learner never reads a partial file.
 
 On the learner, add `--bundle-archive-inbox /learner/uploads` to
 `train_policy_session.py` alongside the ordinary
-`--bundle-inbox /learner/native-inbox`. Both directories must already
-exist. The waiting session verifies each newly arrived archive against
+`--bundle-inbox /learner/native-inbox`. The same option is available when
+starting a fresh `bootstrap_policy.py --train-rounds` session. Both directories
+must already exist. The waiting session verifies each newly arrived archive against
 its issued work order, extracts all captures with content verification,
 and atomically publishes the familiar `rollout-bundle.json` directory
 to the normal inbox. It then proceeds with the **existing** MA-POCA
@@ -1361,8 +1362,11 @@ The collector writes its local artifacts under that UUID and publishes
 the pinned bundle under `bundle_directory` in the shared inbox; no
 extra scheduler or process owner is created. A `bees_native_collect`
 job with the old parameters remains unchanged. Hub's read-only log
-mirroring is **not** the rollout-bundle transport; the shared inbox
-must already be independently available to the learner.
+mirroring is **not** the rollout-bundle transport. A shared inbox is
+unnecessary when the Hub owner's completed local bundle is exported
+with `transfer_policy_bundle.py export`, transferred, and imported by the
+learner's archive inbox as described above. The Hub does not automatically
+upload such archives; transport remains an operator or deployment responsibility.
 
 Use the actual `trainer.yaml` file required by the standalone collector
 CLI; it is not consumed by a collect-only run. Each collector reuses
