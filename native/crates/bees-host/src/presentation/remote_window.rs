@@ -341,7 +341,10 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         for ship in state["ships"].as_array().into_iter().flatten() {
             let Some(point)=position(ship) else { continue };
             let center=screen(camera,point);
-            let friendly=ship["owned"]==true;
+            // Side allegiance and command rights are separate. The host
+            // includes AI-controlled friendly ships but never permits a
+            // remote peer to select their unowned squad.
+            let friendly=ship["friendly"]==true;
             let color=if friendly {GREEN} else {RED};
             let angle=(ship["rotation"].as_f64().unwrap_or(0.0) as f32).to_radians();
             let (sin,cos)=angle.sin_cos();
@@ -359,7 +362,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                      (center.0-10+(20.0*(health/maximum).clamp(0.0,1.0)) as i32,center.1+14),
                      color);
             }
-            if friendly && highlighted.contains(&ship["id"].as_i64().unwrap_or(-1)) {
+            if ship["owned"]==true && highlighted.contains(&ship["id"].as_i64().unwrap_or(-1)) {
                 outline(pixels,center.0-15,center.1-17,30,34,0xf9f0a1);
                 if let Some(destination)=ship["destination"].as_array() {
                     if destination.len()==2 {
