@@ -335,6 +335,7 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          distributed_plan: Path | None, bundle_inbox: Path | None,
                          bundle_archive_inbox: Path | None,
                          bundle_receiver_listen: str | None,
+                         collector_input_outbox: Path | None,
                          collector_timeout_seconds: int, auto_balance_collectors: bool,
                          evaluation_run_config: Path | None, evaluation_side: int | None,
                          evaluation_policy_seed: int,
@@ -386,6 +387,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         ])
     if bundle_receiver_listen is not None:
         command.extend(["--bundle-receiver-listen", bundle_receiver_listen])
+    if collector_input_outbox is not None:
+        command.extend(["--collector-input-outbox", str(collector_input_outbox.resolve(strict=True))])
     if auto_balance_collectors:
         command.append("--auto-balance-collectors")
     if evaluation_run_config is not None:
@@ -449,6 +452,8 @@ def main() -> None:
                         help="optional incoming collector tar directory; imports after verified upload")
     parser.add_argument("--bundle-receiver-listen",
                         help="bind an authenticated native streaming rollout receiver on HOST:PORT")
+    parser.add_argument("--collector-input-outbox", type=Path,
+                        help="existing directory for automatically prepared portable collector input archives")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0)
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="conservatively rebalance native distributed arena windows from verified collector throughput")
@@ -515,6 +520,9 @@ def main() -> None:
         parser.error("--bundle-archive-inbox requires distributed collection and an existing directory")
     if args.bundle_receiver_listen is not None and args.distributed_plan is None:
         parser.error("--bundle-receiver-listen requires distributed collection")
+    if args.collector_input_outbox is not None and (
+            args.distributed_plan is None or not args.collector_input_outbox.is_dir()):
+        parser.error("--collector-input-outbox requires distributed collection and an existing directory")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds must be nonnegative")
     if args.auto_balance_collectors and args.distributed_plan is None:
@@ -542,6 +550,7 @@ def main() -> None:
         args.distributed_plan is not None, args.bundle_inbox is not None,
         args.bundle_archive_inbox is not None,
         args.bundle_receiver_listen is not None,
+        args.collector_input_outbox is not None,
         args.holdout_worlds is not None, args.evaluation_run_config is not None,
         args.evaluation_side is not None,
         args.evaluation_policy_seed != 0, args.collector_timeout_seconds != 0,
@@ -628,6 +637,7 @@ def main() -> None:
             args.distributed_plan, args.bundle_inbox,
             args.bundle_archive_inbox,
             args.bundle_receiver_listen,
+            args.collector_input_outbox,
             args.collector_timeout_seconds, args.auto_balance_collectors,
             (output / "holdout-run.json" if args.holdout_worlds is not None
              else args.evaluation_run_config),
