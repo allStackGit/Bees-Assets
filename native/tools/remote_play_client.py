@@ -14,6 +14,22 @@ import socket
 import threading
 
 
+def remote_token(side):
+    """Resolve the caller's explicitly configured identity, never guess a side."""
+    if "BEES_NATIVE_REMOTE_SIDE_TOKENS" in os.environ:
+        if side is None:
+            raise ValueError("specify --side 1 or --side 2 for independent multiplayer")
+        tokens = json.loads(os.environ["BEES_NATIVE_REMOTE_SIDE_TOKENS"])
+        token = tokens.get(str(side))
+        if not isinstance(token, str):
+            raise ValueError(f"no remote authentication token configured for side {side}")
+        return token
+    token = os.environ.get("BEES_NATIVE_REMOTE_TOKEN")
+    if not token:
+        raise ValueError("set BEES_NATIVE_REMOTE_TOKEN or BEES_NATIVE_REMOTE_SIDE_TOKENS")
+    return token
+
+
 HELP = """Commands:
   status               Show the latest world and selected friendly squads
   ships                List currently visible ships and their positions
@@ -63,7 +79,7 @@ class RemoteConsole:
                     elif kind == "welcome":
                         self.notifications.put("Authenticated; native battle stream ready")
                         if not self.silent:
-                            print("Authenticated; native battle stream ready")
+                            print(f"Authenticated; player side {message.get('side')} ready")
                     elif kind == "input_result":
                         note = f"Order {message['request_id']}: {message['feedback']}"
                         self.notifications.put(note)
@@ -243,10 +259,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("host", help="native host IP or DNS name")
     parser.add_argument("port", type=int)
+    parser.add_argument("--side", type=int, choices=(1, 2),
+                        help="authenticated side for independent multiplayer")
     args = parser.parse_args()
-    token = os.environ.get("BEES_NATIVE_REMOTE_TOKEN")
-    if not token:
-        parser.error("set BEES_NATIVE_REMOTE_TOKEN (matching the native game host)")
+    try:
+        token = remote_token(args.side)
+    except (ValueError, json.JSONDecodeError) as error:
+        parser.error(str(error))
     with socket.create_connection((args.host, args.port), timeout=10) as connection:
         connection.settimeout(None)
         console = RemoteConsole(connection)
