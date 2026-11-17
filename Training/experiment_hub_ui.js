@@ -1015,12 +1015,21 @@ document.addEventListener('DOMContentLoaded', () => {
             resources.value='{"cpus":2,"ram_mb":2048,"gpu_count":0}';
         }
         resourceLabel.append(resources);
+        const curriculumLabel=document.createElement('label');
+        curriculumLabel.className='hub-pipeline-curriculum-label';
+        const curriculum=document.createElement('input');
+        curriculum.type='checkbox';
+        curriculum.className='hub-pipeline-curriculum';
+        curriculumLabel.append(curriculum,
+            document.createTextNode(' Curriculum stage (compatible environment changes)'));
         const remove=button('Remove',()=>{
             if(container.children.length<=2)return;
             row.remove();
             renderPipelineStages();
         });
-        row.append(configLabel,resourceLabel,remove);
+        const resourceGroup=document.createElement('div');
+        resourceGroup.append(resourceLabel,curriculumLabel);
+        row.append(configLabel,resourceGroup,remove);
         container.append(row);
     }
     function renderPipelineStages() {
@@ -1046,6 +1055,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if(sameSelection&&configs.some(c=>c.id===old))
                 select.value=old;
             else if(suggested)select.value=suggested.id;
+            const curriculum=row.querySelector('.hub-pipeline-curriculum');
+            const curriculumLabel=row.querySelector('.hub-pipeline-curriculum-label');
+            curriculumLabel.hidden=!(checkpointPipeline&&project==='courier'&&
+                (i>0||Boolean($('hub-pipeline-predecessor').value)));
+            if(curriculumLabel.hidden)curriculum.checked=false;
             row.querySelector('button').disabled=rows.length<=2;
         }
         pipelineStageProject=project;
@@ -3880,6 +3894,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+j.id.slice(-8),j.id)));
         if(availableParents.some(j=>j.id===previousParent))
             predecessorSelect.value=previousParent;
+        renderCurriculumChoice();
         const sequenceRows=sequenceRowsForJobs(state.jobs||[]);
         $('hub-sequence-overview-panel').hidden=project==='bees'||
             !sequenceRows.length;
@@ -4094,7 +4109,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · '+live.cpu_cores_used.toFixed(2)+' average CPU cores':'')
                 :'';
             const lineage=j.continuation_of_job_id
-                ?' · Resumes '+(state.jobs.find(p=>
+                ?(j.continuation_mode==='curriculum'
+                    ?' · Curriculum from ':' · Resumes ')+(state.jobs.find(p=>
                     p.id===j.continuation_of_job_id)?.configuration_name||
                     'prior experiment')+' on original machine'
                 :j.after_job_id
@@ -5571,7 +5587,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(!selected)throw Error('Select a saved configuration for every stage.');
                 return {configuration_id:selected.id,
                     expected_revision:selected.revision,
-                    resources:JSON.parse(row.querySelector('input').value)};
+                    resources:JSON.parse(row.querySelector('.hub-pipeline-resources').value),
+                    ...(checkpointPipeline&&project==='courier'&&
+                        row.querySelector('.hub-pipeline-curriculum').checked
+                        ?{continuation_mode:'curriculum'}:{})};
             });
             const predecessor=trialBatch?'':$('hub-pipeline-predecessor').value;
             const question=checkpointPipeline
@@ -5780,6 +5799,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('hub-job-resources').addEventListener('change',renderJobMetricSelection);
     distributedMachine.addEventListener('change',renderDistributedGroup);
+    const curriculumChoiceLabel=document.createElement('label');
+    const curriculumChoice=document.createElement('input');
+    curriculumChoice.type='checkbox';
+    curriculumChoiceLabel.className='hub-curriculum-choice';
+    curriculumChoiceLabel.append(curriculumChoice,
+        document.createTextNode(' Curriculum transition: preserve the trained model while allowing adapter-approved environment changes (Courier map resize only for now)'));
+    $('hub-job-predecessor').closest('label')
+        .insertAdjacentElement('afterend',curriculumChoiceLabel);
+    function renderCurriculumChoice() {
+        curriculumChoiceLabel.hidden=project!=='courier'||
+            !$('hub-job-predecessor').value;
+        if(curriculumChoiceLabel.hidden)curriculumChoice.checked=false;
+    }
+    $('hub-job-predecessor').addEventListener('change',renderCurriculumChoice);
     $('hub-job-queue').addEventListener('click',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id===project&&c.id===$('hub-job-configuration').value);
@@ -5788,6 +5821,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const predecessor=$('hub-job-predecessor').value;
+        const curriculum=Boolean(predecessor&&project==='courier'&&
+            curriculumChoice.checked);
         const parent=state.jobs.find(j=>j.id===predecessor);
         const prequeue=Boolean(parent&&!parent.capacity_released_at);
         if(project==='tinybrains') {
@@ -5816,7 +5851,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'Freeze '+selected.name+' revision '+selected.revision+
             ($('hub-job-run-name').value.trim()
                 ?' as run "'+$('hub-job-run-name').value.trim()+'"':'')+
-            (predecessor?' as a continuation of the selected predecessor':
+            (curriculum?' as a curriculum transition from the selected predecessor':
+                predecessor?' as an exact continuation of the selected predecessor':
                 ' as a new independent run')+
             '? '+(prequeue
                 ?'This stage remains blocked until its predecessor FINISHES and capacity is released. Stops and failures do not auto-advance it. '
@@ -5832,6 +5868,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // [] explicitly suppresses inherited defaults for this job.
                 metric_selection:metrics,
                 ...(predecessor?{continuation_of_job_id:predecessor}:{}),
+                ...(curriculum?{continuation_mode:'curriculum'}:{}),
             });
             $('hub-job-run-name').value='';
             feedback('hub-job-message',job.status==='waiting_predecessor'

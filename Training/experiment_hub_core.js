@@ -3676,6 +3676,7 @@ class ExperimentHub {
                     frozen_parameters:copy(job.frozen_parameters),
                     configuration_sha256:job.configuration_sha256,
                     continuation_of_job_id:job.continuation_of_job_id||null,
+                    ...(job.continuation_mode?{continuation_mode:job.continuation_mode}:{}),
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     resources:copy(job.resources),
                     ...(action==='inspect'&&job.checkpoint_reinspection_requested_at
@@ -4939,7 +4940,7 @@ class ExperimentHub {
         let predecessor=value.continuation_of_job_id??null;
         for(const stage of value.stages) {
             if(!object(stage)||Object.keys(stage).some(key=>
-                !['configuration_id','expected_revision','resources'].includes(key)))
+                !['configuration_id','expected_revision','resources','continuation_mode'].includes(key)))
                 throw Error('Each pipeline stage must select one saved configuration and resource request.');
             const job=this.queueIn(next,{
                 ...stage,continuation_of_job_id:predecessor,
@@ -4983,6 +4984,11 @@ class ExperimentHub {
 
         const ancestorId=value.continuation_of_job_id==null
             ?null:value.continuation_of_job_id;
+        const continuationMode=value.continuation_mode??'exact';
+        if(!['exact','curriculum'].includes(continuationMode)||
+            (continuationMode==='curriculum'&&
+                (!ancestorId||project.id!=='courier')))
+            throw Error('Curriculum continuation currently requires an explicit Courier predecessor and a trusted compatible environment transition.');
         const afterId=value.after_job_id==null?null:value.after_job_id;
         if(afterId!==null&&ancestorId!==null)
             throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
@@ -5095,6 +5101,7 @@ class ExperimentHub {
             id:jobId,
             project_id:project.id, adapter:project.adapter,
             continuation_of_job_id:parent?.id||null,
+            ...(parent?{continuation_mode:continuationMode}:{}),
             after_job_id:dependency?.id||null,
             predecessor_ready_at:dependencyReady?now():null,
             artifact_lineage_root_id:parent

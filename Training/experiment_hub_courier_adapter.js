@@ -3,6 +3,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
+const {isDeepStrictEqual}=require('node:util');
 const {validateProgress}=require('./experiment_hub_progress');
 const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {applyOverrides,described,validateCatalog}=require('./experiment_hub_design_fields');
@@ -604,12 +605,26 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 !evaluator.evaluation_suites.includes(context.evaluation_suite_id)))
                 throw Error('Courier snapshot publishing requires a matching dispatch and suite.');
             const predecessor=context.continuation_of_job_id;
-            let limit=max_rounds, files=[];
+            let limit=max_rounds, files=[],resumeMapSize=null;
             if(predecessor) {
                 const source=path.join(artifacts,predecessor);
                 const saved=completedCheckpoint(source,max_rounds);
-                if(!saved.environment.equals(environment))
-                    throw Error('Courier checkpoint continuation requires unchanged training environment.');
+                if(!saved.environment.equals(environment)) {
+                    if(context.continuation_mode!=='curriculum')
+                        throw Error('Courier checkpoint environment changed; select a curriculum continuation for compatible map changes.');
+                    const previous=JSON.parse(saved.environment.toString('utf8'));
+                    const next=JSON.parse(environment.toString('utf8'));
+                    if(!isDeepStrictEqual(previous,next)) {
+                        // Courier's installed --map-size preserves its fixed
+                        // observation/action schema. Other changes need their
+                        // own explicit trainer migration capability.
+                        if(next.width!==next.height||
+                            !Number.isSafeInteger(next.width)||next.width<4||next.width>32||
+                            !isDeepStrictEqual({...previous,width:next.width,height:next.height},next))
+                            throw Error('Courier curriculum currently supports only square map resizing; all other environment settings and policy interfaces must remain unchanged.');
+                        resumeMapSize=next.width;
+                    }
+                }
                 files=saved.files;
                 if(context.expected_parent_model_sha256&&
                     modelFileSha256(saved.files.find(file=>path.basename(file)==='lineage-0.zip'))!==
@@ -640,7 +655,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(training!==null?['--hub-training-config',
                     path.join(out,'hub-training-overrides.json')]:[]),
                 ...(reporting_benchmarks===true?['--reporting-benchmarks']:[]),
-                ...(predecessor?['--resume']:[])];
+                ...(predecessor?['--resume']:[]),
+                ...(resumeMapSize===null?[]:['--map-size',String(resumeMapSize)])];
         },
         readProgress(context) {
             const root=jobRoot(context);

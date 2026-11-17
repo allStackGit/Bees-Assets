@@ -161,6 +161,11 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     if(!['terminate-group','interrupt-main'].includes(stopPolicy))
         throw Error('Unknown locally installed native stop policy.');
     const predecessor=job.continuation_of_job_id||null;
+    const continuationMode=job.continuation_mode??'exact';
+    if(!['exact','curriculum'].includes(continuationMode)||
+        (continuationMode==='curriculum'&&
+            (job.project_id!=='courier'||!predecessor)))
+        throw Error('Unsupported native curriculum continuation mode.');
     const lineageRoot=job.artifact_lineage_root_id||job.id;
     if(!UUID.test(String(lineageRoot))||
         (predecessor!==null&&(!UUID.test(String(predecessor))||
@@ -173,6 +178,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         continuation_of_job_id:predecessor,
+        continuation_mode:continuationMode,
         artifact_lineage_root_id:lineageRoot,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),

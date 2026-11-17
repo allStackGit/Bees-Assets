@@ -376,6 +376,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 }
 .hub-pipeline-stage label { min-width: 0; }
 .hub-pipeline-stage select, .hub-pipeline-stage input { width: 100%; }
+.hub-pipeline-curriculum-label { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; line-height: 1.4; }
+.hub-pipeline-curriculum-label[hidden] { display: none; }
+.hub-pipeline-stage .hub-pipeline-curriculum { width: auto; flex: 0 0 auto; margin: 0; }
 @media (max-width: 720px) {
     .hub-pipeline-stage { grid-template-columns: 1fr; }
 }
@@ -668,6 +671,9 @@ fieldset > .formgrid { margin-bottom: 12px; }
     align-items: start;
 }
 .hub-job-identifiers > label { min-width: 0; }
+.hub-job-identifiers .hub-curriculum-choice { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.4; }
+.hub-job-identifiers .hub-curriculum-choice[hidden] { display: none; }
+.hub-job-identifiers .hub-curriculum-choice input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 0; }
 .hub-job-json { display: block; min-width: 0; }
 .hub-job-json textarea { min-height: 100px; }
 .hub-resource-builder { min-width: 0; margin: 0; padding: 14px; }
