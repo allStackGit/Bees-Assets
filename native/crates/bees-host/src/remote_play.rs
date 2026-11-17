@@ -506,6 +506,9 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
             "command": command,
             "cease_fire": if owned { view.player_authority.player_cease_fire(owner) } else { None },
             "chasing": if owned { Some(view.player_authority.player_should_chase(owner)) } else { None },
+            "match_speed": if owned {
+                Some(view.player_authority.player_matched_speed(owner).is_some())
+            } else { None },
             "shooting": if owned { view.player_authority.player_shooting_strategy(owner)
                 .map(|strategy| strategy.id) } else { None },
         }))
