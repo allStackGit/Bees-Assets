@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Transfer an immutable native rollout bundle between machines without shared storage.
+
+The exported tar contains only an approved collection receipt and its captured
+files. Imports verify the work order, every artifact digest, and all archive
+paths before atomically publishing the existing collector inbox layout. This
+is transport, not a second collector, training protocol or job scheduler.
+"""
+
+import argparse
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import tarfile
+from tempfile import TemporaryDirectory, NamedTemporaryFile
+
+from native_distributed_collection import verify_bundle
+from native_training_artifacts import file_sha256, sync_directory
+
+
+DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+BUNDLE_NAME = re.compile(r"[A-Za-z0-9_-]{1,96}\Z")
+MAX_RECEIPT_BYTES = 2 * 1024 * 1024
+CHUNK = 1024 * 1024
+
+
+def checked_order(path, collector_id):
+    orders = json.loads(Path(path).read_text(encoding="utf-8"))
+    if (not isinstance(orders, dict) or
+            orders.get("kind") != "native_distributed_collection_orders" or
+            orders.get("schema_version") != 1 or
+            not isinstance(orders.get("jobs"), list)):
+        raise ValueError("expected issued native distributed collection orders")
+    jobs = [job for job in orders["jobs"]
+            if isinstance(job, dict) and job.get("id") == collector_id]
+    if len(jobs) != 1:
+        raise ValueError("collector is not uniquely present in the issued work order")
+    job = jobs[0]
+    name = job.get("bundle_directory")
+    if not isinstance(name, str) or not BUNDLE_NAME.fullmatch(name):
+        raise ValueError("collector bundle destination is not a safe directory name")
+    return orders, job
+
+
+def artifact_paths(receipt):
+    """Only original capture/journal files may travel with this receipt."""
+    captures = receipt.get("captures")
+    if not isinstance(captures, list) or not captures or len(captures) > 256:
+        raise ValueError("native bundle has an invalid capture list")
+    files = {}
+    for capture in captures:
+        if not isinstance(capture, dict) or set(capture) != {"policy_capture", "notifications"}:
+            raise ValueError("native bundle has incomplete capture/journal pairs")
+        for record in capture.values():
+            if not isinstance(record, dict):
+                raise ValueError("invalid captured artifact")
+            name, sha = record.get("path"), record.get("sha256")
+            if not isinstance(name, str) or not isinstance(sha, str) or not DIGEST.fullmatch(sha):
+                raise ValueError("captured artifact has an invalid name or digest")
+            path = PurePosixPath(name)
+            if (not path.parts or path.is_absolute() or
+                    path.as_posix() != name or
+                    any(part in (".", "..") for part in path.parts) or
+                    "\\" in name or ":" in name or
+                    name == "rollout-bundle.json" or name in files):
+                raise ValueError("captured artifact path is unsafe or duplicated")
+            files[name] = sha
+    return files
+
+
+class DigestReader:
+    """Hash the same bytes tarfile writes, with no second artifact read."""
+    def __init__(self, stream):
+        self.stream = stream
+        self.digest = hashlib.sha256()
+        self.bytes_read = 0
+
+    def read(self, length=-1):
+        data = self.stream.read(length)
+        self.digest.update(data)
+        self.bytes_read += len(data)
+        return data
+
+
+def archive_info(name, size):
+    info = tarfile.TarInfo(name)
+    info.size = size
+    info.mode = 0o600
+    info.mtime = 0
+    return info
+
+
+def export_bundle_archive(receipt_path, job, orders, archive_path):
+    receipt_path = Path(receipt_path).resolve(strict=True)
+    bundle_root = receipt_path.parent
+    archive_path = Path(archive_path).absolute()
+    archive_parent = archive_path.parent.resolve(strict=True)
+    if not archive_parent.is_dir() or archive_path.exists() or archive_path.is_symlink():
+        raise FileExistsError(f"archive output must be a new file in an existing directory: {archive_path}")
+    verify_bundle(receipt_path, job, orders)
+    raw = receipt_path.read_bytes()
+    if len(raw) > MAX_RECEIPT_BYTES:
+        raise ValueError("rollout bundle receipt exceeds transfer limit")
+    files = artifact_paths(json.loads(raw))
+    temporary = None
+    transferred = 0
+    try:
+        with NamedTemporaryFile(mode="w+b", prefix=".native-bundle-", suffix=".partial",
+                                dir=archive_parent, delete=False) as sink:
+            temporary = Path(sink.name)
+            with tarfile.open(fileobj=sink, mode="w", format=tarfile.PAX_FORMAT) as archive:
+                archive.addfile(archive_info("rollout-bundle.json", len(raw)), io.BytesIO(raw))
+                for name, expected in sorted(files.items()):
+                    source = bundle_root.joinpath(*PurePosixPath(name).parts)
+                    # Never follow a collector artifact through a symlink or
+                    # outside the approved bundle root, on any platform.
+                    if (source.is_symlink() or not source.is_file() or
+                            not source.resolve(strict=True).is_relative_to(bundle_root)):
+                        raise ValueError(f"collector artifact escaped its bundle: {name}")
+                    size = source.stat().st_size
+                    with source.open("rb") as stream:
+                        reader = DigestReader(stream)
+                        archive.addfile(archive_info(name, size), reader)
+                        if reader.bytes_read != size or reader.digest.hexdigest() != expected:
+                            raise ValueError(f"collector artifact changed before export: {name}")
+                    transferred += size
+            sink.flush()
+            os.fsync(sink.fileno())
+        # Hard-link publication is atomic and refuses to overwrite a file
+        # published by another collector, unlike os.replace on POSIX.
+        os.link(temporary, archive_path)
+        sync_directory(archive_parent)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return {
+        "archive": str(archive_path),
+        "archive_sha256": file_sha256(archive_path),
+        "capture_files": len(files),
+        "capture_bytes": transferred,
+        "archive_bytes": archive_path.stat().st_size,
+    }
+
+
+def import_bundle_archive(archive_path, job, orders, inbox):
+    archive_path = Path(archive_path).resolve(strict=True)
+    inbox = Path(inbox).resolve(strict=True)
+    if not inbox.is_dir():
+        raise ValueError("native collector inbox must exist")
+    destination = inbox / job["bundle_directory"]
+    if destination.exists() or destination.is_symlink():
+        raise FileExistsError(f"native collector bundle already published: {destination}")
+    with TemporaryDirectory(prefix=".native-bundle-import-", dir=inbox) as scratch:
+        stage = Path(scratch) / "bundle"
+        stage.mkdir()
+        expected = None
+        received = set()
+        transferred = 0
+        with tarfile.open(archive_path, mode="r|") as archive:
+            for item in archive:
+                if not item.isfile():
+                    raise ValueError("transfer archive contains a non-file member")
+                if expected is None:
+                    if item.name != "rollout-bundle.json" or not 0 < item.size <= MAX_RECEIPT_BYTES:
+                        raise ValueError("transfer archive must start with a bounded rollout receipt")
+                    source = archive.extractfile(item)
+                    if source is None:
+                        raise ValueError("missing archived rollout receipt")
+                    raw = source.read(MAX_RECEIPT_BYTES + 1)
+                    if len(raw) != item.size:
+                        raise ValueError("truncated archived rollout receipt")
+                    receipt = stage / "rollout-bundle.json"
+                    with receipt.open("xb") as sink:
+                        sink.write(raw)
+                        sink.flush()
+                        os.fsync(sink.fileno())
+                    verify_bundle(receipt, job, orders)
+                    expected = artifact_paths(json.loads(raw))
+                    continue
+                name = item.name
+                if name not in expected or name in received:
+                    raise ValueError(f"transfer archive contains unexpected or duplicate artifact: {name}")
+                target = stage.joinpath(*PurePosixPath(name).parts)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = archive.extractfile(item)
+                if source is None:
+                    raise ValueError(f"missing archived artifact: {name}")
+                digest = hashlib.sha256()
+                total = 0
+                with target.open("xb") as sink:
+                    while True:
+                        block = source.read(CHUNK)
+                        if not block:
+                            break
+                        sink.write(block)
+                        digest.update(block)
+                        total += len(block)
+                    sink.flush()
+                    os.fsync(sink.fileno())
+                if total != item.size or digest.hexdigest() != expected[name]:
+                    raise ValueError(f"captured artifact digest mismatch: {name}")
+                if target.parent != stage:
+                    sync_directory(target.parent)
+                received.add(name)
+                transferred += total
+        if expected is None or received != set(expected):
+            raise ValueError("transfer archive is missing required capture files")
+        if destination.exists() or destination.is_symlink():
+            raise FileExistsError(f"native collector bundle already published: {destination}")
+        stage.rename(destination)
+        sync_directory(inbox)
+    return {
+        "bundle": str(destination / "rollout-bundle.json"),
+        "collector_id": job["id"],
+        "capture_files": len(received),
+        "capture_bytes": transferred,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    for command in ("export", "import"):
+        sub = commands.add_parser(command)
+        sub.add_argument("--orders", type=Path, required=True)
+        sub.add_argument("--collector-id", required=True)
+        sub.add_argument("--archive", type=Path, required=True)
+        if command == "export":
+            sub.add_argument("--receipt", type=Path, required=True)
+        else:
+            sub.add_argument("--inbox", type=Path, required=True)
+    args = parser.parse_args()
+    orders, job = checked_order(args.orders, args.collector_id)
+    result = (
+        export_bundle_archive(args.receipt, job, orders, args.archive)
+        if args.command == "export"
+        else import_bundle_archive(args.archive, job, orders, args.inbox)
+    )
+    print(json.dumps({
+        "kind": "native_rollout_archive_exported" if args.command == "export"
+                else "native_rollout_archive_imported",
+        **result,
+    }, sort_keys=True), flush=True)
+
+
+if __name__ == "__main__":
+    main()
