@@ -39,6 +39,21 @@ def model_artifact_name(digest):
     return f"models/{digest}.model"
 
 
+def legacy_model_artifact_name(name):
+    # Older archives carried exactly the original relative manifest path.
+    # Those existing jobs remain importable without permitting traversal.
+    if (not isinstance(name, str) or not name or
+            chr(92) in name or ":" in name or len(name) > 255):
+        raise ValueError("legacy model path is not portable")
+    path = PurePosixPath(name)
+    if (path.is_absolute() or path.as_posix() != name or
+            len(path.parts) > 8 or any(x in (".", "..") for x in path.parts) or
+            path.parts[0] in ("scene", "source", ".") or
+            name in RESERVED and name != "checkpoint.pt"):
+        raise ValueError("legacy model path is unsafe")
+    return name
+
+
 
 def resolve_source(root, value):
     if not isinstance(value, str) or not value:
@@ -243,6 +258,7 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None,
                     not 1 <= len(info["files"]) <= MAX_FILES):
                 raise ValueError("native collector input archive has an invalid manifest")
             files = info["files"]
+            legacy_archive = "collection_ids" not in info
             remaining = set(files)
             total = 0
             for item in tar:
@@ -262,6 +278,11 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None,
                     allowed = (re.fullmatch(r"scene/[0-9]{4}\.json", name) is not None or
                         name in ("source/collision_matrix.json", "source/stage_palette.json") or
                         re.fullmatch(r"models/[0-9a-f]{64}\.model", name) is not None)
+                    if not allowed and legacy_archive:
+                        try:
+                            allowed = legacy_model_artifact_name(name) == name
+                        except ValueError:
+                            allowed = False
                     if not allowed:
                         raise ValueError(f"unsafe native input artifact path: {name}")
                 member_path = PurePosixPath(name)
@@ -297,18 +318,23 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None,
             raise ValueError("shared collector input archive requires explicit collector identity")
         orders, job = checked_order(orders_file, selected)
         identities = info.get("collection_ids")
-        if (not isinstance(identities, dict) or
-                identities.get(selected) != job["collection_id"] or
-                (info.get("collector_id") != "@round" and
-                 (info.get("collector_id") != selected or
-                  len(identities) != 1))):
-            raise ValueError("native collector identity differs from its issued order")
-        if info.get("collector_id") == "@round" and (
-            len(identities) != len(orders["jobs"]) or
-            any(identities.get(entry["id"]) != entry["collection_id"]
-                for entry in orders["jobs"])
-        ):
-            raise ValueError("shared collector archive differs from issued round")
+        if legacy_archive:
+            if (info.get("collector_id") != selected or
+                    info.get("collection_id") != job["collection_id"]):
+                raise ValueError("legacy collector identity differs from its issued order")
+        else:
+            if (not isinstance(identities, dict) or
+                    identities.get(selected) != job["collection_id"] or
+                    (info.get("collector_id") != "@round" and
+                     (info.get("collector_id") != selected or
+                      len(identities) != 1))):
+                raise ValueError("native collector identity differs from its issued order")
+            if info.get("collector_id") == "@round" and (
+                len(identities) != len(orders["jobs"]) or
+                any(identities.get(entry["id"]) != entry["collection_id"]
+                    for entry in orders["jobs"])
+            ):
+                raise ValueError("shared collector archive differs from issued round")
         if file_sha256(root / "manifest.json") != orders["input_manifest_sha256"] or (
             file_sha256(root / "checkpoint.pt") != orders["input_checkpoint_sha256"]
         ):
@@ -322,10 +348,15 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None,
             if not isinstance(model, dict):
                 raise ValueError("portable model has invalid slot")
             digest = model.get("sha256")
-            name = model_artifact_name(digest)
+            name = (legacy_model_artifact_name(model.get("path"))
+                    if legacy_archive else model_artifact_name(digest))
             if digest == checkpoint_sha:
                 if file_sha256(root / "checkpoint.pt") != digest:
                     raise ValueError("portable learner checkpoint changed")
+                if legacy_archive and name != "checkpoint.pt":
+                    expected_files.add(name)
+                    if file_sha256(root / name) != digest:
+                        raise ValueError("legacy learner model artifact changed")
             else:
                 expected_files.add(name)
                 if file_sha256(root / name) != digest:
@@ -342,6 +373,20 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None,
         # without duplicating its bytes on normal local filesystems.
         models_dir = root / "models"
         models_dir.mkdir(exist_ok=True)
+        if legacy_archive:
+            for model in models["models"]:
+                digest = model["sha256"]
+                if digest == checkpoint_sha:
+                    continue
+                alias = models_dir / (digest + ".model")
+                if not alias.exists():
+                    try:
+                        os.link(root / legacy_model_artifact_name(model["path"]), alias)
+                    except OSError:
+                        import shutil
+                        shutil.copyfile(root / legacy_model_artifact_name(model["path"]), alias)
+                if file_sha256(alias) != digest:
+                    raise ValueError("legacy model-store alias differs from pinned weights")
         checkpoint_alias = models_dir / (checkpoint_sha + ".model")
         if not checkpoint_alias.exists():
             try:
