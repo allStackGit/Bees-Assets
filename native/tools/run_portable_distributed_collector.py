@@ -18,11 +18,16 @@ import tempfile
 import time
 
 from transfer_policy_inputs import import_inputs
+from native_bundle_receiver import download_input_archive
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-archive", required=True, type=Path)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--input-archive", type=Path,
+                        help="local issued input archive")
+    source.add_argument("--input-url", help="authenticated learner collector input endpoint")
+    parser.add_argument("--collector-id", help="issued collector ID, required with --input-url")
     parser.add_argument("--scratch", required=True, type=Path,
                         help="existing private writable collector scratch directory")
     parser.add_argument("--rollout-binary", required=True, type=Path)
@@ -37,7 +42,12 @@ def main():
     parser.add_argument("--python", help="worker's local Python interpreter")
     parser.add_argument("--stage-diagnostics", action="store_true")
     args = parser.parse_args()
-    if not (args.upload_url or args.archive_output or args.bundle_inbox):
+    if args.input_url and not args.collector_id:
+        parser.error("--collector-id is required with --input-url")
+    if args.input_archive and args.collector_id:
+        parser.error("collector identity is embedded in --input-archive")
+    upload_url = args.upload_url or args.input_url
+    if not (upload_url or args.archive_output or args.bundle_inbox):
         parser.error("supply --upload-url, --archive-output or --bundle-inbox")
     scratch = args.scratch.resolve(strict=True)
     if not scratch.is_dir() or scratch.is_symlink():
@@ -52,7 +62,14 @@ def main():
     attempt = Path(tempfile.mkdtemp(prefix="native-portable-collector-", dir=scratch))
     inputs = attempt / "inputs"
     try:
-        imported = import_inputs(args.input_archive, inputs,
+        input_archive = args.input_archive
+        if args.input_url:
+            input_archive = attempt / "issued-inputs.tar"
+            received = download_input_archive(
+                args.input_url, args.collector_id, input_archive,
+            )
+            print(json.dumps(received, sort_keys=True), flush=True)
+        imported = import_inputs(input_archive, inputs,
                                  args.policy_worker, args.python)
         print(json.dumps(imported, sort_keys=True), flush=True)
         command = [
@@ -65,7 +82,7 @@ def main():
             *([] if args.bundle_inbox is None else [str(args.bundle_inbox.resolve(strict=True))]),
             "--rollout-binary", str(binary),
             *([] if args.archive_output is None else ["--archive-output", str(args.archive_output)]),
-            *([] if args.upload_url is None else ["--upload-url", args.upload_url]),
+            *([] if upload_url is None else ["--upload-url", upload_url]),
             *([] if not args.stage_diagnostics else ["--stage-diagnostics"]),
         ]
         subprocess.run(command, check=True)
@@ -77,7 +94,7 @@ def main():
             "collector_id": imported["collector_id"],
             "input_bytes": imported["source_bytes"],
             "elapsed_wall_seconds": time.perf_counter() - started,
-            "input_archive": str(args.input_archive.resolve()),
+            "input_archive": str(input_archive.resolve()),
         }, sort_keys=True), flush=True)
     except BaseException:
         # Failed work is never converted to success. Keep its source inputs
