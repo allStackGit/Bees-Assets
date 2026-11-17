@@ -17,6 +17,7 @@ HELP = """Commands:
   status               Show the latest world and selected friendly squads
   ships                List currently visible ships and their positions
   squads               List friendly and visible target squads
+  obstacles            List visible map objects and mining asteroids
   select ID [ID...]    Select one or more friendly squad IDs
   move X Y             Move selected squads to world point
   fire X Y             Manual point fire; fire stop clears target
@@ -25,6 +26,10 @@ HELP = """Commands:
   match on|off         Match selected ship speeds
   attack ID            Attack visible enemy squad
   guard ID             Guard a visible friendly squad
+  mine ID              Mine a visible mining asteroid
+  heal ID              Heal from a visible friendly Beehive
+  retreat ID           Retreat through a visible friendly WarpGate
+  patrol X1 Y1 X2 Y2   Patrol the requested rectangle
   hold                 Stop selected squad's active chase
   special beacon|detonate|charge
   help                 Print this command list
@@ -140,6 +145,13 @@ class RemoteConsole:
                       f" {'ours' if squad['owned'] else 'target'}"
                       f" ships {squad['members']}")
             return
+        if cmd == "obstacles":
+            for object in state.get("obstacles", []):
+                print(f"  {object['id']:>8} kind {object['kind']}"
+                      f" ({object['x']:8.1f}, {object['y']:8.1f})"
+                      f" {'mining' if object['mining'] else ''}"
+                      f" HP {object['health']}")
+            return
         if cmd == "select":
             if not argv:
                 raise ValueError("select requires at least one squad ID")
@@ -171,6 +183,29 @@ class RemoteConsole:
             target = self.locate_squad(state, argv[0], owned=True)
             self.send(("support", {"action": {"Guard": {"target": target}}}),
                       state, owners)
+        elif cmd == "mine" and len(argv) == 1:
+            object_id = int(argv[0])
+            if not any(obj["id"] == object_id and obj["mining"]
+                       for obj in state.get("obstacles", [])):
+                raise ValueError("mining asteroid is not currently visible")
+            self.send(("support", {"action": {"Mining": {"asteroid_id": object_id}}}),
+                      state, owners)
+        elif cmd in ("heal", "retreat") and len(argv) == 1:
+            ship_id = int(argv[0])
+            if not any(ship["id"] == ship_id and ship["owned"]
+                       for ship in state["ships"]):
+                raise ValueError("friendly heal/retreat target is not currently visible")
+            action = ({"Heal": {"beehive_ids": [ship_id]}} if cmd == "heal"
+                      else {"FullRetreat": {"warp_gate_id": ship_id}})
+            self.send(("support", {"action": action}), state, owners)
+        elif cmd == "patrol" and len(argv) == 4:
+            x1, y1, x2, y2 = map(float, argv)
+            self.send(("support", {"action": {
+                "Patrol": {
+                    "top_left": {"x": x1, "y": y1},
+                    "bottom_right": {"x": x2, "y": y2},
+                },
+            }}), state, owners)
         elif cmd == "hold" and not argv:
             self.send(("support", {"action": "Hold"}), state, owners)
         elif cmd == "special" and len(argv) == 1 and argv[0] in ("beacon", "detonate", "charge"):
