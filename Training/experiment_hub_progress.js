@@ -165,9 +165,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
             'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
             'pipeline_remote_wait_dominant',
-            'pipeline_remote_wait_owner',
+            'pipeline_remote_wait_owner','pipeline_remote_wait_competing_collectors',
             'pipeline_remote_exposed_work_share',
             'remote_collectors_pending_after_local',
+            'remote_collector_co_limiting_count',
             'remote_collector_exposed_wait_seconds',
             'remote_collector_exposed_wait_owner',
             'training_queue_pressure','training_final_join_pressure',
@@ -297,6 +298,7 @@ class BottleneckEvidence {
             const remoteExposed=seconds('remote_collector_exposed_wait_seconds');
             const remotePending=metrics.remote_collectors_pending_after_local;
             const remoteOwnerMetric=metrics.remote_collector_exposed_wait_owner;
+            const remoteCoLimit=metrics.remote_collector_co_limiting_count;
             const remoteCount=metrics.collector_count;
             const exposedShare=(collection>0&&remoteExposed!==null&&
                 remoteExposed<=collection)?remoteExposed/collection:null;
@@ -309,6 +311,12 @@ class BottleneckEvidence {
             const ownerWait=Number.isSafeInteger(candidate)&&candidate>0&&
                 candidate<MAX_TINYBRAINS_COLLECTORS
                 ?seconds('collector_'+candidate+'_wait_after_local_seconds'):null;
+            const remoteCompeting=(remoteCoLimit?.unit==='count'&&
+                Number.isSafeInteger(remoteCoLimit.value)&&
+                remoteCoLimit.value>=2&&remotePending?.unit==='count'&&
+                Number.isSafeInteger(remotePending.value)&&
+                remotePending.value>=remoteCoLimit.value&&
+                exposedShare!==null&&exposedShare>=0.25);
             const remoteOwner=(remoteCount?.unit==='count'&&
                 remotePending?.unit==='count'&&
                 Number.isSafeInteger(remoteCount.value)&&
@@ -461,7 +469,7 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,mergeShare,
-                    localGpuShare,localGpuOwner,localGpuLease,remoteOwner,
+                    localGpuShare,localGpuOwner,localGpuLease,remoteOwner,remoteCompeting,
                     stageHints,simHints,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
@@ -485,6 +493,9 @@ class BottleneckEvidence {
                         x.remoteOwner===owner&&x.waitShare!==null&&
                         x.waitShare>=0.5).length>=5)
                         add('pipeline_remote_wait_owner',owner,'count');
+                    if(recent.filter(x=>x.remoteCompeting&&x.waitShare!==null&&
+                        x.waitShare>=0.5).length>=5)
+                        add('pipeline_remote_wait_competing_collectors',1,'count');
                 }
                 if(recent.filter(x=>x.localGpuShare!==null&&
                     x.localGpuShare>=0.5).length>=5) {
