@@ -33,6 +33,14 @@ function checkPlan(plan,orders) {
         typeof plan.confirm_unattended_start!=='boolean'||
         plan.confirm_unattended_start!==true||
         typeof plan.confirm_gpu_start!=='boolean'||
+        (plan.resume_after_restart!==undefined&&
+         typeof plan.resume_after_restart!=='boolean')||
+        (plan.confirm_restart_rearm!==undefined&&
+         typeof plan.confirm_restart_rearm!=='boolean')||
+        (plan.resume_after_restart===true&&
+         (plan.confirm_restart_rearm!==true||
+          plan.collectors?.some(item=>item.resources?.gpu_count>0)))||
+        (!plan.resume_after_restart&&plan.confirm_restart_rearm===true)||
         !Array.isArray(plan.collectors)||
         plan.collectors.length!==orders.jobs.length||
         plan.collectors.length<2||plan.collectors.length>16)
@@ -194,8 +202,11 @@ async function dispatch(ordersFile,planFile,port) {
             bundle_id:bundleId,expected_job_ids:memberIds,
             confirm_schedule:true,
             confirm_gpu_start:plan.confirm_gpu_start,
-            resume_after_restart:false,
+            resume_after_restart:plan.resume_after_restart===true,
+            confirm_restart_rearm:plan.confirm_restart_rearm===true,
         });
+        if(!['pending','authorized'].includes(launch?.status))
+            throw Error('Native bundle requires Hub operator review before unattended Start.');
     } else if(!launch&&active.some(j=>j.status==='waiting_adapter')) {
         throw Error('Native bundle has partially started; inspect exact Hub owners.');
     }
