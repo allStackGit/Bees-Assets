@@ -150,6 +150,10 @@ pub struct NativePlayerSquadFire {
     pub world_id: WorldId,
     pub episode_revision: u64,
     pub squads: Vec<SquadLifetime>,
+    /// Zero for local play. Remote transport overwrites this with its
+    /// authenticated peer ID; no wire sender can spoof another owner's aim.
+    #[serde(default)]
+    pub controller_id: u64,
     /// Manual point-fire, or None to release it. Does not replace movement or
     /// the squad's current command and never manufactures a policy decision.
     pub target: Option<Vec2>,
