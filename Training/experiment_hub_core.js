@@ -3448,7 +3448,11 @@ class ExperimentHub {
                     job.final_progress=selected;
                     changed=true;
                 }
-                if(job.release_on_terminal&&['finished','stopped'].includes(job.status))
+                // A verified prelaunch rejection never owned a native
+                // process. Release its claim even without a terminal-release
+                // preference, allowing a corrected continuation to be queued.
+                if(job.status==='failed'&&job.prelaunch_absence_verified===true||
+                    job.release_on_terminal&&['finished','stopped'].includes(job.status))
                     this.releaseIn(next,lease);
             }
         }

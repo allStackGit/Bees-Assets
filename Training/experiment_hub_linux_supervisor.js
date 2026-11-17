@@ -756,6 +756,49 @@ class LinuxSupervisor {
         }
         return {state:'unverified',quarantined:true};
     }
+    // The owner ledger is fsynced before systemd-run is invoked. When there
+    // is no owner record, no pending launch, and no matching systemd unit,
+    // this particular Start could not have reached native execution.
+    async reconcileAbsent(jobId) {
+        const unit=unitFor(jobId);
+        const pending=()=>this.fs.existsSync(this.lock)||
+            this.fs.existsSync(this.gpuProbePending)||
+            this.state.records.some(record=>record.job_id===jobId);
+        const uncertain=diagnostic=>({state:'unverified',diagnostic});
+        if(pending())
+            return uncertain('Native ownership or preflight may still be in progress.');
+        let service;
+        try {
+            const shown=await this.runner(SYSTEMCTL,
+                ['--user','show',unit,'--no-pager',
+                    '--property=Id,Description,LoadState,ActiveState'],
+                {timeout:12000,maxBuffer:16384,windowsHide:true});
+            service=parseShow(shown.stdout);
+        }catch(error) {
+            return uncertain('Native systemd absence could not be verified: '+
+                String(error.message||error).slice(0,150));
+        }
+        if(service.LoadState!=='not-found'||service.Id&&service.Id!==unit)
+            return uncertain('A native service may exist without a matching owner journal.');
+        // Re-read the durable journal after systemd inspection. An agent
+        // restart or concurrent ledger mutation cannot prove prelaunch absence.
+        try {
+            if(pending())
+                return uncertain('Native ownership changed during absence inspection.');
+            const onDisk=this.fs.existsSync(this.file)
+                ?JSON.parse(this.fs.readFileSync(this.file,'utf8'))
+                :{version:1,revision:0,records:[]};
+            if(onDisk.version!==1||onDisk.revision!==this.state.revision||
+                !Array.isArray(onDisk.records)||
+                onDisk.records.some(record=>record.job_id===jobId))
+                return uncertain('Native owner journal changed during absence inspection.');
+        }catch(error) {
+            return uncertain('Native owner journal could not be verified: '+
+                String(error.message||error).slice(0,150));
+        }
+        return {state:'failed',prelaunch_absence_verified:true,
+            diagnostic:'Native Start rejected before launch; no owner journal or systemd unit exists.'};
+    }
     async start(job,lease) {
         if(!this.qualifiedAt)
             throw Error('Linux kernel resource preflight must pass before native start.');

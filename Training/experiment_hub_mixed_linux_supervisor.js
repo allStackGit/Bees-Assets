@@ -122,7 +122,9 @@ class MixedLinuxSupervisor {
             return {state:'unverified',diagnostic:'Mixed ownership exists; reconcile the recorded owner.'};
         return projectId==='tinybrains'
             ?this.docker.reconcileAbsent(jobId)
-            :{state:'unverified',diagnostic:'Native absence cannot prove that no systemd service was launched.'};
+            :projectId==='courier'
+                ?this.native.reconcileAbsent(jobId)
+                :{state:'unverified',diagnostic:'Unknown mixed project; native ownership cannot be verified.'};
     }
 }
 
