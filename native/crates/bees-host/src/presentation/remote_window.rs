@@ -3,7 +3,7 @@
 //! here. All orders use the host's existing NativePlayerInput serializer and
 //! player-side permissions; the host validates them again at tick boundaries.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::error::Error;
 use std::fs;
 use std::io::{self, ErrorKind, Read, Write};
@@ -320,6 +320,13 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         for shot in state["projectiles"].as_array().into_iter().flatten() {
             if let Some(point)=position(shot) { circle(pixels,screen(camera,point),2,0xf8d798); }
         }
+        // Build selected ship membership once per rendered snapshot.
+        // Avoid an O(ships * squads * members) roster scan on large battles.
+        let highlighted: HashSet<i64> = state["squads"].as_array().into_iter().flatten()
+            .filter(|s|s["owned"]==true &&
+                s["owner"]["squad_id"].as_i64().is_some_and(|id|selected.contains(&id)))
+            .flat_map(|s|s["members"].as_array().into_iter().flatten())
+            .filter_map(Value::as_i64).collect();
         for ship in state["ships"].as_array().into_iter().flatten() {
             let Some(point)=position(ship) else { continue };
             let center=screen(camera,point);
@@ -341,13 +348,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                      (center.0-10+(20.0*(health/maximum).clamp(0.0,1.0)) as i32,center.1+14),
                      color);
             }
-            if friendly {
-                if let Some(squad)=squad_for_ship(state,ship["id"].as_i64().unwrap_or(-1),true) {
-                    let id=squad["owner"]["squad_id"].as_i64().unwrap_or(-1);
-                    if selected.contains(&id) {
-                        outline(pixels,center.0-15,center.1-17,30,34,0xf9f0a1);
-                    }
-                }
+            if friendly && highlighted.contains(&ship["id"].as_i64().unwrap_or(-1)) {
+                outline(pixels,center.0-15,center.1-17,30,34,0xf9f0a1);
                 if let Some(destination)=ship["destination"].as_array() {
                     if destination.len()==2 {
                         if let (Some(x),Some(y))=(destination[0].as_f64(),destination[1].as_f64()) {
@@ -369,7 +371,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             let label=format!("{} ID {}: {} ships",if selected.contains(&id) {">"} else {" "},
                 id,squad["members"].as_array().map_or(0,Vec::len));
             text::draw_at(pixels, WIDTH, FIELD+14, 150+index*22,
-                text::fit(&label,FIELD.saturating_sub(20)),1,
+                text::fit(&label,WIDTH-FIELD-24),1,
                 if selected.contains(&id){TEXT}else{MUTED});
         }
         if !state["terminal_result"].is_null() {
