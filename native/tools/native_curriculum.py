@@ -158,6 +158,9 @@ def curriculum_stage_metrics(base_run, curriculum, completed, evaluations, fleet
             "successful_world_steps": world_steps,
             "successful_policy_rows": policy_rows,
             "optimizer_input_steps": optimizer_steps,
+            "latest_training_outcomes": (
+                rounds[-1][2]["learner_metrics"].get("training_outcomes", {})
+                if rounds else None),
             "sum_optimizer_wall_seconds": optimizer_seconds,
             "collection_wall_seconds_observed_rounds": collection_observations,
             "collection_wall_seconds_complete": complete,
