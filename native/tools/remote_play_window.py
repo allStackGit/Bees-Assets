@@ -44,8 +44,29 @@ class RemoteBattleWindow:
         self.frame.pack(fill="both", expand=True)
         self.toolbar = ttk.Frame(self.frame, padding=6)
         self.toolbar.pack(fill="x")
-        self.canvas = tk.Canvas(self.frame, bg=BACKGROUND, highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True)
+        self.toolbar_main = ttk.Frame(self.toolbar)
+        self.toolbar_main.pack(fill="x")
+        self.toolbar_tactics = ttk.Frame(self.toolbar)
+        self.toolbar_tactics.pack(fill="x", pady=(3, 0))
+        self.toolbar_special = ttk.Frame(self.toolbar)
+        self.toolbar_special.pack(fill="x", pady=(3, 0))
+        self.battle_area = ttk.Frame(self.frame)
+        self.battle_area.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(self.battle_area, bg=BACKGROUND, highlightthickness=0)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.sidebar = ttk.Frame(self.battle_area, padding=6, width=220)
+        self.sidebar.pack(side="right", fill="y")
+        self.sidebar.pack_propagate(False)
+        ttk.Label(self.sidebar, text="Player squads").pack(anchor="w")
+        self.squad_list = tk.Listbox(self.sidebar, selectmode=tk.EXTENDED,
+                                     exportselection=False, height=15, width=27)
+        self.squad_list.pack(fill="both", expand=True)
+        self.sidebar_owners = []
+        self.sidebar_updating = False
+        self.squad_list.bind("<<ListboxSelect>>", self.sidebar_select)
+        self.squad_detail = tk.StringVar(value="Select a squad")
+        ttk.Label(self.sidebar, textvariable=self.squad_detail, wraplength=200,
+                  justify="left").pack(anchor="w", pady=(8, 0))
         self.footer = ttk.Frame(self.frame, padding=6)
         self.footer.pack(fill="x")
         self.status = tk.StringVar(value="Connecting to native host...")
@@ -70,18 +91,25 @@ class RemoteBattleWindow:
 
         for title in ("Move", "Attack", "Guard", "Mine", "Heal", "Retreat", "Point fire"):
             ttk.Button(self.toolbar, text=title, command=lambda t=title: self.set_mode(MODES[t])
-                       ).pack(side="left", padx=2)
+                       ).pack(in_=self.toolbar_main, side="left", padx=2)
         for title, action in [
             ("Stop fire", lambda: self.send("fire", {"target": None})),
             ("Cease", lambda: self.send("cease_fire", {"cease_fire": True})),
             ("Fire at will", lambda: self.send("cease_fire", {"cease_fire": False})),
+            ("Chase on", lambda: self.send("chase", {"chasing": True})),
+            ("Chase off", lambda: self.send("chase", {"chasing": False})),
+            ("Match speed", lambda: self.send("match_speed", {"match_speed": True})),
+            ("Own speed", lambda: self.send("match_speed", {"match_speed": False})),
             ("Hold", lambda: self.send("support", {"action": "Hold"})),
             ("Beacon", lambda: self.send("special", {"kind": "DropBeacon"})),
             ("Detonate", lambda: self.send("special", {"kind": "Detonate"})),
             ("Charge", lambda: self.send("special", {"kind": "Charge"})),
             ("Fit", self.fit),
         ]:
-            ttk.Button(self.toolbar, text=title, command=action
+            group = self.toolbar_special if title in (
+                "Beacon", "Detonate", "Charge", "Fit"
+            ) else self.toolbar_tactics
+            ttk.Button(group, text=title, command=action
                        ).pack(side="left", padx=2)
 
         self.canvas.bind("<ButtonPress-1>", self.left_down)
@@ -162,8 +190,14 @@ class RemoteBattleWindow:
         if state is not None:
             key = (state["world_id"], state["episode_revision"], state["tick"])
             if key != self.drawn_scope:
+                if self.drawn_scope is not None and (
+                    key[0] != self.drawn_scope[0] or
+                    key[1] != self.drawn_scope[1]
+                ):
+                    self.selected = []
                 self.state = state
                 self.drawn_scope = key
+                self.update_sidebar()
                 bounds = state.get("map_bounds")
                 if self.map_bounds != bounds:
                     self.map_bounds = bounds
@@ -214,11 +248,58 @@ class RemoteBattleWindow:
             elif additive:
                 self.selected.remove(owner)
         self.draw()
+        self.update_sidebar()
 
     def select_all(self, _event=None):
         if self.state:
             self.selected = [squad["owner"] for squad in self.state["squads"] if squad["owned"]]
             self.draw()
+            self.update_sidebar()
+
+    def update_sidebar(self):
+        if self.state is None:
+            return
+        self.sidebar_updating = True
+        try:
+            self.sidebar_owners = [
+                s for s in self.state["squads"] if s["owned"]
+            ]
+            self.squad_list.delete(0, tk.END)
+            for squad in self.sidebar_owners:
+                owner = squad["owner"]
+                number = squad.get("source_number")
+                label = f"#{number}" if number is not None else f"ID {owner['squad_id']}"
+                active = squad.get("command") or "Idle"
+                self.squad_list.insert(tk.END,
+                    f"{label:>6}  {len(squad['members']):>2} ships  {active}")
+            for idx, squad in enumerate(self.sidebar_owners):
+                if squad["owner"] in self.selected:
+                    self.squad_list.selection_set(idx)
+            details = [
+                s for s in self.sidebar_owners if s["owner"] in self.selected
+            ]
+            if details:
+                self.squad_detail.set("\n".join(
+                    f"Squad {s['owner']['squad_id']}: {s.get('command') or 'Idle'}; "
+                    f"cease {s.get('cease_fire')}; chase {s.get('chasing')}; "
+                    f"shooting {s.get('shooting')}"
+                    for s in details[:3]
+                ))
+            else:
+                self.squad_detail.set("Select a friendly squad to issue orders")
+        finally:
+            self.sidebar_updating = False
+
+    def sidebar_select(self, _event):
+        if self.sidebar_updating:
+            return
+        self.selected = [
+            self.sidebar_owners[index]["owner"]
+            for index in self.squad_list.curselection()
+            if index < len(self.sidebar_owners)
+        ]
+        self.update_sidebar()
+        self.draw()
 
     def selected_owners(self):
         if self.state is None:
@@ -284,7 +365,6 @@ class RemoteBattleWindow:
     def left_up(self, event):
         if self.drag_origin is None:
             return
-        start = self.drag_origin
         self.drag_origin = None
         if self.mode:
             self.issue_at(event.x, event.y, self.mode)
@@ -312,6 +392,7 @@ class RemoteBattleWindow:
                         self.selected.append(owner)
             self.drag_box = None
             self.draw()
+            self.update_sidebar()
             return
         kind, target = self.hit(event.x, event.y)
         if kind == "ship" and target["owned"]:
