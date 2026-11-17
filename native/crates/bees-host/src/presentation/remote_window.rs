@@ -278,9 +278,9 @@ fn first_selected<'a>(state: Option<&'a Value>, selected: &[i64]) -> Option<&'a 
             .as_i64().is_some_and(|id| selected.contains(&id)))
 }
 
-fn squad_for_ship<'a>(state: &'a Value, id: i64, owned: bool) -> Option<&'a Value> {
+fn squad_for_ship<'a>(state: &'a Value, id: i64, side: i64) -> Option<&'a Value> {
     state["squads"].as_array()?.iter().find(|squad|
-        squad["owned"] == owned &&
+        squad["side"].as_i64() == Some(side) &&
         squad["members"].as_array().is_some_and(|members|
             members.iter().any(|member| member.as_i64() == Some(id))))
 }
@@ -488,15 +488,17 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
     let hit=hit(state,camera,x,y);
     let action=match (mode,hit) {
         (Some(TargetMode::Attack),Some(("ship",target))) |
-        (None,Some(("ship",target))) if target["owned"]==false => {
-            let Some(squad)=squad_for_ship(state,target["id"].as_i64().unwrap_or(-1),false) else {
+        (None,Some(("ship",target))) if target["friendly"]==false => {
+            let Some(squad)=squad_for_ship(state,target["id"].as_i64().unwrap_or(-1),
+                target["side"].as_i64().unwrap_or(0)) else {
                 return Err(invalid("enemy target has no visible squad").into())
             };
             ("support",json!({"action":{"Attack":{"target":squad["owner"]}}}))
         }
         (Some(TargetMode::Guard),Some(("ship",target))) |
-        (None,Some(("ship",target))) if target["owned"]==true => {
-            let Some(squad)=squad_for_ship(state,target["id"].as_i64().unwrap_or(-1),true) else {
+        (None,Some(("ship",target))) if target["friendly"]==true => {
+            let Some(squad)=squad_for_ship(state,target["id"].as_i64().unwrap_or(-1),
+                target["side"].as_i64().unwrap_or(0)) else {
                 return Err(invalid("friendly target has no visible squad").into())
             };
             ("support",json!({"action":{"Guard":{"target":squad["owner"]}}}))
@@ -505,10 +507,10 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
         (None,Some(("obstacle",target))) if target["mining"]==true => {
             ("support",json!({"action":{"Mining":{"asteroid_id":target["id"]}}}))
         }
-        (Some(TargetMode::Heal),Some(("ship",target))) if target["owned"]==true => {
+        (Some(TargetMode::Heal),Some(("ship",target))) if target["friendly"]==true => {
             ("support",json!({"action":{"Heal":{"beehive_ids":[target["id"]]}}}))
         }
-        (Some(TargetMode::Retreat),Some(("ship",target))) if target["owned"]==true => {
+        (Some(TargetMode::Retreat),Some(("ship",target))) if target["friendly"]==true => {
             ("support",json!({"action":{"FullRetreat":{"warp_gate_id":target["id"]}}}))
         }
         (Some(TargetMode::Attack|TargetMode::Guard|TargetMode::Mine|
@@ -741,7 +743,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                                     if px>=sx.min(x)&&px<=sx.max(x)&&
                                         py>=sy.min(y)&&py<=sy.max(y) {
                                         if let Some(squad)=squad_for_ship(state,
-                                            ship["id"].as_i64().unwrap_or(-1),true){
+                                            ship["id"].as_i64().unwrap_or(-1),
+                                            ship["side"].as_i64().unwrap_or(0)){
                                             if let Some(id)=squad["owner"]["squad_id"].as_i64(){
                                                 if !additions.contains(&id){additions.push(id);}
                                             }
@@ -751,7 +754,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                             } else if let Some(("ship",ship))=hit(state,cam,x,y) {
                                 if ship["owned"]==true {
                                     if let Some(squad)=squad_for_ship(state,
-                                        ship["id"].as_i64().unwrap_or(-1),true) {
+                                        ship["id"].as_i64().unwrap_or(-1),
+                                        ship["side"].as_i64().unwrap_or(0)) {
                                         if let Some(id)=squad["owner"]["squad_id"].as_i64() {
                                             additions.push(id);
                                         }
