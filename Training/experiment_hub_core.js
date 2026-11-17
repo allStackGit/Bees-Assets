@@ -3059,6 +3059,61 @@ class ExperimentHub {
         }
         return changed;
     }
+    // Abort a never-dispatched Courier learner and its exact remote PPO
+    // population. Delivered Starts become supervised Stop orders; native
+    // resources remain reserved until verified termination or absence.
+    abortCourierStartup(value) {
+        if(!object(value)||value.confirm_abort!==true||
+            !UUID.test(String(value.learner_job_id||''))||
+            !Array.isArray(value.expected_lineage_job_ids)||
+            !value.expected_lineage_job_ids.length||
+            value.expected_lineage_job_ids.length>16||
+            value.expected_lineage_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_lineage_job_ids).size!==value.expected_lineage_job_ids.length||
+            Object.keys(value).some(key=>![
+                'learner_job_id','expected_lineage_job_ids','confirm_abort'].includes(key)))
+            throw Error('Confirm the exact Courier native learner and remote sidecar jobs to abort.');
+        const next=copy(this.state);
+        const learner=next.jobs.find(job=>job.id===value.learner_job_id);
+        if(!learner||learner.project_id!=='courier'||
+            learner.distributed_courier_managed!==true||
+            learner.frozen_parameters?.remote_lineages!==true||
+            learner.status!=='waiting_adapter'||learner.dispatch_id)
+            throw Error('Only a never-started Courier distributed learner can abort its remote launch.');
+        const children=next.jobs.filter(job=>
+            job.project_id==='courier_lineage'&&
+            job.frozen_parameters?.learner_job_id===learner.id);
+        const expected=new Set(value.expected_lineage_job_ids);
+        if(children.length!==expected.size||
+            children.some(job=>!expected.has(job.id)))
+            throw Error('Courier remote sidecar membership changed; no native Stops authorized.');
+        const members=[learner,...children];
+        if(next.jobs.some(job=>job.status!=='cancelled'&&
+            members.some(parent=>job.after_job_id===parent.id||
+                job.continuation_of_job_id===parent.id))||
+            (next.candidate_selections||[]).some(plan=>
+                ['waiting','needs_review'].includes(plan.status)&&
+                members.some(job=>plan.candidate_job_ids?.includes(job.id))))
+            throw Error('Resolve dependent experiment stages before abandoning the Courier group.');
+        learner.distributed_abort_requested_at??=now();
+        learner.status_reason='Courier distributed startup aborted; stopping native remote lineages and retaining uncertain leases.';
+        this.reconcileDistributedAborts(next);
+        const pending=(next.distributed_launch_plans||[]).find(plan=>
+            plan.kind==='courier'&&plan.learner_job_id===learner.id&&
+            plan.status==='pending');
+        if(pending) {
+            pending.status='disarmed';
+            pending.reason='Courier group startup aborted; future learner Start revoked.';
+            pending.resolved_at=now();
+        }
+        this.commit(next);
+        return {learner_job_id:learner.id,
+            learner_cancelled:next.jobs.find(job=>job.id===learner.id).status==='cancelled',
+            lineage_statuses:children.map(job=>({
+                job_id:job.id,status:job.status,
+                released:Boolean(job.capacity_released_at)}))};
+    }
+
     // Explicit abort is available only while the learner has never been
     // authorized to start. A GPU learner that was dispatched must use its
     // normal checkpoint-preserving native Stop and reconciliation.
@@ -3188,6 +3243,19 @@ class ExperimentHub {
                     job.frozen_parameters?.learner_job_id===learner.id&&
                     job.status!=='cancelled');
                 const expected=Object.keys(intent.collector_dispatches||{});
+                if(workers.length===expected.length&&
+                    workers.some(worker=>['finished','stopped','failed'].includes(worker.status))) {
+                    try {
+                        this.abortCourierStartup({
+                            learner_job_id:learner.id,
+                            expected_lineage_job_ids:expected,confirm_abort:true,
+                        });
+                    }catch(error) {
+                        disarm('Courier remote service terminated before learner Start: '+
+                            String(error.message||error).slice(0,150));
+                    }
+                    continue;
+                }
                 if(learner.project_id!=='courier'||
                     learner.distributed_courier_managed!==true||
                     workers.length!==expected.length||
