@@ -44,8 +44,9 @@ def main():
     args = parser.parse_args()
     if args.input_url and not args.collector_id:
         parser.error("--collector-id is required with --input-url")
-    if args.input_archive and args.collector_id:
-        parser.error("collector identity is embedded in --input-archive")
+    # Local archives may be dedicated to one collector or shared by
+    # every issued collector in a round. In the latter case identity is
+    # mandatory and is checked against the immutable work order.
     upload_url = args.upload_url or args.input_url
     if not (upload_url or args.archive_output or args.bundle_inbox):
         parser.error("supply --upload-url, --archive-output or --bundle-inbox")
@@ -73,7 +74,7 @@ def main():
             )
             print(json.dumps(received, sort_keys=True), flush=True)
         imported = import_inputs(input_archive, inputs,
-                                 args.policy_worker, args.python)
+                                 args.policy_worker, args.python, args.collector_id)
         print(json.dumps(imported, sort_keys=True), flush=True)
         command = [
             sys.executable,
