@@ -65,6 +65,8 @@ def main():
         file = Path(location)
         if not file.is_absolute() or file.resolve(strict=True) != file or not file.is_file():
             parser.error(f"Invalid, missing, or redirected checkpoint: {label}")
+        if scratch.is_relative_to(file.parent) or output.is_relative_to(file.parent):
+            parser.error("Evaluator scratch and reports must stay outside checkpoint directories.")
         labels.add(label)
         candidates.append((label, file, checkpoint_digest(file)))
 
