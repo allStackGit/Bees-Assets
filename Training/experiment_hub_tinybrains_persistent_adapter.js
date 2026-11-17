@@ -99,13 +99,20 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_backward_seconds','ppo_metric_readback_seconds',
         'ppo_diagnostic_aggregation_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
-        'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
+        'ppo_parameter_finite_check_seconds',
+        // CPU preparation may overlap GPU work; only wait is an exposed
+        // learner stall. Pinned transfer enqueue is host wall, not PCIe time.
+        'ppo_prep_cpu_seconds','ppo_prep_wait_seconds',
+        'ppo_prep_pin_seconds','ppo_prep_h2d_enqueue_seconds',
+        'ppo_gpu_stream_sync_seconds',
         'ppo_gpu_stream_interval_seconds'])
         add(name,row[name],'seconds');
     for(const name of ['simulation_active_matches','simulation_target_matches',
         'simulation_max_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
         'simulation_tuner_settled','simulation_target_restored',
+        'simulation_global_cadence_samples','simulation_global_cadence_rejections',
+        'local_lease_cadence_comparable','local_lease_completed_cadence_update',
         'simulation_proven_target',
         'ant_decisions','group_states','births','deaths',
         'episodes_ended','multi_ant_states','terminal_rewards',
@@ -113,6 +120,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'truncated_groups','terminal_groups','collector_count',
         'simulation_prefetch_engine_steps',
         'ppo_minibatches','ppo_microbatches',
+        'ppo_prep_batches','ppo_prep_async_h2d_copies',
         'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
         'ppo_gpu_pixel_budget',
         'ppo_gpu_batch_target_pixels','ppo_gpu_batch_next_target',
@@ -183,7 +191,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // not raw machine RAM utilization or a physical OOM diagnosis.
     add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
     add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
+    // Actual useful action target divided by completed end-to-end PPO wall.
+    // Mixed simulation/GPU layout rounds are explicitly marked incomparable.
+    add('local_lease_completed_cadence_sps',
+        row.local_lease_completed_cadence_sps,'rate');
+    add('simulation_global_cadence_gain',
+        row.simulation_global_cadence_gain,'scalar');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
+    add('ppo_prep_board_bytes',row.ppo_prep_board_bytes,'bytes');
+    add('ppo_prep_async_h2d_bytes',row.ppo_prep_async_h2d_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
     add('remote_policy_shared_bytes',row.remote_policy_shared_bytes,'bytes');
@@ -286,11 +302,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['sim_target','simulation_target_matches'],
             ['sim_max','simulation_max_matches'],
             ['sim_changes','simulation_concurrency_adjustments'],
+            ['sim_global_samples','simulation_global_cadence_samples'],
+            ['sim_global_rejections','simulation_global_cadence_rejections'],
             ['sim_accepted','simulation_tuner_accepted'],
             ['sim_settled','simulation_tuner_settled'],
             ['sim_restored','simulation_target_restored'],
             ['sim_proven','simulation_proven_target']])
             add('collector_'+i+'_'+suffix,worker[name],'count');
+        add('collector_'+i+'_sim_global_gain',
+            worker.simulation_global_cadence_gain,'scalar');
         add('collector_'+i+'_sim_engine_charged_mb',
             worker.simulation_engine_memory_mb,'mb');
         for(const [suffix,name] of [
@@ -349,6 +369,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.collector_weight_blob_used,'count');
         add('collector_'+i+'_policy_upload_groups',
             worker.collector_policy_upload_groups,'count');
+        add('collector_'+i+'_policy_apply_groups',
+            worker.collector_policy_apply_groups,'count');
         for(const [suffix,name] of [
             ['gpu_allocated_mb','collector_gpu_allocated_mb'],
             ['gpu_reserved_mb','collector_gpu_reserved_mb'],
@@ -433,6 +455,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('collector_'+i+'_'+suffix,worker[name],'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
+        // GPU stream interval around a copied immutable policy version.
+        // Includes stream waits; not measured PCIe/peer bandwidth.
+        add('collector_'+i+'_model_copy_gpu_stream_seconds',
+            worker.model_copy_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_snapshot_cache_files',
             worker.snapshot_cache_files,'count');
         add('collector_'+i+'_snapshot_cache_bytes',
@@ -506,6 +532,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 // Keep live/target/max simulation counts and real waits.
                 'sim_changes','sim_accepted','sim_settled',
                 'sim_restored','sim_proven',
+                'sim_global_samples','sim_global_gain',
                 'inference_shape_groups','inference_readbacks',
                 'inference_forward_chunks','opponent_shape_groups',
                 'inference_max_group_px','bootstrap_seconds','returns_seconds',
@@ -516,6 +543,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'supports_weight_blob','weight_blob_used',
                 'gpu_ordinal','gpu_batch_used_pixels',
                 'gpu_batch_vram_capped','model_prepare_seconds',
+                'model_copy_gpu_stream_seconds','policy_apply_groups',
                 // Preserve the physical lease index, live simulation count,
                 // effective throughput, critical stage and join wait ahead
                 // of secondary resource details under maximum fanout.
@@ -537,6 +565,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'sim_batch_wall_seconds','inference_pixel_samples',
                 'learner_gpu_stream_seconds','engine_steps_per_second',
                 'simulation_match_steps','match_steps_per_second','engine_steps',
+                'sim_global_rejections','sim_max','sim_target',
             ];
             for(const suffix of deferredDetails) {
                 for(let i=0;i<collectors;i++)

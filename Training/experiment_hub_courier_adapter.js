@@ -21,6 +21,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version','training_sim_early_dispatches',
     'training_sim_prestaged_actions','training_sim_queue_peak_shards',
+    'training_sim_multiplexed_shards','training_sim_child_os_threads',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
     'training_sim_topology_rejected','training_sim_topology_unavailable',
     'training_sim_topology_unverified','training_sim_topology_migrations',
@@ -30,8 +31,14 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_optimizer_tuner_adjustments',
     'training_gpu_optimizer_tuner_accepted',
     'training_gpu_optimizer_tuner_settled',
+    'training_gpu_placement_trial','training_gpu_placement_settled',
+    'training_gpu_placement_adjustments','training_gpu_placement_accepted',
+    'training_gpu_placement_rejected','training_gpu_placement_ram_denials',
+    'training_gpu_placement_changed_next','training_gpu_placement_devices',
+    'training_gpu_placement_moved_lineage',
     'training_gpu_metric_readbacks','training_gpu_metric_rows',
     'training_gpu_guard_readbacks',
+    'training_gpu_snapshot_reused_lineages','training_gpu_snapshot_owner',
     'training_gpu_h2d_async_batches',
     'training_gpu_h2d_packed_batches',
     'training_gpu_copy_stream_batches',
@@ -48,6 +55,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_rollout_spare_candidates',
     'training_gpu_rollout_batches','training_gpu_rollout_states',
     'training_gpu_rollout_lstm_steps','training_gpu_rollout_policy_reused',
+    'training_gpu_policy_retained','training_gpu_policy_reused',
     'training_gpu_rollout_state_copy_batches',
     'training_remote_gpu_rollout_trials','training_remote_gpu_rollout_tuned',
     'training_gpu_prefetched_batches',
@@ -95,17 +103,28 @@ function courierMetrics(source) {
     // of the population at the old 253-field adapter limit. Reserve space
     // for the envelope, host data and optional derived diagnoses.
     let retained=0;
-    for(const [name,value] of Object.entries(stats)) {
+    // A 64-lineage run can exceed the neutral 512-field/32-KiB report.
+    // Preserve the handful of whole-run GPU placement decisions before
+    // optional per-lineage details. The append-only Courier event still
+    // contains every original measurement for full native history.
+    const primary=name=>name.startsWith('training_gpu_placement_')||
+        /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
+        /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
+        /^training_gpu_snapshot_(?:max_seconds|stream_max_seconds|reused_lineages|owner|work_share)$/.test(name);
+    const entries=Object.entries(stats).sort(
+        ([a],[b])=>Number(primary(b))-Number(primary(a)));
+    for(const [name,value] of entries) {
         if(retained>=480)break;
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|gpu_prefetch_skipped_batches)$/.test(name)||
-            /^training_gpu_device_[0-7]_lineages$/.test(name))?'count':
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device)$/.test(name)||
+            /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':
+            name==='training_gpu_snapshot_work_share'&&value>=0&&value<=1?'ratio':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
                     ?'rate':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&

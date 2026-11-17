@@ -8,7 +8,7 @@ The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimiz
 
 - **Existing Hub metrics pipeline:** derives sustained collection-vs-optimization and rollout engine-vs-inference work shares from measured durations, with five-of-six sustained signals for dominant remote-collector join waits or learner rollout-merge overhead when independently timed. Remote requests now report worker receive/decode, learner serialize/compress/send/receive/decode/ingestion and compressed wire bytes separately; socket blocking and roundtrip residual are **not** claimed as physical network saturation or bandwidth. The authenticated framing path now compresses the existing serialization buffer directly, computes HMAC incrementally, and sends header/payload without a second full-size payload copy; framing and authentication bytes remain unchanged. Each collector reports CPU observation preparation and opponent-processing time separately from inference and native stepping. Parallel pools report **simulation_match_steps**: actual independent native match transitions, not just the legacy aggregate `engine_steps` tick count. Default throughput charts prioritize usable decisions/s and real simulation match steps/s. Checkpoint save stalls are timed. These measurements enter existing Train/Monitor/Compare archives, selection and exports. The validated source allows up to 512 named measurements with a strict 32-KiB report cap, and the chart cache holds up to 96 operator-selected measurements. Near the 32-KiB cap, the analyzer preserves confirmed sustained bottleneck signals first, spreading primary alerts across collectors before adding secondary measurements, rather than dropping all derived findings. Sustained (five-of-six, at least two minutes) **per-collector** engine/observation/inference/opponent stage dominance is exposed through the same metrics, default charts, and Train/Monitor summaries; it is explicitly not a device-saturation claim. Native engine pools now also report per-collector dispatch-thread queue wait, summed child roundtrip wall, whole-batch wall, last-child completion gap, **early-dispatched engine count/potential preparation overlap**, and an effective in-flight request factor. The engine step timer after early dispatch measures remaining join wait, while full batch wall includes potentially overlapped preparation; neither is exclusive native CPU busy time. The existing Hub diagnosis now requires a substantial **unhidden join-wait share** before flagging a prefetched slow-child completion gap as active straggler pressure. It leaves older synchronous collectors' signals unchanged and reports uncertainty when the join timing is unavailable. The Hub distinguishes sustained slow-child barriers, dispatch queueing, and remote rollout record packing (now independently timed at the worker) from GPU and hardware saturation claims. The same analysis now correlates completed training stages with **authenticated job CPU lease utilization, CPU quota throttling, RAM lease usage and allocated-device host GPU observations**: sustained CPU/RAM pressure, CPU underuse during collection, and GPU host idle/busy evidence are exposed without asserting causation. GPU signals require a complete set of observed devices and an exclusive Hub lease; even then they describe physical-host occupancy, not proven per-job GPU efficiency. For multi-GPU leases, the fraction of allocated devices observed at high host activity and sustained mixed busy/idle evidence are separate measurements, so one busy GPU does not hide an unused second device. The 32-KiB/512-metric source contracts still apply.
 - **Companion backend branch:** `allStackGit/TinyBrains:feat/hub-resource-efficiency-20261112` based on `feat/linux-tinybrains-runtime`. Persistent local and remote collectors can use a pool of independent one-match native engines. Native steps run concurrently while policy observations stay batched. A RAM-bounded controller calibrates concurrency using sustained usable actions/s in either direction: it probes upward first, then tests lower concurrency if the original CPU-sized pool appears oversubscribed. Probes use long windows, cooldowns, measured improvement thresholds, rollback, and a settled state. Throughput uses **all actions and collection seconds in each full window**, not the latest eight updates; the recent samples only check variability. Reductions retire environments after completed episodes without restarting the pool. Large hosts can probe a meaningful halving to escape severe throughput-collapse plateaus. Each engine has one Rayon thread; the dispatch pool no longer imposes an artificial 64-thread dispatch ceiling; the previous fixed 128-engine ceiling is now 512 subject to the same leased CPU/RAM and measured admission limits. New local and remote pools start near their leased CPU count instead of a fixed eight-engine bootstrap, subject to the same per-engine RAM-admission guard and later sustained throughput tuning. Removed a separate fixed 128-MiB-per-engine cap; live child-process RSS and parent RSS under the frozen lease are the admission authority. CPU-only collectors now dispatch independent ONNX opponent inference through a small bounded pool rather than serializing all opponent sessions. Native one-engine collection avoids an unnecessary thread-pool handoff; multi-engine replay ownership routing examines only each engine's active episode IDs rather than scanning the whole pool's global episode table on every engine tick. Engines whose seat orders are already complete can now launch their native step while the trainer processes other opponents; all results are **still joined in original slot order** at the unchanged PPO reward boundary. ONNX results are consumed in completion order but assigned to original seat indices (for small groups, each completion can unlock an engine; larger groups use bounded scans). No simulation state or policy sample is consumed out of order. Completion-gap accounting also uses a linear scan. Fog-memory learner **and Torch-opponent** paths now build each policy observation and next memory state from the same encoded board instead of reconstructing every board twice. A checkpoint-aligned proven concurrency count can be reused when restarting an equivalent run on the same host/lease/workload; fresh jobs with separate histories still calibrate independently.
-- **GPU execution:** persistent colony PPO partitions *unchanged minibatches* into VRAM-budgeted microbatches rather than an unconditional 65,536-pixel ceiling. Colony PPO rollout inference coalesces policy results across distinct board shapes into one host readback where safe, preserving seeded sampling order and per-seat record ordering. Large same-shaped GPU inference groups now run bounded forward chunks according to the existing VRAM-aware pixel budget, then recombine their selected ant logits before the **single original per-shape seeded sampling call**, preserving action and group ordering while avoiding oversized activation allocations. Frozen/current Torch-opponent inference now coalesces deterministic actions across shapes per model as well. Singleton shape groups in the learner, opponent, PPO cache and uncached PPO paths avoid unnecessary NumPy host copies while preserving board shapes. Repeated PPO rollout boards are staged once on the optimizer GPU across multiple epochs only when a conservative 4%-of-free-VRAM / 256-MiB budget permits it; otherwise the prior per-microbatch transfer path remains. The cached values retain their source dtype, and PPO minibatch composition and optimizer steps do not change. PPO per-microbatch diagnostic loss rows are kept detached on-device until a **single end-of-update readback** alongside saved gradient norms; existing pre-step nonfinite checks remain. CPU diagnostic aggregation has a separate stage timing, and diagnostic readback/row counts are recorded. Optional CUDA/ROCm profiling now brackets optimization work with stream events and reads their interval only after an existing synchronization; this measures an elapsed device-stream interval, **not** exclusive GPU utilization. Existing two-GPU optimization/collection device separation remains intact.
+- **GPU execution:** persistent colony PPO partitions *unchanged minibatches* into VRAM-budgeted microbatches rather than an unconditional 65,536-pixel ceiling. Colony PPO rollout inference coalesces policy results across distinct board shapes into one host readback where safe, preserving seeded sampling order and per-seat record ordering. Large same-shaped GPU inference groups now run bounded forward chunks according to the existing VRAM-aware pixel budget, then recombine their selected ant logits before the **single original per-shape seeded sampling call**, preserving action and group ordering while avoiding oversized activation allocations. Frozen/current Torch-opponent inference now coalesces deterministic actions across shapes per model as well. Singleton shape groups in the learner, opponent, PPO cache and uncached PPO paths avoid unnecessary NumPy host copies while preserving board shapes. Repeated PPO rollout boards are staged once across epochs in complete board-shape groups under the same conservative 4%-of-free-VRAM / 256-MiB ceiling; even oversized mixed-shape rollouts may cache the groups that fit. Remaining groups use per-microbatch transfers, now eligible for bounded lookahead. The cached values retain their source dtype, and PPO minibatch composition and optimizer steps do not change. PPO per-microbatch diagnostic loss rows are kept detached on-device until a **single end-of-update readback** alongside saved gradient norms; existing pre-step nonfinite checks remain. CPU diagnostic aggregation has a separate stage timing, and diagnostic readback/row counts are recorded. Optional CUDA/ROCm profiling now brackets optimization work with stream events and reads their interval only after an existing synchronization; this measures an elapsed device-stream interval, **not** exclusive GPU utilization. Existing two-GPU optimization/collection device separation remains intact.
 - **Heterogeneous collectors:** immutable per-update shares of the fixed total PPO action target can shift toward higher delivered actions/s. Adjustments require ≥90-second full-window delivered-actions/elapsed-time evidence, a predicted ≥18% gain, and an observed ≥10% benefit to accept; otherwise revert and settle. The 30-update cooldown excludes transient updates from the following calibration window rather than allowing them to distort the rate. Fixed operator weights retain precedence. Restored allocations are accepted only from a checkpoint-aligned source history and original collector identities.
 - **Hub launch/measurement integration:** both native platform ownership contexts provide frozen RAM budgets. Trusted TinyBrains persistent and remote launchers opt into these capabilities when the installed backend supports them; older backends retain legacy execution. The persistent TinyBrains adapter now defaults its CPU thread count to the **Hub-leased CPU allocation** rather than a separate profile default, while explicit per-job thread overrides and the legacy profile setting remain supported. Per-machine simulation pool size, proven/restored settings, memory, accepted/rejected tuning, optimizer board-cache bytes/reuses, bounded inference forward-chunk counts and PPO diagnostic transfer/aggregation stages all use existing trusted `hub-metrics-v1` fields.
 
@@ -61,6 +61,125 @@ approved remote workers. Courier freezes its trailing PPO slots and selected
 process ceilings at reservation. Older native adapters retain the full-group
 path. Courier installations that advertise spare-GPU rollout can pass larger
 GPU leases through to the existing measured role tuner.
+
+- **2026-11-17 native policy-transfer and ONNX inference update:** `allStackGit/TinyBrains:feat/training-efficient-policy-copy-20261117` adds strict shape/dtype/hook-guarded grouped GPU policy application, retaining the original state_dict loader when unavailable. It also vectorizes greedy ONNX ant-action decoding without changing choices or policy sampling. Courier's existing child-owned action copy remains intact: its documented environment-state ownership contract takes precedence over eliminating a small copy without full lifecycle evidence. This Hub branch maps per-collector grouped policy operations, device-stream copy intervals, and sustained model-preparation dominance through the existing bounded metrics, charts, and export path. A successful API-level source check and randomized ONNX argmax parity are not live SPS evidence. Highest remaining priority: real multi-machine throughput and shared-policy/distributed rollout capabilities, without changing the Hub's fixed lease ownership.
+
+- **2026-11-17 persistent Courier GPU policy between PPO rounds:** `allStackGit/Basic-Training:feat/courier-persistent-gpu-policy-20261117` retains the checked recurrent PPO policy and Adam cache on the SAME leased
+GPU after an unscreened update only when the next rollout and optimizer
+share that device. A failed/incomplete PPO update cannot authorize retention;
+CPU-only/split-GPU operation, changed GPU owners, configuration edits,
+selection evaluation (including first-round fallback), and atomic policy
+snapshots still restore CPU policy and optimizer state before proceeding.
+The unchanged backend stage aggregation reports actual retained and reused
+lineage counts, logical resident model MiB and same-lineage GPU policy transfer
+host wall; the Hub maps these source fields and derives sustained
+**slowest-lineage** transfer pressure without claiming PCIe saturation.
+CUDA/ROCm live SPS, device switching and checkpoint continuation remain to
+be qualified; existing independent-policy Courier population semantics remain.
+
+- **2026-11-17 shared-CPU useful-SPS acceptance:** `allStackGit/TinyBrains:feat/tinybrains-global-cadence-cpu-tuning-20261117` now makes each shared-host native simulator pool prove its own ≥12% local
+collection-rate improvement **and** a ≥5% improvement in completed whole-PPO
+action throughput before accepting the extra native processes. The learner
+publishes one actual completed update duration through the existing
+HostMemoryLease; rollout-launch simulation revisions, action shares, GPU batch
+layouts and independently tuning remote pools guard comparisons. A single
+bounded rolling receipt per update is read on the next collection, without a
+new queue, thread or telemetry service. Poor global outcomes roll back only
+the trial engine target at episode boundaries and keep the shared admission
+lock until the pool is stable. CPU-count-based initial engine allocation
+remains; all local and remote engine pools may now calibrate up to the
+existing 512-engine/RAM-admission bound instead of stopping at four times
+leased CPU threads. Updated performance identities prevent stale ceiling
+receipts silently restoring an old cap. Hub metrics expose actual complete
+update cadence, per-collector global evidence counts, gain and rejection
+counts; neither controller outcome nor observed host activity proves CPU
+hardware saturation. Actual heterogeneous useful-SPS and recovery
+qualification remain.
+
+- **2026-11-17 measured local Courier GPU ownership:** `allStackGit/Basic-Training:feat/courier-measured-gpu-placement-20261117` adds a bounded, checkpoint-aligned GPU optimizer-lineage placement trial
+after existing CPU/optimizer-count/rollout/copy-stream tuners settle. It
+moves exactly one existing recurrent PPO policy owner between GPUs that
+are already physically assigned and in use, without restarting its world
+processes or changing vector sizes, PPO batches, Adam ownership or saved
+policy population. Candidate choice uses sustained per-lineage optimizer
+host wall as a heuristic, not GPU occupancy; a move must pass live peak
+allocator MiB plus a 512-MiB margin against all affected workers' next
+VRAM slice; the existing whole-worker PSS/USS admission must also reserve
+512 MiB host RAM for a possible additional driver context before submission.
+Denied moves settle rather than repeatedly probing an unadmittable GPU.
+Six+ complete updates, 90 seconds of comparable useful training, a long
+cooldown and >=10% measured end-to-end useful PPO SPS improvement govern
+acceptance; a failure reverts after the complete update, and only proven
+placements restore with matching host/frozen GPU/CPU/RAM/policy identity.
+Existing Hub metrics report owner devices, proposed per-device lineage
+counts, placement trial/accepted/rejected/settled and signed measured
+gain; whole-run placement decisions survive bounded-source shedding.
+Physical kernel busy time, cross-machine GPU balancing and independent
+policy batched inference remain unimplemented. Real CUDA/ROCm training SPS
+and continuation need qualification.
+
+- **2026-11-17 bounded TinyBrains PPO input lookahead:** `allStackGit/TinyBrains:feat/tinybrains-ppo-lookahead-20261117` now overlaps one **future immutable PPO minibatch** of CPU board-array
+concatenation, exact shape grouping and packed ant indices with current GPU
+optimization on a single reusable CPU worker. Eligible larger uncached
+boards also use pinned-memory H2D copies on a separate CUDA/ROCm stream
+with event waits, bounded to 2% of the current verified VRAM lease and
+without added steady-state synchronizations. Failed PPO updates drain
+unfinished copy-stream work; successes reuse the preexisting per-minibatch
+finite-gradient synchronization. Both execution paths retain identical
+per-epoch Torch RNG permutations, record/ant order, total PPO minibatches,
+microbatch loss scaling, gradient accumulation and Adam steps. Small or
+CPU-only jobs use the original inline path. Hub metrics report worker
+preparation CPU wall **separately** from exposed learner wait, pinned-copy
+host pin/enqueue wall and logical bytes/copies; a sustained bottleneck
+signal requires exposure to dominate the same completed optimizer stage.
+The existing project-neutral 512-field/32-KiB report, charts and exports
+remain unchanged. Randomized CPU workgroup/board/ant index comparisons
+matched 1,000 original grouping cases; real CUDA/ROCm SPS impact and
+failure/restart qualification remain to be established.
+
+- **2026-11-17 Courier CPU shard process event loop:** `allStackGit/Basic-Training:feat/courier-event-loop-shards-20261117` replaces the previous one-Python-thread-per-logical-shard plus
+per-process step mutex with one pipe-driven control loop per physical
+simulation process. Each loop owns its separate seeded persistent worlds,
+shared-memory segments, explicit action snapshots, metadata, completed
+episode migration and PPO slot order; one native map step at a time per
+process preserves the original serial CPU process-count contract.
+Single-shard physical processes retain direct blocking pipe reads,
+avoiding an extra readiness syscall on the common hot path. Multiple
+leased processes still execute in parallel and retain the existing
+long-window useful-SPS process-count and shard regrouping tuners.
+No new scheduling service or whole-pool restart is introduced. Ordered
+pipe servicing matches the parent's existing receive order, avoiding a
+large snapshot/trait reply blocking an earlier expected response. An
+isolated spawn-mode eight-shard IPC check completed repeated steps and
+2-MiB-per-shard checkpoint-style replies with identical restored RNG
+continuation and clean shutdown; this did not exercise live Courier maps.
+The worker now measures real OS threads in each physical child after a completed PPO
+update, along with logical shards multiplexed per process. These structural
+measurements flow through Courier's existing stage metric records and
+Hub's standard count metrics/default charts; a low OS-thread count does
+not imply higher useful training SPS. Actual multi-process throughput,
+migration continuation, Windows spawn and low-RAM behavior still need
+qualified measurement.
+
+- **2026-11-17 reusable Courier GPU PPO rollback buffers:** `allStackGit/Basic-Training:feat/courier-reusable-gpu-rollback-20261117` retains complete transactional PPO state verification/rollback, but
+refreshes preallocated CUDA/ROCm policy and Adam safety buffers before
+each unchanged-layout GPU optimizer update instead of reallocating and
+deep-copying their tensor storage. The capture still copies every live
+tensor and current optimizer-group setting on the optimizer stream;
+structural changes allocate fresh backups. Numerical or other optimizer
+failures restore the prior policy, Adam state and update count and
+invalidate staging; numerical recovery then applies the existing
+learning-rate halving rule. Checkpoint save, evaluation and CPU role changes
+release the private GPU rollback cache and keep portable original state.
+PyTorch CPU semantic checks covered cold/initialized/stable Adam layouts,
+learning-rate changes, no live-storage aliasing, exact policy+optimizer
+rollback, same-layout optimizer replacement and actual layout change.
+Existing Hub metrics now expose logical backup bytes, copy-preparation
+host wall, an optimizer-stream event interval read after the existing PPO
+completion barrier, per-lineage buffer reuse and a sustained copy-pressure
+diagnosis only for the verified last/slowest PPO lineage. These are not physical
+VRAM bus bandwidth, exclusive GPU kernel time or demonstrated SPS gains;
+CUDA/ROCm benchmarking and recovery qualification remain outstanding.
 
 ## Significant remaining development
 

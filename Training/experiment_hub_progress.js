@@ -92,6 +92,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             reported.simulation_match_steps_per_second);
         for(const name of ['ppo_gpu_batch_target_pixels',
             'ppo_gpu_batch_next_target','ppo_gpu_batch_settled',
+            // Report exposed CPU-prep wait, not concurrent background work
+            // as a separate portion of whole-update wall.
+            'ppo_prep_wait_seconds','ppo_prep_cpu_seconds',
+            'ppo_prep_wait_work_share',
+            'pipeline_ppo_prep_wait_pressure',
+            'ppo_prep_async_h2d_bytes',
             'rollout_gpu_batch_target_pixels',
             'rollout_gpu_batch_next_target','rollout_gpu_batch_settled',
             'rollout_gpu_batch_proven_target',
@@ -135,6 +141,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_metric_readback_max_seconds',
             'training_gpu_guard_readback_max_seconds',
             'training_gpu_guard_readbacks',
+            'training_gpu_snapshot_max_seconds',
+            'training_gpu_snapshot_stream_max_seconds',
+            'training_gpu_snapshot_reused_lineages',
+            'training_gpu_snapshot_reuse_fraction',
+            'training_gpu_snapshot_work_share',
             'training_gpu_h2d_enqueue_max_seconds',
             'training_gpu_h2d_bytes',
             'training_gpu_h2d_async_batches',
@@ -143,6 +154,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_prefetch_validated_batches',
             'training_gpu_optimizer_peak_allocated_mb',
             'training_cpu_parallelism','training_queue_max_seconds',
+            'training_sim_processes',
+            'training_sim_multiplexed_shards',
+            'training_sim_child_os_threads',
             'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
             'training_sim_queue_max_seconds','training_sim_queue_peak_shards',
             'training_sim_idle_tail_max_ratio',
@@ -201,6 +215,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_parallelism_underuse_evidence',
             'training_remote_gap_pressure','training_remote_codec_pressure',
             'training_gpu_guard_wait_pressure',
+            'training_gpu_policy_copy_pressure',
+            'training_gpu_policy_reuse_fraction',
+            'training_gpu_policy_copy_work_share',
             'training_gpu_guard_readback_work_share',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_sim_queue_work_share','training_sim_queue_pressure',
@@ -221,7 +238,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             for(const suffix of ['sim_straggler_pressure','sim_dispatch_pressure',
                 'record_encode_pressure','prev_reply_prep_pressure'])
                 retain('collector_'+i+'_'+suffix,reported['collector_'+i+'_'+suffix]);
-            for(const stage of ['engine','observation','inference','opponent','result','bootstrap','returns'])
+            for(const stage of ['engine','observation','inference','opponent','result','bootstrap','returns','model_prepare'])
                 retain('collector_'+i+'_stage_'+stage+'_dominant',
                     reported['collector_'+i+'_stage_'+stage+'_dominant']);
         }
@@ -307,6 +324,10 @@ class BottleneckEvidence {
         };
         const collection=seconds('collection_seconds');
         const optimize=seconds('optimization_seconds');
+        const prepWait=seconds('ppo_prep_wait_seconds');
+        const prepShare=(optimize>0&&prepWait!==null&&prepWait<=optimize)
+            ?prepWait/optimize:null;
+        if(prepShare!==null)add('ppo_prep_wait_work_share',prepShare);
         if(collection!==null&&optimize!==null&&collection+optimize>0) {
             const workShare=collection/(collection+optimize);
             add('pipeline_collection_work_share',workShare);
@@ -424,11 +445,11 @@ class BottleneckEvidence {
             // Per-collector stage times are independent *wall intervals*.
             // Compare only a complete set from one collector. A dominant
             // measured stage is not evidence that a specific CPU/GPU is full.
-            const stageNames=['engine','observation','inference','opponent','result','bootstrap','returns'];
+            const stageNames=['engine','observation','inference','opponent','result','bootstrap','returns','model_prepare'];
             const sourceNames=['rollout_engine_step_seconds',
                 'observation_prepare_seconds','learner_inference_seconds',
                 'opponent_processing_seconds','result_processing_seconds',
-                'bootstrap_seconds','returns_seconds'];
+                'bootstrap_seconds','returns_seconds','model_prepare_seconds'];
             const stageHints=[];
             const simHints=[];
             for(let i=0;i<MAX_TINYBRAINS_COLLECTORS;i++) {
@@ -522,6 +543,7 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,mergeShare,
+                    prepShare,
                     localGpuShare,localGpuOwner,localGpuLease,remoteOwner,remoteCompeting,
                     remoteConnectCritical,remotePrepCritical,
                     stageHints,simHints,resourceHints});
@@ -538,6 +560,13 @@ class BottleneckEvidence {
                     add('pipeline_collection_dominant',1,'count');
                 else if(recent.filter(x=>x.fraction<=0.3).length>=5)
                     add('pipeline_optimization_dominant',1,'count');
+                // A foreground CPU-preparation stall matters for end-to-end
+                // PPO only when optimizing is already exposure-dominant.
+                // Producer CPU time can overlap GPU kernels and cannot be
+                // added to the wall as if it were serial critical work.
+                if(recent.filter(x=>x.fraction<=0.5&&
+                    x.prepShare!==null&&x.prepShare>=0.30).length>=5)
+                    add('pipeline_ppo_prep_wait_pressure',1,'count');
                 if(recent.filter(x=>x.waitShare!==null&&x.waitShare>=0.5).length>=5) {
                     add('pipeline_remote_wait_dominant',1,'count');
                     // Require five of six completed measurements to name
@@ -704,8 +733,62 @@ class BottleneckEvidence {
                 ?guard/slowestOptimize:null;
             if(guardShare!==null)
                 add('training_gpu_guard_readback_work_share',guardShare);
+            // An optimizer backup is a measured host+GPU copy interval.
+            // Only the last completed lineage can expose it as a training
+            // bottleneck; a costly early-finishing lineage does not.
+            const snapshot=(Number.isSafeInteger(slowest)&&
+                slowest>=0&&slowest<count)
+                ?seconds('worker_'+slowest+'_gpu_snapshot_seconds'):null;
+            const snapshotShare=slowestOptimize>0&&snapshot!==null&&
+                snapshot<=slowestOptimize?snapshot/slowestOptimize:null;
+            if(snapshotShare!==null)
+                add('training_gpu_snapshot_critical_share',snapshotShare);
+            // CUDA/ROCm events bracket backup copies on the optimizer
+            // stream. This interval includes host dispatch gaps; neither
+            // measure is an exclusive GPU-kernel busy percentage.
+            const snapshotStream=(Number.isSafeInteger(slowest)&&
+                slowest>=0&&slowest<count)
+                ?seconds('worker_'+slowest+'_gpu_snapshot_stream_seconds'):null;
+            const streamShare=slowestOptimize>0&&snapshotStream!==null&&
+                snapshotStream<=slowestOptimize
+                ?snapshotStream/slowestOptimize:null;
+            if(streamShare!==null)
+                add('training_gpu_snapshot_stream_work_share',streamShare);
+            const snapshotHint=(
+                (snapshotShare!==null&&snapshotShare>=0.25&&snapshot>=0.20)||
+                (streamShare!==null&&streamShare>=0.25&&snapshotStream>=0.20)
+            )&&slowestOptimize>=0.15*wall&&
+                metrics.training_last_reply_worker?.value===slowest&&
+                (queueShare===null||queueShare<=0.10);
             const guardHint=guardShare!==null&&guardShare>=0.3&&
                 guard>=0.25&&slowestOptimize>=0.15*wall;
+            // Policy GPU<->CPU host transition costs from the SAME
+            // slowest completed lineage. These include host dispatch and
+            // blocking; they are not measured PCIe link utilization.
+            const copyRow=metrics.training_gpu_policy_copy_slowest_ratio;
+            const copyShare=copyRow?.unit==='ratio'&&
+                Number.isFinite(copyRow.value)&&copyRow.value>=0&&
+                copyRow.value<=1?copyRow.value:null;
+            const copySeconds=seconds('training_gpu_policy_copy_slowest_seconds');
+            if(copyShare!==null)
+                add('training_gpu_policy_copy_work_share',copyShare);
+            const gpuCopyHint=copyShare!==null&&copyShare>=0.25&&
+                copySeconds!==null&&copySeconds>=0.25&&
+                Number.isSafeInteger(slowest)&&
+                // A worker can have the longest local training interval yet
+                // finish before a separately queued or remote lineage.
+                // Attribute an exposed pipeline stall only when verified
+                // coordinator reply arrival identifies the SAME owner.
+                metrics.training_last_reply_worker?.value===slowest&&
+                metrics.training_gpu_policy_copy_owner?.value===slowest&&
+                (queueShare===null||queueShare<=0.10);
+            // In each completed update, only eligible GPU PPO lineages can
+            // retain an unchanged policy for another on-policy collection.
+            const gpuLineages=metrics.training_gpu_optimizer_lineages?.value;
+            const reused=metrics.training_gpu_policy_reused?.value;
+            if(Number.isSafeInteger(gpuLineages)&&gpuLineages>0&&
+                Number.isSafeInteger(reused)&&reused>=0&&reused<=gpuLineages)
+                add('training_gpu_policy_reuse_fraction',reused/gpuLineages,'ratio');
             for(let i=0;i<count;i++) {
                 const collect=seconds('worker_'+i+'_collection_seconds');
                 const optimize=seconds('worker_'+i+'_optimization_seconds');
@@ -755,7 +838,9 @@ class BottleneckEvidence {
                         (queueShare===null||queueShare<=0.10),
                     courierRemoteGap:remoteGapHint,
                     courierRemoteCodec:remoteCodecHint,
-                    courierGpuGuard:guardHint});
+                    courierGpuGuard:guardHint,
+                    courierGpuSnapshot:snapshotHint,
+                    courierGpuCopy:gpuCopyHint});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -781,6 +866,10 @@ class BottleneckEvidence {
                     add('training_remote_codec_pressure',1,'count');
                 if(sustained(x=>x.courierGpuGuard))
                     add('training_gpu_guard_wait_pressure',1,'count');
+                if(sustained(x=>x.courierGpuSnapshot))
+                    add('training_gpu_snapshot_pressure',1,'count');
+                if(sustained(x=>x.courierGpuCopy))
+                    add('training_gpu_policy_copy_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.cpuBusy))
                     add('pipeline_cpu_lease_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.throttled))
