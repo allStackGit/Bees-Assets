@@ -48,6 +48,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_rollout_spare_candidates',
     'training_gpu_rollout_batches','training_gpu_rollout_states',
     'training_gpu_rollout_lstm_steps','training_gpu_rollout_policy_reused',
+    'training_gpu_policy_retained','training_gpu_policy_reused',
     'training_gpu_rollout_state_copy_batches',
     'training_remote_gpu_rollout_trials','training_remote_gpu_rollout_tuned',
     'training_gpu_prefetched_batches',
@@ -102,7 +103,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|gpu_prefetch_skipped_batches)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused)$/.test(name)||
             /^training_gpu_device_[0-7]_lineages$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':
