@@ -43,6 +43,11 @@ def original_audio_paths() -> list[tuple[Path, Path]]:
         relative = Path(name)
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError(f"Invalid native audio resource path: {name}")
+        # The renderer also has a repository-only fallback for Titania's
+        # source file. The release instead ships the single same recording
+        # in its portable assets/audio/Titania directory.
+        if relative == Path("Resources/Music/Titania/Titania Source.mp3"):
+            continue
         if len(relative.parts) == 1:
             relative = Path("Sound Effects") / relative
         destination = Path("assets/audio") / relative
