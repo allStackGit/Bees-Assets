@@ -72,10 +72,16 @@ def load_curriculum(path, base_run, total_rounds, round_python, learner_slot, se
                 _python_command(run, source.get("python")) != round_python or
                 (Path(run["path"]).parent / worker).resolve(strict=True) != base_worker):
             raise ValueError("curriculum cannot change the session Python or policy worker")
+        routed = [set(level.get("model_slots", {}).values())
+                  for level in source["levels"]
+                  if isinstance(level, dict) and isinstance(level.get("model_slots"), dict)]
+        if learner_slot is not None and not any(
+            learner_slot in slots for slots in routed
+        ):
+            raise ValueError("curriculum stage does not route the selected learner slot")
         if self_play is not None:
             required = {learner_slot, self_play["opponent_slot"]}
-            if not any(required.issubset(set(level.get("model_slots", {}).values()))
-                       for level in source["levels"] if isinstance(level, dict)):
+            if not any(required.issubset(slots) for slots in routed):
                 raise ValueError("curriculum stage must route both self-play model slots")
         stages.append({"start_round": item["start_round"], "run_config": run})
         previous_round = item["start_round"]
