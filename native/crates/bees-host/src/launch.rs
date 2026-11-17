@@ -2049,7 +2049,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             entry.title.trim().is_empty() || entry.title.len() > 120 ||
             !matches!(entry.kind.as_str(), "campaign" | "battle") ||
             entry.config.extension().is_none_or(|ext| ext != "json") ||
-            entry.config.to_string_lossy().contains(['\\', ':']) ||
+            (entry.config.to_string_lossy().contains('\\') ||
+             entry.config.to_string_lossy().contains(':')) ||
             !entry.config.components().all(|part| matches!(part, Component::Normal(_)))
         {
             return Err(invalid("invalid or duplicate native game library item").into());
