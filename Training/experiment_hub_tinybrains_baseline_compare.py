@@ -108,6 +108,23 @@ def main():
             write_atomic(output, report)
             print(f"{label} vs {result['opponent']}: W {wins}, L {losses}, D {draws}"
                   f" / {trials}; score {result['score_rate']:.1%}", flush=True)
+    # Rank only comparable complete suites. A ranking is descriptive, not
+    # evidence that the leading candidate improved significantly.
+    grouped = {}
+    for result in report["results"]:
+        grouped.setdefault(result["candidate"], {})[result["opponent"]] = result
+    if grouped and all("micro" in value and "nano" in value for value in grouped.values()):
+        ranked = sorted(grouped, key=lambda name: (
+            -grouped[name]["micro"]["score_rate"],
+            -grouped[name]["nano"]["score_rate"], name))
+        report["provisional_rank"] = [
+            {"candidate": name,
+             "micro_score_rate": grouped[name]["micro"]["score_rate"],
+             "nano_score_rate": grouped[name]["nano"]["score_rate"]}
+            for name in ranked
+        ]
+        print("Provisional fixed-opponent leader:", ranked[0],
+              "(not a statistical promotion decision)", flush=True)
     report["complete"] = True
     write_atomic(output, report)
     print(f"Complete independent baseline report: {output}")
