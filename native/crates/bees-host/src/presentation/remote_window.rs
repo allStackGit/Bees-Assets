@@ -302,6 +302,47 @@ fn hit<'a>(state: &'a Value, camera: NativeCamera, x:i32,y:i32)
     choice
 }
 
+
+fn source_numbered_squads(state: &Value) -> Vec<(u64, i64)> {
+    let mut numbered: Vec<_> = state["squads"].as_array().into_iter().flatten()
+        .filter(|squad| squad["owned"]==true)
+        .filter_map(|squad| Some((
+            squad["source_number"].as_u64()?,
+            squad["owner"]["squad_id"].as_i64()?,
+        ))).collect();
+    numbered.sort_unstable_by_key(|&(number, _)| number);
+    numbered
+}
+
+/// Unity numbered shortcuts wrap against the authored original side count,
+/// rather than renumbering after squad casualties.
+fn numbered_squad(state: &Value, key: u64) -> Option<i64> {
+    let first=state["squads"].as_array()?.iter()
+        .find(|s| s["owned"]==true && s["source_number"].as_u64().is_some())?;
+    let count=first["original_squad_count"].as_u64()?;
+    if count==0 {return None;}
+    let input=if key==0 {10} else {key};
+    let target=(input-1)%count+1;
+    source_numbered_squads(state).into_iter()
+        .find(|&(number,_)|number==target).map(|(_,id)|id)
+}
+
+fn next_numbered_squad(state: &Value, selected: &[i64]) -> Option<i64> {
+    let numbered=source_numbered_squads(state);
+    if numbered.is_empty(){return None;}
+    let current=selected.first().and_then(|id|
+        numbered.iter().position(|&(_,candidate)|candidate==*id));
+    Some(numbered[current.map_or(0,|index|(index+1)%numbered.len())].1)
+}
+
+fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
+    let squad=state["squads"].as_array()?.iter().find(|s|
+        s["owned"]==true && s["owner"]["squad_id"].as_i64()==Some(squad_id))?;
+    let ship_id=squad["members"].as_array()?.iter().find_map(Value::as_i64)?;
+    state["ships"].as_array()?.iter().find(|ship|
+        ship["id"].as_i64()==Some(ship_id)).and_then(position)
+}
+
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
     patrol_start: Option<Vec2>, metrics: &WireCounts) {
@@ -410,15 +451,15 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         "Left: select   Shift: add",
         "Drag: select multiple",
         "Right: move/attack/mine",
-        "A all     F point fire",
-        "G guard  M mine  T attack",
-        "H hold   Z cease fire",
+        "1-0 select Tab cycle A all",
+        "F fire  G guard  T attack",
+        "H hold  M mine Z cease fire",
         "C chase  L lock  V speed",
         "PgUp/Dn shooting (1-40)",
         "B beacon D detonate Q charge",
         "E heal W retreat P patrol",
         "R reset +/- zoom Arrows pan",
-        "Esc disconnect",
+        "Esc cancel / disconnect",
     ];
     for (index,label) in instructions.iter().enumerate(){
         text::draw_at(pixels,WIDTH,FIELD+14,465+index*19,label,1,MUTED);
@@ -522,7 +563,12 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut last_middle:Option<(f32,f32)>=None;
     let started=Instant::now();
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
+    while window.is_open() {
+        if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+            if mode.is_some() {
+                mode=None;patrol_start=None;drag_start=None;
+            } else {break;}
+        }
         peer.poll()?;
         if let Some(state)=peer.state.as_ref() {
             let episode=(state["world_id"].as_u64().unwrap_or(0),
@@ -543,6 +589,28 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         if let Some(mut cam)=camera {
             let keys=window.get_keys_pressed(KeyRepeat::No);
             for key in keys {
+                let numbered=match key {
+                    Key::Key1=>Some(1),Key::Key2=>Some(2),Key::Key3=>Some(3),
+                    Key::Key4=>Some(4),Key::Key5=>Some(5),Key::Key6=>Some(6),
+                    Key::Key7=>Some(7),Key::Key8=>Some(8),Key::Key9=>Some(9),
+                    Key::Key0=>Some(0),_=>None,
+                };
+                if numbered.is_some()||key==Key::Tab {
+                    if let Some(state)=peer.state.as_ref() {
+                        let next=numbered.and_then(|number|numbered_squad(state,number))
+                            .or_else(||(key==Key::Tab)
+                                .then(||next_numbered_squad(state,&selected)).flatten());
+                        if let Some(id)=next {
+                            selected.clear();selected.push(id);
+                            if let Some(point)=focus_squad(state,id){cam.center=point;}
+                            mode=None;patrol_start=None;
+                            peer.notice=format!("Selected source squad {id}");
+                        } else {
+                            peer.notice="No surviving authored numbered squad for that key".into();
+                        }
+                    }
+                    continue;
+                }
                 let send=match key {
                     Key::A => {
                         if let Some(state)=peer.state.as_ref() {
