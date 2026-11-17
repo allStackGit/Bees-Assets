@@ -110,7 +110,7 @@ function courierMetrics(source) {
     const primary=name=>name.startsWith('training_gpu_placement_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
-        /^training_gpu_snapshot_(?:max_seconds|reused_lineages|owner|work_share)$/.test(name);
+        /^training_gpu_snapshot_(?:max_seconds|stream_max_seconds|reused_lineages|owner|work_share)$/.test(name);
     const entries=Object.entries(stats).sort(
         ([a],[b])=>Number(primary(b))-Number(primary(a)));
     for(const [name,value] of entries) {
