@@ -682,7 +682,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
     let mut dialogue_line=0usize;
     let mut held_fire_active=false;
-    let mut held_fire_cursor:Option<(i32,i32)>=None;
+    let mut held_fire_target:Option<Vec2>=None;
     let started=Instant::now();
 
     while window.is_open() {
@@ -720,7 +720,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     // The server forgets this lease at the same authoritative
                     // episode boundary; the client never aims old ships.
                     held_fire_active=false;
-                    held_fire_cursor=None;
+                    held_fire_target=None;
                 }
             }
             selected.retain(|id|state["squads"].as_array().into_iter().flatten()
@@ -839,16 +839,20 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     let point=cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
                     match peer.held_fire(&selected,"Begin",Some(point)) {
                         Ok(()) => {
-                            held_fire_active=true;held_fire_cursor=Some((x,y));
+                            held_fire_active=true;held_fire_target=Some(point);
                         },
                         Err(error) => peer.notice=error.to_string(),
                     }
                 },
-                (true,true,Some((x,y))) if held_fire_cursor!=Some((x,y)) => {
+                (true,true,Some((x,y))) => {
                     let point=cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
-                    match peer.held_fire(&selected,"Aim",Some(point)) {
-                        Ok(()) => held_fire_cursor=Some((x,y)),
-                        Err(error) => peer.notice=error.to_string(),
+                    // Camera movement also changes the world aim when the
+                    // mouse has not moved. Skip truly unchanged targets.
+                    if !held_fire_target.is_some_and(|prior| prior.unity_equal(point)) {
+                        match peer.held_fire(&selected,"Aim",Some(point)) {
+                            Ok(()) => held_fire_target=Some(point),
+                            Err(error) => peer.notice=error.to_string(),
+                        }
                     }
                 },
                 (true,false,_) => {
@@ -860,7 +864,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                         peer.connected=false;
                         peer.notice=error.to_string();
                     }
-                    held_fire_active=false;held_fire_cursor=None;
+                    held_fire_active=false;held_fire_target=None;
                 },
                 _ => {},
             }
