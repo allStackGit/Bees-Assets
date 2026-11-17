@@ -5,7 +5,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
-const {fixedCpuParallelism}=require('./experiment_hub_resources');
+const {fixedCpuParallelism,approvedEndpointSubset}=require('./experiment_hub_resources');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -40,11 +40,15 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_copy_stream_next','training_gpu_copy_stream_settled',
     'training_gpu_lstm_boundary_batches',
     'training_gpu_vector_pad_batches','training_cpu_vector_pad_batches',
+    'training_cpu_lstm_boundary_batches','training_cpu_rollout_lstm_calls',
+    'training_cpu_optimizer_threads_max','training_cpu_optimizer_threads_next',
+    'training_cpu_optimizer_threads_settled','training_remote_cpu_optimizer_trials',
     'training_gpu_rollout_lineages','training_split_gpu_rollout_lineages',
     'training_local_gpu_rollout_devices','training_gpu_rollout_next_devices',
     'training_gpu_rollout_spare_candidates',
     'training_gpu_rollout_batches','training_gpu_rollout_states',
     'training_gpu_rollout_lstm_steps','training_gpu_rollout_policy_reused',
+    'training_gpu_rollout_state_copy_batches',
     'training_remote_gpu_rollout_trials','training_remote_gpu_rollout_tuned',
     'training_gpu_prefetched_batches',
     'training_gpu_prefetch_active_lineages',
@@ -59,6 +63,19 @@ const WINDOWS_ENTRY=[
     'sys.path.insert(0, os.path.dirname(script))',
     "runpy.run_path(script, run_name='__main__')",
 ].join('; ');
+
+function approvedCourierLineages(approved,selected) {
+    if(selected===undefined)return approved;
+    if(!Array.isArray(selected)||selected.some(item=>!item||
+        typeof item!=='object'||Array.isArray(item)||
+        Object.keys(item).length!==2||typeof item.endpoint!=='string'||
+        !Number.isSafeInteger(item.maxShards)))return null;
+    const endpoints=approvedEndpointSubset(approved?.map(item=>item.endpoint),
+        selected.map(item=>item.endpoint));
+    if(!endpoints)return null;
+    const plan=approved.filter(item=>endpoints.includes(item.endpoint));
+    return plan.every((item,index)=>item.maxShards===selected[index].maxShards)?plan:null;
+}
 
 function inside(parent,child) {
     const relative=path.relative(parent,child);
@@ -186,6 +203,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
     let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false,gpuMulti=false;
+    let gpuSpareRollout=false;
     let persistentWorlds=false,maxSimulationShards=1;
     if(fs.existsSync(capabilitiesFile)) {
         if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
@@ -221,13 +239,16 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 (capabilities.courier_episode_safe_process_groups!==true||
                     !Number.isSafeInteger(capabilities.courier_max_simulation_shards)))||
             (capabilities.courier_remote_lineage_transport!==undefined&&
-                typeof capabilities.courier_remote_lineage_transport!=='boolean'))
+                typeof capabilities.courier_remote_lineage_transport!=='boolean')||
+            (capabilities.courier_spare_rollout_gpu!==undefined&&
+                typeof capabilities.courier_spare_rollout_gpu!=='boolean'))
             throw Error('Unsupported Courier backend capabilities manifest.');
         boundedLearners=capabilities.courier_active_learners;
         autoLearners=boundedLearners&&capabilities.courier_auto_active_learners===true;
         optimizerGpu=capabilities.courier_gpu_optimizer===true;
         gpuPciPin=optimizerGpu&&capabilities.courier_gpu_pci_pin===true;
         gpuMulti=gpuPciPin&&capabilities.courier_gpu_multi_optimizer===true;
+        gpuSpareRollout=gpuMulti&&capabilities.courier_spare_rollout_gpu===true;
         persistentWorlds=autoLearners&&
             capabilities.courier_parallel_worlds===true&&
             capabilities.courier_episode_safe_process_groups===true;
@@ -364,6 +385,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
         ...(remote?{
             courier_remote_lineage_endpoints:remote.endpoints.map(item=>item.endpoint),
+            courier_lineage_subset:true,
             courier_remote_key_fingerprint:remote.fingerprint,
             courier_remote_max_shards:remote.endpoints.map(item=>item.maxShards),
         }:{}),
@@ -404,9 +426,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         checkpoint_stop_file:context=>path.join(jobRoot(context),'hub-stop.request'),
         ...evaluator,
         args(parameters,context) {
-            const {config_sha256,seed,workers,max_rounds,checkpoint_rounds}=parameters;
+            const {config_sha256,seed,workers,max_rounds,checkpoint_rounds,remote_lineage_plan}=parameters;
+            const remotePlan=approvedCourierLineages(remote?.endpoints,remote_lineage_plan);
             if(Object.keys(parameters).some(key=>
-                !['config_sha256','seed','workers','max_rounds','checkpoint_rounds','remote_lineages'].includes(key))||
+                !['config_sha256','seed','workers','max_rounds','checkpoint_rounds',
+                    'remote_lineages','remote_lineage_plan'].includes(key))||
                 config_sha256!==configSha256||!within(seed,0,4294967295)||
                 !(workers===undefined&&cpuParallelism==='allocation')&&
                     !within(workers,1,64)||
@@ -414,17 +438,16 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 !within(checkpoint_rounds,1,10000000)||
                 (parameters.remote_lineages!==undefined&&
                     typeof parameters.remote_lineages!=='boolean')||
-                (parameters.remote_lineages===true&&!remote))
+                (parameters.remote_lineages===true&&!remotePlan)||
+                (remote_lineage_plan!==undefined&&(parameters.remote_lineages!==true||!remotePlan)))
                 throw Error('Courier requires a pinned environment, valid worker settings and the locally approved remote-lineage mode.');
             // Courier workers own separate PPO policies and population
             // lineages, not parallel simulators for one shared policy.
             // Keep population size independent of CPU lease changes.
             let chosenWorkers=workers===undefined?12:workers;
             const useRemote=parameters.remote_lineages===true;
-            if(useRemote&&remote.endpoints.length>=chosenWorkers)
+            if(useRemote&&remotePlan.length>=chosenWorkers)
                 throw Error('Courier requires at least one local PPO lineage beside its remote workers.');
-            if(context.gpu_pci_addresses&&chosenWorkers<context.gpu_pci_addresses.length)
-                throw Error('Courier cannot allocate more GPU optimizers than independent saved lineages.');
             const out=jobRoot(context);
             if(useRemote&&crypto.createHash('sha256')
                 .update(fs.readFileSync(remote.keyFile)).digest('hex')!==remote.fingerprint)
@@ -453,6 +476,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     throw Error('Courier promoted checkpoint no longer matches its evaluated model.');
                 if(max_rounds!==0)limit=saved.checkpoint.round+max_rounds;
             }
+            if(!gpuSpareRollout&&context.gpu_pci_addresses&&
+                    chosenWorkers<context.gpu_pci_addresses.length)
+                throw Error('This Courier installation requires at least one lineage per leased GPU.');
             fs.mkdirSync(out,{mode:0o700});
             for(const file of files)
                 fs.copyFileSync(file,path.join(out,path.basename(file)),fs.constants.COPYFILE_EXCL);
@@ -497,7 +523,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                            :gpuPciPin&&!windows
                                ?['--optimizer-gpu-pci',context.gpu_pci_address]:[])]:[]),
                 ...(useRemote?[
-                    '--remote-lineage-plan',remote.endpoints.map(item=>
+                    '--remote-lineage-plan',remotePlan.map(item=>
                         item.endpoint+'@'+item.maxShards).join(','),
                     '--remote-lineage-key-file',remote.keyFile,
                     '--remote-job-id',context.job_id,
@@ -551,4 +577,4 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     };
 }
 
-module.exports={createCourierAdapter};
+module.exports={createCourierAdapter,approvedCourierLineages};
