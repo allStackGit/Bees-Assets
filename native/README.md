@@ -874,10 +874,16 @@ portable across supported Windows/Linux CPUs, while `cuda` requires a
 compatible Torch accelerator and source ONNX GPU providers are not
 automatically reconfigured. `--python-command` selects the bare target
 Python executable (`python3` on Linux or `python` on Windows by default).
-The finished native release manifest includes all copied model binaries
-and inference scripts, allowing normal package integrity verification. The packager
-requires Pillow only during asset preparation, refuses to overwrite an
-existing release and creates `play-bees.sh` on Linux or
+The finished native release manifest includes every copied file,
+including the nested model manifests and frozen external authored
+scenes. On the destination computer, verify the complete transfer with
+`python3 native/tools/package-native-game.py --verify .` from inside
+the extracted distribution (use `py` on Windows). This checks file
+hashes, scene/mission routes, and each portable model's actual weight
+digests without Unity or the original training workspace. The manifest
+is a transfer-integrity receipt, not an authenticity signature.
+The packager requires Pillow only during asset preparation, refuses to
+overwrite an existing release, and creates `play-bees.sh` on Linux or
 `play-bees.cmd` on Windows as the main desktop entry point. The former
 battle-specific `play-native-duel`, `play-native-skirmish` and
 `play-native-two-player` launchers remain available.

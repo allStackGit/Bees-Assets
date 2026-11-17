@@ -21,7 +21,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from package_policy_manifest import export_model
+from package_policy_manifest import export_model, verify_package as verify_policy_package
 
 ROOT = Path(__file__).resolve().parents[2]
 AUDIO_SOURCE = ROOT / "native/crates/bees-host/src/game_audio.rs"
@@ -335,12 +335,150 @@ def create_manifest(output: Path) -> None:
     )
 
 
+def verify_native_package(directory: Path) -> dict:
+    """Verify every released byte and that game/model links are self-contained.
+
+    This is a portable transfer-integrity check, not a cryptographic
+    signature: the independent release manifest must come from a trusted
+    distributor. It does not start physics, a model worker, or Unity.
+    """
+    if directory.is_symlink():
+        raise ValueError("native game release must not be a symlink")
+    directory = directory.resolve(strict=True)
+    receipt = directory / "manifest.json"
+    if not receipt.is_file() or receipt.is_symlink():
+        raise ValueError("native release is missing its completion manifest")
+    manifest = json.loads(receipt.read_text(encoding="utf-8"))
+    if (not isinstance(manifest, dict) or
+            manifest.get("format") != "bees-native-game-package" or
+            manifest.get("version") != 1 or
+            not isinstance(manifest.get("content"), list)):
+        raise ValueError("unsupported native game release manifest")
+
+    expected = {}
+    total_bytes = 0
+    for item in manifest["content"]:
+        if not isinstance(item, dict):
+            raise ValueError("invalid native release inventory item")
+        name, size, digest = (
+            item.get("path"), item.get("bytes"), item.get("sha256")
+        )
+        if (not isinstance(name, str) or not name or "\\" in name or
+                ":" in name or
+                Path(name).is_absolute() or ".." in Path(name).parts or
+                Path(name) == Path("manifest.json") or
+                name in expected or type(size) is not int or size < 0 or
+                not isinstance(digest, str) or
+                re.fullmatch(r"[0-9a-f]{64}", digest) is None):
+            raise ValueError("invalid or repeated native package asset entry")
+        expected[name] = (size, digest)
+        total_bytes += size
+    actual = set()
+    for file in directory.rglob("*"):
+        if file.is_symlink():
+            raise ValueError(f"native package contains a symbolic link: {file}")
+        if file.is_file() and file != receipt:
+            actual.add(file.relative_to(directory).as_posix())
+    if actual != set(expected):
+        raise ValueError("native release inventory does not match its files")
+    for name, (size, digest) in expected.items():
+        file = directory / name
+        if file.stat().st_size != size:
+            raise ValueError(f"native release asset length changed: {name}")
+        sha = hashlib.sha256()
+        with file.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                sha.update(block)
+        if sha.hexdigest() != digest:
+            raise ValueError(f"native release asset hash changed: {name}")
+
+    if not any((directory / name).is_file() for name in ("bees", "bees.exe")):
+        raise ValueError("native release is missing the game executable")
+
+    def owned_link(owner: Path, relative: str, name: str) -> Path:
+        if (not isinstance(relative, str) or not relative or
+                Path(relative).is_absolute() or "\\" in relative or
+                ":" in relative):
+            raise ValueError(f"invalid packaged {name} path")
+        asset = (owner.parent / relative).resolve(strict=True)
+        if not asset.is_relative_to(directory) or not asset.is_file():
+            raise ValueError(f"packaged {name} escapes the game distribution")
+        return asset
+
+    pending = [(directory / "examples/native-library.json", "library")]
+    inventory_paths = {directory / name for name in expected}
+    seen = {}
+    policies = set()
+    count_runs = 0
+    while pending:
+        file, kind = pending.pop()
+        prior = seen.get(file)
+        if prior is not None:
+            if prior != kind:
+                raise ValueError("native packaged asset has inconsistent roles")
+            continue
+        if file not in inventory_paths:
+            raise ValueError("native packaged game asset is missing from inventory")
+        seen[file] = kind
+        data = json.loads(file.read_text(encoding="utf-8"))
+        if kind == "library":
+            if not isinstance(data, dict) or data.get("library_schema") != 1:
+                raise ValueError("invalid packaged native library")
+            for item in data["games"]:
+                game_kind = item["kind"]
+                if game_kind not in ("campaign", "battle"):
+                    raise ValueError("unsupported packaged native game kind")
+                pending.append((
+                    owned_link(file, item["config"], "game configuration"),
+                    "campaign" if game_kind == "campaign" else "run",
+                ))
+        elif kind == "campaign":
+            for item in data["battles"]:
+                pending.append((owned_link(file, item["config"], "mission"), "run"))
+                route = (item.get("mission") or {}).get("on_victory")
+                if route is not None:
+                    pending.append((
+                        owned_link(file, route["config"], "victory route"), "run",
+                    ))
+        elif kind == "run":
+            count_runs += 1
+            if data.get("hivemind") or data.get("model_updates") or data.get("policy_capture"):
+                raise ValueError("packaged native game contains a live training or Hub dependency")
+            for level in data["levels"]:
+                pending.append((owned_link(file, level["scene"], "scene"), "scene"))
+            if data.get("collision_matrix") or data.get("stage_palette"):
+                if not data.get("collision_matrix") or not data.get("stage_palette"):
+                    raise ValueError("partial source Stage asset configuration")
+                for name in ("collision_matrix", "stage_palette"):
+                    pending.append((owned_link(file, data[name], name), "stage_asset"))
+            if data.get("model_manifest"):
+                worker = owned_link(file, data["policy_worker"], "policy worker")
+                if worker != directory / "native/tools/policy_worker.py":
+                    raise ValueError("packaged run names an external policy worker")
+                model = owned_link(file, data["model_manifest"], "policy manifest")
+                if model.name != "manifest.json" or not model.parent.is_relative_to(
+                        directory / "assets/policies"):
+                    raise ValueError("packaged run uses an external model manifest")
+                if model.parent not in policies:
+                    verify_policy_package(model.parent)
+                    policies.add(model.parent)
+        elif kind not in ("scene", "stage_asset"):
+            raise ValueError("unknown packaged native JSON dependency")
+    return {
+        "kind": "bees_native_game_package_verified",
+        "files": len(expected), "bytes": total_bytes,
+        "battles": count_runs, "portable_models": len(policies),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, required=True,
+    parser.add_argument("--binary", type=Path,
                         help="Existing graphical bees or bees.exe executable")
-    parser.add_argument("--output", type=Path, required=True,
+    parser.add_argument("--output", type=Path,
                         help="New distribution folder; will not overwrite")
+    parser.add_argument("--verify", type=Path,
+                        help="verify the file hashes and all game/model dependencies of a transferred native release")
     parser.add_argument("--library", type=Path,
                         default=ROOT / "native/examples/native-library.json",
                         help="native game library to package (built-in or Unity-free authored campaign)")
@@ -351,6 +489,15 @@ def main() -> None:
     parser.add_argument("--policy-device", choices=("cpu", "cuda"),
                         help="target inference device (cpu works on Linux/Windows, cuda needs supported torch)")
     args = parser.parse_args()
+    if args.verify is not None:
+        if (args.binary is not None or args.output is not None or
+                args.include_policies or args.policy_device is not None or
+                args.python_command is not None):
+            parser.error("--verify accepts only the completed distribution directory")
+        print(json.dumps(verify_native_package(args.verify)), flush=True)
+        return
+    if args.binary is None or args.output is None:
+        parser.error("create a native release with --binary and --output")
     if args.policy_device is not None and not args.include_policies:
         parser.error("--policy-device requires --include-policies")
     binary = args.binary.resolve()
@@ -390,6 +537,13 @@ def main() -> None:
         )
         if policy_used:
             package_policy_runtime(staging)
+        # The integrity checker travels with the immutable distribution,
+        # including game-only builds. It is optional at PLAY time; copying
+        # these tools does not introduce Python into native game execution.
+        tools_dir = staging / "native/tools"
+        tools_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("package-native-game.py", "package_policy_manifest.py"):
+            shutil.copy2(ROOT / "native/tools" / name, tools_dir / name)
         # Remote controllers are optional Python/Tk tools. The canonical
         # simulation core stays Rust-native; trained policy inference
         # requires local Python/NumPy and its selected model backend.
