@@ -2084,7 +2084,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             !seen.insert(entry.id.as_str()) ||
             entry.title.trim().is_empty() || entry.title.len() > 120 ||
             !matches!(entry.kind.as_str(), "campaign" | "battle") ||
-            entry.config.extension().is_none_or(|ext| ext != "json") ||
+            entry.config.extension().and_then(|ext| ext.to_str()) != Some("json") ||
             (entry.config.to_string_lossy().contains('\\') ||
              entry.config.to_string_lossy().contains(':')) ||
             !entry.config.components().all(|part| matches!(part, Component::Normal(_)))
