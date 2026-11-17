@@ -1608,9 +1608,10 @@ For **unattended round-by-round dispatch**, the learner may use the
 existing Hub's loopback operator API rather than manually creating each
 collector job. This requires an explicitly approved local plan and 2–16
 collector allocations per round (the current atomic Hub resource-bundle
-limit). The native distributed allocation plan still determines source
-World windows and physics-worker counts. The new Hub plan supplies only
-the selected machines and the resources the operator is authorizing:
+limit). The Hub plan specifies the machines and authorized CPU/GPU/RAM
+resources. The learner may either accept an existing explicit native
+collector plan or derive its arena windows and worker parallelism from
+the same Hub plan, using the total Worlds per training round:
 
 ```json
 {
@@ -1634,9 +1635,19 @@ the selected machines and the resources the operator is authorizing:
 }
 ```
 
-The collector IDs must exactly match the existing
-`--distributed-plan`; each requested CPU budget must cover the
-round's fixed `rollout_workers * physics_workers`. Set
+For an existing `--distributed-plan`, collector IDs must match and
+each requested CPU budget must cover its frozen
+`rollout_workers * physics_workers`. Alternatively, omit the separate
+collector plan and add `--hub-auto-worlds 144` (or another explicit,
+fixed total World budget). The learner then creates one rollout
+process per machine where possible, shares batched policy inference
+within it, and assigns physics threads from the leased CPU allocation.
+It distributes distinct World ranges in proportion to reserved CPUs.
+The resulting collector plan is pinned inside the session, automatically
+reused across restarts, and conservatively rebalanced between completed
+rounds only after sustained, meaningful throughput measurements. RAM
+remains a hard Hub reservation; actual model and arena memory suitability
+still depends on the chosen scenario and must be observed. Set
 `confirm_gpu_start: true` only when expressly approving one exclusive
 GPU for a collector. GPU starts still require fresh agent hardware proof,
 and a scheduled GPU bundle expires if its safety conditions are not met.
@@ -1646,6 +1657,24 @@ the Hub's existing **CPU-only** coordinator-restart rearm policy,
 also set `resume_after_restart: true` and
 `confirm_restart_rearm: true` in the local plan. GPU batches cannot
 use that policy: an agent replacement requires fresh GPU approval.
+
+For example, after preparing the learner's existing inbox and outbox:
+
+```sh
+python3 native/tools/train_policy_session.py \
+  run.json checkpoint.pt trainer.yaml native-session \
+  --rounds 100 --bundle-inbox /learner/native-inbox \
+  --collector-input-outbox /learner/outbox \
+  --bundle-receiver-listen 127.0.0.1:7391 \
+  --hub-dispatch-plan /private/hub-machines.json \
+  --hub-auto-worlds 144 --collector-timeout-seconds 7200
+```
+
+This requires no independently maintained `--distributed-plan`.
+Each machine still needs the installed trusted portable native
+collector adapter and matching local native executable. The learner
+does not impersonate Hub agent ownership or silently relax exclusive
+GPU authorization.
 
 Start the learner on the **Hub host** with all three existing distributed
 transport options plus `--hub-dispatch-plan /private/hub-machines.json`
@@ -1662,6 +1691,14 @@ A crash/restart reuses configurations identified by the issued order
 digest and reconciles exact previously reserved bundle identities.
 Partial, changed or review-required Hub ownership **fails closed**,
 rather than starting duplicate work or silently recycling a GPU.
+While waiting for verified rollouts, the learner consults Hub's
+existing job registry every five seconds. A failed, stopped, cancelled
+or review-required missing collector terminates that round immediately
+with its collector, machine and Hub job ID instead of awaiting the full
+timeout. Transient coordinator unavailability is recorded without
+replacing verified rollout evidence. The time spent exporting inputs,
+dispatching Hub jobs and awaiting complete receipts is measured
+separately from useful World SPS.
 An operator must explicitly resolve such a state. This is opt-in;
 without the dispatch flag, existing manual and externally managed
 collectors work as before. Hub history currently limits the number of
