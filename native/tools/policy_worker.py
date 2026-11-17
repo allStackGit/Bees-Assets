@@ -345,7 +345,7 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
     return signature_bytes, policies, manifest_digest
 
 
-def decode_row_metadata(meta: bytearray, rows: int):
+def decode_row_metadata(meta: bytearray, rows: int, output_buffers=None):
     fields = np.frombuffer(meta, dtype=ROW_META_DTYPE, count=rows)
     fire_bytes = fields["fire"]
     special_bytes = fields["special"]
@@ -371,15 +371,21 @@ def decode_row_metadata(meta: bytearray, rows: int):
     # Contiguous, batch-wide copies are cheaper than allocating two arrays
     # per agent; the slot IDs remain a borrowed view of this input frame.
     slots = fields["slot"]
-    fire = fire_bytes.astype(np.bool_)
-    special = special_bytes.astype(np.bool_)
-    allow = np.ones((rows, MASK_WIDTH), dtype=np.float32)
+    # Each wire flag has already been validated as 0 or 1. A bool view
+    # preserves the existing mask contract without copying two tiny arrays
+    # on every inference frame; the input wire storage lives through predict.
+    fire = fire_bytes.view(np.bool_)
+    special = special_bytes.view(np.bool_)
+    allow = (
+        np.ones((rows, MASK_WIDTH), dtype=np.float32)
+        if output_buffers is None else output_buffers.mask(rows)
+    )
     allow[:, 1:10:2] = fire
     allow[:, 10:15] = special
     return slots, fire, special, allow
 
 class InferenceOutputBuffers:
-    """Retain model output arrays across batches, not across model updates.
+    """Retain action and mask arrays across batches, not model-owned state.
 
     The binary protocol writes each completed frame before reading the next
     request. A per-worker buffer can therefore be reused without copying
@@ -390,6 +396,7 @@ class InferenceOutputBuffers:
         self.capacity = 0
         self.continuous = np.empty((0, CONTINUOUS), dtype="<f4")
         self.discrete = np.empty((0, DISCRETE), dtype=np.uint8)
+        self.allowed = np.empty((0, MASK_WIDTH), dtype="<f4")
         self.behavior = None
         self.action_growths = 0
         self.behavior_allocations = 0
@@ -401,6 +408,7 @@ class InferenceOutputBuffers:
             self.capacity = min(MAX_BATCH_ROWS, max(rows, max(16, self.capacity * 2)))
             self.continuous = np.empty((self.capacity, CONTINUOUS), dtype="<f4")
             self.discrete = np.empty((self.capacity, DISCRETE), dtype=np.uint8)
+            self.allowed = np.empty((self.capacity, MASK_WIDTH), dtype="<f4")
             if self.behavior is not None:
                 self.behavior = np.empty(
                     (self.capacity, CONTINUOUS * 2 + DISCRETE), dtype="<f4"
@@ -408,6 +416,15 @@ class InferenceOutputBuffers:
                 self.behavior_allocations += 1
             self.action_growths += 1
         return self.continuous[:rows], self.discrete[:rows]
+
+    def mask(self, rows):
+        if rows > self.capacity:
+            self.actions(rows)
+        mask = self.allowed[:rows]
+        # Every new frame must restore the unrestricted decisions, including
+        # when rows shrink. Masked fire/special columns are overwritten below.
+        mask.fill(1.0)
+        return mask
 
     def behavior_rows(self, rows, zero_nonlearner):
         if self.behavior is None:
@@ -648,7 +665,9 @@ def main() -> None:
         observation_storage, payload = read_reused(
             reader, observation_storage, rows * OBS_FLOATS * 4
         )
-        slots, fire, special, allowed = decode_row_metadata(meta, rows)
+        slots, fire, special, allowed = decode_row_metadata(
+            meta, rows, output_buffers
+        )
         observation = np.frombuffer(payload, dtype="<f4").reshape(
             (rows, OBS_FLOATS)
         )
