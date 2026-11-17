@@ -397,9 +397,20 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb) -> Value {
         let members: Vec<_> = squad.members.iter().copied()
             .filter(|id| owned || visible_ids.contains(id)).collect();
         if members.is_empty() { return None; }
+        // Gameplay and remote HUD read the SAME live command director and
+        // mutable source player preferences. No network-side squad state.
+        let command = view.commands.current_kind(owner)
+            .map(|kind| format!("{kind:?}"));
+        let permissions = view.player_authority.player_permissions(owner);
         Some(json!({
             "owner": owner, "side": squad.side, "owned": owned,
+            "controllable": owned && permissions.is_some_and(|p| p.can_accept_input),
             "members": members, "source_number": squad.source_hotkey_number,
+            "command": command,
+            "cease_fire": if owned { view.player_authority.player_cease_fire(owner) } else { None },
+            "chasing": if owned { Some(view.player_authority.player_should_chase(owner)) } else { None },
+            "shooting": if owned { view.player_authority.player_shooting_strategy(owner)
+                .map(|strategy| strategy.id) } else { None },
         }))
     }).collect();
     json!({
