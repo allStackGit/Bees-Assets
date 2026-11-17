@@ -30,7 +30,8 @@ from native_distributed_collection import (
     derive_hub_resource_plan,
 )
 from native_session_selection import publish_best_evaluated
-from native_curriculum import load_curriculum, selected_curriculum_run
+from native_curriculum import (load_curriculum, selected_curriculum_run,
+                               curriculum_stage_metrics)
 
 
 ATTEMPT = re.compile(r"round-(\d{5})-attempt-(\d{3})\Z")
@@ -575,7 +576,7 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
 
 
 def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None,
-                      best_evaluated=None, stopping=None):
+                      best_evaluated=None, stopping=None, recipe=None):
     evaluations = evaluations or {}
     world_steps = sum(record["rollout_metrics"]["successful_world_steps"]
                       for _, record in completed)
@@ -601,6 +602,10 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         else "local_rollout_wall_seconds"
     )
     fleet_window = measured_distributed_collection_windows(completed)
+    stage_report = (curriculum_stage_metrics(
+        recipe["run_config"], recipe["curriculum"], completed,
+        evaluations or {}, fleet_window,
+    ) if recipe is not None and "curriculum" in recipe else None)
     # An optimizer round cannot overlap its own collection window. Local
     # rollout wall seconds are directly measured; multi-machine collector
     # seconds overlap and are NEVER interchangeable with whole-fleet time.
@@ -672,6 +677,7 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
             "evaluated_rounds": best_evaluated["evaluated_rounds"],
         }} if best_evaluated is not None else {}),
         "completed_rounds": len(completed), "target_rounds": target,
+        **({"curriculum": stage_report} if stage_report is not None else {}),
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
         "total_optimizer_input_steps": optimizer_steps,
@@ -1113,6 +1119,7 @@ def main():
             raise ValueError("early-stop meaningful improvement exceeds available holdout episodes")
         atomic_json(root / "session-progress.json", progress_snapshot(
             completed, args.rounds, evaluations, baseline_holdout, best_evaluated, stop_state,
+            recipe,
         ))
         if len(completed) > args.rounds:
             raise ValueError("target round count is smaller than the completed checkpoint lineage")
@@ -1371,6 +1378,7 @@ def main():
             # artifact rather than collecting another training round.
             atomic_json(root / "session-progress.json", progress_snapshot(
                 completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
+                recipe=recipe,
             ))
             if "evaluation_config" in recipe and evaluation_due(index, args.rounds, recipe):
                 check_native_input_dependencies(recipe)
@@ -1383,7 +1391,7 @@ def main():
             )
             snapshot = progress_snapshot(
                 completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
-                stop_state,
+                stop_state, recipe,
             )
             atomic_json(root / "session-progress.json", snapshot)
             print(json.dumps({"kind": "native_training_session_round_complete",
