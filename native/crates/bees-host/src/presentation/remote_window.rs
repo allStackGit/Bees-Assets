@@ -54,6 +54,8 @@ struct PeerClient {
     side: i32,
     state: Option<Value>,
     notice: String,
+    held_fire_begin_request: Option<u64>,
+    held_fire_rejected: bool,
     metrics: WireCounts,
 }
 
@@ -81,6 +83,7 @@ impl PeerClient {
             written: 0, queued_bytes: 0, next_request: 1,
             authenticated: false, connected: true, side,
             state: None, notice: "Authenticating with native host".to_owned(),
+            held_fire_begin_request: None, held_fire_rejected: false,
             metrics: WireCounts::default(),
         })
     }
@@ -138,9 +141,20 @@ impl PeerClient {
                 }
                 Some("input_result") => {
                     self.metrics.acknowledgments += 1;
-                    self.notice = format!("Order {}: {}",
-                        message["request_id"].as_u64().unwrap_or(0),
-                        message["feedback"].as_str().unwrap_or("host acknowledgment"));
+                    let request = message["request_id"].as_u64().unwrap_or(0);
+                    let feedback = message["feedback"].as_str()
+                        .unwrap_or("host acknowledgment");
+                    if self.held_fire_begin_request == Some(request) {
+                        self.held_fire_begin_request = None;
+                        // A rejected Begin must not cause 30 new attempts
+                        // per second while the player holds J. Require one
+                        // release before requesting a different gesture.
+                        if message["processed"] != true ||
+                            feedback == "No selected weapons accepted held fire" {
+                            self.held_fire_rejected = true;
+                        }
+                    }
+                    self.notice = format!("Order {request}: {feedback}");
                 }
                 _ => return Err(invalid("unexpected native multiplayer protocol message").into()),
             }
@@ -228,8 +242,13 @@ impl PeerClient {
             "episode_revision": state["episode_revision"],
             "action": action,
         });
+        let begin_request = (event == "Begin").then_some(self.next_request);
         self.send_action(json!({"kind": "held_fire", "input": input}),
-            format!("Manual fire: {event}"))
+            format!("Manual fire: {event}"))?;
+        if let Some(request) = begin_request {
+            self.held_fire_begin_request = Some(request);
+        }
+        Ok(())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -692,6 +711,13 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             } else {break;}
         }
         peer.poll()?;
+        if peer.held_fire_rejected {
+            held_fire_active = false;
+            held_fire_target = None;
+        }
+        if !window.is_key_down(Key::J) {
+            peer.held_fire_rejected = false;
+        }
         if let Some(state)=peer.state.as_ref() {
             let cue=state["campaign_dialogue"]["sequence"].as_u64().map(|sequence|(
                 state["world_id"].as_u64().unwrap_or(0),
@@ -832,7 +858,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     .then_some((x as i32,y as i32))
             });
             let holding=window.is_active() && window.is_key_down(Key::J)
-                && mode.is_none() && within.is_some() &&
+                && !peer.held_fire_rejected && mode.is_none() && within.is_some() &&
                 (held_fire_active || !selected.is_empty());
             match (held_fire_active,holding,within) {
                 (false,true,Some((x,y))) => {
