@@ -194,7 +194,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_sim_queue_work_share','training_sim_queue_pressure',
             'training_sim_cpu_underuse_evidence',
             'training_sim_idle_tail_work_share',
-            'training_sim_imbalance_pressure',
+            'training_sim_tail_skew_pressure',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
             'pipeline_optimization_dominant','pipeline_remote_wait_work_share',
@@ -644,7 +644,7 @@ class BottleneckEvidence {
                 add('training_sim_idle_tail_work_share',idleTailShare);
             const idleTailOwner=metrics.training_sim_idle_tail_ratio_owner?.value;
             // Observed last reply-to-barrier time for idle physical
-            // processes supports an imbalanced shard layout diagnosis,
+            // processes supports a delayed-final-reply (tail-skew) diagnosis,
             // not a measurement of actual OS/device idle percentage.
             const simImbalanceCritical=idleTailShare!==null&&
                 idleTailShare>=0.20&&simDominant&&
@@ -725,7 +725,7 @@ class BottleneckEvidence {
                 if(sustained(x=>x.courierSimQueue))
                     add('training_sim_queue_pressure',1,'count');
                 if(sustained(x=>x.courierSimImbalance))
-                    add('training_sim_imbalance_pressure',1,'count');
+                    add('training_sim_tail_skew_pressure',1,'count');
                 if(sustained(x=>x.courierSimQueue)&&
                     sustained(x=>x.resourceHints?.cpuIdle))
                     add('training_sim_cpu_underuse_evidence',1,'count');
