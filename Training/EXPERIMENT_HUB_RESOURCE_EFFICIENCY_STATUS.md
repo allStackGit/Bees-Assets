@@ -161,8 +161,9 @@ each unchanged-layout GPU optimizer update instead of reallocating and
 deep-copying their tensor storage. The capture still copies every live
 tensor and current optimizer-group setting on the optimizer stream;
 structural changes allocate fresh backups. Numerical or other optimizer
-failures restore the exact prior policy, Adam state, LR and update count
-and invalidate staging; checkpoint save, evaluation and CPU role changes
+failures restore the prior policy, Adam state and update count and
+invalidate staging; numerical recovery then applies the existing
+learning-rate halving rule. Checkpoint save, evaluation and CPU role changes
 release the private GPU rollback cache and keep portable original state.
 PyTorch CPU semantic checks covered cold/initialized/stable Adam layouts,
 learning-rate changes, no live-storage aliasing, exact policy+optimizer
