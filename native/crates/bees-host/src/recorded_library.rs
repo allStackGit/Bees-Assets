@@ -11,11 +11,16 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+pub(super) enum RecordedSource {
+    QuickBattle(PathBuf),
+    CampaignSetup(PathBuf),
+}
+
 pub(super) struct RecordedBattle {
     pub title: String,
     pub status: String,
     pub game_id: String,
-    pub source_config: PathBuf,
+    pub source: RecordedSource,
     pub trace: PathBuf,
     number: u64,
 }
@@ -86,16 +91,80 @@ pub(super) fn list(
                 title: format!("{title}  |  Battle {number:06}"),
                 status: "  [Recorded]".to_owned(),
                 game_id: game_id.clone(),
-                source_config: config.clone(),
+                source: RecordedSource::QuickBattle(config.clone()),
                 trace,
                 number,
             });
         }
     }
+    sort_recent(&mut clips);
+    Ok(clips)
+}
+
+/// Career battles use the original campaign ledger and therefore cannot
+/// replay by loading today's edited fleet. The adjacent immutable setup is
+/// the only permitted source of the battle-start fleet projection.
+pub(super) fn list_campaigns(
+    save_root: &Path, campaigns: impl Iterator<Item = (String, String)>,
+) -> io::Result<Vec<RecordedBattle>> {
+    let mut clips = Vec::new();
+    for (game_id, title) in campaigns {
+        let directory = save_root.join("campaigns").join(&game_id);
+        match fs::symlink_metadata(&directory) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+            Ok(meta) if !meta.file_type().is_dir() => continue,
+            Ok(_) => {},
+        }
+        for entry in fs::read_dir(&directory)? {
+            let entry = entry?;
+            let Some(name) = entry.file_name().to_str().map(str::to_owned)
+            else { continue };
+            let Some(number) = name.strip_prefix("battle-")
+                .filter(|suffix| suffix.len() == 4 &&
+                    suffix.bytes().all(|ch| ch.is_ascii_digit()))
+                .and_then(|suffix| suffix.parse::<u64>().ok())
+            else { continue };
+            if !entry.file_type()?.is_dir() { continue; }
+            let run = entry.path().join("run");
+            if !fs::symlink_metadata(&run)
+                .is_ok_and(|meta| meta.file_type().is_dir()) { continue; }
+            let trace = run.join("player-inputs.jsonl");
+            if !complete_trace(&trace).unwrap_or(false) { continue; }
+
+            let setup = entry.path().join("campaign-replay-setup.json");
+            let Ok(metadata) = fs::symlink_metadata(&setup) else { continue };
+            if !metadata.file_type().is_file() || metadata.len() > 256 * 1024 {
+                continue;
+            }
+            let Ok(bytes) = fs::read(&setup) else { continue };
+            let Ok(stored): Result<Value, _> = serde_json::from_slice(&bytes) else {
+                continue;
+            };
+            if stored["schema_version"] != 1 ||
+                stored["kind"] != "native_campaign_replay_setup" { continue; }
+            let Some(mission_id) = stored["mission_id"].as_str()
+                .filter(|name| !name.is_empty() && name.len() <= 80)
+            else { continue };
+            clips.push(RecordedBattle {
+                title: format!("{title}: {mission_id}  |  Battle {number:04}"),
+                status: "  [Career replay]".to_owned(),
+                // Replays are ordinary game outputs, not campaign receipts.
+                game_id: format!("campaign-replay-{game_id}"),
+                source: RecordedSource::CampaignSetup(setup),
+                trace,
+                number,
+            });
+        }
+    }
+    sort_recent(&mut clips);
+    Ok(clips)
+}
+
+pub(super) fn sort_recent(clips: &mut Vec<RecordedBattle>) {
     // Recent launches first, deterministic within one game and across OSes.
     clips.sort_by(|left,right|
         right.number.cmp(&left.number)
             .then_with(|| left.game_id.cmp(&right.game_id)));
     clips.truncate(256);
-    Ok(clips)
 }
