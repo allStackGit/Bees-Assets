@@ -2084,6 +2084,18 @@ struct NativeLibraryGame {
     config: PathBuf,
 }
 
+/// Local player settings contain only the server endpoint and a path to a
+/// separately protected token file; no credentials belong to the shared
+/// package or library JSON.
+#[cfg(feature = "client")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSavedNetwork {
+    address: String,
+    side: i32,
+    token_file: PathBuf,
+}
+
 /// A single Unity-free home screen, not another simulation/campaign mode.
 /// Each selected campaign uses the existing verified career ledger, shop,
 /// mission unlocks and battle picker; quick battles use run_session directly.
@@ -2136,6 +2148,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
     }));
     let mut selected = 0_usize;
     let mut launch_failed = false;
+    let saved_network = save_root.join("multiplayer.json");
     loop {
         let status = library.games.iter().zip(&games).map(|(item, config)| {
             if item.kind != "campaign" {
@@ -2149,29 +2162,61 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 .filter(|mission| progress.completed(&mission.id)).count();
             Ok::<String, Box<dyn Error>>(format!("  [Career {complete}/{total}]"))
         }).collect::<Result<Vec<_>,_>>()?;
-        let rows = library.games.iter().enumerate().map(|(index, item)| {
+        let mut rows = library.games.iter().enumerate().map(|(index, item)| {
             BattleMenuRow {
                 title: item.title.as_str(), status: status[index].as_str(),
                 unlocked: true,
             }
         }).collect::<Vec<_>>();
+        // Multiplayer configuration belongs to the player's save directory.
+        // It is discovered on each return to the library, so a user can
+        // change servers without rebuilding or editing the game package.
+        if saved_network.is_file() {
+            rows.push(BattleMenuRow {
+                title: "Join Multiplayer", status: "  [Saved server]",
+                unlocked: true,
+            });
+        }
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
-        let item = &library.games[index];
+        let remote = index == library.games.len();
+        let (game_id, game_kind, game_title) = if remote {
+            ("multiplayer", "remote", "Join Multiplayer")
+        } else {
+            let item = &library.games[index];
+            (item.id.as_str(), item.kind.as_str(), item.title.as_str())
+        };
         let launch_started = Instant::now();
         println!("{}", json!({
             "kind": "native_game_library_launch",
-            "game_id": item.id,
-            "game_kind": item.kind,
+            "game_id": game_id,
+            "game_kind": game_kind,
         }));
-        let result = if item.kind == "campaign" {
-            run_menu(&games[index], &save_root.join("campaigns").join(&item.id))
+        let result: Result<(), Box<dyn Error>> = if remote {
+            (|| {
+                let connection: NativeSavedNetwork =
+                    serde_json::from_slice(&fs::read(&saved_network)?)?;
+                if connection.address.is_empty() || connection.address.len() > 255 {
+                    return Err(invalid("invalid saved native multiplayer endpoint").into());
+                }
+                let token_file = if connection.token_file.is_absolute() {
+                    connection.token_file
+                } else {
+                    save_root.join(connection.token_file)
+                };
+                bees_host::presentation::connect_remote(
+                    &connection.address, &token_file, connection.side,
+                )
+            })()
+        } else if game_kind == "campaign" {
+            run_menu(&games[index], &save_root.join("campaigns").join(game_id))
         } else {
-            let root = save_root.join("battles").join(&item.id);
+            let root = save_root.join("battles").join(game_id);
             fs::create_dir_all(&root)?;
             let mut number = 0_u64;
             let run_root = loop {
-                number = number.checked_add(1).ok_or_else(|| invalid("quick battle count exhausted"))?;
+                number = number.checked_add(1)
+                    .ok_or_else(|| invalid("quick battle count exhausted"))?;
                 let dir = root.join(format!("battle-{number:06}"));
                 match fs::create_dir(&dir) {
                     Ok(()) => break dir.join("run"),
@@ -2184,13 +2229,13 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         launch_failed = result.is_err();
         println!("{}", json!({
             "kind": "native_game_library_return",
-            "game_id": item.id,
-            "game_kind": item.kind,
+            "game_id": game_id,
+            "game_kind": game_kind,
             "success": !launch_failed,
             "session_wall_seconds": launch_started.elapsed().as_secs_f64(),
         }));
         if let Err(error) = result {
-            eprintln!("Could not open {}: {error}", item.title);
+            eprintln!("Could not open {game_title}: {error}");
         }
     }
     Ok(())
