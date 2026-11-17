@@ -150,25 +150,14 @@ impl PeerClient {
         Ok(())
     }
 
-    fn order(&mut self, selected: &[i64], kind: &str, fields: Value) -> Result<(), Box<dyn Error>> {
-        if !self.authenticated || !self.connected { return Err(invalid("not connected to native host").into()); }
-        let Some(state) = self.state.as_ref() else { return Err(invalid("native battle has no snapshot").into()) };
-        let owners: Vec<_> = state["squads"].as_array().into_iter().flatten()
-            .filter(|squad| squad["owned"] == true &&
-                squad["controllable"] == true &&
-                selected.contains(&squad["owner"]["squad_id"].as_i64().unwrap_or(-1)))
-            .map(|squad| squad["owner"].clone()).collect();
-        if owners.is_empty() { return Err(invalid("select a live controllable friendly squad").into()); }
-        let mut input = json!({
-            "world_id": state["world_id"],
-            "episode_revision": state["episode_revision"],
-            "squads": owners,
-        });
-        let object = fields.as_object().ok_or_else(|| invalid("invalid native action fields"))?;
-        for (key, value) in object { input[key] = value.clone(); }
+    fn send_action(&mut self, action: Value, notice: String) -> Result<(), Box<dyn Error>> {
+        if !self.authenticated || !self.connected {
+            return Err(invalid("not connected to native host").into());
+        }
+        let next = self.next_request.checked_add(1)
+            .ok_or_else(|| invalid("native multiplayer request ID exhausted"))?;
         let mut packet = serde_json::to_vec(&json!({
-            "kind": "input", "request_id": self.next_request,
-            "action": {"kind": kind, "input": input},
+            "kind": "input", "request_id": self.next_request, "action": action,
         }))?;
         packet.push(b'\n');
         if self.queued_bytes + packet.len() > MAX_OUTGOING {
@@ -176,12 +165,71 @@ impl PeerClient {
         }
         self.queued_bytes += packet.len();
         self.queued.push_back(packet);
-        self.next_request = self.next_request.checked_add(1)
-            .ok_or_else(|| invalid("native multiplayer request ID exhausted"))?;
+        self.next_request = next;
         self.metrics.orders_sent += 1;
-        self.notice = format!("Sent {kind} for {} selected squads", owners.len());
+        self.notice = notice;
         self.flush()?;
         Ok(())
+    }
+
+    fn selected_owners(state: &Value, selected: &[i64]) -> Vec<Value> {
+        state["squads"].as_array().into_iter().flatten()
+            .filter(|squad| squad["owned"] == true &&
+                squad["controllable"] == true &&
+                selected.contains(&squad["owner"]["squad_id"].as_i64().unwrap_or(-1)))
+            .map(|squad| squad["owner"].clone()).collect()
+    }
+
+    fn order(&mut self, selected: &[i64], kind: &str, fields: Value) -> Result<(), Box<dyn Error>> {
+        let state = self.state.as_ref().ok_or_else(||
+            invalid("native battle has no snapshot"))?;
+        let owners = Self::selected_owners(state, selected);
+        if owners.is_empty() {
+            return Err(invalid("select a live controllable friendly squad").into());
+        }
+        let count = owners.len();
+        let mut input = json!({
+            "world_id": state["world_id"],
+            "episode_revision": state["episode_revision"],
+            "squads": owners,
+        });
+        let object = fields.as_object().ok_or_else(|| invalid("invalid native action fields"))?;
+        for (key, value) in object { input[key] = value.clone(); }
+        self.send_action(json!({"kind": kind, "input": input}),
+            format!("Sent {kind} for {count} selected squads"))
+    }
+
+    /// Only the Begin packet contains the original squad lifetimes.
+    /// The server subsequently owns that gesture until End or disconnect;
+    /// Aim never retransmits a new selection into the shared CombatWorld.
+    fn held_fire(&mut self, selected: &[i64], event: &str, target: Option<Vec2>)
+        -> Result<(), Box<dyn Error>>
+    {
+        let state = self.state.as_ref().ok_or_else(||
+            invalid("native battle has no snapshot"))?;
+        let action = match event {
+            "Begin" => {
+                let owners = Self::selected_owners(state, selected);
+                if owners.is_empty() {
+                    return Err(invalid("select a controllable squad to begin held fire").into());
+                }
+                let point = target.ok_or_else(|| invalid("held fire requires a target"))?;
+                json!({"Begin": {"squads": owners, "target": {"x": point.x, "y": point.y}}})
+            },
+            "Aim" => {
+                let point = target.ok_or_else(|| invalid("held fire requires a target"))?;
+                json!({"Aim": {"target": {"x": point.x, "y": point.y}}})
+            },
+            "End" => json!("End"),
+            _ => return Err(invalid("unknown held-fire gesture").into()),
+        };
+        let input = json!({
+            "world_id": state["world_id"],
+            "episode_revision": state["episode_revision"],
+            "action": action,
+        });
+        self.send_action(json!({"kind": "held_fire", "input": input}),
+            format!("Manual fire: {event}"))
     }
 
     fn flush(&mut self) -> io::Result<()> {
