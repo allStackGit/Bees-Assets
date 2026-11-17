@@ -3113,7 +3113,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 actions.append(button('Cancel scheduled group',async()=>{
                     if(!confirm('Revoke future collector and GPU learner Starts for this group? The queued native jobs and their resource claims stay unchanged.'))return;
                     try {
-                        await action('hub/distributed/tinybrains/cancel-start-plan',{
+                        await action('hub/distributed/'+(courierGroup?'courier':'tinybrains')+'/cancel-start-plan',{
                             plan_id:scheduledGroup.id,confirm_cancel:true,
                         });
                         feedback('hub-job-message',
@@ -3126,7 +3126,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if(!confirm('Disarm this pending coordinated learner Start? '+
                         'The existing remote collector processes and all resource claims remain unchanged.'))return;
                     try{
-                        await action('hub/distributed/tinybrains/cancel-launch',{
+                        await action('hub/distributed/'+(courierGroup?'courier':'tinybrains')+'/cancel-launch',{
                             learner_job_id:j.id,confirm_cancel:true,
                         });
                         feedback('hub-job-message',
@@ -3158,7 +3158,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }));
             if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
-                !j.distributed_abort_requested_at&&groupWorkers.length>0&&
+                !unresolvedScheduledGroup&&!j.distributed_abort_requested_at&&
+                groupWorkers.length>0&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.lease_id&&worker.assigned_machine_id))
+                actions.append(button('Schedule Courier group when ready',async()=>{
+                    if(!confirm('Approve these original Courier PPO machine leases for one future group Start? '+
+                        'When every worker has a fresh lease and GPU proof, the Hub will authorize '+
+                        'all remote services in one transaction, then Start the learner only after '+
+                        'authenticated running receipts. Approval expires after 20 minutes, is '+
+                        'disarmed on coordinator restart, and never retries an uncertain native process.'))return;
+                    try {
+                        const plan=await action('hub/distributed/courier/schedule-start',{
+                            learner_job_id:j.id,
+                            expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_schedule:true,confirm_learner_start:true,
+                        });
+                        feedback('hub-job-message','Courier distributed group '+plan.status+
+                            '; no native process Starts until original resource proof is complete.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                }));
+            if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !unresolvedScheduledGroup&&!j.distributed_abort_requested_at&&groupWorkers.length>0&&
                 groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
                     !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
                 actions.append(button('Start Courier distributed group',async()=>{
