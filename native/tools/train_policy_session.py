@@ -690,7 +690,11 @@ def main():
     parser.add_argument("--bundle-receiver-listen",
                         help="start an authenticated native collector upload receiver on HOST:PORT; requires BEES_NATIVE_BUNDLE_TOKEN")
     parser.add_argument("--collector-input-outbox", type=Path,
-                        help="automatically export a portable verified input bundle per issued remote collector")
+                        help="automatically export one shared verified input archive for each issued round")
+    parser.add_argument("--hub-dispatch-plan", type=Path,
+                        help="opt-in machine/resource allocation and preapproved native Hub Start for each issued round")
+    parser.add_argument("--hub-dispatch-port", type=int, default=7148,
+                        help="loopback Experiment Hub operator API port (default: 7148)")
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="redistribute contiguous native arena windows conservatively between verified distributed rounds")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0,
@@ -753,6 +757,13 @@ def main():
         parser.error("--collector-input-outbox requires --distributed-plan and --bundle-inbox")
     if args.collector_input_outbox is not None and not args.collector_input_outbox.is_dir():
         parser.error("--collector-input-outbox must be an existing directory")
+    if args.hub_dispatch_plan is not None and (
+            args.distributed_plan is None or
+            args.bundle_receiver_listen is None or
+            args.collector_input_outbox is None):
+        parser.error("--hub-dispatch-plan requires distributed collection, a receiver and published collector inputs")
+    if not 1 <= args.hub_dispatch_port <= 65535:
+        parser.error("--hub-dispatch-port must be a valid TCP port")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds cannot be negative")
     if args.auto_balance_collectors and args.distributed_plan is None:
@@ -843,6 +854,8 @@ def main():
         read_plan(Path(recipe["distributed_plan"]["path"]))
         if args.auto_balance_collectors:
             recipe["auto_balance_collectors"] = True
+        if args.hub_dispatch_plan is not None:
+            recipe["hub_dispatch_plan"] = pinned(args.hub_dispatch_plan)
     if args.evaluation_run_config is not None:
         recipe["evaluation_config"] = pinned(args.evaluation_run_config)
         recipe["evaluation_side"] = args.evaluation_side
@@ -1054,6 +1067,28 @@ def main():
                         }, sort_keys=True), flush=True)
                 if receiver is not None:
                     receiver.activate(orders, prepared_inputs)
+                if "hub_dispatch_plan" in recipe:
+                    pinned_plan = recipe["hub_dispatch_plan"]
+                    if file_sha256(Path(pinned_plan["path"])) != pinned_plan["sha256"]:
+                        raise ValueError("approved native Hub machine/resource dispatch plan changed")
+                    node = shutil.which("node")
+                    if node is None:
+                        raise ValueError("Node.js is required for native Experiment Hub round dispatch")
+                    bridge = Path(__file__).resolve().parents[2] / (
+                        "Training/experiment_hub_native_round_dispatch.js"
+                    )
+                    dispatched = subprocess.run([
+                        node, str(bridge), "--orders", str(order_path),
+                        "--plan", pinned_plan["path"],
+                        "--port", str(args.hub_dispatch_port),
+                    ], check=True, capture_output=True, text=True, timeout=120)
+                    for line in dispatched.stdout.splitlines():
+                        report = json.loads(line)
+                        if (report.get("kind") != "native_hub_collection_round_dispatched" or
+                                report.get("round") != index or
+                                report.get("orders_sha256") != file_sha256(order_path)):
+                            raise ValueError("Hub did not confirm the exact native round dispatch")
+                        print(json.dumps(report, sort_keys=True), flush=True)
                 print(json.dumps({"kind": "native_distributed_collection_orders_ready",
                                   "round": index, "orders": str(order_path),
                                   "jobs": orders["jobs"]}), flush=True)
