@@ -3284,6 +3284,14 @@ class ExperimentHub {
         learner.distributed_abort_requested_at??=now();
         learner.status_reason='Courier distributed startup aborted; stopping native remote lineages and retaining uncertain leases.';
         this.reconcileDistributedAborts(next);
+        const scheduled=(next.distributed_group_plans||[]).find(plan=>
+            plan.kind==='courier'&&plan.learner_job_id===learner.id&&
+            ['pending','needs_review'].includes(plan.status));
+        if(scheduled) {
+            scheduled.status='disarmed';
+            scheduled.reason='Courier distributed group abandoned before its native Start.';
+            scheduled.resolved_at=now();
+        }
         const pending=(next.distributed_launch_plans||[]).find(plan=>
             plan.kind==='courier'&&plan.learner_job_id===learner.id&&
             plan.status==='pending');
