@@ -921,7 +921,7 @@ quick battles, including **Hold the Beehive**: an authored 110-second
 survival defense against two genuine deferred enemy waves (35s, 70s).
 **Build Fleet Skirmish** is also available in the native game library,
 including packaged custom libraries. Pick either player faction or two
-local commanders, then independently choose 1, 2, 4, 8 or 12 ships per
+local commanders, then independently choose 1, 2, 4, 8, 16, 32 or 64 ships per
 side and open, classic, flanking-cover or dense-cover terrain. Cover is
 made of the real source-authored obstacle prefabs; its collisions, health,
 visibility and navigation all use the same native CombatWorld as training.
@@ -929,6 +929,12 @@ This uses verified native squad cloning and the same physical
 Level, real AI commands and player controls as any other game. Each
 custom battle saves its starting scene and replay configuration alongside
 its input trace; completed games appear under **Watch Recorded Battles**.
+**Benchmark Fleet Simulation** uses the identical saved scene with real
+scripted opponents on both sides, runs it without a graphical window,
+and displays actual world steps per execution second. The complete
+sampled CPU/physics, navigation, and throughput counters remain in the
+numbered `battles/fleet-benchmark/battle-NNNNNN/run/rollout-summary.json`
+file for comparison across machine allocations and fleet sizes.
 No Unity, editor, authoring script or separate simulation is involved.
 With `--library` the packager copies that authored library's
 campaign configs, mission runs and native scene dependencies into the

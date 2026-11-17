@@ -2480,9 +2480,15 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             title: "Build Fleet Skirmish",
             status: "  [Custom native fleets]", unlocked: true,
         });
+        let fleet_benchmark_index = rows.len();
+        rows.push(BattleMenuRow {
+            title: "Benchmark Fleet Simulation",
+            status: "  [Measured headless SPS]", unlocked: true,
+        });
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
         let creating_fleet = index == fleet_builder_index;
+        let benchmarking_fleet = index == fleet_benchmark_index;
         let trained_index = (index >= library.games.len() &&
             index < library.games.len() + trained.len())
             .then_some(index.saturating_sub(library.games.len()));
@@ -2494,6 +2500,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 usize::from(join_available) + usize::from(host_available);
         let (game_id, game_kind, game_title) = if creating_fleet {
             (fleet_builder::GAME_ID, "custom_fleet", "Build Fleet Skirmish")
+        } else if benchmarking_fleet {
+            ("fleet-benchmark", "benchmark", "Benchmark Fleet Simulation")
         } else if watching {
             ("recordings", "recording_library", "Watch Recorded Battles")
         } else if remote {
@@ -2528,6 +2536,22 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     "game_id": fleet_builder::GAME_ID,
                 }));
                 run_session(&source, true, true, Some(output), None, None, None)
+            })()
+        } else if benchmarking_fleet {
+            (|| {
+                let Some(choice) = fleet_builder::choose_benchmark()? else {
+                    return Ok::<(), Box<dyn Error>>(());
+                };
+                let output = new_library_battle_output(save_root, "fleet-benchmark")?;
+                let parent = output.parent().ok_or_else(||
+                    invalid("native benchmark has no archive directory"))?;
+                let source = fleet_builder::archive(parent, choice)?;
+                // The same physical RunConfig enters the headless path.
+                // No window, model worker, invented result or independent
+                // training simulator is involved in this measurement.
+                run_session(&source, false, false, Some(output.clone()),
+                    None, None, None)?;
+                fleet_builder::show_benchmark_result(&output)
             })()
         } else if watching {
             (|| {

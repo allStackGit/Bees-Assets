@@ -5,7 +5,7 @@
 //! operation, then run the ordinary native Level and replay pipeline.
 
 use std::error::Error;
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -19,7 +19,7 @@ use super::RunConfig;
 
 const SOURCE_SCENE: &str = include_str!("../../../examples/native-two-player.scene.json");
 const SOURCE_RUN: &str = include_str!("../../../examples/native-two-player.run.json");
-const FLEET_SIZES: [usize; 5] = [1, 2, 4, 8, 12];
+const FLEET_SIZES: [usize; 7] = [1, 2, 4, 8, 16, 32, 64];
 pub(super) const GAME_ID: &str = "fleet-skirmish";
 
 #[derive(Clone, Copy)]
@@ -31,6 +31,7 @@ pub(super) struct FleetChoice {
     player_side: Option<i32>,
     fleet_sizes: [usize; 2],
     terrain: Terrain,
+    ai_both: bool,
 }
 
 fn invalid(message: &'static str) -> io::Error {
@@ -53,7 +54,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     Ok(choose_terrain()?.map(|terrain| FleetChoice {
         player_side: match mode { 0 => Some(1), 1 => Some(2), _ => None },
-        fleet_sizes, terrain,
+        fleet_sizes, terrain, ai_both: false,
     }))
 }
 
@@ -62,7 +63,16 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
 pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     Ok(choose_terrain()?.map(|terrain| FleetChoice {
-        player_side: None, fleet_sizes, terrain,
+        player_side: None, fleet_sizes, terrain, ai_both: false,
+    }))
+}
+
+/// The actual headless native runner measures steps/s and wall time with
+/// exactly the same collision, command and ship code used in windowed play.
+pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> {
+    let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
+    Ok(choose_terrain()?.map(|terrain| FleetChoice {
+        player_side: None, fleet_sizes, terrain, ai_both: true,
     }))
 }
 
@@ -108,11 +118,68 @@ fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
 /// Reuse the existing source collider prefab, not an approximate visual
 /// barrier. Both live game and training share its authentic collision and
 /// navigation behavior through NativeLevelLayout.
+/// Keep the original authored hull at (0,0), then admit newly cloned
+/// ships in deterministic near-first grid order. Eight columns and nine
+/// rows fit up to 64 independent physical squads per faction without
+/// crossing map center or the authored +/-100 vertical map bounds.
+fn fleet_offsets(side: usize, count: usize) -> Vec<[f32; 2]> {
+    let columns = if side == 0 { -4_i32..=3 } else { -3_i32..=4 };
+    let mut positions = (-4_i32..=4).flat_map(|row|
+        columns.clone().filter_map(move |column|
+            (row != 0 || column != 0).then_some((column, row))
+        )
+    ).collect::<Vec<_>>();
+    positions.sort_unstable_by_key(|&(column, row)|
+        (column * column + row * row, row.abs(), column.abs(), row, column)
+    );
+    let mut offsets = vec![[0.0, 0.0]];
+    offsets.extend(positions.into_iter().take(count.saturating_sub(1))
+        .map(|(x, y)| [x as f32 * 12.0, y as f32 * 18.0]));
+    offsets
+}
+
 fn cover_box(id: i64, position: [f32; 2]) -> NativePlacedStaticBox {
     NativePlacedStaticBox {
         entity_id: id, prefab_name: "Box".to_owned(),
         position, rotation_degrees: 0.0, local_corners: None,
     }
+}
+
+/// The unmodified native headless runner writes the authoritative timing
+/// and physics counters. Show those exact measurements in the game menu,
+/// while keeping the full JSON analysis artifact in the numbered save.
+pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>> {
+    let file = run_dir.join("rollout-summary.json");
+    let summary: Value = serde_json::from_slice(&fs::read(&file)?)?;
+    let metrics = &summary["throughput"];
+    let sps = metrics["world_steps_per_execution_second"].as_f64()
+        .ok_or_else(|| invalid("native benchmark omitted measured SPS"))?;
+    let steps = metrics["successful_world_steps"].as_u64()
+        .ok_or_else(|| invalid("native benchmark omitted executed steps"))?;
+    let wall = metrics["execution_wall_seconds"].as_f64()
+        .ok_or_else(|| invalid("native benchmark omitted execution time"))?;
+    if !sps.is_finite() || !wall.is_finite() || wall <= 0.0 ||
+        !summary["failed_window"].is_null() {
+        return Err(invalid("native benchmark has no complete valid measurement").into());
+    }
+    println!("{}", json!({
+        "kind": "native_fleet_benchmark_complete",
+        "world_steps": steps,
+        "world_steps_per_execution_second": sps,
+        "execution_wall_seconds": wall,
+        "summary": file,
+    }));
+    let labels = [
+        format!("Measured simulation: {sps:.1} steps/s"),
+        format!("Completed: {steps} world steps in {wall:.2}s"),
+        "Detailed timing and physics counters saved as rollout-summary.json".to_owned(),
+    ];
+    let rows = labels.iter().map(|title| BattleMenuRow {
+        title, status: "  [Native benchmark]", unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = 0_usize;
+    let _ = select_library(&rows, &mut selected, false)?;
+    Ok(())
 }
 
 fn write_json_new(path: &Path, value: &Value) -> Result<(), Box<dyn Error>> {
@@ -141,11 +208,18 @@ pub(super) fn archive(
     for squad in squads {
         let side = squad["side"].as_i64()
             .ok_or_else(|| invalid("fleet template squad is missing its faction"))?;
-        let controlled = selected.player_side.is_none_or(|player| player == side);
+        let controlled = !selected.ai_both &&
+            selected.player_side.is_none_or(|player| player == side);
         squad["user_controlled"] = json!(controlled);
         squad["can_accept_input"] = json!(controlled);
     }
-    scene["local_player_side"] = json!(selected.player_side.unwrap_or(2));
+    if selected.ai_both {
+        scene.as_object_mut().ok_or_else(||
+            invalid("fleet source scene must be a JSON object"))?
+            .remove("local_player_side");
+    } else {
+        scene["local_player_side"] = json!(selected.player_side.unwrap_or(2));
+    }
     scene["level_name"] = json!(format!(
         "Fleet Skirmish: {} Bees vs {} Humans",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
@@ -153,6 +227,10 @@ pub(super) fn archive(
 
     let mut cloned = NativeLevelLayout::default();
     let mut squad_ids = [vec![101_i64], vec![102_i64]];
+    let offsets = [
+        fleet_offsets(0, selected.fleet_sizes[0]),
+        fleet_offsets(1, selected.fleet_sizes[1]),
+    ];
     for side in 0..2_usize {
         for index in 1..selected.fleet_sizes[side] {
             // New identities occupy disjoint faction ranges well beyond all
@@ -161,13 +239,11 @@ pub(super) fn archive(
             let side_base = (side as i64 + 1) * 100;
             let new_squad = 2_000 + side_base + index as i64;
             let new_ship = 10_000 + side_base + index as i64;
-            let row = ((index + 1) / 2) as f32;
-            let sign = if index % 2 == 1 { 1.0 } else { -1.0 };
             cloned.clone_squads.push(NativeSquadClone {
                 source_squad_item_id: 101 + side as i64,
                 new_squad_item_id: new_squad,
                 ship_ids: vec![new_ship],
-                by: [0.0, sign * row * 15.0],
+                by: offsets[side][index],
             });
             squad_ids[side].push(new_squad);
         }
@@ -179,10 +255,13 @@ pub(super) fn archive(
     }
     let cover = match selected.terrain {
         Terrain::Open | Terrain::Original => &[][..],
-        Terrain::Cover => &[[-24.0, 45.0], [24.0, -45.0]][..],
+        // Keep all cover in the map's central no-spawn lane. Native
+        // 64-ship fleets occupy x<=-39 and x>=39 respectively; prefab
+        // half-width is 25 and never overlaps a fresh ship by design.
+        Terrain::Cover => &[[0.0, 52.0], [0.0, -52.0]][..],
         Terrain::DenseCover => &[
-            [-24.0, -42.0], [-24.0, 42.0],
-            [24.0, -42.0], [24.0, 42.0],
+            [0.0, -75.0], [0.0, -20.0],
+            [0.0, 35.0], [0.0, 90.0],
         ][..],
     };
     cloned.add_static_boxes.extend(cover.iter().enumerate().map(|(index, &position)|
@@ -193,28 +272,41 @@ pub(super) fn archive(
     run["run_id"] = json!(format!(
         "native-fleet-{}v{}-{}",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
-        selected.player_side.map_or("local", |side|
-            if side == 1 { "bees" } else { "humans" }),
+        if selected.ai_both { "benchmark" }
+        else { selected.player_side.map_or("local", |side|
+            if side == 1 { "bees" } else { "humans" }) },
     ));
+    if selected.ai_both {
+        // A repeatable multi-CPU stress case: the runner does no GUI or
+        // Python inference here, and writes its normal sampled CPU/SPS
+        // measurements in run/rollout-summary.json.
+        run["max_rounds"] = json!(6_000);
+        // Repeat quick 1v1 eliminations rather than publishing a noisy
+        // millisecond-long sample. Large fleet fights naturally consume
+        // more of the shared fixed-round budget per episode.
+        run["episodes_per_world"] = json!(12);
+        run["rounds_per_window"] = json!(128);
+        run["timing_sample_period"] = json!(32);
+        run["status_every_rounds"] = json!(2_000);
+    }
     // AI squads use the ordinary source command director and target real
     // opposing SquadLifetimes, not an approximate trainer-only opponent.
     // Cycling through the entire opposite roster lets battle AI switch
     // targets as individual ships die; local-human squads own no script.
     let mut queues = Vec::new();
     for side in 0..2_usize {
-        if selected.player_side.is_none_or(|player| player == side as i32 + 1) {
+        if !selected.ai_both &&
+            selected.player_side.is_none_or(|player| player == side as i32 + 1)
+        {
             continue;
         }
-        for (&owner, position) in squad_ids[side].iter().zip(0..) {
+        for (position, &owner) in squad_ids[side].iter().enumerate() {
+            let start = offsets[side][position];
             let mut orders = vec![json!({
                 "kind": "move_to_point",
                 "destination": [
-                    if side == 0 { -10.0 } else { 10.0 },
-                    if position == 0 { 0.0 } else {
-                        let row = ((position + 1) / 2) as f32;
-                        let sign = if position % 2 == 1 { 1.0 } else { -1.0 };
-                        sign * row * 15.0
-                    },
+                    (if side == 0 { -30.0 } else { 30.0 }) + start[0] * 0.25,
+                    start[1],
                 ],
             })];
             orders.extend(squad_ids[1 - side].iter().map(|&enemy| json!({
