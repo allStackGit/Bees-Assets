@@ -440,7 +440,7 @@ function createTinyBrainsPersistentDockerAdapter({
         !Number.isSafeInteger(sourceTurns)||sourceTurns<1||sourceTurns>1000)
         throw Error('Original TinyBrains training map inventory is invalid.');
     const basename=map=>map.replace(/\\/g,'/').split('/').at(-1);
-    const isTwoPlayer=map=>map==='basic-tiny-2p'||/-2p(?:-|\\.|$)/.test(basename(map));
+    const isTwoPlayer=map=>map==='basic-tiny-2p'||/-2p(?:-|\.|$)/.test(basename(map));
     const isTiny=map=>map==='basic-tiny-2p'||/^tiny(?:wide)?-/.test(basename(map));
     const isSmall=map=>isTiny(map)||/^small(?:wide)?-/.test(basename(map));
     function approvedStage(name) {
@@ -722,7 +722,11 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
-                ...(stage?['--hub-stage-json',JSON.stringify(stage)]:[]),
+                ...(stage?['--hub-stage-file',
+                    JOBS_IN+'/'+context.job_id+'/hub-curriculum-stage.json',
+                    '--hub-stage-sha256',
+                    crypto.createHash('sha256').update(JSON.stringify(stage)+'\n')
+                        .digest('hex')]:[]),
                 ...(design_overrides===undefined?[]:
                     ['--hub-design-overrides-file',
                         JOBS_IN+'/'+context.job_id+'/hub-design-overrides.json',
