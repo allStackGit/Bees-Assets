@@ -35,9 +35,13 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
     the existing measured between-round balancer corrects for heterogeneous
     hardware after sustained real SPS measurements.
     """
-    entries = hub_plan.get("collectors") if isinstance(hub_plan, dict) else None
+    if not isinstance(hub_plan, dict):
+        raise ValueError("Hub resource plan must be a JSON object")
+    entries = hub_plan.get("collectors")
     if (hub_plan.get("kind") != "native_hub_round_dispatch" or
             hub_plan.get("schema_version") != 1 or
+            hub_plan.get("schedule_start") is not True or
+            hub_plan.get("confirm_unattended_start") is not True or
             not isinstance(entries, list) or not 2 <= len(entries) <= 16 or
             type(total_worlds) is not int or
             not len(entries) <= total_worlds <= len(entries) * 1024):
