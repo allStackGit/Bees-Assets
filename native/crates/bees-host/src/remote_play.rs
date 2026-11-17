@@ -266,18 +266,30 @@ impl NativeRemotePlay {
     /// are returned as canonical inputs before newly received player orders.
     pub fn poll(&mut self, world_id: WorldId, revision: u64,
                 live_controllers: &[u64]) -> Vec<RemoteOrder> {
-        let mut retired_no_live = 0;
+        let mut retired_no_live = Vec::new();
         self.held_fire.retain(|&peer, lease| {
             if lease.world_id != world_id || lease.episode_revision != revision {
                 return false;
             }
             if !live_controllers.contains(&peer) {
-                retired_no_live += 1;
+                retired_no_live.push(peer);
                 return false;
             }
             true
         });
-        self.measurements.held_fire_no_live_weapons_releases += retired_no_live;
+        self.measurements.held_fire_no_live_weapons_releases +=
+            retired_no_live.len() as u64;
+        // A still-connected player must learn that its final held weapon
+        // died. Otherwise it keeps sending Aim for a retired gesture.
+        // Episode turnover is already handled by the new-world snapshot.
+        for peer in &mut self.peers {
+            if retired_no_live.contains(&peer.id) && !peer.closed {
+                let _ = peer.enqueue(&json!({
+                    "kind": "held_fire_released",
+                    "reason": "no_live_weapons",
+                }));
+            }
+        }
         let mut orders = std::mem::take(&mut self.pending_releases);
         orders.retain(|order| order.action.episode() == (world_id, revision));
         // A connection flood must not monopolize the authoritative game
