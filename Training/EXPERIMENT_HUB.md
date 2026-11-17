@@ -1641,7 +1641,11 @@ round's fixed `rollout_workers * physics_workers`. Set
 GPU for a collector. GPU starts still require fresh agent hardware proof,
 and a scheduled GPU bundle expires if its safety conditions are not met.
 CPU-only groups also require live, qualified agents; this mechanism
-does not bypass the Hub's native process owner.
+does not bypass the Hub's native process owner. To explicitly permit
+the Hub's existing **CPU-only** coordinator-restart rearm policy,
+also set `resume_after_restart: true` and
+`confirm_restart_rearm: true` in the local plan. GPU batches cannot
+use that policy: an agent replacement requires fresh GPU approval.
 
 Start the learner on the **Hub host** with all three existing distributed
 transport options plus `--hub-dispatch-plan /private/hub-machines.json`
