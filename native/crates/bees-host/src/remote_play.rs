@@ -485,10 +485,10 @@ impl NativeRemotePlay {
         // Authoritative Begin rejection must revoke its provisional lease,
         // or one invalid squad selection could lock out all other clients.
         if self.held_fire.get(&peer_id).is_some_and(|lease|
-            lease.begin_request_id == request_id) &&
-            (result.is_err() ||
-             matches!(result, Ok("No selected weapons accepted held fire"))) {
+            (lease.begin_request_id == request_id && result.is_err()) ||
+            matches!(result, Err("No selected weapons accepted held fire"))) {
             self.held_fire.remove(&peer_id);
+            self.measurements.held_fire_rejected += 1;
         }
         let Some(peer) = self.peers.iter_mut()
             .find(|peer| peer.id == peer_id && peer.side.is_some()) else { return };
