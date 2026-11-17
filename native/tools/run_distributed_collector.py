@@ -17,6 +17,7 @@ from native_training_artifacts import (
 )
 from native_distributed_collection import verify_bundle
 from transfer_policy_bundle import export_bundle_archive
+from native_bundle_receiver import upload_bundle_archive
 
 
 def main():
@@ -34,9 +35,11 @@ def main():
     parser.add_argument("--stage-diagnostics", action="store_true")
     parser.add_argument("--archive-output", type=Path,
                         help="publish a portable verified tar for transfer to a different machine")
+    parser.add_argument("--upload-url",
+                        help="stream completed verified archive to a native learner bundle receiver")
     args = parser.parse_args()
-    if args.bundle_inbox is None and args.archive_output is None:
-        parser.error("supply a bundle inbox or --archive-output")
+    if args.bundle_inbox is None and args.archive_output is None and not args.upload_url:
+        parser.error("supply a bundle inbox, --archive-output or --upload-url")
 
     orders_path = args.orders.resolve(strict=True)
     orders = json.loads(orders_path.read_text(encoding="utf-8"))
@@ -111,14 +114,24 @@ def main():
         else inbox / job["bundle_directory"] / "rollout-bundle.json"
     )
     receipt = verify_bundle(receipt_path, job, orders)
-    if args.archive_output is not None:
-        archive = export_bundle_archive(
-            receipt_path, job, orders, args.archive_output,
-        )
+    if args.archive_output is not None or args.upload_url:
+        # Direct upload keeps its own immutable archive in the collector's
+        # already unique scratch attempt; no shared filesystem is required.
+        archive_path = args.archive_output or (parent / (job["bundle_directory"] + ".tar"))
+        archive = export_bundle_archive(receipt_path, job, orders, archive_path)
         print(json.dumps({
             "kind": "native_distributed_collector_archive_ready",
             "collector": job["id"], **archive,
         }), flush=True)
+        if args.upload_url:
+            delivered = upload_bundle_archive(
+                archive_path, job["id"], args.upload_url,
+                archive_sha256=archive["archive_sha256"],
+            )
+            print(json.dumps({
+                "kind": "native_distributed_collector_delivered",
+                "collector": job["id"], **delivered,
+            }, flush=True), flush=True)
     print(json.dumps({
         "kind": "native_distributed_collector_completed",
         "collector": job["id"], "round": orders["round"],
