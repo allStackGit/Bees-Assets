@@ -57,12 +57,6 @@ def publish(
         "manifest": str(manifest),
     })
     playable["run_id"] += "-" + game_id
-    # Hub training templates may size their physical worker pool with
-    # fields consumed by train_policy_round before invoking the host.
-    # They are allocation instructions, not RunConfig gameplay fields;
-    # the library now selects one authentic source Level explicitly.
-    for key in ("rollout_worlds", "rollout_world_start", "rollout_workers"):
-        playable.pop(key, None)
     config_path = round_directory / "latest-playable-run.json"
     receipt_path = round_directory / "latest-playable.json"
 

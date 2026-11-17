@@ -60,6 +60,12 @@ def _playable_run(source_path, selected):
             source.get("recover_outcome_journals") or
             "rollout_bundles" in source):
         raise ValueError("best native gameplay run requires a model-only source with physical Levels")
+    # The training round driver consumes these machine-allocation fields
+    # before launching Rust. They are not physical-game RunConfig fields,
+    # whose schema deliberately rejects unknown training instructions.
+    # Both standalone sessions and Experiment Hub use this sole publisher.
+    for field in ("rollout_worlds", "rollout_world_start", "rollout_workers"):
+        source.pop(field, None)
     base = source_path.parent
     def absolute(field):
         value = source.get(field)
