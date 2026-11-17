@@ -2123,19 +2123,39 @@ impl NativeSoftwareRenderer {
         if left >= right || top >= bottom { return false; }
         self.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels
             .saturating_add(((right - left) as u64).saturating_mul((bottom - top) as u64));
+        // Affine inverse transform: evaluate row origins once, then one
+        // scaled horizontal offset per pixel. The old raster path divided
+        // by scale for EVERY pixel, even for large transparent sprite areas.
+        // Compute offsets from the row origin (not accumulated additions)
+        // to avoid growing rounding error across wide source sprites.
+        let inv_scale = scale.recip();
+        let dx_left = (left as f32 + 0.5 - center_x) * inv_scale;
+        let du = cos * inv_scale;
+        let dv = sin * inv_scale;
         for y in top..bottom {
-            let dy = (y as f32 + 0.5 - center_y) / scale;
+            let dy = (y as f32 + 0.5 - center_y) * inv_scale;
+            let u_left = dx_left * cos - dy * sin + half_w;
+            let v_left = dx_left * sin + dy * cos + half_h;
+            let row = y * self.width;
             for x in left..right {
-                let dx = (x as f32 + 0.5 - center_x) / scale;
-                let u = (dx * cos - dy * sin + half_w).floor() as isize;
-                let v = (dx * sin + dy * cos + half_h).floor() as isize;
+                let delta = (x - left) as f32;
+                let u = (u_left + delta * du).floor() as isize;
+                let v = (v_left + delta * dv).floor() as isize;
                 if u < 0 || v < 0 || u as usize >= sprite.width || v as usize >= sprite.height { continue; }
                 let offset = (v as usize * sprite.width + u as usize) * 4;
                 let rgba = &sprite.pixels[offset..offset + 4];
                 let opacity = (f32::from(rgba[3]) * alpha).round() as u32;
                 if opacity == 0 { continue; }
-                let pixel = &mut self.pixels[y * self.width + x];
-                *pixel = text::blend(*pixel, [rgba[0], rgba[1], rgba[2]], opacity);
+                let pixel = &mut self.pixels[row + x];
+                // Most interior ship pixels are fully opaque. They should
+                // not pay three divide-by-255 blends per sprite layer.
+                *pixel = if opacity == 255 {
+                    (u32::from(rgba[0]) << 16) |
+                    (u32::from(rgba[1]) << 8) |
+                    u32::from(rgba[2])
+                } else {
+                    text::blend(*pixel, [rgba[0], rgba[1], rgba[2]], opacity)
+                };
             }
         }
         true
