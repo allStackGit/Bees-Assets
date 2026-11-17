@@ -424,7 +424,8 @@ fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) 
 
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
-    patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize) {
+    patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
+    held_fire_active: bool) {
     for scanline in pixels.chunks_exact_mut(WIDTH) {
         scanline[..FIELD].fill(0x080f1a);
         scanline[FIELD..].fill(0x152439);
@@ -557,14 +558,19 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         text::draw_at(pixels,WIDTH,30,30,"Waiting for authoritative battle state",2,TEXT);
     }
     if let Some(state)=state {draw_campaign_dialogue(pixels,state,dialogue_line);}
+    if held_fire_active {
+        text::draw_at(pixels,WIDTH,15,HEIGHT-44,
+            "MANUAL FIRE - release J to stop",1,[255,221,151]);
+    }
     let instructions=[
         "Left: select   Shift: add",
         "Drag: select multiple",
         "Right: move/attack/mine",
         "1-0 select Tab cycle A all",
-        "F fire  G guard  T attack",
-        "H hold  M mine Z cease fire",
-        "C chase  L lock  V speed",
+        "F point fire J held fire",
+        "G guard T attack H hold",
+        "M mine Z cease fire",
+        "C chase L lock V speed",
         "PgUp/Dn shooting (1-40)",
         "B beacon D detonate Q charge",
         "E heal W retreat P patrol",
@@ -675,6 +681,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut last_middle:Option<(f32,f32)>=None;
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
     let mut dialogue_line=0usize;
+    let mut held_fire_active=false;
+    let mut held_fire_cursor:Option<(i32,i32)>=None;
     let started=Instant::now();
 
     while window.is_open() {
@@ -709,6 +717,10 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     selected.clear();
                     mode=None;
                     patrol_start=None;
+                    // The server forgets this lease at the same authoritative
+                    // episode boundary; the client never aims old ships.
+                    held_fire_active=false;
+                    held_fire_cursor=None;
                 }
             }
             selected.retain(|id|state["squads"].as_array().into_iter().flatten()
@@ -815,6 +827,43 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 cam.constrain_to_map(map,FIELD,HEIGHT);
             }
             let mouse=window.get_mouse_pos(MouseMode::Discard);
+            let within=mouse.and_then(|(x,y)| {
+                (x>=0.0 && x<FIELD as f32 && y>=0.0 && y<HEIGHT as f32)
+                    .then_some((x as i32,y as i32))
+            });
+            let holding=window.is_active() && window.is_key_down(Key::J)
+                && mode.is_none() && within.is_some() &&
+                (held_fire_active || !selected.is_empty());
+            match (held_fire_active,holding,within) {
+                (false,true,Some((x,y))) => {
+                    let point=cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
+                    match peer.held_fire(&selected,"Begin",Some(point)) {
+                        Ok(()) => {
+                            held_fire_active=true;held_fire_cursor=Some((x,y));
+                        },
+                        Err(error) => peer.notice=error.to_string(),
+                    }
+                },
+                (true,true,Some((x,y))) if held_fire_cursor!=Some((x,y)) => {
+                    let point=cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
+                    match peer.held_fire(&selected,"Aim",Some(point)) {
+                        Ok(()) => held_fire_cursor=Some((x,y)),
+                        Err(error) => peer.notice=error.to_string(),
+                    }
+                },
+                (true,false,_) => {
+                    if let Err(error)=peer.held_fire(&selected,"End",None) {
+                        // If a bounded outgoing queue cannot transmit End,
+                        // close the socket to trigger the host's authoritative
+                        // disconnect release. Never leave a stale fire lock.
+                        let _=peer.socket.shutdown(std::net::Shutdown::Both);
+                        peer.connected=false;
+                        peer.notice=error.to_string();
+                    }
+                    held_fire_active=false;held_fire_cursor=None;
+                },
+                _ => {},
+            }
             let left=window.get_mouse_down(MouseButton::Left);
             let right=window.get_mouse_down(MouseButton::Right);
             let middle=window.get_mouse_down(MouseButton::Middle);
@@ -906,7 +955,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             camera=Some(cam);
         }
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
-            expected_side,mode,patrol_start,&peer.metrics,dialogue_line);
+            expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
+            held_fire_active);
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
     }
     println!("{}",json!({
