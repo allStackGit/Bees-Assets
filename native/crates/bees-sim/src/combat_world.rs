@@ -1192,6 +1192,16 @@ impl CombatWorld {
         if !self.physics.ships()[index].active {
             return Ok(());
         }
+        // Unity Beehive.Kill synchronously kills the ships already in its
+        // HealShips callback queue before the hive's own base.Kill. Ships
+        // still travelling to the HealCollider only reserved a capacity
+        // slot and survive. Capture the committed arrivals before clearing
+        // the hive's physical reservation table below.
+        let active_healers = if self.ships[index].ship_type == BEEHIVE_TYPE {
+            self.active_command_healers_at_beehive(self.ships[index].entity_id)
+        } else {
+            Vec::new()
+        };
         // Unity FireBarge.Kill creates the same explosion whether the
         // death came from its special, projectile fire or a collision.
         // Explicit self-detonations consume their bomb first, so this is
@@ -1266,6 +1276,24 @@ impl CombatWorld {
         self.latest_game_point_orders.remove(&victim_id);
         self.asteroid_navigation_refresh.remove(&victim_id);
         self.nearby_asteroids_by_ship.remove(&victim_id);
+        // Keep all cascading deaths inside the same real fixed tick and
+        // source kill attribution, with no fabricated projectile/HitEvent.
+        // The original hive is already retired from physics, so cyclic
+        // Beehive Heal commands cannot recursively kill it twice.
+        for healer_id in active_healers {
+            let Some(&healer_index) = self.ship_by_id.get(&healer_id) else {
+                continue;
+            };
+            if self.ships[healer_index].vitals.is_dead() ||
+                !self.physics.ships()[healer_index].active {
+                continue;
+            }
+            self.ships[healer_index].vitals.kill_without_hit();
+            self.reservations.target_health_changed(healer_id, 0);
+            self.retire_dead_ship_with_mode(
+                healer_index, killer_id, command_outcome_id, end_kill,
+            )?;
+        }
         self.events.push(CombatEvent::ShipDied {
             victim_id, killer_id, command_outcome_id, policy_binding_revision,
         });
