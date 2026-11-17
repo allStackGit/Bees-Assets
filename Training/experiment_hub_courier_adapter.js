@@ -252,7 +252,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             if(!worker||typeof worker!=='object'||Array.isArray(worker)||
                 Object.keys(worker).sort().join(',')!=='endpoint,maxShards'||
                 typeof worker.endpoint!=='string'||
-                !/^100\\.(?:\\d{1,3}\\.){2}\\d{1,3}:\\d{1,5}$/.test(worker.endpoint)||
+                !/^100\.(?:\d{1,3}\.){2}\d{1,3}:\d{1,5}$/.test(worker.endpoint)||
                 !Number.isSafeInteger(worker.maxShards)||worker.maxShards<1||
                 worker.maxShards>64)
                 throw Error('Courier remote worker requires a pinned Tailnet endpoint and 1–64 process ceiling.');
