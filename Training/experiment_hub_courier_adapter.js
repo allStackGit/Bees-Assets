@@ -21,8 +21,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version','training_sim_early_dispatches',
     'training_sim_prestaged_actions','training_sim_queue_peak_shards',
-    'training_sim_multiplexed_shards','training_sim_event_loop_processes',
-    'training_sim_child_os_threads',
+    'training_sim_multiplexed_shards','training_sim_child_os_threads',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
     'training_sim_topology_rejected','training_sim_topology_unavailable',
     'training_sim_topology_unverified','training_sim_topology_migrations',
@@ -109,7 +108,7 @@ function courierMetrics(source) {
     // contains every original measurement for full native history.
     const primary=name=>name.startsWith('training_gpu_placement_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
-        /^training_sim_(?:multiplexed_shards|event_loop_processes|child_os_threads)$/.test(name);
+        /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name);
     const entries=Object.entries(stats).sort(
         ([a],[b])=>Number(primary(b))-Number(primary(a)));
     for(const [name,value] of entries) {
