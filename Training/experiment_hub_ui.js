@@ -2276,6 +2276,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Sustained simulation pressure: '+enginePressure.slice(0,2).join('; ')+
                     (enginePressure.length>2?' (+'+(enginePressure.length-2)+' more)':'')
                 :'';
+            const queueOwner=measured.training_sim_queue_ratio_owner?.value;
+            const courierQueueSignal=job.project_id==='courier'&&
+                measured.training_sim_queue_pressure?.value===1&&
+                Number.isSafeInteger(queueOwner)&&queueOwner>=0&&queueOwner<64
+                ?' · Sustained simulation shard backlog at PPO lineage '+queueOwner+
+                    (measured.training_sim_parallelism_underuse_evidence?.value===1
+                        ?' with unused leased CPU capacity'
+                        :' (not evidence of hardware saturation)')
+                :'';
             const resourceFlags=[
                 ['pipeline_cpu_lease_pressure','CPU lease nearly occupied'],
                 ['pipeline_cpu_throttle_pressure','CPU quota throttling'],
@@ -2305,7 +2314,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
-                enginePressureSignal+resourceSignal+
+                enginePressureSignal+courierQueueSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2383,6 +2392,13 @@ document.addEventListener('DOMContentLoaded', () => {
         'simulation_batch_wall_seconds','simulation_last_child_gap_seconds',
         'simulation_prefetch_overlap_seconds',
         'simulation_prefetch_engine_steps','optimization_seconds','overlap_seconds',
+        'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
+        'training_sim_queue_max_seconds','training_sim_queue_peak_shards',
+        'training_sim_prestaged_actions',
+        'training_sim_prestage_max_seconds',
+        'training_sim_dispatch_copy_max_seconds',
+        'training_sim_queue_work_share','training_sim_queue_pressure',
+        'training_sim_parallelism_underuse_evidence',
         'training_sim_topology_trial_lineages','training_sim_topology_accepted',
         'training_sim_topology_rejected','training_sim_topology_unavailable',
         'training_sim_topology_unverified','training_sim_topology_migrations',
