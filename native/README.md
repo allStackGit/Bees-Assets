@@ -89,6 +89,35 @@ compatible MA-POCA Python environment remain required for training;
 a generated configuration alone is not evidence of policy quality or
 Unity gameplay parity.
 
+### Play against the actual trained native policy
+
+Training's verified `best-evaluated.json` and `latest-playable.json`
+receipts contain genuine checkpoints, but their default runs still use
+training-controlled factions. Publish a **human-versus-trained-policy**
+version of the identical scene with no exported Unity content:
+
+```sh
+python3 native/tools/challenge_policy.py \
+  native-new-model/session/best-evaluated.json challenge-best --player-side 1
+bees play challenge-best/challenge.run.json --output-dir challenge-best-play
+```
+
+`--player-side 2` lets a human command the opposite side. The publisher
+verifies the pinned checkpoint, manifest, selected run, and learner model
+slot before changing only player ownership and policy routing. It retains
+the physical hulls, physics, authored map, special weapons and native
+policy observations. The trained checkpoint is mapped to the *actual*
+remaining opponent team, rather than assuming the learner always trained
+on the same physical faction. It removes player-owned scripted orders
+and stale two-sided policy participant declarations. The game runs one
+authentic authored episode, not an unattended multi-round training batch.
+The new directory includes `challenge.scene.json`,
+`challenge.run.json`, `library.json`, and a provenance receipt.
+It requires the original verified manifest/checkpoint files to remain
+accessible; this does not copy or silently mutate trained weights.
+For the most recent checkpoint rather than highest fixed-holdout wins,
+pass `latest-playable.json` instead.
+
 In an ordinary native scene with exactly one player-controlled side, the
 local camera/input owner now follows that actual squad side, regardless
 of whether it is the historically named `bee_side` or `human_side`.
