@@ -8,7 +8,7 @@ are authoritative for resumption.
 
 import argparse
 from collections import defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import math
 import os
@@ -20,6 +20,7 @@ import sys
 import time
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256
+from native_bundle_receiver import BundleReceiver
 from native_distributed_collection import (
     read_plan, make_orders, wait_for_collections, balanced_round_plan,
 )
@@ -685,6 +686,8 @@ def main():
                         help="directory for verified collector bundles in distributed mode")
     parser.add_argument("--bundle-archive-inbox", type=Path,
                         help="optional directory receiving atomically uploaded *.tar collector archives")
+    parser.add_argument("--bundle-receiver-listen",
+                        help="start an authenticated native collector upload receiver on HOST:PORT; requires BEES_NATIVE_BUNDLE_TOKEN")
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="redistribute contiguous native arena windows conservatively between verified distributed rounds")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0,
@@ -741,6 +744,8 @@ def main():
         parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
     if args.bundle_archive_inbox is not None and args.distributed_plan is None:
         parser.error("--bundle-archive-inbox requires --distributed-plan and --bundle-inbox")
+    if args.bundle_receiver_listen is not None and args.distributed_plan is None:
+        parser.error("--bundle-receiver-listen requires --distributed-plan and --bundle-inbox")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds cannot be negative")
     if args.auto_balance_collectors and args.distributed_plan is None:
@@ -852,7 +857,18 @@ def main():
             parser.error("cannot resume a session without its output directory")
     else:
         root.mkdir(parents=True, exist_ok=False)
-    with session_lock(root):
+    # Listener address and credentials are transport settings, not model
+    # lineage: a resumed session may bind a new machine or private port.
+    # The receiver is live only while this learner owns the session lock.
+    receiver_context = (
+        BundleReceiver(
+            args.bundle_receiver_listen, Path(recipe["bundle_inbox"]),
+            on_event=lambda kind, details: print(json.dumps({
+                "kind": kind, **details,
+            }), flush=True),
+        ) if args.bundle_receiver_listen is not None else nullcontext(None)
+    )
+    with session_lock(root), receiver_context as receiver:
         config_path = root / "session-config.json"
         if args.resume:
             previous = read_json(config_path)
@@ -980,6 +996,8 @@ def main():
                     root, index, seed_offset, allocation_plan,
                     run, next_checkpoint, next_manifest, args.learner_slot,
                 )
+                if receiver is not None:
+                    receiver.activate(orders)
                 print(json.dumps({"kind": "native_distributed_collection_orders_ready",
                                   "round": index, "orders": str(order_path),
                                   "jobs": orders["jobs"]}), flush=True)
@@ -994,6 +1012,8 @@ def main():
                         if "bundle_archive_inbox" in recipe else None
                     ),
                 )
+                if receiver is not None:
+                    receiver.deactivate()
                 # Only a newly published order yields a real end-to-end
                 # measurement. A restarted learner can collect receipts
                 # that arrived while it was offline; never divide those
