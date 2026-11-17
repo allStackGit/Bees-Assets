@@ -139,6 +139,10 @@ pub struct NativeSourceVision {
 /// inventory; commands query those same owners rather than a copied roster.
 pub struct NativePolicyOnlyMetadata {
     pub targeting_context: Option<bees_gameplay::squad_targeting::NativeTargetingContext>,
+    /// Transient caller identity for a verified remote player input. This is
+    /// never persisted, copied into a model observation, or used for physics.
+    /// It is set only around the synchronous host input dispatcher.
+    remote_player_side: Option<i32>,
     /// Exact Level.ActivateMining from the source scene; unavailable for
     /// older physical exports, never inferred from present asteroids.
     pub activate_mining: Option<bool>,
@@ -190,6 +194,13 @@ pub struct NativePolicyOnlyMetadata {
 }
 
 impl NativePolicyOnlyMetadata {
+    /// Temporarily select an authenticated peer's authored player side.
+    /// The host always clears this after the synchronous command completes.
+    /// Source squad permission and live movement ownership still gate input.
+    pub fn set_remote_player_side(&mut self, side: Option<i32>) {
+        self.remote_player_side = side;
+    }
+
     /// Interactive presentation may dedicate long-lived CPU path workers to
     /// this actual Level. The same CombatWorld still owns each job, route
     /// installation and physics; model-driven headless runs leave this off.
@@ -316,7 +327,7 @@ impl NativePolicyOnlyMetadata {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
         Ok(Self {
-            targeting_context: None, activate_mining: None,
+            targeting_context: None, remote_player_side: None, activate_mining: None,
             activate_fog_of_war: None, hivemind_active: None, hivemind_initial_delay_seconds: None,
             hivemind_starting_positions: None,
             hivemind_squads: HashMap::new(),
@@ -1142,8 +1153,9 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     }
 
     fn player_viewer_side(&self) -> Option<i32> {
-        self.targeting_context.filter(|source| source.has_player && source.user_side > 0)
-            .map(|source| source.user_side)
+        self.remote_player_side.or_else(|| self.targeting_context
+            .filter(|source| source.has_player && source.user_side > 0)
+            .map(|source| source.user_side))
     }
 
     fn player_fog_vision_radius(&self, ship_id: i64) -> Option<f32> {
