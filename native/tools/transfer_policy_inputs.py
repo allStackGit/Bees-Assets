@@ -136,7 +136,23 @@ class HashingReader:
 def export_inputs(orders_file, collector_id, run, trainer, checkpoint, manifest, destination):
     started = time.perf_counter()
     orders_path = Path(orders_file).resolve(strict=True)
-    orders, job = checked_order(orders_path, collector_id)
+    if collector_id == "all":
+        # All collectors in one issued round share source scenes and weights.
+        # One immutable archive avoids N duplicate disk copies and SHA scans.
+        document = json.loads(orders_path.read_text(encoding="utf-8"))
+        if (document.get("kind") != "native_distributed_collection_orders" or
+                document.get("schema_version") != 1 or
+                not isinstance(document.get("jobs"), list) or
+                not 1 <= len(document["jobs"]) <= 256):
+            raise ValueError("invalid issued native distributed collection round")
+        collector_ids = [job["id"] for job in document["jobs"]]
+        for identity in collector_ids:
+            checked_order(orders_path, identity)
+        job = None
+        orders = document
+    else:
+        orders, job = checked_order(orders_path, collector_id)
+        collector_ids = [collector_id]
     # The helper needs the exact original orders bytes in the tar, not a
     # second independently serialized work order.
     orders = dict(orders)
@@ -157,7 +173,10 @@ def export_inputs(orders_file, collector_id, run, trainer, checkpoint, manifest,
     metadata = {
         "kind": "native_collector_inputs", "schema_version": 1,
         "collector_id": collector_id,
-        "collection_id": job["collection_id"],
+        "collection_ids": {
+            item["id"]: item["collection_id"] for item in orders["jobs"]
+            if item["id"] in collector_ids
+        },
         "source_contract_sha256": contract,
         "input_checkpoint_sha256": orders["input_checkpoint_sha256"],
         "input_manifest_sha256": orders["input_manifest_sha256"],
@@ -196,7 +215,8 @@ def export_inputs(orders_file, collector_id, run, trainer, checkpoint, manifest,
             "wall_seconds": time.perf_counter() - started}
 
 
-def import_inputs(archive_path, destination, policy_worker, interpreter=None):
+def import_inputs(archive_path, destination, policy_worker, interpreter=None,
+                  collector_id=None):
     started = time.perf_counter()
     archive_path = Path(archive_path).resolve(strict=True)
     target = Path(destination).absolute()
@@ -272,9 +292,23 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None):
             if remaining:
                 raise ValueError("native collector input archive is missing source artifacts")
         orders_file = root / "orders.json"
-        orders, job = checked_order(orders_file, info.get("collector_id"))
-        if info.get("collection_id") != job["collection_id"]:
+        selected = collector_id or info.get("collector_id")
+        if selected == "all" or not isinstance(selected, str):
+            raise ValueError("shared collector input archive requires explicit collector identity")
+        orders, job = checked_order(orders_file, selected)
+        identities = info.get("collection_ids")
+        if (not isinstance(identities, dict) or
+                identities.get(selected) != job["collection_id"] or
+                (info.get("collector_id") != "all" and
+                 (info.get("collector_id") != selected or
+                  len(identities) != 1))):
             raise ValueError("native collector identity differs from its issued order")
+        if info.get("collector_id") == "all" and (
+            len(identities) != len(orders["jobs"]) or
+            any(identities.get(entry["id"]) != entry["collection_id"]
+                for entry in orders["jobs"])
+        ):
+            raise ValueError("shared collector archive differs from issued round")
         if file_sha256(root / "manifest.json") != orders["input_manifest_sha256"] or (
             file_sha256(root / "checkpoint.pt") != orders["input_checkpoint_sha256"]
         ):
@@ -346,7 +380,7 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None):
         root.rename(target)
         sync_directory(parent)
     return {
-        "kind": "native_collector_inputs_imported", "collector_id": info["collector_id"],
+        "kind": "native_collector_inputs_imported", "collector_id": selected,
         "directory": str(target), "source_contract_sha256": actual,
         "files": len(files), "source_bytes": total,
         "wall_seconds": time.perf_counter() - started,
@@ -358,7 +392,8 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     export = commands.add_parser("export")
     export.add_argument("--orders", required=True, type=Path)
-    export.add_argument("--collector-id", required=True)
+    export.add_argument("--collector-id", required=True,
+                        help="issued collector ID, or 'all' to share one archive per round")
     export.add_argument("--run-config", required=True, type=Path)
     export.add_argument("--trainer-config", required=True, type=Path)
     export.add_argument("--checkpoint", required=True, type=Path)
@@ -367,6 +402,8 @@ def main():
     imp = commands.add_parser("import")
     imp.add_argument("--archive", required=True, type=Path)
     imp.add_argument("--destination", required=True, type=Path)
+    imp.add_argument("--collector-id",
+                     help="required for archives shared by all issued collectors")
     imp.add_argument("--policy-worker", type=Path, default=Path(__file__).with_name("policy_worker.py"))
     imp.add_argument("--python")
     args = parser.parse_args()
@@ -376,7 +413,7 @@ def main():
                                args.model_manifest, args.archive)
     else:
         result = import_inputs(args.archive, args.destination,
-                               args.policy_worker, args.python)
+                               args.policy_worker, args.python, args.collector_id)
     print(json.dumps(result, sort_keys=True), flush=True)
 
 
