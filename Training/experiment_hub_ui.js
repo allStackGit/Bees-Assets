@@ -2328,7 +2328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
         'pipeline_timing_sample_count','rollout_engine_measured_work_share',
         'rollout_inference_measured_work_share',
-        ...Array.from({length:9},(_,i)=>'collector_'+i+'_turnaround_overhead_share'),
+        ...Array.from({length:17},(_,i)=>'collector_'+i+'_turnaround_overhead_share'),
         'engine_steps','engine_steps_per_second',
         'simulation_match_steps','simulation_match_steps_per_second',
         'ant_decisions',
@@ -2392,9 +2392,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_next_update',
-        // The TinyBrains learner contributes slot 0; up to eight remote
-        // workers contribute slots 1–8. Let the operator select every slot.
-        ...Array.from({length:9},(_,i)=>[
+        // The TinyBrains learner, local GPU collectors and up to eight
+        // network workers can occupy seventeen separately measured slots.
+        ...Array.from({length:17},(_,i)=>[
             'collector_'+i+'_ant_decisions',
             'collector_'+i+'_engine_steps',
             'collector_'+i+'_simulation_match_steps',
