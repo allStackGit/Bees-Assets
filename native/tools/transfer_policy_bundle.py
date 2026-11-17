@@ -228,27 +228,33 @@ def import_bundle_archive(archive_path, job, orders, inbox):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for command in ("export", "import"):
+    for command in ("export", "import", "upload"):
         sub = commands.add_parser(command)
         sub.add_argument("--orders", type=Path, required=True)
         sub.add_argument("--collector-id", required=True)
         sub.add_argument("--archive", type=Path, required=True)
         if command == "export":
             sub.add_argument("--receipt", type=Path, required=True)
-        else:
+        elif command == "import":
             sub.add_argument("--inbox", type=Path, required=True)
+        else:
+            sub.add_argument("--url", required=True,
+                             help="authenticated native learner bundle receiver")
     args = parser.parse_args()
     orders, job = checked_order(args.orders, args.collector_id)
-    result = (
-        export_bundle_archive(args.receipt, job, orders, args.archive)
-        if args.command == "export"
-        else import_bundle_archive(args.archive, job, orders, args.inbox)
-    )
-    print(json.dumps({
-        "kind": "native_rollout_archive_exported" if args.command == "export"
-                else "native_rollout_archive_imported",
-        **result,
-    }, sort_keys=True), flush=True)
+    if args.command == "export":
+        result = export_bundle_archive(args.receipt, job, orders, args.archive)
+        kind = "native_rollout_archive_exported"
+    elif args.command == "import":
+        result = import_bundle_archive(args.archive, job, orders, args.inbox)
+        kind = "native_rollout_archive_imported"
+    else:
+        # A Hub-managed collector can finish locally and independently
+        # upload its immutable bundle without spawning another simulator.
+        from native_bundle_receiver import upload_bundle_archive
+        result = upload_bundle_archive(args.archive, job["id"], args.url)
+        kind = "native_rollout_archive_uploaded"
+    print(json.dumps({"kind": kind, **result}, sort_keys=True), flush=True)
 
 
 if __name__ == "__main__":
