@@ -17,23 +17,25 @@ const SHA = /^[0-9a-f]{64}$/;
 const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const ROCM_UUID = /^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const SAFE_ARG = /^[A-Za-z0-9_./:@=+\-,]+$/;
+const safeLocalArg = value => typeof value === 'string' && value.length <= 1024 &&
+    (process.platform === 'win32' ? !/[\x00\r\n]/.test(value) : SAFE_ARG.test(value));
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 function trustedFile(file) {
-    if(typeof file !== 'string'||!path.isAbsolute(file)||!SAFE_ARG.test(file))
+    if(typeof file !== 'string'||!path.isAbsolute(file)||!safeLocalArg(file))
         throw Error('Native portable collector needs an absolute safe local file path.');
     const resolved=fs.realpathSync(file);
-    if(!fs.statSync(resolved).isFile()||!SAFE_ARG.test(resolved))
+    if(!fs.statSync(resolved).isFile()||!safeLocalArg(resolved))
         throw Error('Native portable collector executable/source was redirected.');
     return resolved;
 }
 
 function trustedDirectory(directory) {
     if(typeof directory!=='string'||!path.isAbsolute(directory)||
-        !SAFE_ARG.test(directory))
+        !safeLocalArg(directory))
         throw Error('Native portable collector needs an existing absolute private directory.');
     const resolved=fs.realpathSync(directory);
-    if(!fs.statSync(resolved).isDirectory()||!SAFE_ARG.test(resolved))
+    if(!fs.statSync(resolved).isDirectory()||!safeLocalArg(resolved))
         throw Error('Native portable collector directory was redirected.');
     return resolved;
 }
@@ -92,12 +94,12 @@ function createNativeBeesPortableCollectorAdapter({
     const gpuVerifier=trustedFile(path.join(__dirname,
         'experiment_hub_tinybrains_rocm_verify.py'));
     pinned.set(gpuVerifier,sha256(fs.readFileSync(gpuVerifier)));
-    // This machine-owned digest is the approved Hub configuration, not a
-    // substitute for the learner's immutable work-order/source contract.
+    // Hub identifies the portable collection *protocol*, while source
+    // contract, seed and World windows remain immutable job parameters.
+    // Different Windows/Linux worker paths and binary bytes are installed
+    // and verified independently on each machine before every launch.
     const configSha256=sha256(JSON.stringify([
-        PROJECT,'portable-collector-v1',executable,
-        ...pinned.values(),receiver,artifacts,scratch,credential,
-        rocr_gpu_uuids,
+        PROJECT,'portable-collector-v1',
     ]));
 
     function jobRoot(context) {
@@ -120,7 +122,8 @@ function createNativeBeesPortableCollectorAdapter({
         const metrics=receipt.rollout_metrics;
         if(receipt?.kind!=='native_rollout_bundle'||receipt.schema_version!==1||
             receipt.collection_id!==params?.collection_id||
-            receipt.source_run_contract_sha256!==params?.source_run_contract_sha256||
+            (receipt.source_run_contract_sha256!==params?.source_run_contract_sha256&&
+             receipt.source_run_contract_sha256_v1!==params?.source_run_contract_sha256)||
             receipt.seed_offset!==params?.seed_offset||
             receipt.rollout_worlds!==params?.rollout_worlds||
             receipt.rollout_processes!==params?.rollout_workers||
