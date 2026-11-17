@@ -172,6 +172,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         row.simulation_total_charged_memory_mb,'mb');
     add('simulation_ram_lease_headroom_mb',
         row.simulation_ram_lease_headroom_mb,'mb');
+    // Multiple local native engine pools share ONE Python parent charge.
+    // These values are measured against the same 75% RAM admission cap,
+    // not raw machine RAM utilization or a physical OOM diagnosis.
+    add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
+    add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
