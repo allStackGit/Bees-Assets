@@ -139,6 +139,14 @@ impl PeerClient {
                     self.state = Some(message);
                     self.metrics.snapshots += 1;
                 }
+                Some("held_fire_released") => {
+                    if message["reason"] != "no_live_weapons" {
+                        return Err(invalid("unknown authoritative held-fire release reason").into());
+                    }
+                    self.held_fire_begin_request = None;
+                    self.held_fire_rejected = true;
+                    self.notice = "Manual fire ended: no surviving held weapons".into();
+                }
                 Some("input_result") => {
                     self.metrics.acknowledgments += 1;
                     let request = message["request_id"].as_u64().unwrap_or(0);
