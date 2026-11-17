@@ -479,9 +479,15 @@ where
             return Ok(if target.is_some() { "No selected weapons accepted held fire" } else { "Manual fire released" });
         }
         self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
-        self.simulation.world_mut(index).expect("located world").state.update_held_fire(input.controller_id, target)
+        let world = self.simulation.world_mut(index).expect("located world");
+        world.state.update_held_fire(input.controller_id, target)
             .map_err(HostPlayerInputError::Gameplay)?;
-        Ok(if target.is_some() { "Manual fire active" } else { "Manual fire released" })
+        Ok(if target.is_none() { "Manual fire released" }
+            else if world.state.has_live_held_fire_for(input.controller_id) {
+                "Manual fire active"
+            } else {
+                "No selected weapons accepted held fire"
+            })
     }
 
     fn apply_player_fire(&mut self, input: &bees_gameplay::player_inputs::NativePlayerSquadFire,
