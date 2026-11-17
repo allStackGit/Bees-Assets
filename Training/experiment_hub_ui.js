@@ -5651,13 +5651,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // can seed a new model but is not a continuation of a Hub predecessor.
     function newLineageWarning(predecessor,parameters) {
         if(predecessor)return '';
-        return 'NO PREVIOUS JOB SELECTED.\\n\\n'+
+        return 'NO PREVIOUS JOB SELECTED.\n\n'+
             'This queues a NEW, independent training run. It will NOT resume '+
-            'training progress or optimizer state from an earlier Hub job.\\n'+
+            'training progress or optimizer state from an earlier Hub job.\n'+
             (parameters?.import_checkpoint!==undefined
-                ?'The saved checkpoint import can seed this new run, but does not continue that previous job.\\n'
+                ?'The saved checkpoint import can seed this new run, but does not continue that previous job.\n'
                 :'')+
-            '\\n';
+            '\n';
     }
     // Distributed groups are frozen and claimed atomically. The operator
     // chooses the CPU/RAM/GPU budgets; endpoint-to-machine identity is never
