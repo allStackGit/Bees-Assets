@@ -1420,8 +1420,8 @@ python native/tools/run_distributed_collector.py collection-round-00001.json hal
 
 ### Direct cross-machine native collection delivery
 
-Distributed native sessions can publish each issued collector's
-complete input artifacts and receive its finished rollouts over the
+Distributed native sessions can publish the issued round's shared
+model/scenario inputs and receive each collector's finished rollouts over the
 **same authenticated streaming HTTP endpoint**, without shared file mounts,
 manual checkpoint/archive copies or another training implementation. The learner owns the
 existing immutable round orders, validated collector receipts and checkpoint
@@ -1439,12 +1439,13 @@ python3 native/tools/train_policy_session.py run.json checkpoint.pt trainer.yaml
 ```
 
 The inbox and outbox must already exist. After issuing each round's
-`collection-round-NNNNN.json`, the learner exports immutable, per-machine
-`<bundle_directory>.inputs.tar` archives. Each includes the exact issued
-order, physical Level scenes, optional Stage assets, pinned model manifest,
-checkpoint and any other referenced model weights. Publication and resumed
-reuse are SHA-256 checked. The learner serves an archive only while its
-corresponding round is active.
+`collection-round-NNNNN.json`, the learner exports one immutable
+`collection-round-NNNNN.inputs.tar` archive shared by all assigned
+collectors. It contains the exact issued work order, physical Level
+scenes, Stage assets, pinned model manifest and all referenced model
+weights. This avoids one full checkpoint/archive copy per worker.
+Publication and resumed reuse are SHA-256 checked. Only collectors
+listed in the active round may download its source archive.
 
 On each allocated worker (with the matching native policy-worker source and
 compiled `policy_rollout` binary), run one command over a private tunnel or
@@ -1463,14 +1464,21 @@ python3 native/tools/run_portable_distributed_collector.py \
 `--input-url` also accepts HTTPS; a private tunnel must be configured if the
 learner listens on loopback. The remote worker retains failed attempts for
 diagnosis, but discards disposable input copies after a successfully
-delivered collector run. Input bundles require a **portable manifest** with
-relative model paths, such as `checkpoint.pt`; they refuse absolute model
-paths and accept only model files whose SHA-256 matches the manifest.
+delivered collector run. Old self-play manifests may refer to earlier
+round directories or Windows-only absolute paths; native collectors carry
+the original SHA-256-pinned manifest and load frozen model files by their
+verified content hash instead of interpreting those machine-specific paths.
+The original manifest digest still gates Rust's resident inference
+handshake. New MA-POCA learner rounds also snapshot frozen opponents
+beside their published manifest with content-addressed hard links
+(falling back to verified copies when linking is unavailable).
 The same `--collector-input-outbox` option is available from the native
 `bootstrap_policy.py --train-rounds` entry point. For disconnected sites,
-`transfer_policy_inputs.py export/import` and
-`run_portable_distributed_collector.py --input-archive` provide the
-identical verified work without an HTTP endpoint.
+`transfer_policy_inputs.py export --collector-id @round`,
+`transfer_policy_inputs.py import --collector-id <issued-id>` and
+`run_portable_distributed_collector.py --input-archive <archive> --collector-id <issued-id>`
+provide the identical verified work without an HTTP endpoint. Single
+collector input archives from earlier sessions remain importable.
 
 The listener accepts uploads **only after** that round's
 `collection-round-NNNNN.json` work order is issued, and publishes
