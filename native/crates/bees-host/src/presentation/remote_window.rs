@@ -444,13 +444,16 @@ fn squad_for_ship<'a>(state: &'a Value, id: i64, side: i64) -> Option<&'a Value>
         squad["members"].as_array().is_some_and(|members|
             members.iter().any(|member| member.as_i64() == Some(id))))
 }
-fn hit<'a>(state: &'a Value, camera: NativeCamera, x:i32,y:i32)
+fn hit<'a>(state: &'a Value, camera: NativeCamera, x:i32,y:i32,
+    visual: &RemoteVisual, fraction: f32)
     -> Option<(&'static str, &'a Value)> {
     let mut choice = None;
     let mut best = 18 * 18;
     for kind in ["ships", "obstacles"] {
         for item in state[kind].as_array().into_iter().flatten() {
-            let Some(point) = position(item) else { continue };
+            let Some(point) = visual.position(
+                item, if kind == "ships" {0} else {2}, fraction,
+            ) else { continue };
             let (sx,sy)=screen(camera, point);
             let distance = (sx-x).pow(2)+(sy-y).pow(2);
             if distance < best {
@@ -536,7 +539,7 @@ fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) 
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
-    held_fire_active: bool) {
+    held_fire_active: bool, visual: &RemoteVisual, fraction: f32) {
     for scanline in pixels.chunks_exact_mut(WIDTH) {
         scanline[..FIELD].fill(0x080f1a);
         scanline[FIELD..].fill(0x152439);
@@ -555,13 +558,15 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 screen(camera,corner).1-7,14,14,0xf7d68f);
         }
         for obj in state["obstacles"].as_array().into_iter().flatten() {
-            if let Some(point)=position(obj) {
+            if let Some(point)=visual.position(obj, 2, fraction) {
                 let coord=screen(camera,point);
                 circle(pixels,coord,5,if obj["mining"]==true {GOLD} else {0x7d92aa});
             }
         }
         for shot in state["projectiles"].as_array().into_iter().flatten() {
-            if let Some(point)=position(shot) { circle(pixels,screen(camera,point),2,0xf8d798); }
+            if let Some(point)=visual.position(shot, 1, fraction) {
+                circle(pixels,screen(camera,point),2,0xf8d798);
+            }
         }
         // Build selected ship membership once per rendered snapshot.
         // Avoid an O(ships * squads * members) roster scan on large battles.
@@ -571,14 +576,14 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             .flat_map(|s|s["members"].as_array().into_iter().flatten())
             .filter_map(Value::as_i64).collect();
         for ship in state["ships"].as_array().into_iter().flatten() {
-            let Some(point)=position(ship) else { continue };
+            let Some(point)=visual.position(ship, 0, fraction) else { continue };
             let center=screen(camera,point);
             // Side allegiance and command rights are separate. The host
             // includes AI-controlled friendly ships but never permits a
             // remote peer to select their unowned squad.
             let friendly=ship["friendly"]==true;
             let color=if friendly {GREEN} else {RED};
-            let angle=(ship["rotation"].as_f64().unwrap_or(0.0) as f32).to_radians();
+            let angle=visual.heading(ship, fraction).to_radians();
             let (sin,cos)=angle.sin_cos();
             let tip=(center.0+(cos*12.0) as i32,center.1-(sin*12.0) as i32);
             let left=(center.0+((-cos*7.0-sin*7.0) as i32),
@@ -712,7 +717,7 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
     x: i32,y: i32, mode: Option<TargetMode>) -> Result<(),Box<dyn Error>> {
     if x<0||x>=FIELD as i32||y<0||y>=HEIGHT as i32{return Ok(())}
     let Some(state)=peer.state.as_ref() else{return Ok(())};
-    let hit=hit(state,camera,x,y);
+    let hit=hit(state,camera,x,y,&peer.visual,peer.visual.fraction());
     let action=match (mode,hit) {
         (Some(TargetMode::Attack),Some(("ship",target))) |
         (None,Some(("ship",target))) if target["friendly"]==false => {
@@ -1036,7 +1041,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                             if (x-sx).abs()+(y-sy).abs()>8 {
                                 for ship in state["ships"].as_array().into_iter().flatten(){
                                     if ship["owned"]!=true {continue;}
-                                    let Some(p)=position(ship) else {continue;};
+                                    let Some(p)=peer.visual.position(
+                                        ship, 0, peer.visual.fraction(),
+                                    ) else {continue;};
                                     let (px,py)=screen(cam,p);
                                     if px>=sx.min(x)&&px<=sx.max(x)&&
                                         py>=sy.min(y)&&py<=sy.max(y) {
@@ -1049,7 +1056,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                                         }
                                     }
                                 }
-                            } else if let Some(("ship",ship))=hit(state,cam,x,y) {
+                            } else if let Some(("ship",ship))=hit(
+                                state,cam,x,y,&peer.visual,peer.visual.fraction(),
+                            ) {
                                 if ship["owned"]==true {
                                     if let Some(squad)=squad_for_ship(state,
                                         ship["id"].as_i64().unwrap_or(-1),
@@ -1076,9 +1085,13 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             last_left=left;last_right=right;
             camera=Some(cam);
         }
+        let visual_fraction = peer.visual.fraction();
+        if visual_fraction < 1.0 && !peer.visual.previous.is_empty() {
+            peer.metrics.interpolated_draw_frames += 1;
+        }
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
-            held_fire_active);
+            held_fire_active,&peer.visual,visual_fraction);
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
     }
     println!("{}",json!({
