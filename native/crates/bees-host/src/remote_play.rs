@@ -528,6 +528,18 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
         "viewer_side": viewer,
         "map_bounds": [[bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y]],
         "terminal_result": view.terminal_result.map(|result| result.winner_side),
+        // Present the SAME authored Level cue as local play. Story text is
+        // restricted to its campaign player's view, never broadcast to an
+        // independently authenticated opposing side.
+        "campaign_dialogue": if view.player_authority.player_viewer_side() == Some(side) {
+            view.campaign_dialogue.map(|(sequence, cue)| {
+                let lines: Vec<_> = crate::presentation::campaign_dialogue::lines(cue)
+                    .iter().map(|&(speaker, message)| json!({
+                        "speaker": speaker, "message": message
+                    })).collect();
+                json!({"sequence": sequence, "lines": lines})
+            })
+        } else { None },
         "ships": ships, "squads": squads, "obstacles": obstacles,
         "projectiles": projectiles,
     })
