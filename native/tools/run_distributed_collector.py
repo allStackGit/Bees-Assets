@@ -16,6 +16,7 @@ from native_training_artifacts import (
     check_learner, file_sha256, native_source_contract_sha256,
 )
 from native_distributed_collection import verify_bundle
+from transfer_policy_bundle import export_bundle_archive
 
 
 def main():
@@ -30,6 +31,8 @@ def main():
     parser.add_argument("bundle_inbox", type=Path)
     parser.add_argument("--rollout-binary", type=Path, required=True)
     parser.add_argument("--stage-diagnostics", action="store_true")
+    parser.add_argument("--archive-output", type=Path,
+                        help="publish a portable verified tar for transfer to a different machine")
     args = parser.parse_args()
 
     orders_path = args.orders.resolve(strict=True)
@@ -102,6 +105,14 @@ def main():
     subprocess.run(command, check=True)
     receipt_path = inbox / job["bundle_directory"] / "rollout-bundle.json"
     receipt = verify_bundle(receipt_path, job, orders)
+    if args.archive_output is not None:
+        archive = export_bundle_archive(
+            receipt_path, job, orders, args.archive_output,
+        )
+        print(json.dumps({
+            "kind": "native_distributed_collector_archive_ready",
+            "collector": job["id"], **archive,
+        }), flush=True)
     print(json.dumps({
         "kind": "native_distributed_collector_completed",
         "collector": job["id"], "round": orders["round"],
