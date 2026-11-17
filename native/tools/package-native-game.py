@@ -25,8 +25,62 @@ ROOT = Path(__file__).resolve().parents[2]
 AUDIO_SOURCE = ROOT / "native/crates/bees-host/src/game_audio.rs"
 CONVERTER = ROOT / "native/tools/import-ship-sprites.py"
 EXAMPLES = ("native-duel", "native-skirmish", "native-two-player")
-CAMPAIGN = "native-frontier-campaign"
-CAMPAIGN_RUNS = ("native-campaign-assault.run.json",)
+def package_game_library(destination: Path) -> None:
+    """Copy exactly the authored game's transitive JSON content dependencies.
+
+    The native game library is the one source of truth for development and
+    packaged play. Catalog victory routes and each Level's scene travel
+    alongside their run config. No Unity export or runtime source scan.
+    """
+    source_root = (ROOT / "native/examples").resolve(strict=True)
+    pending = [("native-library.json", "library")]
+    copied: dict[str, str] = {}
+    while pending:
+        relative, kind = pending.pop()
+        path = Path(relative)
+        if (not relative or path.is_absolute() or
+                any(part in ("", ".", "..") for part in path.parts) or
+                len(path.parts) > 8 or len(relative) > 255 or
+                "\\" in relative or ":" in relative or path.suffix != ".json"):
+            raise ValueError(f"Unsafe native game asset reference: {relative!r}")
+        label = path.as_posix()
+        if label in copied:
+            if copied[label] != kind:
+                raise ValueError(f"Native game asset has conflicting roles: {label}")
+            continue
+        if len(copied) >= 256:
+            raise ValueError("Native game library exceeds 256 source JSON files")
+        source = (source_root / path).resolve(strict=True)
+        if not source.is_relative_to(source_root) or not source.is_file():
+            raise ValueError(f"Native game asset escaped its content root: {label}")
+        data = json.loads(source.read_text(encoding="utf-8"))
+        if kind == "library":
+            if data.get("library_schema") != 1 or not isinstance(data.get("games"), list):
+                raise ValueError("Native game library schema is invalid")
+            for game in data["games"]:
+                if game["kind"] not in ("campaign", "battle"):
+                    raise ValueError("Unknown native game library item")
+                pending.append((str(path.parent / game["config"]),
+                                game["kind"] if game["kind"] == "campaign" else "run"))
+        elif kind == "campaign":
+            for battle in data["battles"]:
+                pending.append((str(path.parent / battle["config"]), "run"))
+                route = (battle.get("mission") or {}).get("on_victory")
+                if route is not None:
+                    pending.append((str(path.parent / route["config"]), "run"))
+        elif kind == "run":
+            # Native game release content is source-authored and operates
+            # independently of policy-worker Python or distributed training.
+            if data.get("model_manifest") or data.get("hivemind"):
+                raise ValueError(f"Native desktop release cannot package external model/Hub dependencies: {label}")
+            for level in data["levels"]:
+                pending.append((str(path.parent / level["scene"]), "scene"))
+        elif kind != "scene":
+            raise ValueError(f"Unknown native package asset kind: {kind}")
+        output = destination / path
+        output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, output)
+        copied[label] = kind
 
 
 def original_audio_paths() -> list[tuple[Path, Path]]:
@@ -180,16 +234,7 @@ def main() -> None:
             shutil.copy2(source, destination)
         examples = staging / "examples"
         examples.mkdir()
-        for name in EXAMPLES:
-            for ext in ("run.json", "scene.json"):
-                shutil.copy2(ROOT / "native/examples" / f"{name}.{ext}",
-                             examples / f"{name}.{ext}")
-        shutil.copy2(ROOT / "native/examples" / (CAMPAIGN + ".json"),
-                     examples / (CAMPAIGN + ".json"))
-        for name in CAMPAIGN_RUNS:
-            shutil.copy2(ROOT / "native/examples" / name, examples / name)
-        shutil.copy2(ROOT / "native/examples/native-library.json",
-                     examples / "native-library.json")
+        package_game_library(examples)
         # Remote controllers are optional Python/Tk tools. The actual
         # packaged native game and training core remain Python-free.
         clients = staging / "clients"
