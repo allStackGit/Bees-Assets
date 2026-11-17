@@ -965,13 +965,33 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
  /// UI's side or take an AI/policy squad by choosing its lifetime ID.
 fn remote_side_owns_input(host: &RolloutHost, action: &NativePlayerInput, side: i32) -> bool {
     if !(1..=2).contains(&side) { return false; }
-    let Some(owners) = action.squad_owners() else { return false };
-    if owners.is_empty() { return false; }
     let Some(world) = host.simulation().world(0) else { return false };
     let (id, revision) = action.episode();
     if world.id != id || world.episode_revision() != revision ||
         world.is_failed() || world.state.events.completed() ||
         world.state.events.is_failed() { return false; }
+    // Transport admission owns Aim/End's peer-specific gesture lease.
+    // This dispatcher remains the shared local/remote combat authority.
+    // Only Begin supplies new squad lifetimes requiring individual checks.
+    let owners = match action {
+        NativePlayerInput::HeldFire(input) => {
+            use bees_gameplay::player_inputs::NativeHeldFireAction;
+            match &input.action {
+                NativeHeldFireAction::Begin { squads, .. } => {
+                    // Do not take over a local player's existing gesture.
+                    if world.state.has_held_fire() { return false; }
+                    squads.as_slice()
+                },
+                NativeHeldFireAction::Aim { .. } | NativeHeldFireAction::End => {
+                    return true;
+                },
+            }
+        },
+        _ => match action.squad_owners() {
+            Some(owners) => owners, None => return false,
+        },
+    };
+    if owners.is_empty() { return false; }
     owners.iter().all(|&owner| {
         world.state.events.roster().get(owner).is_some_and(|squad|
             squad.side == side &&
@@ -3531,7 +3551,10 @@ fn run_battle(
         // command dispatcher as the local window and recorded input replay.
         // Process it at this fixed-tick boundary, never during physics.
         if let Some(server) = &mut remote {
-            for order in server.poll() {
+            let world = host.simulation().world(0).expect("remote play has one Level");
+            let world_id = world.id;
+            let revision = world.episode_revision();
+            for order in server.poll(world_id, revision) {
                 if !remote_side_owns_input(&host, &order.action, order.side) {
                     server.reply(order.peer, order.request_id,
                         Err("stale world, unauthorized side, or unavailable squad"));
@@ -3568,6 +3591,19 @@ fn run_battle(
             let tick = current.tick;
             let action = client.poll(current, client_bounds[client.selected_world()],
                 host.simulation().world_count(), client_step_interval_by_level[client.selected_world()]);
+            // One live weapon gesture is owned by the authoritative Level.
+            // Prevent the local window from silently stealing a remote
+            // controller's lease. Do this before recording the input trace.
+            let action = match action {
+                Ok(bees_host::client::NativeClientAction::Input {
+                    action: NativePlayerInput::HeldFire(_), step,
+                }) if remote.as_ref().is_some_and(|server| server.held_fire_active()) => {
+                    client.report_move("Remote player is holding manual fire");
+                    Ok(if step { bees_host::client::NativeClientAction::Step }
+                       else { bees_host::client::NativeClientAction::Wait })
+                },
+                other => other,
+            };
             if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input { action: input, .. })) = (&mut input_trace, &action) {
                 if let Err(error) = writeln!(trace, "{}", json!({
                         "kind": "player_input",
