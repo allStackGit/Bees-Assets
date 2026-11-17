@@ -3225,7 +3225,7 @@ fn run_battle(
         rounds += u64::from(counts.rounds);
         if let Some(server) = &mut remote {
             if let Some(world) = host.render_world(0) {
-                server.broadcast(&world);
+                server.broadcast(&world, client_bounds[0]);
             }
         }
         // An interactive remote host is real-time. Ordinary headless PPO
