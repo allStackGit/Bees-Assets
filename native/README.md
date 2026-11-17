@@ -314,6 +314,47 @@ The server rejects remote held-fire gestures until per-connection release
 semantics exist, but explicit point fire works. Up to four connections
 share **one** player-side authority.
 
+#### Independent two-player native battles
+
+The native Level can also accept **one independently authenticated player per
+side**, provided its authored scene explicitly marks the squads/ships of both
+sides `user_controlled` with `can_accept_input` enabled. No AI or
+policy-controlled unit is implicitly transferred to a remote player.
+`native/examples/native-two-player.run.json` and
+`native/examples/native-two-player.scene.json` supply a concrete native
+duel with two user-controlled opposing squads and no competing scripted
+orders. The host retains the normal local human-side window; either side
+can also connect remotely.
+
+Host (POSIX shell; use the equivalent environment variables on Windows):
+
+```sh
+export BEES_NATIVE_REMOTE_LISTEN=127.0.0.1:7284
+export BEES_NATIVE_REMOTE_SIDE_TOKENS="$(python3 -c 'import json,secrets; print(json.dumps({str(side):secrets.token_hex(24) for side in (1,2)}))')"
+# Save each side's token securely before starting the game.
+bees play native/examples/native-two-player.run.json --output-dir /path/to/new-run
+```
+
+Give each remote player **only their own token** from the host-side map.
+Each client sets `BEES_NATIVE_REMOTE_TOKEN` to that token and connects:
+
+```sh
+python3 native/tools/remote_play_window.py 127.0.0.1 7284
+# Terminal alternative: python3 native/tools/remote_play_client.py 127.0.0.1 7284
+```
+
+The host selects the player's side from the authenticated token and validates
+every submitted squad lifetime against the current Level, live player
+permissions, and episode identity. The other player's hidden positions are
+filtered from that recipient's snapshots using their own source fog radius;
+same-side peers share their side's state. Accepted remotely issued orders
+include their authenticated side in the existing native input trace, so
+replay runs through the same gameplay authority. Without separate side
+tokens the original one-token shared-side co-op behavior remains unchanged.
+The two-player example is a functional **native battle scenario**, not
+automated matchmaking, Internet-grade encrypted transport, or a port of
+every Unity multiplayer feature.
+
 The terminal client provides `status`, `ships`, `squads`,
 `select ID`, `move X Y`, `attack ID`, `guard ID`, `fire X Y`,
 `cease on|off`, `chase on|off`, `special` and other shared gameplay
@@ -325,8 +366,9 @@ rollout windows as quickly as possible. All network work is opt-in and
 off the training hot path. `run_final.remote_play` reports session
 connections, orders, frame and byte counts.
 
-This is **cooperative control of one host-owned player side**, not
-independent opposing-player authority, source-art graphical streaming,
+Single-token mode controls one host-owned player side. With explicitly
+authored opposing human squads and separate side tokens, the host also
+supports two-sided player commands, but not source-art graphical streaming,
 matchmaking or Internet-hardened multiplayer. Local play and headless simulation without
 these environment variables are unchanged. Remote commands accepted in
 a recorded interactive offline battle also enter the authoritative player
