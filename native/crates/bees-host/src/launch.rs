@@ -2105,6 +2105,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         games.push(config);
     }
     fs::create_dir_all(save_root)?;
+    println!("{}", json!({
+        "kind": "native_game_library_ready",
+        "games": library.games.len(),
+        "campaigns": library.games.iter().filter(|entry| entry.kind == "campaign").count(),
+        "battles": library.games.iter().filter(|entry| entry.kind == "battle").count(),
+    }));
     let mut selected = 0_usize;
     let mut launch_failed = false;
     loop {
@@ -2129,6 +2135,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
         let item = &library.games[index];
+        let launch_started = Instant::now();
+        println!("{}", json!({
+            "kind": "native_game_library_launch",
+            "game_id": item.id,
+            "game_kind": item.kind,
+        }));
         let result = if item.kind == "campaign" {
             run_menu(&games[index], &save_root.join("campaigns").join(&item.id))
         } else {
@@ -2147,6 +2159,13 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             run_session(&games[index], true, true, Some(run_root), None, None, None)
         };
         launch_failed = result.is_err();
+        println!("{}", json!({
+            "kind": "native_game_library_return",
+            "game_id": item.id,
+            "game_kind": item.kind,
+            "success": !launch_failed,
+            "session_wall_seconds": launch_started.elapsed().as_secs_f64(),
+        }));
         if let Err(error) = result {
             eprintln!("Could not open {}: {error}", item.title);
         }
