@@ -171,6 +171,58 @@ manifest passed their artifact checks. Training, native gameplay
 qualification and actual throughput still require an executable Rust
 runner and compatible ML-Agents Python runtime.
 
+### Play or host a trained checkpoint in the native game library
+
+The native session controller publishes `latest-playable.json` after
+each verified checkpoint, including sessions without a holdout suite.
+When fixed-reference evaluations are configured, `best-evaluated.json`
+selects the strongest verified holdout candidate separately. Both receipts
+identify a directly playable native `run.json`; neither copies model
+weights into the game.
+
+To show one or both in the normal native game library, create
+`trained-models.json` inside the **player save root**, not the packaged
+game library. For example:
+
+```json
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "my-policy-latest",
+      "title": "My Latest Native Policy",
+      "receipt": "/absolute/path/to/training/session/latest-playable.json"
+    },
+    {
+      "id": "my-policy-best",
+      "title": "My Best Holdout Policy",
+      "receipt": "/absolute/path/to/training/session/best-evaluated.json"
+    }
+  ]
+}
+```
+
+Then run `bees library native/examples/native-library.json --output-dir
+/path/to/player-save-root`. Each registered checkpoint appears alongside
+the existing campaigns and battles. It uses the same native physics,
+policy process and authored scene as headless training. On launch the
+library verifies the published run, manifest and checkpoint digests,
+rejects changed artifacts and creates an independent numbered battle
+output under the player's save root. The training session stays untouched.
+A registration can use a path relative to the save root or an absolute
+path to a training directory on another disk.
+
+The existing saved `multiplayer-host.json` may also name a trained model
+using `"game_id": "trained-my-policy-latest"` (or its registered ID
+prefixed with `trained-`). This starts the **same** authoritative,
+authenticated native multiplayer host using that checkpoint. Only
+authored scenes granting human player control permit multiplayer orders;
+registering a model never changes game permissions.
+
+The gallery is opt-in and read-only. Remove `trained-models.json` to
+return to the original game library. Neither the gallery nor the
+headless learner scans unrelated directories for model weights.
+
 Native Bees checkpoints from separate Experiment Hub jobs can now be
 independently ranked and continued, rather than selected from training
 reward metrics. Compile a native `policy_rollout` executable for the
