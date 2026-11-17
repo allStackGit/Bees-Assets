@@ -488,51 +488,75 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             }
         }
 
-        // Each worker claims an entire independently owned arena under a
-        // short mutex; it executes its full physics tick without holding
-        // the queue lock. One contiguous action Vec per world is reused
-        // across model rounds. Neither per-ship locks nor trace allocations
-        // are involved.
-        let pending = Mutex::new(self.worlds.iter_mut().zip(actions)
-            .enumerate().filter_map(|(index, (world, action))| {
-                if serialized_indices.binary_search(&index).is_ok() {
-                    return None;
-                }
-                action.as_ref().map(|action| (index, world, action.as_slice()))
-            }));
-        // Threads are retained across successive model inference rounds;
-        // only these small scheduling tasks are created each tick. Workers
-        // still claim independent arena borrows and never own model state.
-        // Catch any worker panic before the same all-world failure path
-        // invalidates trajectories.
-        let work = || {
-            let started = Instant::now();
-            let mut measurements = Measurements::default();
-            let mut failures = Vec::new();
-            let mut arenas = 0;
-            loop {
-                let next = pending.lock()
-                    .expect("native model-step arena queue poisoned").next();
-                let Some((index, world, actions)) = next else { break };
-                arenas += 1;
-                if let Err(error) = step_one(
-                    rules, dt, sample, world, actions, &mut measurements,
-                ) {
-                    failures.push((index, error));
-                }
-            }
-            (measurements, arenas, failures, started.elapsed())
-        };
         let pool = &self.physics_pool.as_ref()
             .expect("multi-worker physics pool initialized above").1;
-        let outcomes = pool.install(|| {
-            (0..workers).into_par_iter().map(|_| {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(&work))
-            }).collect::<Vec<_>>()
-        });
-        // Release claimed/unclaimed mutable references before modifying
-        // world state after a worker failure.
-        drop(pending);
+        // Common small-arena path: one live physics world per available
+        // worker. Rayon owns the bounded queue internally, so building a
+        // second Mutex-protected iterator would cause an unnecessary lock
+        // acquisition for every individual world on every inference tick.
+        // Preserve the exact same per-world result and panic handling.
+        let outcomes = if parallel_count == workers {
+            let jobs = self.worlds.iter_mut().zip(actions).enumerate()
+                .filter_map(|(index, (world, action))| {
+                    if serialized_indices.binary_search(&index).is_ok() {
+                        return None;
+                    }
+                    action.as_ref().map(|action|
+                        (index, world, action.as_slice()))
+                }).collect::<Vec<_>>();
+            pool.install(|| jobs.into_par_iter().map(|(index, world, action)| {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let started = Instant::now();
+                    let mut measurements = Measurements::default();
+                    let mut failures = Vec::new();
+                    if let Err(error) = step_one(
+                        rules, dt, sample, world, action, &mut measurements,
+                    ) {
+                        failures.push((index, error));
+                    }
+                    (measurements, 1usize, failures, started.elapsed())
+                }))
+            }).collect::<Vec<_>>())
+        } else {
+            // For larger, heterogeneous battles, dynamically claim
+            // independent arenas with one short mutex acquisition per
+            // world. Game physics and model decisions run outside it.
+            let pending = Mutex::new(self.worlds.iter_mut().zip(actions)
+                .enumerate().filter_map(|(index, (world, action))| {
+                    if serialized_indices.binary_search(&index).is_ok() {
+                        return None;
+                    }
+                    action.as_ref().map(|action|
+                        (index, world, action.as_slice()))
+                }));
+            let work = || {
+                let started = Instant::now();
+                let mut measurements = Measurements::default();
+                let mut failures = Vec::new();
+                let mut arenas = 0;
+                loop {
+                    let next = pending.lock()
+                        .expect("native model-step arena queue poisoned").next();
+                    let Some((index, world, actions)) = next else { break };
+                    arenas += 1;
+                    if let Err(error) = step_one(
+                        rules, dt, sample, world, actions, &mut measurements,
+                    ) {
+                        failures.push((index, error));
+                    }
+                }
+                (measurements, arenas, failures, started.elapsed())
+            };
+            let outcomes = pool.install(|| {
+                (0..workers).into_par_iter().map(|_| {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(&work))
+                }).collect::<Vec<_>>()
+            });
+            // Drop mutable arena borrows before the shared failure/report
+            // path can mark worlds or merge measurements.
+            drop(pending);
+            outcomes
+        };
         report.parallel_workers = workers;
         let mut panicked = false;
         for outcome in outcomes {
