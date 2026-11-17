@@ -832,8 +832,9 @@ existing release and creates `play-bees.sh` on Linux or
 battle-specific `play-native-duel`, `play-native-skirmish` and
 `play-native-two-player` launchers remain available.
 The primary launcher opens the selected Unity-free game library:
-the default includes the persistent Frontier fleet campaign and three
-quick battles. With `--library` it copies that authored library's
+the default includes the persistent Frontier fleet campaign and four
+quick battles, including **Hold the Beehive**: an authored 110-second
+survival defense against two genuine deferred enemy waves (35s, 70s). With `--library` it copies that authored library's
 campaign configs, mission runs and native scene dependencies into the
 same portable layout, without requiring Unity or the authoring Python
 tools on the playing machine. Optional quick-battle launchers are

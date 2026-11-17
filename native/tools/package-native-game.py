@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 AUDIO_SOURCE = ROOT / "native/crates/bees-host/src/game_audio.rs"
 CONVERTER = ROOT / "native/tools/import-ship-sprites.py"
-EXAMPLES = ("native-duel", "native-skirmish", "native-two-player")
+EXAMPLES = ("native-duel", "native-skirmish", "native-two-player", "native-wave-defense")
 def package_game_library(destination: Path, library: Path) -> None:
     """Copy exactly one selected native library and its transitive JSON.
 

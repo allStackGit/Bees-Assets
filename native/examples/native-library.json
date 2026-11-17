@@ -24,6 +24,12 @@
       "title": "Native Two-Player Duel",
       "kind": "battle",
       "config": "native-two-player.run.json"
+    },
+    {
+      "id": "wave-defense",
+      "title": "Hold the Beehive — Wave Defense",
+      "kind": "battle",
+      "config": "native-wave-defense.run.json"
     }
   ]
 }
