@@ -118,6 +118,42 @@ accessible; this does not copy or silently mutate trained weights.
 For the most recent checkpoint rather than highest fixed-holdout wins,
 pass `latest-playable.json` instead.
 
+### Build a native campaign from authored fleet battles
+
+Multiple new native scenarios can be published as one persistent game
+campaign using the existing (not duplicated) mission/fleet/career system:
+
+```sh
+python3 native/tools/author-battle.py mission-one \
+  --bees 21:4,18:1,4:1 --humans 13:3 --control bees --seed 11
+python3 native/tools/author-battle.py mission-two \
+  --bees 21:4,18:1,4:1 --humans 13:7 --control bees --seed 12
+python3 native/tools/author_campaign.py my-native-campaign \
+  --title "Native Fleet Campaign" \
+  --mission mission-one/battle.run.json \
+  --mission mission-two/battle.run.json \
+  --shop-types 21,18 --player-side 1
+bees library my-native-campaign/library.json --output-dir my-native-saves
+```
+
+Mission order controls prerequisites. The publisher retains the complete
+source-authored physical map, ships and scripted opponents, while assigning
+stable persistent SavedSquad identities. It rejects player fleet ID,
+ship-class or squad-membership changes between missions rather than
+quietly resetting a player's losses or purchased-ship authority. All
+missions publish real native combat/fleet statistics, bank mined minerals
+and preserve player casualties through the game's existing durable
+campaign ledger. The optional ship shop prices are taken from the
+physical authored MaxTSV, not a separate guessed economy; unlocks
+start after the first victory. The shop's source-backed hull types must
+already be in the stable player fleet, and the native campaign editor
+continues validating construction against every destination scene.
+Omit `--shop-types` for a campaign without ship purchases.
+The resulting self-contained directory holds a `campaign.json`, a
+`library.json`, independent mission scenes/run files and a source-hash
+provenance receipt. This is source authoring, not a separate campaign
+simulator or substitute for live runtime qualification.
+
 In an ordinary native scene with exactly one player-controlled side, the
 local camera/input owner now follows that actual squad side, regardless
 of whether it is the historically named `bee_side` or `human_side`.
