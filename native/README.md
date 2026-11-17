@@ -270,6 +270,53 @@ cargo build --release --manifest-path native/Cargo.toml -p bees-host --features 
 bees play /absolute/path/to/run.json --output-dir /path/to/new-run
 ```
 
+### Native cooperative remote play (one shared Level)
+
+The native host can accept up to four authenticated cooperative TCP
+controllers without creating a second gameplay simulation. Remote commands
+are the exact `NativePlayerInput` variants used by the local window and
+offline traces; the same authority and squad/episode checks apply. Use a
+long random token and bind to loopback unless a secure private network or
+SSH tunnel is available. This protocol uses **unencrypted TCP**: do not
+publish the port on the public Internet.
+
+With a built native `bees` executable and a real player-controlled Level,
+set these environment variables on the **host** (shown in POSIX shell;
+PowerShell can set the same names with `$env:`):
+
+```sh
+export BEES_NATIVE_REMOTE_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+export BEES_NATIVE_REMOTE_LISTEN=127.0.0.1:7284
+bees play /absolute/path/to/run.json --output-dir /path/to/new-run
+```
+
+From another terminal or machine, set the **same token** in that client's
+environment and connect to the host. For a remote machine, tunnel port
+7284 over SSH or use a private authenticated overlay network and bind the
+host to its private interface:
+
+```sh
+python3 native/tools/remote_play_client.py 127.0.0.1 7284
+```
+
+The terminal client provides `status`, `ships`, `squads`,
+`select ID`, `move X Y`, `attack ID`, `guard ID`, `fire X Y`,
+`cease on|off`, `chase on|off`, `special` and other shared gameplay
+orders. The host publishes current ship positions/health and their real
+squad lifetime identities, with enemy coordinates restricted by source
+player fog. A headless `bees run` host also supports this mode and paces
+its single Level at the authored game clock instead of executing training
+rollout windows as quickly as possible. All network work is opt-in and
+off the training hot path. `run_final.remote_play` reports session
+connections, orders, frame and byte counts.
+
+This is **cooperative control of one host-owned player side**, not
+independent opposing-player authority, graphical streaming, matchmaking or
+Internet-hardened multiplayer. Local play and headless simulation without
+these environment variables are unchanged. Remote commands accepted in
+a recorded interactive offline battle also enter the authoritative player
+input trace.
+
 The graphical client now plays the original Bees weapon, explosion and
 warp MP3 clips from the real live projectile and combat events, and the
 source Pluto/Neptune/Uranus intro and layered loops selected by each
