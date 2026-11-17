@@ -126,6 +126,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'remote_collectors_pending_after_local',
+        'remote_collector_co_limiting_count',
         'remote_collector_exposed_wait_owner',
         'local_gpu_collector_count',
         'local_gpu_direct_model_updates',
