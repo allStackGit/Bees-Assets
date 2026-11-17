@@ -24,6 +24,8 @@ def main():
     parser.add_argument("--actions", type=int, required=True)
     parser.add_argument("--hub-design-overrides-file", type=Path)
     parser.add_argument("--hub-design-overrides-sha256")
+    parser.add_argument("--hub-stage-file", type=Path)
+    parser.add_argument("--hub-stage-sha256")
     parser.add_argument("--device", choices=("cpu", "cuda", "dual"), default="cuda")
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
@@ -65,6 +67,23 @@ def main():
         design_overrides = json.loads(raw_overrides)
         if not isinstance(design_overrides, dict) or len(design_overrides) > 128:
             parser.error("Invalid frozen project Design overrides.")
+    stage = None
+    if (args.hub_stage_file is None) != (args.hub_stage_sha256 is None):
+        parser.error("Frozen curriculum manifest and SHA-256 must be supplied together.")
+    if args.hub_stage_file is not None:
+        stage_file = run / "hub-curriculum-stage.json"
+        if (args.hub_stage_file.resolve(strict=True) != stage_file
+                or stage_file.is_symlink() or not stage_file.is_file()
+                or stage_file.stat().st_size > 16384):
+            parser.error("Frozen TinyBrains curriculum must be the job-local manifest.")
+        raw_stage = stage_file.read_bytes()
+        if (not raw_stage or len(raw_stage) > 16384 or
+                hashlib.sha256(raw_stage).hexdigest() != args.hub_stage_sha256):
+            parser.error("Frozen TinyBrains curriculum differs from approved invocation.")
+        stage = json.loads(raw_stage)
+        if (not isinstance(stage, dict) or set(stage) != {"name", "maps", "max_turns"}
+                or not isinstance(stage["maps"], list) or not stage["maps"]):
+            parser.error("Invalid frozen TinyBrains curriculum.")
     checkpoint = run / "self-play" / "latest.pt"
     spec = run / "run-spec.json"
     gate = run / "gate-passed.json"
@@ -112,6 +131,8 @@ def main():
         "--max-ppo-updates", str(args.updates),
         *(["--hub-design-overrides", json.dumps(design_overrides, separators=(",", ":"))]
           if design_overrides is not None else []),
+        *(["--hub-stage-json", json.dumps(stage, separators=(",", ":"))]
+          if stage is not None else []),
         *[arg for endpoint in args.remote_rollout_endpoint
           for arg in ("--remote-rollout-endpoint", endpoint)],
         *[arg for weight in args.remote_rollout_weight
