@@ -25,15 +25,19 @@ ROOT = Path(__file__).resolve().parents[2]
 AUDIO_SOURCE = ROOT / "native/crates/bees-host/src/game_audio.rs"
 CONVERTER = ROOT / "native/tools/import-ship-sprites.py"
 EXAMPLES = ("native-duel", "native-skirmish", "native-two-player")
-def package_game_library(destination: Path) -> None:
-    """Copy exactly the authored game's transitive JSON content dependencies.
+def package_game_library(destination: Path, library: Path) -> None:
+    """Copy exactly one selected native library and its transitive JSON.
 
-    The native game library is the one source of truth for development and
-    packaged play. Catalog victory routes and each Level's scene travel
-    alongside their run config. No Unity export or runtime source scan.
+    This works for built-in Levels and newly authored user campaigns. The
+    package still has one immutable examples/native-library.json entry
+    point; source filenames under the selected library's content root
+    retain their original relative hierarchy.
     """
-    source_root = (ROOT / "native/examples").resolve(strict=True)
-    pending = [("native-library.json", "library")]
+    library = library.resolve(strict=True)
+    if library.suffix != ".json" or not library.is_file():
+        raise ValueError("native game package requires a JSON library file")
+    source_root = library.parent
+    pending = [(library.name, "library")]
     copied: dict[str, str] = {}
     while pending:
         relative, kind = pending.pop()
@@ -77,7 +81,10 @@ def package_game_library(destination: Path) -> None:
                 pending.append((str(path.parent / level["scene"]), "scene"))
         elif kind != "scene":
             raise ValueError(f"Unknown native package asset kind: {kind}")
-        output = destination / path
+        # A custom library can be named library.json, but the packaged
+        # launcher has one stable entry point across Windows and Linux.
+        output = (destination / "native-library.json"
+                  if kind == "library" else destination / path)
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, output)
         copied[label] = kind
@@ -119,6 +126,8 @@ def original_audio_paths() -> list[tuple[Path, Path]]:
 
 def write_launchers(output: Path, binary_name: str) -> None:
     for name in EXAMPLES:
+        if not (output / "examples" / f"{name}.run.json").is_file():
+            continue
         if binary_name.endswith(".exe"):
             launcher = output / f"play-{name}.cmd"
             launcher.write_text(
@@ -207,6 +216,9 @@ def main() -> None:
                         help="Existing graphical bees or bees.exe executable")
     parser.add_argument("--output", type=Path, required=True,
                         help="New distribution folder; will not overwrite")
+    parser.add_argument("--library", type=Path,
+                        default=ROOT / "native/examples/native-library.json",
+                        help="native game library to package (built-in or Unity-free authored campaign)")
     args = parser.parse_args()
     binary = args.binary.resolve()
     output = args.output.resolve()
@@ -234,7 +246,7 @@ def main() -> None:
             shutil.copy2(source, destination)
         examples = staging / "examples"
         examples.mkdir()
-        package_game_library(examples)
+        package_game_library(examples, args.library)
         # Remote controllers are optional Python/Tk tools. The actual
         # packaged native game and training core remain Python-free.
         clients = staging / "clients"

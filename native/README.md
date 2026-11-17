@@ -774,6 +774,11 @@ native campaign, quick battles and checksum manifest, run from the repository ro
 ```sh
 python3 native/tools/package-native-game.py \
   --binary native/target/release/bees --output dist/bees-native
+
+# Ship an authored Unity-free campaign (or one custom battle) instead:
+python3 native/tools/package-native-game.py \
+  --binary native/target/release/bees --output dist/my-fleet \
+  --library my-native-campaign/library.json
 ```
 
 Use the corresponding `bees.exe` binary on Windows. The packager
@@ -782,8 +787,13 @@ existing release and creates `play-bees.sh` on Linux or
 `play-bees.cmd` on Windows as the main desktop entry point. The former
 battle-specific `play-native-duel`, `play-native-skirmish` and
 `play-native-two-player` launchers remain available.
-The primary launcher opens a Unity-free game library with the persistent
-Frontier fleet campaign and three quick battles. Campaigns use the same
+The primary launcher opens the selected Unity-free game library:
+the default includes the persistent Frontier fleet campaign and three
+quick battles. With `--library` it copies that authored library's
+campaign configs, mission runs and native scene dependencies into the
+same portable layout, without requiring Unity or the authoring Python
+tools on the playing machine. Optional quick-battle launchers are
+created only for actual packaged example runs. Campaigns use the same
 mission unlock, saved-squad, ship-purchase, tactics and fleet-loss
 implementation as `bees menu`; battles use the same native simulation
 and renderer as training. Closing a campaign or battle returns to the
