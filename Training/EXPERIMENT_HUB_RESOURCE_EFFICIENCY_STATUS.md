@@ -112,6 +112,25 @@ Physical kernel busy time, cross-machine GPU balancing and independent
 policy batched inference remain unimplemented. Real CUDA/ROCm training SPS
 and continuation need qualification.
 
+- **2026-11-17 bounded TinyBrains PPO input lookahead:** `allStackGit/TinyBrains:feat/tinybrains-ppo-lookahead-20261117` now overlaps one **future immutable PPO minibatch** of CPU board-array
+concatenation, exact shape grouping and packed ant indices with current GPU
+optimization on a single reusable CPU worker. Eligible larger uncached
+boards also use pinned-memory H2D copies on a separate CUDA/ROCm stream
+with event waits, bounded to 2% of the current verified VRAM lease and
+without added steady-state synchronizations. Failed PPO updates drain
+unfinished copy-stream work; successes reuse the preexisting per-minibatch
+finite-gradient synchronization. Both execution paths retain identical
+per-epoch Torch RNG permutations, record/ant order, total PPO minibatches,
+microbatch loss scaling, gradient accumulation and Adam steps. Small or
+CPU-only jobs use the original inline path. Hub metrics report worker
+preparation CPU wall **separately** from exposed learner wait, pinned-copy
+host pin/enqueue wall and logical bytes/copies; a sustained bottleneck
+signal requires exposure to dominate the same completed optimizer stage.
+The existing project-neutral 512-field/32-KiB report, charts and exports
+remain unchanged. Randomized CPU workgroup/board/ant index comparisons
+matched 1,000 original grouping cases; real CUDA/ROCm SPS impact and
+failure/restart qualification remain to be established.
+
 ## Significant remaining development
 
 1. **Exercise the exact executable native-engine path:** qualify early dispatched pooled engine steps, episode/seat identity, replay attribution, graceful retirement and checkpoint continuation using actual TinyBrains binaries and training environments. Synthetic scheduling checks preserve action indices and show potential latency savings, not measured real SPS. On the next native profiling run, nonzero `collector_N_sim_prefetch_engine_steps` plus reduced `collector_N_sim_exposed_wait_share` with improved useful decisions/s would support the expected benefit; absent early dispatch or unchanged exposed wait would falsify it. Full removal of the slowest-child barrier would also require explicit in-flight transition ownership, terminal reward completion, and deterministic policy sampling across out-of-order engine returns; that change has **not** been implemented.
