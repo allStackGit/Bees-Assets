@@ -20,6 +20,9 @@ const SAFE_ARG = /^[A-Za-z0-9_./:@=+\-,]+$/;
 const safeLocalArg = value => typeof value === 'string' && value.length <= 1024 &&
     (process.platform === 'win32' ? !/[\x00\r\n]/.test(value) : SAFE_ARG.test(value));
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
+const PORTABLE_CONFIG_SHA256=sha256(JSON.stringify([
+    PROJECT,'portable-collector-v1',
+]));
 
 function trustedFile(file,{preserveInvocation=false}={}) {
     if(typeof file !== 'string'||!path.isAbsolute(file)||!safeLocalArg(file))
@@ -102,9 +105,7 @@ function createNativeBeesPortableCollectorAdapter({
     // contract, seed and World windows remain immutable job parameters.
     // Different Windows/Linux worker paths and binary bytes are installed
     // and verified independently on each machine before every launch.
-    const configSha256=sha256(JSON.stringify([
-        PROJECT,'portable-collector-v1',
-    ]));
+    const configSha256=PORTABLE_CONFIG_SHA256;
 
     function jobRoot(context) {
         if(context?.project_id!==PROJECT||!UUID.test(String(context.job_id||'')))
@@ -257,4 +258,4 @@ function createNativeBeesPortableCollectorAdapter({
     };
 }
 
-module.exports={createNativeBeesPortableCollectorAdapter};
+module.exports={createNativeBeesPortableCollectorAdapter,PORTABLE_CONFIG_SHA256};
