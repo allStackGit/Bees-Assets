@@ -532,13 +532,14 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
         // restricted to its campaign player's view, never broadcast to an
         // independently authenticated opposing side.
         "campaign_dialogue": if view.player_authority.player_viewer_side() == Some(side) {
-            view.campaign_dialogue.map(|(sequence, cue)| {
-                let lines: Vec<_> = crate::presentation::campaign_dialogue::lines(cue)
-                    .iter().map(|&(speaker, message)| json!({
-                        "speaker": speaker, "message": message
-                    })).collect();
-                json!({"sequence": sequence, "lines": lines})
-            })
+            // Both compiled clients share the exact authored dialogue
+            // table. Send only the cue and progression identity rather
+            // than retransmitting entire conversations at every tick.
+            view.campaign_dialogue.map(|(sequence, cue)| json!({
+                "sequence": sequence,
+                "cue": cue,
+                "line_count": crate::presentation::campaign_dialogue::lines(cue).len(),
+            }))
         } else { None },
         // Mission timing and wave ownership come from the same native
         // Level controller as local gameplay; clients cannot schedule waves.
