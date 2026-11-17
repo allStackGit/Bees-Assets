@@ -74,19 +74,28 @@ fn completed_quick_battles(directory: &Path)
         Ok(meta) if !meta.file_type().is_dir() => return Ok(Vec::new()),
         Ok(_) => {},
     }
-    let mut completed = Vec::new();
+    let mut candidates = Vec::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let Some(name) = entry.file_name().to_str().map(str::to_owned)
         else { continue };
         let Some(number) = battle_number(&name) else { continue };
-        if !entry.file_type()?.is_dir() { continue; }
-        let run_dir = entry.path().join("run");
+        if entry.file_type()?.is_dir() {
+            candidates.push((number, entry.path()));
+        }
+    }
+    // A long-running career may accumulate thousands of archived rounds.
+    // Read only the latest 256 completed footers, not every old trace.
+    candidates.sort_unstable_by(|left, right| right.0.cmp(&left.0));
+    let mut completed = Vec::new();
+    for (number, folder) in candidates {
+        let run_dir = folder.join("run");
         if !fs::symlink_metadata(&run_dir)
             .is_ok_and(|meta| meta.file_type().is_dir()) { continue; }
         let trace = run_dir.join("player-inputs.jsonl");
         if complete_trace(&trace).unwrap_or(false) {
-            completed.push((number, entry.path(), trace));
+            completed.push((number, folder, trace));
+            if completed.len() == 256 { break; }
         }
     }
     Ok(completed)
