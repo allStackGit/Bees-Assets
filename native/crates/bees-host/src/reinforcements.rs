@@ -392,7 +392,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 if let Some(&position) = planned_positions.get(&ship.entity_id) {
                     ship.motion.position = position;
                 }
-                self.reserved_ship_ids.push(ship.entity_id);
+                self.reserved_ship_ids.push((ship.entity_id, ship.side));
                 waves[wave].ships.push(ship);
             } else {
                 initial_entities.push(NativeAuthoredEntity::Ship(ship));

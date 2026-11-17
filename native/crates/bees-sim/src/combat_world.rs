@@ -733,7 +733,10 @@ pub struct CombatWorld {
     physics: KinematicPhysics,
     projectile_assets: Arc<ProjectileAssetCatalog>,
     next_entity_id: i64,
-    reserved_ship_ids: HashSet<i64>,
+    // Key by authentic side; an unspawned enemy reinforcement must not
+    // suppress elimination when the *other* faction lost its last squad.
+    // Side-indexed sets keep terminal checks O(1) even for large waves.
+    reserved_ship_ids: HashMap<i32, HashSet<i64>>,
     ships: Vec<CombatShip>,
     /// Actual live MapObjects: paired with ObstacleBody collider slots in
     /// the same KinematicPhysics world, not perception-only replicas.
@@ -964,7 +967,7 @@ impl CombatWorld {
             physics: KinematicPhysics::new(area, cell_size)?,
             projectile_assets,
             next_entity_id: 1,
-            reserved_ship_ids: HashSet::new(),
+            reserved_ship_ids: HashMap::new(),
             ships: Vec::new(),
             map_objects: HashMap::new(),
             range_visible_map_objects: HashSet::new(),
@@ -1687,29 +1690,36 @@ impl CombatWorld {
 
     /// Reserve an authored future hull in the same source-ordered stream
     /// that assigns initial entities. Dynamic shots and minions skip it.
-    pub fn reserve_future_ship_id(&mut self, id: i64) -> Result<(), CombatWorldError> {
-        if id < self.next_entity_id { return Err(CombatWorldError::DuplicateEntity); }
+    pub fn reserve_future_ship_id(
+        &mut self, id: i64, side: i32,
+    ) -> Result<(), CombatWorldError> {
+        if id < self.next_entity_id || side <= 0 {
+            return Err(CombatWorldError::DuplicateEntity);
+        }
         self.next_entity_id = id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
-        self.reserved_ship_ids.insert(id);
+        self.reserved_ship_ids.entry(side).or_default().insert(id);
         Ok(())
     }
 
-    /// A reserved hull belongs to a real authored future reinforcement
-    /// wave. Its ID is already owned by this CombatWorld, but the ship is
-    /// not yet living in the active combat roster. An elimination result
-    /// must not misinterpret that absence as the permanent defeat of
-    /// the waiting faction.
-    pub fn has_reserved_future_ships(&self) -> bool {
-        !self.reserved_ship_ids.is_empty()
+    /// True only while this physical faction has real, authored unspawned
+    /// reinforcement hulls. Queried by the SAME terminal used by gameplay,
+    /// training, headless evaluation and network-hosted battles.
+    pub fn has_reserved_future_ships_on_side(&self, side: i32) -> bool {
+        self.reserved_ship_ids.get(&side).is_some_and(|ships| !ships.is_empty())
     }
 
     pub fn spawn_reserved_ship(
         &mut self, asset: &ShipAsset, entity_id: i64, side: i32, vitals: ShipVitals, motion: ShipMotion,
     ) -> Result<(), CombatWorldError> {
-        if !self.reserved_ship_ids.contains(&entity_id) { return Err(CombatWorldError::UnknownShip); }
+        if !self.reserved_ship_ids.get(&side)
+            .is_some_and(|ships| ships.contains(&entity_id))
+        {
+            return Err(CombatWorldError::UnknownShip);
+        }
         let body = asset.spawn_physics_body(entity_id, motion)?;
         self.add_ship_inner(CombatShip { entity_id, side, ship_type: asset.ship_type, vitals }, body, true)?;
-        self.reserved_ship_ids.remove(&entity_id);
+        self.reserved_ship_ids.get_mut(&side)
+            .expect("validated reserved ship ownership").remove(&entity_id);
         Ok(())
     }
 

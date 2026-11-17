@@ -194,7 +194,9 @@ pub struct NativeAuthoredGroups {
 }
 
 pub struct NativeAuthoredLevel<M, A> {
-    pub reserved_ship_ids: Vec<i64>,
+    /// Preserve both unique Stage entity ID and true owning faction for
+    /// every future-authored reinforcement hull.
+    pub reserved_ship_ids: Vec<(i64, i32)>,
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
     pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     pub weapon_rank_frame: Option<i32>,
@@ -352,13 +354,14 @@ impl NativeSceneAssets {
         // original IDs once at setup, never in the simulation hot path.
         let mut entities = authored.entities;
         let mut reserved = authored.reserved_ship_ids;
-        reserved.sort_unstable();
+        reserved.sort_unstable_by_key(|&(id, _)| id);
         let mut reserved = reserved.into_iter().peekable();
         let mut attachments = Vec::new();
         entities.sort_unstable_by_key(NativeAuthoredEntity::entity_id);
         for entity in entities {
-            while reserved.peek().is_some_and(|&id| id < entity.entity_id()) {
-                combat.reserve_future_ship_id(reserved.next().expect("next reserved ship"))
+            while reserved.peek().is_some_and(|&(id, _)| id < entity.entity_id()) {
+                let (id, side) = reserved.next().expect("next reserved ship");
+                combat.reserve_future_ship_id(id, side)
                     .map_err(NativeSceneBuildError::Combat)?;
             }
             match entity {
@@ -417,8 +420,8 @@ impl NativeSceneAssets {
                 }
             }
         }
-        for id in reserved {
-            combat.reserve_future_ship_id(id).map_err(NativeSceneBuildError::Combat)?;
+        for (id, side) in reserved {
+            combat.reserve_future_ship_id(id, side).map_err(NativeSceneBuildError::Combat)?;
         }
         install_ship_attachments(&mut combat, attachments)?;
         if combat.total_living_ships() == 0 {

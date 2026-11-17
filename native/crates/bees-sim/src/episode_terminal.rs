@@ -449,26 +449,27 @@ impl NativeEpisodeTerminal {
         }
 
         let extraction_outcome = world.extraction_outcome();
-        let future_hulls = world.has_reserved_future_ships();
-        // The common physics world has already reserved every authentic
-        // deferred ship ID. An empty currently deployed side is not a
-        // final elimination while those real hulls still await deployment.
-        // Extraction has its own terminal condition and always wins
-        // independently of pending waves.
-        let check_elimination = squad_was_retired ||
-            (self.deferred_elimination && !future_hulls);
-        if check_elimination || extraction_outcome.is_some() {
+        // The physics world knows which faction owns every reserved future
+        // hull. Delaying elimination for the *opponent's* reinforcement
+        // would keep a defeated faction in an unending game if the later
+        // wave requires a ship-death trigger that can no longer occur.
+        // Source survival and extraction retain their independent terminal
+        // conditions; only ordinary SquadRetired elimination is deferred.
+        let bee_waiting = world.has_reserved_future_ships_on_side(self.bee_side);
+        let human_waiting = world.has_reserved_future_ships_on_side(self.human_side);
+        let bee_eliminated = bee_dead && !bee_waiting;
+        let human_eliminated = human_dead && !human_waiting;
+        if squad_was_retired || self.deferred_elimination || extraction_outcome.is_some() {
             self.measurements.elimination_checks += 1;
-            let would_eliminate = bee_dead || human_dead;
-            if check_elimination {
-                self.deferred_elimination = future_hulls && would_eliminate;
-            }
-            let elimination = || if !future_hulls && would_eliminate {
-                Some((if bee_dead == human_dead { 0 } else if bee_dead {
-                    self.human_side
-                } else {
-                    self.bee_side
-                }, false))
+            // Recheck on subsequent ticks only while a currently empty
+            // faction waits for its real reserved hulls. Once they arrive,
+            // retire this pending check without requiring another death.
+            self.deferred_elimination =
+                (bee_dead && bee_waiting) || (human_dead && human_waiting);
+            let elimination = || if bee_eliminated || human_eliminated {
+                Some((if bee_eliminated == human_eliminated { 0 }
+                    else if bee_eliminated { self.human_side }
+                    else { self.bee_side }, false))
             } else { None };
             if let Some((winner, extraction_victory)) = extraction_outcome.or_else(elimination) {
                 let outcome = EpisodeTerminalResult {
@@ -476,8 +477,8 @@ impl NativeEpisodeTerminal {
                     timed_out: false,
                     extraction_victory,
                     duration_seconds: self.elapsed_seconds,
-                    bee_side_eliminated: bee_dead,
-                    human_side_eliminated: human_dead,
+                    bee_side_eliminated: bee_eliminated,
+                    human_side_eliminated: human_eliminated,
                 };
                 self.completed = Some(outcome);
                 self.measurements.eliminations += 1;
