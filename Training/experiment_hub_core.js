@@ -3373,10 +3373,10 @@ class ExperimentHub {
         // group queue time, not selected by this Start. Withdrawing an
         // undelivered offer must not turn its next verified terminal receipt
         // into a permanently held CPU/GPU reservation.
-        const groupOwnedCollector=job.project_id==='tinybrains_rollout'&&
-            next.jobs.some(parent=>parent.id===job.frozen_parameters?.learner_job_id&&
-                parent.project_id==='tinybrains'&&
-                parent.distributed_rollout_managed===true);
+        const groupOwnedCollector=['tinybrains_rollout','courier_lineage'].includes(job.project_id)&&
+            next.jobs.some(parent=>parent.id===job.frozen_parameters?.learner_job_id&&(
+                parent.project_id==='tinybrains'&&parent.distributed_rollout_managed===true||
+                parent.project_id==='courier'&&parent.distributed_courier_managed===true));
         if(!groupOwnedCollector)delete job.release_on_terminal;
         delete job.automation_start_session_id;
         job.status_reason='Undelivered Start withdrawn. The queued job retains its existing claim.';
@@ -3701,22 +3701,25 @@ class ExperimentHub {
         // Terminal learner receipts end the lifecycle of its exclusively
         // owned remote collection sidecars. Never launch or stop a different
         // learner's worker, and never infer a native process has disappeared.
-        for(const learner of next.jobs.filter(j=>j.project_id==='tinybrains'&&
-            j.distributed_rollout_managed===true&&
+        for(const learner of next.jobs.filter(j=>
+            (j.project_id==='tinybrains'&&j.distributed_rollout_managed===true||
+                j.project_id==='courier'&&j.distributed_courier_managed===true)&&
             ['finished','failed','stopped'].includes(j.status))) {
-            for(const child of next.jobs.filter(j=>j.project_id==='tinybrains_rollout'&&
+            const workerProject=learner.project_id==='courier'
+                ?'courier_lineage':'tinybrains_rollout';
+            for(const child of next.jobs.filter(j=>j.project_id===workerProject&&
                 j.frozen_parameters?.learner_job_id===learner.id)) {
                 if(['running','launch_requested','unverified'].includes(child.status)) {
                     const owned=next.reservations.find(lease=>
                         lease.id===child.lease_id&&lease.job_id===child.id&&
                         lease.machine_id===child.assigned_machine_id&&
-                        lease.project_id==='tinybrains_rollout'&&
+                        lease.project_id===workerProject&&
                         lease.status==='acknowledged'&&
                         lease.issued_by==='experiment-hub');
                     if(!child.dispatch_id||!owned)continue;
                     child.status='stop_requested';
                     child.stop_requested_at=now();
-                    child.status_reason='Parent learner is terminal; stopping its reserved remote collector.';
+                    child.status_reason='Parent learner is terminal; stopping its reserved remote training worker.';
                     changed=true;
                 }else if(child.status==='start_requested'&&
                     child.start_first_offered_at===null) {
@@ -4436,9 +4439,10 @@ class ExperimentHub {
                          machine.execution_capabilities?.cgroup_controllers?.includes(controller)))))
                 throw Error('Bundle member '+(index+1)+' requires a connected, qualified native machine.');
             const job=this.queueIn(next,selection);
-            if(job.project_id==='tinybrains_rollout'||job.project_id==='bees'||
-                job.project_id==='ants'||
+            if(job.project_id==='tinybrains_rollout'||job.project_id==='courier_lineage'||
+                job.project_id==='bees'||job.project_id==='ants'||
                 (job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true)||
+                (job.project_id==='courier'&&job.frozen_parameters?.remote_lineages===true)||
                 job.status!=='waiting_adapter'||
                 job.continuation_of_job_id||job.after_job_id||
                 !machine.installed_projects?.includes(job.project_id)||
@@ -4501,7 +4505,8 @@ class ExperimentHub {
                 throw Error('Bundle member '+job.resource_bundle.index+
                     ' / '+job.project_id+' cannot Start: '+readiness.reason);
             if(job.distributed_rollout_managed===true||
-                job.project_id==='tinybrains_rollout')
+                job.distributed_courier_managed===true||
+                ['tinybrains_rollout','courier_lineage'].includes(job.project_id))
                 throw Error('Distributed rollout groups use their own verified learner barrier.');
         }
         const pending=(this.state.bundle_start_plans||[]).find(plan=>
@@ -5628,13 +5633,14 @@ class ExperimentHub {
             throw Error('Cancel the pending distributed group approval before cancelling an individual native job.');
         if (job.status==='cancelled') return copy(job);
         const cancelledAt=now();
-        if(job.project_id==='tinybrains'&&job.distributed_rollout_managed===true) {
-            // The collector jobs are not checkpoint successors: they exist
-            // solely for this learner. Cancel every unstarted child before
-            // withdrawing the learner. Any uncertain/started sidecar blocks
-            // the whole cancellation and requires explicit native Stop.
+        if(job.project_id==='tinybrains'&&job.distributed_rollout_managed===true||
+            job.project_id==='courier'&&job.distributed_courier_managed===true) {
+            // Sidecars are independent native jobs, not checkpoint children.
+            // A started or uncertain owner prevents partial cancellation.
+            const workerProject=job.project_id==='courier'
+                ?'courier_lineage':'tinybrains_rollout';
             for(const child of next.jobs.filter(candidate=>
-                candidate.project_id==='tinybrains_rollout'&&
+                candidate.project_id===workerProject&&
                 candidate.frozen_parameters?.learner_job_id===job.id&&
                 candidate.status!=='cancelled'))
                 this.cancelUnstartedJob(next,child,cancelledAt);
