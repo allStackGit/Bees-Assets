@@ -159,6 +159,11 @@ pub struct NativePlayerSquadFire {
 pub struct NativePlayerHeldFire {
     pub world_id: WorldId,
     pub episode_revision: u64,
+    /// Zero for the local UI and legacy recordings. The authenticated host
+    /// overrides this with the peer's connection ID before dispatch, so a
+    /// wire sender cannot select another controller's live weapons.
+    #[serde(default)]
+    pub controller_id: u64,
     pub action: NativeHeldFireAction,
 }
 
@@ -678,17 +683,25 @@ impl NativePlayerFirePlan {
     pub fn execute<M: NativeLevelPlayerContext, A>(self, world: &mut World<NativeLevelState<M, A>>)
         -> Result<usize, NativePlayerInputError>
     {
-        self.apply(world, false)
+        self.apply(world, false, 0)
     }
 
-    pub fn begin_held_fire<M: NativeLevelPlayerContext, A>(self, world: &mut World<NativeLevelState<M, A>>)
-        -> Result<usize, NativePlayerInputError>
+    /// Iteration is only used at player command boundaries when checking
+    /// whether another live controller currently owns a selected weapon.
+    pub fn ship_ids(&self) -> impl Iterator<Item = i64> + '_ {
+        self.authority.members.iter().map(|member| member.ship_id)
+    }
+
+    pub fn begin_held_fire<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>, controller_id: u64,
+    ) -> Result<usize, NativePlayerInputError>
     {
-        self.apply(world, true)
+        self.apply(world, true, controller_id)
     }
 
     fn apply<M: NativeLevelPlayerContext, A>(
         self, world: &mut World<NativeLevelState<M, A>>, held: bool,
+        controller_id: u64,
     ) -> Result<usize, NativePlayerInputError>
     {
         let current = Self::prepare(world, self.world_id, self.episode_revision,
@@ -710,7 +723,10 @@ impl NativePlayerFirePlan {
             match result {
                 Ok(count) => {
                     weapons += count;
-                    if held && count > 0 { state.held_fire_ships.push(member.ship_id); }
+                    if held && count > 0 {
+                        state.held_fire_ships.entry(controller_id).or_default()
+                            .push(member.ship_id);
+                    }
                 },
                 Err(error) => {
                     world.state.events.fail_player_input();
@@ -723,31 +739,59 @@ impl NativePlayerFirePlan {
 }
 
 impl<M, A> NativeLevelState<M, A> {
-    pub fn has_held_fire(&self) -> bool { !self.held_fire_ships.is_empty() }
+    pub fn has_held_fire(&self) -> bool {
+        self.held_fire_ships.values().any(|ships| !ships.is_empty())
+    }
 
-    /// A dead/retired source weapon cannot retain a remote player's active
-    /// gesture. This is read only at interactive input boundaries, not in
-    /// the performance-critical headless physics loop.
-    pub fn has_live_held_fire(&self) -> bool {
-        self.held_fire_ships.iter().copied().any(|id|
-            self.combat.ship_body(id).is_some_and(|body| body.active) &&
-            self.combat.ship(id).is_some_and(|ship| !ship.vitals.is_dead())
+    pub fn has_held_fire_for(&self, controller_id: u64) -> bool {
+        self.held_fire_ships.get(&controller_id)
+            .is_some_and(|ships| !ships.is_empty())
+    }
+
+    /// An active gesture may never overwrite another peer's ship target.
+    /// The lookup runs only when a human issues a new manual fire command.
+    pub fn ship_held_by_other(&self, controller_id: u64, ship_id: i64) -> bool {
+        self.held_fire_ships.iter().any(|(&owner, ships)|
+            owner != controller_id && ships.contains(&ship_id))
+    }
+
+    /// A dead weapon does not retain a peer's claim. Iteration and collision
+    /// state inspection happen only at input/network boundaries, never in
+    /// the headless combat hot path.
+    pub fn has_live_held_fire_for(&self, controller_id: u64) -> bool {
+        self.held_fire_ships.get(&controller_id).is_some_and(|ships|
+            ships.iter().copied().any(|id|
+                self.combat.ship_body(id).is_some_and(|body| body.active) &&
+                self.combat.ship(id).is_some_and(|ship| !ship.vitals.is_dead())
+            )
         )
+    }
+
+    pub fn has_live_held_fire(&self) -> bool {
+        self.held_fire_ships.keys().copied()
+            .any(|owner| self.has_live_held_fire_for(owner))
+    }
+
+    pub fn live_held_fire_controllers(&self) -> impl Iterator<Item = u64> + '_ {
+        self.held_fire_ships.keys().copied()
+            .filter(|&controller| self.has_live_held_fire_for(controller))
     }
 }
 
 impl<M: NativePlayerAuthority, A> NativeLevelState<M, A> {
-    /// Follow the original live ships even when selection has changed,
-    /// but do not let a viewer-side switch or roster transfer continue to
-    /// aim ships controlled by another player. A valid released/retired
-    /// ship has its manual target cleared using the SAME combat weapon
-    /// owner, not a presentation-only cancellation.
-    ///
-    /// Compact the existing list in place; no per-mouse-move allocation.
-    pub fn update_held_fire(&mut self, target: Option<Vec2>) -> Result<(), NativePlayerInputError> {
+    /// Updates only this controller's original selected ships. Another
+    /// controller's fire target never changes when one peer aims/releases.
+    /// Every remaining ship still checks live roster, policy and permission
+    /// authority before the canonical combat weapon update is applied.
+    pub fn update_held_fire(
+        &mut self, controller_id: u64, target: Option<Vec2>,
+    ) -> Result<(), NativePlayerInputError> {
+        let Some(ships) = self.held_fire_ships.get_mut(&controller_id) else {
+            return Ok(());
+        };
         let mut retained = 0;
-        for index in 0..self.held_fire_ships.len() {
-            let id = self.held_fire_ships[index];
+        for index in 0..ships.len() {
+            let id = ships[index];
             if !self.combat.ship_body(id).is_some_and(|body| body.active) ||
                 !self.combat.ship(id).is_some_and(|ship| !ship.vitals.is_dead()) ||
                 self.combat.policy_frame(id).is_some() {
@@ -763,11 +807,12 @@ impl<M: NativePlayerAuthority, A> NativeLevelState<M, A> {
                 return Err(NativePlayerInputError::Source(error.into()));
             }
             if owned && target.is_some() {
-                self.held_fire_ships[retained] = id;
+                ships[retained] = id;
                 retained += 1;
             }
         }
-        self.held_fire_ships.truncate(retained);
+        ships.truncate(retained);
+        if ships.is_empty() { self.held_fire_ships.remove(&controller_id); }
         Ok(())
     }
 }
