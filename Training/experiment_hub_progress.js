@@ -149,6 +149,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_sim_topology_unverified','training_sim_topology_migrations',
             'training_topology_max_migration_seconds',
             'training_topology_max_pred_gain_ratio','training_topology_migration_owner',
+            'training_topology_sps_change_pct','training_topology_result_owner',
             'training_checkpoint_snapshot_seconds',
             'training_checkpoint_max_worker_seconds',
             'training_reply_gap_seconds','training_last_reply_worker',
