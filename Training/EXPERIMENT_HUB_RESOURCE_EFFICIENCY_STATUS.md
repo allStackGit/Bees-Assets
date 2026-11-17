@@ -169,8 +169,9 @@ PyTorch CPU semantic checks covered cold/initialized/stable Adam layouts,
 learning-rate changes, no live-storage aliasing, exact policy+optimizer
 rollback, same-layout optimizer replacement and actual layout change.
 Existing Hub metrics now expose logical backup bytes, copy-preparation
-host wall, per-lineage buffer reuse and a sustained copy-pressure diagnosis
-only for the verified last/slowest PPO lineage. These are not physical
+host wall, an optimizer-stream event interval read after the existing PPO
+completion barrier, per-lineage buffer reuse and a sustained copy-pressure
+diagnosis only for the verified last/slowest PPO lineage. These are not physical
 VRAM bus bandwidth, exclusive GPU kernel time or demonstrated SPS gains;
 CUDA/ROCm benchmarking and recovery qualification remain outstanding.
 
