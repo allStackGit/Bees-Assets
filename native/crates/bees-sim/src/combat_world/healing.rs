@@ -224,6 +224,16 @@ impl CombatWorld {
     /// command has reserved capacity while they are still en route.
     /// Sorted IDs preserve deterministic side effects across OSes and
     /// independent training arena schedules. No scan on ordinary ticks.
+    /// On-demand gauges for the physical shared Heal pool. There is no
+    /// scanning or gauge update in ordinary training fixed steps.
+    pub fn game_command_healing_gauges(&self) -> (usize, usize) {
+        (
+            self.healing_hive_by_ship.len(),
+            self.healing_hive_by_ship.values()
+                .filter(|(_, active)| *active).count(),
+        )
+    }
+
     pub(super) fn active_command_healers_at_beehive(
         &self, beehive_id: i64,
     ) -> Vec<i64> {
