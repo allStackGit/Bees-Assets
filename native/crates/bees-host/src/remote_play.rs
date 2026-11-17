@@ -414,8 +414,10 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
             "side": ship.side, "ship_type": ship.ship_type,
             "x": body.motion.position.x, "y": body.motion.position.y,
             "rotation": body.motion.rotation_degrees,
-            "destination": view.combat.ship_game_destination(ship.entity_id)
-                .map(|destination| [destination.x, destination.y]),
+            "destination": if owned {
+                view.combat.ship_game_destination(ship.entity_id)
+                    .map(|destination| [destination.x, destination.y])
+            } else { None },
             "health": ship.vitals.health(), "max_health": ship.vitals.max_health(),
             "owned": owned, "discovered": discovered,
         }))
