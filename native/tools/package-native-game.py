@@ -90,11 +90,14 @@ def write_launchers(output: Path, binary_name: str) -> None:
             launcher = output / f"play-{name}.cmd"
             launcher.write_text(
                 "@echo off\r\n"
-                "cd /d \"%~dp0\"\r\n"
-                f"set \"BEES_RUN=runs\\{name}-%RANDOM%-%RANDOM%\"\r\n"
-                "if not exist runs mkdir runs\r\n"
-                f"\"%~dp0{binary_name}\" play \"examples\\{name}.run.json\" "
-                "--output-dir \"%BEES_RUN%\" %*\r\n",
+                "setlocal\r\n"
+                'cd /d "%~dp0"\r\n'
+                'if defined LOCALAPPDATA (set "BEES_SAVE=%LOCALAPPDATA%\\BeesNative") '
+                'else (set "BEES_SAVE=%USERPROFILE%\\BeesNative")\r\n'
+                'if not exist "%BEES_SAVE%\\battles" mkdir "%BEES_SAVE%\\battles"\r\n'
+                f'set "BEES_RUN=%BEES_SAVE%\\battles\\{name}-%RANDOM%-%RANDOM%"\r\n'
+                f'"%~dp0{binary_name}" play "examples\\{name}.run.json" '
+                '--output-dir "%BEES_RUN%" %*\r\n',
                 encoding="utf-8",
             )
         else:
@@ -103,8 +106,9 @@ def write_launchers(output: Path, binary_name: str) -> None:
                 "#!/bin/sh\n"
                 "set -eu\n"
                 'cd "$(dirname "$0")"\n'
-                "mkdir -p runs\n"
-                f'run="runs/{name}-$(date +%Y%m%d-%H%M%S)-$$"\n'
+                'save="${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\n'
+                'mkdir -p "$save/battles"\n'
+                f'run="$save/battles/{name}-$(date +%Y%m%d-%H%M%S)-$$"\n'
                 f'exec "./{binary_name}" play "examples/{name}.run.json" '
                 '--output-dir "$run" "$@"\n',
                 encoding="utf-8",
