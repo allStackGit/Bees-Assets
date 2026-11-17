@@ -2759,6 +2759,9 @@ fn run_battle(
     let mut client = if view {
         let mut client = bees_host::client::NativeClient::new(client_bounds[0])?;
         client.set_source_zoom_limits(client_zoom_limits);
+        client.set_music_locations(
+            source_levels.iter().map(|source| source.music_location).collect(),
+        );
         // Stage/user settings are common to these simultaneously captured
         // Levels, while an operator can override edge panning with F6.
         client.set_source_edge_scrolling(
@@ -3870,6 +3873,7 @@ fn run_battle(
     if let Some(client) = &client {
         println!("{}", json!({ "kind": "presentation_final", "run_id": config.run_id,
             "rendered_frames": client.rendered_frames,
+            "audio": client.audio_measurements(),
             "fixed_steps_executed": client.fixed_steps_executed,
             "multi_step_frames": client.multi_step_frames,
             "max_steps_per_frame": client.max_steps_per_frame,
