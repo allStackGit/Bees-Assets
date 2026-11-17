@@ -337,5 +337,14 @@ function ensureLocalCpuRamCapacity(records,cpus,ramMb,hostCpus,hostRamMb) {
             throw Error('Unresolved native workloads already reserve the remaining physical CPU/RAM capacity.');
     }
 }
+function approvedEndpointSubset(approved,selected) {
+    if(!Array.isArray(approved)||!approved.length)return null;
+    if(selected===undefined)return approved;
+    if(!Array.isArray(selected)||!selected.length)return null;
+    const ordered=approved.filter(endpoint=>selected.includes(endpoint));
+    return ordered.length===selected.length&&
+        ordered.every((endpoint,index)=>endpoint===selected[index])?selected:null;
+}
+
 module.exports={request,matchingLeaseBudget,remaining,placements,plan,startHeadroom,
-    observedLoadPreference,ensureLocalCpuRamCapacity,fixedCpuParallelism};
+    observedLoadPreference,ensureLocalCpuRamCapacity,fixedCpuParallelism,approvedEndpointSubset};

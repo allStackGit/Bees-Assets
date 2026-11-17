@@ -143,7 +143,21 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_prefetch_validated_batches',
             'training_gpu_optimizer_peak_allocated_mb',
             'training_cpu_parallelism','training_queue_max_seconds',
+            'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
+            'training_sim_queue_max_seconds','training_sim_queue_peak_shards',
+            'training_sim_idle_tail_max_ratio',
+            'training_sim_idle_tail_ratio_owner',
+            'training_sim_owner_tail_max_seconds',
+            'training_sim_prestaged_actions',
+            'training_sim_prestage_max_seconds',
+            'training_sim_dispatch_copy_max_seconds',
             'training_sim_early_dispatches',
+            'training_sim_topology_trial_lineages','training_sim_topology_accepted',
+            'training_sim_topology_rejected','training_sim_topology_unavailable',
+            'training_sim_topology_unverified','training_sim_topology_migrations',
+            'training_topology_max_migration_seconds',
+            'training_topology_max_pred_gain_ratio','training_topology_migration_owner',
+            'training_topology_sps_change_pct','training_topology_result_owner',
             'training_checkpoint_snapshot_seconds',
             'training_checkpoint_max_worker_seconds',
             'training_reply_gap_seconds','training_last_reply_worker',
@@ -165,12 +179,34 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
             'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
             'pipeline_remote_wait_dominant',
+            'pipeline_remote_wait_owner','pipeline_remote_wait_competing_collectors',
+            'pipeline_remote_exposed_work_share',
+            'remote_collectors_pending_after_local',
+            'remote_collector_co_limiting_count',
+            'remote_collector_exposed_wait_seconds',
+            'remote_collector_exposed_wait_owner',
+            'remote_transport_new_connections',
+            'remote_transport_reused_collectors',
+            'remote_transport_connect_max_seconds',
+            'remote_transport_connect_owner',
+            'local_lease_ram_charged_mb',
+        'local_lease_ram_headroom_mb',
+        'remote_snapshot_cache_hits',
+            'remote_snapshot_staged_bytes',
+            'remote_snapshot_unstaged_bytes',
+            'remote_snapshot_unstaged_ratio',
+            'pipeline_remote_connection_reuse_ratio',
+            'pipeline_remote_connect_pressure',
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
             'training_remote_gap_pressure','training_remote_codec_pressure',
             'training_gpu_guard_wait_pressure',
             'training_gpu_guard_readback_work_share',
             'training_queue_work_share','training_reply_gap_work_share',
+            'training_sim_queue_work_share','training_sim_queue_pressure',
+            'training_sim_cpu_underuse_evidence',
+            'training_sim_idle_tail_work_share',
+            'training_sim_tail_skew_pressure',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
             'pipeline_optimization_dominant','pipeline_remote_wait_work_share',
@@ -289,6 +325,63 @@ class BottleneckEvidence {
             const mergeShare=collection>0&&merge!==null&&merge<=collection
                 ?merge/collection:null;
             if(waitShare!==null)add('pipeline_remote_wait_work_share',waitShare);
+            const remoteExposed=seconds('remote_collector_exposed_wait_seconds');
+            const remotePending=metrics.remote_collectors_pending_after_local;
+            const remoteOwnerMetric=metrics.remote_collector_exposed_wait_owner;
+            const remoteCoLimit=metrics.remote_collector_co_limiting_count;
+            const remoteCount=metrics.collector_count;
+            const exposedShare=(collection>0&&remoteExposed!==null&&
+                remoteExposed<=collection)?remoteExposed/collection:null;
+            if(exposedShare!==null)
+                add('pipeline_remote_exposed_work_share',exposedShare);
+            // The owner is the last learner-visible collector completion,
+            // not a worker's isolated service time or physical GPU usage.
+            // Verify the matching per-worker receipt before attribution.
+            const candidate=remoteOwnerMetric?.value;
+            const ownerWait=Number.isSafeInteger(candidate)&&candidate>0&&
+                candidate<MAX_TINYBRAINS_COLLECTORS
+                ?seconds('collector_'+candidate+'_wait_after_local_seconds'):null;
+            const connected=metrics.remote_transport_new_connections;
+            const reused=metrics.remote_transport_reused_collectors;
+            const validCount=value=>value?.unit==='count'&&
+                Number.isSafeInteger(value.value)&&value.value>=0;
+            const remoteUses=validCount(connected)&&validCount(reused)
+                ?connected.value+reused.value:null;
+            if(remoteUses>0)
+                add('pipeline_remote_connection_reuse_ratio',
+                    reused.value/remoteUses);
+            const remoteCompeting=(remoteCoLimit?.unit==='count'&&
+                Number.isSafeInteger(remoteCoLimit.value)&&
+                remoteCoLimit.value>=2&&remotePending?.unit==='count'&&
+                Number.isSafeInteger(remotePending.value)&&
+                remotePending.value>=remoteCoLimit.value&&
+                exposedShare!==null&&exposedShare>=0.25);
+            const remoteOwner=(remoteCount?.unit==='count'&&
+                remotePending?.unit==='count'&&
+                Number.isSafeInteger(remoteCount.value)&&
+                Number.isSafeInteger(remotePending.value)&&
+                candidate>0&&candidate<remoteCount.value&&
+                remotePending.value>=1&&
+                remotePending.value<remoteCount.value&&
+                exposedShare!==null&&exposedShare>=0.25&&
+                remoteExposed>=0.25&&ownerWait!==null&&
+                Math.abs(ownerWait-remoteExposed)<=
+                    Math.max(1e-6,remoteExposed*0.001))
+                    ?candidate:null;
+            // The learner measures the limiting collector's TCP setup
+            // interval after all local collectors finish.
+            const connectSeconds=seconds('remote_connect_exposed_seconds');
+            const remoteConnectCritical=remoteOwner!==null&&
+                validCount(connected)&&connected.value>=1&&
+                connectSeconds!==null&&connectSeconds<=remoteExposed&&
+                connectSeconds>=0.15&&
+                connectSeconds>=0.15*collection&&
+                connectSeconds>=0.20*remoteExposed;
+            const launchDelay=seconds('remote_network_launch_delay_seconds');
+            const prepExposed=seconds('remote_network_prep_exposed_seconds');
+            const remotePrepCritical=launchDelay!==null&&launchDelay<=collection&&
+                prepExposed!==null&&prepExposed<=launchDelay&&
+                prepExposed>=0.25&&prepExposed>=0.15*collection;
             if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
             const localGpuWait=seconds('local_gpu_wait_after_local_max_seconds');
             const localGpuShare=(collection>0&&localGpuWait!==null&&
@@ -429,7 +522,8 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,mergeShare,
-                    localGpuShare,localGpuOwner,localGpuLease,
+                    localGpuShare,localGpuOwner,localGpuLease,remoteOwner,remoteCompeting,
+                    remoteConnectCritical,remotePrepCritical,
                     stageHints,simHints,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
@@ -444,8 +538,19 @@ class BottleneckEvidence {
                     add('pipeline_collection_dominant',1,'count');
                 else if(recent.filter(x=>x.fraction<=0.3).length>=5)
                     add('pipeline_optimization_dominant',1,'count');
-                if(recent.filter(x=>x.waitShare!==null&&x.waitShare>=0.5).length>=5)
+                if(recent.filter(x=>x.waitShare!==null&&x.waitShare>=0.5).length>=5) {
                     add('pipeline_remote_wait_dominant',1,'count');
+                    // Require five of six completed measurements to name
+                    // the same uniquely exposed remote collector.
+                    const owner=recent.at(-1).remoteOwner;
+                    if(owner!==null&&recent.filter(x=>
+                        x.remoteOwner===owner&&x.waitShare!==null&&
+                        x.waitShare>=0.5).length>=5)
+                        add('pipeline_remote_wait_owner',owner,'count');
+                    if(recent.filter(x=>x.remoteCompeting&&x.waitShare!==null&&
+                        x.waitShare>=0.5).length>=5)
+                        add('pipeline_remote_wait_competing_collectors',1,'count');
+                }
                 if(recent.filter(x=>x.localGpuShare!==null&&
                     x.localGpuShare>=0.5).length>=5) {
                     add('pipeline_local_gpu_wait_dominant',1,'count');
@@ -462,6 +567,14 @@ class BottleneckEvidence {
                             add('pipeline_local_gpu_lease_index',lease,'count');
                     }
                 }
+                const connect=recent.at(-1);
+                if(connect.remoteConnectCritical&&recent.filter(x=>
+                    x.remoteConnectCritical&&x.remoteOwner===connect.remoteOwner).length>=5) {
+                    add('pipeline_remote_connect_pressure',1,'count');
+                    add('pipeline_remote_connect_owner',connect.remoteOwner,'count');
+                }
+                if(recent.filter(x=>x.remotePrepCritical).length>=5)
+                    add('pipeline_remote_prep_pressure',1,'count');
                 if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
                     add('pipeline_merge_dominant',1,'count');
                 // Cross-stage capacity evidence requires *sustained* host
@@ -547,6 +660,39 @@ class BottleneckEvidence {
             // contributes to the experiment's critical path. This wait
             // INCLUDES pending GPU work, so it is not a GPU busy fraction.
             const slowest=metrics.training_slowest_worker?.value;
+            const simQueue=metrics.training_sim_queue_max_ratio;
+            const simQueueShare=simQueue?.unit==='ratio'&&
+                Number.isFinite(simQueue.value)&&simQueue.value>=0&&
+                simQueue.value<=1?simQueue.value:null;
+            if(simQueueShare!==null)
+                add('training_sim_queue_work_share',simQueueShare);
+            const simQueueOwner=metrics.training_sim_queue_ratio_owner?.value;
+            const slowestSimulation=Number.isSafeInteger(slowest)
+                ?seconds('worker_'+slowest+'_simulation_seconds'):null;
+            const slowestCollection=Number.isSafeInteger(slowest)
+                ?seconds('worker_'+slowest+'_collection_seconds'):null;
+            const simDominant=slowestSimulation!==null&&slowestCollection>0&&
+                slowestSimulation>=0.45*slowestCollection&&
+                slowestSimulation>=0.20*wall;
+            // Queued shards show pending work, not host CPU saturation.
+            // Only attribute a bottleneck to the lineage that extends
+            // the completed PPO round and is dominated by simulation.
+            const simQueueCritical=simQueueShare!==null&&
+                simQueueShare>=0.25&&simDominant&&
+                Number.isSafeInteger(simQueueOwner)&&simQueueOwner===slowest;
+            const idleTail=metrics.training_sim_idle_tail_max_ratio;
+            const idleTailShare=idleTail?.unit==='ratio'&&
+                Number.isFinite(idleTail.value)&&idleTail.value>=0&&
+                idleTail.value<=1?idleTail.value:null;
+            if(idleTailShare!==null)
+                add('training_sim_idle_tail_work_share',idleTailShare);
+            const idleTailOwner=metrics.training_sim_idle_tail_ratio_owner?.value;
+            // Observed last reply-to-barrier time for idle physical
+            // processes supports a delayed-final-reply (tail-skew) diagnosis,
+            // not a measurement of actual OS/device idle percentage.
+            const simImbalanceCritical=idleTailShare!==null&&
+                idleTailShare>=0.20&&simDominant&&
+                Number.isSafeInteger(idleTailOwner)&&idleTailOwner===slowest;
             const guard=(Number.isSafeInteger(slowest)&&
                 slowest>=0&&slowest<count)
                 ?seconds('worker_'+slowest+'_gpu_guard_readback_seconds'):null;
@@ -601,6 +747,8 @@ class BottleneckEvidence {
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,stageHints,resourceHints,
                     courierQueue:queueShare!==null&&queueShare>=0.20,
+                    courierSimQueue:simQueueCritical,
+                    courierSimImbalance:simImbalanceCritical,
                     // With queued lineages, the last completion may be a
                     // normal admission wave rather than a slow worker.
                     courierTail:gapShare!==null&&gapShare>=0.25&&
@@ -618,6 +766,13 @@ class BottleneckEvidence {
                 const sustained=fn=>recent.filter(fn).length>=5;
                 if(sustained(x=>x.courierQueue))
                     add('training_queue_pressure',1,'count');
+                if(sustained(x=>x.courierSimQueue))
+                    add('training_sim_queue_pressure',1,'count');
+                if(sustained(x=>x.courierSimImbalance))
+                    add('training_sim_tail_skew_pressure',1,'count');
+                if(sustained(x=>x.courierSimQueue)&&
+                    sustained(x=>x.resourceHints?.cpuIdle))
+                    add('training_sim_cpu_underuse_evidence',1,'count');
                 if(sustained(x=>x.courierTail))
                     add('training_final_join_pressure',1,'count');
                 if(sustained(x=>x.courierRemoteGap))
@@ -676,7 +831,9 @@ class BottleneckEvidence {
         // limit. Never evict a project-owned source metric for a diagnosis.
         const priority=name=>
             (name==='pipeline_local_gpu_wait_owner'||
-             name==='pipeline_local_gpu_lease_index')?0:
+             name==='pipeline_local_gpu_lease_index'||
+             name==='pipeline_remote_connect_owner'||
+             name==='pipeline_remote_wait_owner')?0:
             name.startsWith('pipeline_')&&(
                 name.endsWith('_pressure')||name.endsWith('_evidence'))?0:
             name.startsWith('pipeline_')&&name.endsWith('_dominant')?0:

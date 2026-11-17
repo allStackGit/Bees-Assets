@@ -8,7 +8,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress,MAX_TINYBRAINS_COLLECTORS}=require('./experiment_hub_progress');
-const {fixedCpuParallelism}=require('./experiment_hub_resources');
+const {fixedCpuParallelism,approvedEndpointSubset}=require('./experiment_hub_resources');
 const {modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -80,10 +80,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'optimization_seconds','checkpoint_seconds',
         'collector_wait_seconds','collector_critical_path_seconds',
         'gpu_role_startup_seconds',
-        'remote_collector_join_wait_seconds','collection_merge_seconds',
+        'remote_collector_join_wait_seconds','remote_collector_exposed_wait_seconds',
+        'remote_transport_connect_max_seconds',
+        'remote_connect_exposed_seconds',
+        'collection_merge_seconds',
         'overlap_seconds','local_gpu_join_wait_seconds',
         'local_gpu_wait_after_local_max_seconds',
         'remote_policy_snapshot_seconds',
+        'remote_network_launch_delay_seconds',
+        'remote_network_prep_exposed_seconds',
         'remote_policy_shared_encode_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
@@ -124,6 +129,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'remote_collectors_pending_after_local',
+        'remote_collector_co_limiting_count',
+        'remote_collector_exposed_wait_owner',
+        'remote_transport_new_connections',
+        'remote_transport_reused_collectors',
+        'remote_transport_connect_owner',
+        'remote_snapshot_cache_hits',
         'local_gpu_collector_count',
         'local_gpu_direct_model_updates',
         'local_lease_native_engines_active',
@@ -134,8 +146,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'collector_balance_changed_next_update',
         'collector_balance_changed_submission',
         'collector_balance_layout_rollbacks',
+        'collector_balance_noisy_rollbacks',
         'collector_balance_next_submission_update',
         'gpu_role_optimizer_lease_index','gpu_role_restored',
+        'remote_policy_readback_groups',
         'ppo_gpu_max_group_pixels','rollout_inference_max_group_pixels',
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target'])
@@ -151,6 +165,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'states_per_microbatch'])add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
     for(const name of ['pipeline_collection_exposure_fraction',
+        'collector_balance_predicted_gain_ratio',
         'pipeline_collector_stage_fraction','pipeline_remote_service_fraction',
         'pipeline_remote_nonservice_fraction'])
         add(name,row[name],'ratio');
@@ -163,10 +178,18 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         row.simulation_total_charged_memory_mb,'mb');
     add('simulation_ram_lease_headroom_mb',
         row.simulation_ram_lease_headroom_mb,'mb');
+    // Multiple local native engine pools share ONE Python parent charge.
+    // These values are measured against the same 75% RAM admission cap,
+    // not raw machine RAM utilization or a physical OOM diagnosis.
+    add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
+    add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
     add('remote_policy_shared_bytes',row.remote_policy_shared_bytes,'bytes');
+    add('remote_snapshot_staged_bytes',row.remote_snapshot_staged_bytes,'bytes');
+    add('remote_snapshot_unstaged_bytes',row.remote_snapshot_unstaged_bytes,'bytes');
+    add('remote_snapshot_unstaged_ratio',row.remote_snapshot_unstaged_ratio,'ratio');
     // Logical immutable tensor size multiplied by completed on-host
     // consumers. This is not a physical PCIe bandwidth measurement.
     add('local_gpu_direct_model_tensor_bytes',
@@ -307,6 +330,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.learner_wait_after_local_seconds,'seconds');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
+        add('collector_'+i+'_connect_seconds',
+            worker.collector_client_connect_seconds,'seconds');
+        add('collector_'+i+'_connection_reused',
+            worker.collector_client_connection_reused,'count');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
         add('collector_'+i+'_completion_seconds',worker.learner_completion_seconds,'seconds');
         add('collector_'+i+'_service_seconds',worker.collector_service_seconds,'seconds');
@@ -320,6 +347,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.collector_supports_weight_blob,'count');
         add('collector_'+i+'_weight_blob_used',
             worker.collector_weight_blob_used,'count');
+        add('collector_'+i+'_policy_upload_groups',
+            worker.collector_policy_upload_groups,'count');
         for(const [suffix,name] of [
             ['gpu_allocated_mb','collector_gpu_allocated_mb'],
             ['gpu_reserved_mb','collector_gpu_reserved_mb'],
@@ -482,6 +511,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'inference_max_group_px','bootstrap_seconds','returns_seconds',
                 'opponent_readbacks',
                 'snapshot_cache_files','snapshot_cache_bytes',
+                'policy_upload_groups',
                 'record_packed','record_board_groups',
                 'supports_weight_blob','weight_blob_used',
                 'gpu_ordinal','gpu_batch_used_pixels',
@@ -497,6 +527,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 // source envelope still cannot hold a valid update.
                 'serialize_seconds','compress_seconds',
                 'send_seconds','receive_seconds','decode_seconds',
+                'connection_reused','connect_seconds',
                 'ingestion_seconds','worker_receive_seconds',
                 'worker_decode_seconds','record_encode_seconds',
                 'request_wire_bytes','response_wire_bytes',
@@ -720,6 +751,8 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_multi_gpu_profiles:enableMultiGpu?[...approved.keys()]:[],
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
         tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
+        tinybrains_remote_cpu_learner:remote!==null,
+        tinybrains_rollout_subset:remote!==null,
         tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
         tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
@@ -749,19 +782,21 @@ function createTinyBrainsPersistentDockerAdapter({
         },
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
-                rollout_action_weights,import_checkpoint,import_checkpoint_sha256}=parameters;
+                rollout_action_weights,rollout_endpoints,import_checkpoint,import_checkpoint_sha256}=parameters;
             const item=approved.get(profile);
+            const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','remote_rollouts','rollout_action_weights',
-                    'import_checkpoint','import_checkpoint_sha256'].includes(k))||
+                    'import_checkpoint','import_checkpoint_sha256','rollout_endpoints'].includes(k))||
+                (rollout_endpoints!==undefined&&(remote_rollouts!==true||!endpoints))||
                 (remote_rollouts!==undefined&&
-                    (remote_rollouts!==true||!remote||device==='cpu'))||
+                    (remote_rollouts!==true||!remote))||
                 (rollout_action_weights!==undefined&&
                     (remote_rollouts!==true||!Array.isArray(rollout_action_weights)||
-                     rollout_action_weights.length!==remote.endpoints.length+1||
+                     !endpoints||rollout_action_weights.length!==endpoints.length+1||
                      rollout_action_weights.some(w=>
                          !Number.isSafeInteger(w)||w<1||w>1024)))||
                 (device!==undefined&&!['cpu','dual','multi'].includes(device))||
@@ -841,7 +876,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
-                ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
+                ...(remote_rollouts===true?[...endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
                     '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
                 ...(rollout_action_weights?rollout_action_weights.flatMap(w=>
