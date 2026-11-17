@@ -243,8 +243,9 @@ changing combat physics or training clocks. Rocket and Fire Barge explosion
 atlases are included; their 1024-pixel source frames are reduced with
 corresponding pixels-per-unit scaling to preserve visual world size without
 excessive memory use on older computers.
-To package a game, copy both atlases into an `assets/` directory beside
-`bees` or `bees.exe`, or point `BEES_NATIVE_ASSETS` at their directory.
+For a manual deployment, copy all three atlases into an `assets/`
+directory beside `bees` or `bees.exe`, or point `BEES_NATIVE_ASSETS`
+at their directory.
 The native renderer recolors only the same source-matched ship pixels for
 squads with authored custom colors, preserving original alpha and unaffected
 details. Source-numbered collision asteroids, spawned shards and fading
@@ -268,6 +269,39 @@ headlessly. Build it with the client feature:
 cargo build --release --manifest-path native/Cargo.toml -p bees-host --features client --bin bees
 bees play /absolute/path/to/run.json --output-dir /path/to/new-run
 ```
+
+The graphical client now plays the original Bees weapon, explosion and
+warp MP3 clips from the real live projectile and combat events, and the
+source Pluto/Neptune/Uranus intro and layered loops selected by each
+Level's authored `music_location`. Titania uses the original recording
+and its authored intro/loop boundaries. Audio is client-only, limited
+to 16 simultaneous effects, and disabled gracefully when no playback
+device or original files exist; it never runs in headless gameplay or
+native PPO. `F7` mutes audio; Space pauses and resumes the soundtrack.
+`presentation_final.audio` reports sound coverage, missed presentation
+ticks and dropped voices. In a source checkout the game finds
+`Music/` automatically; deployed clients use `assets/audio/` beside
+the executable or `BEES_NATIVE_AUDIO` as the containing music directory.
+Linux graphical builds using the audio backend may need
+`sudo apt install libasound2-dev pkg-config`.
+
+To create a complete portable Windows/Linux game bundle with the
+compiled executable, converted source sprites, original MP3s, sample
+native battles and checksum manifest, run from the repository root:
+
+```sh
+python3 native/tools/package-native-game.py \
+  --binary native/target/release/bees --output dist/bees-native
+```
+
+Use the corresponding `bees.exe` binary on Windows. The packager
+requires Pillow only during asset preparation, refuses to overwrite an
+existing release and creates `play-native-duel` and
+`play-native-skirmish` launchers for the target platform. The packaged
+game requires neither Python nor Unity to run. The current audio
+projection follows visible gameplay events at render boundaries, so a
+very large skipped-tick interval can omit transient sound cues without
+changing combat or replay outcomes.
 
 Run the built executable from `native/target/release` or add it to your
 PATH. For fresh runs, `--output-dir` creates a new
