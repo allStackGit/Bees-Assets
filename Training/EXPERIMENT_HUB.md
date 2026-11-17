@@ -2740,13 +2740,15 @@ older completed history.
 
 The `feat/hub-resource-experiments-20261110` Hub branch and matching
 `feat/linux-tinybrains-runtime` TinyBrains branch have an **unqualified**
-multi-machine rollout path. A single Halifax trainer owns the PPO optimizer,
-checkpoint, evaluation and STOP marker. Each remote machine owns an independent
-`tinybrains_rollout` native job under its own acknowledged CPU/RAM lease,
+multi-machine rollout path. One approved Linux learner owns the PPO optimizer,
+checkpoint, evaluation and STOP marker. It can use a CPU/RAM-only lease
+when its Docker adapter advertises CPU learner support. Each remote machine
+owns a `tinybrains_rollout` native job under its own acknowledged CPU/RAM lease,
 optionally with **one exclusive Windows CUDA GPU**. The learner sends a frozen
 behavior policy and collects the returned on-policy shards before optimizing.
-By default, each collector receives an equal action target. For heterogeneous
-fixed machines, Design can freeze an optional `rollout_action_weights` array,
+The current backend starts from matching checkpoint measurements when
+available, or equal shares, and tests changes against completed PPO cadence.
+Design can freeze an optional `rollout_action_weights` array,
 for example `[2,8,4]` for the learner and two ordered remote collectors.
 This divides the configured total action target proportionally, assigning at
 least one action to each collector and preserving the total. The chosen
@@ -2762,9 +2764,8 @@ latest uninterrupted chart segment, **Compare** displays advisory
 median delivered decisions/s, reduced to bounded integer weights; they are
 a starting estimate, not a guarantee of faster PPO updates. Rates from
 different action targets may change when their work shares change.
-**Use proposed weights in Design** only fills the input for an approved
-matching profile: review the full draft and save explicitly. Nothing
-rebalances a running job, changes its resource lease, or starts training.
+**Use proposed weights in Design** fills the input for an approved
+matching profile for a future job. Review the draft and save it explicitly.
 Re-measure when worker machines, assigned CPUs/GPUs, network or model change.
 Remote workers never publish or advance learner checkpoints.
 
@@ -2790,13 +2791,17 @@ service to the public Internet.
    and enroll their native agents. Save a TinyBrains configuration with
    `remote_rollouts:true` and the approved profile/checkpoint import.
    In **Train**, choose the saved learner configuration, enter its local
-   CPU/RAM and one- or two-GPU budget, then use **Queue and reserve entire
-   group**. Select Halifax and provide one CPU/RAM resource budget per
-   approved endpoint in the shown order. Each collector may set an independent
+   CPU/RAM and optional GPU budget, then use **Queue and reserve entire
+   group**. Select the learner and keep one CPU/RAM budget for each machine you
+   want to allocate. The Hub resolves the machine IDs through authenticated
+   agent reports and freezes the selected endpoints in the learner's
+   approved order. Optional fixed action weights use that same order.
+   Older learner adapters require all approved endpoints.
+   Each collector may set an independent
    `threads` count no greater than its leased CPUs or its locally approved
    thread limit. A worker budget may also request one exclusive Windows CUDA
    GPU; no shared remote GPU is admitted. Collector slot 0 is the learner's
-   local rollout; slots 1–8 correspond to approved remote endpoints.
+   local rollout. Slots 1–8 follow the frozen selection.
    Updated remote workers report `collector_N_model_prepare_seconds`
    (policy/critic weight loading plus first-use allocation) so that model
    reuse can be measured separately from end-to-end collection time.
