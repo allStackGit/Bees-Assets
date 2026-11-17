@@ -1387,6 +1387,25 @@ round, use the native session controller over the same collector and learner:
 python native/tools/train_policy_session.py run.json checkpoint.pt Training/rl_1v1_config.yaml native-session --rounds 100 --rollout-binary path/to/policy_rollout --rollout-worlds 16 --rollout-workers 4 --physics-workers 2 --device cuda
 ```
 
+To advance through authored environments in one checkpoint lineage, add
+`--curriculum-plan curriculum.json`. The positional `run.json` is the first
+stage; the plan names **complete** replacement native run configurations
+relative to the plan file:
+
+```json
+{"schema_version":1,"stages":[
+  {"start_round":10,"run_config":"intermediate.run.json"},
+  {"start_round":30,"run_config":"fleet.run.json"}
+]}
+```
+
+A stage begins **between** optimizer rounds, never during an episode. Each
+run's scenes and Stage assets are pinned for the session; local and distributed
+collectors use that same selected source. Stage runs must keep the session
+Python and policy worker, and must route both model slots if self-play is
+enabled. The independent fixed holdout evaluation remains unchanged, so
+victory measurements across curriculum stages use one consistent reference.
+
 After interruption or a failed round, repeat the command with `--resume`;
 `--rounds` counts the total desired successful rounds and may be increased
 without changing the pinned run, trainer, model, or resource allocation.
