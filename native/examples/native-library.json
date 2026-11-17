@@ -1,0 +1,29 @@
+{
+  "library_schema": 1,
+  "games": [
+    {
+      "id": "frontier",
+      "title": "Frontier Fleet Campaign",
+      "kind": "campaign",
+      "config": "native-frontier-campaign.json"
+    },
+    {
+      "id": "duel",
+      "title": "Native Duel",
+      "kind": "battle",
+      "config": "native-duel.run.json"
+    },
+    {
+      "id": "skirmish",
+      "title": "Native Skirmish",
+      "kind": "battle",
+      "config": "native-skirmish.run.json"
+    },
+    {
+      "id": "two-player",
+      "title": "Native Two-Player Duel",
+      "kind": "battle",
+      "config": "native-two-player.run.json"
+    }
+  ]
+}
