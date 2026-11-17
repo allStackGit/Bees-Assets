@@ -155,6 +155,24 @@ not imply higher useful training SPS. Actual multi-process throughput,
 migration continuation, Windows spawn and low-RAM behavior still need
 qualified measurement.
 
+- **2026-11-17 reusable Courier GPU PPO rollback buffers:** `allStackGit/Basic-Training:feat/courier-reusable-gpu-rollback-20261117` retains complete transactional PPO state verification/rollback, but
+refreshes preallocated CUDA/ROCm policy and Adam safety buffers before
+each unchanged-layout GPU optimizer update instead of reallocating and
+deep-copying their tensor storage. The capture still copies every live
+tensor and current optimizer-group setting on the optimizer stream;
+structural changes allocate fresh backups. Numerical or other optimizer
+failures restore the exact prior policy, Adam state, LR and update count
+and invalidate staging; checkpoint save, evaluation and CPU role changes
+release the private GPU rollback cache and keep portable original state.
+PyTorch CPU semantic checks covered cold/initialized/stable Adam layouts,
+learning-rate changes, no live-storage aliasing, exact policy+optimizer
+rollback, same-layout optimizer replacement and actual layout change.
+Existing Hub metrics now expose logical backup bytes, copy-preparation
+host wall, per-lineage buffer reuse and a sustained copy-pressure diagnosis
+only for the verified last/slowest PPO lineage. These are not physical
+VRAM bus bandwidth, exclusive GPU kernel time or demonstrated SPS gains;
+CUDA/ROCm benchmarking and recovery qualification remain outstanding.
+
 ## Significant remaining development
 
 1. **Exercise the exact executable native-engine path:** qualify early dispatched pooled engine steps, episode/seat identity, replay attribution, graceful retirement and checkpoint continuation using actual TinyBrains binaries and training environments. Synthetic scheduling checks preserve action indices and show potential latency savings, not measured real SPS. On the next native profiling run, nonzero `collector_N_sim_prefetch_engine_steps` plus reduced `collector_N_sim_exposed_wait_share` with improved useful decisions/s would support the expected benefit; absent early dispatch or unchanged exposed wait would falsify it. Full removal of the slowest-child barrier would also require explicit in-flight transition ownership, terminal reward completion, and deterministic policy sampling across out-of-order engine returns; that change has **not** been implemented.
