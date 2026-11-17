@@ -1018,6 +1018,7 @@ def main():
                     run, next_checkpoint, next_manifest, args.learner_slot,
                 )
                 prepared_inputs = {}
+                export_started = time.monotonic()
                 if args.collector_input_outbox is not None:
                     outbox = args.collector_input_outbox.resolve(strict=True)
                     order_digest = file_sha256(order_path)
@@ -1066,9 +1067,13 @@ def main():
                             "shared_round_archive": True,
                             **result,
                         }, sort_keys=True), flush=True)
+                export_wall_seconds = time.monotonic() - export_started
                 if receiver is not None:
                     receiver.activate(orders, prepared_inputs)
+                hub_dispatch_wall_seconds = 0.0
+                hub_dispatch_job_count = 0
                 if "hub_dispatch_plan" in recipe:
+                    dispatch_started = time.monotonic()
                     pinned_plan = recipe["hub_dispatch_plan"]
                     if file_sha256(Path(pinned_plan["path"])) != pinned_plan["sha256"]:
                         raise ValueError("approved native Hub machine/resource dispatch plan changed")
@@ -1095,10 +1100,13 @@ def main():
                                 report.get("round") != index or
                                 report.get("orders_sha256") != file_sha256(order_path)):
                             raise ValueError("Hub did not confirm the exact native round dispatch")
+                        hub_dispatch_job_count = len(report.get("member_job_ids", []))
                         print(json.dumps(report, sort_keys=True), flush=True)
+                    hub_dispatch_wall_seconds = time.monotonic() - dispatch_started
                 print(json.dumps({"kind": "native_distributed_collection_orders_ready",
                                   "round": index, "orders": str(order_path),
                                   "jobs": orders["jobs"]}), flush=True)
+                barrier_started = time.monotonic()
                 bundles = wait_for_collections(
                     Path(recipe["bundle_inbox"]), orders,
                     args.collector_timeout_seconds,
@@ -1110,6 +1118,7 @@ def main():
                         if "bundle_archive_inbox" in recipe else None
                     ),
                 )
+                collector_barrier_wall_seconds = time.monotonic() - barrier_started
                 if receiver is not None:
                     receiver.deactivate()
                 # Only a newly published order yields a real end-to-end
@@ -1128,6 +1137,10 @@ def main():
                         "schema_version": 1,
                         "kind": "native_distributed_collection_window",
                         "collector_input_archive_count": 1 if prepared_inputs else 0,
+                        "collector_source_export_wall_seconds": export_wall_seconds,
+                        "hub_dispatch_wall_seconds": hub_dispatch_wall_seconds,
+                        "hub_dispatched_collectors": hub_dispatch_job_count,
+                        "collector_barrier_wall_seconds": collector_barrier_wall_seconds,
                         "collector_input_archive_bytes_published": (
                             next(iter(prepared_inputs.values()))[2] if prepared_inputs else 0
                         ),
