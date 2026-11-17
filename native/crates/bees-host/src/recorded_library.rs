@@ -124,6 +124,37 @@ pub(super) fn list(
     Ok(clips)
 }
 
+/// Fleet skirmishes are generated inside the game and each battle owns
+/// a different physical source layout. Replay must load the particular
+/// archived scene and run, not a mutable global quick-battle template.
+/// The same original player-input trace reader verifies all playbacks.
+pub(super) fn list_fleet_builds(save_root: &Path) -> io::Result<Vec<RecordedBattle>> {
+    let game_id = "fleet-skirmish";
+    let directory = save_root.join("battles").join(game_id);
+    let mut clips = Vec::new();
+    for (number, folder, trace) in completed_quick_battles(&directory)? {
+        let run = folder.join("replay-source-run.json");
+        let scene = folder.join("replay-source-scene.json");
+        if [(&run, 1024 * 1024_u64), (&scene, 4 * 1024 * 1024_u64)]
+            .iter().any(|(file, max_size)|
+                !fs::symlink_metadata(file).is_ok_and(|metadata|
+                    metadata.file_type().is_file() && metadata.len() <= *max_size))
+        {
+            continue;
+        }
+        clips.push(RecordedBattle {
+            title: format!("Fleet Skirmish  |  Battle {number:06}"),
+            status: "  [Custom replay]".to_owned(),
+            game_id: game_id.to_owned(),
+            source: RecordedSource::QuickBattle(run),
+            trace,
+            number,
+        });
+    }
+    sort_recent(&mut clips);
+    Ok(clips)
+}
+
 /// Latest/best model receipts can change independently of an archived
 /// battle. The game launcher freezes each played model's *run config* in
 /// that battle's own folder. Model weights remain referenced by their

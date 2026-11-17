@@ -55,6 +55,9 @@ mod trained_library;
 #[cfg(feature = "client")]
 #[path = "recorded_library.rs"]
 mod recorded_library;
+#[cfg(feature = "client")]
+#[path = "fleet_builder.rs"]
+mod fleet_builder;
 
 type MinionAllocator = Box<
     dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError> + Send,
@@ -2433,6 +2436,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             save_root, trained.iter().map(|model|
                 (model.id.clone(), model.title.clone())),
         )?);
+        recordings.extend(recorded_library::list_fleet_builds(save_root)?);
         recorded_library::sort_recent(&mut recordings);
         let join_available=saved_network.is_file();
         let host_available=saved_host.is_file();
@@ -2454,8 +2458,14 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 status: "  [Saved replays]", unlocked: true,
             });
         }
+        let fleet_builder_index = rows.len();
+        rows.push(BattleMenuRow {
+            title: "Build Fleet Skirmish",
+            status: "  [Custom native fleets]", unlocked: true,
+        });
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
+        let creating_fleet = index == fleet_builder_index;
         let trained_index = (index >= library.games.len() &&
             index < library.games.len() + trained.len())
             .then_some(index.saturating_sub(library.games.len()));
@@ -2465,7 +2475,9 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let watching = !recordings.is_empty() &&
             index == library.games.len() + trained.len() +
                 usize::from(join_available) + usize::from(host_available);
-        let (game_id, game_kind, game_title) = if watching {
+        let (game_id, game_kind, game_title) = if creating_fleet {
+            (fleet_builder::GAME_ID, "custom_fleet", "Build Fleet Skirmish")
+        } else if watching {
             ("recordings", "recording_library", "Watch Recorded Battles")
         } else if remote {
             ("multiplayer", "remote", "Join Multiplayer")
@@ -2484,7 +2496,23 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             "game_id": game_id,
             "game_kind": game_kind,
         }));
-        let result: Result<(), Box<dyn Error>> = if watching {
+        let result: Result<(), Box<dyn Error>> = if creating_fleet {
+            (|| {
+                let Some(choice) = fleet_builder::choose()? else {
+                    return Ok::<(), Box<dyn Error>>(());
+                };
+                let output = new_library_battle_output(save_root, fleet_builder::GAME_ID)?;
+                let parent = output.parent().ok_or_else(||
+                    invalid("custom skirmish has no archive directory"))?;
+                let source = fleet_builder::archive(parent, choice)?;
+                println!("{}", json!({
+                    "kind": "native_fleet_skirmish_ready",
+                    "source": source,
+                    "game_id": fleet_builder::GAME_ID,
+                }));
+                run_session(&source, true, true, Some(output), None, None, None)
+            })()
+        } else if watching {
             (|| {
                 let rows = recordings.iter().map(|recording| BattleMenuRow {
                     title: &recording.title, status: &recording.status, unlocked: true,

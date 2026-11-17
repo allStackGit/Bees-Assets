@@ -913,7 +913,16 @@ battle-specific `play-native-duel`, `play-native-skirmish` and
 The primary launcher opens the selected Unity-free game library:
 the default includes the persistent Frontier fleet campaign and four
 quick battles, including **Hold the Beehive**: an authored 110-second
-survival defense against two genuine deferred enemy waves (35s, 70s). With `--library` it copies that authored library's
+survival defense against two genuine deferred enemy waves (35s, 70s).
+**Build Fleet Skirmish** is also available in the native game library,
+including packaged custom libraries. Pick either player faction or two
+local commanders, then independently choose 1, 2, 4, 8 or 12 ships per
+side. This uses verified native squad cloning and the same physical
+Level, real AI commands and player controls as any other game. Each
+custom battle saves its starting scene and replay configuration alongside
+its input trace; completed games appear under **Watch Recorded Battles**.
+No Unity, editor, authoring script or separate simulation is involved.
+With `--library` the packager copies that authored library's
 campaign configs, mission runs and native scene dependencies into the
 same portable layout, without requiring Unity or the authoring Python
 tools on the playing machine. Optional quick-battle launchers are
