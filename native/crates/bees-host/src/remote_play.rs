@@ -353,6 +353,8 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb) -> Value {
             "side": ship.side, "ship_type": ship.ship_type,
             "x": body.motion.position.x, "y": body.motion.position.y,
             "rotation": body.motion.rotation_degrees,
+            "destination": view.combat.ship_game_destination(ship.entity_id)
+                .map(|destination| [destination.x, destination.y]),
             "health": ship.vitals.health(), "max_health": ship.vitals.max_health(),
             "owned": owned, "discovered": discovered,
         }))
@@ -405,6 +407,7 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb) -> Value {
         Some(json!({
             "owner": owner, "side": squad.side, "owned": owned,
             "controllable": owned && permissions.is_some_and(|p| p.can_accept_input),
+            "locked_on": if owned { permissions.map(|p| p.locked_on) } else { None },
             "members": members, "source_number": squad.source_hotkey_number,
             "command": command,
             "cease_fire": if owned { view.player_authority.player_cease_fire(owner) } else { None },
