@@ -61,6 +61,34 @@ For playback with no original Unity authoring tools, both the game and
 headless executable need only the compiled native assets and generated
 JSON. Authoring Python is not a runtime dependency.
 
+To turn an authored battle into a **real native MA-POCA training session**,
+add `--trainable` when generating it. This writes a second source scene/run
+with real policy controller identities, known Bomb observation metadata,
+and reward/discovery baselines calculated from the immutable scene assets:
+
+```sh
+python3 native/tools/author-battle.py native-trainable \
+  --bees 21:6,18:2 --humans 13:6,10:2 --trainable --seed 42
+python3 native/tools/bootstrap_policy.py native-new-model \
+  --scenario custom \
+  --source-scene native-trainable/battle.policy.scene.json \
+  --source-run native-trainable/battle.policy.run.json \
+  --seed 42 --train-rounds 3 --learner-slot 0 \
+  --rollout-worlds 16 --holdout-worlds 8 --evaluation-side 1
+```
+
+The new policy scene uses the **same physical hulls and CombatWorld** as
+the playable `battle.run.json`. Only ship classes with checked-in native
+policy observations are assigned a controller; ordinary AI-controlled
+support squads retain the original scripted-command owner. The initializer
+uses the existing checkpoint serializer, pinned holdout evaluation,
+multi-round optimizer, resumable lineage and optional Experiment Hub
+distributed-collector controls. Custom scenario inputs are hash-pinned;
+resume rejects changed originals. A native binary, Rust toolchain and
+compatible MA-POCA Python environment remain required for training;
+a generated configuration alone is not evidence of policy quality or
+Unity gameplay parity.
+
 In an ordinary native scene with exactly one player-controlled side, the
 local camera/input owner now follows that actual squad side, regardless
 of whether it is the historically named `bee_side` or `human_side`.

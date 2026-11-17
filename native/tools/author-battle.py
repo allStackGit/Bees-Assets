@@ -98,7 +98,7 @@ def author(args) -> tuple[dict, dict, dict]:
             "native_stage" not in run or len(run.get("levels", [])) != 1 or
             run.get("model_manifest") or run.get("hivemind")):
         raise ValueError("the paired run template must contain the same native map and game-only stage assets")
-    if set(scene.get("layout", {})) - {"add_static_boxes", "add_polygon_obstacles"}:
+    if set(scene.get("layout", {})) - {"add_static_boxes", "add_static_polygons"}:
         raise ValueError("source layout contains squad-relative changes that cannot be safely cloned")
     if not math.isfinite(args.spacing) or args.spacing < 12:
         raise ValueError("spacing must be a finite world distance of at least 12")
@@ -178,7 +178,7 @@ def author(args) -> tuple[dict, dict, dict]:
          for resource in scene.get(key, [])] +
         [box["entity_id"] for box in scene.get("layout", {}).get("add_static_boxes", [])] +
         [polygon["entity_id"] for polygon in
-         scene.get("layout", {}).get("add_polygon_obstacles", [])]
+         scene.get("layout", {}).get("add_static_polygons", [])]
     )
     ship_id = max(SHIP_ID_START, max_reserved + 1)
     weapon_id = max(WEAPON_ID_START, ship_id + sum(
@@ -301,6 +301,116 @@ def author(args) -> tuple[dict, dict, dict]:
     return scene, run, library
 
 
+def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
+    """Use source-authored v26 policy identities with this same CombatWorld."""
+    source = load_json(args.policy_archetypes)
+    if source.get("native_game_schema") != 1:
+        raise ValueError("policy archetypes require a native_game_schema 1 source")
+    policies = {
+        (ship["side"], ship["ship_type"]): ship
+        for ship in source.get("ships", [])
+        if isinstance(ship, dict) and isinstance(ship.get("policy"), dict)
+    }
+    scene = copy.deepcopy(scene)
+    run = copy.deepcopy(run)
+    active = {1: 0, 2: 0}
+    for ship in scene["ships"]:
+        ship["user_controlled"] = False
+        # Native episode starting TSV uses actual ShipVitals, not nominal
+        # capacity. The generated baseline is exact only for intact,
+        # empty-cargo archetypes; refuse other scenes instead of guessing.
+        if (ship.get("health") != ship.get("max_health") or
+                ship.get("mined_cargo", 0)):
+            raise ValueError("custom native policy starting ships must be at full health with no cargo")
+        source_ship = policies.get((ship["side"], ship["ship_type"]))
+        if source_ship is None:
+            ship.pop("policy", None)
+            continue
+        if ship.get("special_weapon") is not None:
+            reference = source_ship.get("special_weapon") or {}
+            physical = ship["special_weapon"]
+            observation = reference.get("observation")
+            if (not isinstance(observation, dict) or
+                    reference.get("power") != physical.get("power") or
+                    reference.get("slot") != physical.get("slot")):
+                raise ValueError(
+                    f"policy ship {ship['ship_type']} needs a matching "
+                    "source-authored Bomb observation"
+                )
+            physical["observation"] = copy.deepcopy(observation)
+        ship["policy"] = {
+            "agent_id": 2_000_000 + ship["entity_id"],
+            "team_id": 0 if ship["side"] == 1 else 1,
+            "quarter_turns": 0 if ship["side"] == 1 else 1,
+            "movement_disabled": False,
+        }
+        active[ship["side"]] += 1
+    if not all(active.values()):
+        raise ValueError(
+            "native MA-POCA needs a source-backed policy ship on both sides; "
+            f"available: {sorted(policies)}"
+        )
+    for squad in scene["squads"]:
+        squad["user_controlled"] = False
+        squad["can_accept_input"] = False
+        squad.pop("hotkey_number", None)
+        squad.pop("original_squad_count", None)
+    scene.pop("local_player_side", None)
+    fleet = {
+        side: sum(ship["max_tsv"] for ship in scene["ships"]
+                  if ship["side"] == side and ship.get("persistent_fleet"))
+        for side in (1, 2)
+    }
+    if min(fleet.values()) <= 0:
+        raise ValueError("policy requires both sides' positive persistent fleet TSV")
+    mining = sum(max(1, obj["health"]) for obj in scene.get("mining_asteroids", []))
+    objects = sum(max(1, obj["max_health"]) for obj in scene.get("map_objects", []))
+    assets = Path(__file__).resolve().parents[1] / "assets"
+    boxes = {
+        obj["name"]: obj["authored_health"]
+        for obj in load_json(assets / "box-obstacle-colliders.json")["obstacles"]
+    }
+    polygons = load_json(assets / "polygon-obstacle-colliders.json")["obstacles"]
+    if len(polygons) != 1:
+        raise ValueError("ambiguous authored native polygon obstacle value")
+    layout = scene.get("layout", {})
+    statics = 0
+    for placement in layout.get("add_static_boxes", []):
+        name = placement["prefab_name"]
+        if name not in boxes:
+            raise ValueError(f"unknown static box archetype {name!r}")
+        statics += max(1, boxes[name])
+    statics += len(layout.get("add_static_polygons", [])) * max(
+        1, polygons[0]["authored_health"]
+    )
+    scene["policy_episode"] = {
+        "episode_number": 1,
+        "bee_starting_tsv": fleet[1],
+        "human_starting_tsv": fleet[2],
+        "timeout_seconds": round(args.minutes * 60 - 10 * scene["fixed_dt_seconds"], 4),
+        "discovery_baselines": [
+            [fleet[2], mining, statics, objects],
+            [fleet[1], mining, statics, objects],
+        ],
+        "movement_disabled_by_team": [False, False],
+    }
+    # Script only ordinary non-policy squads, never compete with a learner.
+    policy_members = {
+        ship["entity_id"] for ship in scene["ships"] if "policy" in ship
+    }
+    policy_squads = {
+        squad["item_id"] for squad in scene["squads"]
+        if any(member in policy_members for member in squad["members"])
+    }
+    run["levels"][0]["scripted_queues"] = [
+        order for order in run["levels"][0].get("scripted_queues", [])
+        if order["squad_item_id"] not in policy_squads
+    ]
+    run["levels"][0]["scene"] = "battle.policy.scene.json"
+    run["run_id"] += "-policy"
+    return scene, run
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path,
@@ -321,6 +431,11 @@ def main() -> None:
                         help="use the authoritative native player fog system")
     parser.add_argument("--empty-map", action="store_true",
                         help="omit source mining resources, static boxes and map objects")
+    parser.add_argument("--trainable", action="store_true",
+                        help="also author a matching native MA-POCA policy scene and run")
+    parser.add_argument("--policy-archetypes", type=Path,
+                        default=EXAMPLES / "native-skirmish.policy.scene.json",
+                        help="existing native policy ship and Bomb observation definitions")
     parser.add_argument("--source-scene", type=Path,
                         default=EXAMPLES / "native-queen.scene.json",
                         help="native game scene supplying exact per-side ship archetypes")
@@ -330,13 +445,20 @@ def main() -> None:
     args = parser.parse_args()
     try:
         scene, run, library = author(args)
+        policy = author_policy_scene(scene, run, args) if args.trainable else None
         output = args.output_dir.resolve()
         output.mkdir(parents=True, exist_ok=False)
-        for name, document in (
+        documents = [
             ("battle.scene.json", scene),
             ("battle.run.json", run),
             ("library.json", library),
-        ):
+        ]
+        if policy is not None:
+            documents.extend([
+                ("battle.policy.scene.json", policy[0]),
+                ("battle.policy.run.json", policy[1]),
+            ])
+        for name, document in documents:
             (output / name).write_text(
                 json.dumps(document, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
@@ -354,6 +476,8 @@ def main() -> None:
         "player_sides": sorted({s["side"] for s in scene["squads"]
                                 if s["user_controlled"]}),
         "fixed_rounds": run["max_rounds"],
+        "native_policy_run": (str(output / "battle.policy.run.json")
+                              if args.trainable else None),
     }, sort_keys=True))
 
 

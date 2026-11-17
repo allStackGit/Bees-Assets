@@ -79,7 +79,9 @@ def write_native_holdout(output: Path, training_run: dict,
 def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
               inference_device: str, cargo: str, scenario: str,
               episodes_per_world: int = 1, holdout_worlds: int | None = None,
-              holdout_seed: int = 918273645, holdout_episodes: int = 1) -> dict:
+              holdout_seed: int = 918273645, holdout_episodes: int = 1,
+              source_scene_override: Path | None = None,
+              source_run_override: Path | None = None) -> dict:
     if output.exists():
         raise FileExistsError(f"refusing to overwrite existing output: {output}")
     if (not slots or len(slots) != len(set(slots)) or
@@ -98,8 +100,14 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     if shutil.which(cargo) is None:
         raise ValueError(f"native bootstrap requires an installed Rust cargo executable: {cargo}")
     example_dir = ROOT / "native" / "examples"
-    source_scene = example_dir / f"native-{scenario}.policy.scene.json"
-    source_run = example_dir / f"native-{scenario}.run.json"
+    if scenario == "custom":
+        if source_scene_override is None or source_run_override is None:
+            raise ValueError("custom bootstrap requires native policy scene and run inputs")
+        source_scene = source_scene_override.resolve(strict=True)
+        source_run = source_run_override.resolve(strict=True)
+    else:
+        source_scene = example_dir / f"native-{scenario}.policy.scene.json"
+        source_run = example_dir / f"native-{scenario}.run.json"
     scene = json.loads(source_scene.read_text(encoding="utf-8"))
     run = json.loads(source_run.read_text(encoding="utf-8"))
     if (not isinstance(scene, dict) or not isinstance(run, dict) or
@@ -110,6 +118,20 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         raise ValueError("native bootstrap requires a one-Level native-authored policy scene")
     if not isinstance(scene.get("ships"), list):
         raise ValueError("native bootstrap requires authored policy ships")
+    if scenario == "custom":
+        source_level = run["levels"][0]
+        scene_field = source_level.get("scene")
+        if (scene.get("native_game_schema") != 1 or
+                not isinstance(scene_field, str) or not scene_field or
+                (source_run.parent / scene_field).resolve() != source_scene or
+                run.get("stage_name") != scene["stage_name"] or
+                run.get("fragment_spawn", {}).get("map_bounds") != scene.get("bounds") or
+                not isinstance(scene.get("policy_episode"), dict) or
+                run.get("model_manifest") or run.get("hivemind")):
+            raise ValueError(
+                "custom native policy scene must match the exact game-only "
+                "run's stage, map, and referenced source path"
+            )
     real_teams = {}
     for ship in scene["ships"]:
         if not isinstance(ship, dict):
@@ -125,6 +147,7 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
             real_teams[0] == real_teams[1]):
         raise ValueError("native bootstrap requires authentic policy agents on distinct sides")
     source_scene_digest = file_sha256(source_scene)
+    source_run_digest = file_sha256(source_run)
     trainer_config_digest = file_sha256(trainer_config)
     import torch
     import yaml
@@ -189,7 +212,11 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     level = run["levels"][0]
     level["scene"] = "scene.json"
     level["model_slots"] = {"0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0]}
-    level.pop("scripted_queues", None)
+    # Custom authored support squads may still have legitimate native
+    # scripted AI orders. They cannot share squad ownership with a policy
+    # controller; the authoring tool checks that contract.
+    if scenario != "custom":
+        level.pop("scripted_queues", None)
     with (output / "run.json").open("x", encoding="utf-8", newline="\n") as file:
         json.dump(run, file, indent=2)
         file.write("\n")
@@ -255,6 +282,10 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         "trainer_config": "trainer-config.yaml",
         "trainer_config_sha256": source_hash,
         "scenario": scenario,
+        **({
+            "source_scene_sha256": source_scene_digest,
+            "source_run_sha256": source_run_digest,
+        } if scenario == "custom" else {}),
         "episodes_per_world": episodes_per_world,
         "holdout_worlds": holdout_worlds,
         "holdout_seed": holdout_seed if holdout_worlds is not None else None,
@@ -277,7 +308,9 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
 def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
                                 scenario: str, episodes_per_world: int,
                                 holdout_worlds: int | None, holdout_seed: int,
-                                holdout_episodes: int) -> dict:
+                                holdout_episodes: int,
+                                source_scene_override: Path | None = None,
+                                source_run_override: Path | None = None) -> dict:
     """Resume only a fully committed, unchanged initial model lineage."""
     if not output.is_dir():
         raise ValueError(f"native bootstrap directory does not exist: {output}")
@@ -294,6 +327,14 @@ def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
                 receipt.get("holdout_episodes") != holdout_episodes
             ))):
         raise ValueError("bootstrap receipt does not match the requested initial run")
+    if scenario == "custom":
+        if source_scene_override is None or source_run_override is None:
+            raise ValueError("resuming custom bootstrap requires its original native inputs")
+        if (file_sha256(source_scene_override.resolve(strict=True)) !=
+                receipt.get("source_scene_sha256") or
+                file_sha256(source_run_override.resolve(strict=True)) !=
+                receipt.get("source_run_sha256")):
+            raise ValueError("custom native scene or run source changed since bootstrap")
     for name in ("checkpoint", "manifest", "trainer_config", "scene", "run"):
         expected_name = {
             "checkpoint": "checkpoint.pt",
@@ -424,8 +465,12 @@ def main() -> None:
                         help="model slots sharing the initial checkpoint (default: 0 1)")
     parser.add_argument("--inference-device", default="cpu",
                         help="resident model device, e.g. cpu or cuda")
-    parser.add_argument("--scenario", choices=("duel", "skirmish"), default="duel",
-                        help="copy a full native policy scene/run template into the bootstrap")
+    parser.add_argument("--scenario", choices=("duel", "skirmish", "custom"), default="duel",
+                        help="copy a shipped or explicit native policy scene/run template")
+    parser.add_argument("--source-scene", type=Path,
+                        help="custom native_game_schema 1 policy scene")
+    parser.add_argument("--source-run", type=Path,
+                        help="paired custom native stage and run configuration")
     parser.add_argument("--episodes-per-world", type=int, default=1,
                         help="complete this many episodes per persistent native arena in each collection")
     parser.add_argument("--cargo", default="cargo",
@@ -492,6 +537,11 @@ def main() -> None:
     parser.add_argument("--early-stop-minimum-extra-victories", type=int, default=1,
                         help="minimum extra fixed-holdout wins qualifying as a learning improvement")
     args = parser.parse_args()
+    custom_inputs = args.source_scene is not None and args.source_run is not None
+    any_custom_input = args.source_scene is not None or args.source_run is not None
+    if (args.scenario == "custom" and not custom_inputs) or (
+            args.scenario != "custom" and any_custom_input):
+        parser.error("--scenario custom requires both --source-scene and --source-run; shipped scenarios use neither")
     if args.train_rounds is not None and not 1 <= args.train_rounds <= 99999:
         parser.error("--train-rounds must be between 1 and 99999")
     if args.resume and args.train_rounds is None:
@@ -619,6 +669,7 @@ def main() -> None:
         result = verified_existing_bootstrap(
             output, args.seed, args.slots, args.scenario, args.episodes_per_world,
             args.holdout_worlds, args.holdout_seed, args.holdout_episodes,
+            args.source_scene, args.source_run,
         )
     else:
         if output.exists():
@@ -643,6 +694,7 @@ def main() -> None:
                 args.inference_device, args.cargo, args.scenario,
                 args.episodes_per_world, args.holdout_worlds,
                 args.holdout_seed, args.holdout_episodes,
+                args.source_scene, args.source_run,
             )
             if output.exists():
                 raise FileExistsError(
