@@ -3157,6 +3157,47 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){feedback('hub-job-message',error.message);}
                     await reload();
                 }));
+            if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&groupWorkers.length>0&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
+                actions.append(button('Start Courier distributed group',async()=>{
+                    if(!confirm('Authorize '+groupWorkers.length+
+                        ' separately leased Courier PPO services and one subsequent learner Start? '+
+                        'The learner Starts only after every original worker has a verified running native receipt. '+
+                        'The approval expires after 20 minutes; coordinator restart disarms the future Start. '+
+                        'No failed PPO owner is retried automatically.'))return;
+                    try {
+                        const result=await action('hub/distributed/courier/start-lineages',{
+                            learner_job_id:j.id,
+                            expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_start:true,confirm_learner_start:true,
+                        });
+                        feedback('hub-job-message',result.starts_authorized+
+                            ' remote Courier Starts approved. Waiting for verified native owners.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                }));
+            }
+            if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&groupWorkers.length>0)
+                actions.append(button('Abort Courier distributed startup',async()=>{
+                    if(!confirm('Abandon this unstarted Courier learner and its '+
+                        groupWorkers.length+' remote PPO lineages? Running or uncertain native owners '+
+                        'receive supervised Stop orders; all fixed CPU/GPU leases remain held '+
+                        'until verified termination or absence. Checkpoints are preserved.'))return;
+                    try {
+                        const result=await action('hub/distributed/courier/abort-startup',{
+                            learner_job_id:j.id,
+                            expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_abort:true,
+                        });
+                        feedback('hub-job-message',result.learner_cancelled
+                            ?'Courier distributed startup cancelled.'
+                            :'Courier remote Stop reconciliation requested; claims remain reserved until verified.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                }));
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
