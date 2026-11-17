@@ -7,7 +7,7 @@ publish = false
 [features]
 default = []
 # The headless build never links a window system. Linux uses X11.
-client = ["dep:minifb"]
+client = ["dep:minifb", "dep:rodio"]
 
 # OS-backed adapters shared by the rendered client and headless worker.
 # Neither gameplay nor the HiveMind protocol crate depends on the host.
@@ -35,3 +35,6 @@ getrandom = "0.2"
 sha2 = "0.10"
 
 minifb = { version = "0.29", optional = true, default-features = false, features = ["x11"] }
+# Client-only cross-platform audio output; the native/headless binary
+# never links an audio driver or allocates a decoder.
+rodio = { version = "0.19", optional = true, default-features = false, features = ["symphonia-mp3"] }
