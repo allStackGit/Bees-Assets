@@ -1087,6 +1087,85 @@ struct CampaignMission<'a> {
     authored_roster: Option<&'a [(i64, i64, i64)]>,
 }
 
+/// The immutable battle-start career projection required to reproduce a
+/// recorded campaign fight after later purchases, losses, and transfers.
+/// This is saved outside the run directory before gameplay writes its
+/// original replay stream. It never replaces the career's transaction log.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignReplaySetup {
+    schema_version: u32,
+    kind: String,
+    source_config: PathBuf,
+    source_config_sha256: String,
+    campaign_id: String,
+    mission_id: String,
+    player_side: i32,
+    record_fleet_stats: bool,
+    bank_player_minerals: bool,
+    lost_fleet_ids: Option<HashSet<i64>>,
+    purchased_ships: Option<Vec<NativePurchasedShip>>,
+    created_squads: Option<Vec<NativeCreatedSquad>>,
+    tactics: Option<Vec<NativeSavedSquadTactics>>,
+    authored_roster: Option<Vec<(i64, i64, i64)>>,
+}
+
+impl CampaignReplaySetup {
+    fn capture(source: &Path, mission: CampaignMission<'_>)
+        -> Result<Self, Box<dyn Error>>
+    {
+        let source = source.canonicalize()?;
+        Ok(Self {
+            schema_version: 1,
+            kind: "native_campaign_replay_setup".to_owned(),
+            source_config_sha256: format!("{:x}", Sha256::digest(fs::read(&source)?)),
+            source_config: source,
+            campaign_id: mission.campaign_id.to_owned(),
+            mission_id: mission.mission_id.to_owned(),
+            player_side: mission.player_side,
+            record_fleet_stats: mission.record_fleet_stats,
+            bank_player_minerals: mission.bank_player_minerals,
+            lost_fleet_ids: mission.lost_fleet_ids.cloned(),
+            purchased_ships: mission.purchased_ships.map(<[_]>::to_vec),
+            created_squads: mission.created_squads.map(<[_]>::to_vec),
+            tactics: mission.tactics.map(<[_]>::to_vec),
+            authored_roster: mission.authored_roster.map(<[_]>::to_vec),
+        })
+    }
+
+    fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
+        let setup: Self = serde_json::from_slice(&fs::read(path)?)?;
+        if setup.schema_version != 1 ||
+            setup.kind != "native_campaign_replay_setup" ||
+            setup.campaign_id.is_empty() || setup.mission_id.is_empty() ||
+            !(1..=2).contains(&setup.player_side) ||
+            !setup.source_config.is_absolute()
+        {
+            return Err(invalid("invalid recorded campaign battle configuration").into());
+        }
+        let source = setup.source_config.canonicalize()?;
+        if format!("{:x}", Sha256::digest(fs::read(&source)?)) != setup.source_config_sha256 {
+            return Err(invalid("recorded campaign source configuration changed").into());
+        }
+        Ok(setup)
+    }
+
+    fn mission(&self) -> CampaignMission<'_> {
+        CampaignMission {
+            campaign_id: &self.campaign_id,
+            mission_id: &self.mission_id,
+            player_side: self.player_side,
+            record_fleet_stats: self.record_fleet_stats,
+            bank_player_minerals: self.bank_player_minerals,
+            lost_fleet_ids: self.lost_fleet_ids.as_ref(),
+            purchased_ships: self.purchased_ships.as_deref(),
+            created_squads: self.created_squads.as_deref(),
+            tactics: self.tactics.as_deref(),
+            authored_roster: self.authored_roster.as_deref(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct CampaignOutcome {
     campaign_id: String,
