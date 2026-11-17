@@ -132,6 +132,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'remote_transport_connected_collectors',
         'remote_transport_reused_collectors',
         'remote_transport_connect_owner',
+        'remote_snapshot_cache_hits',
         'local_gpu_collector_count',
         'local_gpu_direct_model_updates',
         'local_lease_native_engines_active',
@@ -175,6 +176,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
     add('remote_policy_shared_bytes',row.remote_policy_shared_bytes,'bytes');
+    add('remote_snapshot_staged_bytes',row.remote_snapshot_staged_bytes,'bytes');
+    add('remote_snapshot_unstaged_bytes',row.remote_snapshot_unstaged_bytes,'bytes');
+    add('remote_snapshot_unstaged_ratio',row.remote_snapshot_unstaged_ratio,'ratio');
     // Logical immutable tensor size multiplied by completed on-host
     // consumers. This is not a physical PCIe bandwidth measurement.
     add('local_gpu_direct_model_tensor_bytes',
