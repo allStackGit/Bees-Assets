@@ -521,7 +521,7 @@ def main():
     connection = socket.create_connection((args.host, args.port), timeout=10)
     connection.settimeout(None)
     try:
-        console = RemoteConsole(connection, silent=True)
+        console = RemoteConsole(connection, silent=True, expected_side=args.side)
         connection.sendall((json.dumps({"kind": "hello", "token": token}) + "\n").encode("utf-8"))
         threading.Thread(target=console.receive, daemon=True).start()
         root = tk.Tk()
