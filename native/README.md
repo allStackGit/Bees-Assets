@@ -80,9 +80,31 @@ python3 native/tools/author-battle.py escape-route \
 These write the normal `levels[0].survival` or `levels[0].extraction`
 contracts consumed by the *same* native combat and terminal rules.
 They work as standalone battles or missions in an authored campaign.
+
+Timed multi-wave battles also use the native Level's existing
+reinforcement scheduler and source command director:
+
+```sh
+python3 native/tools/author-battle.py defend-waves \
+  --bees 21:4,2:1 --humans 13:12,10:1 --control bees \
+  --objective survival --protect-type 2 --survive-seconds 90 \
+  --reinforcement 30:2:13:4 --reinforcement 60:2:13:4
+```
+
+Each `SECONDS:SIDE:TYPE:COUNT` allocation reserves exactly that many
+already-authored physical ships for a later arrival, splitting them into
+separate squads without mixing deployed and deferred members. The source
+Level owns deployment and starts each deferred enemy's scripted command
+only after it actually arrives. Waves retain unique stable physical IDs,
+the existing formation and collision rules, and the same headless
+gameplay result as windowed play. Both factions need some initially
+deployed ships; wave times must precede the battle end.
+These source-authored waves do not invent obstacle navigation at an
+off-map spawn: delayed hulls use their original distinct authored slots.
 The native policy-training author currently permits only elimination
-episodes; it rejects `--trainable` with survival/extraction rather
-than silently mixing incompatible training episode contracts.
+episodes without deferred waves; it rejects `--trainable` with
+survival/extraction or reinforcements rather than mixing incompatible
+group membership and reward episode contracts.
 
 To turn an authored battle into a **real native MA-POCA training session**,
 add `--trainable` when generating it. This writes a second source scene/run

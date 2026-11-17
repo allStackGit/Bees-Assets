@@ -39,6 +39,28 @@ def fleet(value: str) -> list[tuple[int, int]]:
     return list(counts.items())
 
 
+def reinforcement(value: str) -> tuple[float, int, int, int]:
+    """A timed deferred squad allocation: SECONDS:SIDE:TYPE:COUNT."""
+    parts = value.split(":")
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError(
+            "reinforcement format is SECONDS:SIDE:TYPE:COUNT (e.g. 45:2:13:4)"
+        )
+    try:
+        seconds = float(parts[0])
+        side, kind, count = (int(part) for part in parts[1:])
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("invalid timed reinforcement numbers") from error
+    if (not math.isfinite(seconds) or seconds <= 0 or
+            side not in (1, 2) or not 0 <= kind < 24 or
+            not 1 <= count <= 1024):
+        raise argparse.ArgumentTypeError(
+            "reinforcement requires positive finite seconds, side 1/2, "
+            "ship type 0..23 and count 1..1024"
+        )
+    return seconds, side, kind, count
+
+
 def load_json(path: Path) -> dict:
     content = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(content, dict):
@@ -133,6 +155,33 @@ def author(args) -> tuple[dict, dict, dict]:
         blueprints.setdefault(key, ship)
 
     requested = {1: args.bees, 2: args.humans}
+    requested_counts = {
+        (side, kind): count for side, units in requested.items()
+        for kind, count in units
+    }
+    deferred_counts: dict[tuple[int, int], int] = {}
+    prior_time = 0.0
+    for when, side, kind, count in args.reinforcements:
+        key = (side, kind)
+        if when < prior_time or when >= args.minutes * 60:
+            raise ValueError(
+                "reinforcements must have nondecreasing times strictly before battle end"
+            )
+        prior_time = when
+        deferred_counts[key] = deferred_counts.get(key, 0) + count
+        if deferred_counts[key] > requested_counts.get(key, 0):
+            raise ValueError(
+                f"reinforcement ships for side {side} type {kind} exceed "
+                "that faction's authored total"
+            )
+    if any(
+        sum(count - deferred_counts.get((side, kind), 0)
+            for kind, count in requested[side]) == 0 for side in (1, 2)
+    ):
+        raise ValueError(
+            "both factions need an initially deployed squad; "
+            "do not defer an entire faction into reinforcement waves"
+        )
     for side, units in requested.items():
         missing = [ship_type for ship_type, _ in units
                    if (side, ship_type) not in blueprints]
@@ -240,24 +289,54 @@ def author(args) -> tuple[dict, dict, dict]:
                     ship["drone_carrier_id"] = carrier
                 child_index += 1
 
+    # The source scene owns every future reinforcement ship up front.
+    # Partition those real hulls into disjoint deferred squads, so the
+    # native Level can reserve them at construction and deploy them once.
+    # The first (count - deferred) ships remain immediately playable.
+    wave_members = [set() for _ in args.reinforcements]
+    by_kind = {
+        (side, kind): [ship["entity_id"] for ship in entries
+                       if ship["ship_type"] == kind]
+        for side, entries in by_side.items()
+        for kind, _ in requested[side]
+    }
+    wave_cursor = {
+        key: len(ships) - deferred_counts.get(key, 0)
+        for key, ships in by_kind.items()
+    }
+    for index, (_, side, kind, count) in enumerate(args.reinforcements):
+        key = (side, kind)
+        start = wave_cursor[key]
+        wave_members[index].update(by_kind[key][start:start + count])
+        wave_cursor[key] += count
+    deferred_owner = {
+        ship_id: index for index, members in enumerate(wave_members)
+        for ship_id in members
+    }
     by_side_squads: dict[int, list[dict]] = {1: [], 2: []}
+    wave_squads: list[list[int]] = [[] for _ in args.reinforcements]
     for side, units in requested.items():
         squad_id = squad_base + (side - 1) * side_span
         for kind, _ in units:
-            matching = [ship["entity_id"] for ship in by_side[side]
-                        if ship["ship_type"] == kind]
-            for start in range(0, len(matching), MAX_SQUAD_MEMBERS):
-                group = {
-                    "item_id": squad_id, "side": side,
-                    "members": matching[start:start + MAX_SQUAD_MEMBERS],
-                    "shooting_strategy_id": 1,
-                    "user_controlled": side in controlled,
-                    "can_accept_input": side in controlled,
-                    "command_bans": [],
-                }
-                by_side_squads[side].append(group)
-                new_squads.append(group)
-                squad_id += 1
+            matching = by_kind[(side, kind)]
+            for wave in [None, *range(len(args.reinforcements))]:
+                members = [ship_id for ship_id in matching
+                           if deferred_owner.get(ship_id) == wave]
+                for start in range(0, len(members), MAX_SQUAD_MEMBERS):
+                    group = {
+                        "item_id": squad_id, "side": side,
+                        "members": members[start:start + MAX_SQUAD_MEMBERS],
+                        "shooting_strategy_id": 1,
+                        "user_controlled": side in controlled,
+                        "can_accept_input": side in controlled,
+                        "command_bans": [],
+                    }
+                    by_side_squads[side].append(group)
+                    new_squads.append(group)
+                    if wave is not None:
+                        wave_squads[wave].append(squad_id)
+                    squad_id += 1
+    deferred_squad_ids = {id for groups in wave_squads for id in groups}
     for side in controlled:
         total = len(by_side_squads[side])
         for index, squad in enumerate(by_side_squads[side], 1):
@@ -278,18 +357,30 @@ def author(args) -> tuple[dict, dict, dict]:
             if example["base_speed"] == 0:
                 orders = [{"kind": "hold"}]
             elif example.get("turrets") or example.get("special_weapon"):
+                # Never target a not-yet-deployed opponent: a native game
+                # order requires an authenticated live enemy SquadLifetime.
+                targets = [
+                    other for other in by_side_squads[3 - side]
+                    if other["item_id"] not in deferred_squad_ids
+                ]
                 orders = [
                     {"kind": "aggressive", "enemy_squad_item_id": other["item_id"]}
-                    for other in by_side_squads[3 - side]
+                    for other in targets
                 ]
+                if not orders:
+                    orders = [{"kind": "move_to_point",
+                               "destination": scene["starting_positions"][2 - side]}]
             else:
                 orders = [{"kind": "move_to_point",
                            "destination": scene["starting_positions"][2 - side]}]
-            queues.append({
+            plan = {
                 "squad_item_id": squad["item_id"],
                 "repeat": False if orders[0]["kind"] == "hold" else True,
                 "orders": orders,
-            })
+            }
+            if squad["item_id"] in deferred_squad_ids:
+                plan["activation"] = {"kind": "on_deployment"}
+            queues.append(plan)
 
     scene["ships"] = new_ships
     scene["squads"] = new_squads
@@ -305,6 +396,13 @@ def author(args) -> tuple[dict, dict, dict]:
         "scene": "battle.scene.json", "world_id": 1, "level_id": 1,
         "seed": args.seed, "scripted_queues": queues,
     }]
+    if args.reinforcements:
+        # Reserved hulls spawn at distinct, preauthored map positions,
+        # avoiding invented pathfinding around obstacles at wave entry.
+        run["levels"][0]["reinforcements"] = [
+            {"after_seconds": when, "squad_item_ids": wave_squads[index]}
+            for index, (when, _, _, _) in enumerate(args.reinforcements)
+        ]
     # These are the native Level's real survival/extraction contracts,
     # consumed by the same CombatWorld/terminal as campaign and training.
     # Authoring never installs a second special-objective simulator.
@@ -502,6 +600,9 @@ def main() -> None:
     parser.add_argument("--extraction-radius", type=float, default=15,
                         help="extraction only: activation distance before exit trigger appears")
     parser.add_argument("--spacing", type=float, default=24)
+    parser.add_argument("--reinforcement", action="append", default=[],
+                        type=reinforcement, dest="reinforcements",
+                        help="defer part of a faction's fleet until SECONDS:SIDE:TYPE:COUNT; repeat in time order")
     parser.add_argument("--fog", action="store_true",
                         help="use the authoritative native player fog system")
     parser.add_argument("--empty-map", action="store_true",
@@ -518,6 +619,11 @@ def main() -> None:
                         default=EXAMPLES / "native-skirmish.run.json",
                         help="paired native run with the same map/physics asset matrix")
     args = parser.parse_args()
+    if args.trainable and args.reinforcements:
+        parser.error(
+            "native policy episodes cannot defer source group membership "
+            "into physical reinforcement waves"
+        )
     if args.objective != "survival" and (
             args.protect_type is not None or args.survive_seconds is not None):
         parser.error("--protect-type and --survive-seconds require --objective survival")
@@ -558,6 +664,8 @@ def main() -> None:
                                 if s["user_controlled"]}),
         "fixed_rounds": run["max_rounds"],
         "objective": args.objective,
+        "reinforcement_waves": len(args.reinforcements),
+        "reinforcement_ships": sum(wave[3] for wave in args.reinforcements),
         "native_policy_run": (str(output / "battle.policy.run.json")
                               if args.trainable else None),
     }, sort_keys=True))
