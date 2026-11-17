@@ -183,21 +183,30 @@ pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>>
         if !fs::symlink_metadata(&published)?.file_type().is_dir() {
             return Err(invalid("native trained-model publication directory is invalid").into());
         }
+        let mut files = Vec::new();
         for entry in fs::read_dir(&published)? {
             let entry = entry?;
-            if entry.path().extension().and_then(|part| part.to_str()) != Some("json") {
+            let path = entry.path();
+            if path.extension().and_then(|part| part.to_str()) != Some("json") {
                 continue; // pending atomic writes are deliberately invisible
             }
             if !entry.file_type()?.is_file() {
                 return Err(invalid("native trained-model registration is not a regular file").into());
             }
-            if registrations.len() == 64 {
+            files.push(path);
+            if registrations.len() + files.len() > 64 {
                 return Err(invalid("native game gallery supports at most 64 models").into());
             }
+        }
+        // read_dir order is OS/filesystem dependent. Stable IDs must give
+        // stable menu ordering on Linux and Windows even when 32 learners
+        // publish independently while a player is in a native battle.
+        files.sort_unstable();
+        for path in files {
             let registration: PublishedModelRegistration =
-                serde_json::from_slice(&fs::read(entry.path())?)?;
+                serde_json::from_slice(&fs::read(&path)?)?;
             if registration.schema_version != 1 ||
-                entry.path().file_stem().and_then(|part| part.to_str()) != Some(registration.id.as_str()) {
+                path.file_stem().and_then(|part| part.to_str()) != Some(registration.id.as_str()) {
                 return Err(invalid("published model ID differs from its registration filename").into());
             }
             registrations.push(RegisteredModel {
