@@ -378,12 +378,59 @@ def decode_row_metadata(meta: bytearray, rows: int):
     allow[:, 10:15] = special
     return slots, fire, special, allow
 
+class InferenceOutputBuffers:
+    """Retain model output arrays across batches, not across model updates.
+
+    The binary protocol writes each completed frame before reading the next
+    request. A per-worker buffer can therefore be reused without copying
+    observations, retaining episode data or changing action ownership.
+    """
+
+    def __init__(self):
+        self.capacity = 0
+        self.continuous = np.empty((0, CONTINUOUS), dtype="<f4")
+        self.discrete = np.empty((0, DISCRETE), dtype=np.uint8)
+        self.behavior = None
+        self.action_growths = 0
+        self.behavior_allocations = 0
+
+    def actions(self, rows):
+        if rows > self.capacity:
+            # Geometric growth avoids reallocating on every slightly larger
+            # arena batch while remaining within the protocol's hard limit.
+            self.capacity = min(MAX_BATCH_ROWS, max(rows, max(16, self.capacity * 2)))
+            self.continuous = np.empty((self.capacity, CONTINUOUS), dtype="<f4")
+            self.discrete = np.empty((self.capacity, DISCRETE), dtype=np.uint8)
+            if self.behavior is not None:
+                self.behavior = np.empty(
+                    (self.capacity, CONTINUOUS * 2 + DISCRETE), dtype="<f4"
+                )
+                self.behavior_allocations += 1
+            self.action_growths += 1
+        return self.continuous[:rows], self.discrete[:rows]
+
+    def behavior_rows(self, rows, zero_nonlearner):
+        if self.behavior is None:
+            self.behavior = np.empty(
+                (self.capacity, CONTINUOUS * 2 + DISCRETE), dtype="<f4"
+            )
+            self.behavior_allocations += 1
+        current = self.behavior[:rows]
+        if zero_nonlearner:
+            current.fill(0)
+        return current
+
+
 def collect_predictions(
     policy_map, slots, observations, fire, special, allowed, measurements=None,
+    output_buffers=None,
 ):
     rows = len(slots)
-    continuous = np.empty((rows, CONTINUOUS), dtype="<f4")
-    discrete = np.empty((rows, DISCRETE), dtype=np.uint8)
+    if output_buffers is None:
+        continuous = np.empty((rows, CONTINUOUS), dtype="<f4")
+        discrete = np.empty((rows, DISCRETE), dtype=np.uint8)
+    else:
+        continuous, discrete = output_buffers.actions(rows)
     behavior = None
 
     # One inference pass per distinct resident model, not per routing slot.
@@ -444,11 +491,16 @@ def collect_predictions(
             if behavior is None:
                 # The protocol emits one all-row frame. Non-sampled
                 # TorchScript/ONNX opponents must retain zeroed statistics.
-                shape = (rows, CONTINUOUS * 2 + DISCRETE)
-                behavior = (
-                    np.empty(shape, dtype="<f4") if fully_sampled
-                    else np.zeros(shape, dtype="<f4")
-                )
+                if output_buffers is None:
+                    shape = (rows, CONTINUOUS * 2 + DISCRETE)
+                    behavior = (
+                        np.empty(shape, dtype="<f4") if fully_sampled
+                        else np.zeros(shape, dtype="<f4")
+                    )
+                else:
+                    behavior = output_buffers.behavior_rows(
+                        rows, zero_nonlearner=not fully_sampled
+                    )
             behavior[indices] = stats
         expected_cont = (count, CONTINUOUS)
         expected_disc = (count, DISCRETE)
@@ -484,6 +536,7 @@ def main() -> None:
         "slot_forwards_without_sharing": 0, "actual_model_forwards": 0,
         "model_updates": 0,
     }
+    output_buffers = InferenceOutputBuffers()
 
     def report_model_residency():
         # JSON on stderr is deliberately outside the binary model protocol.
@@ -497,6 +550,9 @@ def main() -> None:
                 measurements["actual_model_forwards"],
             "model_slots": len(policy_map),
             "distinct_loaded_models": len(resident_models),
+            "action_buffer_capacity_rows": output_buffers.capacity,
+            "action_buffer_growths": output_buffers.action_growths,
+            "behavior_buffer_allocations": output_buffers.behavior_allocations,
         }, sort_keys=True), file=sys.stderr, flush=True)
 
     report_model_residency()
@@ -599,7 +655,8 @@ def main() -> None:
         if not np.all(np.isfinite(observation)):
             raise ValueError("nonfinite policy observation")
         continuous, discrete, behavior = collect_predictions(
-            policy_map, slots, observation, fire, special, allowed, measurements
+            policy_map, slots, observation, fire, special, allowed, measurements,
+            output_buffers,
         )
         if measurements["batches"] % 2048 == 0:
             report_model_residency()
