@@ -136,7 +136,7 @@ class HashingReader:
 def export_inputs(orders_file, collector_id, run, trainer, checkpoint, manifest, destination):
     started = time.perf_counter()
     orders_path = Path(orders_file).resolve(strict=True)
-    if collector_id == "all":
+    if collector_id == "@round":
         # All collectors in one issued round share source scenes and weights.
         # One immutable archive avoids N duplicate disk copies and SHA scans.
         document = json.loads(orders_path.read_text(encoding="utf-8"))
@@ -293,17 +293,17 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None,
                 raise ValueError("native collector input archive is missing source artifacts")
         orders_file = root / "orders.json"
         selected = collector_id or info.get("collector_id")
-        if selected == "all" or not isinstance(selected, str):
+        if selected == "@round" or not isinstance(selected, str):
             raise ValueError("shared collector input archive requires explicit collector identity")
         orders, job = checked_order(orders_file, selected)
         identities = info.get("collection_ids")
         if (not isinstance(identities, dict) or
                 identities.get(selected) != job["collection_id"] or
-                (info.get("collector_id") != "all" and
+                (info.get("collector_id") != "@round" and
                  (info.get("collector_id") != selected or
                   len(identities) != 1))):
             raise ValueError("native collector identity differs from its issued order")
-        if info.get("collector_id") == "all" and (
+        if info.get("collector_id") == "@round" and (
             len(identities) != len(orders["jobs"]) or
             any(identities.get(entry["id"]) != entry["collection_id"]
                 for entry in orders["jobs"])
@@ -393,7 +393,7 @@ def main():
     export = commands.add_parser("export")
     export.add_argument("--orders", required=True, type=Path)
     export.add_argument("--collector-id", required=True,
-                        help="issued collector ID, or 'all' to share one archive per round")
+                        help="issued collector ID, or '@round' to share one archive per round")
     export.add_argument("--run-config", required=True, type=Path)
     export.add_argument("--trainer-config", required=True, type=Path)
     export.add_argument("--checkpoint", required=True, type=Path)
