@@ -24,6 +24,70 @@ def read_plan(path):
     return _validate_collector_plan(json.loads(path.read_text(encoding="utf-8")))
 
 
+def derive_hub_resource_plan(hub_plan, total_worlds):
+    """One fixed, portable source allocation from user-chosen Hub resources.
+
+    Prefer a single native rollout process per machine: it batches neural
+    inference once while persistent arena physics work fans out over the
+    leased CPU cores. Large CPU leases may require several processes because
+    each process supports at most 128 physical workers. A bounded,
+    deterministic proportional split assigns World windows by CPU capacity;
+    the existing measured between-round balancer corrects for heterogeneous
+    hardware after sustained real SPS measurements.
+    """
+    entries = hub_plan.get("collectors") if isinstance(hub_plan, dict) else None
+    if (hub_plan.get("kind") != "native_hub_round_dispatch" or
+            hub_plan.get("schema_version") != 1 or
+            not isinstance(entries, list) or not 2 <= len(entries) <= 16 or
+            type(total_worlds) is not int or
+            not len(entries) <= total_worlds <= len(entries) * 1024):
+        raise ValueError("Hub resource plan requires 2..16 machines and 1..1024 worlds per machine")
+    seen = set()
+    cpus = []
+    for entry in entries:
+        if (not isinstance(entry, dict) or
+                not isinstance(entry.get("id"), str) or
+                not COLLECTOR_ID.fullmatch(entry["id"]) or
+                entry["id"] in seen or
+                not isinstance(entry.get("machine_id"), str) or
+                not isinstance(entry.get("resources"), dict)):
+            raise ValueError("Hub source plan needs distinct issued collector and machine IDs")
+        seen.add(entry["id"])
+        cpu = entry["resources"].get("cpus")
+        if type(cpu) is not int or not 1 <= cpu <= 32768:
+            raise ValueError("Hub CPU resources must be positive finite quotas")
+        cpus.append(cpu)
+
+    # Allocate a minimum one arena per machine, then a fair capped share
+    # proportional to fixed CPU budgets. No per-machine benchmark settings
+    # or CPU-architecture guesses enter training/model lineage.
+    counts = [1] * len(entries)
+    for _ in range(total_worlds - len(entries)):
+        eligible = [i for i, count in enumerate(counts) if count < 1024]
+        if not eligible:
+            raise ValueError("Hub source plan exhausted available native World slots")
+        selected = max(eligible, key=lambda i: (
+            cpus[i] / (counts[i] + 1), -i,
+        ))
+        counts[selected] += 1
+
+    current = 0
+    collectors = []
+    for entry, cpus_reserved, worlds in zip(entries, cpus, counts):
+        processes = min(worlds, (cpus_reserved + 127) // 128)
+        physics = min(128, max(1, cpus_reserved // processes),
+                      max(1, worlds // processes))
+        collectors.append({
+            "id": entry["id"],
+            "world_start": current,
+            "world_count": worlds,
+            "rollout_workers": processes,
+            "physics_workers": physics,
+        })
+        current += worlds
+    return _validate_collector_plan({"collectors": collectors})
+
+
 def _issued_allocations(path, baseline):
     """Recover the immutable allocations of an issued round, including on resume."""
     orders = json.loads(path.read_text(encoding="utf-8"))
