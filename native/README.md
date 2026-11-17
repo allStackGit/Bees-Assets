@@ -339,12 +339,15 @@ Give each remote player **only their own token** from the host-side map.
 Each client sets `BEES_NATIVE_REMOTE_TOKEN` to that token and connects:
 
 ```sh
-python3 native/tools/remote_play_window.py 127.0.0.1 7284
-# Terminal alternative: python3 native/tools/remote_play_client.py 127.0.0.1 7284
+python3 native/tools/remote_play_window.py 127.0.0.1 7284 --side 1
+# Terminal alternative: python3 native/tools/remote_play_client.py 127.0.0.1 7284 --side 1
 ```
 
-The host selects the player's side from the authenticated token and validates
-every submitted squad lifetime against the current Level, live player
+The host selects the player's side from the authenticated token; `--side`
+is a client-side check that the server selected the intended side, not a
+claim of authority. Each client should set only its own
+`BEES_NATIVE_REMOTE_TOKEN`, never distribute the host's full token map.
+The host validates every submitted squad lifetime against the current Level, live player
 permissions, and episode identity. The other player's hidden positions are
 filtered from that recipient's snapshots using their own source fog radius;
 same-side peers share their side's state. Accepted remotely issued orders
@@ -400,8 +403,10 @@ python3 native/tools/package-native-game.py \
 
 Use the corresponding `bees.exe` binary on Windows. The packager
 requires Pillow only during asset preparation, refuses to overwrite an
-existing release and creates `play-native-duel` and
-`play-native-skirmish` launchers for the target platform. The packaged
+existing release and creates `play-native-duel`, `play-native-skirmish` and
+`play-native-two-player` launchers for the target platform.
+The package also includes `clients/remote_play_client.py` and
+`clients/remote_play_window.py` for optional remote players. The packaged
 game requires neither Python nor Unity to run. The current audio
 projection follows visible gameplay events at render boundaries, so a
 very large skipped-tick interval can omit transient sound cues without
