@@ -2287,10 +2287,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'';
             const idleTailOwner=measured.training_sim_idle_tail_ratio_owner?.value;
             const courierImbalanceSignal=job.project_id==='courier'&&
-                measured.training_sim_imbalance_pressure?.value===1&&
+                measured.training_sim_tail_skew_pressure?.value===1&&
                 Number.isSafeInteger(idleTailOwner)&&idleTailOwner>=0&&idleTailOwner<64
-                ?' · Sustained idle-tail after physical shard replies at PPO lineage '+
-                    idleTailOwner+' (suggests imbalanced map-shard workloads, not CPU idle%)'
+                ?' · Sustained shard receipt tail skew at PPO lineage '+
+                    idleTailOwner+' (may reflect shard imbalance or receipt overhead, not measured CPU idle%)'
                 :'';
             const resourceFlags=[
                 ['pipeline_cpu_lease_pressure','CPU lease nearly occupied'],
@@ -2408,7 +2408,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_sim_idle_tail_ratio_owner',
         'training_sim_owner_tail_max_seconds',
         'training_sim_idle_tail_work_share',
-        'training_sim_imbalance_pressure',
+        'training_sim_tail_skew_pressure',
         'training_sim_queue_work_share','training_sim_queue_pressure',
         'training_sim_cpu_underuse_evidence',
         'training_sim_topology_trial_lineages','training_sim_topology_accepted',
