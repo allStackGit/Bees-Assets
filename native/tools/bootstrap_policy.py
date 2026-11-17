@@ -337,6 +337,7 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          bundle_receiver_listen: str | None,
                          collector_input_outbox: Path | None,
                          hub_dispatch_plan: Path | None, hub_dispatch_port: int,
+                         hub_auto_worlds: int | None,
                          collector_timeout_seconds: int, auto_balance_collectors: bool,
                          evaluation_run_config: Path | None, evaluation_side: int | None,
                          evaluation_policy_seed: int,
@@ -379,9 +380,12 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
     if rollout_binary is not None:
         command.extend(["--rollout-binary", str(rollout_binary.resolve(strict=True))])
     if distributed_plan is not None:
-        command.extend(["--distributed-plan", str(distributed_plan.resolve(strict=True)),
-                        "--bundle-inbox", str(bundle_inbox.resolve(strict=True)),
+        command.extend(["--distributed-plan", str(distributed_plan.resolve(strict=True))])
+    if distributed_plan is not None or hub_auto_worlds is not None:
+        command.extend(["--bundle-inbox", str(bundle_inbox.resolve(strict=True)),
                         "--collector-timeout-seconds", str(collector_timeout_seconds)])
+    if hub_auto_worlds is not None:
+        command.extend(["--hub-auto-worlds", str(hub_auto_worlds)])
     if bundle_archive_inbox is not None:
         command.extend([
             "--bundle-archive-inbox", str(bundle_archive_inbox.resolve(strict=True)),
@@ -462,6 +466,8 @@ def main() -> None:
                         help="preapproved Hub machine placement and unattended collector starts for issued native rounds")
     parser.add_argument("--hub-dispatch-port", type=int, default=7148,
                         help="loopback Hub operator API port")
+    parser.add_argument("--hub-auto-worlds", type=int,
+                        help="derive one persistent source arena plan from the fixed Hub CPU resource assignments and this many worlds per round")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0)
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="conservatively rebalance native distributed arena windows from verified collector throughput")
@@ -521,26 +527,31 @@ def main() -> None:
         not 1 <= args.self_play_refresh_every <= 99999
     ):
         parser.error("self-play requires training rounds, a distinct opponent model slot, and a positive refresh interval")
-    if (args.distributed_plan is None) != (args.bundle_inbox is None):
-        parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
+    if args.hub_auto_worlds is not None and (
+            args.hub_dispatch_plan is None or args.distributed_plan is not None or
+            not 2 <= args.hub_auto_worlds <= 16384):
+        parser.error("--hub-auto-worlds requires a Hub dispatch plan, no separate collector plan, and 2..16384 total Worlds")
+    distributed = args.distributed_plan is not None or args.hub_auto_worlds is not None
+    if distributed != (args.bundle_inbox is not None):
+        parser.error("distributed sessions require a collector plan or --hub-auto-worlds and --bundle-inbox")
     if args.bundle_archive_inbox is not None and (
-            args.distributed_plan is None or not args.bundle_archive_inbox.is_dir()):
+            not distributed or not args.bundle_archive_inbox.is_dir()):
         parser.error("--bundle-archive-inbox requires distributed collection and an existing directory")
-    if args.bundle_receiver_listen is not None and args.distributed_plan is None:
+    if args.bundle_receiver_listen is not None and not distributed:
         parser.error("--bundle-receiver-listen requires distributed collection")
     if args.collector_input_outbox is not None and (
-            args.distributed_plan is None or not args.collector_input_outbox.is_dir()):
+            not distributed or not args.collector_input_outbox.is_dir()):
         parser.error("--collector-input-outbox requires distributed collection and an existing directory")
     if args.hub_dispatch_plan is not None and (
-            args.distributed_plan is None or not args.hub_dispatch_plan.is_file() or
+            not distributed or not args.hub_dispatch_plan.is_file() or
             args.bundle_receiver_listen is None or args.collector_input_outbox is None):
         parser.error("--hub-dispatch-plan requires an existing Hub plan, distributed collector inputs and receiver")
     if not 1 <= args.hub_dispatch_port <= 65535:
         parser.error("--hub-dispatch-port must be a valid port")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds must be nonnegative")
-    if args.auto_balance_collectors and args.distributed_plan is None:
-        parser.error("--auto-balance-collectors requires --distributed-plan")
+    if args.auto_balance_collectors and not distributed:
+        parser.error("--auto-balance-collectors requires distributed collection")
     if args.holdout_worlds is not None and not 1 <= args.holdout_worlds <= 1024:
         parser.error("--holdout-worlds must be between 1 and 1024")
     if not 0 <= args.holdout_seed < U64 or not 1 <= args.holdout_episodes <= 10000:
@@ -566,17 +577,18 @@ def main() -> None:
         args.bundle_receiver_listen is not None,
         args.collector_input_outbox is not None,
         args.hub_dispatch_plan is not None,
+        args.hub_auto_worlds is not None,
         args.holdout_worlds is not None, args.evaluation_run_config is not None,
         args.evaluation_side is not None,
         args.evaluation_policy_seed != 0, args.collector_timeout_seconds != 0,
     )):
         parser.error("distributed collection and evaluation require --train-rounds")
-    if args.distributed_plan is not None and any(
+    if distributed and any(
         value is not None for value in (
             args.rollout_worlds, args.rollout_workers, args.physics_workers,
         )
     ):
-        parser.error("distributed resource allocations belong to --distributed-plan")
+        parser.error("distributed resource allocations belong to the fixed native source plan")
     for name, value, limit in (
         ("--rollout-worlds", args.rollout_worlds, 1024),
         ("--rollout-workers", args.rollout_workers, 256),
@@ -654,6 +666,7 @@ def main() -> None:
             args.bundle_receiver_listen,
             args.collector_input_outbox,
             args.hub_dispatch_plan, args.hub_dispatch_port,
+            args.hub_auto_worlds,
             args.collector_timeout_seconds, args.auto_balance_collectors,
             (output / "holdout-run.json" if args.holdout_worlds is not None
              else args.evaluation_run_config),
