@@ -31,6 +31,15 @@ struct RegisteredModel {
     receipt: PathBuf,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PublishedModelRegistration {
+    schema_version: u32,
+    id: String,
+    title: String,
+    receipt: PathBuf,
+}
+
 pub(super) struct TrainedGame {
     pub id: String,
     pub title: String,
@@ -149,19 +158,58 @@ impl TrainedGame {
     }
 }
 
-/// Opt-in gallery. The player lists their training receipts in the private
-/// save root, including absolute paths to training on another disk. No repo
-/// scanning, shared-machine directory walk, or automatic trust of exports.
+/// Explicit manual registrations and independently published job receipts.
+/// Each training job owns one atomic JSON registration under trained-models.d;
+/// simultaneous jobs cannot lose each other's entries by rewriting a shared
+/// manifest. Only this bounded save-root folder is scanned, never the
+/// trainer's workspace or arbitrary assets.
 pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>> {
-    let path = save_root.join("trained-models.json");
-    if !path.is_file() { return Ok(Vec::new()); }
-    let registration: Registration = serde_json::from_slice(&fs::read(&path)?)?;
-    if registration.schema_version != 1 || registration.models.len() > 64 {
-        return Err(invalid("native trained-model gallery requires schema 1 and at most 64 models").into());
+    let manifest = save_root.join("trained-models.json");
+    let mut registrations = if manifest.is_file() {
+        let registry: Registration = serde_json::from_slice(&fs::read(&manifest)?)?;
+        if registry.schema_version != 1 {
+            return Err(invalid("unsupported trained-model gallery registration").into());
+        }
+        registry.models
+    } else {
+        Vec::new()
+    };
+    if registrations.len() > 64 {
+        return Err(invalid("native game gallery supports at most 64 models").into());
     }
+
+    let published = save_root.join("trained-models.d");
+    if published.exists() {
+        if !fs::symlink_metadata(&published)?.file_type().is_dir() {
+            return Err(invalid("native trained-model publication directory is invalid").into());
+        }
+        for entry in fs::read_dir(&published)? {
+            let entry = entry?;
+            if entry.path().extension().and_then(|part| part.to_str()) != Some("json") {
+                continue; // pending atomic writes are deliberately invisible
+            }
+            if !entry.file_type()?.is_file() {
+                return Err(invalid("native trained-model registration is not a regular file").into());
+            }
+            if registrations.len() == 64 {
+                return Err(invalid("native game gallery supports at most 64 models").into());
+            }
+            let registration: PublishedModelRegistration =
+                serde_json::from_slice(&fs::read(entry.path())?)?;
+            if registration.schema_version != 1 ||
+                entry.path().file_stem().and_then(|part| part.to_str()) != Some(&registration.id) {
+                return Err(invalid("published model ID differs from its registration filename").into());
+            }
+            registrations.push(RegisteredModel {
+                id: registration.id, title: registration.title,
+                receipt: registration.receipt,
+            });
+        }
+    }
+
     let mut seen = HashSet::new();
-    let mut games = Vec::with_capacity(registration.models.len());
-    for model in registration.models {
+    let mut games = Vec::with_capacity(registrations.len());
+    for model in registrations {
         if model.id.is_empty() || model.id.len() > 40 ||
             !model.id.bytes().all(|ch| ch.is_ascii_alphanumeric() || ch == b'-' || ch == b'_') ||
             !seen.insert(model.id.clone()) ||
@@ -174,7 +222,9 @@ pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>>
         } else {
             save_root.join(model.receipt).canonicalize()?
         };
-        if !receipt.is_file() { return Err(invalid("native trained-model receipt is not a file").into()); }
+        if !receipt.is_file() {
+            return Err(invalid("native trained-model receipt is not a file").into());
+        }
         let kind: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
         let label = match (kind["schema_version"].as_u64(), kind["kind"].as_str()) {
             (Some(1), Some("native_training_latest_playable")) => "[Latest checkpoint]",
