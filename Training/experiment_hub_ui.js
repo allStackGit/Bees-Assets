@@ -5647,6 +5647,18 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-build-message',String(error.message||error));
         }
     });
+    // A queue confirmation must make the lineage choice explicit. An import
+    // can seed a new model but is not a continuation of a Hub predecessor.
+    function newLineageWarning(predecessor,parameters) {
+        if(predecessor)return '';
+        return 'NO PREVIOUS JOB SELECTED.\\n\\n'+
+            'This queues a NEW, independent training run. It will NOT resume '+
+            'training progress or optimizer state from an earlier Hub job.\\n'+
+            (parameters?.import_checkpoint!==undefined
+                ?'The saved checkpoint import can seed this new run, but does not continue that previous job.\\n'
+                :'')+
+            '\\n';
+    }
     // Distributed groups are frozen and claimed atomically. The operator
     // chooses the CPU/RAM/GPU budgets; endpoint-to-machine identity is never
     // entered by the browser and comes from connected native agents instead.
@@ -5691,7 +5703,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // a subsequent *advisory* allocation recommendation.
             const metricSelection=hubDistributedMetricSelection(
                 selectedJobMetrics(),budgets.length);
-            if(!confirm('Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
+            if(!confirm(newLineageWarning(predecessor,selected.parameters)+
+                'Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
                 ' on '+distributedMachine.value+
                 ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
                 ' reservations will be created together, but no process will start.'))return;
@@ -5798,11 +5811,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }
-        if(!confirm('Freeze '+selected.name+' revision '+selected.revision+
+        if(!confirm(newLineageWarning(predecessor,selected.parameters)+
+            'Freeze '+selected.name+' revision '+selected.revision+
             ($('hub-job-run-name').value.trim()
                 ?' as run "'+$('hub-job-run-name').value.trim()+'"':'')+
             (predecessor?' as a continuation of the selected predecessor':
-                ' as a new job')+
+                ' as a new independent run')+
             '? '+(prequeue
                 ?'This stage remains blocked until its predecessor FINISHES and capacity is released. Stops and failures do not auto-advance it. '
                 :'')+
