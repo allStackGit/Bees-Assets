@@ -3,7 +3,7 @@
 //! here. All orders use the host's existing NativePlayerInput serializer and
 //! player-side permissions; the host validates them again at tick boundaries.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::fs;
 use std::io::{self, ErrorKind, Read, Write};
@@ -40,6 +40,85 @@ struct WireCounts {
     snapshots: u64,
     orders_sent: u64,
     acknowledgments: u64,
+    /// Render-only smoothing; no simulation or network side-effects.
+    snapshot_pairs_interpolated: u64,
+    interpolated_draw_frames: u64,
+}
+
+/// Presentation-only interpolation between two authenticated snapshots.
+/// The host still owns every position and all click targets refer to the
+/// latest authoritative entity IDs. Old poses never create ships or reveal
+/// fogged entities in the current packet.
+#[derive(Clone, Copy)]
+struct RemotePose {
+    position: Vec2,
+    rotation: Option<f32>,
+}
+
+#[derive(Default)]
+struct RemoteVisual {
+    previous: HashMap<(u8, i64), RemotePose>,
+    began: Option<Instant>,
+    duration: Duration,
+}
+
+impl RemoteVisual {
+    fn snapshot(&mut self, previous: Option<&Value>, next: &Value) -> bool {
+        self.previous.clear();
+        self.began = None;
+        let Some(previous) = previous else { return false };
+        if previous["world_id"] != next["world_id"] ||
+            previous["episode_revision"] != next["episode_revision"] {
+            return false;
+        }
+        let Some(from) = previous["tick"].as_u64() else { return false };
+        let Some(to) = next["tick"].as_u64() else { return false };
+        let Some(delta) = to.checked_sub(from).filter(|&ticks| ticks > 0 && ticks <= 60)
+        else { return false };
+        let Some(dt) = next["fixed_step_seconds"].as_f64()
+            .filter(|dt| dt.is_finite() && *dt > 0.0) else { return false };
+        let seconds = (delta as f64 * dt).min(0.30);
+        if seconds < 0.005 || seconds > 0.30 { return false; }
+        self.duration = Duration::from_secs_f64(seconds);
+        for (kind, field) in [(0, "ships"), (1, "projectiles"), (2, "obstacles")] {
+            for item in previous[field].as_array().into_iter().flatten() {
+                if let (Some(id), Some(position)) =
+                    (item["id"].as_i64(), position(item)) {
+                    self.previous.insert((kind, id), RemotePose {
+                        position,
+                        rotation: item["rotation"].as_f64().map(|degrees| degrees as f32)
+                            .filter(|value| value.is_finite()),
+                    });
+                }
+            }
+        }
+        self.began = Some(Instant::now());
+        true
+    }
+
+    fn fraction(&self) -> f32 {
+        let Some(began) = self.began else { return 1.0 };
+        (began.elapsed().as_secs_f32() / self.duration.as_secs_f32())
+            .clamp(0.0, 1.0)
+    }
+
+    fn position(&self, item: &Value, kind: u8, fraction: f32) -> Option<Vec2> {
+        let current = position(item)?;
+        let Some(previous) = item["id"].as_i64().and_then(|id|
+            self.previous.get(&(kind, id))) else { return Some(current) };
+        Some(previous.position + (current - previous.position) * fraction)
+    }
+
+    fn heading(&self, item: &Value, fraction: f32) -> f32 {
+        let now = item["rotation"].as_f64().unwrap_or(0.0) as f32;
+        let Some(before) = item["id"].as_i64().and_then(|id|
+            self.previous.get(&(0, id))).and_then(|pose| pose.rotation)
+        else { return now };
+        // Shortest signed turn across 0/360, with no ship steering on the
+        // client. The source rotation still comes exclusively from the host.
+        let delta = (now - before + 180.0).rem_euclid(360.0) - 180.0;
+        before + delta * fraction
+    }
 }
 
 struct PeerClient {
@@ -53,6 +132,7 @@ struct PeerClient {
     connected: bool,
     side: i32,
     state: Option<Value>,
+    visual: RemoteVisual,
     notice: String,
     held_fire_begin_request: Option<u64>,
     held_fire_rejected: bool,
@@ -82,7 +162,8 @@ impl PeerClient {
             socket, incoming: Vec::new(), queued: VecDeque::new(),
             written: 0, queued_bytes: 0, next_request: 1,
             authenticated: false, connected: true, side,
-            state: None, notice: "Authenticating with native host".to_owned(),
+            state: None, visual: RemoteVisual::default(),
+            notice: "Authenticating with native host".to_owned(),
             held_fire_begin_request: None, held_fire_rejected: false,
             metrics: WireCounts::default(),
         })
@@ -135,6 +216,9 @@ impl PeerClient {
                             message["tick"].as_u64() < previous["tick"].as_u64() {
                             return Err(invalid("out-of-order authoritative world snapshot").into());
                         }
+                    }
+                    if self.visual.snapshot(self.state.as_ref(), &message) {
+                        self.metrics.snapshot_pairs_interpolated += 1;
                     }
                     self.state = Some(message);
                     self.metrics.snapshots += 1;
