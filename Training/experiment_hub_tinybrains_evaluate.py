@@ -61,12 +61,12 @@ def verify_opponent(suite, directory):
             raise ValueError(f"TinyBrains evaluation {filename} differs from the suite pin.")
 
 
-def evaluate(checkpoint, digest, suite, work):
+def evaluate(checkpoint, digest, suite, work, *, on_result=None):
     with pinned_runtime("tinybrains", suite):
-        return _evaluate(checkpoint, digest, suite, work)
+        return _evaluate(checkpoint, digest, suite, work, on_result=on_result)
 
 
-def _evaluate(checkpoint, digest, suite, work):
+def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     from ants_mapoca.artifacts import export
     from ants_mapoca.runtime import STARTER, configure, dump, run_cli
 
@@ -108,8 +108,15 @@ def _evaluate(checkpoint, digest, suite, work):
                 ranks = replay["engine_ranks"]
                 if not isinstance(ranks, list) or len(ranks) != 2 or any(type(rank) is not int for rank in ranks):
                     raise ValueError("TinyBrains replay has invalid engine ranks.")
-                wins += ranks[seat] < ranks[1 - seat]
+                outcome = "win" if ranks[seat] < ranks[1 - seat] else (
+                    "loss" if ranks[seat] > ranks[1 - seat] else "draw")
+                wins += outcome == "win"
                 trials += 1
+                if on_result is not None:
+                    on_result({"map": board, "seed": seed, "candidate_seat": seat,
+                               "opponent": opponent, "outcome": outcome,
+                               "ranks": ranks, "scores": replay.get("scores"),
+                               "turns": replay.get("turns")})
     verify_opponent(suite, fixed)
     return wins, trials
 
