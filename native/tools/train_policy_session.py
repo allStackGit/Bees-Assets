@@ -19,6 +19,8 @@ import signal
 import subprocess
 import sys
 import time
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256
 from native_bundle_receiver import BundleReceiver
@@ -31,6 +33,104 @@ from native_session_selection import publish_best_evaluated
 
 ATTEMPT = re.compile(r"round-(\d{5})-attempt-(\d{3})\Z")
 EVALUATION_ATTEMPT = re.compile(r"evaluation-attempt-(\d{3})\Z")
+
+
+class NativeHubCollectionBarrier:
+    """Inspect Hub's OWN terminal job states while waiting for verified rollouts.
+
+    The Hub retains all lease, Start and Stop authority. The learner only
+    looks up its already-dispatched job IDs; it never retries or schedules
+    replacements, and absence of a rollout is not inferred from telemetry.
+    Called by the normal collection receipt barrier, not a separate monitor.
+    """
+
+    def __init__(self, port, dispatched, orders):
+        self.port = port
+        jobs = {job["id"]: job for job in orders["jobs"]}
+        reported = dispatched.get("collectors")
+        if not isinstance(reported, list) or len(reported) != len(jobs):
+            raise ValueError("Hub dispatch did not return every issued collector")
+        self.members = {}
+        for row in reported:
+            if not isinstance(row, dict) or row.get("collector_id") not in jobs:
+                raise ValueError("Hub returned an unissued native collector")
+            name = row["collector_id"]
+            hub_job = row.get("hub_job_id")
+            machine = row.get("machine_id")
+            if (name in self.members or not isinstance(hub_job, str) or
+                    re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                                 hub_job) is None or
+                    not isinstance(machine, str) or not machine):
+                raise ValueError("Hub returned a malformed or duplicate native collector")
+            self.members[name] = (hub_job, machine, jobs[name]["collection_id"])
+        self.last_checked = float("-inf")
+        self.checks = 0
+        self.coordinator_unavailable = 0
+        self.last_reported_unavailable = False
+
+    def __call__(self, missing):
+        now = time.monotonic()
+        if now - self.last_checked < 5.0:
+            return
+        self.last_checked = now
+        try:
+            with urlopen(
+                f"http://127.0.0.1:{self.port}/api/hub/state",
+                timeout=5.0,
+            ) as response:
+                # Bound a coordinator response, never ingest arbitrary
+                # artifacts or training logs as part of this monitor.
+                raw = response.read(16 * 1024 * 1024 + 1)
+            if len(raw) > 16 * 1024 * 1024:
+                raise ValueError("Hub state exceeds native collection status limit")
+            snapshot = json.loads(raw)
+        except (OSError, URLError, TimeoutError) as error:
+            self.coordinator_unavailable += 1
+            if not self.last_reported_unavailable:
+                print(json.dumps({
+                    "kind": "native_hub_collection_observation_unavailable",
+                    "reason": str(error)[:200],
+                }), flush=True)
+            self.last_reported_unavailable = True
+            return
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("jobs"), list):
+            raise ValueError("Hub returned an invalid native collection registry snapshot")
+        self.checks += 1
+        self.last_reported_unavailable = False
+        indexed = {job.get("id"): job for job in snapshot["jobs"]
+                   if isinstance(job, dict) and isinstance(job.get("id"), str)}
+        for collector in missing:
+            job_id, machine, collection_id = self.members[collector]
+            job = indexed.get(job_id)
+            if not isinstance(job, dict):
+                raise ValueError(f"Hub no longer has native collector {collector} ({job_id})")
+            params = job.get("frozen_parameters")
+            if (job.get("project_id") != "bees_native_collect" or
+                    job.get("assigned_machine_id") != machine or
+                    not isinstance(params, dict) or
+                    params.get("collector_id") != collector or
+                    params.get("collection_id") != collection_id):
+                raise ValueError(f"Hub native collector {collector} changed its frozen job identity")
+            if job.get("status") in ("failed", "cancelled", "stopped"):
+                reason = str(job.get("status_reason") or "")[:240]
+                raise RuntimeError(
+                    f"native collector {collector} on {machine} ({job_id}) "
+                    f"is {job['status']} in Hub: {reason}"
+                )
+        # If the coordinated Start becomes review-required, no additional
+        # collector can safely be launched under this approval.
+        plans = snapshot.get("bundle_start_plans") or []
+        active_ids = {self.members[name][0] for name in missing}
+        for plan in plans:
+            if not isinstance(plan, dict):
+                continue
+            ids = plan.get("member_job_ids")
+            if (isinstance(ids, list) and active_ids.intersection(ids) and
+                    plan.get("status") in ("needs_review", "disarmed", "expired")):
+                raise RuntimeError(
+                    f"native Hub collection Start requires review: "
+                    f"{str(plan.get('reason') or plan['status'])[:240]}"
+                )
 
 
 def pinned(path):
@@ -1072,6 +1172,7 @@ def main():
                     receiver.activate(orders, prepared_inputs)
                 hub_dispatch_wall_seconds = 0.0
                 hub_dispatch_job_count = 0
+                hub_barrier = None
                 if "hub_dispatch_plan" in recipe:
                     dispatch_started = time.monotonic()
                     pinned_plan = recipe["hub_dispatch_plan"]
@@ -1100,6 +1201,9 @@ def main():
                                 report.get("round") != index or
                                 report.get("orders_sha256") != file_sha256(order_path)):
                             raise ValueError("Hub did not confirm the exact native round dispatch")
+                        hub_barrier = NativeHubCollectionBarrier(
+                            args.hub_dispatch_port, report, orders,
+                        )
                         hub_dispatch_job_count = len(report.get("member_job_ids", []))
                         print(json.dumps(report, sort_keys=True), flush=True)
                     hub_dispatch_wall_seconds = time.monotonic() - dispatch_started
@@ -1117,6 +1221,7 @@ def main():
                         Path(recipe["bundle_archive_inbox"])
                         if "bundle_archive_inbox" in recipe else None
                     ),
+                    check_unfinished=hub_barrier,
                 )
                 collector_barrier_wall_seconds = time.monotonic() - barrier_started
                 if receiver is not None:
@@ -1140,6 +1245,10 @@ def main():
                         "collector_source_export_wall_seconds": export_wall_seconds,
                         "hub_dispatch_wall_seconds": hub_dispatch_wall_seconds,
                         "hub_dispatched_collectors": hub_dispatch_job_count,
+                        "hub_barrier_registry_checks": hub_barrier.checks if hub_barrier else 0,
+                        "hub_barrier_unavailable_observations": (
+                            hub_barrier.coordinator_unavailable if hub_barrier else 0
+                        ),
                         "collector_barrier_wall_seconds": collector_barrier_wall_seconds,
                         "collector_input_archive_bytes_published": (
                             next(iter(prepared_inputs.values()))[2] if prepared_inputs else 0
