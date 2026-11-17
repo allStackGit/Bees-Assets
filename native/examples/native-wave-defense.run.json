@@ -80,13 +80,9 @@
             {
               "kind": "move_to_point",
               "destination": [
-                35,
-                0
+                -93,
+                -40
               ]
-            },
-            {
-              "kind": "bombing_run",
-              "enemy_squad_item_id": 101
             }
           ]
         },
