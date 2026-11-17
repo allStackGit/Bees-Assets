@@ -240,6 +240,29 @@ function boundedReport(value) {
     const workerEndpoint=value.tinybrains_rollout_endpoint??null;
     const workerFingerprint=value.tinybrains_rollout_key_fingerprint??null;
     const workerThreadLimit=value.tinybrains_rollout_thread_limit??0;
+    const courierEndpoints=value.courier_remote_lineage_endpoints??[];
+    const courierKey=value.courier_remote_key_fingerprint??null;
+    const courierShards=value.courier_remote_max_shards??[];
+    const courierWorkerEndpoint=value.courier_lineage_endpoint??null;
+    const courierWorkerKey=value.courier_lineage_key_fingerprint??null;
+    const courierWorkerShards=value.courier_lineage_max_shards??0;
+    if(!Array.isArray(courierEndpoints)||courierEndpoints.length>16||
+        courierEndpoints.some(endpoint=>!rolloutEndpoint(endpoint))||
+        new Set(courierEndpoints).size!==courierEndpoints.length||
+        !Array.isArray(courierShards)||courierShards.length!==courierEndpoints.length||
+        courierShards.some(value=>!Number.isSafeInteger(value)||value<1||value>64)||
+        (courierEndpoints.length
+            ?!installed.includes('courier')||!SHA256.test(String(courierKey||''))
+            :courierKey!==null)||
+        (courierWorkerEndpoint===null)!==(courierWorkerKey===null)||
+        (courierWorkerEndpoint===null)!==(courierWorkerShards===0)||
+        (courierWorkerEndpoint!==null&&(
+            !installed.includes('courier_lineage')||
+            !rolloutEndpoint(courierWorkerEndpoint)||
+            !SHA256.test(String(courierWorkerKey||''))||
+            !Number.isSafeInteger(courierWorkerShards)||
+            courierWorkerShards<1||courierWorkerShards>64)))
+        throw Error('Courier remote lineages require approved native adapters and private pinned endpoints.');
     if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(remoteRollouts).size!==remoteRollouts.length||
@@ -305,6 +328,12 @@ function boundedReport(value) {
         tinybrains_rollout_endpoint:workerEndpoint,
         tinybrains_rollout_key_fingerprint:workerFingerprint,
         tinybrains_rollout_thread_limit:workerThreadLimit,
+        courier_remote_lineage_endpoints:courierEndpoints.slice(),
+        courier_remote_key_fingerprint:courierKey,
+        courier_remote_max_shards:courierShards.slice(),
+        courier_lineage_endpoint:courierWorkerEndpoint,
+        courier_lineage_key_fingerprint:courierWorkerKey,
+        courier_lineage_max_shards:courierWorkerShards,
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -1280,6 +1309,12 @@ class ExperimentHub {
                 machine.tinybrains_rollout_endpoint=report.tinybrains_rollout_endpoint;
                 machine.tinybrains_rollout_key_fingerprint=report.tinybrains_rollout_key_fingerprint;
                 machine.tinybrains_rollout_thread_limit=report.tinybrains_rollout_thread_limit;
+                machine.courier_remote_lineage_endpoints=report.courier_remote_lineage_endpoints.slice();
+                machine.courier_remote_key_fingerprint=report.courier_remote_key_fingerprint;
+                machine.courier_remote_max_shards=report.courier_remote_max_shards.slice();
+                machine.courier_lineage_endpoint=report.courier_lineage_endpoint;
+                machine.courier_lineage_key_fingerprint=report.courier_lineage_key_fingerprint;
+                machine.courier_lineage_max_shards=report.courier_lineage_max_shards;
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
