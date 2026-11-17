@@ -715,7 +715,13 @@ class BottleneckEvidence {
             const gpuCopyHint=copyShare!==null&&copyShare>=0.25&&
                 copySeconds!==null&&copySeconds>=0.25&&
                 Number.isSafeInteger(slowest)&&
-                metrics.training_gpu_policy_copy_owner?.value===slowest;
+                // A worker can have the longest local training interval yet
+                // finish before a separately queued or remote lineage.
+                // Attribute an exposed pipeline stall only when verified
+                // coordinator reply arrival identifies the SAME owner.
+                metrics.training_last_reply_worker?.value===slowest&&
+                metrics.training_gpu_policy_copy_owner?.value===slowest&&
+                (queueShare===null||queueShare<=0.10);
             // In each completed update, only eligible GPU PPO lineages can
             // retain an unchanged policy for another on-policy collection.
             const gpuLineages=metrics.training_gpu_optimizer_lineages?.value;
