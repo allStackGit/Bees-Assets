@@ -1405,6 +1405,8 @@ collectors use that same selected source. Stage runs must keep the session
 Python and policy worker, and must route both model slots if self-play is
 enabled. The independent fixed holdout evaluation remains unchanged, so
 victory measurements across curriculum stages use one consistent reference.
+When early stopping is enabled, plateau patience begins anew at the final
+curriculum stage; an easy-stage plateau cannot cancel later authored stages.
 
 After interruption or a failed round, repeat the command with `--resume`;
 `--rounds` counts the total desired successful rounds and may be increased
