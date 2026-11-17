@@ -15,6 +15,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import tarfile
+import time
 from tempfile import TemporaryDirectory, NamedTemporaryFile
 
 from native_distributed_collection import verify_bundle
@@ -94,6 +95,7 @@ def archive_info(name, size):
 
 
 def export_bundle_archive(receipt_path, job, orders, archive_path):
+    started = time.perf_counter()
     receipt_path = Path(receipt_path).resolve(strict=True)
     bundle_root = receipt_path.parent
     archive_path = Path(archive_path).absolute()
@@ -142,10 +144,12 @@ def export_bundle_archive(receipt_path, job, orders, archive_path):
         "capture_files": len(files),
         "capture_bytes": transferred,
         "archive_bytes": archive_path.stat().st_size,
+        "archive_export_wall_seconds": time.perf_counter() - started,
     }
 
 
 def import_bundle_archive(archive_path, job, orders, inbox):
+    started = time.perf_counter()
     archive_path = Path(archive_path).resolve(strict=True)
     inbox = Path(inbox).resolve(strict=True)
     if not inbox.is_dir():
@@ -217,6 +221,7 @@ def import_bundle_archive(archive_path, job, orders, inbox):
         "collector_id": job["id"],
         "capture_files": len(received),
         "capture_bytes": transferred,
+        "archive_import_wall_seconds": time.perf_counter() - started,
     }
 
 
