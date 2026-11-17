@@ -2835,6 +2835,80 @@ class ExperimentHub {
                 continue;
             }
             const learner=members[0];
+            if(plan.kind==='courier') {
+                const workers=snapshot.jobs.filter(job=>
+                    job.project_id==='courier_lineage'&&
+                    job.frozen_parameters?.learner_job_id===learner.id&&
+                    job.status!=='cancelled');
+                const expected=new Set(plan.collector_job_ids);
+                if(learner.project_id!=='courier'||
+                    learner.distributed_courier_managed!==true||
+                    workers.length!==expected.size||
+                    workers.length!==members.length-1||
+                    workers.some(worker=>!expected.has(worker.id))||
+                    members.slice(1).some(worker=>
+                        worker.project_id!=='courier_lineage'||
+                        worker.frozen_parameters?.learner_job_id!==learner.id)) {
+                    halt('needs_review','Courier group membership changed before native Start.');
+                    continue;
+                }
+                if(members.some((job,index)=>!snapshot.reservations.some(lease=>
+                    lease.id===plan.frozen_members[index].lease_id&&
+                    lease.job_id===job.id&&lease.project_id===job.project_id&&
+                    lease.machine_id===job.assigned_machine_id&&
+                    lease.issued_by==='experiment-hub'&&
+                    ['offered','acknowledged'].includes(lease.status)))) {
+                    halt('needs_review','Courier group original resource reservation changed.');
+                    continue;
+                }
+                const offline=members.some(job=>
+                    snapshot.machines.find(host=>
+                        host.id===job.assigned_machine_id)?.status!=='connected');
+                if(offline)continue;
+                const host=snapshot.machines.find(item=>
+                    item.id===learner.assigned_machine_id);
+                if(host?.courier_remote_key_fingerprint!==plan.key_fingerprint||
+                    JSON.stringify(host?.courier_remote_lineage_endpoints)!==
+                        JSON.stringify(plan.learner_endpoints)||
+                    JSON.stringify(host?.courier_remote_max_shards)!==
+                        JSON.stringify(plan.learner_shards)||
+                    members.slice(1).some((worker,index)=>{
+                        const machine=snapshot.machines.find(item=>
+                            item.id===worker.assigned_machine_id);
+                        const frozen=plan.frozen_members[index+1];
+                        return !machine||worker.frozen_parameters?.slot!==frozen.slot||
+                            machine.courier_lineage_endpoint!==frozen.endpoint||
+                            machine.courier_lineage_key_fingerprint!==plan.key_fingerprint||
+                            machine.courier_lineage_max_shards!==frozen.max_shards;
+                    })) {
+                    halt('needs_review','Courier group private endpoint, slot or key identity changed.');
+                    continue;
+                }
+                if(members.some(job=>
+                    this.agentReports.get(job.assigned_machine_id)?.instance_id!==
+                        plan.agent_instances[job.assigned_machine_id])) {
+                    halt('disarmed','Courier group native agent identity changed before Start.');
+                    continue;
+                }
+                if(!workers.every(job=>
+                    nativeStartReadiness(snapshot,job).eligible))
+                    continue;
+                try {
+                    this.authorizeCourierLineages({
+                        learner_job_id:learner.id,
+                        expected_lineage_job_ids:plan.collector_job_ids,
+                        confirm_start:true,confirm_learner_start:true,
+                    },plan.id);
+                }catch(error) {
+                    const message=String(error.message||error).slice(0,180);
+                    if(!['The Courier learner needs a fresh',
+                        'Courier remote lineage ','Every Courier remote worker needs',
+                        'Courier learner requires a live'].some(prefix=>
+                        message.startsWith(prefix)))
+                        halt('needs_review','Courier group admission needs review: '+message);
+                }
+                continue;
+            }
             const other=snapshot.jobs.filter(job=>
                 job.project_id==='tinybrains_rollout'&&
                 job.frozen_parameters?.learner_job_id===learner.id);
