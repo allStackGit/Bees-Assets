@@ -9,7 +9,7 @@
 //! {kind:"input", request_id:u64, action:NativePlayerInput}. Host replies
 //! with kind:"input_result" and broadcasts kind:"world_state". The remote
 //! interface shares the local player's authority (co-op, not opposing sides).
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Instant;
@@ -18,6 +18,7 @@ use bees_sim::collision::Aabb;
 use bees_sim::level_discovery::DiscoveryKind;
 use bees_sim::obstacle::ObstacleKind;
 use bees_sim::geometry::Vec2;
+use bees_hivemind::session::SquadLifetime;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -42,6 +43,7 @@ enum WireInput {
 
 pub struct RemoteOrder {
     pub peer: u64,
+    pub side: i32,
     pub request_id: u64,
     pub action: NativePlayerInput,
 }
@@ -49,7 +51,7 @@ pub struct RemoteOrder {
 struct Peer {
     id: u64,
     socket: TcpStream,
-    authenticated: bool,
+    side: Option<i32>,
     incoming: Vec<u8>,
     outgoing: Vec<u8>,
     written: usize,
@@ -111,7 +113,7 @@ pub struct RemotePlayMeasurements {
 
 pub struct NativeRemotePlay {
     listener: TcpListener,
-    token: String,
+    side_tokens: HashMap<i32, String>,
     peers: Vec<Peer>,
     next_peer: u64,
     last_state: Option<(u64, u64)>,
@@ -119,17 +121,34 @@ pub struct NativeRemotePlay {
 }
 
 impl NativeRemotePlay {
-    pub fn from_environment() -> io::Result<Option<Self>> {
+    pub fn from_environment(local_side: i32) -> io::Result<Option<Self>> {
         let Ok(address) = std::env::var("BEES_NATIVE_REMOTE_LISTEN") else {
             return Ok(None);
         };
-        let token = std::env::var("BEES_NATIVE_REMOTE_TOKEN").map_err(|_|
-            io::Error::new(io::ErrorKind::InvalidInput,
-                "BEES_NATIVE_REMOTE_TOKEN must be set for remote play"))?;
-        if token.len() < 24 || token.len() > 256 ||
-            token.chars().any(|ch| ch.is_control()) {
+        // One token keeps the original cooperative single-side mode.
+        // Explicit side tokens enable independently authenticated human
+        // players only where the imported Level actually grants each
+        // side source player control.
+        let side_tokens: HashMap<i32, String> =
+            if let Ok(raw) = std::env::var("BEES_NATIVE_REMOTE_SIDE_TOKENS") {
+                serde_json::from_str(&raw).map_err(|error|
+                    io::Error::new(io::ErrorKind::InvalidInput,
+                        format!("invalid BEES_NATIVE_REMOTE_SIDE_TOKENS: {error}")))?
+            } else {
+                let token = std::env::var("BEES_NATIVE_REMOTE_TOKEN").map_err(|_|
+                    io::Error::new(io::ErrorKind::InvalidInput,
+                        "BEES_NATIVE_REMOTE_TOKEN or BEES_NATIVE_REMOTE_SIDE_TOKENS is required"))?;
+                HashMap::from([(local_side, token)])
+            };
+        if side_tokens.is_empty() || side_tokens.len() > 2 ||
+            side_tokens.iter().any(|(&side, token)|
+                !(1..=2).contains(&side) || token.len() < 24 ||
+                token.len() > 256 || token.chars().any(|ch| ch.is_control())) ||
+            { let unique: HashSet<_> = side_tokens.values().collect();
+              unique.len() != side_tokens.len() }
+        {
             return Err(io::Error::new(io::ErrorKind::InvalidInput,
-                "remote play requires a nonempty 24-256 character non-control token"));
+                "remote player sides must be 1 or 2 with unique 24-256 character tokens"));
         }
         let listener = TcpListener::bind(&address)?;
         listener.set_nonblocking(true)?;
@@ -137,10 +156,13 @@ impl NativeRemotePlay {
             "kind": "native_remote_listening",
             "address": listener.local_addr()?.to_string(),
             "max_peers": MAX_PEERS,
-            "mode": "shared_player_authority",
+            "mode": if side_tokens.len() > 1 { "independent_player_sides" }
+                    else { "shared_player_authority" },
+            "configured_sides": { let mut sides = side_tokens.keys().copied().collect::<Vec<_>>();
+                                  sides.sort_unstable(); sides },
         }));
         Ok(Some(Self {
-            listener, token, peers: Vec::new(),
+            listener, side_tokens, peers: Vec::new(),
             next_peer: 1, last_state: None,
             measurements: RemotePlayMeasurements::default(),
         }))
@@ -169,7 +191,7 @@ impl NativeRemotePlay {
             self.next_peer += 1;
             self.measurements.connections_accepted += 1;
             self.peers.push(Peer {
-                id, socket, authenticated: false, incoming: Vec::new(),
+                id, socket, side: None, incoming: Vec::new(),
                 outgoing: Vec::new(), written: 0, closed: false,
                 accepted_at: Instant::now(),
             });
@@ -180,7 +202,7 @@ impl NativeRemotePlay {
             if peer.closed { continue; }
             let mut peer_orders = 0;
             // Never allow an unauthenticated socket to occupy a slot forever.
-            if !peer.authenticated && peer.accepted_at.elapsed().as_secs() > 10 {
+            if peer.side.is_none() && peer.accepted_at.elapsed().as_secs() > 10 {
                 peer.closed = true;
                 continue;
             }
@@ -215,15 +237,22 @@ impl NativeRemotePlay {
                     serde_json::from_slice(&peer.incoming[start..end]);
                 start = end + 1;
                 match message {
-                    Ok(WireInput::Hello { token }) if !peer.authenticated &&
-                        constant_time_matches(self.token.as_bytes(), token.as_bytes()) => {
-                        peer.authenticated = true;
-                        self.measurements.authenticated_peers += 1;
-                        let _ = peer.enqueue(&json!({
-                            "kind": "welcome", "protocol": 1, "mode": "cooperative",
-                        }));
+                    Ok(WireInput::Hello { token }) if peer.side.is_none() => {
+                        let side = self.side_tokens.iter().find_map(|(&side, secret)|
+                            constant_time_matches(secret.as_bytes(), token.as_bytes())
+                                .then_some(side));
+                        if let Some(side) = side {
+                            peer.side = Some(side);
+                            self.measurements.authenticated_peers += 1;
+                            let _ = peer.enqueue(&json!({
+                                "kind": "welcome", "protocol": 1,
+                                "mode": "authenticated_player_side", "side": side,
+                            }));
+                        } else {
+                            peer.closed = true;
+                        }
                     }
-                    Ok(WireInput::Input { request_id, action }) if peer.authenticated => {
+                    Ok(WireInput::Input { request_id, action }) if peer.side.is_some() => {
                         // Held-fire is a continuing, per-controller gesture.
                         // The present cooperative protocol has no peer-owned
                         // release lifecycle: rejecting it avoids an orphaned
@@ -245,7 +274,8 @@ impl NativeRemotePlay {
                         peer_orders += 1;
                         self.measurements.orders_received += 1;
                         orders.push(RemoteOrder {
-                            peer: peer.id, request_id, action,
+                            peer: peer.id, side: peer.side.expect("checked authenticated peer"),
+                            request_id, action,
                         });
                     }
                     _ => { peer.closed = true; break; }
@@ -261,7 +291,7 @@ impl NativeRemotePlay {
 
     pub fn reply(&mut self, peer_id: u64, request_id: u64, result: Result<&str, &str>) {
         let Some(peer) = self.peers.iter_mut()
-            .find(|peer| peer.id == peer_id && peer.authenticated) else { return };
+            .find(|peer| peer.id == peer_id && peer.side.is_some()) else { return };
         if result.is_ok() { self.measurements.orders_processed += 1; }
         else { self.measurements.orders_rejected += 1; }
         let reply = match result {
@@ -279,18 +309,25 @@ impl NativeRemotePlay {
     }
 
     pub fn broadcast(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) {
-        if !self.peers.iter().any(|peer| peer.authenticated) { return; }
+        if !self.peers.iter().any(|peer| peer.side.is_some()) { return; }
         let episode = (view.world_id.0, view.episode_revision);
         if self.last_state == Some(episode) &&
             view.tick % STATE_EVERY_TICKS != 0 &&
             view.terminal_result.is_none() { return; }
         self.last_state = Some(episode);
-        let state = current_state(view, bounds);
-        let Ok(encoded) = serde_json::to_vec(&state) else { return };
-        if encoded.len() > MAX_PENDING / 2 { return; }
+        // Encode each player's side-filtered snapshot only once, then fan it
+        // out to peers on the same side. Never send another side's packet.
+        let mut snapshots = HashMap::<i32, Vec<u8>>::new();
         for peer in &mut self.peers {
-            if !peer.authenticated { continue; }
-            if peer.outgoing.len().saturating_sub(peer.written) + encoded.len() > MAX_PENDING {
+            let Some(side) = peer.side else { continue };
+            let encoded = snapshots.entry(side).or_insert_with(||
+                serde_json::to_vec(&current_state(view, bounds, side))
+                    .unwrap_or_default());
+            if encoded.len() > MAX_PENDING / 2 {
+                peer.closed = true;
+                continue;
+            }
+            if peer.outgoing.len().saturating_sub(peer.written) + encoded.len() + 1 > MAX_PENDING {
                 // Drop a lagging observer rather than accumulating unbounded
                 // snapshots or slowing the authoritative fixed-step loop.
                 peer.closed = true;
@@ -300,7 +337,7 @@ impl NativeRemotePlay {
                 peer.outgoing.clear();
                 peer.written = 0;
             }
-            peer.outgoing.extend_from_slice(&encoded);
+            peer.outgoing.extend_from_slice(encoded);
             peer.outgoing.push(b'\n');
             peer.flush();
             self.measurements.state_bytes += encoded.len() as u64;
@@ -327,13 +364,19 @@ fn constant_time_matches(expected: &[u8], actual: &[u8]) -> bool {
 /// State snapshots are a read-only projection of the same live CombatWorld.
 /// Source FogOfWar restricts ship coordinates to ships actually within live
 /// friendly sight masks; previous discoveries alone do not reveal position.
-fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb) -> Value {
-    let viewer = view.player_authority.player_viewer_side();
+fn owns_player_side(view: &NativeRenderWorldView<'_>, owner: SquadLifetime, side: i32) -> bool {
+    view.roster.get(owner).is_some_and(|squad| squad.side == side &&
+        view.player_authority.player_permissions(owner)
+            .is_some_and(|permission| permission.user_controlled))
+}
+
+fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> Value {
+    let viewer = Some(side);
     let fog = view.player_authority.player_fog_of_war_enabled();
     let sources: Vec<(Vec2, f32)> = if fog {
         view.combat.render_ships().filter_map(|(ship, body)| {
             let owner = view.roster.owning_squad(ship.entity_id)?;
-            if !view.is_local_player_squad(owner) { return None; }
+            if !owns_player_side(view, owner, side) { return None; }
             let radius = view.player_authority.player_fog_vision_radius(ship.entity_id)?;
             (radius > 0.0 && radius.is_finite()).then_some((body.motion.position, radius))
         }).collect()
@@ -341,7 +384,7 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb) -> Value {
     let mut visible_ids = HashSet::<i64>::new();
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
         let owned = view.roster.owning_squad(ship.entity_id)
-            .is_some_and(|owner| view.is_local_player_squad(owner));
+            .is_some_and(|owner| owns_player_side(view, owner, side));
         let visible = owned || !fog || sources.iter().any(|&(position, radius)|
             (body.motion.position - position).length_squared() <= radius * radius);
         if !visible { return None; }
@@ -395,7 +438,7 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb) -> Value {
     }).collect();
     let squads: Vec<_> = view.roster.active_lifetimes().filter_map(|owner| {
         let squad = view.roster.get(owner)?;
-        let owned = view.is_local_player_squad(owner);
+        let owned = owns_player_side(view, owner, side);
         let members: Vec<_> = squad.members.iter().copied()
             .filter(|id| owned || visible_ids.contains(id)).collect();
         if members.is_empty() { return None; }
