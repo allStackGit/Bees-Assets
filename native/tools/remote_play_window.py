@@ -14,7 +14,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from remote_play_client import RemoteConsole
+from remote_play_client import RemoteConsole, remote_token
 
 
 BACKGROUND = "#101925"
@@ -511,10 +511,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("host")
     parser.add_argument("port", type=int)
+    parser.add_argument("--side", type=int, choices=(1, 2),
+                        help="authenticated player side for multiplayer")
     args = parser.parse_args()
-    token = os.environ.get("BEES_NATIVE_REMOTE_TOKEN")
-    if not token:
-        parser.error("BEES_NATIVE_REMOTE_TOKEN is required")
+    try:
+        token = remote_token(args.side)
+    except ValueError as error:
+        parser.error(str(error))
     connection = socket.create_connection((args.host, args.port), timeout=10)
     connection.settimeout(None)
     try:
