@@ -569,6 +569,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
         design_catalog:{courier:{...designFields,config_sha256:configSha256,
+            curriculum_fields:designFields.fields.filter(field=>
+                field.section==='environment'&&
+                (supportsResumeEnvironment
+                    ?CURRICULUM_MUTABLE_KEYS.has(field.key)
+                    :['width','height','move_cost','food_spawn_mode'].includes(field.key)))
+                .map(field=>field.key),
             metric_catalog:{...COURIER_METRIC_CATALOG,
                 communication:process.env.COURIER_COMMUNICATION_LOGGING?.match(/^(1|true|yes|on)$/i)
                     ?['colony_window_messages_written']:[]},
