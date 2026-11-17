@@ -230,7 +230,7 @@ pub struct ParallelSelectedStep<E> {
 
 /// A single world scheduler defaults to the cheapest serial path. Long
 /// independent rollout windows and model-batched physics reuse one bounded,
-/// lazily initialized CPU pool across rounds; short windows stay inexpensive.
+/// lazily initialized CPU pool across rounds. One-world dispatch stays inline.
 pub struct Simulation<S, R> {
     rules: R,
     worlds: Vec<World<S>>,
@@ -566,9 +566,10 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
     /// after validating every model row, never infer inside this callback.
     ///
     /// One arena or one requested worker runs inline, with no thread spawn.
-    /// Long windows with more arenas than workers reuse the same physical
-    /// thread pool as model-batched inference. Small windows keep the
-    /// existing inline/scoped low-latency dispatch.
+    /// Every multi-worker window uses the same persistent pool as the
+    /// model-batched path: short windows use bounded disjoint partitions,
+    /// while longer heterogeneous arenas use dynamically claimed worlds.
+    /// A one-worker window still runs inline without scheduling overhead.
     pub fn run_parallel_window<F>(
         &mut self,
         steps_per_world: NonZeroU32,
@@ -590,11 +591,10 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
 
         let workers = worker_count.get().min(self.worlds.len());
         let steps = steps_per_world.get();
-        let reuse_pool = workers > 1 && steps >= 64 && self.worlds.len() > workers;
-        if reuse_pool {
-            // The public independent-window API returns a report, not an
-            // initialization Result. A failed thread allocation is fatal,
-            // as it was for scoped thread spawning. Do not half-step worlds.
+        let dynamic_claims = steps >= 64 && self.worlds.len() > workers;
+        if workers > 1 {
+            // Reserve workers before any World changes so allocation
+            // failure never partially advances this collection window.
             self.ensure_physics_pool(workers)
                 .expect("unable to allocate persistent native physics workers");
         }
@@ -617,17 +617,12 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             return part;
         }
 
-        // Short windows and exactly one arena per worker retain the cheapest
-        // fixed-slice dispatch. For longer multi-arena CPU windows, take each
-        // independent world from a single bounded queue. A worker owns that
-        // world for its WHOLE window, retaining local RNG, game scratch and
-        // one reusable action buffer. Only the arena claim takes a lock;
-        // physics and policy decisions never execute under one.
-        //
-        // This avoids one busy world holding a whole static partition while
-        // other workers finish their cheap arenas and sit idle. The threshold
-        // keeps queue setup off the one-/few-tick path used by clients.
-        let outcomes = if reuse_pool {
+        // Dynamic claims balance heterogeneous multi-world workloads; the
+        // worker-local decision buffer and full-episode state are never
+        // shared. Keep the queue and its lock off short windows.
+        let pool = &self.physics_pool.as_ref()
+            .expect("multi-worker physics pool initialized above").1;
+        let outcomes = if dynamic_claims {
             let pending = Mutex::new(self.worlds.iter_mut());
             let work = || {
                 let worker_started = Instant::now();
@@ -651,53 +646,37 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             // rollout windows and also serves model-batched physics.
             // Every worker owns a reusable action buffer for its claimed
             // arena sequence; only claims take the short queue mutex.
-            let pool = &self.physics_pool.as_ref()
-                .expect("long-window physics pool initialized above").1;
             pool.install(|| (0..workers).into_par_iter().map(|_| {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(&work))
             }).collect::<Vec<_>>())
         } else {
-            // Fixed consecutive partitions avoid a queue for short windows.
-            // Give the last chunk to the caller rather than spawning every
-            // worker and waiting with an otherwise idle simulation thread.
+            // Disjoint, near-equal contiguous partitions use the existing
+            // pool instead of starting up to (workers-1) OS threads on EVERY
+            // short collection window. Each partition reuses its own action
+            // buffer, and no per-ship or per-world mutex is necessary.
             let base = self.worlds.len() / workers;
             let extras = self.worlds.len() % workers;
-            std::thread::scope(|scope| {
-                let mut remaining = self.worlds.as_mut_slice();
-                let mut handles = Vec::with_capacity(workers - 1);
-                for index in 0..workers - 1 {
-                    let size = base + usize::from(index < extras);
-                    let (chunk, rest) = remaining.split_at_mut(size);
-                    remaining = rest;
-                    handles.push(scope.spawn(move || {
-                        let worker_started = Instant::now();
-                        let mut decisions = Vec::new();
-                        let mut report = ParallelWindow::default();
-                        run_partition(
-                            rules, dt, sample, chunk, steps, decide, &mut decisions,
-                            &mut report,
-                        );
-                        (report, size, worker_started.elapsed())
-                    }));
-                }
-                let caller_started = Instant::now();
-                let caller = std::panic::catch_unwind(
-                    std::panic::AssertUnwindSafe(|| {
-                        let assigned = remaining.len();
-                        let mut decisions = Vec::new();
-                        let mut report = ParallelWindow::default();
-                        run_partition(
-                            rules, dt, sample, remaining, steps, decide, &mut decisions,
-                            &mut report,
-                        );
-                        (report, assigned, caller_started.elapsed())
-                    }),
-                );
-                let mut outcomes = Vec::with_capacity(workers);
-                outcomes.push(caller);
-                outcomes.extend(handles.into_iter().map(|handle| handle.join()));
-                outcomes
-            })
+            let mut remaining = self.worlds.as_mut_slice();
+            let mut chunks = Vec::with_capacity(workers);
+            for index in 0..workers {
+                let size = base + usize::from(index < extras);
+                let (chunk, rest) = remaining.split_at_mut(size);
+                chunks.push(chunk);
+                remaining = rest;
+            }
+            pool.install(|| chunks.into_par_iter().map(|chunk| {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let worker_started = Instant::now();
+                    let assigned = chunk.len();
+                    let mut decisions = Vec::new();
+                    let mut report = ParallelWindow::default();
+                    run_partition(
+                        rules, dt, sample, chunk, steps, decide, &mut decisions,
+                        &mut report,
+                    );
+                    (report, assigned, worker_started.elapsed())
+                }))
+            }).collect::<Vec<_>>())
         };
 
         let mut panicked = false;
