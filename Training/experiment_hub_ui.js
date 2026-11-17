@@ -2194,8 +2194,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // hardware diagnosis; measured stage time alone cannot prove
             // device saturation or justify buying additional resources.
             const measured=p.metrics||{};
+            const remoteWaitOwner=measured.pipeline_remote_wait_owner?.value;
+            const remoteWaitLabel=Number.isSafeInteger(remoteWaitOwner)&&
+                remoteWaitOwner>=1&&remoteWaitOwner<=16
+                ?' (Collector '+remoteWaitOwner+')':'';
             const delay=measured.pipeline_remote_wait_dominant?.value===1
-                ?'remote collector join wait':measured.pipeline_merge_dominant?.value===1
+                ?'remote collector join wait'+remoteWaitLabel
+                :measured.pipeline_merge_dominant?.value===1
                     ?'learner-side rollout merge':null;
             const stage=measured.pipeline_collection_dominant?.value===1
                 ?'collection':measured.pipeline_optimization_dominant?.value===1
@@ -2321,6 +2326,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'pipeline_collection_work_share','pipeline_optimization_work_share',
         'pipeline_collection_dominant','pipeline_optimization_dominant',
         'pipeline_remote_wait_work_share','pipeline_merge_work_share',
+        'pipeline_remote_exposed_work_share','pipeline_remote_wait_owner',
+        'remote_collector_exposed_wait_seconds','remote_collectors_pending_after_local',
+        'remote_collector_exposed_wait_owner',
         'pipeline_remote_wait_dominant','pipeline_merge_dominant',
         'pipeline_cpu_lease_pressure','pipeline_cpu_throttle_pressure',
         'pipeline_ram_lease_pressure','pipeline_gpu_host_busy_pressure',
