@@ -724,6 +724,16 @@ impl NativePlayerFirePlan {
 
 impl<M, A> NativeLevelState<M, A> {
     pub fn has_held_fire(&self) -> bool { !self.held_fire_ships.is_empty() }
+
+    /// A dead/retired source weapon cannot retain a remote player's active
+    /// gesture. This is read only at interactive input boundaries, not in
+    /// the performance-critical headless physics loop.
+    pub fn has_live_held_fire(&self) -> bool {
+        self.held_fire_ships.iter().copied().any(|id|
+            self.combat.ship_body(id).is_some_and(|body| body.active) &&
+            self.combat.ship(id).is_some_and(|ship| !ship.vitals.is_dead())
+        )
+    }
 }
 
 impl<M: NativePlayerAuthority, A> NativeLevelState<M, A> {
