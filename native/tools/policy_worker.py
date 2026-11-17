@@ -229,7 +229,7 @@ class MlagentsPolicy:
 
 
 def read_reused(reader, storage: bytearray, count: int):
-    """Reuse the largest observation receive buffer across model batches."""
+    """Reuse a receive buffer across binary inference frames."""
     if len(storage) < count:
         storage = bytearray(count)
     view = memoryview(storage)[:count]
@@ -237,7 +237,7 @@ def read_reused(reader, storage: bytearray, count: int):
     while offset < count:
         received = reader.readinto(view[offset:])
         if not received:
-            raise EOFError("incomplete inference observation payload")
+            raise EOFError("incomplete inference frame payload")
         offset += received
     return storage, view
 
@@ -345,7 +345,7 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
     return signature_bytes, policies, manifest_digest
 
 
-def decode_row_metadata(meta: bytearray, rows: int, output_buffers=None):
+def decode_row_metadata(meta: bytearray | memoryview, rows: int, output_buffers=None):
     fields = np.frombuffer(meta, dtype=ROW_META_DTYPE, count=rows)
     fire_bytes = fields["fire"]
     special_bytes = fields["special"]
@@ -599,6 +599,7 @@ def main() -> None:
     writer.write(manifest_digest)
     writer.flush()
     observation_storage = bytearray()
+    metadata_storage = bytearray()
     while True:
         data = read_exact(reader, HEADER.size)
         if data is None:
@@ -659,9 +660,9 @@ def main() -> None:
             raise ValueError("invalid inference request header")
         if not 0 < rows <= MAX_BATCH_ROWS:
             raise ValueError("invalid model batch size")
-        meta = read_exact(reader, rows * ROW_META_BYTES)
-        if meta is None:
-            raise EOFError("incomplete inference metadata")
+        metadata_storage, meta = read_reused(
+            reader, metadata_storage, rows * ROW_META_BYTES
+        )
         observation_storage, payload = read_reused(
             reader, observation_storage, rows * OBS_FLOATS * 4
         )
@@ -687,7 +688,7 @@ def main() -> None:
         writer.flush()
         # Release NumPy/memoryview references before expanding the next
         # batch's storage; smaller/equal batches reuse the same allocation.
-        del observation, payload
+        del observation, payload, meta, slots, fire, special, allowed
     report_model_residency()
 
 
