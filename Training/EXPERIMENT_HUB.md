@@ -2508,7 +2508,8 @@ python -B Training/experiment_hub_tinybrains_baseline_suites.py \
 The generator creates `tinybrains_nano_tiny_v1.json` and
 `tinybrains_micro_tiny_v1.json`, pins the evaluator/runtime and both
 opponent files, and prints the suite digests. It refuses to overwrite an
-existing suite with different content. Reserve these seed IDs for independent
+existing suite with different content; use `--suite-version 2` if the
+evaluation method, seeds, or opponents change. Reserve these seed IDs for independent
 evaluation, not training. For use as an automated Hub evaluation stop, the
 evaluator must advertise the exact suite IDs and the job's policy must pin
 the printed suite SHA-256. Reuse the *same* suite definition for every
