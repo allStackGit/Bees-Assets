@@ -21,6 +21,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version','training_sim_early_dispatches',
     'training_sim_prestaged_actions','training_sim_queue_peak_shards',
+    'training_sim_multiplexed_shards','training_sim_event_loop_processes',
+    'training_sim_child_os_threads',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
     'training_sim_topology_rejected','training_sim_topology_unavailable',
     'training_sim_topology_unverified','training_sim_topology_migrations',
@@ -106,7 +108,8 @@ function courierMetrics(source) {
     // optional per-lineage details. The append-only Courier event still
     // contains every original measurement for full native history.
     const primary=name=>name.startsWith('training_gpu_placement_')||
-        /^training_gpu_device_[0-7]_next_lineages$/.test(name);
+        /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
+        /^training_sim_(?:multiplexed_shards|event_loop_processes|child_os_threads)$/.test(name);
     const entries=Object.entries(stats).sort(
         ([a],[b])=>Number(primary(b))-Number(primary(a)));
     for(const [name,value] of entries) {
@@ -116,7 +119,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':
