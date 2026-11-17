@@ -2531,11 +2531,15 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         } else if hosting {
             run_library_host(&saved_host,save_root,&library,&games,&trained)
         } else if let Some(trained_index) = trained_index {
-            // Verify the original checkpoint immediately before each game,
-            // including after returning from a prior game to the library.
+            // The active latest-playable-run.json may be replaced by the
+            // next training round. Freeze its verified bytes beside this
+            // battle, so both live gameplay and its future recording use
+            // exactly the same original model/scene configuration.
             (|| {
-                let source = trained[trained_index].verified_run()?;
-                let output = new_library_battle_output(save_root,game_id)?;
+                let output = new_library_battle_output(save_root, game_id)?;
+                let source = trained[trained_index].archive_playable(
+                    output.parent().ok_or_else(|| invalid("missing trained battle archive"))?,
+                )?;
                 run_session(&source, true, true, Some(output), None, None, None)
             })()
         } else if game_kind == "campaign" {
