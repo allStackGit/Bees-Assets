@@ -798,7 +798,7 @@ impl NativeClient {
             self.selection_drag = None;
             self.renderer.selection_box = None;
             Some(NativePlayerSquadFire { world_id: view.world_id, episode_revision: view.episode_revision,
-                squads: self.renderer.selection.squads().to_vec(), target: None })
+                squads: self.renderer.selection.squads().to_vec(), controller_id: 0, target: None })
         } else { None };
         let firing_mode = if accepts_orders &&
             (clicked_hud == Some(HudAction::CeaseFire) ||
@@ -992,7 +992,8 @@ impl NativeClient {
                         if mode == NativeTargetMode::ManualFire {
                             manual_fire = Some(NativePlayerSquadFire { world_id: view.world_id,
                                 episode_revision: view.episode_revision,
-                                squads: self.renderer.selection.squads().to_vec(), target: Some(end) });
+                                squads: self.renderer.selection.squads().to_vec(),
+                                controller_id: 0, target: Some(end) });
                             self.support_mode = None;
                         } else if let NativeTargetMode::Support(mode) = mode {
                             if let Some(action) = self.renderer.pick_support_action(&view, mode, end, Some(start)) {
