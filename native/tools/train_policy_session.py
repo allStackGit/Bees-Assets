@@ -712,6 +712,7 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         "latest_training_outcomes": latest,
         "rounds": [
             {"round": index, "directory": str(path),
+             "source_run_config_sha256": record.get("source_run_config_sha256"),
              "next_checkpoint_sha256": record["next_checkpoint_sha256"],
              "next_manifest_sha256": record["next_manifest_sha256"],
              "world_steps": record["rollout_metrics"]["successful_world_steps"],
