@@ -20,6 +20,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version','training_sim_early_dispatches',
+    'training_sim_prestaged_actions','training_sim_queue_peak_shards',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
     'training_sim_topology_rejected','training_sim_topology_unavailable',
     'training_sim_topology_unverified','training_sim_topology_migrations',
