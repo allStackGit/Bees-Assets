@@ -1083,6 +1083,11 @@ def main():
                     window = {
                         "schema_version": 1,
                         "kind": "native_distributed_collection_window",
+                        "collector_input_archive_count": len(prepared_inputs),
+                        "collector_input_archive_bytes_published": sum(
+                            size for _, _, size in prepared_inputs.values()
+                        ),
+                        **({} if receiver is None else receiver.transfer_metrics()),
                         "round": index,
                         "orders_sha256": file_sha256(order_path),
                         "source_run_contract_sha256":
