@@ -106,6 +106,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_max_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
         'simulation_tuner_settled','simulation_target_restored',
+        'simulation_global_cadence_samples','simulation_global_cadence_rejections',
+        'local_lease_cadence_comparable','local_lease_completed_cadence_update',
         'simulation_proven_target',
         'ant_decisions','group_states','births','deaths',
         'episodes_ended','multi_ant_states','terminal_rewards',
@@ -180,6 +182,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // not raw machine RAM utilization or a physical OOM diagnosis.
     add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
     add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
+    // Actual useful action target divided by completed end-to-end PPO wall.
+    // Mixed simulation/GPU layout rounds are explicitly marked incomparable.
+    add('local_lease_completed_cadence_sps',
+        row.local_lease_completed_cadence_sps,'rate');
+    add('simulation_global_cadence_gain',
+        row.simulation_global_cadence_gain,'scalar');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
@@ -283,11 +291,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['sim_target','simulation_target_matches'],
             ['sim_max','simulation_max_matches'],
             ['sim_changes','simulation_concurrency_adjustments'],
+            ['sim_global_samples','simulation_global_cadence_samples'],
+            ['sim_global_rejections','simulation_global_cadence_rejections'],
             ['sim_accepted','simulation_tuner_accepted'],
             ['sim_settled','simulation_tuner_settled'],
             ['sim_restored','simulation_target_restored'],
             ['sim_proven','simulation_proven_target']])
             add('collector_'+i+'_'+suffix,worker[name],'count');
+        add('collector_'+i+'_sim_global_gain',
+            worker.simulation_global_cadence_gain,'scalar');
         add('collector_'+i+'_sim_engine_charged_mb',
             worker.simulation_engine_memory_mb,'mb');
         for(const [suffix,name] of [
@@ -509,6 +521,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 // Keep live/target/max simulation counts and real waits.
                 'sim_changes','sim_accepted','sim_settled',
                 'sim_restored','sim_proven',
+                'sim_global_samples','sim_global_gain',
                 'inference_shape_groups','inference_readbacks',
                 'inference_forward_chunks','opponent_shape_groups',
                 'inference_max_group_px','bootstrap_seconds','returns_seconds',
