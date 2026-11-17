@@ -4514,6 +4514,8 @@ fn run_battle(
         "vision_completed_step_totals": status.simulation.vision,
         "navigation_current_episodes": status.navigation_workers,
         "navigation_raster_work_current_episodes": status.navigation_rasters,
+        "beehive_healing_cascade_kills_current_episodes":
+            status.game_healing_cascade_kills,
         "campaign_outcome": campaign_outcome,
         "campaign_fleet": campaign_fleet,
         "campaign_squads": campaign_squads,
