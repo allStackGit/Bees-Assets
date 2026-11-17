@@ -25,6 +25,8 @@ HELP = """Commands:
   cease on|off         Set cease fire or attack on sight
   chase on|off         Enable/disable selected squad chase preference
   match on|off         Match selected ship speeds
+  lock on|off          Lock/unlock selected squad's current enemy
+  shoot ID             Choose native shooting strategy ID 1-40
   attack ID            Attack visible enemy squad
   guard ID             Guard a visible friendly squad
   mine ID              Mine a visible mining asteroid
@@ -188,6 +190,13 @@ class RemoteConsole:
                 "match": ("match_speed", "match_speed"),
             }[cmd]
             self.send((kind, {field: self.flag(argv[0])}), state, owners)
+        elif cmd == "lock" and len(argv) == 1:
+            self.send(("lock_on", {"locked": self.flag(argv[0])}), state, owners)
+        elif cmd == "shoot" and len(argv) == 1:
+            strategy_id = int(argv[0])
+            if strategy_id not in range(1, 41):
+                raise ValueError("shooting strategy must be 1-40")
+            self.send(("shooting", {"strategy_id": strategy_id}), state, owners)
         elif cmd == "attack" and len(argv) == 1:
             target = self.locate_squad(state, argv[0], owned=False)
             self.send(("support", {"action": {"Attack": {"target": target}}}),
