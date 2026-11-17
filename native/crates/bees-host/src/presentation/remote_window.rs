@@ -343,9 +343,38 @@ fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
         ship["id"].as_i64()==Some(ship_id)).and_then(position)
 }
 
+/// The remote window presents the host's authored dialogue, never a second
+/// mission progression state. Peers choose which line to read locally.
+fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) {
+    let Some(lines)=state["campaign_dialogue"]["lines"].as_array() else {return;};
+    let Some(line)=lines.get(line_index) else{return;};
+    let speaker=line["speaker"].as_str().unwrap_or("Mission");
+    let message=line["message"].as_str().unwrap_or("");
+    for scanline in pixels.chunks_exact_mut(WIDTH).skip(HEIGHT-160).take(96) {
+        scanline[..FIELD].fill(0x1c3045);
+    }
+    let heading=format!("{}   Dialogue {}/{}",
+        speaker,line_index+1,lines.len());
+    text::draw_at(pixels,WIDTH,15,HEIGHT-152,
+        text::fit(&heading,FIELD-30),1,[251,217,146]);
+    let mut rest=message;
+    for index in 0..3 {
+        if rest.is_empty(){break;}
+        let fit=text::fit(rest,FIELD-36);
+        let piece=if fit.len()<rest.len(){
+            fit.rsplit_once(' ').map_or(fit,|(head,_)|head)
+        }else{fit};
+        let piece=if piece.is_empty(){fit}else{piece};
+        text::draw_at(pixels,WIDTH,15,HEIGHT-127+index*19,piece,1,TEXT);
+        rest=rest[piece.len()..].trim_start();
+    }
+    text::draw_at(pixels,WIDTH,15,HEIGHT-72,
+        "Enter next   Backspace previous",1,MUTED);
+}
+
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
-    patrol_start: Option<Vec2>, metrics: &WireCounts) {
+    patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize) {
     for scanline in pixels.chunks_exact_mut(WIDTH) {
         scanline[..FIELD].fill(0x080f1a);
         scanline[FIELD..].fill(0x152439);
@@ -447,6 +476,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     } else {
         text::draw_at(pixels,WIDTH,30,30,"Waiting for authoritative battle state",2,TEXT);
     }
+    if let Some(state)=state {draw_campaign_dialogue(pixels,state,dialogue_line);}
     let instructions=[
         "Left: select   Shift: add",
         "Drag: select multiple",
@@ -563,6 +593,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut last_right=false;
     let mut drag_start:Option<(i32,i32)>=None;
     let mut last_middle:Option<(f32,f32)>=None;
+    let mut dialogue_key:Option<(u64,u64,u64)>=None;
+    let mut dialogue_line=0usize;
     let started=Instant::now();
 
     while window.is_open() {
@@ -573,6 +605,20 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         }
         peer.poll()?;
         if let Some(state)=peer.state.as_ref() {
+            let cue=state["campaign_dialogue"]["sequence"].as_u64().map(|sequence|(
+                state["world_id"].as_u64().unwrap_or(0),
+                state["episode_revision"].as_u64().unwrap_or(0),sequence,
+            ));
+            if cue!=dialogue_key {dialogue_key=cue;dialogue_line=0;}
+            let count=state["campaign_dialogue"]["lines"].as_array().map_or(0,Vec::len);
+            if count>0 {
+                if window.is_key_pressed(Key::Enter,KeyRepeat::No){
+                    dialogue_line=(dialogue_line+1).min(count-1);
+                }
+                if window.is_key_pressed(Key::Backspace,KeyRepeat::No){
+                    dialogue_line=dialogue_line.saturating_sub(1);
+                }
+            }
             let episode=(state["world_id"].as_u64().unwrap_or(0),
                          state["episode_revision"].as_u64().unwrap_or(0));
             if let Some(map)=bounds(state) {
@@ -779,7 +825,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             camera=Some(cam);
         }
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
-            expected_side,mode,patrol_start,&peer.metrics);
+            expected_side,mode,patrol_start,&peer.metrics,dialogue_line);
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
     }
     println!("{}",json!({
