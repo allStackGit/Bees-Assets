@@ -1261,7 +1261,7 @@ impl NativeClient {
         self.pending_steps = due;
         let step = due > 0;
         if let Some(action) = held_fire {
-            let input = NativePlayerHeldFire { world_id: view.world_id, episode_revision: view.episode_revision, action };
+            let input = NativePlayerHeldFire { world_id: view.world_id, episode_revision: view.episode_revision, controller_id: 0, action };
             Ok(NativeClientAction::Input { action: NativePlayerInput::HeldFire(input), step })
         } else if step {
             Ok(NativeClientAction::Step)
