@@ -279,6 +279,13 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
     # Cache by all backend settings and verified bytes, not the slot number
     # or artifact path, so distinct devices/providers never share a model.
     loaded_models = {}
+    # The optional portable model store maps pinned content hashes to local
+    # files without changing the original manifest or Rust ABI handshake.
+    model_store = os.environ.get("BEES_NATIVE_MODEL_STORE")
+    if model_store:
+        model_store = Path(model_store)
+        if not model_store.is_absolute() or not model_store.is_dir():
+            raise ValueError("portable native model store must be an existing absolute directory")
     for config in configurations:
         if not isinstance(config, dict):
             raise ValueError("invalid model slot configuration")
@@ -291,18 +298,21 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
             raise ValueError(f"duplicate model slot: {slot}")
         if not isinstance(model_path, str) or not model_path:
             raise ValueError("model path is required")
-        # Rust passes an absolute verbatim path on Windows. Normalize the
-        # slot path before opening so relative parent components work there.
-        model_file = path.parent / model_path
-        if os.name == "nt":
-            drive, tail = os.path.splitdrive(model_file)
-            if drive.startswith("\\\\?\\"):
-                model_file = Path(drive + os.path.normpath(tail))
         expected_sha256 = config.get("sha256")
         if not isinstance(expected_sha256, str) or (
             len(expected_sha256) != 64
         ) or any(char not in "0123456789abcdef" for char in expected_sha256):
             raise ValueError("model requires a canonical lowercase SHA-256 digest")
+        if model_store is not None:
+            model_file = model_store / (expected_sha256 + ".model")
+        else:
+            # Rust passes an absolute verbatim path on Windows. Normalize the
+            # slot path before opening so relative parent components work there.
+            model_file = path.parent / model_path
+            if os.name == "nt":
+                drive, tail = os.path.splitdrive(model_file)
+                if drive.startswith("\\\\?\\"):
+                    model_file = Path(drive + os.path.normpath(tail))
         if file_sha256(model_file) != expected_sha256:
             raise ValueError(f"model artifact content changed: slot {slot}")
         if backend not in ("torchscript", "onnx", "mlagents"):
