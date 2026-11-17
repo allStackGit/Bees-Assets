@@ -29,7 +29,7 @@ from native_distributed_collection import (
     read_plan, make_orders, wait_for_collections, balanced_round_plan,
     derive_hub_resource_plan,
 )
-from native_session_selection import publish_best_evaluated
+from native_session_selection import publish_best_evaluated, publish_latest_playable
 from native_curriculum import (load_curriculum, selected_curriculum_run,
                                curriculum_stage_metrics)
 
@@ -576,7 +576,8 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
 
 
 def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None,
-                      best_evaluated=None, stopping=None, recipe=None):
+                      best_evaluated=None, stopping=None, recipe=None,
+                      latest_playable=None):
     evaluations = evaluations or {}
     world_steps = sum(record["rollout_metrics"]["successful_world_steps"]
                       for _, record in completed)
@@ -677,6 +678,13 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
             "evaluated_rounds": best_evaluated["evaluated_rounds"],
         }} if best_evaluated is not None else {}),
         "completed_rounds": len(completed), "target_rounds": target,
+        **({"latest_playable": {
+            "checkpoint_sha256": latest_playable["checkpoint_sha256"],
+            "manifest_sha256": latest_playable["manifest_sha256"],
+            "playable_run": latest_playable["playable_run"],
+            "playable_run_sha256": latest_playable["playable_run_sha256"],
+            "source_run_config_sha256": latest_playable["source_run_config_sha256"],
+        }} if latest_playable is not None else {}),
         **({"curriculum": stage_report} if stage_report is not None else {}),
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
@@ -1090,6 +1098,9 @@ def main():
             root, Path(manifest["path"]), Path(checkpoint["path"]), args.learner_slot,
             recipe.get("self_play"), recipe.get("curriculum"), run,
         )
+        latest_playable = publish_latest_playable(
+            root, recipe, completed, next_manifest, next_checkpoint,
+        )
         evaluations = {}
         baseline_holdout = None
         best_evaluated = None
@@ -1119,7 +1130,7 @@ def main():
             raise ValueError("early-stop meaningful improvement exceeds available holdout episodes")
         atomic_json(root / "session-progress.json", progress_snapshot(
             completed, args.rounds, evaluations, baseline_holdout, best_evaluated, stop_state,
-            recipe,
+            recipe, latest_playable,
         ))
         if len(completed) > args.rounds:
             raise ValueError("target round count is smaller than the completed checkpoint lineage")
@@ -1373,12 +1384,15 @@ def main():
                 stage_run["sha256"] if curriculum is not None else None,
             )
             completed.append((directory, record))
+            latest_playable = publish_latest_playable(
+                root, recipe, completed, next_manifest, next_checkpoint,
+            )
             # A successfully learned checkpoint remains committed even if
             # its subsequent holdout run fails. Resume evaluates this exact
             # artifact rather than collecting another training round.
             atomic_json(root / "session-progress.json", progress_snapshot(
                 completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
-                recipe=recipe,
+                recipe=recipe, latest_playable=latest_playable,
             ))
             if "evaluation_config" in recipe:
                 due = evaluation_due(index, args.rounds, recipe)
@@ -1399,7 +1413,7 @@ def main():
             )
             snapshot = progress_snapshot(
                 completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
-                stop_state, recipe,
+                stop_state, recipe, latest_playable,
             )
             atomic_json(root / "session-progress.json", snapshot)
             print(json.dumps({"kind": "native_training_session_round_complete",
@@ -1409,6 +1423,7 @@ def main():
                               "world_steps": record["rollout_metrics"]["successful_world_steps"],
                               "optimizer_input_steps": record["learner_metrics"]["optimizer_input_steps"],
                               "next_checkpoint_sha256": record["next_checkpoint_sha256"],
+                              "latest_playable_run": latest_playable["playable_run"],
                               "latest_training_outcomes": snapshot["latest_training_outcomes"]}),
                   flush=True)
         stopped_early = (len(completed) < args.rounds and
@@ -1431,6 +1446,7 @@ def main():
                           "stop_reason": stop_state["reason"] if stopped_early else None,
                           "checkpoint": str(next_checkpoint),
                           "manifest": str(next_manifest),
+                          "latest_playable_run": latest_playable["playable_run"],
                           "best_playable_run":
                               best_evaluated["playable_run"] if best_evaluated else None}),
               flush=True)
