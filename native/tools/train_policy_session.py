@@ -30,6 +30,7 @@ from native_distributed_collection import (
     derive_hub_resource_plan,
 )
 from native_session_selection import publish_best_evaluated
+from native_curriculum import load_curriculum, selected_curriculum_run
 
 
 ATTEMPT = re.compile(r"round-(\d{5})-attempt-(\d{3})\Z")
@@ -216,7 +217,7 @@ def scheduled_opponent_slot(self_play, round_number):
 
 
 def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot,
-                 refresh_opponent_slot=None):
+                 refresh_opponent_slot=None, source_run_sha=None):
     receipt_path = directory / "round-result.json"
     record = read_json(receipt_path)
     if (record.get("kind") != "native_training_round_complete" or
@@ -227,6 +228,8 @@ def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot,
             record.get("learner_metrics", {}).get("refreshed_opponent_slot") !=
                 refresh_opponent_slot):
         raise ValueError(f"round completion receipt does not match its lineage: {receipt_path}")
+    if source_run_sha is not None and record.get("source_run_config_sha256") != source_run_sha:
+        raise ValueError(f"round belongs to a different curriculum stage: {receipt_path}")
     checkpoint = directory / "learner" / "checkpoint.pt"
     manifest = directory / "learner" / "manifest.json"
     for key, path in (("next_checkpoint", checkpoint), ("next_manifest", manifest)):
@@ -268,7 +271,7 @@ def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot,
 
 
 def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot,
-                    self_play=None):
+                    self_play=None, curriculum=None, base_run=None):
     attempts = defaultdict(list)
     for path in root.iterdir():
         match = ATTEMPT.fullmatch(path.name)
@@ -294,9 +297,11 @@ def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot,
                 raise ValueError(f"missing committed round {number} before a later attempt")
             next_attempt = max((index for index, _ in candidates), default=0) + 1
             break
+        expected_source = (selected_curriculum_run(base_run, curriculum, number)[0]["sha256"]
+                           if curriculum is not None else None)
         record, manifest, checkpoint = verify_round(
             valid[0], manifest_sha, checkpoint_sha, learner_slot,
-            scheduled_opponent_slot(self_play, number),
+            scheduled_opponent_slot(self_play, number), expected_source,
         )
         completed.append((valid[0], record))
         manifest_sha = record["next_manifest_sha256"]
@@ -758,6 +763,8 @@ def main():
     parser.add_argument("--resume", action="store_true",
                         help="resume an existing session without changing its pinned inputs")
     parser.add_argument("--model-manifest", type=Path)
+    parser.add_argument("--curriculum-plan", type=Path,
+                        help="pinned source-run changes between completed optimizer rounds")
     parser.add_argument("--evaluation-run-config", type=Path,
                         help="independent fixed-seed Levels evaluated after each completed update")
     parser.add_argument("--evaluation-side", type=int,
@@ -925,6 +932,9 @@ def main():
             "opponent_slot": args.self_play_opponent_slot,
             "every": args.self_play_refresh_every,
         }
+    curriculum = (load_curriculum(args.curriculum_plan, run, args.rounds,
+                                  round_python, args.learner_slot, self_play)
+                  if args.curriculum_plan is not None else None)
     if args.rollout_binary is not None:
         binary = pinned(args.rollout_binary)
     else:
@@ -951,6 +961,8 @@ def main():
         recipe["physics_workers"] = args.physics_workers
     if self_play is not None:
         recipe["self_play"] = self_play
+    if curriculum is not None:
+        recipe["curriculum"] = curriculum
     if distributed_requested:
         if args.distributed_plan is not None:
             recipe["distributed_plan"] = pinned(args.distributed_plan)
@@ -983,6 +995,7 @@ def main():
         }
     recipe["source_dependencies"] = native_input_dependencies(
         run, recipe.get("evaluation_config"),
+        *([] if curriculum is None else [item["run_config"] for item in curriculum["stages"]]),
     )
     root = args.output_dir.resolve()
     if args.resume:
@@ -1057,7 +1070,7 @@ def main():
                 atomic_json(template, expected_template)
         completed, next_manifest, next_checkpoint, next_attempt = existing_rounds(
             root, Path(manifest["path"]), Path(checkpoint["path"]), args.learner_slot,
-            recipe.get("self_play"),
+            recipe.get("self_play"), recipe.get("curriculum"), run,
         )
         evaluations = {}
         baseline_holdout = None
@@ -1105,6 +1118,15 @@ def main():
                 source = recipe[label]
                 if source is not None and file_sha256(Path(source["path"])) != source["sha256"]:
                     raise ValueError(f"{label} changed during this training session")
+            stage_run, stage_start = selected_curriculum_run(run, curriculum, index)
+            if curriculum is not None:
+                plan = curriculum["plan"]
+                if file_sha256(Path(plan["path"])) != plan["sha256"]:
+                    raise ValueError("curriculum plan changed during training")
+                for item in curriculum["stages"]:
+                    source = item["run_config"]
+                    if file_sha256(Path(source["path"])) != source["sha256"]:
+                        raise ValueError("curriculum source run changed during training")
             check_native_input_dependencies(recipe)
             attempt = next_attempt if index == first_pending_round else 1
             if attempt > 999:
@@ -1114,10 +1136,12 @@ def main():
             seed_offset = args.seed_offset_start + (index - 1) * args.seed_offset_stride
             print(json.dumps({"kind": "native_training_session_round_started",
                               "round": index, "target_rounds": args.rounds,
-                              "directory": str(directory), "seed_offset": seed_offset}), flush=True)
+                              "directory": str(directory), "seed_offset": seed_offset,
+                              "curriculum_stage_start_round": stage_start,
+                              "source_run_config_sha256": stage_run["sha256"]}), flush=True)
             command = [
                 round_python, str(Path(__file__).with_name("train_policy_round.py")),
-                str(template if distributed else run["path"]),
+                str(template if distributed else stage_run["path"]),
                 str(next_checkpoint), trainer["path"], str(directory),
                 "--model-manifest", str(next_manifest),
                 "--device", args.device,
@@ -1149,7 +1173,7 @@ def main():
                     }), flush=True)
                 orders, order_path = make_orders(
                     root, index, seed_offset, allocation_plan,
-                    run, next_checkpoint, next_manifest, args.learner_slot,
+                    stage_run, next_checkpoint, next_manifest, args.learner_slot,
                 )
                 prepared_inputs = {}
                 export_started = time.monotonic()
@@ -1184,7 +1208,7 @@ def main():
                         }
                     else:
                         result = export_inputs(
-                            order_path, "@round", Path(run["path"]),
+                            order_path, "@round", Path(stage_run["path"]),
                             Path(trainer["path"]), Path(next_checkpoint),
                             Path(next_manifest), archive,
                         )
@@ -1327,6 +1351,7 @@ def main():
             record, next_manifest, next_checkpoint = verify_round(
                 directory, file_sha256(next_manifest), file_sha256(next_checkpoint),
                 args.learner_slot, refreshing,
+                stage_run["sha256"] if curriculum is not None else None,
             )
             completed.append((directory, record))
             # A successfully learned checkpoint remains committed even if
@@ -1351,6 +1376,8 @@ def main():
             atomic_json(root / "session-progress.json", snapshot)
             print(json.dumps({"kind": "native_training_session_round_complete",
                               "round": index, "directory": str(directory),
+                              "curriculum_stage_start_round": stage_start,
+                              "source_run_config_sha256": stage_run["sha256"],
                               "world_steps": record["rollout_metrics"]["successful_world_steps"],
                               "optimizer_input_steps": record["learner_metrics"]["optimizer_input_steps"],
                               "next_checkpoint_sha256": record["next_checkpoint_sha256"],
