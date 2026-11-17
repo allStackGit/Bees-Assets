@@ -1309,11 +1309,14 @@ mapping its local source/config/model paths while retaining the pinned hashes:
 python native/tools/run_distributed_collector.py collection-round-00001.json halifax run.json checkpoint.pt manifest.json trainer.yaml /local/scratch /shared/native-inbox --rollout-binary /path/to/policy_rollout
 ```
 
-For collectors on a machine without a mounted learner inbox, use a **local**
-inbox with the same collector command and append
-`--archive-output /local/outgoing/halifax.tar`. The archive contains the
-completed receipt and its SHA-256-verified captures, not model weights or
-another training implementation. Transfer it by SSH/SFTP, SMB or another
+For collectors on a machine without a mounted learner inbox, omit the
+last positional `bundle_inbox` argument from the collector command and add
+`--archive-output /local/outgoing/halifax.tar`. This writes an archive
+directly from the collector's own completed output, without copying another
+full capture set into a local inbox. Passing both an inbox and
+`--archive-output` deliberately publishes both forms. The archive contains
+the completed receipt and its SHA-256-verified captures, not model weights
+or another training implementation. Transfer it by SSH/SFTP, SMB or another
 file transport to the learner's archive inbox, naming the finished file
 `<bundle_directory>.tar` where `bundle_directory` is recorded in that
 round's `collection-round-NNNNN.json`. Upload as `.tar.pending` and
