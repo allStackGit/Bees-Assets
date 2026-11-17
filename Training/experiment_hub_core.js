@@ -2977,12 +2977,14 @@ class ExperimentHub {
     reconcileDistributedAborts(next) {
         let changed=false;
         for(const learner of next.jobs.filter(job=>
-            job.project_id==='tinybrains'&&
-            job.distributed_rollout_managed===true&&
+            (job.project_id==='tinybrains'&&job.distributed_rollout_managed===true||
+                job.project_id==='courier'&&job.distributed_courier_managed===true)&&
             job.distributed_abort_requested_at&&
             job.status==='waiting_adapter'&&!job.dispatch_id)) {
+            const workerProject=learner.project_id==='courier'
+                ?'courier_lineage':'tinybrains_rollout';
             const children=next.jobs.filter(job=>
-                job.project_id==='tinybrains_rollout'&&
+                job.project_id===workerProject&&
                 job.frozen_parameters?.learner_job_id===learner.id);
             for(const child of children) {
                 if(child.status==='start_requested'&&
@@ -3007,7 +3009,7 @@ class ExperimentHub {
                     .includes(child.status)) {
                     const lease=next.reservations.find(item=>
                         item.id===child.lease_id&&item.job_id===child.id&&
-                        item.project_id==='tinybrains_rollout'&&
+                        item.project_id===workerProject&&
                         item.machine_id===child.assigned_machine_id&&
                         item.issued_by==='experiment-hub'&&
                         item.status==='acknowledged');
@@ -3023,7 +3025,7 @@ class ExperimentHub {
                 const lease=next.reservations.find(item=>
                     item.id===child.lease_id&&item.job_id===child.id&&
                     item.machine_id===child.assigned_machine_id&&
-                    item.project_id==='tinybrains_rollout'&&
+                    item.project_id===workerProject&&
                     item.issued_by==='experiment-hub');
                 if(lease&&lease.status==='acknowledged'&&
                     ['finished','stopped','failed'].includes(child.status)&&
@@ -3045,7 +3047,7 @@ class ExperimentHub {
                     !child.capacity_released_at)return false;
                 const lease=next.reservations.find(item=>
                     item.id===child.lease_id&&item.job_id===child.id&&
-                    item.project_id==='tinybrains_rollout'&&
+                    item.project_id===workerProject&&
                     item.status==='released');
                 return Boolean(lease);
             });
