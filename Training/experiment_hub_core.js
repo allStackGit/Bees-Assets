@@ -5257,7 +5257,19 @@ class ExperimentHub {
     // Authorize all separately leased Courier remote services in one durable
     // transition. The existing distributed-launch reconciliation waits for
     // their authenticated running receipts before starting the learner.
-    authorizeCourierLineages(value) {
+    authorizeCourierLineages(value,sourcePlanId=null) {
+        if(sourcePlanId!==null&&!UUID.test(String(sourcePlanId)))
+            throw Error('Invalid frozen Courier group Start approval.');
+        const pending=sourcePlanId===null?null:
+            (this.state.distributed_group_plans||[]).find(plan=>
+                plan.id===sourcePlanId&&plan.kind==='courier'&&plan.status==='pending');
+        if(sourcePlanId!==null&&!pending)
+            throw Error('Courier future Start approval is no longer active.');
+        if(sourcePlanId===null&&(this.state.distributed_group_plans||[])
+            .some(plan=>plan.kind==='courier'&&
+                ['pending','needs_review'].includes(plan.status)&&
+                plan.learner_job_id===value?.learner_job_id))
+            throw Error('Cancel the scheduled Courier approval before manually starting its remote sidecars.');
         if(!object(value)||value.confirm_start!==true||
             value.confirm_learner_start!==true||
             !UUID.test(String(value.learner_job_id||''))||
@@ -5300,6 +5312,22 @@ class ExperimentHub {
             item.status!=='cancelled');
         if(workers.length!==expected.size||workers.some(item=>!expected.has(item.id)))
             throw Error('Courier remote lineage membership changed before group authorization.');
+        if(pending&&(pending.learner_job_id!==learner.id||
+            pending.collector_job_ids.length!==workers.length||
+            workers.some(worker=>{
+                const pinned=pending.frozen_members.find(item=>item.job_id===worker.id);
+                return !pinned||pinned.lease_id!==worker.lease_id||
+                    pinned.machine_id!==worker.assigned_machine_id||
+                    pinned.slot!==worker.frozen_parameters?.slot;
+            })||
+            pending.frozen_members[0]?.lease_id!==learner.lease_id||
+            pending.frozen_members[0]?.machine_id!==learner.assigned_machine_id||
+            pending.key_fingerprint!==host.courier_remote_key_fingerprint||
+            JSON.stringify(pending.learner_endpoints)!==
+                JSON.stringify(host.courier_remote_lineage_endpoints)||
+            JSON.stringify(pending.learner_shards)!==
+                JSON.stringify(host.courier_remote_max_shards)))
+            throw Error('Original scheduled Courier leases or endpoint identities changed before native Start.');
         const owners={},hosts=new Set([host.id]),dispatches={};
         for(const worker of workers) {
             const readiness=nativeStartReadiness(snapshot,worker);
@@ -5372,6 +5400,12 @@ class ExperimentHub {
         });
         next.distributed_launch_plans=plans;
         next.jobs.find(item=>item.id===learner.id).release_on_terminal=true;
+        if(pending) {
+            const resolved=next.distributed_group_plans.find(plan=>plan.id===pending.id);
+            resolved.status='authorized';
+            resolved.reason='Original Courier sidecar Starts and one-use learner gate committed atomically.';
+            resolved.resolved_at=started;
+        }
         this.commit(next);
         return {learner_job_id:learner.id,
             lineage_job_ids:workers.map(item=>item.id),
