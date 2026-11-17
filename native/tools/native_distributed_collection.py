@@ -379,9 +379,16 @@ def verify_bundle(path, job, orders):
     }
 
 
-def wait_for_collections(inbox, orders, timeout_seconds, progress=None):
+def wait_for_collections(inbox, orders, timeout_seconds, progress=None,
+                         archive_inbox=None):
     if not inbox.is_dir():
         raise ValueError(f"collector inbox must be an existing directory: {inbox}")
+    if archive_inbox is not None:
+        if not archive_inbox.is_dir():
+            raise ValueError(f"collector archive inbox must already exist: {archive_inbox}")
+        # Import uses this module's existing receipt validation and publishes
+        # into the ordinary inbox only after all capture bytes are verified.
+        from transfer_policy_bundle import import_bundle_archive
     started = time.monotonic()
     results = {}
     while len(results) < len(orders["jobs"]):
@@ -389,6 +396,20 @@ def wait_for_collections(inbox, orders, timeout_seconds, progress=None):
             if job["id"] in results:
                 continue
             receipt = inbox / job["bundle_directory"] / "rollout-bundle.json"
+            if not receipt.is_file() and archive_inbox is not None:
+                name = job["bundle_directory"]
+                if not isinstance(name, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,96}", name) is None:
+                    raise ValueError("invalid collector bundle directory in issued order")
+                # Upload as *.tar.pending and rename to *.tar after transfer.
+                # An interrupted upload is never mistaken for a completed
+                # collector bundle and never becomes an optimizer input.
+                archive = archive_inbox / (name + ".tar")
+                if archive.is_file():
+                    imported = import_bundle_archive(archive, job, orders, inbox)
+                    if progress is not None:
+                        progress("native_distributed_collector_archive_imported", {
+                            "collector_id": job["id"], **imported,
+                        })
             if receipt.is_file():
                 results[job["id"]] = verify_bundle(receipt, job, orders)
                 if progress is not None:
