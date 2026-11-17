@@ -452,9 +452,14 @@ the existing campaigns and battles. Selecting one now offers three modes:
 fight its verified learner checkpoint as side 1, fight as side 2, or watch
 the original policy-vs-policy battle. The native menu archives the
 human challenge's exact scene and run beside the replay, so future training
-does not alter an already played game. Only player authority and the
-remaining AI's model slot change; physical gameplay still uses the same
-Rust CombatWorld as headless training. On launch the
+does not alter an already played game. The original AI battle mode now
+also freezes all authored scenes; both modes resolve the model manifest,
+worker and optional source assets from the *verified training run's*
+original directory before moving the replay config into player saves.
+Relative paths cannot silently retarget a different model or scene in
+the player's save folder. Only player authority and the remaining AI's
+model slot change; physical gameplay still uses the same Rust
+CombatWorld as headless training. On launch the
 library verifies the published run, manifest and checkpoint digests,
 rejects changed artifacts and creates an independent numbered battle
 output under the player's save root. The training session stays untouched.

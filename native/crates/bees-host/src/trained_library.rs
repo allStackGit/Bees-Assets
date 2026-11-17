@@ -82,6 +82,52 @@ fn verified_file(path: &str, sha256: &str) -> io::Result<PathBuf> {
     Ok(file)
 }
 
+/// A published training run is rooted in the learner's directory; moving
+/// those JSON bytes to a player save must not retarget its authored scenes,
+/// model weights or worker script. Bind every read-only file dependency to
+/// the original verified source *before* archiving the run. A bare Python
+/// executable name remains PATH-owned on either operating system.
+fn rebase_source_files(run: &mut Value, original_run: &Path) -> io::Result<()> {
+    let root = original_run.parent().ok_or_else(||
+        invalid("verified trained run has no source directory"))?;
+    let resolve = |value: &str| -> io::Result<PathBuf> {
+        let path = Path::new(value);
+        let file = if path.is_absolute() { path.to_owned() } else { root.join(path) };
+        let file = file.canonicalize()?;
+        if !file.is_file() {
+            return Err(invalid("trained run dependency must be a regular file"));
+        }
+        Ok(file)
+    };
+    for field in ["policy_worker", "model_manifest", "collision_matrix", "stage_palette"] {
+        if let Some(value) = run.get(field).and_then(Value::as_str).map(str::to_owned) {
+            run[field] = json!(resolve(&value)?);
+        }
+    }
+    if let Some(python) = run.get("python").and_then(Value::as_str).map(str::to_owned) {
+        let path = Path::new(&python);
+        if path.is_absolute() || path.components().count() > 1 {
+            run["python"] = json!(resolve(&python)?);
+        }
+    }
+    for level in run["levels"].as_array_mut()
+        .ok_or_else(|| invalid("trained run has no source Levels"))?
+    {
+        let value = text_field(level, "scene")?.to_owned();
+        level["scene"] = json!(resolve(&value)?);
+    }
+    Ok(())
+}
+
+fn archive_source_scene(source: &Path, target: &Path) -> io::Result<PathBuf> {
+    let mut input = File::open(source)?;
+    let mut output = fs::OpenOptions::new().write(true).create_new(true)
+        .open(target)?;
+    io::copy(&mut input, &mut output)?;
+    output.sync_all()?;
+    target.canonicalize()
+}
+
 impl TrainedGame {
     fn published_receipt(&self) -> Result<Value, Box<dyn Error>> {
         let receipt: Value = serde_json::from_slice(&fs::read(&self.receipt)?)?;
@@ -158,6 +204,7 @@ impl TrainedGame {
             return Err(invalid("trained challenge source run changed during publication").into());
         }
         let mut run: Value = serde_json::from_slice(&source_bytes)?;
+        rebase_source_files(&mut run, &source_run)?;
         let source_levels = run["levels"].as_array()
             .ok_or_else(|| invalid("trained challenge has no source levels"))?;
         if source_levels.len() != 1 ||
@@ -296,10 +343,11 @@ impl TrainedGame {
         Ok(run_path)
     }
 
-    /// Preserve the exact game configuration for this completed battle.
-    /// Training may republish latest-playable-run.json after the next round;
-    /// its manifest/checkpoint are already SHA-pinned immutable artifacts,
-    /// so only these small run-config bytes need to be archived here.
+    /// Freeze the verified source configuration and its authored scenes,
+    /// resolving external model/worker paths relative to the ORIGINAL run
+    /// before relocating the file. Later training publications cannot
+    /// change this played battle's initial physical world or controller
+    /// identity, and replay never silently resolves assets in save-root.
     pub fn archive_playable(&self, parent: &Path)
         -> Result<PathBuf, Box<dyn Error>>
     {
@@ -311,10 +359,22 @@ impl TrainedGame {
             text_field(&receipt, "playable_run_sha256")? {
             return Err(invalid("trained run was republished during game launch").into());
         }
+        let mut archived_run: Value = serde_json::from_slice(&bytes)?;
+        rebase_source_files(&mut archived_run, &run)?;
+        let levels = archived_run["levels"].as_array_mut()
+            .ok_or_else(|| invalid("trained replay requires source Levels"))?;
+        for (index, level) in levels.iter_mut().enumerate() {
+            let source = PathBuf::from(text_field(level, "scene")?);
+            let archived = archive_source_scene(
+                &source, &parent.join(format!("replay-level-{index}.scene.json")),
+            )?;
+            level["scene"] = json!(archived);
+        }
         let archived = parent.join("replay-source-run.json");
         let mut output = fs::OpenOptions::new().write(true).create_new(true)
             .open(&archived)?;
-        output.write_all(&bytes)?;
+        serde_json::to_writer_pretty(&mut output, &archived_run)?;
+        output.write_all(b"\n")?;
         output.sync_all()?;
         Ok(archived)
     }
