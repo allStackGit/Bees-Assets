@@ -13,6 +13,7 @@ use serde_json::Value;
 
 pub(super) enum RecordedSource {
     QuickBattle(PathBuf),
+    TrainedBattle(PathBuf),
     CampaignSetup(PathBuf),
 }
 
@@ -62,6 +63,35 @@ fn complete_trace(path: &Path) -> io::Result<bool> {
        end["user_closed"] == false)
 }
 
+/// Enumerate one known game's numbered battle folders. Shared by
+/// packaged quick battles and frozen trained-model replays.
+fn completed_quick_battles(directory: &Path)
+    -> io::Result<Vec<(u64, PathBuf, PathBuf)>>
+{
+    match fs::symlink_metadata(directory) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+        Ok(meta) if !meta.file_type().is_dir() => return Ok(Vec::new()),
+        Ok(_) => {},
+    }
+    let mut completed = Vec::new();
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned)
+        else { continue };
+        let Some(number) = battle_number(&name) else { continue };
+        if !entry.file_type()?.is_dir() { continue; }
+        let run_dir = entry.path().join("run");
+        if !fs::symlink_metadata(&run_dir)
+            .is_ok_and(|meta| meta.file_type().is_dir()) { continue; }
+        let trace = run_dir.join("player-inputs.jsonl");
+        if complete_trace(&trace).unwrap_or(false) {
+            completed.push((number, entry.path(), trace));
+        }
+    }
+    Ok(completed)
+}
+
 /// Restrict recordings to game IDs already validated by NativeLibrary and
 /// to their directly owned save directories; no recursive filesystem walk.
 pub(super) fn list(
@@ -70,28 +100,42 @@ pub(super) fn list(
     let mut clips = Vec::new();
     for (game_id, title, config) in games {
         let directory = save_root.join("battles").join(&game_id);
-        match fs::symlink_metadata(&directory) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error),
-            Ok(meta) if !meta.file_type().is_dir() => continue,
-            Ok(_) => {},
-        }
-        for entry in fs::read_dir(&directory)? {
-            let entry = entry?;
-            let Some(name) = entry.file_name().to_str().map(str::to_owned)
-            else { continue };
-            let Some(number) = battle_number(&name) else { continue };
-            if !entry.file_type()?.is_dir() { continue; }
-            let run_dir = entry.path().join("run");
-            if !fs::symlink_metadata(&run_dir)
-                .is_ok_and(|meta| meta.file_type().is_dir()) { continue; }
-            let trace = run_dir.join("player-inputs.jsonl");
-            if !complete_trace(&trace).unwrap_or(false) { continue; }
+        for (number, _, trace) in completed_quick_battles(&directory)? {
             clips.push(RecordedBattle {
                 title: format!("{title}  |  Battle {number:06}"),
                 status: "  [Recorded]".to_owned(),
                 game_id: game_id.clone(),
                 source: RecordedSource::QuickBattle(config.clone()),
+                trace,
+                number,
+            });
+        }
+    }
+    sort_recent(&mut clips);
+    Ok(clips)
+}
+
+/// Latest/best model receipts can change independently of an archived
+/// battle. The game launcher freezes each played model's *run config* in
+/// that battle's own folder. Model weights remain referenced by their
+/// immutable SHA-verified manifest instead of copied into every save.
+pub(super) fn list_trained(
+    save_root: &Path, models: impl Iterator<Item = (String, String)>,
+) -> io::Result<Vec<RecordedBattle>> {
+    let mut clips = Vec::new();
+    for (game_id, title) in models {
+        let directory = save_root.join("battles").join(&game_id);
+        for (number, folder, trace) in completed_quick_battles(&directory)? {
+            let frozen = folder.join("replay-source-run.json");
+            let Ok(meta) = fs::symlink_metadata(&frozen) else { continue };
+            if !meta.file_type().is_file() || meta.len() > 1024 * 1024 {
+                continue;
+            }
+            clips.push(RecordedBattle {
+                title: format!("{title}  |  Model battle {number:06}"),
+                status: "  [Trained replay]".to_owned(),
+                game_id: game_id.clone(),
+                source: RecordedSource::TrainedBattle(frozen),
                 trace,
                 number,
             });
