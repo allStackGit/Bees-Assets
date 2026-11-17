@@ -336,6 +336,7 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          bundle_archive_inbox: Path | None,
                          bundle_receiver_listen: str | None,
                          collector_input_outbox: Path | None,
+                         hub_dispatch_plan: Path | None, hub_dispatch_port: int,
                          collector_timeout_seconds: int, auto_balance_collectors: bool,
                          evaluation_run_config: Path | None, evaluation_side: int | None,
                          evaluation_policy_seed: int,
@@ -389,6 +390,9 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         command.extend(["--bundle-receiver-listen", bundle_receiver_listen])
     if collector_input_outbox is not None:
         command.extend(["--collector-input-outbox", str(collector_input_outbox.resolve(strict=True))])
+    if hub_dispatch_plan is not None:
+        command.extend(["--hub-dispatch-plan", str(hub_dispatch_plan.resolve(strict=True)),
+                        "--hub-dispatch-port", str(hub_dispatch_port)])
     if auto_balance_collectors:
         command.append("--auto-balance-collectors")
     if evaluation_run_config is not None:
@@ -454,6 +458,10 @@ def main() -> None:
                         help="bind an authenticated native streaming rollout receiver on HOST:PORT")
     parser.add_argument("--collector-input-outbox", type=Path,
                         help="existing directory for automatically prepared portable collector input archives")
+    parser.add_argument("--hub-dispatch-plan", type=Path,
+                        help="preapproved Hub machine placement and unattended collector starts for issued native rounds")
+    parser.add_argument("--hub-dispatch-port", type=int, default=7148,
+                        help="loopback Hub operator API port")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0)
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="conservatively rebalance native distributed arena windows from verified collector throughput")
@@ -523,6 +531,12 @@ def main() -> None:
     if args.collector_input_outbox is not None and (
             args.distributed_plan is None or not args.collector_input_outbox.is_dir()):
         parser.error("--collector-input-outbox requires distributed collection and an existing directory")
+    if args.hub_dispatch_plan is not None and (
+            args.distributed_plan is None or not args.hub_dispatch_plan.is_file() or
+            args.bundle_receiver_listen is None or args.collector_input_outbox is None):
+        parser.error("--hub-dispatch-plan requires an existing Hub plan, distributed collector inputs and receiver")
+    if not 1 <= args.hub_dispatch_port <= 65535:
+        parser.error("--hub-dispatch-port must be a valid port")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds must be nonnegative")
     if args.auto_balance_collectors and args.distributed_plan is None:
@@ -551,6 +565,7 @@ def main() -> None:
         args.bundle_archive_inbox is not None,
         args.bundle_receiver_listen is not None,
         args.collector_input_outbox is not None,
+        args.hub_dispatch_plan is not None,
         args.holdout_worlds is not None, args.evaluation_run_config is not None,
         args.evaluation_side is not None,
         args.evaluation_policy_seed != 0, args.collector_timeout_seconds != 0,
@@ -638,6 +653,7 @@ def main() -> None:
             args.bundle_archive_inbox,
             args.bundle_receiver_listen,
             args.collector_input_outbox,
+            args.hub_dispatch_plan, args.hub_dispatch_port,
             args.collector_timeout_seconds, args.auto_balance_collectors,
             (output / "holdout-run.json" if args.holdout_worlds is not None
              else args.evaluation_run_config),
