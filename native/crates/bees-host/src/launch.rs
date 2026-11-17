@@ -2425,6 +2425,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             library.games.iter().filter(|item| item.kind == "campaign")
                 .map(|item| (item.id.clone(), item.title.clone())),
         )?);
+        recordings.extend(recorded_library::list_trained(
+            save_root, trained.iter().map(|model|
+                (model.id.clone(), model.title.clone())),
+        )?);
         recorded_library::sort_recent(&mut recordings);
         let join_available=saved_network.is_file();
         let host_available=saved_host.is_file();
@@ -2489,13 +2493,15 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                         "source_game_id": recording.game_id,
                         "source_kind": match &recording.source {
                             recorded_library::RecordedSource::QuickBattle(_) => "quick_battle",
+                            recorded_library::RecordedSource::TrainedBattle(_) => "trained_policy",
                             recorded_library::RecordedSource::CampaignSetup(_) => "campaign",
                         },
                         "recording": recording.trace,
                     }));
                     let output = new_library_battle_output(save_root, &recording.game_id)?;
                     match &recording.source {
-                        recorded_library::RecordedSource::QuickBattle(config) =>
+                        recorded_library::RecordedSource::QuickBattle(config) |
+                        recorded_library::RecordedSource::TrainedBattle(config) =>
                             run_session(config, true, true, Some(output),
                                 None, Some(recording.trace.clone()), None)?,
                         recorded_library::RecordedSource::CampaignSetup(path) => {
