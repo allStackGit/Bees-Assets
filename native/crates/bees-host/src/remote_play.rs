@@ -732,6 +732,13 @@ fn current_state(
             "kind": object.kind as u8,
             "mining": object.kind == ObstacleKind::MiningAsteroid,
             "x": body.pose.position.x, "y": body.pose.position.y,
+            "rotation": body.pose.rotation_degrees,
+            // Source-authored collision asteroid atlas identity. A remote
+            // player draws this same prefab sprite, never inferred art
+            // from obstacle radius, health, or user-facing map category.
+            "asteroid_prefab": if object.kind == ObstacleKind::CollisionAsteroid {
+                body.source_asteroid_prefab_number
+            } else { None },
             "health": object.vitals.map(|v| v.health)
                 .or_else(|| map.map(|v| v.health)),
         }))
