@@ -8,7 +8,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress,MAX_TINYBRAINS_COLLECTORS}=require('./experiment_hub_progress');
-const {fixedCpuParallelism}=require('./experiment_hub_resources');
+const {fixedCpuParallelism,approvedEndpointSubset}=require('./experiment_hub_resources');
 const {modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -82,10 +82,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'gpu_role_startup_seconds',
         'remote_collector_join_wait_seconds','remote_collector_exposed_wait_seconds',
         'remote_transport_connect_max_seconds',
+        'remote_connect_exposed_seconds',
         'collection_merge_seconds',
         'overlap_seconds','local_gpu_join_wait_seconds',
         'local_gpu_wait_after_local_max_seconds',
         'remote_policy_snapshot_seconds',
+        'remote_network_launch_delay_seconds',
+        'remote_network_prep_exposed_seconds',
         'remote_policy_shared_encode_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
@@ -737,6 +740,8 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_multi_gpu_profiles:enableMultiGpu?[...approved.keys()]:[],
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
         tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
+        tinybrains_remote_cpu_learner:remote!==null,
+        tinybrains_rollout_subset:remote!==null,
         tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
         tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
@@ -766,19 +771,21 @@ function createTinyBrainsPersistentDockerAdapter({
         },
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
-                rollout_action_weights,import_checkpoint,import_checkpoint_sha256}=parameters;
+                rollout_action_weights,rollout_endpoints,import_checkpoint,import_checkpoint_sha256}=parameters;
             const item=approved.get(profile);
+            const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','remote_rollouts','rollout_action_weights',
-                    'import_checkpoint','import_checkpoint_sha256'].includes(k))||
+                    'import_checkpoint','import_checkpoint_sha256','rollout_endpoints'].includes(k))||
+                (rollout_endpoints!==undefined&&(remote_rollouts!==true||!endpoints))||
                 (remote_rollouts!==undefined&&
-                    (remote_rollouts!==true||!remote||device==='cpu'))||
+                    (remote_rollouts!==true||!remote))||
                 (rollout_action_weights!==undefined&&
                     (remote_rollouts!==true||!Array.isArray(rollout_action_weights)||
-                     rollout_action_weights.length!==remote.endpoints.length+1||
+                     (!endpoints||rollout_action_weights.length!==endpoints.length+1)||
                      rollout_action_weights.some(w=>
                          !Number.isSafeInteger(w)||w<1||w>1024)))||
                 (device!==undefined&&!['cpu','dual','multi'].includes(device))||
@@ -858,7 +865,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
-                ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
+                ...(remote_rollouts===true?[...endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
                     '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
                 ...(rollout_action_weights?rollout_action_weights.flatMap(w=>
