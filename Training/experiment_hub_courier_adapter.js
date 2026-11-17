@@ -38,9 +38,25 @@ const COURIER_MODE_FIELDS=[
     courierNumber('speed_maintenance','Speed maintenance energy multiplier','number',0.25,0.01,10),
     courierNumber('speed_travel_cost','Speed travel energy multiplier','number',0.5,0.01,10),
 ];
+// Changing these environment parameters preserves the installed Courier
+// policy's observation/action contract. All other changes must be migrated,
+// even if a future trainer version accepts new settings.
+const CURRICULUM_MUTABLE_KEYS=new Set([
+    'width','height','destination_pattern','initial_energy','max_energy',
+    'energy_per_delivery','move_cost','survival_scale','evaluation_steps',
+    'food_spawn_interval','food_spawn_multiplier','food_spawn_mode',
+    'food_tile_capacity','combat_value','carrying_capacity',
+    'stat_mutation_rate','founder_default_chance','food_patch_count',
+    'food_patch_radius','food_patch_reserve','food_patch_rest',
+    'food_patch_lifetime','speed_value','speed_maintenance',
+    'speed_travel_cost',
+]);
 const COURIER_MODE_BY_KEY=new Map(COURIER_MODE_FIELDS.map(field=>[field.key,field]));
 const COURIER_MODE_DEFAULTS=Object.fromEntries(COURIER_MODE_FIELDS.map(field=>[field.key,field.default]));
 function validateCourierModes(c) {
+    if(typeof c.initial_energy==='number'&&typeof c.max_energy==='number'&&
+        c.initial_energy>c.max_energy)
+        throw Error('Courier initial energy cannot exceed maximum energy.');
     if(c.colony&&c.competitive)
         throw Error('Select individual competition or colony competition, not both.');
     if(c.evolution&&!c.colony)throw Error('Trait evolution requires colony mode.');
@@ -385,6 +401,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     if(!fs.statSync(artifacts).isDirectory()||!fs.statSync(executable).isFile()||
         !fs.statSync(script).isFile()||inside(project,artifacts)||inside(artifacts,project))
         throw Error('Courier needs an installed trainer and a dedicated artifact directory outside the project.');
+    // Keep the installed trainer as the authority for applying and validating
+    // a curriculum transition. Older trainers retain the three legacy flags;
+    // all other changes require the explicit resume-environment implementation.
+    const supportsResumeEnvironment=fs.readFileSync(script,'utf8')
+        .includes('parser.add_argument("--resume-environment"');
     const config=fs.readFileSync(configPath);
     const parsed=JSON.parse(config.toString('utf8'));
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
@@ -530,6 +551,17 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             !within(checkpoint.round,1,Number.MAX_SAFE_INTEGER-maxRounds)||
             !Array.isArray(checkpoint.lineage)||!within(checkpoint.lineage.length,1,64))
             throw Error('Courier checkpoint environment or population is invalid.');
+        // A resumable checkpoint must describe the environment the trainer
+        // actually saved, not merely the requested launch file. Courier's
+        // validator fills optional mode defaults before saving the checkpoint.
+        // Do not inherit models trained under an unrecorded UI configuration.
+        const pinned={...COURIER_MODE_DEFAULTS,
+            ...JSON.parse(environment.toString('utf8'))};
+        const actual=checkpoint.config;
+        if(!actual||typeof actual!=='object'||Array.isArray(actual)||
+            Object.keys(actual).some(key=>!Object.hasOwn(pinned,key))||
+            !isDeepStrictEqual({...COURIER_MODE_DEFAULTS,...actual},pinned))
+            throw Error('Courier checkpoint was trained with an environment different from its frozen Hub configuration.');
         const names=new Set(fs.readdirSync(source));
         const required=['checkpoint.json',...checkpoint.lineage.map((_,i)=>'lineage-'+i+'.zip')];
         const optional=['champion.zip','milestone.json','milestone-policy.zip',
@@ -540,6 +572,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
         design_catalog:{courier:{...designFields,config_sha256:configSha256,
+            curriculum_fields:designFields.fields.filter(field=>
+                field.section==='environment'&&
+                (supportsResumeEnvironment
+                    ?CURRICULUM_MUTABLE_KEYS.has(field.key)
+                    :['width','height','move_cost','food_spawn_mode'].includes(field.key)))
+                .map(field=>field.key),
             metric_catalog:{...COURIER_METRIC_CATALOG,
                 communication:process.env.COURIER_COMMUNICATION_LOGGING?.match(/^(1|true|yes|on)$/i)
                     ?['colony_window_messages_written']:[]},
@@ -607,6 +645,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const predecessor=context.continuation_of_job_id;
             let limit=max_rounds, files=[];
             let resumeMapSize=null,resumeMoveCost=null,resumeFoodMode=null;
+            let resumeEnvironment=false;
             if(predecessor) {
                 const source=path.join(artifacts,predecessor);
                 const saved=completedCheckpoint(source,max_rounds);
@@ -615,35 +654,30 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                         throw Error('Courier checkpoint environment changed; explicitly select a curriculum continuation.');
                     const previous=JSON.parse(saved.environment.toString('utf8'));
                     const next=JSON.parse(environment.toString('utf8'));
-                    // These three controls are supported by the installed
-                    // Courier trainer on resume and preserve its policy schema.
-                    // Never mistake a new observation/action mode for a
-                    // compatible curriculum step.
-                    const mapChanged=next.width!==previous.width||
-                        next.height!==previous.height;
-                    const moveCostChanged=next.move_cost!==previous.move_cost;
-                    const foodModeChanged=next.food_spawn_mode!==previous.food_spawn_mode;
-                    if(mapChanged&&(!Number.isSafeInteger(next.width)||
-                        next.width!==next.height||next.width<4||next.width>32))
-                        throw Error('Courier curriculum map resizing requires a square map between 4 and 32 tiles.');
-                    if(moveCostChanged&&(typeof next.move_cost!=='number'||
-                        !Number.isFinite(next.move_cost)||
-                        next.move_cost<0.01||next.move_cost>100))
-                        throw Error('Courier curriculum movement cost must be between 0.01 and 100.');
-                    if(foodModeChanged&&!['uniform','patches'].includes(next.food_spawn_mode))
-                        throw Error('Courier curriculum food distribution must be uniform or patches.');
-                    const expected={...previous};
-                    if(mapChanged) {
-                        expected.width=next.width;
-                        expected.height=next.height;
+                    const changed=new Set([...Object.keys(previous),
+                        ...Object.keys(next)].filter(key=>
+                        !isDeepStrictEqual(previous[key],next[key])));
+                    const unsupported=[...changed].filter(key=>
+                        !CURRICULUM_MUTABLE_KEYS.has(key));
+                    if(unsupported.length)
+                        throw Error('Courier curriculum requires a model migration for incompatible settings: '+
+                            unsupported.sort().join(', ')+'.');
+                    // A changed policy interface is never inferred compatible
+                    // from the caller's selected mode or a configuration name.
+                    if(supportsResumeEnvironment) {
+                        resumeEnvironment=changed.size>0;
+                    }else {
+                        const mapChanged=changed.has('width')||changed.has('height');
+                        const allowed=new Set(['width','height','move_cost','food_spawn_mode']);
+                        if([...changed].some(key=>!allowed.has(key)))
+                            throw Error('The installed Courier trainer lacks --resume-environment; update the approved Basic-Training checkout and restart the agent.');
+                        if(mapChanged&&(!Number.isSafeInteger(next.width)||
+                            next.width!==next.height||next.width<4||next.width>32))
+                            throw Error('Legacy Courier curriculum map resizing requires a square map between 4 and 32 tiles.');
+                        if(mapChanged)resumeMapSize=next.width;
+                        if(changed.has('move_cost'))resumeMoveCost=next.move_cost;
+                        if(changed.has('food_spawn_mode'))resumeFoodMode=next.food_spawn_mode;
                     }
-                    if(moveCostChanged)expected.move_cost=next.move_cost;
-                    if(foodModeChanged)expected.food_spawn_mode=next.food_spawn_mode;
-                    if(!isDeepStrictEqual(expected,next))
-                        throw Error('Courier curriculum changes to observation modes or other environment settings require an approved trainer migration.');
-                    if(mapChanged)resumeMapSize=next.width;
-                    if(moveCostChanged)resumeMoveCost=next.move_cost;
-                    if(foodModeChanged)resumeFoodMode=next.food_spawn_mode;
                 }
                 files=saved.files;
                 if(context.expected_parent_model_sha256&&
@@ -678,7 +712,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(predecessor?['--resume']:[]),
                 ...(resumeMapSize===null?[]:['--map-size',String(resumeMapSize)]),
                 ...(resumeMoveCost===null?[]:['--move-cost',String(resumeMoveCost)]),
-                ...(resumeFoodMode===null?[]:['--food-spawn-mode',resumeFoodMode])];
+                ...(resumeFoodMode===null?[]:['--food-spawn-mode',resumeFoodMode]),
+                ...(resumeEnvironment?['--resume-environment']:[])];
         },
         readProgress(context) {
             const root=jobRoot(context);
