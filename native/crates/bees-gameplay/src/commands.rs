@@ -1547,6 +1547,12 @@ impl NativeSquadCommandDirector {
             .and_then(|prior| prior.charge.as_ref()) {
             previous.release_superseded(world, retained_bomb_members);
         }
+        // Heal arrival status becomes physical Beehive ownership only at
+        // this successful command-commit boundary. An in-flight replacement
+        // never makes its predecessor's waiting ship an active casualty.
+        if let Some(heal) = active.heal.as_ref() {
+            heal.commit_active_arrivals(world);
+        }
         let new_following = usize::from(active.following.is_some());
         let new_full_retreat = usize::from(active.full_retreat.is_some());
         let replaced = self.active.insert(squad.owner, active);
