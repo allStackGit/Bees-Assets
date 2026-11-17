@@ -978,8 +978,12 @@ fn remote_side_owns_input(host: &RolloutHost, action: &NativePlayerInput, side: 
             use bees_gameplay::player_inputs::NativeHeldFireAction;
             match &input.action {
                 NativeHeldFireAction::Begin { squads, .. } => {
-                    // Do not take over a local player's existing gesture.
-                    if world.state.has_live_held_fire() { return false; }
+                    // Multiple controllers may fire independent squads.
+                    // Runtime preflight rejects overlapping live weapons;
+                    // a single peer cannot start a second active gesture.
+                    if world.state.has_held_fire_for(input.controller_id) {
+                        return false;
+                    }
                     squads.as_slice()
                 },
                 NativeHeldFireAction::Aim { .. } | NativeHeldFireAction::End => {
@@ -3554,8 +3558,9 @@ fn run_battle(
             let world = host.simulation().world(0).expect("remote play has one Level");
             let world_id = world.id;
             let revision = world.episode_revision();
-            let live_held_weapons = world.state.has_live_held_fire();
-            for order in server.poll(world_id, revision, live_held_weapons) {
+            let live_held_controllers: Vec<_> =
+                world.state.live_held_fire_controllers().collect();
+            for order in server.poll(world_id, revision, &live_held_controllers) {
                 if !remote_side_owns_input(&host, &order.action, order.side) {
                     server.reply(order.peer, order.request_id,
                         Err("stale world, unauthorized side, or unavailable squad"));
@@ -3592,19 +3597,6 @@ fn run_battle(
             let tick = current.tick;
             let action = client.poll(current, client_bounds[client.selected_world()],
                 host.simulation().world_count(), client_step_interval_by_level[client.selected_world()]);
-            // One live weapon gesture is owned by the authoritative Level.
-            // Prevent the local window from silently stealing a remote
-            // controller's lease. Do this before recording the input trace.
-            let action = match action {
-                Ok(bees_host::client::NativeClientAction::Input {
-                    action: NativePlayerInput::HeldFire(_), step,
-                }) if remote.as_ref().is_some_and(|server| server.held_fire_active()) => {
-                    client.report_move("Remote player is holding manual fire");
-                    Ok(if step { bees_host::client::NativeClientAction::Step }
-                       else { bees_host::client::NativeClientAction::Wait })
-                },
-                other => other,
-            };
             if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input { action: input, .. })) = (&mut input_trace, &action) {
                 if let Err(error) = writeln!(trace, "{}", json!({
                         "kind": "player_input",
