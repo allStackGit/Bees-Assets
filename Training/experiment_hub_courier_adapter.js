@@ -548,6 +548,17 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             !within(checkpoint.round,1,Number.MAX_SAFE_INTEGER-maxRounds)||
             !Array.isArray(checkpoint.lineage)||!within(checkpoint.lineage.length,1,64))
             throw Error('Courier checkpoint environment or population is invalid.');
+        // A resumable checkpoint must describe the environment the trainer
+        // actually saved, not merely the requested launch file. Courier's
+        // validator fills optional mode defaults before saving the checkpoint.
+        // Do not inherit models trained under an unrecorded UI configuration.
+        const pinned={...COURIER_MODE_DEFAULTS,
+            ...JSON.parse(environment.toString('utf8'))};
+        const actual=checkpoint.config;
+        if(!actual||typeof actual!=='object'||Array.isArray(actual)||
+            Object.keys(actual).some(key=>!Object.hasOwn(pinned,key))||
+            !isDeepStrictEqual({...COURIER_MODE_DEFAULTS,...actual},pinned))
+            throw Error('Courier checkpoint was trained with an environment different from its frozen Hub configuration.');
         const names=new Set(fs.readdirSync(source));
         const required=['checkpoint.json',...checkpoint.lineage.map((_,i)=>'lineage-'+i+'.zip')];
         const optional=['champion.zip','milestone.json','milestone-policy.zip',
