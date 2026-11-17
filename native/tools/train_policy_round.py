@@ -252,6 +252,16 @@ def rollout_metrics(summary_path, config, manifest_sha):
             raise ValueError("native rollout summary has invalid physical worker timing")
         metrics.update(physics)
         metrics["parallel_worker_cpu_wall_seconds_sum"] = worker_seconds
+        # The direct/queued split was introduced after the original
+        # physical-worker counters. Do not invent historical values.
+        dispatch_keys = ("parallel_physics_direct_rounds", "parallel_physics_queued_rounds")
+        if any(key in throughput for key in dispatch_keys):
+            if (any(type(throughput.get(key)) is not int or throughput[key] < 0
+                    for key in dispatch_keys) or
+                    sum(throughput[key] for key in dispatch_keys) !=
+                    physics["parallel_physics_rounds"]):
+                raise ValueError("native rollout physics dispatch counters are inconsistent")
+            metrics.update({key: throughput[key] for key in dispatch_keys})
     elif requested != 1 or "physics_workers" in config:
         # Explicit physical parallelism must be acknowledged by a runner
         # that implements it; old binaries may be used only for untouched
@@ -323,6 +333,12 @@ def combined_rollout_metrics(shards, wall_seconds):
             "peak_parallel_physics_workers":
                 max(shard["peak_parallel_physics_workers"] for shard in shards),
         })
+    # Mixed historical collector binaries may report only the older
+    # parallel-physics totals. Preserve unknown dispatch provenance as
+    # absent, never treat missing direct rounds as zero.
+    dispatch_keys = ("parallel_physics_direct_rounds", "parallel_physics_queued_rounds")
+    if all(all(key in shard for key in dispatch_keys) for shard in shards):
+        metrics.update({key: sum(shard[key] for shard in shards) for key in dispatch_keys})
     # Retain per-process evidence so a resource scheduler can distinguish
     # an overloaded process, a scene-dependent straggler and accelerator
     # inference time without requiring frame-level logs or guessed CPU use.
@@ -342,11 +358,13 @@ def combined_rollout_metrics(shards, wall_seconds):
             "requested_physics_workers": shard["requested_physics_worker_slots"],
             **({key: shard[key] for key in (
                 "parallel_physics_rounds",
+                "parallel_physics_direct_rounds",
+                "parallel_physics_queued_rounds",
                 "parallel_stage_id_serialized_rounds",
                 "parallel_stage_id_serialized_arenas",
                 "peak_parallel_physics_workers",
                 "parallel_worker_cpu_wall_seconds_sum",
-            )} if "parallel_physics_rounds" in shard else {}),
+            ) if key in shard} if "parallel_physics_rounds" in shard else {}),
             **({"sampled_model_timing": shard["sampled_model_timing"]}
                if "sampled_model_timing" in shard else {}),
         }

@@ -167,6 +167,8 @@ function rolloutPhysicsMeasurements(rollout) {
     for (const field of [
         'requested_physics_worker_slots',
         'parallel_physics_rounds',
+        'parallel_physics_direct_rounds',
+        'parallel_physics_queued_rounds',
         'parallel_stage_id_serialized_rounds',
         'parallel_stage_id_serialized_arenas',
         'peak_parallel_physics_workers',
@@ -177,6 +179,14 @@ function rolloutPhysicsMeasurements(rollout) {
     if (rollout?.parallel_worker_cpu_wall_seconds_sum != null)
         result.rollout_parallel_worker_cpu_wall_seconds_sum = {
             value: rollout.parallel_worker_cpu_wall_seconds_sum, unit: 'seconds',
+        };
+    if (rollout?.parallel_physics_rounds > 0 &&
+        Number.isSafeInteger(rollout.parallel_physics_direct_rounds) &&
+        rollout.parallel_physics_direct_rounds >= 0 &&
+        rollout.parallel_physics_direct_rounds <= rollout.parallel_physics_rounds)
+        result.rollout_parallel_physics_direct_ratio = {
+            value: rollout.parallel_physics_direct_rounds / rollout.parallel_physics_rounds,
+            unit: 'ratio',
         };
     return result;
 }
