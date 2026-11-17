@@ -49,6 +49,9 @@ use sha2::{Digest, Sha256};
 
 #[path = "battle_catalog.rs"]
 mod battle_catalog;
+#[cfg(feature = "client")]
+#[path = "trained_library.rs"]
+mod trained_library;
 
 type MinionAllocator = Box<
     dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError> + Send,
@@ -2220,9 +2223,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         games.push(config);
     }
     fs::create_dir_all(save_root)?;
+    let trained = trained_library::load(save_root)?;
     println!("{}", json!({
         "kind": "native_game_library_ready",
         "games": library.games.len(),
+        "trained_models": trained.len(),
         "campaigns": library.games.iter().filter(|entry| entry.kind == "campaign").count(),
         "battles": library.games.iter().filter(|entry| entry.kind == "battle").count(),
     }));
@@ -2249,6 +2254,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 unlocked: true,
             }
         }).collect::<Vec<_>>();
+        for model in &trained {
+            rows.push(BattleMenuRow {
+                title: &model.title, status: &model.status, unlocked: true,
+            });
+        }
         // Multiplayer configuration belongs to the player's save directory.
         // It is discovered on each return to the library, so a user can
         // change servers without rebuilding or editing the game package.
@@ -2268,13 +2278,19 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         }
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
-        let remote = join_available && index == library.games.len();
+        let trained_index = (index >= library.games.len() &&
+            index < library.games.len() + trained.len())
+            .then_some(index.saturating_sub(library.games.len()));
+        let remote = join_available && index == library.games.len() + trained.len();
         let hosting = host_available &&
-            index == library.games.len()+usize::from(join_available);
+            index == library.games.len() + trained.len() + usize::from(join_available);
         let (game_id, game_kind, game_title) = if remote {
             ("multiplayer", "remote", "Join Multiplayer")
         } else if hosting {
             ("multiplayer-host", "host", "Host Multiplayer")
+        } else if let Some(trained_index) = trained_index {
+            let model = &trained[trained_index];
+            (model.id.as_str(), "trained", model.title.as_str())
         } else {
             let item = &library.games[index];
             (item.id.as_str(), item.kind.as_str(), item.title.as_str())
@@ -2303,6 +2319,14 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             })()
         } else if hosting {
             run_library_host(&saved_host,save_root,&library,&games)
+        } else if let Some(trained_index) = trained_index {
+            // Verify the original checkpoint immediately before each game,
+            // including after returning from a prior game to the library.
+            (|| {
+                let source = trained[trained_index].verified_run()?;
+                let output = new_library_battle_output(save_root,game_id)?;
+                run_session(&source, true, true, Some(output), None, None, None)
+            })()
         } else if game_kind == "campaign" {
             run_menu(&games[index], &save_root.join("campaigns").join(game_id))
         } else {
