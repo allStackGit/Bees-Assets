@@ -221,7 +221,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             for(const suffix of ['sim_straggler_pressure','sim_dispatch_pressure',
                 'record_encode_pressure','prev_reply_prep_pressure'])
                 retain('collector_'+i+'_'+suffix,reported['collector_'+i+'_'+suffix]);
-            for(const stage of ['engine','observation','inference','opponent','result','bootstrap','returns'])
+            for(const stage of ['engine','observation','inference','opponent','result','bootstrap','returns','model_prepare'])
                 retain('collector_'+i+'_stage_'+stage+'_dominant',
                     reported['collector_'+i+'_stage_'+stage+'_dominant']);
         }
@@ -423,11 +423,11 @@ class BottleneckEvidence {
             // Per-collector stage times are independent *wall intervals*.
             // Compare only a complete set from one collector. A dominant
             // measured stage is not evidence that a specific CPU/GPU is full.
-            const stageNames=['engine','observation','inference','opponent','result','bootstrap','returns'];
+            const stageNames=['engine','observation','inference','opponent','result','bootstrap','returns','model_prepare'];
             const sourceNames=['rollout_engine_step_seconds',
                 'observation_prepare_seconds','learner_inference_seconds',
                 'opponent_processing_seconds','result_processing_seconds',
-                'bootstrap_seconds','returns_seconds'];
+                'bootstrap_seconds','returns_seconds','model_prepare_seconds'];
             const stageHints=[];
             const simHints=[];
             for(let i=0;i<MAX_TINYBRAINS_COLLECTORS;i++) {
