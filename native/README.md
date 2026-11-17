@@ -1418,6 +1418,66 @@ mapping its local source/config/model paths while retaining the pinned hashes:
 python native/tools/run_distributed_collector.py collection-round-00001.json halifax run.json checkpoint.pt manifest.json trainer.yaml /local/scratch /shared/native-inbox --rollout-binary /path/to/policy_rollout
 ```
 
+### Direct cross-machine native collection delivery
+
+Distributed native sessions can receive verified rollouts over an
+authenticated streaming HTTP endpoint, without shared file mounts, manual
+archive copies or a second training implementation. The learner owns the
+existing immutable round orders, validated collector receipts and checkpoint
+lineage. Create an existing writable collector inbox, generate a long
+random token, and start the learner:
+
+```sh
+# Learner machine: use a private VPN/SSH tunnel or bind to loopback.
+export BEES_NATIVE_BUNDLE_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
+python3 native/tools/train_policy_session.py run.json checkpoint.pt trainer.yaml native-session \
+  --rounds 100 --distributed-plan collectors.json \
+  --bundle-inbox /learner/native-inbox --bundle-receiver-listen 127.0.0.1:7391 \
+  --device cuda
+```
+
+The listener accepts uploads **only after** that round's
+`collection-round-NNNNN.json` work order is issued, and publishes
+a collector only after validating its issued identity, source contract,
+checkpoint/manifest digests and every streamed capture. Files arrive in
+bounded-memory temporary storage and are atomically committed to the
+same collector inbox used by MA-POCA. Interrupted or invalid uploads do not
+become learner input. The receiver reports archive bytes, checksums and
+receive/verify wall time; the session continues reporting useful world SPS.
+
+Distribute the issued round's work order and its pinned run, checkpoint,
+manifest and trainer settings to each allocated machine as usual. On a
+collector, set only the shared upload token and specify the learner's
+private-network/tunneled address:
+
+```sh
+export BEES_NATIVE_BUNDLE_TOKEN="<same private transport token>"
+python3 native/tools/run_distributed_collector.py \
+  collection-round-00001.json halifax run.json checkpoint.pt manifest.json trainer.yaml \
+  /local/scratch --rollout-binary /path/to/policy_rollout \
+  --upload-url http://127.0.0.1:7391
+```
+
+This archives locally and uploads on successful collection; there is no
+remote simulator instance on the learner. An existing Hub-managed collector
+can instead upload its completed archive without launching new work:
+
+```sh
+python3 native/tools/transfer_policy_bundle.py upload \
+  --orders collection-round-00001.json --collector-id halifax \
+  --archive /local/outgoing/halifax.tar --url http://127.0.0.1:7391
+```
+
+The token and transport endpoint are operational settings, not training
+recipe or policy-identity inputs, so a resumed session may change machine
+or bind port. The receiver is plain HTTP: **never expose it to the public
+Internet**, send the token over untrusted networks, or bypass a private
+overlay/SSH tunnel or TLS-terminating reverse proxy. The uploader also
+supports an HTTPS URL with ordinary certificate verification. Collection
+scheduling, the distribution of model/input files and machine reservations
+remain with Experiment Hub or the operator; direct archive delivery does
+not pretend to perform orchestration.
+
 For collectors on a machine without a mounted learner inbox, omit the
 last positional `bundle_inbox` argument from the collector command and add
 `--archive-output /local/outgoing/halifax.tar`. This writes an archive
@@ -1474,8 +1534,10 @@ job with the old parameters remains unchanged. Hub's read-only log
 mirroring is **not** the rollout-bundle transport. A shared inbox is
 unnecessary when the Hub owner's completed local bundle is exported
 with `transfer_policy_bundle.py export`, transferred, and imported by the
-learner's archive inbox as described above. The Hub does not automatically
-upload such archives; transport remains an operator or deployment responsibility.
+learner's archive inbox as described above. A Hub-managed job may now stream its completed archive with
+`transfer_policy_bundle.py upload` rather than using a shared archive inbox;
+Experiment Hub still owns when it launches that step and how it distributes
+source inputs.
 
 Use the actual `trainer.yaml` file required by the standalone collector
 CLI; it is not consumed by a collect-only run. Each collector reuses
