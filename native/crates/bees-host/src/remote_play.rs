@@ -713,6 +713,11 @@ fn current_state(
                     .map(|destination| [destination.x, destination.y])
             } else { None },
             "health": ship.vitals.health(), "max_health": ship.vitals.max_health(),
+            // Source Squad.SetColor uses a stable RGB independent of side.
+            // Only already-fog-visible ships receive their visual color;
+            // this is not a new command permission or roster disclosure.
+            "color_rgb": view.roster.owning_squad(ship.entity_id)
+                .and_then(|owner| view.player_authority.player_squad_color_rgb(owner)),
             // Allegiance is not command permission. AI-owned allies must
             // remain friendly in the remote view but never become selectable.
             "friendly": ship.side == side,
