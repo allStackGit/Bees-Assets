@@ -202,6 +202,29 @@ game library. For example:
 }
 ```
 
+Alternatively, register directly from the learning job, avoiding any
+manual shared catalog edits:
+
+```sh
+# Add to a normal train_policy_session.py invocation:
+--library-save-root /path/to/player-save-root \
+--library-game-id experiment-01 --library-game-title "Experiment 01"
+
+# For an already completed Experiment Hub learner round:
+python3 native/tools/publish_round_playable.py source-run.json \
+  hub-artifacts/round-result.json hub-artifacts/playable-export \
+  --library-save-root /path/to/player-save-root \
+  --library-game-id hub-01 --library-title "Hub model 01"
+```
+
+Each job owns one atomic `trained-models.d/<id>.json` in the player
+save root, preventing independent jobs from overwriting each other's
+registrations. A session with fixed holdout evaluations also registers
+`<id>-best`. The library refreshes registrations and checkpoint status
+after each menu selection, while learning continues separately. The
+existing manually maintained `trained-models.json` remains supported;
+IDs must be unique across both sources.
+
 Then run `bees library native/examples/native-library.json --output-dir
 /path/to/player-save-root`. Each registered checkpoint appears alongside
 the existing campaigns and battles. It uses the same native physics,
