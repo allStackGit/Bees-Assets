@@ -659,6 +659,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         // shared. Keep the queue and its lock off short windows.
         let pool = &self.physics_pool.as_ref()
             .expect("multi-worker physics pool initialized above").1;
+        // Split field borrows before either Rayon closure: the physical
+        // worlds and reusable action storage have disjoint owners.
+        let action_buffers = &mut self.window_action_buffers[..workers];
         let outcomes = if dynamic_claims {
             let pending = Mutex::new(self.worlds.iter_mut());
             let work = |decisions: &mut Vec<Decision>| {
@@ -682,8 +685,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             // rollout windows and also serves model-batched physics.
             // Every worker owns a reusable action buffer for its claimed
             // arena sequence; only claims take the short queue mutex.
-            pool.install(|| self.window_action_buffers[..workers]
-                .par_iter_mut().map(|decisions| {
+            pool.install(|| action_buffers.par_iter_mut().map(|decisions| {
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
                         work(decisions)))
                 }).collect::<Vec<_>>())
@@ -703,7 +705,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 remaining = rest;
             }
             pool.install(|| chunks.into_par_iter()
-                .zip(self.window_action_buffers[..workers].par_iter_mut())
+                .zip(action_buffers.par_iter_mut())
                 .map(|(chunk, decisions)| {
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let worker_started = Instant::now();
