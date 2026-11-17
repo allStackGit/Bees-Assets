@@ -201,6 +201,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_parallelism_underuse_evidence',
             'training_remote_gap_pressure','training_remote_codec_pressure',
             'training_gpu_guard_wait_pressure',
+            'training_gpu_policy_copy_pressure',
+            'training_gpu_policy_reuse_fraction',
+            'training_gpu_policy_copy_work_share',
             'training_gpu_guard_readback_work_share',
             'training_queue_work_share','training_reply_gap_work_share',
             'training_sim_queue_work_share','training_sim_queue_pressure',
@@ -699,6 +702,27 @@ class BottleneckEvidence {
                 add('training_gpu_guard_readback_work_share',guardShare);
             const guardHint=guardShare!==null&&guardShare>=0.3&&
                 guard>=0.25&&slowestOptimize>=0.15*wall;
+            // Policy GPU<->CPU host transition costs from the SAME
+            // slowest completed lineage. These include host dispatch and
+            // blocking; they are not measured PCIe link utilization.
+            const copyRow=metrics.training_gpu_policy_copy_slowest_ratio;
+            const copyShare=copyRow?.unit==='ratio'&&
+                Number.isFinite(copyRow.value)&&copyRow.value>=0&&
+                copyRow.value<=1?copyRow.value:null;
+            const copySeconds=seconds('training_gpu_policy_copy_slowest_seconds');
+            if(copyShare!==null)
+                add('training_gpu_policy_copy_work_share',copyShare);
+            const gpuCopyHint=copyShare!==null&&copyShare>=0.25&&
+                copySeconds!==null&&copySeconds>=0.25&&
+                Number.isSafeInteger(slowest)&&
+                metrics.training_gpu_policy_copy_owner?.value===slowest;
+            // In each completed update, only eligible GPU PPO lineages can
+            // retain an unchanged policy for another on-policy collection.
+            const gpuLineages=metrics.training_gpu_optimizer_lineages?.value;
+            const reused=metrics.training_gpu_policy_reused?.value;
+            if(Number.isSafeInteger(gpuLineages)&&gpuLineages>0&&
+                Number.isSafeInteger(reused)&&reused>=0&&reused<=gpuLineages)
+                add('training_gpu_policy_reuse_fraction',reused/gpuLineages,'ratio');
             for(let i=0;i<count;i++) {
                 const collect=seconds('worker_'+i+'_collection_seconds');
                 const optimize=seconds('worker_'+i+'_optimization_seconds');
@@ -748,7 +772,8 @@ class BottleneckEvidence {
                         (queueShare===null||queueShare<=0.10),
                     courierRemoteGap:remoteGapHint,
                     courierRemoteCodec:remoteCodecHint,
-                    courierGpuGuard:guardHint});
+                    courierGpuGuard:guardHint,
+                    courierGpuCopy:gpuCopyHint});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -774,6 +799,8 @@ class BottleneckEvidence {
                     add('training_remote_codec_pressure',1,'count');
                 if(sustained(x=>x.courierGpuGuard))
                     add('training_gpu_guard_wait_pressure',1,'count');
+                if(sustained(x=>x.courierGpuCopy))
+                    add('training_gpu_policy_copy_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.cpuBusy))
                     add('pipeline_cpu_lease_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.throttled))
