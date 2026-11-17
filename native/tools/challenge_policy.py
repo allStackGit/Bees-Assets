@@ -85,15 +85,29 @@ def rebase_run_sources(run: dict, original_run: Path) -> None:
         run["python"] = str(source)
 
 
-def challenge(receipt_path: Path, player_side: int) -> tuple[dict, dict, dict, dict]:
+def challenge(
+    receipt_path: Path, player_side: int, level_index: int | None = None,
+) -> tuple[dict, dict, dict, dict]:
     receipt, run, learner_slot, run_path = selected_run(receipt_path)
-    if (len(run.get("levels", [])) != 1 or
-            not isinstance(run.get("levels", [None])[0], dict) or
+    levels = run.get("levels")
+    if (not isinstance(levels, list) or not levels or
+            not all(isinstance(level, dict) for level in levels) or
             run.get("hivemind") is not None or run.get("model_updates") or
             run.get("recover_notifications") or
             run.get("recover_outcome_journals") or
             "rollout_bundles" in run):
-        raise ValueError("native interactive challenge needs exactly one offline physical Level")
+        raise ValueError("native interactive challenge needs offline physical Levels")
+    if level_index is None:
+        if len(levels) > 1:
+            raise ValueError(
+                f"training published {len(levels)} Levels; select one with --level-index 1..{len(levels)}"
+            )
+        level_index = 1
+    if type(level_index) is not int or not 1 <= level_index <= len(levels):
+        raise ValueError(f"--level-index must be between 1 and {len(levels)}")
+    # A game challenges one original physical arena, not a whole trainer
+    # pool, and the original Level's source RNG/episode seed is retained.
+    run["levels"] = [levels[level_index - 1]]
     level = run["levels"][0]
     scene_path = existing_path(run_path, level.get("scene"))
     scene_sha = file_sha256(scene_path)
@@ -171,9 +185,15 @@ def challenge(receipt_path: Path, player_side: int) -> tuple[dict, dict, dict, d
             run["episodes_per_world"] <= 0 or
             run["max_rounds"] % run["episodes_per_world"]):
         raise ValueError("cannot derive a complete playable episode budget")
-    run["max_rounds"] //= run["episodes_per_world"]
+    episodes = run["episodes_per_world"]
+    if level.get("episode_seeds") is not None:
+        seeds = level["episode_seeds"]
+        if not isinstance(seeds, list) or len(seeds) != episodes:
+            raise ValueError("selected native Level has an invalid episode seed schedule")
+        level["episode_seeds"] = seeds[:1]
+    run["max_rounds"] //= episodes
     run["episodes_per_world"] = 1
-    run["run_id"] += f"-human-{player_side}"
+    run["run_id"] += f"-human-{player_side}-level-{level_index}"
     run["connection_checkpoint"] = "challenge-connection.json"
     run["notifications"] = "challenge-events.jsonl"
     run["rollout_summary"] = "challenge-summary.json"
@@ -197,6 +217,9 @@ def challenge(receipt_path: Path, player_side: int) -> tuple[dict, dict, dict, d
         "selection_receipt_sha256": file_sha256(receipt_path),
         "source_scene": str(scene_path),
         "source_scene_sha256": scene_sha,
+        "source_level_index": level_index,
+        "source_world_id": level.get("world_id"),
+        "source_level_id": level.get("level_id"),
         "learner_slot": learner_slot,
         "opponent_team": team,
         "player_side": player_side,
@@ -217,10 +240,14 @@ def main() -> None:
                         help="new native challenge directory")
     parser.add_argument("--player-side", type=int, choices=(1, 2), default=1,
                         help="which physical faction a human commands")
+    parser.add_argument("--level-index", type=int,
+                        help="1-based physical Level from a multi-arena training run")
     args = parser.parse_args()
     try:
         receipt = args.selection_receipt.resolve(strict=True)
-        scene, run, library, provenance = challenge(receipt, args.player_side)
+        scene, run, library, provenance = challenge(
+            receipt, args.player_side, args.level_index,
+        )
         output = args.output_dir.resolve()
         if output.exists():
             raise FileExistsError(f"refusing to overwrite existing native challenge: {output}")
@@ -251,6 +278,8 @@ def main() -> None:
         "run": str(output / "challenge.run.json"),
         "library": str(output / "library.json"),
         "human_side": args.player_side,
+        "source_level_index": provenance["source_level_index"],
+        "source_world_id": provenance["source_world_id"],
         "opponent_policy_team": provenance["opponent_team"],
         "checkpoint_sha256": provenance["selected_checkpoint_sha256"],
     }, sort_keys=True))

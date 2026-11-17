@@ -171,9 +171,16 @@ python3 native/tools/challenge_policy.py \
 bees play challenge-best/challenge.run.json --output-dir challenge-best-play
 ```
 
-`--player-side 2` lets a human command the opposite side. The publisher
-verifies the pinned checkpoint, manifest, selected run, and learner model
-slot before changing only player ownership and policy routing. Model,
+`--player-side 2` lets a human command the opposite side. For a
+multi-arena training run, add `--level-index N` (1-based) to choose
+which physical arena to challenge; the native game library presents the
+same Level choices after selecting a trained checkpoint. Both interactive
+play and AI-vs-AI viewing use one complete original episode, reducing
+the source `episode_seeds` list to its first real seed so native episode
+validation, deterministic replay, and stage ownership remain correct.
+The publisher verifies the pinned checkpoint, manifest, selected run,
+and learner model slot before changing only player ownership and policy
+routing. Model,
 worker and optional Stage-asset paths are bound to their original
 verified source directory, so a challenge moved into its own folder
 cannot accidentally resolve a different model; the native campaign
