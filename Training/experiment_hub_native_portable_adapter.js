@@ -1,0 +1,220 @@
+'use strict';
+
+// Machine-installed CPU collector for an issued *portable* native MA-POCA
+// work order. Experiment Hub remains the sole scheduler, lease owner and
+// process supervisor. This adapter only selects a trusted local executable,
+// checks the frozen lease against the collector's allocation and exposes
+// the same verified rollout bundle artifacts as bees_native_collect.
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const {validateProgress} = require('./experiment_hub_progress');
+const {capturePaths} = require('./experiment_hub_native_bundle_transfer');
+
+const PROJECT = 'bees_native_collect';
+const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const SHA = /^[0-9a-f]{64}$/;
+const SAFE_ARG = /^[A-Za-z0-9_./:@=+\-,]+$/;
+const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
+
+function trustedFile(file) {
+    if(typeof file !== 'string'||!path.isAbsolute(file)||!SAFE_ARG.test(file))
+        throw Error('Native portable collector needs an absolute safe local file path.');
+    const resolved=fs.realpathSync(file);
+    if(!fs.statSync(resolved).isFile()||!SAFE_ARG.test(resolved))
+        throw Error('Native portable collector executable/source was redirected.');
+    return resolved;
+}
+
+function trustedDirectory(directory) {
+    if(typeof directory!=='string'||!path.isAbsolute(directory)||
+        !SAFE_ARG.test(directory))
+        throw Error('Native portable collector needs an existing absolute private directory.');
+    const resolved=fs.realpathSync(directory);
+    if(!fs.statSync(resolved).isDirectory()||!SAFE_ARG.test(resolved))
+        throw Error('Native portable collector directory was redirected.');
+    return resolved;
+}
+
+function trustedReceiver(endpoint) {
+    if(typeof endpoint!=='string'||!SAFE_ARG.test(endpoint))
+        throw Error('Native collector needs an approved private receiver endpoint.');
+    const url=new URL(endpoint);
+    if(!['http:','https:'].includes(url.protocol)||!url.hostname||
+        url.username||url.password||url.search||url.hash||
+        !['','/'].includes(url.pathname))
+        throw Error('Native collector receiver must be an HTTP(S) origin without credentials.');
+    return url.origin;
+}
+
+function createNativeBeesPortableCollectorAdapter({
+    pythonPath, rolloutBinary, artifactRoot, scratchRoot, tokenFile, receiverUrl,
+}) {
+    const executable=trustedFile(pythonPath);
+    const binary=trustedFile(rolloutBinary);
+    const artifacts=trustedDirectory(artifactRoot);
+    const scratch=trustedDirectory(scratchRoot);
+    if(artifacts===scratch)throw Error('Hub collection artifacts and scratch must differ.');
+    const credential=trustedFile(tokenFile);
+    const stat=fs.statSync(credential);
+    if(stat.size<33||stat.size>512||
+        process.platform!=='win32'&&(stat.mode&0o077)!==0)
+        throw Error('Native bundle credential must be a private local secret file.');
+    const receiver=trustedReceiver(receiverUrl);
+    const tools=path.resolve(__dirname,'../native/tools');
+    const names=[
+        'run_portable_distributed_collector.py',
+        'run_distributed_collector.py',
+        'train_policy_round.py',
+        'transfer_policy_inputs.py',
+        'transfer_policy_bundle.py',
+        'native_bundle_receiver.py',
+        'native_distributed_collection.py',
+        'native_training_artifacts.py',
+        'policy_worker.py',
+    ];
+    const pinned=new Map([
+        [binary,sha256(fs.readFileSync(binary))],
+        ...names.map(name=>{
+            const file=trustedFile(path.join(tools,name));
+            return [file,sha256(fs.readFileSync(file))];
+        }),
+    ]);
+    const runner=trustedFile(path.join(tools,names[0]));
+    // This machine-owned digest is the approved Hub configuration, not a
+    // substitute for the learner's immutable work-order/source contract.
+    const configSha256=sha256(JSON.stringify([
+        PROJECT,'portable-collector-v1',executable,
+        ...pinned.values(),receiver,artifacts,scratch,credential,
+    ]));
+
+    function jobRoot(context) {
+        if(context?.project_id!==PROJECT||!UUID.test(String(context.job_id||'')))
+            throw Error('Invalid native portable collector job identity.');
+        return path.join(artifacts,context.job_id);
+    }
+
+    function verifiedReceipt(context) {
+        const output=jobRoot(context);
+        const file=path.join(output,'rollout-bundle.json');
+        let stat;
+        try{stat=fs.lstatSync(file);}
+        catch(error){if(error.code==='ENOENT')return null;throw error;}
+        if(!stat.isFile()||stat.isSymbolicLink()||stat.size<1||
+            stat.size>2*1024*1024||fs.realpathSync(file)!==file)
+            throw Error('Native collector receipt is not a regular bounded artifact.');
+        const receipt=JSON.parse(fs.readFileSync(file,'utf8'));
+        const params=context.frozen_parameters;
+        const metrics=receipt.rollout_metrics;
+        if(receipt?.kind!=='native_rollout_bundle'||receipt.schema_version!==1||
+            receipt.collection_id!==params?.collection_id||
+            receipt.source_run_contract_sha256!==params?.source_run_contract_sha256||
+            receipt.seed_offset!==params?.seed_offset||
+            receipt.rollout_worlds!==params?.rollout_worlds||
+            receipt.rollout_processes!==params?.rollout_workers||
+            receipt.physics_workers_per_process!==params?.physics_workers||
+            receipt.partition?.world_start!==params?.rollout_world_start||
+            !metrics||!Number.isSafeInteger(metrics.successful_policy_rows)||
+            metrics.successful_policy_rows<1||
+            !Number.isSafeInteger(metrics.successful_world_steps)||
+            metrics.successful_world_steps<1||
+            typeof metrics.wall_seconds!=='number'||!Number.isFinite(metrics.wall_seconds)||
+            metrics.wall_seconds<=0)
+            throw Error('Native portable collector receipt differs from its Hub-frozen work order.');
+        capturePaths(receipt);
+        return {receipt,stat};
+    }
+
+    return {
+        executable,
+        cwd:tools,
+        stop_policy:'terminate-group',
+        config_sha256:configSha256,
+        args(parameters,context) {
+            const required=[
+                'config_sha256','collection_id','seed_offset',
+                'rollout_workers','physics_workers','rollout_world_start',
+                'rollout_worlds','bundle_directory','source_run_contract_sha256',
+            ];
+            if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
+                Object.keys(parameters).length!==required.length||
+                required.some(key=>!Object.hasOwn(parameters,key))||
+                parameters.config_sha256!==configSha256||
+                !SHA.test(String(parameters.collection_id||''))||
+                !SHA.test(String(parameters.source_run_contract_sha256||''))||
+                !Number.isSafeInteger(parameters.seed_offset)||parameters.seed_offset<0||
+                !Number.isSafeInteger(parameters.rollout_world_start)||
+                parameters.rollout_world_start<0||
+                !Number.isSafeInteger(parameters.rollout_worlds)||
+                parameters.rollout_worlds<1||parameters.rollout_worlds>1024||
+                !Number.isSafeInteger(parameters.rollout_workers)||
+                parameters.rollout_workers<1||
+                parameters.rollout_workers>parameters.rollout_worlds||
+                !Number.isSafeInteger(parameters.physics_workers)||
+                parameters.physics_workers<1||parameters.physics_workers>128||
+                parameters.bundle_directory!==context?.job_id||
+                context?.continuation_of_job_id!=null||
+                context?.gpu_pci_address!==undefined||
+                context?.gpu_pci_addresses!==undefined||
+                !Number.isSafeInteger(context?.cpu_quota)||
+                parameters.rollout_workers*parameters.physics_workers>context.cpu_quota)
+                throw Error('Native portable collector must fit the exact Hub-frozen CPU allocation and work order.');
+            for(const [file,digest] of pinned) {
+                if(sha256(fs.readFileSync(file))!==digest)
+                    throw Error('Native portable collector runtime changed since adapter installation.');
+            }
+            return ['-B',runner,
+                '--input-url',receiver,'--collector-id',context.job_id,
+                '--scratch',scratch,'--rollout-binary',binary,
+                '--bundle-inbox',artifacts,'--token-file',credential,
+                '--hub-job-id',context.job_id,
+                '--cpu-quota',String(context.cpu_quota),
+                '--expected-collection-id',parameters.collection_id,
+                '--expected-source-contract',parameters.source_run_contract_sha256,
+                '--expected-seed-offset',String(parameters.seed_offset),
+                '--expected-world-start',String(parameters.rollout_world_start),
+                '--expected-worlds',String(parameters.rollout_worlds),
+                '--expected-workers',String(parameters.rollout_workers),
+                '--expected-physics-workers',String(parameters.physics_workers)];
+        },
+        artifact_export_dir(jobId) {
+            if(!UUID.test(String(jobId||'')))
+                throw Error('Invalid native portable collector artifact identity.');
+            return path.join(artifacts,jobId);
+        },
+        readProgress(context) {
+            const completed=verifiedReceipt(context);
+            if(!completed)return null;
+            const {receipt,stat}=completed,metrics=receipt.rollout_metrics;
+            return validateProgress({
+                schema_version:1,source:'hub-metrics-v1',
+                experiment_id:context.job_id,segment_id:'collection',
+                source_modified_at:stat.mtime.toISOString(),
+                steps_completed:metrics.successful_policy_rows,
+                metrics:{
+                    rollout_world_steps:{value:metrics.successful_world_steps,unit:'count'},
+                    rollout_policy_rows:{value:metrics.successful_policy_rows,unit:'count'},
+                    rollout_wall_seconds:{value:metrics.wall_seconds,unit:'seconds'},
+                    rollout_workers:{value:receipt.rollout_processes,unit:'count'},
+                    rollout_physics_workers_per_process:{
+                        value:receipt.physics_workers_per_process,unit:'count',
+                    },
+                    rollout_world_steps_per_second:{
+                        value:metrics.successful_world_steps/metrics.wall_seconds,unit:'rate',
+                    },
+                    rollout_policy_rows_per_second:{
+                        value:metrics.successful_policy_rows/metrics.wall_seconds,unit:'rate',
+                    },
+                    ...(receipt.delivery?{
+                        rollout_delivery_bytes:{value:receipt.delivery.bytes,unit:'bytes'},
+                        rollout_delivery_seconds:{
+                            value:receipt.delivery.copy_wall_seconds,unit:'seconds',
+                        },
+                    }:{}),
+                },
+            },PROJECT);
+        },
+    };
+}
+
+module.exports={createNativeBeesPortableCollectorAdapter};
