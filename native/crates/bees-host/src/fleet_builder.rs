@@ -10,7 +10,9 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use bees_host::presentation::{select_library, BattleMenuRow};
-use bees_host::unity_scene_snapshot::{NativeLevelLayout, NativeSquadClone};
+use bees_host::unity_scene_snapshot::{
+    NativeLevelLayout, NativePlacedStaticBox, NativeSquadClone,
+};
 use serde_json::{json, Value};
 
 use super::RunConfig;
@@ -21,10 +23,14 @@ const FLEET_SIZES: [usize; 5] = [1, 2, 4, 8, 12];
 pub(super) const GAME_ID: &str = "fleet-skirmish";
 
 #[derive(Clone, Copy)]
+enum Terrain { Open, Original, Cover, DenseCover }
+
+#[derive(Clone, Copy)]
 pub(super) struct FleetChoice {
     /// None preserves the source's two human-controlled factions.
     player_side: Option<i32>,
     fleet_sizes: [usize; 2],
+    terrain: Terrain,
 }
 
 fn invalid(message: &'static str) -> io::Error {
@@ -44,17 +50,19 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(mode) = select_library(&rows, &mut selection, false)? else {
         return Ok(None);
     };
-    Ok(choose_sizes()?.map(|fleet_sizes| FleetChoice {
+    let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
+    Ok(choose_terrain()?.map(|terrain| FleetChoice {
         player_side: match mode { 0 => Some(1), 1 => Some(2), _ => None },
-        fleet_sizes,
+        fleet_sizes, terrain,
     }))
 }
 
 /// The existing private host authenticates a separate remote commander
 /// per side; no new network controller, simulation or permission model.
 pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>> {
-    Ok(choose_sizes()?.map(|fleet_sizes| FleetChoice {
-        player_side: None, fleet_sizes,
+    let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
+    Ok(choose_terrain()?.map(|terrain| FleetChoice {
+        player_side: None, fleet_sizes, terrain,
     }))
 }
 
@@ -74,6 +82,37 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
         fleet_sizes[index] = FLEET_SIZES[choice];
     }
     Ok(Some(fleet_sizes))
+}
+
+fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
+    let choices = [
+        ("Open field", "  [No static obstacles]"),
+        ("Classic duel", "  [Original minor cover]"),
+        ("Flanking cover", "  [Two physical obstacles]"),
+        ("Dense cover", "  [Four physical obstacles]"),
+    ];
+    let rows = choices.iter().map(|(title, status)| BattleMenuRow {
+        title, status, unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut choice = 0;
+    Ok(select_library(&rows, &mut choice, false)?.map(|index|
+        match index {
+            0 => Terrain::Open,
+            1 => Terrain::Original,
+            2 => Terrain::Cover,
+            _ => Terrain::DenseCover,
+        }
+    ))
+}
+
+/// Reuse the existing source collider prefab, not an approximate visual
+/// barrier. Both live game and training share its authentic collision and
+/// navigation behavior through NativeLevelLayout.
+fn cover_box(id: i64, position: [f32; 2]) -> NativePlacedStaticBox {
+    NativePlacedStaticBox {
+        entity_id: id, prefab_name: "Box".to_owned(),
+        position, rotation_degrees: 0.0, local_corners: None,
+    }
 }
 
 fn write_json_new(path: &Path, value: &Value) -> Result<(), Box<dyn Error>> {
@@ -133,6 +172,22 @@ pub(super) fn archive(
             squad_ids[side].push(new_squad);
         }
     }
+    if !matches!(selected.terrain, Terrain::Original) {
+        // The two-player template's id=30 tiny box is a real authored
+        // static collider. Remove it when choosing a different map.
+        cloned.remove_static_ids.push(30);
+    }
+    let cover = match selected.terrain {
+        Terrain::Open | Terrain::Original => &[][..],
+        Terrain::Cover => &[[-24.0, 45.0], [24.0, -45.0]][..],
+        Terrain::DenseCover => &[
+            [-24.0, -42.0], [-24.0, 42.0],
+            [24.0, -42.0], [24.0, 42.0],
+        ][..],
+    };
+    cloned.add_static_boxes.extend(cover.iter().enumerate().map(|(index, &position)|
+        cover_box(20_001 + index as i64, position)
+    ));
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
     run["next_squad_item_id"] = json!(3_000);
     run["run_id"] = json!(format!(
