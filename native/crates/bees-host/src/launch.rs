@@ -998,6 +998,7 @@ fn apply_remote_side_input(
 
 const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
        bees menu <catalog.json> --output-dir <battle-runs>
+       bees library <library.json> --output-dir <player-save-root>
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
        bees campaign <catalog.json> --output-dir <battle-runs> --all
@@ -1239,6 +1240,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_campaign_mission(&catalog_path, &output,
             &mission_id.to_string_lossy());
+    }
+    if first == "library" {
+        #[cfg(feature = "client")]
+        {
+            let library = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+            if args.next().is_none_or(|flag| flag != "--output-dir") {
+                return Err(invalid(USAGE).into());
+            }
+            let save_root = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+            if args.next().is_some() { return Err(invalid(USAGE).into()); }
+            return run_library(&library, &save_root);
+        }
+        #[cfg(not(feature = "client"))]
+        return Err(invalid("The native game library requires building with --features client").into());
     }
     if first == "menu" {
         #[cfg(feature = "client")]
@@ -1990,6 +2005,119 @@ fn authored_menu_fleet(
     }
     listed.sort_unstable();
     listed
+}
+
+#[cfg(feature = "client")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeLibrary {
+    library_schema: u32,
+    games: Vec<NativeLibraryGame>,
+}
+
+#[cfg(feature = "client")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeLibraryGame {
+    id: String,
+    title: String,
+    kind: String,
+    config: PathBuf,
+}
+
+/// A single Unity-free home screen, not another simulation/campaign mode.
+/// Each selected campaign uses the existing verified career ledger, shop,
+/// mission unlocks and battle picker; quick battles use run_session directly.
+#[cfg(feature = "client")]
+fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Error>> {
+    use bees_host::presentation::{BattleMenuRow, NativeBattleMenuAction, select_battle};
+    use std::path::Component;
+
+    let library_path = library_path.canonicalize()?;
+    let base = library_path.parent().ok_or_else(|| invalid("missing native game library directory"))?;
+    let library: NativeLibrary = serde_json::from_slice(&fs::read(&library_path)?)?;
+    if library.library_schema != 1 || library.games.is_empty() ||
+        library.games.len() > 100 {
+        return Err(invalid("native game library requires 1..100 entries and schema 1").into());
+    }
+    let mut games = Vec::new();
+    let mut seen = HashSet::new();
+    for entry in &library.games {
+        if entry.id.is_empty() || entry.id.len() > 48 ||
+            !entry.id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') ||
+            !seen.insert(entry.id.as_str()) ||
+            entry.title.trim().is_empty() || entry.title.len() > 120 ||
+            !matches!(entry.kind.as_str(), "campaign" | "battle") ||
+            entry.config.extension().is_none_or(|ext| ext != "json") ||
+            entry.config.to_string_lossy().contains(['\\', ':']) ||
+            !entry.config.components().all(|part| matches!(part, Component::Normal(_)))
+        {
+            return Err(invalid("invalid or duplicate native game library item").into());
+        }
+        let config = base.join(&entry.config).canonicalize()?;
+        if !config.starts_with(base) || !config.is_file() {
+            return Err(invalid("native library content must reside within the library directory").into());
+        }
+        // Fail before showing the window, not halfway through a menu choice.
+        if entry.kind == "campaign" {
+            let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(&config)?)?;
+            catalog.validate()?;
+        } else {
+            let _: RunConfig = serde_json::from_slice(&fs::read(&config)?)?;
+        }
+        games.push(config);
+    }
+    fs::create_dir_all(save_root)?;
+    let mut selected = 0_usize;
+    let mut launch_failed = false;
+    loop {
+        let status = library.games.iter().zip(&games).map(|(item, config)| {
+            if item.kind != "campaign" {
+                return Ok("  [Battle]".to_string());
+            }
+            let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(config)?)?;
+            let career_root = save_root.join("campaigns").join(&item.id);
+            let progress = catalog.load_progress(&career_root)?;
+            let total = catalog.battles.iter().filter_map(|b| b.mission.as_ref()).count();
+            let complete = catalog.battles.iter().filter_map(|b| b.mission.as_ref())
+                .filter(|mission| progress.completed(&mission.id)).count();
+            Ok::<String, Box<dyn Error>>(format!("  [Career {complete}/{total}]"))
+        }).collect::<Result<Vec<_>,_>>()?;
+        let rows = library.games.iter().enumerate().map(|(index, item)| {
+            BattleMenuRow {
+                title: item.title.as_str(), status: status[index].as_str(),
+                unlocked: true,
+            }
+        }).collect::<Vec<_>>();
+        let action = select_battle(
+            &rows, &mut selected, launch_failed,
+            &[], &[], &[], 0, &[], &[], &[],
+        )?;
+        let Some(NativeBattleMenuAction::Play(index)) = action else { break };
+        let item = &library.games[index];
+        let result = if item.kind == "campaign" {
+            run_menu(&games[index], &save_root.join("campaigns").join(&item.id))
+        } else {
+            let root = save_root.join("battles").join(&item.id);
+            fs::create_dir_all(&root)?;
+            let mut number = 0_u64;
+            let run_root = loop {
+                number = number.checked_add(1).ok_or_else(|| invalid("quick battle count exhausted"))?;
+                let dir = root.join(format!("battle-{number:06}"));
+                match fs::create_dir(&dir) {
+                    Ok(()) => break dir.join("run"),
+                    Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+                    Err(error) => return Err(error.into()),
+                }
+            };
+            run_session(&games[index], true, true, Some(run_root), None, None, None)
+        };
+        launch_failed = result.is_err();
+        if let Err(error) = result {
+            eprintln!("Could not open {}: {error}", item.title);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "client")]
