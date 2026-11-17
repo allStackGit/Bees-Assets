@@ -526,7 +526,16 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
     last_meaningful_evaluation = 0
     evaluated = 0
     every = recipe.get("evaluation_every", 1)
+    # An early stop on the easy scene must not prevent the scheduled
+    # harder environments from ever running. Once the final stage begins,
+    # patience starts anew; checkpoint improvements remain measured against
+    # the one fixed reference holdout.
+    curriculum = recipe.get("curriculum")
+    final_stage_start = (curriculum["stages"][-1]["start_round"]
+                         if curriculum is not None else 1)
     for index, (directory, _) in enumerate(completed, 1):
+        if curriculum is not None and index == final_stage_start:
+            last_meaningful_evaluation = evaluated
         result = evaluations.get(str(directory))
         if result is None:
             if index % every == 0:
@@ -543,7 +552,7 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
             last_meaningful_round = index
             last_meaningful_evaluation = evaluated
     no_gain = evaluated - last_meaningful_evaluation
-    stop = (len(completed) >= policy["minimum_rounds"] and
+    stop = (len(completed) >= max(policy["minimum_rounds"], final_stage_start) and
             no_gain >= policy["patience_rounds"])
     return {
         "kind": "native_training_holdout_stopping",
@@ -554,6 +563,8 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
         "completed_rounds": len(completed),
         "holdout_interval_rounds": every,
         "minimum_rounds": policy["minimum_rounds"],
+        **({"curriculum_final_stage_start_round": final_stage_start}
+           if curriculum is not None else {}),
         "patience_rounds": policy["patience_rounds"],
         "minimum_extra_victories": policy["minimum_extra_victories"],
         "best_holdout_victories": best_wins,
