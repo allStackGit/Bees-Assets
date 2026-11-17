@@ -22,6 +22,10 @@ pub(crate) mod campaign_dialogue;
 #[cfg(feature = "client")]
 mod battle_menu;
 #[cfg(feature = "client")]
+mod remote_window;
+#[cfg(feature = "client")]
+pub use remote_window::connect_remote;
+#[cfg(feature = "client")]
 pub use battle_menu::{
     BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
     NativeTransferMenuRow, NativeCreateSquadMenuRow, NativeTacticsMenuRow,
