@@ -373,8 +373,13 @@ IDs must be unique across both sources.
 
 Then run `bees library native/examples/native-library.json --output-dir
 /path/to/player-save-root`. Each registered checkpoint appears alongside
-the existing campaigns and battles. It uses the same native physics,
-policy process and authored scene as headless training. On launch the
+the existing campaigns and battles. Selecting one now offers three modes:
+fight its verified learner checkpoint as side 1, fight as side 2, or watch
+the original policy-vs-policy battle. The native menu archives the
+human challenge's exact scene and run beside the replay, so future training
+does not alter an already played game. Only player authority and the
+remaining AI's model slot change; physical gameplay still uses the same
+Rust CombatWorld as headless training. On launch the
 library verifies the published run, manifest and checkpoint digests,
 rejects changed artifacts and creates an independent numbered battle
 output under the player's save root. The training session stays untouched.

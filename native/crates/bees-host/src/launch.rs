@@ -2541,15 +2541,49 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         } else if hosting {
             run_library_host(&saved_host,save_root,&library,&games,&trained)
         } else if let Some(trained_index) = trained_index {
-            // The active latest-playable-run.json may be replaced by the
-            // next training round. Freeze its verified bytes beside this
-            // battle, so both live gameplay and its future recording use
-            // exactly the same original model/scene configuration.
+            // A selected trained model can still run the exact original
+            // AI-vs-AI rollout, or become a human opponent on either
+            // physical side without a training-only alternative game.
             (|| {
+                let choices = [
+                    BattleMenuRow {
+                        title: "Fight trained policy as Bees (side 1)",
+                        status: "  [Human vs trained]",
+                        unlocked: true,
+                    },
+                    BattleMenuRow {
+                        title: "Fight trained policy as Humans (side 2)",
+                        status: "  [Human vs trained]",
+                        unlocked: true,
+                    },
+                    BattleMenuRow {
+                        title: "Watch original trained-policy battle",
+                        status: "  [Original AI teams]",
+                        unlocked: true,
+                    },
+                ];
+                let mut choice = 0_usize;
+                let Some(mode) = select_library(&choices, &mut choice, false)?
+                    else { return Ok::<(), Box<dyn Error>>(()); };
                 let output = new_library_battle_output(save_root, game_id)?;
-                let source = trained[trained_index].archive_playable(
-                    output.parent().ok_or_else(|| invalid("missing trained battle archive"))?,
-                )?;
+                let parent = output.parent()
+                    .ok_or_else(|| invalid("missing trained battle archive"))?;
+                let source = if mode < 2 {
+                    trained[trained_index].archive_challenge(
+                        parent, if mode == 0 { 1 } else { 2 },
+                    )?
+                } else {
+                    // Freeze the verified selection's run bytes before a
+                    // trainer can republish its next mutable latest link.
+                    trained[trained_index].archive_playable(parent)?
+                };
+                println!("{}", json!({
+                    "kind": "native_trained_game_mode",
+                    "game_id": game_id,
+                    "mode": if mode == 2 { "original_ai" } else { "human_challenge" },
+                    "human_side": if mode < 2 { Some(if mode == 0 { 1 } else { 2 }) } else { None },
+                    "archived_run": source,
+                }));
                 run_session(&source, true, true, Some(output), None, None, None)
             })()
         } else if game_kind == "campaign" {

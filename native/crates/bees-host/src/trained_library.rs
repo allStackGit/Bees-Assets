@@ -11,7 +11,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use super::RunConfig;
@@ -132,6 +132,168 @@ impl TrainedGame {
         let _: RunConfig = serde_json::from_slice(&fs::read(&run)?)?;
         let _ = checkpoint; // explicit verification is the model identity.
         Ok(run)
+    }
+
+
+    /// Make the selected checkpoint playable from the regular native
+    /// library. Only scene controller ownership and policy route change;
+    /// CombatWorld, physical assets, source rewards and policy ABI do not.
+    /// Freeze the authored scene beside the already archived run so a
+    /// future training publication cannot change this battle's replay.
+    pub fn archive_challenge(
+        &self, parent: &Path, human_side: i32,
+    ) -> Result<PathBuf, Box<dyn Error>> {
+        use std::io::Write;
+        if !matches!(human_side, 1 | 2) {
+            return Err(invalid("trained challenge side must be 1 or 2").into());
+        }
+        let source_run = self.verified_run()?;
+        let receipt = self.published_receipt()?;
+        let learner_slot = receipt["learner_slot"].as_u64()
+            .ok_or_else(|| invalid("trained challenge receipt lacks a learner model slot"))?;
+        let source_bytes = fs::read(&source_run)?;
+        if format!("{:x}", Sha256::digest(&source_bytes)) !=
+            text_field(&receipt, "playable_run_sha256")?
+        {
+            return Err(invalid("trained challenge source run changed during publication").into());
+        }
+        let mut run: Value = serde_json::from_slice(&source_bytes)?;
+        let source_levels = run["levels"].as_array()
+            .ok_or_else(|| invalid("trained challenge has no source levels"))?;
+        if source_levels.len() != 1 ||
+            run["hivemind"].is_object() || run["model_updates"].as_array()
+                .is_some_and(|updates| !updates.is_empty())
+        {
+            return Err(invalid("interactive trained challenge needs one offline Level").into());
+        }
+        let authored_scene = Path::new(text_field(&source_levels[0], "scene")?);
+        let source_scene = if authored_scene.is_absolute() {
+            authored_scene.canonicalize()?
+        } else {
+            source_run.parent().ok_or_else(||
+                invalid("trained challenge run has no parent directory"))?
+                .join(authored_scene).canonicalize()?
+        };
+        let mut scene: Value = serde_json::from_slice(&fs::read(&source_scene)?)?;
+        if scene["native_game_schema"].as_u64() != Some(1) ||
+            !scene["policy_episode"].is_object() ||
+            scene["bee_side"].as_i64() != Some(1) ||
+            scene["human_side"].as_i64() != Some(2)
+        {
+            return Err(invalid("interactive trained challenge needs a native-authored policy scene").into());
+        }
+
+        let opponent_side = 3 - human_side;
+        let mut owned_ships = HashSet::new();
+        let mut opponent_team = None;
+        let ships = scene["ships"].as_array_mut()
+            .ok_or_else(|| invalid("trained challenge scene has no ship roster"))?;
+        for ship in ships {
+            let side = ship["side"].as_i64()
+                .ok_or_else(|| invalid("trained challenge has an unowned ship"))?;
+            if side == i64::from(human_side) {
+                let id = ship["entity_id"].as_i64()
+                    .ok_or_else(|| invalid("trained challenge player ship has no ID"))?;
+                owned_ships.insert(id);
+                ship.as_object_mut().ok_or_else(||
+                    invalid("trained challenge ship is not a JSON object"))?
+                    .remove("policy");
+                ship["user_controlled"] = Value::Bool(true);
+            } else if side == i64::from(opponent_side) {
+                ship["user_controlled"] = Value::Bool(false);
+                if let Some(team) = ship["policy"]["team_id"].as_u64() {
+                    if team > 1 || opponent_team.is_some_and(|old| old != team) {
+                        return Err(invalid("trained challenge opponent has inconsistent policy teams").into());
+                    }
+                    opponent_team = Some(team);
+                }
+            } else {
+                return Err(invalid("trained challenge ship has an unknown side").into());
+            }
+        }
+        let team = opponent_team.ok_or_else(||
+            invalid("trained challenge opponent has no native policy controllers"))?;
+        if owned_ships.is_empty() {
+            return Err(invalid("trained challenge human faction has no ships").into());
+        }
+        let mut human_squads = HashSet::new();
+        for squad in scene["squads"].as_array_mut().ok_or_else(||
+            invalid("trained challenge scene has no squads"))? {
+            let side = squad["side"].as_i64()
+                .ok_or_else(|| invalid("trained challenge squad has no side"))?;
+            let is_human = side == i64::from(human_side);
+            if !is_human && side != i64::from(opponent_side) {
+                return Err(invalid("trained challenge squad has an unknown side").into());
+            }
+            squad["user_controlled"] = Value::Bool(is_human);
+            squad["can_accept_input"] = Value::Bool(is_human);
+            if is_human {
+                let id = squad["item_id"].as_i64()
+                    .ok_or_else(|| invalid("trained challenge player squad has no ID"))?;
+                let members = squad["members"].as_array()
+                    .ok_or_else(|| invalid("trained challenge squad has no members"))?;
+                if members.is_empty() || !members.iter().all(|member|
+                    member.as_i64().is_some_and(|id| owned_ships.contains(&id))
+                ) {
+                    return Err(invalid("trained challenge player squad has an invalid roster").into());
+                }
+                human_squads.insert(id);
+            } else {
+                let source = squad.as_object_mut().ok_or_else(||
+                    invalid("trained challenge squad is not a JSON object"))?;
+                source.remove("hotkey_number");
+                source.remove("original_squad_count");
+            }
+        }
+        if human_squads.is_empty() {
+            return Err(invalid("trained challenge has no player-controlled squad").into());
+        }
+        scene["local_player_side"] = json!(human_side);
+        // Source side identity, episode reward denominators, hulls, weapons,
+        // collision objects and original policy coordinate frames stay put.
+        let level = &mut run["levels"][0];
+        if let Some(queues) = level["scripted_queues"].as_array_mut() {
+            queues.retain(|queue| !queue["squad_item_id"].as_i64()
+                .is_some_and(|id| human_squads.contains(&id)));
+        }
+        let slots = level["model_slots"].as_object_mut()
+            .ok_or_else(|| invalid("trained challenge source has no policy slots"))?;
+        if !slots.contains_key(&team.to_string()) {
+            return Err(invalid("trained challenge opponent has no original policy route").into());
+        }
+        slots.insert(team.to_string(), json!(learner_slot));
+        level.as_object_mut().ok_or_else(||
+            invalid("trained challenge Level is not an object"))?.remove("groups");
+
+        let episodes = run["episodes_per_world"].as_u64()
+            .filter(|&n| n > 0)
+            .ok_or_else(|| invalid("trained challenge has no fixed episode count"))?;
+        let rounds = run["max_rounds"].as_u64()
+            .filter(|&n| n > 0 && n % episodes == 0)
+            .ok_or_else(|| invalid("trained challenge has no whole source episode budget"))?;
+        run["max_rounds"] = json!(rounds / episodes);
+        run["episodes_per_world"] = json!(1);
+        let run_name = text_field(&run, "run_id")?.to_owned();
+        run["run_id"] = json!(format!("{run_name}-challenge-side-{human_side}"));
+        run["policy_capture"] = Value::Null;
+        run["connection_checkpoint"] = json!("challenge-connection.json");
+        run["notifications"] = json!("challenge-events.jsonl");
+        run["rollout_summary"] = json!("challenge-summary.json");
+
+        let scene_path = parent.join("replay-source-scene.json");
+        let mut scene_out = fs::OpenOptions::new().create_new(true)
+            .write(true).open(&scene_path)?;
+        serde_json::to_writer_pretty(&mut scene_out, &scene)?;
+        scene_out.write_all(b"\n")?;
+        scene_out.sync_all()?;
+        run["levels"][0]["scene"] = json!(scene_path.canonicalize()?);
+        let run_path = parent.join("replay-source-run.json");
+        let mut run_out = fs::OpenOptions::new().create_new(true)
+            .write(true).open(&run_path)?;
+        serde_json::to_writer_pretty(&mut run_out, &run)?;
+        run_out.write_all(b"\n")?;
+        run_out.sync_all()?;
+        Ok(run_path)
     }
 
     /// Preserve the exact game configuration for this completed battle.
