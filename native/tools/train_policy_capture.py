@@ -7,6 +7,7 @@ from collections import defaultdict, deque
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import time
 
@@ -796,22 +797,49 @@ def main():
     else:
         learner_slots = {args.learner_slot}
     next_sha = file_sha256(next_checkpoint)
+    # A published checkpoint lineage must be transferable to a different
+    # machine (and still runnable after old attempt directories are moved).
+    # Source opponent paths can point into older rounds or even other Windows
+    # volumes; snapshot the verified frozen bytes beside this manifest.
+    # Content-addressed hard links avoid both duplicate disk storage and
+    # expensive reads on the common same-filesystem path. A cross-volume
+    # copy is measured and verified, never silently substituted.
+    frozen_artifacts = {}
+    frozen_snapshot_copies = 0
+    frozen_snapshot_copy_bytes = 0
+    frozen_snapshot_started = time.perf_counter()
     for entry in manifest["models"]:
         if (entry["slot"] in learner_slots or
                 entry["slot"] == args.refresh_opponent_slot):
             entry["path"] = next_checkpoint.name
             entry["sha256"] = next_sha
-        else:
-            old_artifact = (args.manifest.parent / entry["path"]).resolve()
-            if file_sha256(old_artifact) != entry["sha256"]:
-                raise ValueError(f"opponent artifact changed: slot {entry['slot']}")
+            continue
+        expected = entry["sha256"]
+        if (not isinstance(expected, str) or len(expected) != 64 or
+                any(char not in "0123456789abcdef" for char in expected)):
+            raise ValueError("frozen opponent has an invalid checkpoint digest")
+        old_artifact = (args.manifest.parent / entry["path"]).resolve(strict=True)
+        if not old_artifact.is_file() or file_sha256(old_artifact) != expected:
+            raise ValueError(f"opponent artifact changed: slot {entry['slot']}")
+        if expected not in frozen_artifacts:
+            directory = args.output / "opponents"
+            directory.mkdir(exist_ok=True)
+            destination = directory / (expected + ".model")
+            if destination.exists():
+                raise ValueError("frozen opponent output was already published")
             try:
-                entry["path"] = Path(os.path.relpath(
-                    old_artifact, args.output.resolve(),
-                )).as_posix()
-            except ValueError:
-                # Relative paths cannot span separate Windows drives.
-                entry["path"] = str(old_artifact)
+                os.link(old_artifact, destination)
+            except OSError:
+                shutil.copyfile(old_artifact, destination)
+                frozen_snapshot_copies += 1
+                frozen_snapshot_copy_bytes += destination.stat().st_size
+            # Hard links and copied files are both pinned to the manifest
+            # bytes, including if an external source is modified while read.
+            if file_sha256(destination) != expected:
+                raise ValueError(f"frozen opponent bytes changed during publication: {entry['slot']}")
+            frozen_artifacts[expected] = destination
+        entry["path"] = "opponents/" + expected + ".model"
+    frozen_snapshot_wall_seconds = time.perf_counter() - frozen_snapshot_started
     next_manifest = args.output / "manifest.json"
     with next_manifest.open("x", encoding="utf-8") as output:
         json.dump(manifest, output, indent=2)
@@ -831,6 +859,10 @@ def main():
         "next_checkpoint_sha256": next_sha,
         "next_manifest": str(next_manifest.resolve()),
         "next_manifest_sha256": file_sha256(next_manifest),
+        "frozen_opponent_snapshots": len(frozen_artifacts),
+        "frozen_opponent_snapshot_fallback_copies": frozen_snapshot_copies,
+        "frozen_opponent_snapshot_copy_bytes": frozen_snapshot_copy_bytes,
+        "frozen_opponent_snapshot_wall_seconds": frozen_snapshot_wall_seconds,
         "optimizer_device": str(device),
         "optimizer_torch_intraop_threads": torch.get_num_threads(),
         "optimizer_torch_interop_threads": torch.get_num_interop_threads(),
