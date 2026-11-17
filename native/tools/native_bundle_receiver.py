@@ -35,12 +35,27 @@ TOKEN_ENV = "BEES_NATIVE_BUNDLE_TOKEN"
 DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
-def bundle_token():
-    token = os.environ.get(TOKEN_ENV)
+def bundle_token(token_file=None):
+    if token_file is None:
+        token = os.environ.get(TOKEN_ENV)
+    else:
+        # A Hub-owned systemd/Windows service must not expose an
+        # authentication secret in frozen job arguments, process lists or
+        # the coordinator. Only this machine-local operator-owned file is
+        # opened by the worker after the resource lease starts.
+        source = Path(token_file).absolute()
+        if source.is_symlink():
+            raise ValueError("native bundle token file cannot be a symlink")
+        source = source.resolve(strict=True)
+        stat = source.stat()
+        if not source.is_file() or stat.st_size > 512 or (
+                os.name == "posix" and stat.st_mode & 0o077):
+            raise ValueError("native bundle token file must be a private regular file")
+        token = source.read_text(encoding="ascii").strip()
     if not isinstance(token, str) or not 32 <= len(token) <= 256 or any(
             character.isspace() or ord(character) < 33 or ord(character) > 126
             for character in token):
-        raise ValueError(f"{TOKEN_ENV} must be a 32-256 character printable ASCII secret")
+        raise ValueError("native bundle authentication needs a 32-256 character printable ASCII secret")
     return token
 
 
