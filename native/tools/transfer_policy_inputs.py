@@ -20,7 +20,6 @@ import tarfile
 import tempfile
 import time
 
-from native_distributed_collection import verify_bundle
 from native_training_artifacts import (
     check_learner, file_sha256, native_source_contract_sha256, sync_directory,
 )
@@ -54,7 +53,7 @@ def resolve_source(root, value):
     return (candidate if candidate.is_absolute() else root / candidate).resolve(strict=True)
 
 
-def source_files(run_path, trainer_path, checkpoint_path, manifest_path, orders, job):
+def source_files(run_path, trainer_path, checkpoint_path, manifest_path, orders):
     run_path = Path(run_path).resolve(strict=True)
     trainer_path = Path(trainer_path).resolve(strict=True)
     checkpoint_path = Path(checkpoint_path).resolve(strict=True)
@@ -143,8 +142,7 @@ def export_inputs(orders_file, collector_id, run, trainer, checkpoint, manifest,
     # second independently serialized work order.
     orders = dict(orders)
     orders["_orders_file"] = str(orders_path)
-    sources, contract = source_files(run, trainer, checkpoint, manifest, orders, job)
-    order_raw = orders_path.read_bytes()
+    sources, contract = source_files(run, trainer, checkpoint, manifest, orders)
     if sources["orders.json"] != orders_path:
         raise ValueError("issued order bytes could not be pinned")
     files = {}
