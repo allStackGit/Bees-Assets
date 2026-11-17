@@ -49,6 +49,7 @@ struct WireCounts {
     sprite_candidate_pixels: u64,
     sprite_opaque_pixels: u64,
     sprite_blended_pixels: u64,
+    recolor_cache_peak: usize,
 }
 
 /// The existing native source-art renderer, reused for authenticated
@@ -139,7 +140,15 @@ impl RemoteArtwork {
                 ship["ship_type"].as_u64().and_then(|kind| u8::try_from(kind).ok()),
                 visual.position(ship, 0, fraction),
             ) else { continue };
-            if self.raster.remote_ship_art(kind, point, visual.heading(ship, fraction)) {
+            let color_rgb = ship["color_rgb"].as_array()
+                .filter(|rgb| rgb.len() == 3)
+                .and_then(|rgb| Some([
+                    u8::try_from(rgb[0].as_u64()?).ok()?,
+                    u8::try_from(rgb[1].as_u64()?).ok()?,
+                    u8::try_from(rgb[2].as_u64()?).ok()?,
+                ]));
+            if self.raster.remote_ship_art(kind, point,
+                visual.heading(ship, fraction), color_rgb) {
                 self.ships.insert(id);
                 stats.ship_sprite_draws += 1;
             }
@@ -148,6 +157,8 @@ impl RemoteArtwork {
         stats.sprite_candidate_pixels += candidates;
         stats.sprite_opaque_pixels += opaque;
         stats.sprite_blended_pixels += blended;
+        stats.recolor_cache_peak = stats.recolor_cache_peak
+            .max(self.raster.remote_ship_recolor_cache_size());
     }
 }
 
@@ -1259,6 +1270,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "sprite_candidate_pixels":peer.metrics.sprite_candidate_pixels,
         "sprite_opaque_pixels":peer.metrics.sprite_opaque_pixels,
         "sprite_blended_pixels":peer.metrics.sprite_blended_pixels,
+        "recolor_cache_peak":peer.metrics.recolor_cache_peak,
         "source_art_enabled":show_art,
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
