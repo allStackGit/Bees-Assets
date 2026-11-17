@@ -185,6 +185,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'remote_collector_co_limiting_count',
             'remote_collector_exposed_wait_seconds',
             'remote_collector_exposed_wait_owner',
+            'remote_transport_connected_collectors',
+            'remote_transport_reused_collectors',
+            'remote_transport_connect_max_seconds',
+            'remote_transport_connect_owner',
+            'pipeline_remote_connection_reuse_ratio',
+            'pipeline_remote_connect_pressure',
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
             'training_remote_gap_pressure','training_remote_codec_pressure',
@@ -329,6 +335,15 @@ class BottleneckEvidence {
             const ownerWait=Number.isSafeInteger(candidate)&&candidate>0&&
                 candidate<MAX_TINYBRAINS_COLLECTORS
                 ?seconds('collector_'+candidate+'_wait_after_local_seconds'):null;
+            const connected=metrics.remote_transport_connected_collectors;
+            const reused=metrics.remote_transport_reused_collectors;
+            const validCount=value=>value?.unit==='count'&&
+                Number.isSafeInteger(value.value)&&value.value>=0;
+            const remoteUses=validCount(connected)&&validCount(reused)
+                ?connected.value+reused.value:null;
+            if(remoteUses>0)
+                add('pipeline_remote_connection_reuse_ratio',
+                    reused.value/remoteUses);
             const remoteCompeting=(remoteCoLimit?.unit==='count'&&
                 Number.isSafeInteger(remoteCoLimit.value)&&
                 remoteCoLimit.value>=2&&remotePending?.unit==='count'&&
@@ -347,6 +362,19 @@ class BottleneckEvidence {
                 Math.abs(ownerWait-remoteExposed)<=
                     Math.max(1e-6,remoteExposed*0.001))
                     ?candidate:null;
+            // A slow TCP connect is relevant to the experiment only if its
+            // original authenticated owner also uniquely extends the local
+            // collection barrier. The timing includes DNS and TCP setup,
+            // not physical network bandwidth or saturation evidence.
+            const connectSeconds=seconds('remote_transport_connect_max_seconds');
+            const connectOwner=metrics.remote_transport_connect_owner?.value;
+            const remoteConnectCritical=remoteOwner!==null&&
+                validCount(connected)&&connected.value>=1&&
+                Number.isSafeInteger(connectOwner)&&
+                connectOwner===remoteOwner&&connectSeconds!==null&&
+                connectSeconds>=0.15&&
+                connectSeconds>=0.15*collection&&
+                connectSeconds>=0.20*remoteExposed;
             if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
             const localGpuWait=seconds('local_gpu_wait_after_local_max_seconds');
             const localGpuShare=(collection>0&&localGpuWait!==null&&
@@ -488,6 +516,7 @@ class BottleneckEvidence {
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,mergeShare,
                     localGpuShare,localGpuOwner,localGpuLease,remoteOwner,remoteCompeting,
+                    remoteConnectCritical,
                     stageHints,simHints,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
@@ -531,6 +560,8 @@ class BottleneckEvidence {
                             add('pipeline_local_gpu_lease_index',lease,'count');
                     }
                 }
+                if(recent.filter(x=>x.remoteConnectCritical).length>=5)
+                    add('pipeline_remote_connect_pressure',1,'count');
                 if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
                     add('pipeline_merge_dominant',1,'count');
                 // Cross-stage capacity evidence requires *sustained* host
