@@ -2245,6 +2245,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     :measured.pipeline_timing_sample_count?.value>0
                         ?' · Bottleneck stage: insufficient sustained evidence'
                         :'';
+            const connectPressure=job.project_id==='tinybrains'&&
+                measured.pipeline_remote_connect_pressure?.value===1;
+            const connectOwner=measured.remote_transport_connect_owner?.value;
+            const connectSignal=connectPressure&&
+                Number.isSafeInteger(connectOwner)&&connectOwner>=1&&connectOwner<=16
+                ?' · Sustained remote TCP connection setup on Collector '+
+                    connectOwner+' (not evidence of network saturation)'
+                :'';
             const measuredWorkers=[];
             for(let i=0;i<9;i++) {
                 for(const stageName of ['engine','observation','inference','opponent']) {
@@ -2321,7 +2329,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
-                enginePressureSignal+courierQueueSignal+courierImbalanceSignal+resourceSignal+
+                enginePressureSignal+connectSignal+courierQueueSignal+courierImbalanceSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2380,6 +2388,12 @@ document.addEventListener('DOMContentLoaded', () => {
         'remote_collector_exposed_wait_seconds','remote_collectors_pending_after_local',
         'remote_collector_co_limiting_count',
         'remote_collector_exposed_wait_owner',
+        'remote_transport_connected_collectors',
+        'remote_transport_reused_collectors',
+        'remote_transport_connect_max_seconds',
+        'remote_transport_connect_owner',
+        'pipeline_remote_connection_reuse_ratio',
+        'pipeline_remote_connect_pressure',
         'pipeline_remote_wait_dominant','pipeline_merge_dominant',
         'pipeline_cpu_lease_pressure','pipeline_cpu_throttle_pressure',
         'pipeline_ram_lease_pressure','pipeline_gpu_host_busy_pressure',
