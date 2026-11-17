@@ -602,9 +602,13 @@ impl RemoteFogSources {
         // Non-finite source positions never covered a physical target in
         // the original squared-distance predicate either.
         sources.retain(|(point, _)| point.is_finite());
-        let indexed = sources.len() > 8;
         let largest_radius = sources.iter().fold(0.0_f32, |radius, source|
             radius.max(source.1));
+        // Extreme but finite authored sight radii can overflow f32 radius².
+        // The source predicate then treats infinity-distance pairs
+        // differently; preserve its behavior by using the old exact scan.
+        let indexed = sources.len() > 8 &&
+            (largest_radius * largest_radius).is_finite();
         if indexed {
             sources.sort_unstable_by(|left, right|
                 left.0.x.total_cmp(&right.0.x));
