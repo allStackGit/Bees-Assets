@@ -17,7 +17,8 @@ mod selection;
 mod minimap;
 mod tactical_hud;
 mod text;
-#[cfg(feature = "client")]
+// Authored mission dialogue also belongs to the headless remote host;
+// it contains no window or audio dependency.
 pub(crate) mod campaign_dialogue;
 #[cfg(feature = "client")]
 mod battle_menu;
