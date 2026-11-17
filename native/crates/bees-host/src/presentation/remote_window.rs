@@ -578,7 +578,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         "Esc cancel / disconnect",
     ];
     for (index,label) in instructions.iter().enumerate(){
-        text::draw_at(pixels,WIDTH,FIELD+14,465+index*19,label,1,MUTED);
+        text::draw_at(pixels,WIDTH,FIELD+14,455+index*18,label,1,MUTED);
     }
     if let Some(mode)=mode {
         text::draw_at(pixels,WIDTH,15,HEIGHT-55,
