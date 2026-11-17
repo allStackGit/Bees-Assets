@@ -2738,6 +2738,13 @@ fn run_battle(
     }
     let source_fixed_dt_by_level: Vec<f32> =
         source_levels.iter().map(|source| source.fixed_dt_seconds).collect();
+    // The remote headless host advances the *same* authored fixed step at
+    // game time, rather than consuming the whole training rollout instantly.
+    let remote_step_interval = if env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
+        Some(std::time::Duration::try_from_secs_f32(
+            source_levels[0].fixed_dt_seconds / source_levels[0].time_scale,
+        ).map_err(|_| invalid("remote Level time scale is not a valid wall-clock duration"))?)
+    } else { None };
     #[cfg(feature = "client")]
     // Unity's Stage.TimeScale changes how often fixed ticks execute,
     // not the physics dt passed to the common CombatWorld. Headless
@@ -2916,6 +2923,11 @@ fn run_battle(
     } else { None };
     let mut network = config.hivemind.as_ref().map(|settings|
         RunNetwork::start(settings, &config.levels, &source_fixed_dt_by_level, host.connection_mut())).transpose()?;
+    if remote_step_interval.is_some() && (config.levels.len() != 1 || playback.is_some()) {
+        return Err(invalid("remote co-op requires one live Level, not multi-world rollout or replay").into());
+    }
+    let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment()?;
+    let mut remote_deadline = Instant::now();
     println!("{}", json!({
         "kind": "run_started",
         "run_id": config.run_id,
@@ -2936,6 +2948,7 @@ fn run_battle(
         "navigation_workers_per_level": navigation_workers.unwrap_or(0),
         "timing_sample_period": config.timing_sample_period,
         "interactive_view": view,
+        "remote_play_enabled": remote.is_some(),
         "source_hivemind_commands": config.hivemind.as_ref()
             .is_some_and(|settings| settings.issue_source_commands),
         "fixed_dt_by_world": config.levels.iter()
@@ -3087,6 +3100,40 @@ fn run_battle(
                 break;
             }
         }
+        // Network co-op enters through precisely the same authoritative
+        // command dispatcher as the local window and recorded input replay.
+        // Process it at this fixed-tick boundary, never during physics.
+        if let Some(server) = &mut remote {
+            for order in server.poll() {
+                let (world_id, revision) = order.action.episode();
+                let matches = host.simulation().world(0).is_some_and(|world|
+                    world.id == world_id && world.episode_revision() == revision
+                );
+                if !matches {
+                    server.reply(order.peer, order.request_id, Err("stale world or episode"));
+                    continue;
+                }
+                #[cfg(feature = "client")]
+                if let Some(trace) = &mut input_trace {
+                    let tick = host.simulation().world(0).expect("checked remote World").tick();
+                    if let Err(error) = writeln!(trace, "{}", json!({
+                        "kind": "player_input", "round": rounds,
+                        "tick": tick, "action": &order.action,
+                    })) {
+                        failed_window = Some(format!("recording remote player input: {error}"));
+                        break 'battle;
+                    }
+                }
+                match apply_player_input(&mut host, order.action) {
+                    Ok(message) => server.reply(order.peer, order.request_id, Ok(message)),
+                    Err(error) => {
+                        server.reply(order.peer, order.request_id, Err("authoritative input failed"));
+                        failed_window = Some(error);
+                        break 'battle;
+                    }
+                }
+            }
+        }
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
             let Some(current) = host.render_world(client.selected_world()) else {
@@ -3176,6 +3223,24 @@ fn run_battle(
             }
         };
         rounds += u64::from(counts.rounds);
+        if let Some(server) = &mut remote {
+            if let Some(world) = host.render_world(0) {
+                server.broadcast(&world);
+            }
+        }
+        // An interactive remote host is real-time. Ordinary headless PPO
+        // remains unpaced and never constructs or polls this socket.
+        if !view {
+            if let Some(interval) = remote_step_interval {
+                remote_deadline += interval;
+                let now = Instant::now();
+                if remote_deadline > now {
+                    std::thread::sleep(remote_deadline - now);
+                } else if now.duration_since(remote_deadline) > interval * 4 {
+                    remote_deadline = now;
+                }
+            }
+        }
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
             client.commit_steps(counts.rounds, client_step_interval_by_level[client.selected_world()]);
@@ -3756,6 +3821,7 @@ fn run_battle(
     } else { None };
     let mut final_summary = json!({
         "kind": "run_final",
+        "remote_play": remote.as_ref().map(|server| server.measurements()),
         "run_id": config.run_id,
         "rounds": rounds,
         "throughput": {
