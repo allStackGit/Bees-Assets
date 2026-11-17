@@ -142,6 +142,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_guard_readback_max_seconds',
             'training_gpu_guard_readbacks',
             'training_gpu_snapshot_max_seconds',
+            'training_gpu_snapshot_stream_max_seconds',
             'training_gpu_snapshot_reused_lineages',
             'training_gpu_snapshot_reuse_fraction',
             'training_gpu_snapshot_work_share',
@@ -735,11 +736,23 @@ class BottleneckEvidence {
                 snapshot<=slowestOptimize?snapshot/slowestOptimize:null;
             if(snapshotShare!==null)
                 add('training_gpu_snapshot_critical_share',snapshotShare);
-            const snapshotHint=(snapshotShare!==null&&
-                snapshotShare>=0.25&&snapshot>=0.20&&
-                slowestOptimize>=0.15*wall&&
+            // CUDA/ROCm events bracket backup copies on the optimizer
+            // stream. This interval includes host dispatch gaps; neither
+            // measure is an exclusive GPU-kernel busy percentage.
+            const snapshotStream=(Number.isSafeInteger(slowest)&&
+                slowest>=0&&slowest<count)
+                ?seconds('worker_'+slowest+'_gpu_snapshot_stream_seconds'):null;
+            const streamShare=slowestOptimize>0&&snapshotStream!==null&&
+                snapshotStream<=slowestOptimize
+                ?snapshotStream/slowestOptimize:null;
+            if(streamShare!==null)
+                add('training_gpu_snapshot_stream_work_share',streamShare);
+            const snapshotHint=(
+                (snapshotShare!==null&&snapshotShare>=0.25&&snapshot>=0.20)||
+                (streamShare!==null&&streamShare>=0.25&&snapshotStream>=0.20)
+            )&&slowestOptimize>=0.15*wall&&
                 metrics.training_last_reply_worker?.value===slowest&&
-                (queueShare===null||queueShare<=0.10));
+                (queueShare===null||queueShare<=0.10);
             const guardHint=guardShare!==null&&guardShare>=0.3&&
                 guard>=0.25&&slowestOptimize>=0.15*wall;
             // Policy GPU<->CPU host transition costs from the SAME
