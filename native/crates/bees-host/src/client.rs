@@ -8,6 +8,8 @@ use bees_sim::simulation::WorldId;
 use bees_hivemind::session::SquadLifetime;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{HudAction, NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
+use crate::game_audio::{NativeGameAudio, NativeAudioMeasurements};
+use crate::unity_scene_snapshot::NativeMusicLocation;
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, NativePlayerSquadMoves,
     NativePlayerSquadFire, NativePlayerSquadCeaseFire,
     NativePlayerSquadSpecial, NativePlayerShipSpecialKind,
@@ -55,6 +57,8 @@ struct RightPress {
 pub struct NativeClient {
     window: Window,
     renderer: NativeSoftwareRenderer,
+    audio: NativeGameAudio,
+    music_locations: Vec<Option<NativeMusicLocation>>,
     bounds: Aabb,
     selected_world: usize,
     selection_owner: Option<(WorldId, u64)>,
@@ -153,7 +157,9 @@ impl NativeClient {
             WindowOptions { resize: true, ..WindowOptions::default() })?;
         window.set_target_fps(60);
         let now = Instant::now();
-        Ok(Self { window, renderer, bounds, selected_world: 0, selection_owner: None,
+        Ok(Self { window, renderer, audio: NativeGameAudio::new(),
+            music_locations: Vec::new(), bounds,
+            selected_world: 0, selection_owner: None,
             paused: false, edge_scroll_enabled: false,
             source_zoom_by_world: Vec::new(),
             next_step: now, pending_steps: 0, previous_frame: now, left_was_down: false,
@@ -265,6 +271,15 @@ impl NativeClient {
         if let Some(bounds) = bounds {
             self.renderer.camera.center = (bounds.min + bounds.max) * 0.5;
         }
+    }
+
+    pub fn set_music_locations(&mut self, locations: Vec<Option<NativeMusicLocation>>) {
+        self.music_locations = locations;
+        self.audio.select_location(self.music_locations.first().copied().flatten());
+    }
+
+    pub fn audio_measurements(&self) -> NativeAudioMeasurements {
+        self.audio.measurements()
     }
 
     pub fn selected_world(&self) -> usize { self.selected_world }
@@ -405,6 +420,12 @@ impl NativeClient {
             self.paused = !self.paused;
             self.next_step = now;
         }
+        self.audio.set_paused(self.paused);
+        if self.window.is_active() && self.window.is_key_pressed(Key::F7, KeyRepeat::No) {
+            self.input_feedback = if self.audio.toggle_muted() {
+                "Audio muted"
+            } else { "Audio enabled" };
+        }
         if self.window.is_key_pressed(Key::B, KeyRepeat::No) {
             self.renderer.show_weapon_ranges = !self.renderer.show_weapon_ranges;
         }
@@ -415,6 +436,9 @@ impl NativeClient {
         let single_step = self.paused && self.window.is_key_pressed(Key::N, KeyRepeat::No);
         if self.window.is_key_pressed(Key::Tab, KeyRepeat::No) && world_count > 1 && self.held_fire_target.is_none() {
             self.selected_world = (self.selected_world + 1) % world_count;
+            self.audio.select_location(
+                self.music_locations.get(self.selected_world).copied().flatten(),
+            );
             self.renderer.selected_ship = None;
             self.renderer.selection.clear();
             self.selection_drag = None;
@@ -1087,6 +1111,15 @@ impl NativeClient {
         }
         let render_started = Instant::now();
         let counts = self.renderer.render(&view, self.bounds);
+        // This is the visible viewport, after camera clamp/zoom and before
+        // any UI overlay. Combat audio never reads or changes world RNG.
+        let (viewport_w, viewport_h) = self.renderer.size();
+        let camera = self.renderer.camera;
+        let half = Vec2::new(viewport_w as f32, viewport_h as f32)
+            * (0.5 / camera.pixels_per_unit);
+        self.audio.observe(&view, Aabb {
+            min: camera.center - half, max: camera.center + half,
+        });
         if accepts_orders {
             self.renderer.draw_tactical_feedback(self.input_feedback);
         }
@@ -1133,7 +1166,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, O lock, E chase, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, O lock, E chase, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, F7 mute, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
