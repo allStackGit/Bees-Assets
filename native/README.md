@@ -421,10 +421,11 @@ The native server accepts one active held-fire gesture across the shared
 Level, owned by the authenticated controller that began it. Press and hold J
 with a selected squad, move the pointer within the battlefield to aim, and
 release J to stop. The host releases the live ship targets if that peer
-disconnects or the episode changes; other controllers cannot seize the
-gesture, including the local host window. End, aim and begin requests go
-through the original canonical weapon input and are counted separately in
-remote-play measurements. Up to four connections
+disconnects, its last held weapon dies, or the episode changes;
+other controllers cannot seize the gesture, including the local host
+window. Begin/aim/end requests use the original canonical weapon input;
+rejections, disconnect cleanup and no-live-weapon cleanup have separate
+remote-play counters. Up to four connections
 share **one** player-side authority.
 
 #### Independent two-player native battles
