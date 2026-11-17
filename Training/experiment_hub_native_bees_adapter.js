@@ -599,30 +599,35 @@ function createNativeBeesAdapter({
                 const output = jobRoot(context);
                 const verified = verifiedOutput(jobRound(context), output);
                 if (gallery) {
-                    // Nonblocking process invocation: the experiment agent
-                    // continues its heartbeat and Stop/Inspect delivery while
-                    // Python independently verifies the committed weights.
-                    // Never publish a gallery entry for a failed or in-flight
-                    // round. A repeated inspect is idempotent at the receipt
-                    // and game-registration boundaries.
-                    for (const file of gallerySources) {
-                        if (sha256(fs.readFileSync(file)) !== pins.get(file))
-                            throw Error('Native Bees gallery publisher changed after adapter installation.');
+                    // The verified learner checkpoint is already resumable.
+                    // A player-save permission error must never make the
+                    // coordinator misreport a valid learner as lacking its
+                    // checkpoint. Publication is an independent opt-in game
+                    // handoff; repeated Inspect requests retry it safely.
+                    // The async child leaves the agent heartbeat responsive.
+                    try {
+                        for (const file of gallerySources) {
+                            if (sha256(fs.readFileSync(file)) !== pins.get(file))
+                                throw Error('Native Bees gallery publisher changed after adapter installation.');
+                        }
+                        const gameId = 'hub-' + context.job_id;
+                        const {stdout} = await execFileAsync(executable, [
+                            '-B', publisher, run, output, gallery, gameId,
+                            String(learnerSlot), pins.get(run),
+                        ], {
+                            cwd: path.dirname(publisher),
+                            timeout: 120000,
+                            maxBuffer: 8192,
+                        });
+                        const published = JSON.parse(stdout);
+                        if (published.kind !== 'native_hub_game_registered' ||
+                            published.game_id !== gameId ||
+                            published.checkpoint_sha256 !== verified.checkpointDigest)
+                            throw Error('Native Bees gallery publication lacks verified Hub model identity.');
+                    } catch (error) {
+                        console.error('[experiment-hub-bees] Optional game-gallery publication failed for ' +
+                            context.job_id + ': ' + String(error.message || error));
                     }
-                    const gameId = 'hub-' + context.job_id;
-                    const {stdout} = await execFileAsync(executable, [
-                        '-B', publisher, run, output, gallery, gameId,
-                        String(learnerSlot), pins.get(run),
-                    ], {
-                        cwd: path.dirname(publisher),
-                        timeout: 120000,
-                        maxBuffer: 8192,
-                    });
-                    const published = JSON.parse(stdout);
-                    if (published.kind !== 'native_hub_game_registered' ||
-                        published.game_id !== gameId ||
-                        published.checkpoint_sha256 !== verified.checkpointDigest)
-                        throw Error('Native Bees gallery publication lacks verified Hub model identity.');
                 }
                 return true;
             },

@@ -543,7 +543,10 @@ checkpoint and original physical Level selection through the same
 native training. Entries are named `hub-<job UUID>`; multi-arena jobs
 offer a Level chooser in the game. Collection-only and bundle-only
 learners cannot opt into this local scene gallery, and no Hub job
-configuration can choose a different save path. A separate scheduled
+configuration can choose a different save path. Publication errors
+are logged by the machine agent and can be retried on Inspect; a
+player-save permission problem does not invalidate the Hub's
+already verified, resumable learner checkpoint. A separate scheduled
 invocation on the enrolled evaluation machine runs:
 
 ```sh
