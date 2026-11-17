@@ -377,6 +377,12 @@ impl NativeRemotePlay {
                             break;
                         }
                         let side = peer.side.expect("checked authenticated peer");
+                        // Point fire and held fire use the same peer-scoped
+                        // canonical weapon ownership. Never accept a
+                        // controller identity supplied by the network.
+                        if let NativePlayerInput::Fire(input) = &mut action {
+                            input.controller_id = peer.id;
+                        }
                         if let NativePlayerInput::HeldFire(input) = &mut action {
                             // Wire-supplied controller identifiers are never
                             // trusted. The server binds gesture identity to
