@@ -505,7 +505,11 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
             "owner": owner, "side": squad.side, "owned": owned,
             "controllable": owned && permissions.is_some_and(|p| p.can_accept_input),
             "locked_on": if owned { permissions.map(|p| p.locked_on) } else { None },
-            "members": members, "source_number": if owned { squad.source_hotkey_number } else { None },
+            "members": members,
+            "source_number": if owned { squad.source_hotkey_number } else { None },
+            // Source LevelInputManager wraps 1..0 against the original
+            // squad count, not the number of survivors visible today.
+            "original_squad_count": if owned { squad.original_squad_count } else { None },
             "command": command,
             "cease_fire": if owned { view.player_authority.player_cease_fire(owner) } else { None },
             "chasing": if owned { Some(view.player_authority.player_should_chase(owner)) } else { None },
