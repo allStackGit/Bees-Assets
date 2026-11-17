@@ -14,6 +14,7 @@ use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Instant;
 
+use bees_sim::collision::Aabb;
 use bees_sim::level_discovery::DiscoveryKind;
 use bees_sim::obstacle::ObstacleKind;
 use bees_sim::geometry::Vec2;
@@ -248,14 +249,14 @@ impl NativeRemotePlay {
         peer.flush();
     }
 
-    pub fn broadcast(&mut self, view: &NativeRenderWorldView<'_>) {
+    pub fn broadcast(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) {
         if !self.peers.iter().any(|peer| peer.authenticated) { return; }
         let episode = (view.world_id.0, view.episode_revision);
         if self.last_state == Some(episode) &&
             view.tick % STATE_EVERY_TICKS != 0 &&
             view.terminal_result.is_none() { return; }
         self.last_state = Some(episode);
-        let state = current_state(view);
+        let state = current_state(view, bounds);
         let Ok(encoded) = serde_json::to_vec(&state) else { return };
         if encoded.len() > MAX_PENDING / 2 { return; }
         for peer in &mut self.peers {
@@ -297,7 +298,7 @@ fn constant_time_matches(expected: &[u8], actual: &[u8]) -> bool {
 /// State snapshots are a read-only projection of the same live CombatWorld.
 /// Source FogOfWar restricts ship coordinates to ships actually within live
 /// friendly sight masks; previous discoveries alone do not reveal position.
-fn current_state(view: &NativeRenderWorldView<'_>) -> Value {
+fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb) -> Value {
     let viewer = view.player_authority.player_viewer_side();
     let fog = view.player_authority.player_fog_of_war_enabled();
     let sources: Vec<(Vec2, f32)> = if fog {
@@ -322,6 +323,7 @@ fn current_state(view: &NativeRenderWorldView<'_>) -> Value {
             "id": ship.entity_id,
             "side": ship.side, "ship_type": ship.ship_type,
             "x": body.motion.position.x, "y": body.motion.position.y,
+            "rotation": body.motion.rotation_degrees,
             "health": ship.vitals.health(), "max_health": ship.vitals.max_health(),
             "owned": owned, "discovered": discovered,
         }))
@@ -344,6 +346,22 @@ fn current_state(view: &NativeRenderWorldView<'_>) -> Value {
                 .or_else(|| map.map(|v| v.health)),
         }))
     }).collect();
+    // Visual-only projectiles are sampled from the authoritative physical
+    // world after the completed step, never simulated by the remote client.
+    // The source fog restricts shots just as it restricts enemy hulls.
+    let projectiles: Vec<_> = view.combat.render_projectiles().filter_map(|(shot, body)| {
+        let position = body.motion.position;
+        if fog && !sources.iter().any(|&(center, radius)|
+            (position - center).length_squared() <= radius * radius) {
+            return None;
+        }
+        Some(json!({
+            "id": shot.entity_id,
+            "type": shot.projectile_type,
+            "x": position.x, "y": position.y,
+            "rotation": body.rotation_degrees,
+        }))
+    }).collect();
     let squads: Vec<_> = view.roster.active_lifetimes().filter_map(|owner| {
         let squad = view.roster.get(owner)?;
         let owned = view.is_local_player_squad(owner);
@@ -361,7 +379,9 @@ fn current_state(view: &NativeRenderWorldView<'_>) -> Value {
         "episode_revision": view.episode_revision,
         "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
         "viewer_side": viewer,
+        "map_bounds": [[bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y]],
         "terminal_result": view.terminal_result.map(|result| result.winner_side),
         "ships": ships, "squads": squads, "obstacles": obstacles,
+        "projectiles": projectiles,
     })
 }
