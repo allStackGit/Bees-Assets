@@ -113,6 +113,11 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Unexpected GPU resources in a CPU-only Windows lease.');
     const predecessor=job.continuation_of_job_id||null,
         root=job.artifact_lineage_root_id||job.id;
+    const continuationMode=job.continuation_mode??'exact';
+    if(!['exact','curriculum'].includes(continuationMode)||
+        (continuationMode==='curriculum'&&
+            (job.project_id!=='courier'||!predecessor)))
+        throw Error('Unsupported Windows curriculum continuation mode.');
     if(!UUID.test(String(root))||
         (predecessor!==null&&(!UUID.test(String(predecessor))||
             predecessor===job.id||root===job.id))||
@@ -124,6 +129,7 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         artifact_lineage_root_id:root,continuation_of_job_id:predecessor,
+        continuation_mode:continuationMode,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(gpu?{gpu_pci_address:gpu.pci_address,gpu_cuda_uuid:gpu.cuda_uuid,
