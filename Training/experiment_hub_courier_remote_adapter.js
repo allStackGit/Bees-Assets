@@ -126,7 +126,10 @@ function createCourierRemoteLineageAdapter({
             if(crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex')!==fingerprint)
                 throw Error('Courier remote HMAC key was changed after local adapter approval.');
             const output=path.join(cache,context.job_id);
-            fs.mkdirSync(output,{recursive:false,mode:0o700});
+            // The same supervised Start can be prepared more than once. Retain
+            // the job's approved scratch directory across preflight/recovery,
+            // but never follow a redirected path.
+            fs.mkdirSync(output,{recursive:true,mode:0o700});
             if(fs.realpathSync(output)!==output||!fs.statSync(output).isDirectory())
                 throw Error('Courier remote scratch directory is not a real directory.');
             return ['-B',path.join(project,'courier_remote_lineage.py'),
