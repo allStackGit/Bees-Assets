@@ -307,25 +307,53 @@ const HUB_METRIC_DESCRIPTIONS=Object.freeze({
     truncated_groups: "Group trajectories cut short by a rollout boundary rather than normal termination. Need bootstrapping for valid PPO targets.",
 });
 const HUB_COLLECTOR_METRIC_SUFFIXES=Object.freeze({
-    ant_decisions: "Ant policy decisions generated",
-    engine_steps: "Simulation steps advanced",
-    action_target: "Requested actions in the collection interval",
-    elapsed_seconds: "Elapsed collection time in seconds",
-    rollout_engine_step_seconds: "Time spent stepping the simulator",
-    learner_inference_seconds: "Time spent running policy inference",
-    roundtrip_seconds: "End-to-end rollout request/response time",
-    model_prepare_seconds: "Time preparing or loading the policy model",
-    snapshot_cache_files: "Policy snapshot files held in the cache",
-    snapshot_cache_bytes: "Bytes of cached policy snapshots",
-    decisions_per_second: "Ant decisions generated per second",
-    engine_steps_per_second: "Simulation steps advanced per second",
+    ant_decisions: "Ant actions this worker returned. A high count matters only if it was delivered within acceptable elapsed time.",
+    engine_steps: "Simulator steps this worker completed. Compare with decisions to see how many actions each step produces.",
+    action_target: "Actions assigned to this collector for the request. A large gap to actual decisions suggests underfilled work.",
+    action_weight: "Current relative allocation weight for this collector; it sets requested work share, not measured throughput.",
+    next_action_weight: "Workload weight planned for the next request after resource tuning. Compare subsequent decisions/s to assess it.",
+    elapsed_seconds: "Worker's measured rollout duration. Denominator for its delivered decisions/s and engine steps/s when present.",
+    rollout_engine_step_seconds: "Time this collector spent advancing simulated worlds. High share means simulation is its bottleneck.",
+    learner_inference_seconds: "Time spent computing learner-policy actions. High share suggests model inference or batching limits.",
+    roundtrip_seconds: "Request-to-response duration, including transmission AND worker computation. Not a network-only latency.",
+    model_prepare_seconds: "Time preparing the policy snapshot for rollout. Frequent or slow preparation can waste collection capacity.",
+    snapshot_cache_files: "Number of model snapshot files cached by the collector. Helps spot buildup or repeated model reloads.",
+    snapshot_cache_bytes: "Size of cached model snapshots in bytes. Compare with worker RAM and storage headroom.",
+    decisions_per_second: "Delivered ant decisions ÷ elapsed collection seconds (or roundtrip if elapsed is absent); collector throughput.",
+    engine_steps_per_second: "Delivered simulation steps ÷ elapsed collection seconds (or roundtrip if absent); compare across workers.",
+    rollout_inference_batches: "Number of inference calls submitted by this collector. Many small calls can make inference overhead dominant.",
+    rollout_inference_boards: "Board observations processed by this collector's inference calls. Divide by batches to inspect batching.",
+    rollout_inference_max_batch: "Largest number of boards passed in one inference call. Shows realized peak batching.",
+    rollout_inference_mean_batch: "Average boards per inference call. Low values may explain poor device throughput despite high utilization.",
+    rollout_engine_cpu_seconds: "CPU time used by this collector's game simulator. May exceed elapsed wall time when using several cores.",
+    rollout_engine_cpu_cores: "Estimated CPU core equivalents busy in the collector's game engine; compare with its CPU lease.",
+    rollout_engine_rss_mb: "Resident memory of this collector's simulation engine, excluding unrelated worker processes.",
+    rollout_observation_encode_seconds: "Time building neural-network input observations from simulated boards. High share suggests encoding cost.",
+    rollout_opponent_inference_seconds: "Time predicting opponent actions during self-play, separate from learner inference.",
+    rollout_result_processing_seconds: "Time handling and packaging simulation results after game steps. High share limits experience throughput.",
+    remote_collect_seconds: "Time the remote worker spent actually collecting experience. Contrast with transport overhead.",
+    remote_record_encode_seconds: "Time converting collected experience into records before sending. High values suggest serialization cost.",
+    transport_connect_seconds: "Time opening the remote-worker connection. Repeated setup can dominate very small requests.",
+    transport_request_send_seconds: "Time transmitting rollout requests to this collector. Helps isolate upload overhead.",
+    transport_response_receive_seconds: "Time receiving completed experience from this collector. Large responses can bottleneck throughput.",
+    transport_record_decode_seconds: "Time decoding received experience for the learner. Measures post-transfer parsing cost.",
+});
+const HUB_LOCAL_ENGINE_METRIC_SUFFIXES=Object.freeze({
+    actions: "Ant decisions generated by this persistent local engine slot. Compare with elapsed seconds for slot throughput.",
+    elapsed_seconds: "Wall time spent on this engine slot's rollout work; denominator for its decisions/s.",
+    retiring: "Indicates that this slot is finishing work before retirement; it should not be reused for a new episode.",
+    cpu_seconds: "CPU time consumed by this local engine slot, which can exceed wall time with multithreading.",
+    rss_mb: "Resident memory used by this engine slot. Adding slots multiplies memory demand.",
+    inference_batches: "Policy-inference batches executed in this slot. Many tiny batches can waste inference overhead.",
+    inference_mean_batch: "Average number of boards per inference call for this slot. Compare across slots for batching imbalance.",
+    decisions_per_second: "Actions completed ÷ this slot's elapsed seconds; direct slot throughput for concurrency tuning.",
 });
 const HUB_GPU_METRIC_SUFFIXES=Object.freeze({
-    busy_pct: "GPU utilization percentage",
-    used_vram_mb: "Used GPU video memory in MiB",
-    temperature_c: "GPU temperature in °C",
-    hotspot_temperature_c: "GPU hotspot/junction temperature in °C",
-    power_w: "GPU board power in watts",
+    busy_pct: "Sensor-reported fraction of time this physical GPU was busy. Includes other processes; high busy alone is not high training SPS.",
+    used_vram_mb: "Total physical VRAM occupied by all processes. Use to assess headroom, not the managed job's allocated share.",
+    temperature_c: "GPU-reported device temperature. Trends matter with power and load; limits depend on the device.",
+    hotspot_temperature_c: "Hottest reported on-chip sensor. Can exceed average GPU temperature; compare with device-specific limits.",
+    power_w: "Current physical GPU power draw. Indicates load, not energy attributable to this particular job.",
 });
 function hubMetricDescription(name,units=[]) {
     if(Object.hasOwn(HUB_METRIC_DESCRIPTIONS,name))return HUB_METRIC_DESCRIPTIONS[name];
@@ -336,6 +364,10 @@ function hubMetricDescription(name,units=[]) {
     if(collector&&Object.hasOwn(HUB_COLLECTOR_METRIC_SUFFIXES,collector[2]))
         return 'Rollout collector '+collector[1]+': '+
             HUB_COLLECTOR_METRIC_SUFFIXES[collector[2]]+'.';
+    const local=/^local_engine_(\\d+)_(.+)$/.exec(name);
+    if(local&&Object.hasOwn(HUB_LOCAL_ENGINE_METRIC_SUFFIXES,local[2]))
+        return 'Local engine '+local[1]+': '+
+            HUB_LOCAL_ENGINE_METRIC_SUFFIXES[local[2]]+'.';
     const display=name.replace(/_/g,' ');
     const unit=units.length?' (units: '+units.join('/')+')':'';
     return 'Uncatalogued '+display+unit+
