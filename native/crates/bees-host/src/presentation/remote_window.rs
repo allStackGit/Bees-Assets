@@ -1,0 +1,645 @@
+//! Native remote battle window using the same read-only authoritative wire
+//! projection as the terminal client. No gameplay/physics or model state lives
+//! here. All orders use the host's existing NativePlayerInput serializer and
+//! player-side permissions; the host validates them again at tick boundaries.
+
+use std::collections::VecDeque;
+use std::error::Error;
+use std::fs;
+use std::io::{self, ErrorKind, Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::path::Path;
+use std::time::{Duration, Instant};
+
+use bees_sim::collision::Aabb;
+use bees_sim::geometry::Vec2;
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
+use serde_json::{json, Value};
+
+use super::{NativeCamera, text};
+
+const WIDTH: usize = 1180;
+const HEIGHT: usize = 720;
+const FIELD: usize = 914;
+const MAX_INCOMING: usize = 4 * 1024 * 1024;
+const MAX_OUTGOING: usize = 128 * 1024;
+const READ_BUDGET: usize = 256 * 1024;
+const TEXT: [u8; 3] = [231, 240, 250];
+const MUTED: [u8; 3] = [161, 181, 201];
+const GREEN: u32 = 0x69d2a1;
+const RED: u32 = 0xed7e85;
+const GOLD: u32 = 0xe7be69;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TargetMode { Fire, Attack, Guard, Mine }
+
+#[derive(Default)]
+struct WireCounts {
+    bytes_received: u64,
+    snapshots: u64,
+    orders_sent: u64,
+    acknowledgments: u64,
+}
+
+struct PeerClient {
+    socket: TcpStream,
+    incoming: Vec<u8>,
+    queued: VecDeque<Vec<u8>>,
+    written: usize,
+    queued_bytes: usize,
+    next_request: u64,
+    authenticated: bool,
+    connected: bool,
+    side: i32,
+    state: Option<Value>,
+    notice: String,
+    metrics: WireCounts,
+}
+
+fn invalid(message: &'static str) -> io::Error {
+    io::Error::new(ErrorKind::InvalidInput, message)
+}
+
+impl PeerClient {
+    fn connect(address: &str, token: &str, side: i32) -> Result<Self, Box<dyn Error>> {
+        let mut connection = None;
+        for candidate in address.to_socket_addrs()? {
+            match TcpStream::connect_timeout(&candidate, Duration::from_secs(5)) {
+                Ok(socket) => { connection = Some(socket); break; }
+                Err(_) => continue,
+            }
+        }
+        let mut socket = connection.ok_or_else(|| invalid("native multiplayer server unreachable"))?;
+        socket.set_nodelay(true)?;
+        let mut hello = serde_json::to_vec(&json!({"kind": "hello", "token": token}))?;
+        hello.push(b'\n');
+        socket.write_all(&hello)?;
+        socket.set_nonblocking(true)?;
+        Ok(Self {
+            socket, incoming: Vec::new(), queued: VecDeque::new(),
+            written: 0, queued_bytes: 0, next_request: 1,
+            authenticated: false, connected: true, side,
+            state: None, notice: "Authenticating with native host".to_owned(),
+            metrics: WireCounts::default(),
+        })
+    }
+
+    fn poll(&mut self) -> Result<(), Box<dyn Error>> {
+        let mut buffer = [0_u8; 32768];
+        let mut read = 0_usize;
+        while read < READ_BUDGET && self.connected {
+            match self.socket.read(&mut buffer[..buffer.len().min(READ_BUDGET - read)]) {
+                Ok(0) => { self.connected = false; self.notice = "Host disconnected".into(); break; }
+                Ok(n) => {
+                    read += n;
+                    self.metrics.bytes_received += n as u64;
+                    if self.incoming.len() + n > MAX_INCOMING {
+                        return Err(invalid("remote world snapshot exceeds client memory limit").into());
+                    }
+                    self.incoming.extend_from_slice(&buffer[..n]);
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => break,
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        // Coalescing is already performed by the authoritative host. Process
+        // only complete JSON lines; never render or apply half a message.
+        let mut start = 0;
+        for index in 0..self.incoming.len() {
+            if self.incoming[index] != b'\n' { continue; }
+            let message: Value = serde_json::from_slice(&self.incoming[start..index])?;
+            start = index + 1;
+            match message["kind"].as_str() {
+                Some("welcome") => {
+                    if message["protocol"].as_u64() != Some(1) ||
+                        message["side"].as_i64() != Some(i64::from(self.side)) {
+                        return Err(invalid("native host authenticated the wrong player side or protocol").into());
+                    }
+                    self.authenticated = true;
+                    self.notice = format!("Connected as player side {}", self.side);
+                }
+                Some("world_state") => {
+                    if !self.authenticated || message["protocol"].as_u64() != Some(1) ||
+                        message["viewer_side"].as_i64() != Some(i64::from(self.side)) {
+                        return Err(invalid("native host snapshot has the wrong player side").into());
+                    }
+                    if let Some(previous) = &self.state {
+                        if previous["world_id"] == message["world_id"] &&
+                            previous["episode_revision"] == message["episode_revision"] &&
+                            message["tick"].as_u64() < previous["tick"].as_u64() {
+                            return Err(invalid("out-of-order authoritative world snapshot").into());
+                        }
+                    }
+                    self.state = Some(message);
+                    self.metrics.snapshots += 1;
+                }
+                Some("input_result") => {
+                    self.metrics.acknowledgments += 1;
+                    self.notice = format!("Order {}: {}",
+                        message["request_id"].as_u64().unwrap_or(0),
+                        message["feedback"].as_str().unwrap_or("host acknowledgment"));
+                }
+                _ => return Err(invalid("unexpected native multiplayer protocol message").into()),
+            }
+        }
+        if start > 0 { self.incoming.drain(..start); }
+        self.flush()?;
+        Ok(())
+    }
+
+    fn order(&mut self, selected: &[i64], kind: &str, fields: Value) -> Result<(), Box<dyn Error>> {
+        if !self.authenticated || !self.connected { return Err(invalid("not connected to native host").into()); }
+        let Some(state) = self.state.as_ref() else { return Err(invalid("native battle has no snapshot").into()) };
+        let owners: Vec<_> = state["squads"].as_array().into_iter().flatten()
+            .filter(|squad| squad["owned"] == true &&
+                squad["controllable"] == true &&
+                selected.contains(&squad["owner"]["squad_id"].as_i64().unwrap_or(-1)))
+            .map(|squad| squad["owner"].clone()).collect();
+        if owners.is_empty() { return Err(invalid("select a live controllable friendly squad").into()); }
+        let mut input = json!({
+            "world_id": state["world_id"],
+            "episode_revision": state["episode_revision"],
+            "squads": owners,
+        });
+        let object = fields.as_object().ok_or_else(|| invalid("invalid native action fields"))?;
+        for (key, value) in object { input[key] = value.clone(); }
+        let mut packet = serde_json::to_vec(&json!({
+            "kind": "input", "request_id": self.next_request,
+            "action": {"kind": kind, "input": input},
+        }))?;
+        packet.push(b'\n');
+        if self.queued_bytes + packet.len() > MAX_OUTGOING {
+            return Err(invalid("outgoing native orders exceed pending network budget").into());
+        }
+        self.queued_bytes += packet.len();
+        self.queued.push_back(packet);
+        self.next_request = self.next_request.checked_add(1)
+            .ok_or_else(|| invalid("native multiplayer request ID exhausted"))?;
+        self.metrics.orders_sent += 1;
+        self.notice = format!("Sent {kind} for {} selected squads", owners.len());
+        self.flush()?;
+        Ok(())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let mut budget = 64 * 1024;
+        while budget > 0 && self.connected {
+            let Some(front) = self.queued.front() else { break };
+            let end = (self.written + budget).min(front.len());
+            match self.socket.write(&front[self.written..end]) {
+                Ok(0) => { self.connected = false; self.notice = "Host disconnected".into(); break; }
+                Ok(n) => {
+                    budget -= n;
+                    self.written += n;
+                    if self.written == front.len() {
+                        self.queued_bytes -= front.len();
+                        self.queued.pop_front();
+                        self.written = 0;
+                    }
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => break,
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+}
+
+fn position(value: &Value) -> Option<Vec2> {
+    let x = value["x"].as_f64()? as f32;
+    let y = value["y"].as_f64()? as f32;
+    (x.is_finite() && y.is_finite()).then_some(Vec2::new(x, y))
+}
+
+fn bounds(state: &Value) -> Option<Aabb> {
+    let points = state["map_bounds"].as_array()?;
+    if points.len() != 2 { return None; }
+    let point = |p: &Value| -> Option<Vec2> {
+        let coordinates = p.as_array()?;
+        if coordinates.len() != 2 { return None; }
+        let x = coordinates[0].as_f64()? as f32;
+        let y = coordinates[1].as_f64()? as f32;
+        (x.is_finite() && y.is_finite()).then_some(Vec2::new(x, y))
+    };
+    let min = point(&points[0])?;
+    let max = point(&points[1])?;
+    (min.x < max.x && min.y < max.y).then_some(Aabb {min, max})
+}
+
+fn screen(camera: NativeCamera, point: Vec2) -> (i32, i32) {
+    let x = FIELD as f32 * 0.5 + (point.x - camera.center.x) * camera.pixels_per_unit;
+    let y = HEIGHT as f32 * 0.5 - (point.y - camera.center.y) * camera.pixels_per_unit;
+    // Keep hostile or corrupted positional data from causing unbounded draw
+    // loops before the actual pixel plotter clips the viewport.
+    (x.clamp(-2000.0, 2000.0) as i32, y.clamp(-2000.0, 2000.0) as i32)
+}
+
+fn plot(pixels: &mut [u32], x: i32, y: i32, color: u32) {
+    if x >= 0 && x < FIELD as i32 && y >= 0 && y < HEIGHT as i32 {
+        pixels[y as usize * WIDTH + x as usize] = color;
+    }
+}
+fn line(pixels: &mut [u32], from: (i32,i32), to: (i32,i32), color: u32) {
+    let (mut x, mut y) = from;
+    let (end_x, end_y) = to;
+    let dx = (end_x - x).abs();
+    let dy = -(end_y - y).abs();
+    let step_x = if x < end_x {1} else {-1};
+    let step_y = if y < end_y {1} else {-1};
+    let mut error = dx + dy;
+    for _ in 0..8002 {
+        plot(pixels, x, y, color);
+        if x == end_x && y == end_y { break; }
+        let doubled = error * 2;
+        if doubled >= dy { error += dy; x += step_x; }
+        if doubled <= dx { error += dx; y += step_y; }
+    }
+}
+fn circle(pixels: &mut [u32], (x,y): (i32,i32), radius: i32, color: u32) {
+    for dy in -radius..=radius {
+        for dx in -radius..=radius {
+            if dx*dx + dy*dy <= radius*radius { plot(pixels,x+dx,y+dy,color); }
+        }
+    }
+}
+fn outline(pixels: &mut [u32], x: i32,y: i32, w: i32,h: i32,color: u32) {
+    line(pixels,(x,y),(x+w,y),color);
+    line(pixels,(x+w,y),(x+w,y+h),color);
+    line(pixels,(x+w,y+h),(x,y+h),color);
+    line(pixels,(x,y+h),(x,y),color);
+}
+
+fn squad_for_ship<'a>(state: &'a Value, id: i64, owned: bool) -> Option<&'a Value> {
+    state["squads"].as_array()?.iter().find(|squad|
+        squad["owned"] == owned &&
+        squad["members"].as_array().is_some_and(|members|
+            members.iter().any(|member| member.as_i64() == Some(id))))
+}
+fn hit<'a>(state: &'a Value, camera: NativeCamera, x:i32,y:i32)
+    -> Option<(&'static str, &'a Value)> {
+    let mut choice = None;
+    let mut best = 18 * 18;
+    for kind in ["ships", "obstacles"] {
+        for item in state[kind].as_array().into_iter().flatten() {
+            let Some(point) = position(item) else { continue };
+            let (sx,sy)=screen(camera, point);
+            let distance = (sx-x).pow(2)+(sy-y).pow(2);
+            if distance < best {
+                choice=Some((if kind == "ships" {"ship"} else {"obstacle"}, item));
+                best = distance;
+            }
+        }
+    }
+    choice
+}
+
+fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
+    selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>, metrics: &WireCounts) {
+    pixels.fill(0x080f1a);
+    pixels.iter_mut().enumerate().for_each(|(index, pixel)| {
+        if index % WIDTH >= FIELD { *pixel = 0x152439; }
+    });
+    text::draw_at(pixels, WIDTH, FIELD + 14, 18, "BEES NATIVE", 2, TEXT);
+    text::draw_at(pixels, WIDTH, FIELD + 14, 57,
+        &format!("Remote player side {side}"), 1, MUTED);
+    if let (Some(state), Some(camera)) = (state,camera) {
+        if let Some(map) = bounds(state) {
+            let a=screen(camera,map.min);
+            let b=screen(camera,map.max);
+            outline(pixels,a.0,b.1,b.0-a.0,a.1-b.1,0x395772);
+        }
+        for obj in state["obstacles"].as_array().into_iter().flatten() {
+            if let Some(point)=position(obj) {
+                let coord=screen(camera,point);
+                circle(pixels,coord,5,if obj["mining"]==true {GOLD} else {0x7d92aa});
+            }
+        }
+        for shot in state["projectiles"].as_array().into_iter().flatten() {
+            if let Some(point)=position(shot) { circle(pixels,screen(camera,point),2,0xf8d798); }
+        }
+        for ship in state["ships"].as_array().into_iter().flatten() {
+            let Some(point)=position(ship) else { continue };
+            let center=screen(camera,point);
+            let friendly=ship["owned"]==true;
+            let color=if friendly {GREEN} else {RED};
+            let angle=(ship["rotation"].as_f64().unwrap_or(0.0) as f32).to_radians();
+            let (sin,cos)=angle.sin_cos();
+            let tip=(center.0+(cos*12.0) as i32,center.1-(sin*12.0) as i32);
+            let left=(center.0+((-cos*7.0-sin*7.0) as i32),
+                      center.1-((-sin*7.0+cos*7.0) as i32));
+            let right=(center.0+((-cos*7.0+sin*7.0) as i32),
+                       center.1-((-sin*7.0-cos*7.0) as i32));
+            line(pixels,tip,left,color);line(pixels,left,right,color);line(pixels,right,tip,color);
+            let health=ship["health"].as_f64().unwrap_or(0.0);
+            let maximum=ship["max_health"].as_f64().unwrap_or(1.0).max(1.0);
+            if health.is_finite() && maximum.is_finite() {
+                line(pixels,(center.0-10,center.1+14),(center.0+10,center.1+14),0x4f6377);
+                line(pixels,(center.0-10,center.1+14),
+                     (center.0-10+(20.0*(health/maximum).clamp(0.0,1.0)) as i32,center.1+14),
+                     color);
+            }
+            if friendly {
+                if let Some(squad)=squad_for_ship(state,ship["id"].as_i64().unwrap_or(-1),true) {
+                    let id=squad["owner"]["squad_id"].as_i64().unwrap_or(-1);
+                    if selected.contains(&id) {
+                        outline(pixels,center.0-15,center.1-17,30,34,0xf9f0a1);
+                    }
+                }
+                if let Some(destination)=ship["destination"].as_array() {
+                    if destination.len()==2 {
+                        if let (Some(x),Some(y))=(destination[0].as_f64(),destination[1].as_f64()) {
+                            let dest=Vec2::new(x as f32,y as f32);
+                            if dest.is_finite() {line(pixels,center,screen(camera,dest),0x2d6070);}
+                        }
+                    }
+                }
+            }
+        }
+        text::draw_at(pixels, WIDTH, FIELD+14, 90,
+            &format!("World {}  Tick {}",state["world_id"],state["tick"]),1,TEXT);
+        let friendly=state["squads"].as_array().into_iter().flatten().filter(|s|s["owned"]==true).count();
+        text::draw_at(pixels, WIDTH, FIELD+14, 111,
+            &format!("Squads {friendly}   Selected {}",selected.len()),1,MUTED);
+        for (index,squad) in state["squads"].as_array().into_iter().flatten()
+            .filter(|s|s["owned"]==true).take(12).enumerate() {
+            let id=squad["owner"]["squad_id"].as_i64().unwrap_or(-1);
+            let label=format!("{} ID {}: {} ships",if selected.contains(&id) {">"} else {" "},
+                id,squad["members"].as_array().map_or(0,Vec::len));
+            text::draw_at(pixels, WIDTH, FIELD+14, 150+index*22,
+                text::fit(&label,FIELD.saturating_sub(20)),1,
+                if selected.contains(&id){TEXT}else{MUTED});
+        }
+        if !state["terminal_result"].is_null() {
+            text::draw_at(pixels,WIDTH,16,20,
+                &format!("Result: winner side {}",state["terminal_result"]),2,[255,210,129]);
+        }
+    } else {
+        text::draw_at(pixels,WIDTH,30,30,"Waiting for authoritative battle state",2,TEXT);
+    }
+    let instructions=[
+        "Left: select   Shift: add",
+        "Drag: select multiple",
+        "Right: move/attack/mine",
+        "A all     F point fire",
+        "G guard  M mine  T attack",
+        "H hold   Z cease fire",
+        "C chase  L lock on",
+        "V speed  R reset camera",
+        "+/- zoom   Arrows pan",
+        "Esc disconnect",
+    ];
+    for (index,label) in instructions.iter().enumerate(){
+        text::draw_at(pixels,WIDTH,FIELD+14,465+index*19,label,1,MUTED);
+    }
+    if let Some(mode)=mode {
+        text::draw_at(pixels,WIDTH,15,HEIGHT-55,
+            match mode {
+                TargetMode::Fire=>"Click map to FIRE, Esc cancels",
+                TargetMode::Attack=>"Click visible enemy squad to ATTACK",
+                TargetMode::Guard=>"Click friendly squad to GUARD",
+                TargetMode::Mine=>"Click mining asteroid to MINE",
+            },1,[255,221,151]);
+    }
+    text::draw_at(pixels,WIDTH,10,HEIGHT-25,text::fit(notice,FIELD-20),1,TEXT);
+    text::draw_at(pixels,WIDTH,FIELD+14,HEIGHT-24,
+        &format!("RX {} KiB  updates {}",metrics.bytes_received/1024,metrics.snapshots),1,MUTED);
+}
+
+fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
+    x: i32,y: i32, mode: Option<TargetMode>) -> Result<(),Box<dyn Error>> {
+    if x<0||x>=FIELD as i32||y<0||y>=HEIGHT as i32{return Ok(())}
+    let Some(state)=peer.state.as_ref() else{return Ok(())};
+    let hit=hit(state,camera,x,y);
+    let action=match (mode,hit) {
+        (Some(TargetMode::Attack),Some(("ship",target))) |
+        (None,Some(("ship",target))) if target["owned"]==false => {
+            let Some(squad)=squad_for_ship(state,target["id"].as_i64().unwrap_or(-1),false) else {
+                return Err(invalid("enemy target has no visible squad").into())
+            };
+            ("support",json!({"action":{"Attack":{"target":squad["owner"]}}}))
+        }
+        (Some(TargetMode::Guard),Some(("ship",target))) |
+        (None,Some(("ship",target))) if target["owned"]==true => {
+            let Some(squad)=squad_for_ship(state,target["id"].as_i64().unwrap_or(-1),true) else {
+                return Err(invalid("friendly target has no visible squad").into())
+            };
+            ("support",json!({"action":{"Guard":{"target":squad["owner"]}}}))
+        }
+        (Some(TargetMode::Mine),Some(("obstacle",target))) |
+        (None,Some(("obstacle",target))) if target["mining"]==true => {
+            ("support",json!({"action":{"Mining":{"asteroid_id":target["id"]}}}))
+        }
+        (Some(TargetMode::Attack|TargetMode::Guard|TargetMode::Mine),_) =>
+            return Err(invalid("select a matching visible target").into()),
+        (Some(TargetMode::Fire),_) => {
+            let point=camera.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
+            ("fire",json!({"target":{"x":point.x,"y":point.y}}))
+        }
+        (None,_) => {
+            let point=camera.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
+            ("move",json!({"destination":{"x":point.x,"y":point.y}}))
+        }
+    };
+    peer.order(selected,action.0,action.1)
+}
+
+pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
+    -> Result<(), Box<dyn Error>> {
+    if !(1..=2).contains(&expected_side) {
+        return Err(invalid("remote player side must be 1 or 2").into());
+    }
+    let link=fs::symlink_metadata(token_file)?;
+    if link.file_type().is_symlink()||!link.is_file()||link.len()>512 {
+        return Err(invalid("remote token must be a private regular file").into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if link.permissions().mode() & 0o077 != 0 {
+            return Err(invalid("remote player token must have private file permissions").into());
+        }
+    }
+    let secret=fs::read_to_string(token_file)?;
+    let token=secret.trim();
+    if !(24..=256).contains(&token.len()) ||token.chars().any(char::is_control) {
+        return Err(invalid("invalid native multiplayer token").into());
+    }
+    let mut peer=PeerClient::connect(address,token,expected_side)?;
+    let mut window=Window::new("Bees | Native Multiplayer",WIDTH,HEIGHT,
+        WindowOptions::default())?;
+    window.set_target_fps(30);
+    let mut pixels=vec![0;WIDTH*HEIGHT];
+    let mut camera:Option<NativeCamera>=None;
+    let mut current_episode=(0_u64,0_u64);
+    let mut selected:Vec<i64>=Vec::new();
+    let mut mode:Option<TargetMode>=None;
+    let mut last_left=false;
+    let mut last_right=false;
+    let mut drag_start:Option<(i32,i32)>=None;
+    let mut last_middle:Option<(f32,f32)>=None;
+    let started=Instant::now();
+
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        peer.poll()?;
+        if let Some(state)=peer.state.as_ref() {
+            let episode=(state["world_id"].as_u64().unwrap_or(0),
+                         state["episode_revision"].as_u64().unwrap_or(0));
+            if let Some(map)=bounds(state) {
+                if camera.is_none()||episode !=current_episode {
+                    camera=Some(NativeCamera::fit(map,FIELD,HEIGHT));
+                    current_episode=episode;
+                    selected.clear();
+                    mode=None;
+                }
+            }
+            selected.retain(|id|state["squads"].as_array().into_iter().flatten()
+                .any(|s|s["owned"]==true &&
+                    s["owner"]["squad_id"].as_i64()==Some(*id)));
+        }
+        if let Some(mut cam)=camera {
+            let keys=window.get_keys_pressed(KeyRepeat::No);
+            for key in keys {
+                let send=match key {
+                    Key::A => {
+                        if let Some(state)=peer.state.as_ref() {
+                            selected=state["squads"].as_array().into_iter().flatten()
+                                .filter(|s|s["owned"]==true)
+                                .filter_map(|s|s["owner"]["squad_id"].as_i64()).collect();
+                        }
+                        None
+                    }
+                    Key::F=>{mode=Some(TargetMode::Fire);None}
+                    Key::T=>{mode=Some(TargetMode::Attack);None}
+                    Key::G=>{mode=Some(TargetMode::Guard);None}
+                    Key::M=>{mode=Some(TargetMode::Mine);None}
+                    Key::R=>{
+                        if let Some(map)=peer.state.as_ref().and_then(bounds) {
+                            camera=Some(NativeCamera::fit(map,FIELD,HEIGHT));
+                        }
+                        None
+                    }
+                    Key::H=>Some(("support",json!({"action":"Hold"}))),
+                    Key::Z=>Some(("cease_fire",json!({
+                        "cease_fire": !selected.iter().filter_map(|id|
+                            peer.state.as_ref()?.get("squads")?.as_array()?.iter().find(|s|
+                                s["owner"]["squad_id"].as_i64()==Some(*id)))
+                            .next().and_then(|s|s["cease_fire"].as_bool()).unwrap_or(false)
+                    }))),
+                    Key::C=>Some(("chase",json!({
+                        "chasing": !selected.iter().filter_map(|id|
+                            peer.state.as_ref()?.get("squads")?.as_array()?.iter().find(|s|
+                                s["owner"]["squad_id"].as_i64()==Some(*id)))
+                            .next().and_then(|s|s["chasing"].as_bool()).unwrap_or(false)
+                    }))),
+                    Key::L=>Some(("lock_on",json!({"locked":true}))),
+                    Key::V=>Some(("match_speed",json!({"match_speed":true}))),
+                    _=>None,
+                };
+                if let Some((name,fields))=send {
+                    if let Err(error)=peer.order(&selected,name,fields) {
+                        peer.notice=error.to_string();
+                    }
+                }
+            }
+            let pan=24.0/cam.pixels_per_unit;
+            if window.is_key_down(Key::Up){cam.center.y+=pan;}
+            if window.is_key_down(Key::Down){cam.center.y-=pan;}
+            if window.is_key_down(Key::Left){cam.center.x-=pan;}
+            if window.is_key_down(Key::Right){cam.center.x+=pan;}
+            if let Some((_,wheel))=window.get_scroll_wheel(){
+                if wheel!=0.0 {cam.zoom_at((1.15_f32).powf(wheel),FIELD as f32/2.0,
+                    HEIGHT as f32/2.0,FIELD,HEIGHT,None);}
+            }
+            if window.is_key_down(Key::Equal){cam.zoom_at(1.035,FIELD as f32/2.0,
+                HEIGHT as f32/2.0,FIELD,HEIGHT,None);}
+            if window.is_key_down(Key::Minus){cam.zoom_at(1.0/1.035,
+                FIELD as f32/2.0,HEIGHT as f32/2.0,FIELD,HEIGHT,None);}
+            if let Some(map)=peer.state.as_ref().and_then(bounds) {
+                cam.constrain_to_map(map,FIELD,HEIGHT);
+            }
+            let mouse=window.get_mouse_pos(MouseMode::Discard);
+            let left=window.get_mouse_down(MouseButton::Left);
+            let right=window.get_mouse_down(MouseButton::Right);
+            let middle=window.get_mouse_down(MouseButton::Middle);
+            if middle {
+                if let (Some((x,y)),Some((old_x,old_y)))=(mouse,last_middle) {
+                    cam.center.x-=(x-old_x)/cam.pixels_per_unit;
+                    cam.center.y+=(y-old_y)/cam.pixels_per_unit;
+                }
+                last_middle=mouse;
+            }else{last_middle=None;}
+            if let Some((x,y))=mouse {
+                let (x,y)=(x as i32,y as i32);
+                if left&&!last_left&&x>=0&&x<FIELD as i32 {
+                    drag_start=Some((x,y));
+                }
+                if !left&&last_left {
+                    if let Some((sx,sy))=drag_start.take() {
+                        if let Some(state)=peer.state.as_ref() {
+                            let additive=window.is_key_down(Key::LeftShift)||
+                                window.is_key_down(Key::RightShift);
+                            let mut additions=Vec::new();
+                            if (x-sx).abs()+(y-sy).abs()>8 {
+                                for ship in state["ships"].as_array().into_iter().flatten(){
+                                    if ship["owned"]!=true {continue;}
+                                    let Some(p)=position(ship) else {continue;};
+                                    let (px,py)=screen(cam,p);
+                                    if px>=sx.min(x)&&px<=sx.max(x)&&
+                                        py>=sy.min(y)&&py<=sy.max(y) {
+                                        if let Some(squad)=squad_for_ship(state,
+                                            ship["id"].as_i64().unwrap_or(-1),true){
+                                            if let Some(id)=squad["owner"]["squad_id"].as_i64(){
+                                                if !additions.contains(&id){additions.push(id);}
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if let Some(("ship",ship))=hit(state,cam,x,y) {
+                                if ship["owned"]==true {
+                                    if let Some(squad)=squad_for_ship(state,
+                                        ship["id"].as_i64().unwrap_or(-1),true) {
+                                        if let Some(id)=squad["owner"]["squad_id"].as_i64() {
+                                            additions.push(id);
+                                        }
+                                    }
+                                }
+                            }
+                            if !additive {selected.clear();}
+                            for id in additions {
+                                if !selected.contains(&id){selected.push(id);}
+                            }
+                        }
+                    }
+                    if mode.is_some() {
+                        if let Err(error)=order_at(&mut peer,&selected,cam,x,y,mode) {
+                            peer.notice=error.to_string();
+                        } else {mode=None;}
+                    }
+                }
+                if right&&!last_right {
+                    if let Err(error)=order_at(&mut peer,&selected,cam,x,y,None) {
+                        peer.notice=error.to_string();
+                    }
+                }
+            }
+            last_left=left;last_right=right;
+            camera=Some(cam);
+        }
+        draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
+            expected_side,mode,&peer.metrics);
+        window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
+    }
+    println!("{}",json!({
+        "kind":"native_multiplayer_client_final",
+        "side":expected_side,
+        "session_wall_seconds":started.elapsed().as_secs_f64(),
+        "bytes_received":peer.metrics.bytes_received,
+        "snapshots_rendered":peer.metrics.snapshots,
+        "orders_sent":peer.metrics.orders_sent,
+        "order_acknowledgments":peer.metrics.acknowledgments,
+        "connection_closed":!peer.connected,
+    }));
+    Ok(())
+}
