@@ -432,6 +432,39 @@ function createTinyBrainsPersistentDockerAdapter({
     if(originalSpec?.model_config?.training?.algorithm!=='colony_ppo'||
         !Number.isSafeInteger(originalSpec.self_play_updates))
         throw Error('Original run is not the approved persistent colony-PPO lineage.');
+    const sourceMaps=originalSpec.model_config?.environment?.maps;
+    const sourceTurns=originalSpec.model_config?.environment?.max_turns;
+    if(!Array.isArray(sourceMaps)||!sourceMaps.length||sourceMaps.length>128||
+        sourceMaps.some(map=>typeof map!=='string'||!map||map.length>512)||
+        new Set(sourceMaps).size!==sourceMaps.length||
+        !Number.isSafeInteger(sourceTurns)||sourceTurns<1||sourceTurns>1000)
+        throw Error('Original TinyBrains training map inventory is invalid.');
+    const basename=map=>map.replace(/\\/g,'/').split('/').at(-1);
+    const isTwoPlayer=map=>map==='basic-tiny-2p'||/-2p(?:-|\\.|$)/.test(basename(map));
+    const isTiny=map=>map==='basic-tiny-2p'||/^tiny(?:wide)?-/.test(basename(map));
+    const isSmall=map=>isTiny(map)||/^small(?:wide)?-/.test(basename(map));
+    function approvedStage(name) {
+        if(name===undefined)return null; // No stage preserves legacy training behavior.
+        const filters={
+            basic_tiny:map=>map==='basic-tiny-2p',
+            tiny_two_player:map=>isTwoPlayer(map)&&isTiny(map),
+            small_two_player:map=>isTwoPlayer(map)&&isSmall(map),
+            all_two_player:isTwoPlayer,
+            full_multiplayer:()=>true,
+        };
+        if(!Object.hasOwn(filters,name))
+            throw Error('Unknown trusted TinyBrains curriculum stage.');
+        const maps=sourceMaps.filter(filters[name]);
+        if(!maps.length||name==='basic_tiny'&&maps.length!==1)
+            throw Error('The approved TinyBrains curriculum stage has no matching maps.');
+        const limit={
+            basic_tiny:300,tiny_two_player:300,small_two_player:500,
+            all_two_player:750,full_multiplayer:sourceTurns,
+        }[name];
+        return {name,maps,max_turns:Math.min(sourceTurns,limit)};
+    }
+    const stageSupport=fs.readFileSync(path.join(project,'src/ants_mapoca/learning_path.py'),'utf8')
+        .includes('--hub-stage-json');
     // Do not advertise editable hyperparameters unless the installed project
     // runtime actually consumes overrides from the resumed checkpoint.
     const learningPath=path.join(project,'src/ants_mapoca/learning_path.py');
@@ -458,6 +491,23 @@ function createTinyBrainsPersistentDockerAdapter({
         if(strict&&(expected===undefined||
             JSON.stringify(actual)!==JSON.stringify(expected)))
             throw Error('TinyBrains checkpoint Design differs from its frozen job.');
+    }
+
+    function checkpointStage(out,expectedName=undefined) {
+        const file=path.join(out,'hub-curriculum-stage.json');
+        if(!fs.existsSync(file)) {
+            if(typeof expectedName==='string')
+                throw Error('Missing frozen TinyBrains curriculum stage.');
+            return;
+        }
+        const stat=fs.lstatSync(file);
+        if(!stat.isFile()||fs.realpathSync(file)!==file||stat.size>16384)
+            throw Error('Invalid TinyBrains frozen curriculum manifest.');
+        const value=JSON.parse(fs.readFileSync(file,'utf8'));
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+            JSON.stringify(value)!==JSON.stringify(approvedStage(value.name))||
+            expectedName===null||typeof expectedName==='string'&&expectedName!==value.name)
+            throw Error('TinyBrains frozen curriculum stage differs from approved inputs.');
     }
 
     function frozenRemoteKeyIntact() {
@@ -490,6 +540,7 @@ function createTinyBrainsPersistentDockerAdapter({
             !frozenEvidenceIntact(out))
             throw Error('Finished TinyBrains job does not have its original frozen lineage and checkpoint.');
         checkpointDesign(out,overrides,strict);
+        checkpointStage(out);
         const status=JSON.parse(fs.readFileSync(path.join(out,'status.json'),'utf8'));
         const start=JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8'));
         if(!Number.isSafeInteger(start.update)||start.update<1||
@@ -569,15 +620,19 @@ function createTinyBrainsPersistentDockerAdapter({
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
                 rollout_action_weights,import_checkpoint,import_checkpoint_sha256,
-                design_overrides,design_source_sha256}=parameters;
+                design_overrides,design_source_sha256,training_stage}=parameters;
             approvedDesign(design_overrides);
+            if(training_stage!==undefined&&!stageSupport)
+                throw Error('Install the approved TinyBrains curriculum-capable runtime before selecting a map stage.');
+            const stage=approvedStage(training_stage);
             const item=approved.get(profile);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','remote_rollouts','rollout_action_weights',
-                    'import_checkpoint','import_checkpoint_sha256','design_overrides','design_source_sha256'].includes(k))||
+                    'import_checkpoint','import_checkpoint_sha256','design_overrides','design_source_sha256',
+                    'training_stage'].includes(k))||
                 (design_overrides===undefined
                     ?design_source_sha256!==undefined
                     :design_source_sha256!==designSourceSha256)||
@@ -638,6 +693,7 @@ function createTinyBrainsPersistentDockerAdapter({
                     !frozenEvidenceIntact(out))
                     throw Error('Previously launched or changed Hub training output cannot be re-used.');
                 checkpointDesign(out,design_overrides,true);
+                checkpointStage(out,training_stage??null);
 
             }else{
                 fs.mkdirSync(out,{mode:0o700});
@@ -649,6 +705,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 if(design_overrides!==undefined)
                     fs.writeFileSync(path.join(out,'hub-design-overrides.json'),
                         JSON.stringify(design_overrides)+'\n',{flag:'wx',mode:0o600});
+                if(stage)
+                    fs.writeFileSync(path.join(out,'hub-curriculum-stage.json'),
+                        JSON.stringify(stage)+'\n',{flag:'wx',mode:0o600});
                 fs.writeFileSync(path.join(out,'hub-start-update.json'),
                     JSON.stringify({update:startingUpdate})+'\n',{flag:'wx',mode:0o600});
             }
@@ -663,6 +722,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
+                ...(stage?['--hub-stage-json',JSON.stringify(stage)]:[]),
                 ...(design_overrides===undefined?[]:
                     ['--hub-design-overrides-file',
                         JOBS_IN+'/'+context.job_id+'/hub-design-overrides.json',
@@ -689,13 +749,17 @@ function createTinyBrainsPersistentDockerAdapter({
             if(!item||item.sha256!==context.frozen_parameters?.profile_sha256)
                 throw Error('Unknown approved checkpoint profile.');
             checkpointReady(targetFor(context),item.text,context.frozen_parameters?.design_overrides,true);
+            checkpointStage(targetFor(context),context.frozen_parameters?.training_stage??null);
             return true;
         },
         model_checkpoint_sha256(context){
             const item=approved.get(context.frozen_parameters?.profile);
             if(!item||item.sha256!==context.frozen_parameters?.profile_sha256)
                 throw Error('Unknown approved checkpoint profile.');
-            return modelFileSha256(checkpointReady(targetFor(context),item.text,context.frozen_parameters?.design_overrides,true));
+            const out=targetFor(context);
+            const file=checkpointReady(out,item.text,context.frozen_parameters?.design_overrides,true);
+            checkpointStage(out,context.frozen_parameters?.training_stage??null);
+            return modelFileSha256(file);
         },
         readProgress(context){
             const file=path.join(targetFor(context),'self-play/history.jsonl');
