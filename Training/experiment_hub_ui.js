@@ -4425,8 +4425,111 @@ document.addEventListener('DOMContentLoaded', () => {
     distributedPanel.append(distributedLegend,distributedMachineLabel,
         distributedBudgetsLabel,distributedDetails,distributedQueue,distributedFeedback);
     $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
+    // Courier reuses the same native group claims, but unlike TinyBrains
+    // each remote process trains its own immutable recurrent PPO lineage.
+    const courierPanel=document.createElement('fieldset');
+    const courierLegend=document.createElement('legend');
+    courierLegend.textContent='Distributed Courier learner + PPO lineages';
+    const courierMachine=document.createElement('select');
+    const courierBudgets=document.createElement('textarea');
+    courierBudgets.rows=5;
+    courierBudgets.placeholder='One CPU/RAM/GPU resource object per pinned PPO endpoint';
+    const courierDetails=document.createElement('div');
+    const courierFeedback=document.createElement('div');
+    const courierMachineLabel=document.createElement('label');
+    courierMachineLabel.append('Learner machine ',courierMachine);
+    const courierBudgetsLabel=document.createElement('label');
+    courierBudgetsLabel.append('Remote lineage budgets (JSON array) ',courierBudgets);
+    const courierQueue=button('Queue and reserve Courier group',async()=>{
+        const selected=state?.configurations.find(c=>
+            c.project_id==='courier'&&c.id===$('hub-job-configuration').value);
+        if(!selected||selected.parameters?.remote_lineages!==true||
+            !courierMachine.value)return;
+        try {
+            const budgets=JSON.parse(courierBudgets.value);
+            const machine=state.machines.find(item=>item.id===courierMachine.value);
+            if(!Array.isArray(budgets)||budgets.length!==
+                machine?.courier_remote_lineage_endpoints?.length||
+                budgets.some(item=>!item||typeof item!=='object'||
+                    Array.isArray(item)))
+                throw Error('Provide one CPU/RAM/GPU budget per approved Courier remote lineage.');
+            const resources=JSON.parse($('hub-job-resources').value);
+            const predecessor=$('hub-job-predecessor').value;
+            if(predecessor) {
+                const parent=state.jobs.find(job=>job.id===predecessor);
+                if(parent?.project_id!=='courier'||!parent.capacity_released_at||
+                    parent.assigned_machine_id!==courierMachine.value||
+                    !(parent.status==='finished'&&parent.checkpoint_ready_verified===true||
+                      parent.status==='stopped'&&parent.checkpoint_stop_verified===true))
+                    throw Error('Courier distributed continuation requires a released, verified checkpoint on the original learner machine.');
+            }
+            if(!confirm('Reserve a Courier learner with '+budgets.length+
+                ' independent remote PPO workers? All machine CPU/RAM/GPU claims are atomic; '+
+                'no process will Start without a separate native approval.'))return;
+            const result=await action('hub/distributed/courier',{
+                confirm_queue:true,
+                learner:{configuration_id:selected.id,expected_revision:selected.revision,
+                    machine_id:courierMachine.value,resources,
+                    metric_selection:selectedJobMetrics(),
+                    ...(predecessor?{continuation_of_job_id:predecessor}:{})},
+                lineages:budgets.map(resources=>({resources})),
+            });
+            courierFeedback.textContent='Reserved '+result.lineages.length+
+                ' remote PPO lineages and learner '+result.learner.id+
+                '. All '+result.leases.length+' independent native leases await receipts.';
+            await reload();
+        }catch(error){courierFeedback.textContent=String(error.message||error);}
+    });
+    courierPanel.append(courierLegend,courierMachineLabel,
+        courierBudgetsLabel,courierDetails,courierQueue,courierFeedback);
+    distributedPanel.insertAdjacentElement('afterend',courierPanel);
+    let courierBudgetHost=null;
+    function renderCourierDistributedGroup() {
+        if(!state)return;
+        const selected=state.configurations.find(c=>
+            c.project_id==='courier'&&c.id===$('hub-job-configuration').value);
+        courierPanel.hidden=project!=='courier'||
+            selected?.parameters?.remote_lineages!==true;
+        if(courierPanel.hidden)return;
+        const prior=courierMachine.value;
+        const machines=state.machines.filter(machine=>
+            machine.status==='connected'&&machine.local_executor_enabled&&
+            machine.native_preflight_passed&&
+            machine.installed_projects?.includes('courier')&&
+            machine.courier_remote_lineage_endpoints?.length);
+        courierMachine.replaceChildren(...machines.map(machine=>new Option(
+            (machine.name||machine.id)+' ('+machine.id+') · '+
+                machine.courier_remote_lineage_endpoints.length+' PPO lineages',machine.id)));
+        if(machines.some(machine=>machine.id===prior))courierMachine.value=prior;
+        const machine=machines.find(item=>item.id===courierMachine.value);
+        if(courierBudgetHost!==machine?.id) {
+            courierBudgetHost=machine?.id||null;
+            courierBudgets.value=JSON.stringify(
+                (machine?.courier_remote_lineage_endpoints||[]).map(()=>
+                    ({cpus:2,ram_mb:4096,gpu_count:0})),null,2);
+        }
+        const endpoints=machine?.courier_remote_lineage_endpoints||[];
+        const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
+            host.status==='connected'&&host.id!==machine.id&&
+            host.courier_lineage_endpoint===endpoint&&
+            host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
+            host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i]&&
+            host.installed_projects?.includes('courier_lineage')));
+        const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
+            selected?.parameters?.workers>endpoints.length&&
+            match.every(item=>item.length===1)&&
+            new Set(match.map(item=>item[0]?.id)).size===match.length);
+        courierQueue.disabled=!ready;
+        courierDetails.textContent=ready
+            ?'Pinned PPO workers: '+match.map((hosts,i)=>
+                endpoints[i]+' on '+hosts[0].id).join('; ')+
+                '. Set fixed CPU/RAM/GPU budgets independently for each worker.'
+            :'Register courier_lineage and connect a distinct approved native worker per Tailnet endpoint.';
+    }
+    courierMachine.addEventListener('change',renderCourierDistributedGroup);
     let distributedBudgetHost=null;
     function renderDistributedGroup() {
+        renderCourierDistributedGroup();
         if(!state)return;
         const selected=state.configurations.find(c=>
             c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
