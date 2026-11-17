@@ -418,11 +418,18 @@ mission views also report the authoritative survival/evacuation clock,
 reinforcement arrivals, and actual win, draw or extraction result. Only
 the compact cue identity crosses the network; both game builds use
 the same authored dialogue table.
-The client renders only the ships,
-obstacles, projectiles, health, orders and fog-limited coordinates that the
-authoritative host transmitted. It never runs client-side physics.
-Connect/return statistics include received bytes, snapshots and order
-acknowledgments, without adding work to the headless training loop.
+The remote window now uses the **same native ship, projectile and asteroid
+sprite atlases** as local play, interpolating the host's recent positions
+for smooth display; click/drag selection follows those displayed poses.
+Press **F6** to switch instantly to fast geometric rendering on older
+machines. Missing optional sprites fall back to triangles or markers.
+Only the ships, obstacles, projectiles, health, orders and fog-limited
+coordinates that the authoritative host transmitted can be drawn.
+No client-side combat, physics or learned-policy state is created.
+Session statistics include received bytes, interpolation coverage and
+source sprite draw counts. Host statistics include exact fog candidate
+checks and sparse-grid usage. These measures do not add work to headless
+training.
 
 Existing Python clients remain available for a terminal or Tk alternative:
 
