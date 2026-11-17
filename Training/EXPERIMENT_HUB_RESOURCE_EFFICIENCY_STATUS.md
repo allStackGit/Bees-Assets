@@ -1,6 +1,6 @@
 # Resource-efficient training workstream
 
-Updated 2026-11-17. Branch: `feat/hub-resource-efficiency-20261112`.
+Updated 2026-11-17. Consolidation branch: `feat/hub-codex-unified-20261117`.
 Scope: TinyBrains, Courier, future native projects; Bees remains with the unified native rewrite.
 The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimize useful training throughput inside those leases. Benchmarks below are not implied: these are source-level changes awaiting real workload qualification.
 
@@ -65,3 +65,5 @@ The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimiz
 5. **Safe continuation and adoption:** Qualify TinyBrains local/remote CPU/GPU sizing, shared VRAM admission and Courier's new measured concurrency controls against actual training and cross-platform restarts; deploy both companion backend branches alongside Hub. The scripted Hub launch path was exercised with a real adapter builder and mocked filesystem, including new/legacy/profile capability choices; synthetic 64-worker progress and sustained diagnostics fit the current metrics schema. These checks are not real SPS benchmarks. Extend proven profile reuse only with resource/workload identity intact. Future backends still require actual environment-pool and batching integration.
 
 Keep the separate Hub feature-development and Bees rewrite workstreams unaffected. Do not interpret code presence, CPU/GPU busy percentage, or old training logs as proof of scaling.
+
+- **2026-11-17 Codex integration checkpoint:** `feat/hub-codex-unified-20261117` includes the updated remote-machine reservation/start ownership contracts from `feat/hub-resource-efficiency-20261112` while retaining newer Hub charts, resource metrics, and Courier/TinyBrains adapters. CPU-only TinyBrains learners, approved subsets of remote collectors/lineages, optional machine-ID budgets, and the existing immutable lease/endpoint verification path are now reconciled. Courier CPU recurrent and GPU recurrent-state-copy metrics are chartable. Backend peers: `allStackGit/TinyBrains:feat/training-efficiency-unified-20261117` and `allStackGit/Basic-Training:feat/courier-codex-unified-20261117`. Original development branches remain intact; physical SPS, distributed recovery, and PPO learning correctness still require integrated qualification.
