@@ -50,6 +50,7 @@ struct WireCounts {
     sprite_opaque_pixels: u64,
     sprite_blended_pixels: u64,
     recolor_cache_peak: usize,
+    obstacle_hull_draws: u64,
 }
 
 /// The existing native source-art renderer, reused for authenticated
@@ -760,7 +761,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
     held_fire_active: bool, visual: &RemoteVisual, fraction: f32,
-    artwork: &RemoteArtwork, show_art: bool) {
+    artwork: &RemoteArtwork, show_art: bool, obstacle_hull_draws: &mut u64) {
     // F6 avoids allocating or clearing a second per-frame art layer,
     // while normal mode reuses the exact local game sprite raster.
     if show_art {
@@ -793,8 +794,15 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 if artwork.asteroids.contains(&obj["id"].as_i64().unwrap_or(-1)) {
                     continue;
                 }
-                let coord=screen(camera,point);
-                circle(pixels,coord,5,if obj["mining"]==true {GOLD} else {0x7d92aa});
+                if draw_remote_obstacle_hull(
+                    pixels, obj, camera, point,
+                    visual.heading_for(obj, 2, fraction),
+                ) {
+                    *obstacle_hull_draws += 1;
+                } else {
+                    let coord=screen(camera,point);
+                    circle(pixels,coord,5,if obj["mining"]==true {GOLD} else {0x7d92aa});
+                }
             }
         }
         for shot in state["projectiles"].as_array().into_iter().flatten() {
@@ -1355,9 +1363,12 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             artwork.paint(state,cam,&peer.visual,visual_fraction,
                 &mut peer.metrics,show_art);
         }
+        let mut hulls = 0_u64;
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
-            held_fire_active,&peer.visual,visual_fraction,&artwork,show_art);
+            held_fire_active,&peer.visual,visual_fraction,&artwork,show_art,
+            &mut hulls);
+        peer.metrics.obstacle_hull_draws += hulls;
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
     }
     println!("{}",json!({
@@ -1375,6 +1386,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "sprite_opaque_pixels":peer.metrics.sprite_opaque_pixels,
         "sprite_blended_pixels":peer.metrics.sprite_blended_pixels,
         "recolor_cache_peak":peer.metrics.recolor_cache_peak,
+        "obstacle_hull_draws":peer.metrics.obstacle_hull_draws,
         "source_art_enabled":show_art,
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
