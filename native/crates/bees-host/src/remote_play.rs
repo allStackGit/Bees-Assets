@@ -27,6 +27,7 @@ const MAX_PEERS: usize = 4;
 const MAX_LINE: usize = 64 * 1024;
 const MAX_PENDING: usize = 4 * 1024 * 1024;
 const READ_BYTES_PER_POLL: usize = 128 * 1024;
+const MAX_ORDERS_PER_POLL: usize = 64;
 const STATE_EVERY_TICKS: u64 = 5;
 
 #[derive(Deserialize)]
@@ -210,6 +211,10 @@ impl NativeRemotePlay {
                         }));
                     }
                     Ok(WireInput::Input { request_id, action }) if peer.authenticated => {
+                        if orders.len() >= MAX_ORDERS_PER_POLL {
+                            peer.closed = true;
+                            break;
+                        }
                         self.measurements.orders_received += 1;
                         orders.push(RemoteOrder {
                             peer: peer.id, request_id, action,
@@ -247,7 +252,8 @@ impl NativeRemotePlay {
         if !self.peers.iter().any(|peer| peer.authenticated) { return; }
         let episode = (view.world_id.0, view.episode_revision);
         if self.last_state == Some(episode) &&
-            view.tick % STATE_EVERY_TICKS != 0 { return; }
+            view.tick % STATE_EVERY_TICKS != 0 &&
+            view.terminal_result.is_none() { return; }
         self.last_state = Some(episode);
         let state = current_state(view);
         let Ok(encoded) = serde_json::to_vec(&state) else { return };
