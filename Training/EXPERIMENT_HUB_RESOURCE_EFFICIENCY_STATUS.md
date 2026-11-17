@@ -97,7 +97,10 @@ are already physically assigned and in use, without restarting its world
 processes or changing vector sizes, PPO batches, Adam ownership or saved
 policy population. Candidate choice uses sustained per-lineage optimizer
 host wall as a heuristic, not GPU occupancy; a move must pass live peak
-allocator MiB plus margin against all affected workers' next VRAM slice.
+allocator MiB plus a 512-MiB margin against all affected workers' next
+VRAM slice; the existing whole-worker PSS/USS admission must also reserve
+512 MiB host RAM for a possible additional driver context before submission.
+Denied moves settle rather than repeatedly probing an unadmittable GPU.
 Six+ complete updates, 90 seconds of comparable useful training, a long
 cooldown and >=10% measured end-to-end useful PPO SPS improvement govern
 acceptance; a failure reverts after the complete update, and only proven
