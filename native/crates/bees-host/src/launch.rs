@@ -2413,13 +2413,19 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         // Multiplayer configuration belongs to the player's save directory.
         // It is discovered on each return to the library, so a user can
         // change servers without rebuilding or editing the game package.
-        let recordings = recorded_library::list(
+        let mut recordings = recorded_library::list(
             save_root,
             library.games.iter().enumerate()
                 .filter(|(_, item)| item.kind == "battle")
                 .map(|(index, item)|
                     (item.id.clone(), item.title.clone(), games[index].clone())),
         )?;
+        recordings.extend(recorded_library::list_campaigns(
+            save_root,
+            library.games.iter().filter(|item| item.kind == "campaign")
+                .map(|item| (item.id.clone(), item.title.clone())),
+        )?);
+        recorded_library::sort_recent(&mut recordings);
         let join_available=saved_network.is_file();
         let host_available=saved_host.is_file();
         if join_available {
@@ -2479,8 +2485,21 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 if let Some(chosen) = select_library(&rows, &mut replay_selected, false)? {
                     let recording = &recordings[chosen];
                     let output = new_library_battle_output(save_root, &recording.game_id)?;
-                    run_session(&recording.source_config, true, true, Some(output),
-                        None, Some(recording.trace.clone()), None)?;
+                    match &recording.source {
+                        recorded_library::RecordedSource::QuickBattle(config) =>
+                            run_session(config, true, true, Some(output),
+                                None, Some(recording.trace.clone()), None)?,
+                        recorded_library::RecordedSource::CampaignSetup(path) => {
+                            let setup = CampaignReplaySetup::load(path)?;
+                            // Watching a prior campaign is not a new career
+                            // outcome. run_battle filters receipts whenever
+                            // replay_inputs is supplied; this saved setup
+                            // restores only the original physical fleet.
+                            run_session(&setup.source_config, true, true,
+                                Some(output), None, Some(recording.trace.clone()),
+                                Some(setup.mission()))?;
+                        },
+                    }
                 }
                 Ok::<(), Box<dyn Error>>(())
             })()
