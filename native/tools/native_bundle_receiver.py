@@ -21,6 +21,7 @@ from pathlib import Path
 import re
 import socket
 import tempfile
+import tarfile
 import threading
 import time
 from urllib.parse import urlsplit
@@ -185,6 +186,8 @@ class BundleReceiver:
             if len(jobs) != 1:
                 raise LookupError("collector has no active issued work order")
             job = jobs[0]
+            if not BUNDLE_NAME.fullmatch(job["bundle_directory"]):
+                raise ValueError("issued collector has an unsafe bundle destination")
             destination = self.inbox / job["bundle_directory"]
             if destination.exists() or collector_id in self.inflight:
                 raise FileExistsError("collector bundle already published or being received")
@@ -242,6 +245,9 @@ def _receiver_handler(owner):
             except FileExistsError as error:
                 self.respond(409, {"error": str(error)})
                 return
+            except ValueError as error:
+                self.respond(422, {"error": str(error)})
+                return
             started = time.perf_counter()
             temporary = None
             try:
@@ -275,7 +281,7 @@ def _receiver_handler(owner):
                 if owner.on_event:
                     owner.on_event("native_bundle_received", result)
                 self.respond(200, result)
-            except (ValueError, OSError, EOFError, KeyError) as error:
+            except (ValueError, OSError, EOFError, KeyError, TypeError, tarfile.TarError) as error:
                 self.respond(422, {"error": str(error)})
             finally:
                 if temporary is not None:
