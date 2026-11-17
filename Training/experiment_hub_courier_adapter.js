@@ -38,6 +38,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_vector_pad_batches','training_cpu_vector_pad_batches',
     'training_gpu_rollout_lineages','training_split_gpu_rollout_lineages',
     'training_local_gpu_rollout_devices','training_gpu_rollout_next_devices',
+    'training_gpu_rollout_spare_candidates',
     'training_gpu_rollout_batches','training_gpu_rollout_states',
     'training_gpu_rollout_lstm_steps','training_gpu_rollout_policy_reused',
     'training_remote_gpu_rollout_trials','training_remote_gpu_rollout_tuned',
