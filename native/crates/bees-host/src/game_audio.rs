@@ -30,15 +30,15 @@ const TITANIA_LOOP_END: f32 = 185.461_18;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Effect {
-    LightLaser, SmallLaser, BigLaser, FlagshipLaser, QueenLaser,
+    LightLaser, SmallLaser, BigLaser, BeamCannon, FlagshipLaser, QueenLaser,
     RocketLaunch, StrikerBomb, Explosion, HugeExplosion,
     Warp, BargeCharge, Button,
 }
 
 impl Effect {
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::LightLaser, Self::SmallLaser, Self::BigLaser,
-        Self::FlagshipLaser, Self::QueenLaser, Self::RocketLaunch,
+        Self::BeamCannon, Self::FlagshipLaser, Self::QueenLaser, Self::RocketLaunch,
         Self::StrikerBomb, Self::Explosion, Self::HugeExplosion,
         Self::Warp, Self::BargeCharge, Self::Button,
     ];
@@ -48,6 +48,7 @@ impl Effect {
             Self::LightLaser => "Light Cannon Laser.mp3",
             Self::SmallLaser => "Small Cannon Laser.mp3",
             Self::BigLaser => "Big Cannon Laser.mp3",
+            Self::BeamCannon => "Beam Cannon.mp3",
             Self::FlagshipLaser => "Flagship Laser Shot.mp3",
             Self::QueenLaser => "Queen Laser.mp3",
             Self::RocketLaunch => "Rocket Launch Sound.mp3",
@@ -71,6 +72,7 @@ impl Effect {
             3 | 7 | 9 => Some(Self::SmallLaser),
             4 => Some(Self::FlagshipLaser),
             5 => Some(Self::RocketLaunch),
+            8 => Some(Self::BeamCannon),
             10 | 11 => Some(Self::QueenLaser),
             // Source StrikerBombDropped is the single authoritative
             // release cue. Do not replay it at the same projectile birth.
@@ -322,6 +324,13 @@ impl NativeGameAudio {
                 }
             }
         }
+    }
+
+    /// Authentic game UI click; completely separate from gameplay
+    /// commands and the durable player-input trace.
+    pub fn click_ui(&mut self) {
+        self.voices.retain(|sink| !sink.empty());
+        self.play(Effect::Button);
     }
 
     fn play(&mut self, effect: Effect) {
