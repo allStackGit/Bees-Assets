@@ -417,16 +417,19 @@ It is a lightweight 2D **remote view**, not a separate physics engine or
 the source-art native local renderer. The optional Python/Tk implementation
 requires Python and Tkinter (`python3-tk` on Debian); the new built-in
 native window, compiled local game and headless learner do not.
-The native server accepts one active held-fire gesture across the shared
-Level, owned by the authenticated controller that began it. Press and hold J
-with a selected squad, move the pointer within the battlefield to aim, and
-release J to stop. The host releases the live ship targets if that peer
-disconnects, its last held weapon dies, or the episode changes;
-other controllers cannot seize the gesture, including the local host
-window. Begin/aim/end requests use the original canonical weapon input;
-rejections, disconnect cleanup and no-live-weapon cleanup have separate
-remote-play counters. Up to four connections
-share **one** player-side authority.
+Each authenticated controller can hold manual fire on its own selected
+ships simultaneously with other players (including the local host window).
+Press and hold J with a selected squad, move the pointer within the
+battlefield to aim, and release J to stop. Two controllers cannot take
+over the same ship's manual weapons, even using a point-fire command.
+The host releases that controller's live weapon targets on disconnect,
+when its last held weapon dies, or at an episode change. Begin/aim/end
+requests use the same native weapon dispatcher and are recorded in native
+player traces with the server-assigned peer ID; old local traces default
+to controller zero. The remote summary records gesture claims, rejections,
+concurrent peak, disconnect cleanup and no-live-weapon cleanup. Up to
+four connections may share one player side cooperatively or use
+independently authenticated sides where the scene permits.
 
 #### Independent two-player native battles
 
