@@ -4814,6 +4814,228 @@ class ExperimentHub {
             starts_authorized:0,
             note:'The entire distributed group has advisory machine claims. Each worker must acknowledge its lease and acquire separate native Start authorization before the learner can start.'};
     }
+    // Atomically claim a Courier learner and its independent remote PPO
+    // lineages. The operator selects fixed machine resource budgets; the
+    // endpoints, shared key fingerprint and slot order come only from native
+    // agent advertisements. No Starts are issued by this transaction.
+    queueDistributedCourier(value) {
+        if(!object(value)||value.confirm_queue!==true||
+            Object.keys(value).some(key=>!['confirm_queue','learner','lineages'].includes(key))||
+            !object(value.learner)||
+            Object.keys(value.learner).some(key=>
+                !['configuration_id','expected_revision','machine_id','resources',
+                    'continuation_of_job_id','metric_selection'].includes(key))||
+            !ID.test(String(value.learner.machine_id||''))||
+            !Array.isArray(value.lineages))
+            throw Error('Confirm the Courier learner, machine and per-lineage CPU/RAM/GPU allocations.');
+        const snapshot=this.snapshot();
+        const machine=snapshot.machines.find(item=>item.id===value.learner.machine_id);
+        const config=snapshot.configurations.find(item=>
+            item.id===value.learner.configuration_id&&
+            item.revision===value.learner.expected_revision&&
+            item.project_id==='courier');
+        const endpoints=machine?.courier_remote_lineage_endpoints;
+        const shards=machine?.courier_remote_max_shards;
+        const ancestorId=value.learner.continuation_of_job_id??null;
+        const ancestor=ancestorId===null?null:snapshot.jobs.find(item=>item.id===ancestorId);
+        if(ancestorId!==null&&(!UUID.test(String(ancestorId))||
+            !checkpointContinuationComplete(ancestor)||
+            !ancestor.capacity_released_at||
+            ancestor.assigned_machine_id!==machine?.id))
+            throw Error('Courier distributed continuation requires a completed, released checkpoint on the original learner host.');
+        const count=endpoints?.length;
+        const population=config?.parameters?.workers;
+        if(!config||config.parameters.remote_lineages!==true||
+            !Number.isSafeInteger(population)||population<2||population>64||
+            !Number.isSafeInteger(count)||count<1||count>16||
+            count>=population||value.lineages.length!==count||
+            !Array.isArray(shards)||shards.length!==count||
+            !SHA256.test(String(machine.courier_remote_key_fingerprint||''))||
+            machine.status!=='connected'||!machine.local_executor_enabled||
+            !machine.native_preflight_passed||
+            !machine.installed_projects?.includes('courier'))
+            throw Error('The learner must advertise exactly the approved Courier remote endpoints and a frozen policy population.');
+        const sidecarProject=snapshot.projects.find(project=>project.id==='courier_lineage');
+        if(sidecarProject?.adapter!=='unconfigured')
+            throw Error('Register the native courier_lineage project before allocating the group.');
+        const next=copy(this.state),machines=snapshot.machines;
+        const learner=this.queueIn(next,value.learner);
+        if(learner.status!=='waiting_adapter')
+            throw Error('The learner predecessor must be released before distributed reservation.');
+        learner.distributed_courier_managed=true;
+        const learnerLease=this.claimJobIn(next,learner,machine.id,machine);
+        const workers=[],leases=[learnerLease],used=new Set([machine.id]);
+        for(let index=0;index<count;index++) {
+            const selection=value.lineages[index];
+            if(!object(selection)||Object.keys(selection).some(key=>key!=='resources'))
+                throw Error('Courier remote lineages accept a resource budget only; physical endpoints are pinned locally.');
+            const budget=resourceRequest(selection.resources);
+            if(budget.gpu_count>1||
+                (budget.gpu_count===1&&budget.gpu_mode!=='exclusive'))
+                throw Error('Courier remote lineage requires CPU only or one exclusive GPU.');
+            const hosts=machines.filter(host=>
+                host.status==='connected'&&host.courier_lineage_endpoint===endpoints[index]&&
+                host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
+                host.courier_lineage_max_shards===shards[index]&&
+                host.installed_projects?.includes('courier_lineage')&&
+                host.local_executor_enabled===true&&host.native_preflight_passed===true&&
+                (host.agent_platform==='win32'||host.agent_platform==='linux'&&
+                    host.execution_capabilities?.cgroup_v2_detected===true&&
+                    ['cpu','memory'].every(c=>
+                        host.execution_capabilities?.cgroup_controllers?.includes(c)))&&
+                (!budget.gpu_count||host.gpu_projects?.includes('courier_lineage')&&(
+                    host.agent_platform==='win32'&&
+                        host.gpu_inventory_source==='nvidia-smi-v1'||
+                    host.agent_platform==='linux'&&
+                        host.gpu_inventory_source==='amdgpu-sysfs-v1'&&
+                        host.observed_gpus?.length>=2)));
+            if(hosts.length!==1||used.has(hosts[0].id))
+                throw Error('Each Courier endpoint must match one distinct, qualified native worker machine.');
+            const host=hosts[0];
+            used.add(host.id);
+            const timestamp=now();
+            const workerConfig={
+                id:crypto.randomUUID(),project_id:'courier_lineage',
+                name:'Courier lineage '+(population-count+index)+' for '+learner.id.slice(-8),
+                parameters:{learner_job_id:learner.id,slot:population-count+index},
+                revision:1,created_at:timestamp,updated_at:timestamp,
+            };
+            next.configurations.push(workerConfig);
+            const worker=this.queueIn(next,{
+                configuration_id:workerConfig.id,expected_revision:1,resources:budget,
+            });
+            worker.release_on_terminal=true;
+            const lease=this.claimJobIn(next,worker,host.id,host);
+            workers.push(worker);leases.push(lease);
+        }
+        this.commit(next);
+        return {learner:copy(learner),lineages:workers.map(copy),
+            leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
+            starts_authorized:0,
+            note:'All Hub machine leases are reserved. Start permission still requires fresh native ownership and explicit group authorization.'};
+    }
+
+    // Authorize all separately leased Courier remote services in one durable
+    // transition. The existing distributed-launch reconciliation waits for
+    // their authenticated running receipts before starting the learner.
+    authorizeCourierLineages(value) {
+        if(!object(value)||value.confirm_start!==true||
+            value.confirm_learner_start!==true||
+            !UUID.test(String(value.learner_job_id||''))||
+            !Array.isArray(value.expected_lineage_job_ids)||
+            !value.expected_lineage_job_ids.length||
+            value.expected_lineage_job_ids.length>16||
+            value.expected_lineage_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_lineage_job_ids).size!==value.expected_lineage_job_ids.length||
+            Object.keys(value).some(key=>![
+                'learner_job_id','expected_lineage_job_ids',
+                'confirm_start','confirm_learner_start'].includes(key)))
+            throw Error('Confirm the exact Courier remote group and automatic learner Start.');
+        const snapshot=this.snapshot();
+        const learner=snapshot.jobs.find(item=>item.id===value.learner_job_id);
+        const host=snapshot.machines.find(item=>item.id===learner?.assigned_machine_id);
+        const endpoints=host?.courier_remote_lineage_endpoints;
+        if(!learner||learner.project_id!=='courier'||
+            learner.distributed_courier_managed!==true||
+            learner.frozen_parameters?.remote_lineages!==true||
+            learner.status!=='waiting_adapter'||learner.dispatch_id||
+            learner.distributed_abort_requested_at||
+            !Array.isArray(endpoints)||endpoints.length!==value.expected_lineage_job_ids.length||
+            !learner.lease_id||predecessorBlock(snapshot,learner))
+            throw Error('Only an unstarted, reserved Courier distributed learner may authorize its remote lineages.');
+        const owned=snapshot.reservations.find(lease=>
+            lease.id===learner.lease_id&&lease.job_id===learner.id&&
+            lease.project_id==='courier'&&
+            lease.machine_id===learner.assigned_machine_id&&
+            lease.status==='acknowledged'&&lease.receipt_fresh===true&&
+            lease.issued_by==='experiment-hub');
+        if(!owned||nativeResourceBlock(learner,owned)||
+            gpuStartBlock(learner,owned,host)||
+            host.status!=='connected'||!host.native_preflight_passed)
+            throw Error('The Courier learner needs a fresh CPU/RAM/GPU native resource claim.');
+        const expected=new Set(value.expected_lineage_job_ids);
+        const workers=snapshot.jobs.filter(item=>
+            item.project_id==='courier_lineage'&&
+            item.frozen_parameters?.learner_job_id===learner.id&&
+            item.status!=='cancelled');
+        if(workers.length!==expected.size||workers.some(item=>!expected.has(item.id)))
+            throw Error('Courier remote lineage membership changed before group authorization.');
+        const owners={},hosts=new Set([host.id]),dispatches={};
+        for(const worker of workers) {
+            const readiness=nativeStartReadiness(snapshot,worker);
+            if(!readiness.eligible)
+                throw Error('Courier remote lineage '+worker.id+' cannot Start: '+readiness.reason);
+            const machine=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
+            if(hosts.has(machine.id))
+                throw Error('Courier group requires a distinct machine for every remote lineage.');
+            hosts.add(machine.id);
+            const owner=snapshot.reservations.find(lease=>
+                lease.id===worker.lease_id&&lease.job_id===worker.id&&
+                lease.machine_id===worker.assigned_machine_id&&
+                lease.project_id==='courier_lineage'&&
+                lease.status==='acknowledged'&&lease.receipt_fresh===true&&
+                lease.issued_by==='experiment-hub');
+            if(!owner||nativeResourceBlock(worker,owner)||
+                gpuStartBlock(worker,owner,machine))
+                throw Error('Courier remote lineage lost its frozen native machine lease.');
+            const report=this.agentReports.get(machine.id);
+            if(!UUID.test(String(report?.instance_id||'')))
+                throw Error('Every Courier remote worker needs an identified native agent.');
+            owners[machine.id]=report.instance_id;
+        }
+        const learnerAgent=this.agentReports.get(host.id);
+        if(!UUID.test(String(learnerAgent?.instance_id||'')))
+            throw Error('Courier learner requires a live, identified native agent.');
+        owners[host.id]=learnerAgent.instance_id;
+        const next=copy(this.state),started=now();
+        for(const worker of workers) {
+            const selected=next.jobs.find(item=>item.id===worker.id);
+            selected.status='start_requested';
+            selected.dispatch_id=crypto.randomUUID();
+            selected.start_requested_at=started;
+            selected.start_first_offered_at=null;
+            selected.status_reason='Hub-approved Courier remote lineage Start; awaiting machine-local enforcement.';
+            dispatches[worker.id]=selected.dispatch_id;
+        }
+        const plans=next.distributed_launch_plans||[];
+        if(plans.some(item=>item.learner_job_id===learner.id&&item.status==='pending'))
+            throw Error('An approved Courier learner launch is already pending.');
+        if(plans.length>=64) {
+            const old=plans.findIndex(item=>item.status!=='pending');
+            if(old<0)throw Error('Resolve pending distributed Start approvals before another group.');
+            plans.splice(old,1);
+        }
+        const approved=Date.now();
+        plans.push({
+            id:crypto.randomUUID(),kind:'courier',
+            learner_job_id:learner.id,
+            learner_machine_id:learner.assigned_machine_id,
+            learner_lease_id:learner.lease_id,
+            collector_dispatches:dispatches,
+            collector_owners:workers.map(worker=>{
+                const machine=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
+                return {job_id:worker.id,dispatch_id:dispatches[worker.id],
+                    machine_id:machine.id,lease_id:worker.lease_id,
+                    endpoint:machine.courier_lineage_endpoint,
+                    key_fingerprint:machine.courier_lineage_key_fingerprint,
+                    slot:worker.frozen_parameters.slot};
+            }),
+            key_fingerprint:host.courier_remote_key_fingerprint,
+            learner_endpoints:endpoints.slice(),
+            agent_instances:owners,resume_after_restart:false,
+            recovery_pending:false,status:'pending',
+            reason:'Awaiting all verified remote PPO native owners before learner Start.',
+            approved_at:new Date(approved).toISOString(),
+            expires_at:new Date(approved+DISTRIBUTED_LAUNCH_TTL_MS).toISOString(),
+        });
+        next.distributed_launch_plans=plans;
+        next.jobs.find(item=>item.id===learner.id).release_on_terminal=true;
+        this.commit(next);
+        return {learner_job_id:learner.id,
+            lineage_job_ids:workers.map(item=>item.id),
+            starts_authorized:workers.length,learner_start_pending:true};
+    }
+
     // Independent jobs may be chained across non-Bees projects. These
     // dependencies do not imply checkpoint inheritance, machine affinity,
     // shared experiments, or evaluation success.
