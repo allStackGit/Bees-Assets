@@ -7,6 +7,7 @@ central multi-round MA-POCA session, without sharing absolute file paths.
 
 import argparse
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -37,7 +38,14 @@ def main():
                         help="publish a portable verified tar for transfer to a different machine")
     parser.add_argument("--upload-url",
                         help="stream completed verified archive to a native learner bundle receiver")
+    parser.add_argument("--hub-artifact-job-id",
+                        help="Hub's separate immutable job UUID for local verified artifact publication")
     args = parser.parse_args()
+    if args.hub_artifact_job_id is not None and (
+            args.bundle_inbox is None or
+            re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                         args.hub_artifact_job_id) is None):
+        parser.error("--hub-artifact-job-id requires a shared inbox and a Hub job UUID")
     if args.bundle_inbox is None and args.archive_output is None and not args.upload_url:
         parser.error("supply a bundle inbox, --archive-output or --upload-url")
 
@@ -89,6 +97,7 @@ def main():
     parent = scratch / f"native-collector-{job['collection_id'][:12]}-{uuid.uuid4().hex}"
     parent.mkdir()
     output = parent / job["bundle_directory"]
+    delivered_name = args.hub_artifact_job_id or job["bundle_directory"]
     command = [
         sys.executable, str(Path(__file__).with_name("train_policy_round.py")),
         str(args.run_config.resolve()), str(args.checkpoint.resolve()),
@@ -97,6 +106,9 @@ def main():
         "--rollout-binary", str(binary),
         *([] if inbox is None else ["--bundle-inbox", str(inbox)]),
         *job["collector_options"],
+        *([] if args.hub_artifact_job_id is None else [
+            "--bundle-delivery-name", delivered_name,
+        ]),
     ]
     if orders["learner_slot"] is not None:
         command.extend(["--learner-slot", str(orders["learner_slot"])])
@@ -111,7 +123,7 @@ def main():
     subprocess.run(command, check=True)
     receipt_path = (
         output / "rollout-bundle.json" if inbox is None
-        else inbox / job["bundle_directory"] / "rollout-bundle.json"
+        else inbox / delivered_name / "rollout-bundle.json"
     )
     receipt = verify_bundle(receipt_path, job, orders)
     if args.archive_output is not None or args.upload_url:
