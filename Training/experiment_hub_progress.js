@@ -141,6 +141,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_metric_readback_max_seconds',
             'training_gpu_guard_readback_max_seconds',
             'training_gpu_guard_readbacks',
+            'training_gpu_snapshot_max_seconds',
+            'training_gpu_snapshot_reused_lineages',
+            'training_gpu_snapshot_reuse_fraction',
+            'training_gpu_snapshot_work_share',
             'training_gpu_h2d_enqueue_max_seconds',
             'training_gpu_h2d_bytes',
             'training_gpu_h2d_async_batches',
@@ -721,6 +725,21 @@ class BottleneckEvidence {
                 ?guard/slowestOptimize:null;
             if(guardShare!==null)
                 add('training_gpu_guard_readback_work_share',guardShare);
+            // An optimizer backup is a measured host+GPU copy interval.
+            // Only the last completed lineage can expose it as a training
+            // bottleneck; a costly early-finishing lineage does not.
+            const snapshot=(Number.isSafeInteger(slowest)&&
+                slowest>=0&&slowest<count)
+                ?seconds('worker_'+slowest+'_gpu_snapshot_seconds'):null;
+            const snapshotShare=slowestOptimize>0&&snapshot!==null&&
+                snapshot<=slowestOptimize?snapshot/slowestOptimize:null;
+            if(snapshotShare!==null)
+                add('training_gpu_snapshot_critical_share',snapshotShare);
+            const snapshotHint=(snapshotShare!==null&&
+                snapshotShare>=0.25&&snapshot>=0.20&&
+                slowestOptimize>=0.15*wall&&
+                metrics.training_last_reply_worker?.value===slowest&&
+                (queueShare===null||queueShare<=0.10));
             const guardHint=guardShare!==null&&guardShare>=0.3&&
                 guard>=0.25&&slowestOptimize>=0.15*wall;
             // Policy GPU<->CPU host transition costs from the SAME
@@ -800,6 +819,7 @@ class BottleneckEvidence {
                     courierRemoteGap:remoteGapHint,
                     courierRemoteCodec:remoteCodecHint,
                     courierGpuGuard:guardHint,
+                    courierGpuSnapshot:snapshotHint,
                     courierGpuCopy:gpuCopyHint});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
@@ -826,6 +846,8 @@ class BottleneckEvidence {
                     add('training_remote_codec_pressure',1,'count');
                 if(sustained(x=>x.courierGpuGuard))
                     add('training_gpu_guard_wait_pressure',1,'count');
+                if(sustained(x=>x.courierGpuSnapshot))
+                    add('training_gpu_snapshot_pressure',1,'count');
                 if(sustained(x=>x.courierGpuCopy))
                     add('training_gpu_policy_copy_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.cpuBusy))
