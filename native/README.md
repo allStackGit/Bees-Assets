@@ -167,7 +167,12 @@ bees play challenge-best/challenge.run.json --output-dir challenge-best-play
 
 `--player-side 2` lets a human command the opposite side. The publisher
 verifies the pinned checkpoint, manifest, selected run, and learner model
-slot before changing only player ownership and policy routing. It retains
+slot before changing only player ownership and policy routing. Model,
+worker and optional Stage-asset paths are bound to their original
+verified source directory, so a challenge moved into its own folder
+cannot accidentally resolve a different model; the native campaign
+publisher checks the resolved manifest identity rather than a fragile
+relative path spelling. It retains
 the physical hulls, physics, authored map, special weapons and native
 policy observations. The trained checkpoint is mapped to the *actual*
 remaining opponent team, rather than assuming the learner always trained

@@ -62,6 +62,29 @@ def selected_run(receipt_path: Path) -> tuple[dict, dict, int, Path]:
     return receipt, run, slot, run_path
 
 
+def rebase_run_sources(run: dict, original_run: Path) -> None:
+    """Bind read-only game assets to their verified training-time locations.
+
+    The published challenge is a *new* run file. Retaining original relative
+    paths would silently resolve model/worker inputs against its new folder
+    and break both live play and subsequent portable packaging.
+    """
+    for key in ("model_manifest", "policy_worker", "collision_matrix", "stage_palette"):
+        value = run.get(key)
+        if value is not None:
+            source = existing_path(original_run, value)
+            if not source.is_file():
+                raise ValueError(f"native challenge source {key} is not a regular file")
+            run[key] = str(source)
+    python = run.get("python")
+    if isinstance(python, str) and python and (
+            Path(python).is_absolute() or len(Path(python).parts) > 1):
+        source = existing_path(original_run, python)
+        if not source.is_file():
+            raise ValueError("native challenge Python interpreter must be a file")
+        run["python"] = str(source)
+
+
 def challenge(receipt_path: Path, player_side: int) -> tuple[dict, dict, dict, dict]:
     receipt, run, learner_slot, run_path = selected_run(receipt_path)
     if (len(run.get("levels", [])) != 1 or
@@ -93,6 +116,9 @@ def challenge(receipt_path: Path, player_side: int) -> tuple[dict, dict, dict, d
     if not any(ship.get("side") == player_side for ship in ships):
         raise ValueError("selected player faction has no physical ships")
 
+    # The source run's manifest/worker were already SHA-verified under
+    # its original root. Preserve their identity after publication.
+    rebase_run_sources(run, run_path)
     scene = copy.deepcopy(scene)
     scene["local_player_side"] = player_side
     players = set()

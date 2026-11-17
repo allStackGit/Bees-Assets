@@ -15,7 +15,7 @@ import re
 import tempfile
 
 from native_training_artifacts import atomic_json, file_sha256, sync_directory
-from challenge_policy import selected_run
+from challenge_policy import existing_path, selected_run
 
 
 def read(path: Path) -> dict:
@@ -45,14 +45,18 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
     selection_path = Path(source["selection_receipt"]).resolve(strict=True)
     if file_sha256(selection_path) != source.get("selection_receipt_sha256"):
         raise ValueError("native policy selection receipt changed after challenge publication")
-    receipt, selected, learner_slot, _ = selected_run(selection_path)
+    receipt, selected, learner_slot, original_run_path = selected_run(selection_path)
+    challenge_manifest = existing_path(run_path, run.get("model_manifest"))
+    selected_manifest = existing_path(
+        original_run_path, selected.get("model_manifest")
+    )
     checkpoint_sha = (
         receipt["selected"]["checkpoint_sha256"]
         if "selected" in receipt else receipt["checkpoint_sha256"]
     )
     if (source.get("selected_checkpoint_sha256") != checkpoint_sha or
             source.get("learner_slot") != learner_slot or
-            run.get("model_manifest") != selected.get("model_manifest")):
+            challenge_manifest != selected_manifest):
         raise ValueError("campaign opponent model differs from the verified training selection")
     return {
         "challenge_receipt": str(provenance_path),
