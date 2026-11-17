@@ -60,7 +60,7 @@ fn verified_file(path: &str, sha256: &str) -> io::Result<PathBuf> {
     if !file.is_file() { return Err(invalid("trained checkpoint artifact is not a file")); }
     let mut hasher = Sha256::new();
     let mut stream = File::open(&file)?;
-    let mut buffer = [0_u8; 1024 * 1024];
+    let mut buffer = [0_u8; 64 * 1024];
     loop {
         let count = stream.read(&mut buffer)?;
         if count == 0 { break; }
