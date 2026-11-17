@@ -95,6 +95,9 @@ function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath
         'TimeoutStopSec=30s',
         'KillMode='+killMode,
         '',
+        // The standalone Hub and enrolled agent are independently managed
+        // user services; enabling them starts them at user-session startup.
+        ...(kind==='coordinator'?[]:['[Install]','WantedBy=default.target','']),
     ].join('\n');
 }
 function installUnit(kind,content,home=os.homedir()) {
@@ -248,7 +251,7 @@ function main(argv=process.argv.slice(2)) {
     }
     const filename=installUnit(kind,unit);
     console.log('Installed (not started): '+filename);
-    console.log('Review the unit, then run: systemctl --user daemon-reload && systemctl --user start '+NAMES[kind]);
+    console.log('Review the unit, then run: systemctl --user daemon-reload && systemctl --user '+(kind==='coordinator'?'start ':'enable --now ')+NAMES[kind]);
 }
 if(require.main===module) {
     try {main();}
