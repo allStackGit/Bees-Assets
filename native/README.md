@@ -1413,6 +1413,14 @@ continues to be selected using the unchanged fixed holdout; its generated
 playable run uses the *currently active* curriculum scene, including when
 the stage changes between scheduled holdout evaluations.
 
+After each verified checkpoint, the session also publishes
+`native-session/latest-playable-run.json` and its SHA-256-bound
+`latest-playable.json` receipt, even when no evaluation suite was supplied.
+It uses the active authored environment and the learner's **current**
+manifest (including the current self-play opponent). Launch it with
+`bees play native-session/latest-playable-run.json --output-dir new-native-battle`.
+This is the latest trained checkpoint, **not** a quality-ranked selection.
+
 After interruption or a failed round, repeat the command with `--resume`;
 `--rounds` counts the total desired successful rounds and may be increased
 without changing the pinned run, trainer, model, or resource allocation.
