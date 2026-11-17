@@ -2035,8 +2035,8 @@ document.addEventListener('DOMContentLoaded', () => {
     tinyBrainsRemote.type='checkbox';
     tinyBrainsWeights.type='text';
     tinyBrainsWeights.placeholder='Optional: 2,8,4 (local, then each remote)';
-    tinyBrainsDevice.append(new Option('Profile default',''),
-        new Option('CPU-only fallback (no GPU)','cpu'),
+    tinyBrainsDevice.append(new Option('From resource allocation',''),
+        new Option('CPU only','cpu'),
         new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
     tinyBrainsThreads.type='number';
     tinyBrainsThreads.min='1';
@@ -2063,9 +2063,11 @@ document.addEventListener('DOMContentLoaded', () => {
             !(state?.machines||[]).some(machine=>
                 machine.status==='connected'&&
                 machine.tinybrains_profiles?.[profile]===digest&&
-                machine.tinybrains_remote_rollout_endpoints?.length===weights.length-1))) {
+                (machine.tinybrains_remote_rollout_endpoints?.length===weights.length-1||
+                    machine.tinybrains_rollout_subset===true&&
+                    machine.tinybrains_remote_rollout_endpoints?.length>=weights.length-1)))) {
             feedback('hub-config-message',
-                'Fixed action weights require one integer from 1–1024 for the learner and each approved remote endpoint.');
+                'Fixed action weights require one integer from 1–1024 for the learner and each selected remote collector.');
             return;
         }
         if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
@@ -2090,11 +2092,13 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
             return;
         }
-        if(remoteRollouts&&(cpuFallback||!(state?.machines||[]).some(machine=>
+        if(remoteRollouts&&!(state?.machines||[]).some(machine=>
             machine.status==='connected'&&machine.agent_platform==='linux'&&
             machine.tinybrains_profiles?.[profile]===digest&&
-            machine.tinybrains_remote_rollout_profiles?.includes(profile)))) {
-            feedback('hub-config-message','Remote CPU rollouts require an approved Linux GPU learner and a locally installed tailnet worker configuration.');
+            machine.tinybrains_remote_rollout_profiles?.includes(profile)&&
+            (!cpuFallback||machine.tinybrains_remote_cpu_learner===true&&
+                machine.tinybrains_cpu_fallback_profiles?.includes(profile)))) {
+            feedback('hub-config-message','Remote rollouts require an approved Linux learner for this device mode and a locally installed Tailnet worker configuration.');
             return;
         }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
@@ -2247,11 +2251,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         :'';
             const connectPressure=job.project_id==='tinybrains'&&
                 measured.pipeline_remote_connect_pressure?.value===1;
-            const connectOwner=measured.remote_transport_connect_owner?.value;
+            const connectOwner=measured.pipeline_remote_connect_owner?.value;
             const connectSignal=connectPressure&&
                 Number.isSafeInteger(connectOwner)&&connectOwner>=1&&connectOwner<=16
                 ?' · Sustained remote TCP connection setup on Collector '+
                     connectOwner+' (not evidence of network saturation)'
+                :'';
+            const remotePrepSignal=measured.pipeline_remote_prep_pressure?.value===1
+                ?' · Learner regularly still preparing remote rollouts after local collectors finish'
                 :'';
             const measuredWorkers=[];
             for(let i=0;i<9;i++) {
@@ -2329,7 +2336,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
-                enginePressureSignal+connectSignal+courierQueueSignal+courierImbalanceSignal+resourceSignal+
+                enginePressureSignal+connectSignal+remotePrepSignal+courierQueueSignal+courierImbalanceSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2400,6 +2407,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'remote_snapshot_unstaged_ratio',
         'pipeline_remote_connection_reuse_ratio',
         'pipeline_remote_connect_pressure',
+        'pipeline_remote_connect_owner','pipeline_remote_prep_pressure',
         'pipeline_remote_wait_dominant','pipeline_merge_dominant',
         'pipeline_cpu_lease_pressure','pipeline_cpu_throttle_pressure',
         'pipeline_ram_lease_pressure','pipeline_gpu_host_busy_pressure',
@@ -2432,6 +2440,11 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_sim_queue_work_share','training_sim_queue_pressure',
         'training_sim_cpu_underuse_evidence',
         'training_sim_topology_trial_lineages','training_sim_topology_accepted',
+        'training_cpu_lstm_boundary_batches','training_cpu_rollout_lstm_calls',
+        'training_cpu_optimizer_threads_max','training_cpu_optimizer_threads_next',
+        'training_cpu_optimizer_threads_settled','training_remote_cpu_optimizer_trials',
+        'training_gpu_rollout_state_copy_batches','training_gpu_rollout_state_copy_bytes',
+        'training_gpu_rollout_state_wait_seconds',
         'training_sim_topology_rejected','training_sim_topology_unavailable',
         'training_sim_topology_unverified','training_sim_topology_migrations',
         'training_topology_max_migration_seconds',
@@ -4485,7 +4498,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const distributedMachine=document.createElement('select');
     const distributedBudgets=document.createElement('textarea');
     distributedBudgets.rows=5;
-    distributedBudgets.placeholder='Worker resource budgets, in endpoint order';
+    distributedBudgets.placeholder='Worker machine IDs and resource budgets';
     const distributedDetails=document.createElement('div');
     const distributedFeedback=document.createElement('div');
     const distributedMachineLabel=document.createElement('label');
@@ -4511,9 +4524,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const budgets=JSON.parse(distributedBudgets.value);
             const selectedMachine=state.machines.find(m=>m.id===distributedMachine.value);
-            if(!Array.isArray(budgets)||budgets.length!==
-                selectedMachine?.tinybrains_remote_rollout_endpoints?.length)
-                throw Error('Supply one resource budget for each physically approved remote collector.');
+            if(!Array.isArray(budgets)||!budgets.length||
+                (selectedMachine?.tinybrains_rollout_subset!==true&&budgets.length!==
+                    selectedMachine?.tinybrains_remote_rollout_endpoints?.length))
+                throw Error('Supply the selected remote collector budgets.');
             const resources=JSON.parse($('hub-job-resources').value);
             // The distributed queue must preserve the same Train metrics as
             // ordinary queueing. Prioritize paired collector evidence for
@@ -4533,8 +4547,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 collectors:budgets.map(item=>{
                     if(!item||typeof item!=='object'||Array.isArray(item))
                         throw Error('Each collector budget must be a JSON object.');
-                    const {threads,...resources}=item;
-                    return {resources,...(threads===undefined?{}:{threads})};
+                    const {machine_id,threads,...resources}=item;
+                    return {resources,...(threads===undefined?{}:{threads}),
+                        ...(machine_id===undefined?{}:{machine_id})};
                 }),
             });
             distributedFeedback.textContent='Queued learner '+result.learner.id+
@@ -4554,7 +4569,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const courierMachine=document.createElement('select');
     const courierBudgets=document.createElement('textarea');
     courierBudgets.rows=5;
-    courierBudgets.placeholder='One CPU/RAM/GPU resource object per pinned PPO endpoint';
+    courierBudgets.placeholder='Worker machine IDs and resource budgets';
     const courierDetails=document.createElement('div');
     const courierFeedback=document.createElement('div');
     const courierMachineLabel=document.createElement('label');
@@ -4593,7 +4608,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     machine_id:courierMachine.value,resources,
                     metric_selection:selectedJobMetrics(),
                     ...(predecessor?{continuation_of_job_id:predecessor}:{})},
-                lineages:budgets.map(resources=>({resources})),
+                lineages:budgets.map(({machine_id,...resources})=>({resources,
+                    ...(machine_id===undefined?{}:{machine_id})})),
             });
             courierFeedback.textContent='Reserved '+result.lineages.length+
                 ' remote PPO lineages and learner '+result.learner.id+
@@ -4623,12 +4639,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 machine.courier_remote_lineage_endpoints.length+' PPO lineages',machine.id)));
         if(machines.some(machine=>machine.id===prior))courierMachine.value=prior;
         const machine=machines.find(item=>item.id===courierMachine.value);
-        if(courierBudgetHost!==machine?.id) {
-            courierBudgetHost=machine?.id||null;
-            courierBudgets.value=JSON.stringify(
-                (machine?.courier_remote_lineage_endpoints||[]).map(()=>
-                    ({cpus:2,ram_mb:4096,gpu_count:0})),null,2);
-        }
         const endpoints=machine?.courier_remote_lineage_endpoints||[];
         const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
             host.status==='connected'&&host.id!==machine.id&&
@@ -4636,16 +4646,27 @@ document.addEventListener('DOMContentLoaded', () => {
             host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
             host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i]&&
             host.installed_projects?.includes('courier_lineage')));
+        const subset=machine?.courier_lineage_subset===true;
+        const available=match.filter(hosts=>hosts.length===1).map(hosts=>hosts[0]);
+        const budgetHost=machine?machine.id+':'+subset:null;
+        const population=selected.parameters.workers;
+        if(courierBudgetHost!==budgetHost) {
+            courierBudgetHost=subset&&!available.length?null:budgetHost;
+            courierBudgets.value=JSON.stringify(
+                (subset?available.slice(0,Math.max(0,population-1)):match).map(worker=>
+                    ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),
+                null,2);
+        }
         const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
-            selected?.parameters?.workers>endpoints.length&&
-            match.every(item=>item.length===1)&&
-            new Set(match.map(item=>item[0]?.id)).size===match.length);
+            population>1&&available.length>0&&
+            (subset||population>endpoints.length&&available.length===endpoints.length)&&
+            new Set(available.map(host=>host.id)).size===available.length);
         courierQueue.disabled=!ready;
         courierDetails.textContent=ready
-            ?'Pinned PPO workers: '+match.map((hosts,i)=>
-                endpoints[i]+' on '+hosts[0].id).join('; ')+
-                '. Set fixed CPU/RAM/GPU budgets independently for each worker.'
-            :'Register courier_lineage and connect a distinct approved native worker per Tailnet endpoint.';
+            ?'Available PPO workers: '+available.map(host=>host.id).join(', ')+
+                (subset?'. Keep the machines you want to allocate.':'. Supply one budget per worker in the listed order.')+
+                ' Leave at least one PPO lineage on the learner.'
+            :'Register the Courier lineage project and connect the approved workers.';
     }
     courierMachine.addEventListener('change',renderCourierDistributedGroup);
     let distributedBudgetHost=null;
@@ -4663,34 +4684,39 @@ document.addEventListener('DOMContentLoaded', () => {
             m.native_preflight_passed&&m.tinybrains_profiles?.[selected.parameters.profile]===
                 selected.parameters.profile_sha256&&
             m.tinybrains_remote_rollout_profiles?.includes(selected.parameters.profile)&&
+            (selected.parameters.device!=='cpu'||m.tinybrains_remote_cpu_learner===true&&
+                m.tinybrains_cpu_fallback_profiles?.includes(selected.parameters.profile))&&
             m.tinybrains_remote_rollout_endpoints?.length);
         distributedMachine.replaceChildren(...machines.map(m=>new Option(
             (m.name||m.id)+' ('+m.id+') · '+
                 m.tinybrains_remote_rollout_endpoints.length+' collectors',m.id)));
         if(machines.some(m=>m.id===prior))distributedMachine.value=prior;
         const machine=machines.find(m=>m.id===distributedMachine.value);
-        if(distributedBudgetHost!==machine?.id) {
-            distributedBudgetHost=machine?.id||null;
-            distributedBudgets.value=JSON.stringify(
-                (machine?.tinybrains_remote_rollout_endpoints||[]).map(()=>
-                    ({cpus:2,ram_mb:4096,gpu_count:0,threads:2})),null,2);
-        }
         const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
         const workers=endpoints.map(endpoint=>state.machines.filter(m=>
             m.status==='connected'&&m.id!==machine.id&&
             m.tinybrains_rollout_endpoint===endpoint&&
             m.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
             m.installed_projects?.includes('tinybrains_rollout')));
+        const subset=machine?.tinybrains_rollout_subset===true;
+        const available=workers.filter(items=>items.length===1).map(items=>items[0]);
+        const budgetHost=machine?machine.id+':'+subset:null;
+        if(distributedBudgetHost!==budgetHost) {
+            distributedBudgetHost=budgetHost;
+            distributedBudgets.value=JSON.stringify((subset?available:workers).map(worker=>
+                ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),null,2);
+            if(subset&&!available.length)distributedBudgetHost=null;
+        }
         const ready=Boolean(machine&&
             state.projects.some(p=>p.id==='tinybrains_rollout')&&
-            workers.every(m=>m.length===1)&&
-            new Set(workers.map(m=>m[0]?.id)).size===workers.length);
+            available.length>0&&new Set(available.map(m=>m.id)).size===available.length&&
+            (subset||available.length===workers.length));
         distributedQueue.disabled=!ready;
         distributedDetails.textContent=ready
-            ?'Approved collectors: '+workers.map((items,i)=>
-                endpoints[i]+' on '+items[0].id).join('; ')+
-                '. Modify each CPU/RAM budget, its independent threads setting, or request an exclusive CUDA GPU.'
-            :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
+            ?'Available collectors: '+available.map(worker=>worker.id).join(', ')+
+                (subset?'. Keep the machines you want to allocate.':'. Supply one budget per collector in the listed order.')+
+                ' Set each CPU/RAM budget and any exclusive GPU allocation.'
+            :'Register the TinyBrains rollout project and connect the approved workers.';
     }
     $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
     distributedMachine.addEventListener('change',renderDistributedGroup);
