@@ -26,6 +26,49 @@ legacy Unity match. Game and headless runs both use the existing
 `NativePhysicalScene` -> `NativeAuthoredLevel` -> `CombatWorld`
 pipeline, including identical collision and weapon implementations.
 
+### Author a new native battle without Unity
+
+The stdlib-only authoring tool constructs real playable scenes from the
+repository's native ship archetypes. It copies each ship's actual weapon,
+collision-type, sight and special definitions rather than guessing stats.
+The selected native map, collision matrix and immutable physics assets are
+shared with the normal playable game and headless simulator:
+
+```sh
+python3 native/tools/author-battle.py custom-fleet \
+  --title "Custom Fleet Battle" --bees 21:6,18:2,2:1 \
+  --humans 13:6,10:2,22:2 --control bees --seed 42
+bees library custom-fleet/library.json --output-dir custom-fleet-saves
+# The same battle without a window or separate simulator:
+bees run custom-fleet/battle.run.json --output-dir custom-fleet-headless
+```
+
+The author produces `battle.scene.json`, `battle.run.json`, and
+`library.json` in a **new directory**, with stable nonoverlapping ship,
+weapon and squad IDs, complete typed AI command queues, and initial
+spawn spacing. It refuses unrepresentable fleet sizes, missing ship
+archetypes, or orphaned Carrier children. `--control both` creates
+two independently controllable sides for the existing authenticated native
+multiplayer host; `--host-side 1|2` chooses the host window's faction.
+`--control none` runs both factions under the same authored native
+scripted-order director. `--fog`, `--empty-map`, `--minutes`,
+and `--spacing` are supported. `--source-scene` and
+`--source-run` allow a larger native-authored arena or other verified
+archetypes without Unity. The default catalogue uses the existing
+native Queen example and skirmish stage: types are available only on
+their original authored side to preserve layer/weapon contracts.
+For playback with no original Unity authoring tools, both the game and
+headless executable need only the compiled native assets and generated
+JSON. Authoring Python is not a runtime dependency.
+
+In an ordinary native scene with exactly one player-controlled side, the
+local camera/input owner now follows that actual squad side, regardless
+of whether it is the historically named `bee_side` or `human_side`.
+For two-sided scenes, `local_player_side` explicitly selects the host
+window; existing two-sided scenes without it retain the previous host-side
+default. This is solely local view/targeting authority, not a change to
+network authentication or the source-side terminal winner.
+
 A larger authored gameplay configuration is
 `native/examples/native-skirmish.run.json` with its companion
 `native-skirmish.scene.json`. It uses the same launcher as the duel,

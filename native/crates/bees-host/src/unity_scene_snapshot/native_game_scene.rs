@@ -20,6 +20,11 @@ struct GameScene {
     time_scale: f32,
     bee_side: i32,
     human_side: i32,
+    /// Local presentation/targeting owner. With one authored human player
+    /// this is inferred from squad ownership, not the opposite faction's
+    /// historical name; two-sided multiplayer may choose explicitly.
+    #[serde(default)]
+    local_player_side: Option<i32>,
     command_settings: GameCommandSettings,
     ships: Vec<GameShip>,
     squads: Vec<GameSquad>,
@@ -608,6 +613,8 @@ impl NativePhysicalScene {
             !span.is_finite() || span.x <= 0.0 || span.y <= 0.0 ||
             raw.bee_side <= 0 || raw.human_side <= 0 ||
             raw.bee_side == raw.human_side ||
+            raw.local_player_side.is_some_and(|side|
+                side != raw.bee_side && side != raw.human_side) ||
             !raw.fixed_dt_seconds.is_finite() || raw.fixed_dt_seconds <= 0.0 ||
             !raw.time_scale.is_finite() || raw.time_scale <= 0.0 ||
             raw.ships.is_empty() || raw.squads.is_empty()
@@ -1258,6 +1265,7 @@ impl NativePhysicalScene {
         let mut squad_ids = HashSet::new();
         let mut saved_squad_ids = HashSet::new();
         let mut has_player = false;
+        let mut player_sides = HashSet::new();
         for squad in raw.squads {
             if squad.item_id <= 0 || squad.item_id == i64::MAX ||
                 squad.saved_squad_id.is_some_and(|id|
@@ -1291,6 +1299,7 @@ impl NativePhysicalScene {
                 return Err(invalid("native HiveMind-controlled squad needs an opponent identity"));
             }
             has_player |= squad.user_controlled;
+            if squad.user_controlled { player_sides.insert(squad.side); }
             source_squads.push(NativeSourceSquad {
                 saved_squad_id: squad.saved_squad_id,
                 custom_color_rgb: squad.custom_color_rgb,
@@ -1320,6 +1329,18 @@ impl NativePhysicalScene {
         if assigned.len() != ship_sides.len() {
             return Err(invalid("every native game ship must belong to exactly one squad"));
         }
+        let local_player_side = if let Some(explicit) = raw.local_player_side {
+            if !player_sides.contains(&explicit) {
+                return Err(invalid("local player side must own an authored player-controlled squad"));
+            }
+            explicit
+        } else if player_sides.len() == 1 {
+            *player_sides.iter().next().expect("one player side")
+        } else {
+            // Preserve existing two-sided native lobby behavior when the
+            // author did not explicitly pick a host-window viewpoint.
+            raw.human_side
+        };
         let agent_ids = group_participants.iter()
             .map(|member| member.agent_id).collect::<HashSet<_>>();
         if agent_ids.len() != group_participants.len() ||
@@ -1342,7 +1363,7 @@ impl NativePhysicalScene {
 
         let mut scene = Self {
             targeting_context: Some(bees_gameplay::squad_targeting::NativeTargetingContext {
-                has_player, user_side: raw.human_side,
+                has_player, user_side: local_player_side,
             }),
             bee_side: raw.bee_side,
             human_side: raw.human_side,
