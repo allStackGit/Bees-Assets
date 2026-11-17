@@ -704,6 +704,7 @@ def main() -> None:
     output = args.output_dir.resolve()
     result = {
         "seed_offset": args.seed_offset,
+        "source_run_config_sha256": hashlib.sha256(run_bytes).hexdigest(),
         "input_checkpoint_sha256": input_checkpoint_sha,
         "input_manifest_sha256": input_manifest_sha,
     }
@@ -756,6 +757,9 @@ def main() -> None:
                    for bundle, source in zip(pinned, collections)):
                 raise ValueError("imported native rollout receipt differs from its pinned SHA-256")
             result["collection_orders"] = str(order_path)
+            # In an imported round, the actual environment is the pinned
+            # collector source, not this empty rollout-bundle template.
+            result["source_run_config_sha256"] = orders["source_run_config_sha256"]
             result["collection_orders_sha256"] = file_sha256(order_path)
             result["rollout_metrics"] = aggregate_collection_metrics(collections)
         output.mkdir(parents=True, exist_ok=False)
