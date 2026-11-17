@@ -32,15 +32,15 @@ const TITANIA_LOOP_END: f32 = 185.461_18;
 enum Effect {
     LightLaser, SmallLaser, BigLaser, BeamCannon, FlagshipLaser, QueenLaser,
     RocketLaunch, StrikerBomb, Explosion, HugeExplosion,
-    Warp, BargeCharge, Button,
+    Warp, Button,
 }
 
 impl Effect {
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 12] = [
         Self::LightLaser, Self::SmallLaser, Self::BigLaser,
         Self::BeamCannon, Self::FlagshipLaser, Self::QueenLaser, Self::RocketLaunch,
         Self::StrikerBomb, Self::Explosion, Self::HugeExplosion,
-        Self::Warp, Self::BargeCharge, Self::Button,
+        Self::Warp, Self::Button,
     ];
 
     fn file(self) -> &'static str {
@@ -56,7 +56,6 @@ impl Effect {
             Self::Explosion => "Ship Explosion.mp3",
             Self::HugeExplosion => "Largest Explosion.mp3",
             Self::Warp => "Enter The Warp.mp3",
-            Self::BargeCharge => "Fire Barge Detonation Click.mp3",
             Self::Button => "Beez Button Click.mp3",
         }
     }
@@ -121,8 +120,6 @@ pub struct NativeAudioMeasurements {
 }
 
 pub struct NativeGameAudio {
-    // Keep the stream alive for as long as any sink is playing.
-    _stream: Option<OutputStream>,
     handle: Option<OutputStreamHandle>,
     root: Option<PathBuf>,
     effects: HashMap<Effect, Arc<[u8]>>,
@@ -136,6 +133,8 @@ pub struct NativeGameAudio {
     paused: bool,
     muted: bool,
     measurements: NativeAudioMeasurements,
+    // Drop the output stream only AFTER music and effect sinks.
+    _stream: Option<OutputStream>,
 }
 
 impl NativeGameAudio {
@@ -164,11 +163,11 @@ impl NativeGameAudio {
             }
         }
         Self {
-            _stream: stream, handle, root, effects,
+            handle, root, effects,
             voices: Vec::new(), music: Vec::new(), location: None,
             current_episode: None, last_tick: None,
             seen_projectiles: HashMap::new(), paused: false, muted: false,
-            measurements,
+            measurements, _stream: stream,
         }
     }
 
@@ -417,11 +416,8 @@ impl NativeGameAudio {
                     view.combat.ship_body(*ship_id)
                         .map(|body| body.motion.position),
                 ),
-                CombatEvent::BargeChargeStarted { ship_id } => (
-                    Effect::BargeCharge,
-                    view.combat.ship_body(*ship_id)
-                        .map(|body| body.motion.position),
-                ),
+                // Source Barge charging has no authenticated sound
+                // identity. Do not impersonate the Fire Barge UI click.
                 _ => continue,
             };
             if point.is_some_and(|point| !on_screen(visible, point)) {
