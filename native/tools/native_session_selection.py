@@ -169,3 +169,60 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
     }
     atomic_json(root / "best-evaluated.json", receipt)
     return receipt
+
+
+def publish_latest_playable(root, recipe, completed, manifest, checkpoint):
+    """Export the latest verified learner as a runnable native game.
+
+    Unlike best-evaluated, this is not a quality ranking. It uses the
+    checkpoint's *current* opponent manifest and the active curriculum scene,
+    keeping self-play and authored gameplay configuration intact.
+    """
+    root = Path(root)
+    manifest = Path(manifest).resolve(strict=True)
+    checkpoint = Path(checkpoint).resolve(strict=True)
+    manifest_sha = file_sha256(manifest)
+    checkpoint_sha = file_sha256(checkpoint)
+    if completed:
+        last = completed[-1][1]
+        if (Path(last["next_manifest"]).resolve(strict=True) != manifest or
+                Path(last["next_checkpoint"]).resolve(strict=True) != checkpoint or
+                last["next_manifest_sha256"] != manifest_sha or
+                last["next_checkpoint_sha256"] != checkpoint_sha):
+            raise ValueError("latest learner model does not match completed native round")
+    elif (manifest_sha != recipe["initial_manifest"]["sha256"] or
+          checkpoint_sha != recipe["initial_checkpoint"]["sha256"]):
+        raise ValueError("initial latest-playable model differs from pinned session input")
+    check_learner(manifest, checkpoint, recipe["learner_slot"])
+    source_run, stage_start = selected_curriculum_run(
+        recipe["run_config"], recipe.get("curriculum"), max(1, len(completed)),
+    )
+    source = Path(source_run["path"]).resolve(strict=True)
+    if file_sha256(source) != source_run["sha256"]:
+        raise ValueError("native playable environment changed during session")
+    playable = _playable_run(source, {
+        "checkpoint_sha256": checkpoint_sha,
+        "manifest": str(manifest),
+    })
+    output = root / "latest-playable-run.json"
+    atomic_json(output, playable)
+    receipt = {
+        "schema_version": 1,
+        "kind": "native_training_latest_playable",
+        "selection": "latest_verified_checkpoint_without_quality_ranking",
+        "completed_rounds": len(completed),
+        "learner_slot": recipe["learner_slot"],
+        "checkpoint": str(checkpoint),
+        "checkpoint_sha256": checkpoint_sha,
+        "manifest": str(manifest),
+        "manifest_sha256": manifest_sha,
+        "source_run_config": str(source),
+        "source_run_config_sha256": source_run["sha256"],
+        **({"curriculum_stage_start_round": stage_start}
+           if "curriculum" in recipe else {}),
+        "playable_run": str(output),
+        "playable_run_sha256": file_sha256(output),
+    }
+    # Receipt last: its presence means the game config has been fsynced.
+    atomic_json(root / "latest-playable.json", receipt)
+    return receipt
