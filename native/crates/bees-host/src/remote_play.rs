@@ -32,6 +32,7 @@ const MAX_LINE: usize = 64 * 1024;
 const MAX_PENDING: usize = 4 * 1024 * 1024;
 const MAX_RELIABLE_PENDING: usize = 256 * 1024;
 const READ_BYTES_PER_POLL: usize = 128 * 1024;
+const WRITE_BYTES_PER_FLUSH: usize = 256 * 1024;
 const MAX_ORDERS_PER_POLL: usize = 64;
 const STATE_EVERY_TICKS: u64 = 5;
 
@@ -105,7 +106,8 @@ impl Peer {
     /// A partially written JSON line is always finished before another one.
     fn flush(&mut self) -> u64 {
         let mut bytes = 0u64;
-        while !self.closed {
+        let mut budget = WRITE_BYTES_PER_FLUSH;
+        while !self.closed && budget > 0 {
             if self.written == self.outgoing.len() {
                 self.outgoing.clear();
                 self.written = 0;
@@ -120,10 +122,12 @@ impl Peer {
                     break;
                 }
             }
-            match self.socket.write(&self.outgoing[self.written..]) {
+            let end = (self.written + budget).min(self.outgoing.len());
+            match self.socket.write(&self.outgoing[self.written..end]) {
                 Ok(0) => { self.closed = true; break; }
                 Ok(n) => {
                     self.written += n;
+                    budget -= n;
                     if self.writing_state { bytes += n as u64; }
                 }
                 Err(ref error) if error.kind() == io::ErrorKind::WouldBlock => break,
