@@ -9,11 +9,11 @@
 //! {kind:"input", request_id:u64, action:NativePlayerInput}. Host replies
 //! with kind:"input_result" and broadcasts kind:"world_state". The remote
 //! interface shares the local player's authority (co-op, not opposing sides).
+use std::collections::HashSet;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Instant;
 
-use bees_gameplay::player_inputs::NativePlayerAuthority;
 use bees_sim::level_discovery::DiscoveryKind;
 use bees_sim::geometry::Vec2;
 use serde::Deserialize;
@@ -54,7 +54,8 @@ struct Peer {
 
 impl Peer {
     fn enqueue(&mut self, message: &Value) -> io::Result<()> {
-        let data = serde_json::to_vec(message)?;
+        let data = serde_json::to_vec(message)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         if self.outgoing.len().saturating_sub(self.written) +
             data.len() + 1 > MAX_PENDING {
             self.closed = true;
@@ -171,7 +172,8 @@ impl NativeRemotePlay {
             let mut budget = READ_BYTES_PER_POLL;
             let mut chunk = [0u8; 8192];
             while budget > 0 {
-                match peer.socket.read(&mut chunk[..budget.min(chunk.len())]) {
+                let limit = budget.min(chunk.len());
+                match peer.socket.read(&mut chunk[..limit]) {
                     Ok(0) => { peer.closed = true; break; }
                     Ok(n) => {
                         budget -= n;
@@ -229,11 +231,11 @@ impl NativeRemotePlay {
         let reply = match result {
             Ok(feedback) => json!({
                 "kind": "input_result", "request_id": request_id,
-                "accepted": true, "feedback": feedback,
+                "processed": true, "feedback": feedback,
             }),
             Err(message) => json!({
                 "kind": "input_result", "request_id": request_id,
-                "accepted": false, "feedback": message,
+                "processed": false, "feedback": message,
             }),
         };
         let _ = peer.enqueue(&reply);
@@ -299,12 +301,14 @@ fn current_state(view: &NativeRenderWorldView<'_>) -> Value {
             (radius > 0.0 && radius.is_finite()).then_some((body.motion.position, radius))
         }).collect()
     } else { Vec::new() };
+    let mut visible_ids = HashSet::<i64>::new();
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
         let owned = view.roster.owning_squad(ship.entity_id)
             .is_some_and(|owner| view.is_local_player_squad(owner));
         let visible = owned || !fog || sources.iter().any(|&(position, radius)|
             (body.motion.position - position).length_squared() <= radius * radius);
         if !visible { return None; }
+        visible_ids.insert(ship.entity_id);
         let discovered = viewer.is_some_and(|side|
             view.combat.discovery().has(side, DiscoveryKind::Ship, ship.entity_id));
         Some(json!({
@@ -316,11 +320,14 @@ fn current_state(view: &NativeRenderWorldView<'_>) -> Value {
         }))
     }).collect();
     let squads: Vec<_> = view.roster.active_lifetimes().filter_map(|owner| {
-        if !view.is_local_player_squad(owner) { return None; }
         let squad = view.roster.get(owner)?;
+        let owned = view.is_local_player_squad(owner);
+        let members: Vec<_> = squad.members.iter().copied()
+            .filter(|id| owned || visible_ids.contains(id)).collect();
+        if members.is_empty() { return None; }
         Some(json!({
-            "owner": owner, "side": squad.side,
-            "members": squad.members, "source_number": squad.source_hotkey_number,
+            "owner": owner, "side": squad.side, "owned": owned,
+            "members": members, "source_number": squad.source_hotkey_number,
         }))
     }).collect();
     json!({
