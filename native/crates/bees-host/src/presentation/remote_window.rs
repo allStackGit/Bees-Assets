@@ -38,6 +38,7 @@ enum TargetMode { Fire, Attack, Guard, Mine, Heal, Retreat, Patrol }
 struct WireCounts {
     bytes_received: u64,
     snapshots: u64,
+    frames_rendered: u64,
     orders_sent: u64,
     acknowledgments: u64,
     /// Render-only smoothing; no simulation or network side-effects.
@@ -1376,13 +1377,19 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             &mut hulls);
         peer.metrics.obstacle_hull_draws += hulls;
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
+        peer.metrics.frames_rendered += 1;
     }
+    let session_seconds = started.elapsed().as_secs_f64();
     println!("{}",json!({
         "kind":"native_multiplayer_client_final",
         "side":expected_side,
-        "session_wall_seconds":started.elapsed().as_secs_f64(),
+        "session_wall_seconds":session_seconds,
         "bytes_received":peer.metrics.bytes_received,
         "snapshots_rendered":peer.metrics.snapshots,
+        "frames_rendered":peer.metrics.frames_rendered,
+        "rendered_fps":if session_seconds > 0.0 {
+            peer.metrics.frames_rendered as f64 / session_seconds
+        } else { 0.0 },
         "snapshot_pairs_interpolated":peer.metrics.snapshot_pairs_interpolated,
         "interpolated_draw_frames":peer.metrics.interpolated_draw_frames,
         "ship_sprite_draws":peer.metrics.ship_sprite_draws,
