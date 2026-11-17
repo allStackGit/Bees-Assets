@@ -131,7 +131,7 @@ def main():
             print(json.dumps({
                 "kind": "native_distributed_collector_delivered",
                 "collector": job["id"], **delivered,
-            }, flush=True), flush=True)
+            }), flush=True)
     print(json.dumps({
         "kind": "native_distributed_collector_completed",
         "collector": job["id"], "round": orders["round"],
