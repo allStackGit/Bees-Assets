@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -49,8 +48,11 @@ def main():
     upload_url = args.upload_url or args.input_url
     if not (upload_url or args.archive_output or args.bundle_inbox):
         parser.error("supply --upload-url, --archive-output or --bundle-inbox")
-    scratch = args.scratch.resolve(strict=True)
-    if not scratch.is_dir() or scratch.is_symlink():
+    original_scratch = args.scratch.absolute()
+    if original_scratch.is_symlink():
+        parser.error("--scratch cannot redirect through a symlink")
+    scratch = original_scratch.resolve(strict=True)
+    if not scratch.is_dir():
         parser.error("--scratch must be an existing non-symlink directory")
     binary = args.rollout_binary.resolve(strict=True)
     if not binary.is_file():
@@ -94,7 +96,7 @@ def main():
             "collector_id": imported["collector_id"],
             "input_bytes": imported["source_bytes"],
             "elapsed_wall_seconds": time.perf_counter() - started,
-            "input_archive": str(input_archive.resolve()),
+            "input_source": args.input_url or str(args.input_archive.resolve()),
         }, sort_keys=True), flush=True)
     except BaseException:
         # Failed work is never converted to success. Keep its source inputs
