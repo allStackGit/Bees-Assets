@@ -841,6 +841,9 @@ pub struct CombatWorld {
     /// that reached the authored child collider are active casualties.
     healing_hive_by_ship: HashMap<i64, (i64, bool)>,
     healing_slots_used_by_hive: HashMap<i64, u8>,
+    /// Episode-local exact Ship.Kill cascades caused by Beehive death.
+    /// Incremented only at the rare physical retirement boundary.
+    game_healing_cascade_kills: u64,
     /// Shared FullRetreat/live-game WarpGate opening sessions. Inactive
     /// gates have no timer or per-step cost.
     game_warp_gate_sessions: HashMap<i64, GameWarpGateSession>,
@@ -1015,6 +1018,7 @@ impl CombatWorld {
             support_zone_ids: HashMap::new(),
             healing_hive_by_ship: HashMap::new(),
             healing_slots_used_by_hive: HashMap::new(),
+            game_healing_cascade_kills: 0,
             game_warp_gate_sessions: HashMap::new(),
             game_warp_gate_by_ship: HashMap::new(),
             pending_game_warps: Vec::new(),
@@ -1293,11 +1297,16 @@ impl CombatWorld {
             self.retire_dead_ship_with_mode(
                 healer_index, killer_id, command_outcome_id, end_kill,
             )?;
+            self.game_healing_cascade_kills += 1;
         }
         self.events.push(CombatEvent::ShipDied {
             victim_id, killer_id, command_outcome_id, policy_binding_revision,
         });
         Ok(())
+    }
+
+    pub fn game_healing_cascade_kills(&self) -> u64 {
+        self.game_healing_cascade_kills
     }
 
     pub fn policy_special_measurements(&self) -> PolicySpecialMeasurements {
