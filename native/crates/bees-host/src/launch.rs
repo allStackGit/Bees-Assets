@@ -4516,6 +4516,8 @@ fn run_battle(
         "navigation_raster_work_current_episodes": status.navigation_rasters,
         "beehive_healing_cascade_kills_current_episodes":
             status.game_healing_cascade_kills,
+        "beehive_healing_reserved_ships": status.game_healing_reserved_ships,
+        "beehive_healing_active_ships": status.game_healing_active_ships,
         "campaign_outcome": campaign_outcome,
         "campaign_fleet": campaign_fleet,
         "campaign_squads": campaign_squads,
