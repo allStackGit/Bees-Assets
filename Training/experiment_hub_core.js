@@ -2532,6 +2532,8 @@ class ExperimentHub {
             throw Error('Cancel the frozen distributed group plan before individually starting one of its members.');
         const snapshot=this.snapshot();
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
+        if(job?.project_id==='courier_lineage')
+            throw Error('Courier remote PPO workers must Start through the frozen distributed group.');
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible)
             throw Error(readiness.reason);
