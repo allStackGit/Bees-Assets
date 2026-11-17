@@ -119,6 +119,35 @@ fn rebase_source_files(run: &mut Value, original_run: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Select one authoritative world from a training configuration and keep
+/// exactly its first fixed-seed episode. The original run's episode_seeds
+/// vector is as long as the trainer's recycle count, so retaining it after
+/// setting episodes_per_world=1 would fail LevelConfig::validate_seeds.
+fn focus_playable_level(run: &mut Value, selected: usize) -> io::Result<()> {
+    let levels = run["levels"].as_array()
+        .ok_or_else(|| invalid("trained selection has no authored Levels"))?;
+    let level = levels.get(selected)
+        .ok_or_else(|| invalid("selected native trained Level is no longer available"))?
+        .clone();
+    let episodes = run["episodes_per_world"].as_u64()
+        .filter(|&count| count > 0)
+        .ok_or_else(|| invalid("trained selection has no fixed episode count"))?;
+    let rounds = run["max_rounds"].as_u64()
+        .filter(|&count| count > 0 && count % episodes == 0)
+        .ok_or_else(|| invalid("trained selection has no whole episode budget"))?;
+    let mut level = level;
+    if let Some(seeds) = level["episode_seeds"].as_array_mut() {
+        if seeds.len() as u64 != episodes {
+            return Err(invalid("trained source has an invalid episode seed schedule"));
+        }
+        seeds.truncate(1);
+    }
+    run["levels"] = json!([level]);
+    run["max_rounds"] = json!(rounds / episodes);
+    run["episodes_per_world"] = json!(1);
+    Ok(())
+}
+
 fn archive_source_scene(source: &Path, target: &Path) -> io::Result<PathBuf> {
     let mut input = File::open(source)?;
     let mut output = fs::OpenOptions::new().write(true).create_new(true)
@@ -129,6 +158,21 @@ fn archive_source_scene(source: &Path, target: &Path) -> io::Result<PathBuf> {
 }
 
 impl TrainedGame {
+    /// Show the physical Levels in the current verified checkpoint, rather
+    /// than requiring a single-arena session just to play a trained model.
+    /// Each choice is derived from the real source RunConfig, not a guessed
+    /// filename or a second scene catalog.
+    pub fn playable_levels(&self) -> Result<Vec<(u64, i64)>, Box<dyn Error>> {
+        let source = self.verified_run()?;
+        let run: RunConfig = serde_json::from_slice(&fs::read(source)?)?;
+        if run.levels.is_empty() {
+            return Err(invalid("trained game contains no playable Levels").into());
+        }
+        Ok(run.levels.iter().map(|level|
+            (level.world_id, level.level_id)
+        ).collect())
+    }
+
     fn published_receipt(&self) -> Result<Value, Box<dyn Error>> {
         let receipt: Value = serde_json::from_slice(&fs::read(&self.receipt)?)?;
         if receipt["schema_version"].as_u64() != Some(1) ||
@@ -187,7 +231,7 @@ impl TrainedGame {
     /// Freeze the authored scene beside the already archived run so a
     /// future training publication cannot change this battle's replay.
     pub fn archive_challenge(
-        &self, parent: &Path, human_side: i32,
+        &self, parent: &Path, human_side: i32, level_index: usize,
     ) -> Result<PathBuf, Box<dyn Error>> {
         use std::io::Write;
         if !matches!(human_side, 1 | 2) {
@@ -204,16 +248,14 @@ impl TrainedGame {
             return Err(invalid("trained challenge source run changed during publication").into());
         }
         let mut run: Value = serde_json::from_slice(&source_bytes)?;
-        rebase_source_files(&mut run, &source_run)?;
-        let source_levels = run["levels"].as_array()
-            .ok_or_else(|| invalid("trained challenge has no source levels"))?;
-        if source_levels.len() != 1 ||
-            run["hivemind"].is_object() || run["model_updates"].as_array()
-                .is_some_and(|updates| !updates.is_empty())
+        if run["hivemind"].is_object() || run["model_updates"].as_array()
+            .is_some_and(|updates| !updates.is_empty())
         {
-            return Err(invalid("interactive trained challenge needs one offline Level").into());
+            return Err(invalid("interactive trained challenge requires an offline source").into());
         }
-        let authored_scene = Path::new(text_field(&source_levels[0], "scene")?);
+        focus_playable_level(&mut run, level_index)?;
+        rebase_source_files(&mut run, &source_run)?;
+        let authored_scene = Path::new(text_field(&run["levels"][0], "scene")?);
         let source_scene = if authored_scene.is_absolute() {
             authored_scene.canonicalize()?
         } else {
@@ -312,16 +354,10 @@ impl TrainedGame {
         level.as_object_mut().ok_or_else(||
             invalid("trained challenge Level is not an object"))?.remove("groups");
 
-        let episodes = run["episodes_per_world"].as_u64()
-            .filter(|&n| n > 0)
-            .ok_or_else(|| invalid("trained challenge has no fixed episode count"))?;
-        let rounds = run["max_rounds"].as_u64()
-            .filter(|&n| n > 0 && n % episodes == 0)
-            .ok_or_else(|| invalid("trained challenge has no whole source episode budget"))?;
-        run["max_rounds"] = json!(rounds / episodes);
-        run["episodes_per_world"] = json!(1);
         let run_name = text_field(&run, "run_id")?.to_owned();
-        run["run_id"] = json!(format!("{run_name}-challenge-side-{human_side}"));
+        run["run_id"] = json!(format!(
+            "{run_name}-challenge-side-{human_side}-level-{}", level_index + 1
+        ));
         run["policy_capture"] = Value::Null;
         run["connection_checkpoint"] = json!("challenge-connection.json");
         run["notifications"] = json!("challenge-events.jsonl");
@@ -348,7 +384,7 @@ impl TrainedGame {
     /// before relocating the file. Later training publications cannot
     /// change this played battle's initial physical world or controller
     /// identity, and replay never silently resolves assets in save-root.
-    pub fn archive_playable(&self, parent: &Path)
+    pub fn archive_playable(&self, parent: &Path, level_index: usize)
         -> Result<PathBuf, Box<dyn Error>>
     {
         use std::io::Write;
@@ -360,7 +396,12 @@ impl TrainedGame {
             return Err(invalid("trained run was republished during game launch").into());
         }
         let mut archived_run: Value = serde_json::from_slice(&bytes)?;
+        focus_playable_level(&mut archived_run, level_index)?;
         rebase_source_files(&mut archived_run, &run)?;
+        let run_name = text_field(&archived_run, "run_id")?.to_owned();
+        archived_run["run_id"] = json!(format!(
+            "{run_name}-original-level-{}", level_index + 1
+        ));
         let levels = archived_run["levels"].as_array_mut()
             .ok_or_else(|| invalid("trained replay requires source Levels"))?;
         for (index, level) in levels.iter_mut().enumerate() {

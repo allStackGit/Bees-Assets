@@ -2565,23 +2565,44 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 let mut choice = 0_usize;
                 let Some(mode) = select_library(&choices, &mut choice, false)?
                     else { return Ok::<(), Box<dyn Error>>(()); };
+                // One trained session can contain many independent
+                // physical arenas. Let the player choose the actual
+                // source Level rather than silently rejecting multi-world
+                // sessions or launching every training world at once.
+                let levels = trained[trained_index].playable_levels()?;
+                let level_index = if levels.len() > 1 {
+                    let titles = levels.iter().enumerate().map(|(index, (world, level))|
+                        format!("Scenario {}  |  Level {}  |  World {}",
+                            index + 1, level, world)
+                    ).collect::<Vec<_>>();
+                    let rows = titles.iter().map(|title| BattleMenuRow {
+                        title, status: "  [Trained source Level]", unlocked: true,
+                    }).collect::<Vec<_>>();
+                    let mut selected_level = 0_usize;
+                    let Some(index) = select_library(&rows, &mut selected_level, false)?
+                        else { return Ok::<(), Box<dyn Error>>(()); };
+                    index
+                } else { 0 };
                 let output = new_library_battle_output(save_root, game_id)?;
                 let parent = output.parent()
                     .ok_or_else(|| invalid("missing trained battle archive"))?;
                 let source = if mode < 2 {
                     trained[trained_index].archive_challenge(
-                        parent, if mode == 0 { 1 } else { 2 },
+                        parent, if mode == 0 { 1 } else { 2 }, level_index,
                     )?
                 } else {
-                    // Freeze the verified selection's run bytes before a
-                    // trainer can republish its next mutable latest link.
-                    trained[trained_index].archive_playable(parent)?
+                    // Freeze the selected source Level and its first
+                    // original episode, not a whole trainer world pool.
+                    trained[trained_index].archive_playable(parent, level_index)?
                 };
                 println!("{}", json!({
                     "kind": "native_trained_game_mode",
                     "game_id": game_id,
                     "mode": if mode == 2 { "original_ai" } else { "human_challenge" },
                     "human_side": if mode < 2 { Some(if mode == 0 { 1 } else { 2 }) } else { None },
+                    "source_level_index": level_index,
+                    "source_world_id": levels[level_index].0,
+                    "source_level_id": levels[level_index].1,
                     "archived_run": source,
                 }));
                 run_session(&source, true, true, Some(output), None, None, None)
