@@ -197,7 +197,7 @@ pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>>
             let registration: PublishedModelRegistration =
                 serde_json::from_slice(&fs::read(entry.path())?)?;
             if registration.schema_version != 1 ||
-                entry.path().file_stem().and_then(|part| part.to_str()) != Some(&registration.id) {
+                entry.path().file_stem().and_then(|part| part.to_str()) != Some(registration.id.as_str()) {
                 return Err(invalid("published model ID differs from its registration filename").into());
             }
             registrations.push(RegisteredModel {
