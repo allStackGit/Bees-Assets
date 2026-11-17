@@ -2946,6 +2946,7 @@ fn run_battle(
     let mut successful_world_steps = 0_u64;
     let mut successful_policy_rows = 0_u64;
     let mut parallel_physics_rounds = 0_u64;
+    let mut parallel_physics_direct_rounds = 0_u64;
     let mut stage_id_serialized_rounds = 0_u64;
     let mut stage_id_serialized_arenas = 0_u64;
     let mut peak_parallel_physics_workers = 0_usize;
@@ -3179,6 +3180,8 @@ fn run_battle(
         successful_world_steps += counts.world_steps as u64;
         successful_policy_rows += counts.policy_rows as u64;
         parallel_physics_rounds += u64::from(counts.parallel_physics_rounds);
+        parallel_physics_direct_rounds +=
+            u64::from(counts.parallel_physics_direct_rounds);
         stage_id_serialized_rounds += u64::from(counts.parallel_stage_id_serialized_rounds);
         stage_id_serialized_arenas += counts.parallel_stage_id_serialized_arenas as u64;
         peak_parallel_physics_workers = peak_parallel_physics_workers
@@ -3766,6 +3769,9 @@ fn run_battle(
             "requested_physics_workers": physical_workers.get(),
             "requested_navigation_workers_per_level": navigation_workers.unwrap_or(0),
             "parallel_physics_rounds": parallel_physics_rounds,
+            "parallel_physics_direct_rounds": parallel_physics_direct_rounds,
+            "parallel_physics_queued_rounds":
+                parallel_physics_rounds - parallel_physics_direct_rounds,
             "parallel_stage_id_serialized_rounds": stage_id_serialized_rounds,
             "parallel_stage_id_serialized_arenas": stage_id_serialized_arenas,
             "peak_parallel_physics_workers": peak_parallel_physics_workers,

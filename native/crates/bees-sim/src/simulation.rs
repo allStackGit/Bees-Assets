@@ -224,6 +224,9 @@ pub struct ParallelSelectedStep<E> {
     /// Number of parallel CPU workers (not including the source-ordered
     /// Stage-identity lane). One denotes serial execution.
     pub parallel_workers: usize,
+    /// This successful batch assigned at most one active arena per worker
+    /// without taking a secondary arena-claim mutex.
+    pub direct_dispatch: bool,
     /// Live arenas stepped on the Stage-identity lane.
     pub serialized_arenas: usize,
 }
@@ -410,6 +413,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             failed_worlds: Vec::new(),
             worker_loads: Vec::new(),
             parallel_workers: 0,
+            direct_dispatch: false,
             serialized_arenas: 0,
         };
         let scheduled = actions.iter().filter(|entry| entry.is_some()).count();
@@ -490,6 +494,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
 
         let pool = &self.physics_pool.as_ref()
             .expect("multi-worker physics pool initialized above").1;
+        report.direct_dispatch = parallel_count == workers;
         // Common small-arena path: one live physics world per available
         // worker. Rayon owns the bounded queue internally, so building a
         // second Mutex-protected iterator would cause an unnecessary lock

@@ -576,6 +576,9 @@ pub struct NativeLevelWindowCounts {
     pub sampled_world_dispatch_and_step_nanos: u128,
     /// Headless model-batched rounds that used multiple physical workers.
     pub parallel_physics_rounds: u32,
+    /// Parallel rounds that used direct, lock-free one-arena dispatch.
+    /// Subtract from parallel_physics_rounds for dynamically claimed rounds.
+    pub parallel_physics_direct_rounds: u32,
     /// Rounds intentionally serialized for deterministic Beacon lifetimes.
     pub parallel_stage_id_serialized_rounds: u32,
     pub parallel_stage_id_serialized_arenas: usize,
@@ -1616,6 +1619,8 @@ impl NativeLevelBatchDriver {
             counts.parallel_stage_id_serialized_arenas += step.serialized_stage_arenas;
             if step.parallel_physics_workers > 1 {
                 counts.parallel_physics_rounds += 1;
+                counts.parallel_physics_direct_rounds +=
+                    u32::from(step.parallel_physics_direct_dispatch);
                 counts.parallel_physics_max_workers = counts.parallel_physics_max_workers
                     .max(step.parallel_physics_workers);
                 counts.parallel_physics_worker_nanos +=

@@ -36,6 +36,8 @@ pub struct NativeBatchedStepCounts {
     /// Number of actual CPU workers used by this round's physical phase.
     /// Zero denotes the ordinary serial path or no live worlds.
     pub parallel_physics_workers: usize,
+    /// One arena per active physics worker without a model-step queue lock.
+    pub parallel_physics_direct_dispatch: bool,
     /// Sum of worker wall durations, including scheduling overhead. This
     /// deliberately differs from real elapsed wall time when workers overlap.
     pub parallel_physics_worker_nanos: u128,
@@ -223,6 +225,7 @@ where
             counts.worlds_stepped = report.worlds_stepped;
             counts.serialized_stage_arenas = report.serialized_arenas;
             counts.parallel_physics_workers = report.parallel_workers;
+            counts.parallel_physics_direct_dispatch = report.direct_dispatch;
             counts.parallel_physics_worker_nanos = report.worker_loads.iter()
                 .map(|load| load.wall_elapsed.as_nanos())
                 .sum();
