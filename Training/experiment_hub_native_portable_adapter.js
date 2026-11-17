@@ -118,24 +118,32 @@ function createNativeBeesPortableCollectorAdapter({
             stat.size>2*1024*1024||fs.realpathSync(file)!==file)
             throw Error('Native collector receipt is not a regular bounded artifact.');
         const receipt=JSON.parse(fs.readFileSync(file,'utf8'));
-        const params=context.frozen_parameters;
         const metrics=receipt.rollout_metrics;
+        // The Hub observation callback intentionally exposes no frozen job
+        // configuration. That already passed adapter.args() before launch,
+        // and Python checked the downloaded order against it before running.
+        // Validate the completed artifact's own bounded identity here; the
+        // coordinator independently verifies the stored job and mirroring.
         if(receipt?.kind!=='native_rollout_bundle'||receipt.schema_version!==1||
-            receipt.collection_id!==params?.collection_id||
-            (receipt.source_run_contract_sha256!==params?.source_run_contract_sha256&&
-             receipt.source_run_contract_sha256_v1!==params?.source_run_contract_sha256)||
-            receipt.seed_offset!==params?.seed_offset||
-            receipt.rollout_worlds!==params?.rollout_worlds||
-            receipt.rollout_processes!==params?.rollout_workers||
-            receipt.physics_workers_per_process!==params?.physics_workers||
-            receipt.partition?.world_start!==params?.rollout_world_start||
+            !SHA.test(String(receipt.collection_id||''))||
+            !SHA.test(String(receipt.input_checkpoint_sha256||''))||
+            !SHA.test(String(receipt.input_manifest_sha256||''))||
+            !SHA.test(String(receipt.source_run_contract_sha256||''))||
+            !Number.isSafeInteger(receipt.seed_offset)||receipt.seed_offset<0||
+            !Number.isSafeInteger(receipt.rollout_worlds)||receipt.rollout_worlds<1||
+            !Number.isSafeInteger(receipt.rollout_processes)||receipt.rollout_processes<1||
+            !Number.isSafeInteger(receipt.physics_workers_per_process)||
+            receipt.physics_workers_per_process<1||
+            !Number.isSafeInteger(receipt.partition?.world_start)||
+            receipt.partition.world_start<0||
+            receipt.partition?.world_count!==receipt.rollout_worlds||
             !metrics||!Number.isSafeInteger(metrics.successful_policy_rows)||
             metrics.successful_policy_rows<1||
             !Number.isSafeInteger(metrics.successful_world_steps)||
             metrics.successful_world_steps<1||
             typeof metrics.wall_seconds!=='number'||!Number.isFinite(metrics.wall_seconds)||
             metrics.wall_seconds<=0)
-            throw Error('Native portable collector receipt differs from its Hub-frozen work order.');
+            throw Error('Native portable collector receipt is invalid or incomplete.');
         capturePaths(receipt);
         return {receipt,stat};
     }
