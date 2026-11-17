@@ -1100,6 +1100,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "session_wall_seconds":started.elapsed().as_secs_f64(),
         "bytes_received":peer.metrics.bytes_received,
         "snapshots_rendered":peer.metrics.snapshots,
+        "snapshot_pairs_interpolated":peer.metrics.snapshot_pairs_interpolated,
+        "interpolated_draw_frames":peer.metrics.interpolated_draw_frames,
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
         "connection_closed":!peer.connected,
