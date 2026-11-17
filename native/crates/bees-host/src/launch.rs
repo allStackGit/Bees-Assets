@@ -2484,6 +2484,15 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 let mut replay_selected = 0;
                 if let Some(chosen) = select_library(&rows, &mut replay_selected, false)? {
                     let recording = &recordings[chosen];
+                    println!("{}", json!({
+                        "kind": "native_game_recording_selected",
+                        "source_game_id": recording.game_id,
+                        "source_kind": match &recording.source {
+                            recorded_library::RecordedSource::QuickBattle(_) => "quick_battle",
+                            recorded_library::RecordedSource::CampaignSetup(_) => "campaign",
+                        },
+                        "recording": recording.trace,
+                    }));
                     let output = new_library_battle_output(save_root, &recording.game_id)?;
                     match &recording.source {
                         recorded_library::RecordedSource::QuickBattle(config) =>
