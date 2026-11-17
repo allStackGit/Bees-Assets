@@ -28,6 +28,8 @@ pub mod world_fingerprint;
 pub mod policy_action_trace;
 #[cfg(feature = "client")]
 pub mod client;
+#[cfg(feature = "client")]
+pub mod game_audio;
 pub mod unity_scene_snapshot;
 
 pub mod notification_file;
