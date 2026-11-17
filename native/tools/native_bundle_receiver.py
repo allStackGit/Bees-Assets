@@ -25,7 +25,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from native_training_artifacts import file_sha256
+from native_training_artifacts import file_sha256, sync_directory
 from transfer_policy_bundle import import_bundle_archive, BUNDLE_NAME
 
 CHUNK = 1024 * 1024
@@ -103,6 +103,66 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
         connection.close()
 
 
+def download_input_archive(base_url, collector_id, destination, token=None):
+    """Fetch one issued worker's immutable inputs with bounded memory."""
+    if not BUNDLE_NAME.fullmatch(collector_id):
+        raise ValueError("invalid native collector identity")
+    parts = urlsplit(base_url)
+    if parts.scheme not in ("http", "https") or not parts.hostname or (
+            parts.username is not None or parts.password is not None or
+            parts.query or parts.fragment):
+        raise ValueError("bundle receiver URL must be an http(s) endpoint without query")
+    target = Path(destination).absolute()
+    parent = target.parent.resolve(strict=True)
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(f"native collector input archive already exists: {target}")
+    connection_class = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+    endpoint = parts.path.rstrip("/") + "/v1/inputs/" + collector_id
+    auth = bundle_token() if token is None else token
+    started = time.perf_counter()
+    temporary = None
+    connection = connection_class(parts.hostname, parts.port, timeout=60)
+    try:
+        connection.request("GET", endpoint, headers={"Authorization": "Bearer " + auth})
+        response = connection.getresponse()
+        if response.status != 200:
+            reason = response.read(4096)
+            raise ValueError(f"collector input download rejected: HTTP {response.status}: {reason!r}")
+        size = int(response.getheader("Content-Length", "0"))
+        digest = response.getheader("X-Archive-SHA256", "")
+        if not 0 < size <= MAX_ARCHIVE_BYTES or not DIGEST_RE.fullmatch(digest):
+            raise ValueError("learner returned an invalid collector archive identity")
+        hasher = hashlib.sha256()
+        count = 0
+        with tempfile.NamedTemporaryFile(mode="w+b", dir=parent,
+                prefix=".native-input-download-", suffix=".partial",
+                delete=False) as output:
+            temporary = Path(output.name)
+            while count < size:
+                block = response.read(min(CHUNK, size - count))
+                if not block:
+                    raise ValueError("learner returned truncated collector inputs")
+                hasher.update(block)
+                output.write(block)
+                count += len(block)
+            output.flush()
+            os.fsync(output.fileno())
+        if count != size or hasher.hexdigest() != digest:
+            raise ValueError("collector input archive checksum differs from learner receipt")
+        os.link(temporary, target)
+        sync_directory(parent)
+    finally:
+        connection.close()
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return {
+        "kind": "native_collector_inputs_downloaded",
+        "collector_id": collector_id, "archive": str(target),
+        "archive_bytes": size, "archive_sha256": digest,
+        "wall_seconds": time.perf_counter() - started,
+    }
+
+
 class LimitedHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -147,6 +207,7 @@ class BundleReceiver:
         self.token = bundle_token() if token is None else token
         self.on_event = on_event
         self.active_orders = None
+        self.input_archives = {}
         self.inflight = set()
         self.lock = threading.Lock()
         self.server = LimitedHTTPServer((host, port), _receiver_handler(self))
@@ -169,15 +230,31 @@ class BundleReceiver:
         if self.worker is not None:
             self.worker.join()
 
-    def activate(self, orders):
+    def activate(self, orders, input_archives=None):
         if orders.get("kind") != "native_distributed_collection_orders":
             raise ValueError("bundle receiver needs issued collection orders")
+        archives = input_archives or {}
+        valid = {job["id"] for job in orders["jobs"]}
+        if set(archives) - valid:
+            raise ValueError("collector input archive was not issued in this round")
         with self.lock:
             self.active_orders = orders
+            self.input_archives = dict(archives)
 
     def deactivate(self):
         with self.lock:
             self.active_orders = None
+            self.input_archives.clear()
+
+    def prepared_input(self, collector_id):
+        with self.lock:
+            if self.active_orders is None or not any(
+                    job["id"] == collector_id for job in self.active_orders["jobs"]):
+                raise LookupError("collector inputs are not currently issued")
+            published = self.input_archives.get(collector_id)
+            if published is None:
+                raise LookupError("collector inputs have not been exported")
+            return published
 
     def claim(self, collector_id):
         with self.lock:
@@ -219,6 +296,51 @@ def _receiver_handler(owner):
             self.end_headers()
             self.wfile.write(data)
             self.close_connection = True
+
+        def do_GET(self):
+            if not hmac.compare_digest(
+                    self.headers.get("Authorization", ""), "Bearer " + owner.token):
+                self.respond(401, {"error": "unauthorized"})
+                return
+            prefix = "/v1/inputs/"
+            collector_id = self.path[len(prefix):] if self.path.startswith(prefix) else ""
+            if not BUNDLE_NAME.fullmatch(collector_id):
+                self.respond(404, {"error": "unknown collector input endpoint"})
+                return
+            try:
+                file, digest, expected_size = owner.prepared_input(collector_id)
+                file = Path(file)
+                if file.is_symlink() or not file.is_file() or (
+                        file.stat().st_size != expected_size or
+                        not 0 < expected_size <= MAX_ARCHIVE_BYTES or
+                        not DIGEST_RE.fullmatch(digest)):
+                    raise ValueError("published collector input archive was redirected or changed")
+                with file.open("rb") as stream:
+                    self.connection.settimeout(60)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/x-native-collector-inputs-tar")
+                    self.send_header("Content-Length", str(expected_size))
+                    self.send_header("X-Archive-SHA256", digest)
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.close_connection = True
+                    remaining = expected_size
+                    while remaining:
+                        data = stream.read(min(CHUNK, remaining))
+                        if not data:
+                            break
+                        self.wfile.write(data)
+                        remaining -= len(data)
+                if owner.on_event and remaining == 0:
+                    owner.on_event("native_collector_inputs_served", {
+                        "collector_id": collector_id, "archive_bytes": expected_size,
+                    })
+            except LookupError as error:
+                self.respond(404, {"error": str(error)})
+            except ValueError as error:
+                self.respond(409, {"error": str(error)})
+            except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+                self.close_connection = True
 
         def do_POST(self):
             # Authenticate before accepting or persisting ANY archive bytes.
