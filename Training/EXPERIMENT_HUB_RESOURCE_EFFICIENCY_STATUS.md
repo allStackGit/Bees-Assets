@@ -58,6 +58,19 @@ The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimiz
 
 - **2026-11-17 native policy-transfer and ONNX inference update:** `allStackGit/TinyBrains:feat/training-efficient-policy-copy-20261117` adds strict shape/dtype/hook-guarded grouped GPU policy application, retaining the original state_dict loader when unavailable. It also vectorizes greedy ONNX ant-action decoding without changing choices or policy sampling. Courier's existing child-owned action copy remains intact: its documented environment-state ownership contract takes precedence over eliminating a small copy without full lifecycle evidence. This Hub branch maps per-collector grouped policy operations, device-stream copy intervals, and sustained model-preparation dominance through the existing bounded metrics, charts, and export path. A successful API-level source check and randomized ONNX argmax parity are not live SPS evidence. Highest remaining priority: real multi-machine throughput and shared-policy/distributed rollout capabilities, without changing the Hub's fixed lease ownership.
 
+- **2026-11-17 persistent Courier GPU policy between PPO rounds:** `allStackGit/Basic-Training:feat/courier-persistent-gpu-policy-20261117` retains the checked recurrent PPO policy and Adam cache on the SAME leased
+GPU after an unscreened update only when the next rollout and optimizer
+share that device. A failed/incomplete PPO update cannot authorize retention;
+CPU-only/split-GPU operation, changed GPU owners, configuration edits,
+selection evaluation (including first-round fallback), and atomic policy
+snapshots still restore CPU policy and optimizer state before proceeding.
+The unchanged backend stage aggregation reports actual retained and reused
+lineage counts, logical resident model MiB and same-lineage GPU policy transfer
+host wall; the Hub maps these source fields and derives sustained
+**slowest-lineage** transfer pressure without claiming PCIe saturation.
+CUDA/ROCm live SPS, device switching and checkpoint continuation remain to
+be qualified; existing independent-policy Courier population semantics remain.
+
 ## Significant remaining development
 
 1. **Exercise the exact executable native-engine path:** qualify early dispatched pooled engine steps, episode/seat identity, replay attribution, graceful retirement and checkpoint continuation using actual TinyBrains binaries and training environments. Synthetic scheduling checks preserve action indices and show potential latency savings, not measured real SPS. On the next native profiling run, nonzero `collector_N_sim_prefetch_engine_steps` plus reduced `collector_N_sim_exposed_wait_share` with improved useful decisions/s would support the expected benefit; absent early dispatch or unchanged exposed wait would falsify it. Full removal of the slowest-child barrier would also require explicit in-flight transition ownership, terminal reward completion, and deterministic policy sampling across out-of-order engine returns; that change has **not** been implemented.
