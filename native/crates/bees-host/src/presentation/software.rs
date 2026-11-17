@@ -100,6 +100,10 @@ pub struct NativeRenderCounts {
     /// Number of visible sprite-pixel candidates inspected by the software
     /// rasterizer, including ships, shots, debris and special effects.
     pub sprite_raster_candidate_pixels: u64,
+    /// Actual fully opaque samples that skipped destination blending.
+    pub sprite_raster_opaque_pixels: u64,
+    /// Actual translucent samples that required destination blending.
+    pub sprite_raster_blended_pixels: u64,
     pub ship_fallback_hulls: usize,
     /// Loaded source-art types, not the number of active ship entities.
     pub ship_art_types_loaded: usize,
@@ -176,6 +180,8 @@ pub struct NativeSoftwareRenderer {
     /// Shared physical templates and PPO workers never allocate here.
     custom_ship_art: HashMap<(u8, [u8; 3]), Arc<NativeSprite>>,
     sprite_raster_candidate_pixels: u64,
+    sprite_raster_opaque_pixels: u64,
+    sprite_raster_blended_pixels: u64,
     pub selection_box: Option<Aabb>,
     /// Optional inspection only. Disabled means no range or linecast work.
     pub show_weapon_ranges: bool,
@@ -592,6 +598,8 @@ impl NativeSoftwareRenderer {
             command_target_ship_ids: HashSet::new(),
             custom_ship_art: HashMap::new(),
             sprite_raster_candidate_pixels: 0,
+            sprite_raster_opaque_pixels: 0,
+            sprite_raster_blended_pixels: 0,
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, show_shooting_menu: false,
             focused_shooting_strategy: 1,
@@ -975,6 +983,8 @@ impl NativeSoftwareRenderer {
         };
         self.pixels.fill(0x080e19);
         self.sprite_raster_candidate_pixels = 0;
+        self.sprite_raster_opaque_pixels = 0;
+        self.sprite_raster_blended_pixels = 0;
         let mut counts = NativeRenderCounts::default();
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
@@ -1318,6 +1328,8 @@ impl NativeSoftwareRenderer {
         // stale animation state over time.
         self.projectile_art_ticks.retain(|_, &mut (_, seen)| seen == view.tick);
         counts.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels;
+        counts.sprite_raster_opaque_pixels = self.sprite_raster_opaque_pixels;
+        counts.sprite_raster_blended_pixels = self.sprite_raster_blended_pixels;
         counts.ship_color_cache_variants = self.custom_ship_art.len();
         // Only presentation pixels are masked. Commands, physics, learning
         // and the source-owned visibility caches remain unchanged.
@@ -2150,10 +2162,12 @@ impl NativeSoftwareRenderer {
                 // Most interior ship pixels are fully opaque. They should
                 // not pay three divide-by-255 blends per sprite layer.
                 *pixel = if opacity == 255 {
+                    self.sprite_raster_opaque_pixels += 1;
                     (u32::from(rgba[0]) << 16) |
                     (u32::from(rgba[1]) << 8) |
                     u32::from(rgba[2])
                 } else {
+                    self.sprite_raster_blended_pixels += 1;
                     text::blend(*pixel, [rgba[0], rgba[1], rgba[2]], opacity)
                 };
             }
