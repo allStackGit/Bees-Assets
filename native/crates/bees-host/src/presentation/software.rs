@@ -616,6 +616,65 @@ impl NativeSoftwareRenderer {
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
     pub fn pixels(&self) -> &[u32] { &self.pixels }
 
+    /// Remote clients draw the host's authenticated physical snapshots
+    /// through the EXACT SAME sprite atlas, pivot, PPU and rasterizer as
+    /// local gameplay. Only pixels are produced; no shadow physics,
+    /// collisions, policy state, or second ship asset definitions exist.
+    #[cfg(feature = "client")]
+    pub(super) fn begin_remote_art(&mut self, camera: NativeCamera) {
+        self.camera = camera;
+        self.pixels.fill(0x080f1a);
+    }
+
+    #[cfg(feature = "client")]
+    pub(super) fn remote_ship_art(
+        &mut self, ship_type: u8, point: Vec2, rotation_degrees: f32,
+    ) -> bool {
+        let Some(art) = source_ship_art()
+            .and_then(|atlas| atlas.sprites.get(usize::from(ship_type)))
+            .and_then(Option::as_ref)
+        else { return false };
+        self.draw_sprite(
+            &art.sprite, point, rotation_degrees.to_radians(),
+            self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
+        )
+    }
+
+    #[cfg(feature = "client")]
+    pub(super) fn remote_projectile_art(
+        &mut self, shot_type: u8, point: Vec2, rotation_degrees: f32,
+        elapsed_seconds: f32,
+    ) -> bool {
+        let Some(art) = source_projectile_art()
+            .and_then(|atlas| atlas.sprites.get(usize::from(shot_type)))
+            .and_then(Option::as_ref)
+        else { return false };
+        let frame = (elapsed_seconds.max(0.0) * 8.0).floor() as usize;
+        let index = if matches!(shot_type, 13 | 14) {
+            frame.min(art.frames.len() - 1)
+        } else {
+            frame % art.frames.len()
+        };
+        self.draw_sprite(
+            &art.frames[index], point, rotation_degrees.to_radians(),
+            self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
+        )
+    }
+
+    #[cfg(feature = "client")]
+    pub(super) fn remote_asteroid_art(
+        &mut self, prefab: u8, point: Vec2, rotation_degrees: f32,
+    ) -> bool {
+        let Some(art) = source_asteroid_art()
+            .and_then(|atlas| atlas.sprites.get(usize::from(prefab)))
+            .and_then(Option::as_ref)
+        else { return false };
+        self.draw_sprite(
+            &art.sprite, point, rotation_degrees.to_radians(),
+            self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
+        )
+    }
+
     /// Resize presentation storage only. Preserve camera world scale and
     /// center, so exposing more pixels shows more of the same battlefield.
     /// Never allocate a new simulation or touch the authoritative world.
