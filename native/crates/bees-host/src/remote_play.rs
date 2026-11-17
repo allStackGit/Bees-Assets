@@ -187,6 +187,7 @@ pub struct RemotePlayMeasurements {
     pub held_fire_requests: u64,
     pub held_fire_rejected: u64,
     pub held_fire_disconnect_releases: u64,
+    pub held_fire_no_live_weapons_releases: u64,
 }
 
 pub struct NativeRemotePlay {
@@ -261,10 +262,17 @@ impl NativeRemotePlay {
     /// Poll at the authoritative world's fixed-tick boundary. An expired
     /// episode cannot retain a peer's old gesture lease. Disconnect releases
     /// are returned as canonical inputs before newly received player orders.
-    pub fn poll(&mut self, world_id: WorldId, revision: u64) -> Vec<RemoteOrder> {
+    pub fn poll(&mut self, world_id: WorldId, revision: u64,
+                live_held_weapons: bool) -> Vec<RemoteOrder> {
         if self.held_fire.is_some_and(|lease|
             lease.world_id != world_id || lease.episode_revision != revision) {
             self.held_fire = None;
+        } else if self.held_fire.is_some() && !live_held_weapons {
+            // The world has already retired the final ship held by this
+            // controller. A dead weapon must not exclude other players
+            // from starting their own gesture during the same episode.
+            self.held_fire = None;
+            self.measurements.held_fire_no_live_weapons_releases += 1;
         }
         let mut orders = std::mem::take(&mut self.pending_releases);
         orders.retain(|order| order.action.episode() == (world_id, revision));
