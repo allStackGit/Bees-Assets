@@ -27,7 +27,7 @@ MASK_WIDTH = 15  # Five fire choices × 2, then five ship specials
 ROW_META_BYTES = 16
 MAX_SIGNATURE_BYTES = 8192
 MAX_BATCH_ROWS = 65536
-VERSION = 2
+VERSION = 3
 MAX_MANIFEST_PATH_BYTES = 4096
 HEADER = struct.Struct("<4sIQI")
 READY = struct.Struct("<4sIIH")
@@ -214,16 +214,29 @@ class MlagentsPolicy:
         self.actor.load_state_dict(checkpoint["Policy"], strict=True)
         self.actor.eval()
 
-    def predict(self, observations, allowed):
+    def predict(self, observations, allowed, capture_behavior=True):
         torch = self.torch
         observations = torch.from_numpy(np.ascontiguousarray(observations)).to(self.device)
         allowed = torch.from_numpy(np.ascontiguousarray(allowed)).to(self.device)
         with torch.inference_mode():
             action, stats, _ = self.actor.get_action_and_stats([observations], masks=allowed)
             applied = stats["env_action"]
+            # ML-Agents versions differ in whether env_action is already a
+            # CPU ActionTuple or contains device tensors. Both native CPU
+            # and CUDA/ROCm workers must publish the same NumPy wire arrays.
+            continuous, discrete = applied.continuous, applied.discrete
+            if isinstance(continuous, torch.Tensor):
+                continuous = continuous.detach().cpu().numpy()
+            if isinstance(discrete, torch.Tensor):
+                discrete = discrete.detach().cpu().numpy()
+            if not capture_behavior:
+                # An interactive game or fixed-seed holdout consumes only
+                # applied actions. Do not download 38 PPO behavior floats
+                # per agent or materialize raw samples just to discard them.
+                return continuous, discrete
             sampled = action.to_action_tuple()
-            log_probs = stats["log_probs"].flatten().cpu().numpy()
-        return applied.continuous, applied.discrete, np.concatenate(
+            log_probs = stats["log_probs"].flatten().detach().cpu().numpy()
+        return continuous, discrete, np.concatenate(
             (sampled.continuous, log_probs), axis=1
         )
 
@@ -450,7 +463,7 @@ class InferenceOutputBuffers:
 
 def collect_predictions(
     policy_map, slots, observations, fire, special, allowed, measurements=None,
-    output_buffers=None,
+    output_buffers=None, capture_behavior=True,
 ):
     rows = len(slots)
     if output_buffers is None:
@@ -477,13 +490,22 @@ def collect_predictions(
         if identity not in groups:
             groups[identity] = (model, [])
         groups[identity][1].append(slot_id)
-    fully_sampled = all(isinstance(model, MlagentsPolicy)
-                        for model, _ in groups.values())
+    fully_sampled = capture_behavior and all(
+        isinstance(model, MlagentsPolicy) for model, _ in groups.values()
+    )
     if measurements is not None:
         measurements["batches"] += 1
         measurements["agent_rows"] += rows
         measurements["slot_forwards_without_sharing"] += len(unique_slots)
         measurements["actual_model_forwards"] += len(groups)
+        if not capture_behavior:
+            measurements["action_only_batches"] += 1
+            measurements["action_only_rows"] += rows
+            if any(isinstance(model, MlagentsPolicy)
+                   for model, _ in groups.values()):
+                measurements["behavior_bytes_avoided"] += (
+                    rows * (CONTINUOUS * 2 + DISCRETE) * 4
+                )
 
     for model, model_slots in groups.values():
         if len(groups) == 1:
@@ -504,12 +526,14 @@ def collect_predictions(
             if last - first + 1 == count:
                 indices = slice(first, last + 1)
             sub_obs, sub_mask = observations[indices], allowed[indices]
-        prediction = model.predict(sub_obs, sub_mask)
+        prediction = (model.predict(sub_obs, sub_mask, capture_behavior)
+                      if isinstance(model, MlagentsPolicy)
+                      else model.predict(sub_obs, sub_mask))
         if not isinstance(prediction, (tuple, list)) or len(prediction) not in (2, 3):
             raise ValueError("policy backend must return two actions and optional behavior statistics")
-        sampled = isinstance(model, MlagentsPolicy)
+        sampled = capture_behavior and isinstance(model, MlagentsPolicy)
         if (len(prediction) == 3) != sampled:
-            raise ValueError("ML-Agents slots must return behavior statistics; inference-only slots must not")
+            raise ValueError("captured ML-Agents slots require genuine behavior statistics; action-only slots must not return them")
         out_cont, out_disc = prediction[:2]
         if sampled:
             stats = prediction[2]
@@ -562,6 +586,8 @@ def main() -> None:
         "batches": 0, "agent_rows": 0,
         "slot_forwards_without_sharing": 0, "actual_model_forwards": 0,
         "model_updates": 0,
+        "action_only_batches": 0, "action_only_rows": 0,
+        "behavior_bytes_avoided": 0,
     }
     output_buffers = InferenceOutputBuffers()
 
@@ -666,8 +692,9 @@ def main() -> None:
             writer.write(manifest_digest)
             writer.flush()
             continue
-        if magic != b"BINF":
+        if magic not in (b"BINF", b"BPLY"):
             raise ValueError("invalid inference request header")
+        capture_behavior = magic == b"BINF"
         if not 0 < rows <= MAX_BATCH_ROWS:
             raise ValueError("invalid model batch size")
         metadata_storage, meta = read_reused(
@@ -686,7 +713,7 @@ def main() -> None:
             raise ValueError("nonfinite policy observation")
         continuous, discrete, behavior = collect_predictions(
             policy_map, slots, observation, fire, special, allowed, measurements,
-            output_buffers,
+            output_buffers, capture_behavior,
         )
         if measurements["batches"] % 2048 == 0:
             report_model_residency()

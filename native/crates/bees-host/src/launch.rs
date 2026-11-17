@@ -3524,8 +3524,9 @@ fn run_battle(
         return Err(invalid("policy capture requires a resident model worker").into());
     }
     if let Some((python, worker, manifest, expected_sha)) = model_source.filter(|_| replay_inputs.is_none()) {
-        let resident = ResidentPolicyProcess::python_worker(python, worker, manifest)
-            .map_err(|error| contextual("model worker startup", error))?;
+        let resident = ResidentPolicyProcess::python_worker(
+            python, worker, manifest, policy_capture.is_some(),
+        ).map_err(|error| contextual("model worker startup", error))?;
         if resident.model_manifest_sha256() != expected_sha {
             return Err(invalid(
                 "model manifest changed between route preflight and authenticated worker startup",
@@ -3621,6 +3622,7 @@ fn run_battle(
         "scheduled_model_updates": config.model_updates.len(),
         "policy_generation": host.model_mut().model_generation(),
         "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
+        "policy_behavior_capture": policy_capture.is_some(),
         "decision_period": config.decision_period,
         "delivery_every": config.delivery_every,
         "physics_workers": physical_workers.get(),

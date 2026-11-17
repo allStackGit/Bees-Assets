@@ -23,13 +23,17 @@ use bees_sim::policy::{CONTINUOUS_ACTIONS, DISCRETE_BRANCHES, OBSERVATION_FLOATS
 use bees_sim::policy_batch::{PolicyActionMask, PolicyAgentKey};
 use bees_sim::policy::{validate_model_abi, PolicyAbiError};
 
-const PROTOCOL_VERSION: u32 = 2;
+const PROTOCOL_VERSION: u32 = 3;
 const CONTROL_RELOAD_MAGIC: &[u8; 4] = b"BMOD";
 const CONTROL_RELOAD_ACK: &[u8; 4] = b"MACK";
 const CONTROL_RELOAD_REJECTED: &[u8; 4] = b"MNOK";
 const MAX_MANIFEST_PATH_BYTES: usize = 4096;
 const MANIFEST_DIGEST_BYTES: usize = 32;
 const REQUEST_MAGIC: &[u8; 4] = b"BINF";
+/// Game and holdout inference do not consume raw PPO action samples or
+/// log-probabilities. Preserve the exact model sampler/action validation,
+/// but send only applied environment actions over the resident worker pipe.
+const PLAY_REQUEST_MAGIC: &[u8; 4] = b"BPLY";
 const RESPONSE_MAGIC: &[u8; 4] = b"BOUT";
 const BEHAVIOR_RESPONSE_MAGIC: &[u8; 4] = b"BTRN";
 const READY_MAGIC: &[u8; 4] = b"BHOK";
@@ -73,6 +77,7 @@ pub struct ResidentPolicyProcess {
     // Reused model route/action-mask packet, 16 bytes per agent.
     row_headers: Vec<u8>,
     behavior_statistics: Vec<f32>,
+    collect_behavior: bool,
 }
 
 impl ResidentPolicyProcess {
@@ -97,6 +102,7 @@ impl ResidentPolicyProcess {
             unavailable: false,
             row_headers: Vec::new(),
             behavior_statistics: Vec::new(),
+            collect_behavior: true,
         };
         backend.read_handshake()?;
         Ok(backend)
@@ -106,6 +112,7 @@ impl ResidentPolicyProcess {
         python: impl AsRef<OsStr>,
         script: impl AsRef<OsStr>,
         manifest: impl AsRef<OsStr>,
+        collect_behavior: bool,
     ) -> Result<Self, PolicyProcessError> {
         // Bind the READY handshake to the exact manifest passed to this
         // process. A replaced file between launch and worker load must
@@ -121,6 +128,7 @@ impl ResidentPolicyProcess {
             backend.unavailable = true;
             return Err(PolicyProcessError::ManifestMismatch);
         }
+        backend.collect_behavior = collect_behavior;
         Ok(backend)
     }
 
@@ -177,7 +185,11 @@ impl ResidentPolicyProcess {
         let seq = self.sequence.checked_add(1)
             .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
         self.sequence = seq;
-        self.input.write_all(REQUEST_MAGIC)?;
+        self.input.write_all(if self.collect_behavior {
+            REQUEST_MAGIC
+        } else {
+            PLAY_REQUEST_MAGIC
+        })?;
         self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
         self.input.write_all(&seq.to_le_bytes())?;
         self.input.write_all(&rows32.to_le_bytes())?;
@@ -211,6 +223,7 @@ impl ResidentPolicyProcess {
         self.output.read_exact(&mut response)?;
         let has_behavior = &response[0..4] == BEHAVIOR_RESPONSE_MAGIC;
         if (!has_behavior && &response[0..4] != RESPONSE_MAGIC) ||
+            (!self.collect_behavior && has_behavior) ||
             u32::from_le_bytes(response[4..8].try_into().unwrap())
                 != PROTOCOL_VERSION ||
             u64::from_le_bytes(response[8..16].try_into().unwrap()) != seq ||

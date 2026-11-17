@@ -388,6 +388,14 @@ runner and compatible ML-Agents Python runtime.
 
 The native session controller publishes `latest-playable.json` after
 each verified checkpoint, including sessions without a holdout suite.
+Native policy worker protocol v3 distinguishes recorded MA-POCA rollouts
+from live games and fixed-seed holdouts: training capture still returns
+full raw action samples and log probabilities, whereas gameplay and
+evaluation request only applied actions. This avoids unnecessary
+GPU-to-CPU statistics transfers and pipe bytes without changing the
+sampled policy, action masks, policy weights, or native simulation.
+The worker reports action-only batch/row counts and avoided behavior
+payload bytes in its existing inference-efficiency diagnostics.
 When fixed-reference evaluations are configured, `best-evaluated.json`
 selects the strongest verified holdout candidate separately. Both receipts
 identify a directly playable native `run.json`; neither copies model
