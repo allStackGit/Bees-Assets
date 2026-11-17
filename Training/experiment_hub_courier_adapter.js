@@ -182,6 +182,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
     let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false,gpuMulti=false;
+    let persistentWorlds=false,maxSimulationShards=1;
     if(fs.existsSync(capabilitiesFile)) {
         if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
             !fs.statSync(capabilitiesFile).isFile()||
@@ -203,13 +204,31 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
              capabilities.courier_gpu_optimizer!==true)||
             (capabilities.courier_gpu_multi_optimizer===true&&
              (capabilities.courier_gpu_optimizer!==true||
-              capabilities.courier_gpu_pci_pin!==true)))
+              capabilities.courier_gpu_pci_pin!==true))||
+            (capabilities.courier_parallel_worlds!==undefined&&
+                typeof capabilities.courier_parallel_worlds!=='boolean')||
+            (capabilities.courier_episode_safe_process_groups!==undefined&&
+                typeof capabilities.courier_episode_safe_process_groups!=='boolean')||
+            (capabilities.courier_max_simulation_shards!==undefined&&
+                (!Number.isSafeInteger(capabilities.courier_max_simulation_shards)||
+                    capabilities.courier_max_simulation_shards<1||
+                    capabilities.courier_max_simulation_shards>64))||
+            (capabilities.courier_parallel_worlds===true&&
+                (capabilities.courier_episode_safe_process_groups!==true||
+                    !Number.isSafeInteger(capabilities.courier_max_simulation_shards)))||
+            (capabilities.courier_remote_lineage_transport!==undefined&&
+                typeof capabilities.courier_remote_lineage_transport!=='boolean'))
             throw Error('Unsupported Courier backend capabilities manifest.');
         boundedLearners=capabilities.courier_active_learners;
         autoLearners=boundedLearners&&capabilities.courier_auto_active_learners===true;
         optimizerGpu=capabilities.courier_gpu_optimizer===true;
         gpuPciPin=optimizerGpu&&capabilities.courier_gpu_pci_pin===true;
         gpuMulti=gpuPciPin&&capabilities.courier_gpu_multi_optimizer===true;
+        persistentWorlds=autoLearners&&
+            capabilities.courier_parallel_worlds===true&&
+            capabilities.courier_episode_safe_process_groups===true;
+        maxSimulationShards=persistentWorlds
+            ?capabilities.courier_max_simulation_shards:1;
     }
     if(enableGpu) {
         if(!optimizerGpu)
@@ -391,18 +410,19 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 !within(checkpoint_rounds,1,10000000)||
                 (parameters.remote_lineages!==undefined&&
                     typeof parameters.remote_lineages!=='boolean')||
-                parameters.remote_lineages===true!==Boolean(remote))
+                (parameters.remote_lineages===true&&!remote))
                 throw Error('Courier requires a pinned environment, valid worker settings and the locally approved remote-lineage mode.');
             // Courier workers own separate PPO policies and population
             // lineages, not parallel simulators for one shared policy.
             // Keep population size independent of CPU lease changes.
             let chosenWorkers=workers===undefined?12:workers;
-            if(remote&&remote.endpoints.length>=chosenWorkers)
+            const useRemote=parameters.remote_lineages===true;
+            if(useRemote&&remote.endpoints.length>=chosenWorkers)
                 throw Error('Courier requires at least one local PPO lineage beside its remote workers.');
             if(context.gpu_pci_addresses&&chosenWorkers<context.gpu_pci_addresses.length)
                 throw Error('Courier cannot allocate more GPU optimizers than independent saved lineages.');
             const out=jobRoot(context);
-            if(remote&&crypto.createHash('sha256')
+            if(useRemote&&crypto.createHash('sha256')
                 .update(fs.readFileSync(remote.keyFile)).digest('hex')!==remote.fingerprint)
                 throw Error('Courier remote lineage key differs from its approved identity.');
             const publish=Boolean(snapshots&&context.evaluation_suite_id);
@@ -440,6 +460,23 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const auto=autoLearners&&cpuParallelism==='allocation';
             if(auto&&(!within(context.ram_quota_mb,128,1000000)))
                 throw Error('Courier automatic execution requires a fixed RAM lease.');
+            // The backend already has checkpoint-aligned, episode-preserving
+            // process-group tuning. The Hub supplies a bounded number of
+            // *logical* complete map shards and the actual leased CPU count,
+            // not an operator-selected optimal process population.
+            //
+            // Preserve the original PPO observation/vector batch size:
+            // colony = four complete maps; competition = 32; ordinary = 64.
+            // A one-core-per-lineage lease retains the efficient old VecEnv
+            // instead of multiplying threads/shared-memory segments.
+            const localLineages=chosenWorkers-(useRemote?remote.endpoints.length:0);
+            const mapCount=parsed.colony?4:parsed.competitive?32:64;
+            const share=auto&&persistentWorlds
+                ?Math.floor(context.cpu_quota/Math.max(1,Math.min(
+                    localLineages,fixedCpuParallelism(context.cpu_quota,64))))
+                :1;
+            const logicalShards=share<=1?1:Math.min(
+                maxSimulationShards,mapCount,4*share);
             // The wrapper provides the same checkpoint-boundary Stop request
             // on both platforms; systemd remains the sole Linux service owner.
             const launch=[path.join(__dirname,'experiment_hub_courier_train.py'),
@@ -451,6 +488,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(boundedLearners?['--active-learners',String(Math.min(
                     chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)))]:[]),
                 ...(auto?['--auto-active-learners']:[]),
+                ...(auto&&persistentWorlds?[
+                    '--cpu-lease',String(context.cpu_quota),
+                    ...(logicalShards>1
+                        ?['--simulation-shards',String(logicalShards)]:[]),
+                ]:[]),
                 ...(auto||context.gpu_pci_address!==undefined||
                     context.gpu_pci_addresses!==undefined
                     ?['--ram-lease-mb',String(context.ram_quota_mb)]:[]),
@@ -462,7 +504,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                                ['--optimizer-gpu-pci',pci])
                            :gpuPciPin&&!windows
                                ?['--optimizer-gpu-pci',context.gpu_pci_address]:[])]:[]),
-                ...(remote?[
+                ...(useRemote?[
                     '--remote-lineage-plan',remote.endpoints.map(item=>
                         item.endpoint+'@'+item.maxShards).join(','),
                     '--remote-lineage-key-file',remote.keyFile,
