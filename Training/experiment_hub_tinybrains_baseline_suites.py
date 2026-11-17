@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--seed-start", type=int, default=813001)
     parser.add_argument("--seeds", type=int, default=50)
     parser.add_argument("--max-turns", type=int, default=300)
+    parser.add_argument("--suite-version", type=int, default=1)
     parser.add_argument("--map", default="basic-tiny-2p")
     args = parser.parse_args()
 
@@ -30,6 +31,8 @@ def main():
         parser.error("Use 1–128 valid distinct uint32 seeds.")
     if not 1 <= args.max_turns <= 1000:
         parser.error("--max-turns must be between 1 and 1000.")
+    if not 1 <= args.suite_version <= 9999:
+        parser.error("--suite-version must be between 1 and 9999.")
     if args.map != "basic-tiny-2p":
         parser.error("This first-stage benchmark is intentionally restricted to basic-tiny-2p.")
 
@@ -43,7 +46,7 @@ def main():
     for opponent in ("nano", "micro"):
         source = STARTER / "models" / f"{opponent}-bc"
         suite = {
-            "suite_id": f"tinybrains_{opponent}_tiny_v1",
+            "suite_id": f"tinybrains_{opponent}_tiny_v{args.suite_version}",
             "maps": [args.map],
             "seeds": list(range(args.seed_start, args.seed_start + args.seeds)),
             "max_turns": args.max_turns,
@@ -58,7 +61,7 @@ def main():
         # replace it when the method, opponent, maps, or seeds change.
         if destination.exists():
             if destination.read_text(encoding="utf-8") != body:
-                raise ValueError(f"Existing suite differs: {destination}. Use a new suite ID.")
+                raise ValueError(f"Existing suite differs: {destination}. Increase --suite-version.")
         else:
             fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
