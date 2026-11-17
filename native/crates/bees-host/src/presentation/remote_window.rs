@@ -297,10 +297,10 @@ fn hit<'a>(state: &'a Value, camera: NativeCamera, x:i32,y:i32)
 
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>, metrics: &WireCounts) {
-    pixels.fill(0x080f1a);
-    pixels.iter_mut().enumerate().for_each(|(index, pixel)| {
-        if index % WIDTH >= FIELD { *pixel = 0x152439; }
-    });
+    for scanline in pixels.chunks_exact_mut(WIDTH) {
+        scanline[..FIELD].fill(0x080f1a);
+        scanline[FIELD..].fill(0x152439);
+    }
     text::draw_at(pixels, WIDTH, FIELD + 14, 18, "BEES NATIVE", 2, TEXT);
     text::draw_at(pixels, WIDTH, FIELD + 14, 57,
         &format!("Remote player side {side}"), 1, MUTED);
@@ -516,7 +516,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     Key::M=>{mode=Some(TargetMode::Mine);None}
                     Key::R=>{
                         if let Some(map)=peer.state.as_ref().and_then(bounds) {
-                            camera=Some(NativeCamera::fit(map,FIELD,HEIGHT));
+                            cam=NativeCamera::fit(map,FIELD,HEIGHT);
                         }
                         None
                     }
@@ -576,7 +576,12 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     drag_start=Some((x,y));
                 }
                 if !left&&last_left {
-                    if let Some((sx,sy))=drag_start.take() {
+                    if mode.is_some() {
+                        drag_start=None;
+                        if let Err(error)=order_at(&mut peer,&selected,cam,x,y,mode) {
+                            peer.notice=error.to_string();
+                        } else {mode=None;}
+                    } else if let Some((sx,sy))=drag_start.take() {
                         if let Some(state)=peer.state.as_ref() {
                             let additive=window.is_key_down(Key::LeftShift)||
                                 window.is_key_down(Key::RightShift);
@@ -611,11 +616,6 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                                 if !selected.contains(&id){selected.push(id);}
                             }
                         }
-                    }
-                    if mode.is_some() {
-                        if let Err(error)=order_at(&mut peer,&selected,cam,x,y,mode) {
-                            peer.notice=error.to_string();
-                        } else {mode=None;}
                     }
                 }
                 if right&&!last_right {
