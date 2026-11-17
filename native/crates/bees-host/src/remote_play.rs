@@ -15,6 +15,7 @@ use std::net::{TcpListener, TcpStream};
 use std::time::Instant;
 
 use bees_sim::collision::Aabb;
+use bees_sim::combat_world::CombatEvent;
 use bees_sim::level_discovery::DiscoveryKind;
 use bees_sim::obstacle::ObstacleKind;
 use bees_sim::physics::ShipShape;
@@ -27,6 +28,7 @@ use serde_json::{json, Value};
 
 use crate::player_trace::NativePlayerInput;
 use crate::presentation::NativeRenderWorldView;
+use crate::unity_scene_snapshot::NativeMusicLocation;
 
 const MAX_PEERS: usize = 4;
 const MAX_ACCEPTS_PER_POLL: usize = 8;
@@ -38,6 +40,7 @@ const READ_BYTES_PER_POLL: usize = 128 * 1024;
 const WRITE_BYTES_PER_FLUSH: usize = 256 * 1024;
 const MAX_ORDERS_PER_POLL: usize = 64;
 const STATE_EVERY_TICKS: u64 = 5;
+const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -197,6 +200,8 @@ pub struct RemotePlayMeasurements {
     pub fog_visibility_candidate_checks: u64,
     pub fog_visibility_sources_indexed: u64,
     pub fog_visibility_grid_queries: u64,
+    pub audio_events_queued: u64,
+    pub audio_events_dropped: u64,
 }
 
 pub struct NativeRemotePlay {
@@ -205,6 +210,9 @@ pub struct NativeRemotePlay {
     peers: Vec<Peer>,
     next_peer: u64,
     last_state: Option<(u64, u64)>,
+    // Cosmetic cues only, not a duplicate gameplay event store.
+    pending_audio: HashMap<i32, Vec<Value>>,
+    music_location: Option<NativeMusicLocation>,
     held_fire: HashMap<u64, HeldFireLease>,
     pending_releases: Vec<RemoteOrder>,
     measurements: RemotePlayMeasurements,
@@ -255,6 +263,7 @@ impl NativeRemotePlay {
         Ok(Some(Self {
             listener, side_tokens, peers: Vec::new(),
             next_peer: 1, last_state: None,
+            pending_audio: HashMap::new(), music_location: None,
             held_fire: HashMap::new(), pending_releases: Vec::new(),
             measurements: RemotePlayMeasurements::default(),
         }))
@@ -262,6 +271,11 @@ impl NativeRemotePlay {
 
     pub fn measurements(&self) -> &RemotePlayMeasurements {
         &self.measurements
+    }
+
+    /// The authored Level selects music, never a network client's request.
+    pub fn set_music_location(&mut self, location: Option<NativeMusicLocation>) {
+        self.music_location = location;
     }
 
     pub fn configured_sides(&self) -> impl Iterator<Item = i32> + '_ {
@@ -516,23 +530,44 @@ impl NativeRemotePlay {
     }
 
     pub fn broadcast(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) {
-        if !self.peers.iter().any(|peer| peer.side.is_some()) { return; }
+        if !self.peers.iter().any(|peer| peer.side.is_some()) {
+            self.pending_audio.clear();
+            return;
+        }
         let episode = (view.world_id.0, view.episode_revision);
+        if self.last_state.is_some_and(|previous| previous != episode) {
+            self.pending_audio.clear();
+        }
+        // This runs at each physical tick, including the four ticks with no
+        // state frame. Carry short-lived sounds to the next presentation frame.
+        if !view.combat.events().is_empty() {
+            let mut sides = HashSet::new();
+            for side in self.peers.iter().filter_map(|peer| peer.side) {
+                if sides.insert(side) {
+                    collect_remote_audio(view, side,
+                        self.pending_audio.entry(side).or_default(),
+                        &mut self.measurements);
+                }
+            }
+        }
         if self.last_state == Some(episode) &&
             view.tick % STATE_EVERY_TICKS != 0 &&
             view.terminal_result.is_none() { return; }
         self.last_state = Some(episode);
-        // Encode each player's side-filtered snapshot only once, then fan it
-        // out to peers on the same side. Never send another side's packet.
+        // Audio is lossy presentation; authoritative orders and replies keep
+        // their existing reliable, bounded channel.
+        let pending_audio = std::mem::take(&mut self.pending_audio);
+        let music_location = self.music_location;
         let mut snapshots = HashMap::<i32, Vec<u8>>::new();
-        // Reborrow disjoint fields: peer sockets cannot mutate snapshot
-        // measurements, and cooperative same-side peers share one projection.
         let measurements = &mut self.measurements;
         for peer in &mut self.peers {
             let Some(side) = peer.side else { continue };
-            let encoded = snapshots.entry(side).or_insert_with(||
-                serde_json::to_vec(&current_state(view, bounds, side, measurements))
-                    .unwrap_or_default());
+            let encoded = snapshots.entry(side).or_insert_with(|| {
+                let cues = pending_audio.get(&side).map(Vec::as_slice).unwrap_or(&[]);
+                serde_json::to_vec(&current_state(
+                    view, bounds, side, music_location, cues, measurements,
+                )).unwrap_or_default()
+            });
             if peer.enqueue_state(encoded) {
                 measurements.states_superseded += 1;
             }
@@ -683,21 +718,69 @@ fn owns_player_side(view: &NativeRenderWorldView<'_>, owner: SquadLifetime, side
             .is_some_and(|permission| permission.user_controlled))
 }
 
+/// Share the actual source sight predicate with state and audio projections.
+fn remote_fog_sources(
+    view: &NativeRenderWorldView<'_>, side: i32,
+    measurements: &mut RemotePlayMeasurements,
+) -> RemoteFogSources {
+    let sources = view.combat.render_ships().filter_map(|(ship, body)| {
+        let owner = view.roster.owning_squad(ship.entity_id)?;
+        if !owns_player_side(view, owner, side) { return None; }
+        let radius = view.player_authority.player_fog_vision_radius(ship.entity_id)?;
+        (radius > 0.0 && radius.is_finite()).then_some((body.motion.position, radius))
+    }).collect();
+    RemoteFogSources::new(sources, measurements)
+}
+
+/// Host-only ephemeral cues, restricted to the same visibility as combat
+/// geometry. Unlocalized events are deliberately not sent to opponents.
+fn collect_remote_audio(
+    view: &NativeRenderWorldView<'_>, side: i32, pending: &mut Vec<Value>,
+    measurements: &mut RemotePlayMeasurements,
+) {
+    let sources = view.player_authority.player_fog_of_war_enabled()
+        .then(|| remote_fog_sources(view, side, measurements));
+    for event in view.combat.events() {
+        let (effect, point) = match event {
+            CombatEvent::ShipDied { victim_id, .. } => (
+                if view.combat.ship(*victim_id)
+                    .is_some_and(|ship| matches!(ship.ship_type, 7 | 10 | 11 | 17)) {
+                    "huge_explosion"
+                } else { "explosion" },
+                view.combat.ship_body(*victim_id)
+                    .map(|body| body.motion.position),
+            ),
+            CombatEvent::StrikerBombDropped { ship_id, .. } => (
+                "striker_bomb",
+                view.combat.ship_body(*ship_id).map(|body| body.motion.position),
+            ),
+            CombatEvent::ShipWarped { ship_id, .. } => (
+                "warp",
+                view.combat.ship_body(*ship_id).map(|body| body.motion.position),
+            ),
+            _ => continue,
+        };
+        let Some(point) = point.filter(|point| point.is_finite()) else { continue };
+        if sources.as_ref().is_some_and(|sources|
+            !sources.covers(point, measurements)) { continue; }
+        if pending.len() < MAX_PENDING_AUDIO_EVENTS {
+            pending.push(json!({
+                "effect": effect, "x": point.x, "y": point.y, "tick": view.tick,
+            }));
+            measurements.audio_events_queued += 1;
+        } else { measurements.audio_events_dropped += 1; }
+    }
+}
+
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
+    music_location: Option<NativeMusicLocation>, audio_events: &[Value],
     measurements: &mut RemotePlayMeasurements,
 ) -> Value {
     let viewer = Some(side);
     let fog = view.player_authority.player_fog_of_war_enabled();
-    let sources: Vec<(Vec2, f32)> = if fog {
-        view.combat.render_ships().filter_map(|(ship, body)| {
-            let owner = view.roster.owning_squad(ship.entity_id)?;
-            if !owns_player_side(view, owner, side) { return None; }
-            let radius = view.player_authority.player_fog_vision_radius(ship.entity_id)?;
-            (radius > 0.0 && radius.is_finite()).then_some((body.motion.position, radius))
-        }).collect()
-    } else { Vec::new() };
-    let sources = RemoteFogSources::new(sources, measurements);
+    let sources = if fog { remote_fog_sources(view, side, measurements) }
+        else { RemoteFogSources::new(Vec::new(), measurements) };
     let mut visible_ids = HashSet::<i64>::new();
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
         let owned = view.roster.owning_squad(ship.entity_id)
@@ -824,6 +907,7 @@ fn current_state(
         "world_id": view.world_id.0,
         "episode_revision": view.episode_revision,
         "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
+        "music_location": music_location, "audio_events": audio_events,
         "viewer_side": viewer,
         "map_bounds": [[bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y]],
         "terminal_result": view.terminal_result.map(|result| result.winner_side),

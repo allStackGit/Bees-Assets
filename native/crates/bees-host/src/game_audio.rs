@@ -16,6 +16,7 @@ use bees_sim::collision::Aabb;
 use bees_sim::combat_world::CombatEvent;
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
+use serde_json::Value;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 
 use crate::presentation::NativeRenderWorldView;
@@ -352,6 +353,70 @@ impl NativeGameAudio {
         sink.append(source);
         self.voices.push(sink);
         self.measurements.sound_effects_started += 1;
+    }
+
+    /// Read-only remote sound projection. The only input is host-authorized
+    /// visible physical entities and fog-filtered cues. There are no gameplay
+    /// callbacks, new policy decisions, or physics work in this client.
+    pub fn observe_remote(&mut self, state: &Value, visible: Aabb) {
+        let (Some(world), Some(revision), Some(tick)) = (
+            state["world_id"].as_u64(), state["episode_revision"].as_u64(),
+            state["tick"].as_u64(),
+        ) else { return };
+        let scope = (WorldId(world), revision);
+        if self.current_episode != Some(scope) {
+            self.current_episode = Some(scope);
+            self.last_tick = None;
+            self.seen_projectiles.clear();
+        }
+        if self.last_tick.is_some_and(|previous| tick <= previous) { return; }
+        let first_snapshot = self.last_tick.is_none();
+        if let Some(previous) = self.last_tick {
+            self.measurements.missed_visualized_ticks +=
+                tick.saturating_sub(previous).saturating_sub(1);
+        }
+        self.last_tick = Some(tick);
+        self.voices.retain(|sink| !sink.empty());
+        let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
+        let mut effects = Vec::new();
+        for shot in state["projectiles"].as_array().into_iter().flatten() {
+            let (Some(id), Some(kind), Some(x), Some(y)) = (
+                shot["id"].as_i64(), shot["type"].as_u64(),
+                shot["x"].as_f64(), shot["y"].as_f64(),
+            ) else { continue };
+            if self.seen_projectiles.insert(id, tick).is_some() ||
+                first_snapshot || !x.is_finite() || !y.is_finite() ||
+                !on_screen(visible, Vec2::new(x as f32, y as f32)) {
+                continue;
+            }
+            let Some(effect) = u8::try_from(kind).ok().and_then(Effect::projectile)
+                else { continue };
+            if budget > 0 {
+                budget -= 1;
+                effects.push(effect);
+            } else { self.measurements.sound_effects_dropped += 1; }
+        }
+        self.seen_projectiles.retain(|_, seen| *seen == tick);
+        for event in state["audio_events"].as_array().into_iter().flatten() {
+            let effect = match event["effect"].as_str() {
+                Some("explosion") => Effect::Explosion,
+                Some("huge_explosion") => Effect::HugeExplosion,
+                Some("striker_bomb") => Effect::StrikerBomb,
+                Some("warp") => Effect::Warp,
+                _ => continue,
+            };
+            let (Some(x), Some(y)) = (event["x"].as_f64(), event["y"].as_f64())
+                else { continue };
+            if !x.is_finite() || !y.is_finite() ||
+                !on_screen(visible, Vec2::new(x as f32, y as f32)) {
+                continue;
+            }
+            if budget > 0 {
+                budget -= 1;
+                effects.push(effect);
+            } else { self.measurements.sound_effects_dropped += 1; }
+        }
+        for effect in effects { self.play(effect); }
     }
 
     /// Presentation-only projection of current canonical physical events.

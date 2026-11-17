@@ -3378,6 +3378,7 @@ fn run_battle(
             ).map_err(|_| invalid("source Stage time scale cannot be represented by the host clock"))
         ).collect::<io::Result<_>>()?;
     let client_bounds: Vec<_> = source_levels.iter().map(|scene| scene.bounds).collect();
+    let remote_music_location = source_levels[0].music_location;
     #[cfg(feature = "client")]
     let client_zoom_limits: Vec<_> =
         source_levels.iter().map(|scene| scene.camera_zoom).collect();
@@ -3553,6 +3554,9 @@ fn run_battle(
         return Err(invalid("remote play requires an authored local player side").into());
     }
     let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(local_player_side)?;
+    if let Some(server) = &mut remote {
+        server.set_music_location(remote_music_location);
+    }
     if let Some(server) = &remote {
         let world = host.render_world(0)
             .ok_or_else(|| invalid("remote player Level disappeared"))?;

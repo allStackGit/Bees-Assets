@@ -418,6 +418,14 @@ mission views also report the authoritative survival/evacuation clock,
 reinforcement arrivals, and actual win, draw or extraction result. Only
 the compact cue identity crosses the network; both game builds use
 the same authored dialogue table.
+The remote window plays the original weapon, death, warp and Striker Bomb
+sounds and the authored Level soundtrack through the same bounded native
+audio mixer as local play. The server buffers short-lived event cues between
+snapshot intervals and filters them by each player's real fog before sending.
+F7 mutes audio; Space pauses or resumes the soundtrack. Missing audio
+assets or an output device do not block play. Client audio measurements
+appear in the multiplayer session summary; headless simulation and PPO
+never initialize this audio path.
 The remote window now uses the **same native ship, projectile and asteroid
 sprite atlases** as local play, interpolating the host's recent positions
 for smooth display; click/drag selection follows those displayed poses.

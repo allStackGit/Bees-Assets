@@ -18,6 +18,8 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use serde_json::{json, Value};
 
 use super::{NativeCamera, NativeSoftwareRenderer, text};
+use crate::game_audio::NativeGameAudio;
+use crate::unity_scene_snapshot::NativeMusicLocation;
 
 const WIDTH: usize = 1180;
 const HEIGHT: usize = 720;
@@ -957,8 +959,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         "PgUp/Dn shooting (1-40)",
         "B beacon D detonate Q charge",
         "E heal W retreat P patrol",
-        "F6 sprites R reset +/- zoom",
-        "Esc cancel / disconnect",
+        "F6 art F7 mute Space music",
+        "R reset +/- zoom Esc back",
     ];
     for (index,label) in instructions.iter().enumerate(){
         text::draw_at(pixels,WIDTH,FIELD+14,455+index*18,label,1,MUTED);
@@ -1054,6 +1056,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     window.set_target_fps(30);
     let mut pixels=vec![0;WIDTH*HEIGHT];
     let mut artwork=RemoteArtwork::new()?;
+    let mut audio=NativeGameAudio::new();
+    let mut soundtrack_paused=false;
+    let mut last_audio_snapshot:Option<(u64,u64,u64)>=None;
     let mut camera:Option<NativeCamera>=None;
     let mut current_episode=(0_u64,0_u64);
     let mut selected:Vec<i64>=Vec::new();
@@ -1078,6 +1083,18 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             } else {
                 "Fast geometric display enabled".into()
             };
+        }
+        if window.is_key_pressed(Key::F7, KeyRepeat::No) {
+            peer.notice=if audio.toggle_muted() {
+                "Native audio muted".into()
+            } else { "Native audio enabled".into() };
+        }
+        if window.is_key_pressed(Key::Space, KeyRepeat::No) {
+            soundtrack_paused=!soundtrack_paused;
+            audio.set_paused(soundtrack_paused);
+            peer.notice=if soundtrack_paused {
+                "Soundtrack paused".into()
+            } else { "Soundtrack playing".into() };
         }
         if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
             if mode.is_some() {
@@ -1126,6 +1143,23 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             selected.retain(|id|state["squads"].as_array().into_iter().flatten()
                 .any(|s|s["owned"]==true &&
                     s["owner"]["squad_id"].as_i64()==Some(*id)));
+            let key=(episode.0,episode.1,state["tick"].as_u64().unwrap_or(0));
+            if last_audio_snapshot != Some(key) {
+                if let Some(cam)=camera {
+                    let location: Option<NativeMusicLocation> =
+                        serde_json::from_value(state["music_location"].clone())
+                            .ok().flatten();
+                    audio.select_location(location);
+                    // Sounds are bounded to the actual player viewport,
+                    // even when more map geometry is authorized by fog.
+                    let visible=Aabb {
+                        min:cam.screen_to_world(0.0,HEIGHT as f32,FIELD,HEIGHT),
+                        max:cam.screen_to_world(FIELD as f32,0.0,FIELD,HEIGHT),
+                    };
+                    audio.observe_remote(state,visible);
+                }
+                last_audio_snapshot=Some(key);
+            }
         }
         if let Some(mut cam)=camera {
             let keys=window.get_keys_pressed(KeyRepeat::No);
@@ -1401,6 +1435,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "recolor_cache_peak":peer.metrics.recolor_cache_peak,
         "obstacle_hull_draws":peer.metrics.obstacle_hull_draws,
         "source_art_enabled":show_art,
+        "audio":audio.measurements(),
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
         "connection_closed":!peer.connected,
