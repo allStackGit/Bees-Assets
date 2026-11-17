@@ -14,6 +14,8 @@ const {capturePaths} = require('./experiment_hub_native_bundle_transfer');
 const PROJECT = 'bees_native_collect';
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const SHA = /^[0-9a-f]{64}$/;
+const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const ROCM_UUID = /^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const SAFE_ARG = /^[A-Za-z0-9_./:@=+\-,]+$/;
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -49,7 +51,13 @@ function trustedReceiver(endpoint) {
 
 function createNativeBeesPortableCollectorAdapter({
     pythonPath, rolloutBinary, artifactRoot, scratchRoot, tokenFile, receiverUrl,
+    rocrGpuUuids = {},
 }) {
+    if(!rocrGpuUuids||typeof rocrGpuUuids!=='object'||Array.isArray(rocrGpuUuids)||
+        Object.entries(rocrGpuUuids).some(([pci,uuid])=>
+            !PCI.test(pci)||typeof uuid!=='string'||!ROCM_UUID.test(uuid)))
+        throw Error('Invalid machine-owned native GPU PCI-to-ROCr UUID binding.');
+    const rocr_gpu_uuids=Object.freeze({...rocrGpuUuids});
     const executable=trustedFile(pythonPath);
     const binary=trustedFile(rolloutBinary);
     const artifacts=trustedDirectory(artifactRoot);
@@ -81,11 +89,15 @@ function createNativeBeesPortableCollectorAdapter({
         }),
     ]);
     const runner=trustedFile(path.join(tools,names[0]));
+    const gpuVerifier=trustedFile(path.join(__dirname,
+        'experiment_hub_tinybrains_rocm_verify.py'));
+    pinned.set(gpuVerifier,sha256(fs.readFileSync(gpuVerifier)));
     // This machine-owned digest is the approved Hub configuration, not a
     // substitute for the learner's immutable work-order/source contract.
     const configSha256=sha256(JSON.stringify([
         PROJECT,'portable-collector-v1',executable,
         ...pinned.values(),receiver,artifacts,scratch,credential,
+        rocr_gpu_uuids,
     ]));
 
     function jobRoot(context) {
@@ -130,12 +142,21 @@ function createNativeBeesPortableCollectorAdapter({
         cwd:tools,
         stop_policy:'terminate-group',
         config_sha256:configSha256,
+        gpu_execution:'cuda',
+        rocr_gpu_uuids,
+        gpu_verify_args(_parameters,context) {
+            if(!PCI.test(String(context?.gpu_pci_address||''))||
+                context.gpu_pci_addresses!==undefined)
+                throw Error('Portable native Bees GPU validation requires one leased PCI device.');
+            return ['-B',gpuVerifier,context.gpu_pci_address];
+        },
         args(parameters,context) {
             const required=[
                 'config_sha256','collector_id','collection_id','seed_offset',
                 'rollout_workers','physics_workers','rollout_world_start',
                 'rollout_worlds','bundle_directory','source_run_contract_sha256',
             ];
+            const gpu = context?.gpu_pci_address!==undefined;
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
                 Object.keys(parameters).length!==required.length||
                 required.some(key=>!Object.hasOwn(parameters,key))||
@@ -155,8 +176,9 @@ function createNativeBeesPortableCollectorAdapter({
                 parameters.physics_workers<1||parameters.physics_workers>128||
                 !/^[A-Za-z0-9_-]{1,96}$/.test(String(parameters.bundle_directory||''))||
                 context?.continuation_of_job_id!=null||
-                context?.gpu_pci_address!==undefined||
                 context?.gpu_pci_addresses!==undefined||
+                (gpu&&(!PCI.test(String(context.gpu_pci_address))||
+                    context.gpu_mode!=='exclusive'))||
                 !Number.isSafeInteger(context?.cpu_quota)||
                 parameters.rollout_workers*parameters.physics_workers>context.cpu_quota)
                 throw Error('Native portable collector must fit the exact Hub-frozen CPU allocation and work order.');
@@ -177,7 +199,8 @@ function createNativeBeesPortableCollectorAdapter({
                 '--expected-world-start',String(parameters.rollout_world_start),
                 '--expected-worlds',String(parameters.rollout_worlds),
                 '--expected-workers',String(parameters.rollout_workers),
-                '--expected-physics-workers',String(parameters.physics_workers)];
+                '--expected-physics-workers',String(parameters.physics_workers),
+                ...(gpu?['--permit-leased-gpu']:[])];
         },
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))
