@@ -999,6 +999,7 @@ fn apply_remote_side_input(
 const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
        bees menu <catalog.json> --output-dir <battle-runs>
        bees library <library.json> --output-dir <player-save-root>
+       bees connect <host:port> --token-file <private-file> --side <1|2>
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
        bees campaign <catalog.json> --output-dir <battle-runs> --all
@@ -1009,6 +1010,7 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>]
   play  Open the native battle window (requires the client feature)
   library  Open packaged native campaigns and quick battles
+  connect  Join authoritative native multiplayer without Python
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
 
@@ -1276,6 +1278,27 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_campaign_mission(&catalog_path, &output,
             &mission_id.to_string_lossy());
+    }
+    if first == "connect" {
+        #[cfg(feature = "client")]
+        {
+            let address = args.next().ok_or_else(|| invalid(USAGE))?;
+            if args.next().is_none_or(|flag| flag != "--token-file") {
+                return Err(invalid(USAGE).into());
+            }
+            let token_file = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+            if args.next().is_none_or(|flag| flag != "--side") {
+                return Err(invalid(USAGE).into());
+            }
+            let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+                .to_string_lossy().parse()?;
+            if args.next().is_some() { return Err(invalid(USAGE).into()); }
+            return bees_host::presentation::connect_remote(
+                &address.to_string_lossy(), &token_file, side,
+            );
+        }
+        #[cfg(not(feature = "client"))]
+        return Err(invalid("Native multiplayer client requires --features client").into());
     }
     if first == "library" {
         #[cfg(feature = "client")]
