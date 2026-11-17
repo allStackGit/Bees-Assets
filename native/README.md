@@ -149,10 +149,20 @@ start after the first victory. The shop's source-backed hull types must
 already be in the stable player fleet, and the native campaign editor
 continues validating construction against every destination scene.
 Omit `--shop-types` for a campaign without ship purchases.
-The resulting self-contained directory holds a `campaign.json`, a
-`library.json`, independent mission scenes/run files and a source-hash
-provenance receipt. This is source authoring, not a separate campaign
-simulator or substitute for live runtime qualification.
+The resulting directory holds a `campaign.json`, a `library.json`,
+independent mission scenes/run files and a source-hash provenance receipt.
+
+A campaign mission may also be a previously published
+`challenge_policy.py` `challenge.run.json`: the campaign publisher
+verifies that challenge's original selected checkpoint, manifest, human
+ownership and immutable selection receipt before accepting a learned
+opponent into campaign play. The same physical player FleetShip IDs and
+SavedSquad membership must appear in *every* mission, whether scripted
+or learned. Trained-opponent campaigns retain absolute references to the
+existing verified model manifest/weights and Python inference runtime;
+keep those source artifacts accessible on the playing machine. No network
+learner, second combat engine or re-training happens during campaign play.
+This is source authoring, not a substitute for live runtime qualification.
 
 In an ordinary native scene with exactly one player-controlled side, the
 local camera/input owner now follows that actual squad side, regardless

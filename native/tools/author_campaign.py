@@ -15,6 +15,7 @@ import re
 import tempfile
 
 from native_training_artifacts import atomic_json, file_sha256, sync_directory
+from challenge_policy import selected_run
 
 
 def read(path: Path) -> dict:
@@ -24,6 +25,46 @@ def read(path: Path) -> dict:
     return value
 
 
+def trained_opponent(run_path: Path, run: dict, scene_path: Path,
+                     player_side: int) -> dict:
+    """Allow only a checkpoint-pinned challenge from the native publisher.
+
+    A raw policy training scene is not itself a safe campaign mission:
+    it may still control the human side, have stale group participants or
+    point at an unevaluated model. The challenge receipt proves that those
+    ownership changes came from the verified native selection boundary.
+    """
+    provenance_path = run_path.parent / "challenge-receipt.json"
+    source = read(provenance_path)
+    if (source.get("kind") != "native_policy_human_challenge" or
+            source.get("run_sha256") != file_sha256(run_path) or
+            source.get("scene_sha256") != file_sha256(scene_path) or
+            source.get("player_side") != player_side or
+            source.get("opponent_side") != 3 - player_side):
+        raise ValueError("policy campaign mission needs a matching verified challenge receipt")
+    selection_path = Path(source["selection_receipt"]).resolve(strict=True)
+    if file_sha256(selection_path) != source.get("selection_receipt_sha256"):
+        raise ValueError("native policy selection receipt changed after challenge publication")
+    receipt, selected, learner_slot, _ = selected_run(selection_path)
+    checkpoint_sha = (
+        receipt["selected"]["checkpoint_sha256"]
+        if "selected" in receipt else receipt["checkpoint_sha256"]
+    )
+    if (source.get("selected_checkpoint_sha256") != checkpoint_sha or
+            source.get("learner_slot") != learner_slot or
+            run.get("model_manifest") != selected.get("model_manifest")):
+        raise ValueError("campaign opponent model differs from the verified training selection")
+    return {
+        "challenge_receipt": str(provenance_path),
+        "challenge_receipt_sha256": file_sha256(provenance_path),
+        "selected_checkpoint_sha256": checkpoint_sha,
+        "selected_model_manifest_sha256": (
+            receipt["selected"]["manifest_sha256"]
+            if "selected" in receipt else receipt["manifest_sha256"]
+        ),
+    }
+
+
 def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     run = read(run_path)
     levels = run.get("levels")
@@ -31,13 +72,12 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
             not isinstance(levels[0], dict) or
             run.get("episodes_per_world") != 1 or
             not isinstance(run.get("native_stage"), dict) or
-            run.get("model_manifest") is not None or
             run.get("hivemind") is not None or
             run.get("model_updates") or
             run.get("recover_notifications") or
             run.get("recover_outcome_journals")):
         raise ValueError(
-            f"campaign mission must be a one-episode, game-only native Stage: {run_path}"
+            f"campaign mission needs a single offline authored native Level: {run_path}"
         )
     scene_name = levels[0].get("scene")
     if not isinstance(scene_name, str) or not scene_name:
@@ -47,12 +87,16 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     if (scene.get("native_game_schema") != 1 or
             scene.get("stage_name") != run.get("stage_name") or
             scene.get("bounds") != run.get("fragment_spawn", {}).get("map_bounds") or
-            scene.get("policy_episode") is not None or
             not isinstance(scene.get("ships"), list) or
             not isinstance(scene.get("squads"), list)):
         raise ValueError("campaign source must contain the matching complete Unity-free game scene")
     if player_side not in (scene.get("bee_side"), scene.get("human_side")):
         raise ValueError("campaign player side is not a faction in its authored mission")
+    has_model = run.get("model_manifest") is not None
+    if has_model != (scene.get("policy_episode") is not None):
+        raise ValueError("a native campaign policy scene requires its authentic model manifest")
+    model_provenance = (trained_opponent(run_path, run, scene_path, player_side)
+                        if has_model else {})
     ships = {ship["entity_id"]: ship for ship in scene["ships"]
              if ship["side"] == player_side}
     if not ships or not any(ship.get("persistent_fleet") for ship in ships.values()):
@@ -99,6 +143,7 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
         "source_scene": str(scene_path),
         "source_scene_sha256": file_sha256(scene_path),
         "player_fleet_contract": canonical,
+        **model_provenance,
     }
 
 
