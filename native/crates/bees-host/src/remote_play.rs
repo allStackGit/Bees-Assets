@@ -52,6 +52,7 @@ struct Peer {
     id: u64,
     socket: TcpStream,
     side: Option<i32>,
+    last_request_id: u64,
     incoming: Vec<u8>,
     outgoing: Vec<u8>,
     written: usize,
@@ -196,7 +197,7 @@ impl NativeRemotePlay {
             self.next_peer += 1;
             self.measurements.connections_accepted += 1;
             self.peers.push(Peer {
-                id, socket, side: None, incoming: Vec::new(),
+                id, socket, side: None, last_request_id: 0, incoming: Vec::new(),
                 outgoing: Vec::new(), written: 0, closed: false,
                 accepted_at: Instant::now(),
             });
@@ -258,6 +259,18 @@ impl NativeRemotePlay {
                         }
                     }
                     Ok(WireInput::Input { request_id, action }) if peer.side.is_some() => {
+                        // No delayed/doubled request may reissue a movement
+                        // or special under the same authenticated connection.
+                        if request_id <= peer.last_request_id {
+                            self.measurements.orders_rejected += 1;
+                            let _ = peer.enqueue(&json!({
+                                "kind": "input_result", "request_id": request_id,
+                                "processed": false,
+                                "feedback": "duplicate or out-of-order request",
+                            }));
+                            continue;
+                        }
+                        peer.last_request_id = request_id;
                         // Held-fire is a continuing, per-controller gesture.
                         // The present cooperative protocol has no peer-owned
                         // release lifecycle: rejecting it avoids an orphaned
