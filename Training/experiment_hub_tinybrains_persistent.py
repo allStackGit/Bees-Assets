@@ -77,9 +77,10 @@ def main():
         os.environ["TINYBRAINS_GPU_LEASE_ORDINALS"] = ",".join(
             str(args.rocm_pci.index(pci)) for pci in actual_pcis)
         if args.device in ("dual", "multi"):
-            # The lease fixes physical PCI identities, not HIP ordinal order.
-            # GPU 0 owns PPO/Adam, GPU 1 owns the original local collection,
-            # and further distinct GPUs own persistent collector sessions.
+            # Prefer measured roles on trainers that support placement.
+            # The ordered physical lease supplies the fallback assignment.
+            if find_spec("ants_mapoca.gpu_roles") is not None:
+                os.environ["TINYBRAINS_AUTO_GPU_ROLES"] = "1"
             optimization_device = f"cuda:{actual_pcis.index(args.rocm_pci[0])}"
             collection_device = f"cuda:{actual_pcis.index(args.rocm_pci[1])}"
             local_gpu_collectors = [

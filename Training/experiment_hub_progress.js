@@ -14,6 +14,7 @@ const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','byt
 // envelope still bounds payload size, separately from this field limit.
 // Complete trainer metrics reach the archive before chart downselection.
 const MAX_SOURCE_METRICS=512;
+const MAX_TINYBRAINS_COLLECTORS=17;
 function validateGenericProgress(value,projectId) {
     const metrics=value?.metrics;
     if(!/^[a-z][a-z0-9_-]{0,47}$/.test(String(projectId||''))||
@@ -103,12 +104,15 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'local_gpu_direct_model_updates',
             'local_gpu_direct_model_tensor_bytes',
             'local_gpu_join_wait_seconds',
-            'local_gpu_collectors_pending_at_local_end',
+            'local_gpu_pending_at_local_end',
             'local_lease_native_engines_active',
             'local_lease_simulation_trial_active',
             'pipeline_local_gpu_wait_work_share',
             'pipeline_local_gpu_wait_dominant',
             'pipeline_local_gpu_wait_owner',
+            'pipeline_slowest_collector_id',
+            'pipeline_collection_exposure_fraction',
+            'collector_wait_seconds','collector_critical_path_seconds',
             'pipeline_local_gpu_lease_index'])
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
@@ -174,11 +178,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             retain(name,reported[name]);
         // At most one sustained stage can dominate each fully instrumented
         // collector. Give confirmed per-worker evidence a default chart slot.
-        for(let i=0;i<9;i++) {
+        for(let i=0;i<MAX_TINYBRAINS_COLLECTORS;i++) {
             for(const suffix of ['sim_straggler_pressure','sim_dispatch_pressure',
                 'record_encode_pressure','prev_reply_prep_pressure'])
                 retain('collector_'+i+'_'+suffix,reported['collector_'+i+'_'+suffix]);
-            for(const stage of ['engine','observation','inference','opponent'])
+            for(const stage of ['engine','observation','inference','opponent','result','bootstrap','returns'])
                 retain('collector_'+i+'_stage_'+stage+'_dominant',
                     reported['collector_'+i+'_stage_'+stage+'_dominant']);
         }
@@ -265,9 +269,14 @@ class BottleneckEvidence {
         const collection=seconds('collection_seconds');
         const optimize=seconds('optimization_seconds');
         if(collection!==null&&optimize!==null&&collection+optimize>0) {
-            const fraction=collection/(collection+optimize);
-            add('pipeline_collection_work_share',fraction);
-            add('pipeline_optimization_work_share',1-fraction);
+            const workShare=collection/(collection+optimize);
+            add('pipeline_collection_work_share',workShare);
+            add('pipeline_optimization_work_share',1-workShare);
+            const overlap=seconds('overlap_seconds');
+            const sourceExposure=metrics.pipeline_collection_exposure_fraction;
+            const exposure=collection-Math.min(collection,overlap??0);
+            const fraction=sourceExposure?.unit==='ratio'?sourceExposure.value:
+                exposure+optimize>0?exposure/(exposure+optimize):workShare;
             // Worker straggler waits and learner-side merge are distinct
             // measured subsets of collection, not new hardware diagnoses.
             const joinWait=seconds('remote_collector_join_wait_seconds');
@@ -289,7 +298,7 @@ class BottleneckEvidence {
             // leave owner unknown rather than inventing a slow GPU.
             const localGpuCount=metrics.local_gpu_collector_count?.value;
             const gpuSamples=[];
-            for(let i=0;i<9;i++) {
+            for(let i=0;i<MAX_TINYBRAINS_COLLECTORS;i++) {
                 if(metrics['collector_'+i+'_is_local_gpu']?.value!==1)
                     continue;
                 const waited=seconds('collector_'+i+'_wait_after_local_seconds');
@@ -319,17 +328,19 @@ class BottleneckEvidence {
             // Per-collector stage times are independent *wall intervals*.
             // Compare only a complete set from one collector. A dominant
             // measured stage is not evidence that a specific CPU/GPU is full.
-            const stageNames=['engine','observation','inference','opponent'];
+            const stageNames=['engine','observation','inference','opponent','result','bootstrap','returns'];
             const sourceNames=['rollout_engine_step_seconds',
                 'observation_prepare_seconds','learner_inference_seconds',
-                'opponent_processing_seconds'];
+                'opponent_processing_seconds','result_processing_seconds',
+                'bootstrap_seconds','returns_seconds'];
             const stageHints=[];
             const simHints=[];
-            for(let i=0;i<9;i++) {
+            for(let i=0;i<MAX_TINYBRAINS_COLLECTORS;i++) {
                 const batch=seconds('collector_'+i+'_sim_batch_wall_seconds');
                 const tail=seconds('collector_'+i+'_sim_last_child_gap_seconds');
                 const queue=seconds('collector_'+i+'_sim_dispatch_queue_seconds');
-                const worker=seconds('collector_'+i+'_sim_engine_roundtrip_seconds');
+                const worker=seconds('collector_'+i+'_sim_engine_roundtrip_seconds')??
+                    seconds('collector_'+i+'_sim_engine_reply_seconds');
                 const tailShare=(batch>0&&tail!==null&&tail<=batch)
                     ?tail/batch:null;
                 const exposed=seconds('collector_'+i+'_rollout_engine_step_seconds');
@@ -404,8 +415,8 @@ class BottleneckEvidence {
                         inferenceStream/inferenceHost);
                 const durations=sourceNames.map(name=>
                     seconds('collector_'+i+'_'+name));
-                if(durations.some(x=>x===null))continue;
-                const total=durations.reduce((sum,x)=>sum+x,0);
+                if(durations.slice(0,4).some(x=>x===null))continue;
+                const total=durations.reduce((sum,x)=>sum+(x??0),0);
                 if(total<=0)continue;
                 const maximum=Math.max(...durations);
                 const stage=durations.indexOf(maximum);
@@ -471,7 +482,7 @@ class BottleneckEvidence {
                 if(sustained('gpuIdle')&&
                         recent.filter(x=>x.fraction<=0.3).length>=5)
                     add('pipeline_gpu_idle_evidence',1,'count');
-                for(let i=0;i<9;i++) {
+                for(let i=0;i<MAX_TINYBRAINS_COLLECTORS;i++) {
                     // Stable straggler tails or dispatch queueing suggest
                     // software parallelism pressure, not CPU saturation.
                     if(recent.filter(x=>x.simHints?.[i]?.tail).length>=5)
@@ -647,7 +658,7 @@ class BottleneckEvidence {
         // the existing TinyBrains source and must never be subtracted from it.
         // Residual includes transport, framing, serialization and queueing,
         // NOT a measurement of network bandwidth alone.
-        for(let i=0;i<9;i++) {
+        for(let i=0;i<MAX_TINYBRAINS_COLLECTORS;i++) {
             const roundtrip=seconds('collector_'+i+'_roundtrip_seconds');
             const service=seconds('collector_'+i+'_service_seconds');
             if(roundtrip!==null&&service!==null&&roundtrip>0&&service<=roundtrip)
@@ -691,4 +702,4 @@ class BottleneckEvidence {
 function validateProgress(value,projectId) {
     return validateGenericProgress(value,projectId);
 }
-module.exports={validateProgress,selectChartMetrics,BottleneckEvidence};
+module.exports={validateProgress,selectChartMetrics,BottleneckEvidence,MAX_TINYBRAINS_COLLECTORS};

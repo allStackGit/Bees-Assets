@@ -7,7 +7,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
-const {validateProgress}=require('./experiment_hub_progress');
+const {validateProgress,MAX_TINYBRAINS_COLLECTORS}=require('./experiment_hub_progress');
 const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {modelFileSha256}=require('./experiment_hub_evaluation');
 
@@ -72,10 +72,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_engine_step_seconds','rollout_observation_prepare_seconds',
         'rollout_learner_inference_seconds','rollout_learner_gpu_stream_seconds',
         'rollout_opponent_processing_seconds',
+        'rollout_result_processing_seconds','rollout_bootstrap_seconds',
+        'rollout_returns_seconds',
         'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
         'simulation_batch_wall_seconds','simulation_last_child_gap_seconds',
         'simulation_prefetch_overlap_seconds',
         'optimization_seconds','checkpoint_seconds',
+        'collector_wait_seconds','collector_critical_path_seconds',
+        'gpu_role_startup_seconds',
         'remote_collector_join_wait_seconds','collection_merge_seconds',
         'overlap_seconds','local_gpu_join_wait_seconds',
         'local_gpu_wait_after_local_max_seconds',
@@ -124,14 +128,20 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'local_gpu_direct_model_updates',
         'local_lease_native_engines_active',
         'local_lease_simulation_trial_active',
-        'local_gpu_collectors_pending_at_local_end',
         'local_gpu_collectors_ready_at_local_end',
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_next_update',
+        'collector_balance_changed_submission',
+        'collector_balance_layout_rollbacks',
+        'collector_balance_next_submission_update',
+        'gpu_role_optimizer_lease_index','gpu_role_restored',
+        'ppo_gpu_max_group_pixels','rollout_inference_max_group_pixels',
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target'])
         add(name,row[name],'count');
+    add('local_gpu_pending_at_local_end',
+        row.local_gpu_collectors_pending_at_local_end,'count');
     // These optimizer observations can be negative; they are scalar values,
     // never performance or strength certification.
     for(const name of ['loss','policy_loss','value_loss','baseline_loss',
@@ -140,6 +150,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'critic_max_weight_change','learning_rate','population_mean',
         'states_per_microbatch'])add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
+    for(const name of ['pipeline_collection_exposure_fraction',
+        'pipeline_collector_stage_fraction','pipeline_remote_service_fraction',
+        'pipeline_remote_nonservice_fraction'])
+        add(name,row[name],'ratio');
+    add('pipeline_slowest_collector_id',row.pipeline_slowest_collector_id,'count');
+    add('pipeline_slowest_collector_ratio',row.pipeline_slowest_collector_ratio,'scalar');
     add('rss_mb',row.rss_mb,'mb');
     add('simulation_engine_memory_mb',row.simulation_engine_memory_mb,'mb');
     add('simulation_learner_memory_mb',row.simulation_learner_memory_mb,'mb');
@@ -237,7 +253,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // Each collector is a separately identified contributor; remote transfer
     // roundtrip includes transmission and worker compute, not network-only time.
     for(const [i,worker] of (Array.isArray(row.collector_samples)
-        ?row.collector_samples:[]).slice(0,9).entries()) {
+        ?row.collector_samples:[]).slice(0,MAX_TINYBRAINS_COLLECTORS).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_simulation_match_steps',
@@ -262,7 +278,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_sim_prefetch_engine_steps',
             worker.simulation_prefetch_engine_steps,'count');
         for(const [suffix,name] of [
-            ['sim_engine_roundtrip_seconds','simulation_engine_roundtrip_seconds'],
+            [i<10?'sim_engine_roundtrip_seconds':'sim_engine_reply_seconds',
+                'simulation_engine_roundtrip_seconds'],
             ['sim_dispatch_queue_seconds','simulation_dispatch_queue_seconds'],
             ['sim_batch_wall_seconds','simulation_batch_wall_seconds'],
             ['sim_last_child_gap_seconds','simulation_last_child_gap_seconds'],
@@ -291,6 +308,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
+        add('collector_'+i+'_completion_seconds',worker.learner_completion_seconds,'seconds');
         add('collector_'+i+'_service_seconds',worker.collector_service_seconds,'seconds');
         add('collector_'+i+'_record_encode_seconds',
             worker.collector_record_encode_seconds,'seconds');
@@ -361,6 +379,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_learner_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_inference_pixel_samples',
             worker.rollout_inference_pixel_samples,'count');
+        add('collector_'+i+'_inference_max_group_px',
+            worker.rollout_inference_max_group_pixels,'count');
         add('collector_'+i+'_gpu_batch_used_pixels',
             worker.rollout_gpu_batch_used_pixels,'count');
         add('collector_'+i+'_gpu_batch_vram_capped',
@@ -377,6 +397,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('collector_'+i+'_'+suffix,worker[name],'count');
         add('collector_'+i+'_opponent_processing_seconds',
             worker.rollout_opponent_processing_seconds,'seconds');
+        for(const [suffix,name] of [
+            ['result_processing_seconds','rollout_result_processing_seconds'],
+            ['bootstrap_seconds','rollout_bootstrap_seconds'],
+            ['returns_seconds','rollout_returns_seconds']])
+            add('collector_'+i+'_'+suffix,worker[name],'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
         add('collector_'+i+'_snapshot_cache_files',
@@ -409,7 +434,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'worker_deserialize_seconds',
         'prev_reply_serial_seconds','prev_reply_compress_seconds',
         'prev_reply_auth_seconds'];
-    const collectors=Math.min(9,Array.isArray(row.collector_samples)
+    const collectors=Math.min(MAX_TINYBRAINS_COLLECTORS,Array.isArray(row.collector_samples)
         ?row.collector_samples.length:0);
     const fits=()=>Object.keys(metrics).length<=500&&
         JSON.stringify(metrics).length<=31000;
@@ -454,6 +479,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'sim_restored','sim_proven',
                 'inference_shape_groups','inference_readbacks',
                 'inference_forward_chunks','opponent_shape_groups',
+                'inference_max_group_px','bootstrap_seconds','returns_seconds',
                 'opponent_readbacks',
                 'snapshot_cache_files','snapshot_cache_bytes',
                 'record_packed','record_board_groups',
@@ -474,6 +500,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'ingestion_seconds','worker_receive_seconds',
                 'worker_decode_seconds','record_encode_seconds',
                 'request_wire_bytes','response_wire_bytes',
+                'sim_engine_roundtrip_seconds','sim_engine_reply_seconds',
+                'sim_prefetch_overlap_seconds','sim_prefetch_engine_steps',
+                'sim_last_child_gap_seconds','sim_dispatch_queue_seconds',
+                'sim_batch_wall_seconds','inference_pixel_samples',
+                'learner_gpu_stream_seconds','engine_steps_per_second',
+                'simulation_match_steps','match_steps_per_second','engine_steps',
             ];
             for(const suffix of deferredDetails) {
                 for(let i=0;i<collectors;i++)
