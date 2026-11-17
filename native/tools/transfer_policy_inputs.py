@@ -34,15 +34,16 @@ RESERVED = {"inputs.json", "orders.json", "run.json", "manifest.json",
 
 
 def relative_artifact(value):
-    if not isinstance(value, str) or not value or "\\" in value or ":" in value:
-        raise ValueError("model manifest must contain portable relative artifact paths")
+    if not isinstance(value, str) or not value or chr(92) in value or ":" in value:
+        raise ValueError("model manifest needs portable relative artifact paths")
+    if value == "checkpoint.pt":
+        return value
     path = PurePosixPath(value)
     if (path.is_absolute() or path.as_posix() != value or
             any(part in ("", ".", "..") for part in path.parts) or
             len(path.parts) > 8 or value in RESERVED or
-            path.parts[0] in ("scene", ".") or len(value) > 255):
-        if value != "checkpoint.pt":
-            raise ValueError(f"invalid model artifact path: {value!r}")
+            path.parts[0] in ("scene", "source", ".") or len(value) > 255):
+        raise ValueError(f"invalid portable model artifact path: {value!r}")
     return value
 
 
@@ -281,11 +282,22 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None):
         ):
             raise ValueError("native collector model inputs differ from its issued order")
         models = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        if models.get("format") != "bees-native-model-v1" or not isinstance(models.get("models"), list):
+            raise ValueError("collector model manifest is invalid")
+        expected_files = set(RESERVED)
         for model in models["models"]:
             name = relative_artifact(model["path"])
+            expected_files.add(name)
             if file_sha256(root / name) != model["sha256"]:
                 raise ValueError("portable collector model weights failed verification")
         run = json.loads((root / "run.json").read_text(encoding="utf-8"))
+        for index in range(len(run.get("levels", []))):
+            expected_files.add(f"scene/{index:04d}.json")
+        for name in ("collision_matrix", "stage_palette"):
+            if run.get(name) is not None:
+                expected_files.add(f"source/{name}.json")
+        if set(files) != expected_files:
+            raise ValueError("collector input archive contains unissued source artifacts")
         if len(run.get("levels", [])) != len([
                 name for name in files if re.fullmatch(r"scene/[0-9]{4}\.json", name)]):
             raise ValueError("collector Level source count changed")
