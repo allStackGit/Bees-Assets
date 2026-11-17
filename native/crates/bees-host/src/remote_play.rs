@@ -528,6 +528,17 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
         "viewer_side": viewer,
         "map_bounds": [[bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y]],
         "terminal_result": view.terminal_result.map(|result| result.winner_side),
+        // Preserve the source distinction between timeout/draw, elimination
+        // and successful extraction, instead of guessing from winner_side.
+        "terminal_outcome": view.terminal_result.map(|result| json!({
+            "winner_side": result.winner_side,
+            "timed_out": result.timed_out,
+            "extraction_victory": result.extraction_victory,
+            "duration_seconds": result.duration_seconds,
+            "bee_side_eliminated": result.bee_side_eliminated,
+            "human_side_eliminated": result.human_side_eliminated,
+            "label": crate::presentation::battle_outcome_label(result),
+        })),
         // Present the SAME authored Level cue as local play. Story text is
         // restricted to its campaign player's view, never broadcast to an
         // independently authenticated opposing side.
