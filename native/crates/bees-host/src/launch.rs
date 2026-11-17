@@ -2096,6 +2096,86 @@ struct NativeSavedNetwork {
     token_file: PathBuf,
 }
 
+#[cfg(feature = "client")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSavedHost {
+    game_id: String,
+    listen: String,
+    tokens_file: PathBuf,
+}
+
+#[cfg(feature = "client")]
+fn new_library_battle_output(save_root: &Path, game_id: &str)
+    -> Result<PathBuf, Box<dyn Error>> {
+    let root=save_root.join("battles").join(game_id);
+    fs::create_dir_all(&root)?;
+    let mut number=0_u64;
+    loop {
+        number=number.checked_add(1)
+            .ok_or_else(|| invalid("quick battle count exhausted"))?;
+        let dir=root.join(format!("battle-{number:06}"));
+        match fs::create_dir(&dir) {
+            Ok(())=>return Ok(dir.join("run")),
+            Err(error) if error.kind()==ErrorKind::AlreadyExists=>continue,
+            Err(error)=>return Err(error.into()),
+        }
+    }
+}
+
+#[cfg(feature = "client")]
+fn run_library_host(settings_path: &Path, save_root: &Path,
+    library: &NativeLibrary, games: &[PathBuf]) -> Result<(), Box<dyn Error>> {
+    let settings:NativeSavedHost=serde_json::from_slice(&fs::read(settings_path)?)?;
+    if settings.listen.is_empty() || settings.listen.len()>255 ||
+        settings.listen.chars().any(char::is_control) {
+        return Err(invalid("native multiplayer host requires a private-network listen address").into());
+    }
+    let index=library.games.iter().position(|entry|
+        entry.id==settings.game_id && entry.kind=="battle")
+        .ok_or_else(|| invalid("multiplayer host game ID is not a playable battle"))?;
+    let token_file=if settings.tokens_file.is_absolute(){
+        settings.tokens_file
+    }else{save_root.join(settings.tokens_file)};
+    let metadata=fs::symlink_metadata(&token_file)?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() ||
+        metadata.len()<2 || metadata.len()>2048 {
+        return Err(invalid("multiplayer host token map must be a private regular file").into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(invalid("multiplayer host token map must have owner-only permissions").into());
+        }
+    }
+    let token_map=fs::read_to_string(&token_file)?;
+    let tokens:std::collections::HashMap<String,String>=serde_json::from_str(&token_map)?;
+    if tokens.is_empty() || tokens.len()>2 ||
+        tokens.iter().any(|(side, token)|
+            !matches!(side.as_str(),"1"|"2") ||
+            !(24..=256).contains(&token.len()) ||
+            token.chars().any(char::is_control)) ||
+        tokens.values().collect::<HashSet<_>>().len()!=tokens.len() {
+        return Err(invalid("host must provide unique side 1/2 native multiplayer tokens").into());
+    }
+    // The authoritative host reads its existing protected environment
+    // configuration. A child avoids process-global env mutations in the
+    // parent UI and keeps one battle runtime / one source physics engine.
+    let output=new_library_battle_output(save_root,&settings.game_id)?;
+    let outcome=std::process::Command::new(env::current_exe()?)
+        .arg("play").arg(&games[index])
+        .arg("--output-dir").arg(output)
+        .env("BEES_NATIVE_REMOTE_LISTEN",&settings.listen)
+        .env("BEES_NATIVE_REMOTE_SIDE_TOKENS",&token_map)
+        .env_remove("BEES_NATIVE_REMOTE_TOKEN")
+        .status()?;
+    if !outcome.success() {
+        return Err(invalid("native multiplayer host exited without completing its battle").into());
+    }
+    Ok(())
+}
+
 /// A single Unity-free home screen, not another simulation/campaign mode.
 /// Each selected campaign uses the existing verified career ledger, shop,
 /// mission unlocks and battle picker; quick battles use run_session directly.
@@ -2149,6 +2229,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
     let mut selected = 0_usize;
     let mut launch_failed = false;
     let saved_network = save_root.join("multiplayer.json");
+    let saved_host = save_root.join("multiplayer-host.json");
     loop {
         let status = library.games.iter().zip(&games).map(|(item, config)| {
             if item.kind != "campaign" {
@@ -2171,17 +2252,29 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         // Multiplayer configuration belongs to the player's save directory.
         // It is discovered on each return to the library, so a user can
         // change servers without rebuilding or editing the game package.
-        if saved_network.is_file() {
+        let join_available=saved_network.is_file();
+        let host_available=saved_host.is_file();
+        if join_available {
             rows.push(BattleMenuRow {
                 title: "Join Multiplayer", status: "  [Saved server]",
                 unlocked: true,
             });
         }
+        if host_available {
+            rows.push(BattleMenuRow {
+                title: "Host Multiplayer", status: "  [Private lobby]",
+                unlocked: true,
+            });
+        }
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
-        let remote = index == library.games.len();
+        let remote = join_available && index == library.games.len();
+        let hosting = host_available &&
+            index == library.games.len()+usize::from(join_available);
         let (game_id, game_kind, game_title) = if remote {
             ("multiplayer", "remote", "Join Multiplayer")
+        } else if hosting {
+            ("multiplayer-host", "host", "Host Multiplayer")
         } else {
             let item = &library.games[index];
             (item.id.as_str(), item.kind.as_str(), item.title.as_str())
@@ -2208,22 +2301,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     &connection.address, &token_file, connection.side,
                 )
             })()
+        } else if hosting {
+            run_library_host(&saved_host,save_root,&library,&games)
         } else if game_kind == "campaign" {
             run_menu(&games[index], &save_root.join("campaigns").join(game_id))
         } else {
-            let root = save_root.join("battles").join(game_id);
-            fs::create_dir_all(&root)?;
-            let mut number = 0_u64;
-            let run_root = loop {
-                number = number.checked_add(1)
-                    .ok_or_else(|| invalid("quick battle count exhausted"))?;
-                let dir = root.join(format!("battle-{number:06}"));
-                match fs::create_dir(&dir) {
-                    Ok(()) => break dir.join("run"),
-                    Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
-                    Err(error) => return Err(error.into()),
-                }
-            };
+            let run_root=new_library_battle_output(save_root,game_id)?;
             run_session(&games[index], true, true, Some(run_root), None, None, None)
         };
         launch_failed = result.is_err();
