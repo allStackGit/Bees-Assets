@@ -6,6 +6,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
+const {approvedEndpointSubset}=require('./experiment_hub_resources');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -38,6 +39,16 @@ function tinyBrainsImports(value) {
     return Object.fromEntries(Object.entries(value).map(([id,pin])=>[id,{...pin}]));
 }
 
+function tinyBrainsDeviceForLease(parameters,resources) {
+    if(parameters.device!==undefined)return parameters.device;
+    if(resources.gpu_count===0)return 'cpu';
+    if(resources.gpu_mode==='exclusive') {
+        if(resources.gpu_count===2)return 'dual';
+        if(resources.gpu_count>=3&&resources.gpu_count<=8)return 'multi';
+    }
+    return undefined;
+}
+
 function supportsTinyBrainsProfile(machine,job) {
     if(job.project_id!=='tinybrains')return true;
     const p=job.frozen_parameters;
@@ -59,20 +70,26 @@ function supportsTinyBrainsProfile(machine,job) {
         (job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&
                 machine.gpu_shared_projects?.includes('tinybrains'));
-    const remote=p?.remote_rollouts===true&&p.device!=='cpu'&&
-        machine.agent_platform==='linux'&&job.resources?.gpu_count>=1&&
+    const remote=p?.remote_rollouts===true&&machine.agent_platform==='linux'&&
+        (cpuFallback?machine.tinybrains_remote_cpu_learner===true:
+            p.device!=='cpu'&&job.resources?.gpu_count>=1)&&
         machine.tinybrains_remote_rollout_profiles?.includes(p.profile)===true;
     const imported=p?.import_checkpoint==null?null:
         machine.tinybrains_imports?.[p.import_checkpoint];
+    const endpoints=approvedEndpointSubset(
+        machine.tinybrains_remote_rollout_endpoints,p?.rollout_endpoints);
     return ['win32','linux'].includes(machine.agent_platform)&&
         (cuda?(cpuFallback||dual||multi||p?.device===undefined&&gpu):
-            p?.device===undefined&&job.resources?.gpu_count===0)&&
+            (p?.device===undefined||p.device==='cpu')&&job.resources?.gpu_count===0)&&
         p&&Object.keys(p).every(key=>
             ['profile','profile_sha256','updates','threads','device','remote_rollouts','import_checkpoint',
-                'import_checkpoint_sha256','rollout_action_weights'].includes(key))&&
+                'import_checkpoint_sha256','rollout_action_weights','rollout_endpoints'].includes(key))&&
+        (p.rollout_endpoints===undefined||
+            remote&&machine.tinybrains_rollout_subset===true&&endpoints!==null)&&
         (p.rollout_action_weights===undefined||
             remote&&Array.isArray(p.rollout_action_weights)&&
-            p.rollout_action_weights.length===machine.tinybrains_remote_rollout_count+1&&
+            p.rollout_action_weights.length===(endpoints?.length??
+                machine.tinybrains_remote_rollout_count)+1&&
             p.rollout_action_weights.every(w=>
                 Number.isSafeInteger(w)&&w>=1&&w<=1024))&&
         (p.remote_rollouts===undefined||remote)&&
@@ -269,13 +286,14 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
             },
         }),
         args(parameters,context) {
-            const {profile,profile_sha256,updates,import_checkpoint,
+            const {profile,profile_sha256,updates,device,import_checkpoint,
                 import_checkpoint_sha256}=parameters;
             const approved=configs.get(profile);
             if(Object.keys(parameters).some(key=>
-                !['profile','profile_sha256','updates','import_checkpoint',
+                !['profile','profile_sha256','updates','device','import_checkpoint',
                     'import_checkpoint_sha256'].includes(key))||
                 !approved||approved.sha256!==profile_sha256||
+                (device!==undefined&&(device!=='cpu'||approved.device!=='cpu'))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000)
                 throw Error('TinyBrains jobs require an approved profile, its SHA-256 and 1–10,000,000 updates.');
             if(approved.device==='cuda'
@@ -384,4 +402,5 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         },
     };
 }
-module.exports={createTinyBrainsAdapter,tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile};
+module.exports={createTinyBrainsAdapter,tinyBrainsProfiles,tinyBrainsImports,
+    supportsTinyBrainsProfile,tinyBrainsDeviceForLease};
