@@ -137,8 +137,10 @@ simulation process. Each loop owns its separate seeded persistent worlds,
 shared-memory segments, explicit action snapshots, metadata, completed
 episode migration and PPO slot order; one native map step at a time per
 process preserves the original serial CPU process-count contract.
-Multiple leased processes still execute in parallel and retain the
-existing long-window useful-SPS process-count and shard regrouping tuners.
+Single-shard physical processes retain direct blocking pipe reads,
+avoiding an extra readiness syscall on the common hot path. Multiple
+leased processes still execute in parallel and retain the existing
+long-window useful-SPS process-count and shard regrouping tuners.
 No new scheduling service or whole-pool restart is introduced. Ordered
 pipe servicing matches the parent's existing receive order, avoiding a
 large snapshot/trait reply blocking an earlier expected response. An
