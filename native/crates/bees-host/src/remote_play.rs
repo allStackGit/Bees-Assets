@@ -1,14 +1,14 @@
-//! Opt-in authenticated LAN co-op transport for the authoritative native Level.
+//! Opt-in authenticated LAN multiplayer transport for one native Level.
 //!
-//! Remote peers observe the host's currently authorized player side and submit
-//! the SAME typed NativePlayerInput as the local window and replay. This file
-//! owns only nonblocking sockets and bounded wire buffers: no remote physics,
-//! command director, policy state, or shadow squad selection.
+//! Every peer is bound to the player side authenticated by its secret token.
+//! Two side tokens permit opposing source-authored human players; one token
+//! permits cooperative control of the local player side. The wire transport
+//! submits the SAME typed NativePlayerInput as local play and replay.
+//! There is no remote physics, command director, policy state or shadow roster.
 //!
 //! Protocol: newline-delimited JSON. Hello {kind:"hello", token}; then
-//! {kind:"input", request_id:u64, action:NativePlayerInput}. Host replies
-//! with kind:"input_result" and broadcasts kind:"world_state". The remote
-//! interface shares the local player's authority (co-op, not opposing sides).
+//! {kind:"input", request_id:u64, action:NativePlayerInput}. The host replies
+//! with kind:"input_result" and projects side-filtered kind:"world_state".
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
