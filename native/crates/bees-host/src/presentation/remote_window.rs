@@ -385,6 +385,17 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 text::fit(&label,WIDTH-FIELD-24),1,
                 if selected.contains(&id){TEXT}else{MUTED});
         }
+        if let Some(squad)=first_selected(Some(state),selected) {
+            let id=squad["owner"]["squad_id"].as_i64().unwrap_or(0);
+            let shooting=squad["shooting"].as_u64().unwrap_or(0);
+            text::draw_at(pixels,WIDTH,FIELD+14,417,
+                &format!("Squad {id}  Shooting {shooting}"),1,TEXT);
+            let enabled=|key:&str|if squad[key]==true {"On"} else {"Off"};
+            let flags=format!("Chase {} Lock {} Speed {}",
+                enabled("chasing"),enabled("locked_on"),enabled("match_speed"));
+            text::draw_at(pixels,WIDTH,FIELD+14,435,
+                text::fit(&flags,WIDTH-FIELD-24),1,MUTED);
+        }
         if !state["terminal_result"].is_null() {
             text::draw_at(pixels,WIDTH,16,20,
                 &format!("Result: winner side {}",state["terminal_result"]),2,[255,210,129]);
