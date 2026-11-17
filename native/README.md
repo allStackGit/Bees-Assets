@@ -532,7 +532,19 @@ python Training/experiment_hub_native_bees_evaluate.py create-suite \
 
 Configure the native Bees Hub adapter's `evaluationRoot` to an independent
 receipt directory and `evaluationSuites` to `["bees_native_duel"]`.
-A separate scheduled invocation on the enrolled evaluation machine runs:
+To make a completed `bees_native` Hub learner available to the native
+game library on the *same machine*, set
+`gameLibrarySaveRoot` in its trusted
+`createNativeBeesAdapter({...})` setup to an **existing absolute player
+save directory** (for example `~/.local/share/bees-native` expanded to
+an absolute path). The adapter then publishes the completed, SHA-verified
+checkpoint and original physical Level selection through the same
+`latest-playable.json` and `trained-models.d` contracts as standalone
+native training. Entries are named `hub-<job UUID>`; multi-arena jobs
+offer a Level chooser in the game. Collection-only and bundle-only
+learners cannot opt into this local scene gallery, and no Hub job
+configuration can choose a different save path. A separate scheduled
+invocation on the enrolled evaluation machine runs:
 
 ```sh
 python Training/experiment_hub_native_bees_eval_poll.py \

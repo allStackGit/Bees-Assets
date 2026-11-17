@@ -3,7 +3,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const {spawnSync} = require('node:child_process');
+const {spawnSync, execFile} = require('node:child_process');
+const {promisify} = require('node:util');
+const execFileAsync = promisify(execFile);
 const {validateProgress} = require('./experiment_hub_progress');
 const {evaluationReader} = require('./experiment_hub_evaluation');
 
@@ -194,7 +196,7 @@ function rolloutPhysicsMeasurements(rollout) {
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
-    evaluationRoot, evaluationSuites,
+    evaluationRoot, evaluationSuites, gameLibrarySaveRoot,
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
     // Local operator-owned PCI to ROCr UUID mappings are never job parameters.
@@ -240,6 +242,29 @@ function createNativeBeesAdapter({
     if (inboxLearner && (!Array.isArray(config.rollout_bundles) || config.rollout_bundles.length))
         throw Error('Native Bees inbox learners require an empty rollout_bundles template.');
     if (collectOnly && bundleRound) throw Error('Native Bees collection requires live Levels.');
+    // Optional operator-owned native-game gallery. This is not a job
+    // parameter, Hub server path, or new training artifact store. The same
+    // verified learner is playable using the existing game library.
+    let gallery = null;
+    if (gameLibrarySaveRoot !== undefined) {
+        if (collectOnly || inboxLearner || bundleRound ||
+            learnerSlot === undefined)
+            throw Error('Native Bees Hub gallery needs a physical-Level learner with an explicit slot.');
+        if (typeof gameLibrarySaveRoot !== 'string' ||
+            !path.isAbsolute(gameLibrarySaveRoot))
+            throw Error('Native Bees game library root must be an absolute machine-local directory.');
+        gallery = fs.realpathSync(gameLibrarySaveRoot);
+        if (!fs.statSync(gallery).isDirectory() || gallery === artifacts ||
+            gallery.startsWith(artifacts + path.sep))
+            throw Error('Native Bees player saves must be separate from Hub job artifacts.');
+    }
+    const publisher = gallery ? trustedFile(path.resolve(__dirname,
+        '../native/tools/publish_hub_playable.py')) : null;
+    const gallerySources = gallery ? [
+        publisher,
+        ...['native_game_registration.py', 'native_session_selection.py', 'native_curriculum.py']
+            .map(name => trustedFile(path.resolve(__dirname, '../native/tools', name))),
+    ] : [];
     const binary = bundleRound ? null : trustedFile(rolloutBinary);
     if (config.hivemind != null || config.recover_notifications?.length ||
         config.recover_outcome_journals?.length || config.model_updates?.length ||
@@ -267,7 +292,7 @@ function createNativeBeesAdapter({
     const pins = new Map([
         ...basePins,
         ...sourcePins,
-        ...[runner, contractScript, ...(binary ? [binary] : [])]
+        ...[runner, contractScript, ...(binary ? [binary] : []), ...gallerySources]
             .map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
     const initialGpuInference = verifyModelDependencies(
@@ -570,8 +595,36 @@ function createNativeBeesAdapter({
             },
         } : {
             ...(inbox ? {bundle_inbox_dir() { return inbox; }} : {}),
-            checkpoint_ready(context) {
-                return Boolean(verifiedOutput(jobRound(context), jobRoot(context)));
+            async checkpoint_ready(context) {
+                const output = jobRoot(context);
+                const verified = verifiedOutput(jobRound(context), output);
+                if (gallery) {
+                    // Nonblocking process invocation: the experiment agent
+                    // continues its heartbeat and Stop/Inspect delivery while
+                    // Python independently verifies the committed weights.
+                    // Never publish a gallery entry for a failed or in-flight
+                    // round. A repeated inspect is idempotent at the receipt
+                    // and game-registration boundaries.
+                    for (const file of gallerySources) {
+                        if (sha256(fs.readFileSync(file)) !== pins.get(file))
+                            throw Error('Native Bees gallery publisher changed after adapter installation.');
+                    }
+                    const gameId = 'hub-' + context.job_id;
+                    const {stdout} = await execFileAsync(executable, [
+                        '-B', publisher, run, output, gallery, gameId,
+                        String(learnerSlot), pins.get(run),
+                    ], {
+                        cwd: path.dirname(publisher),
+                        timeout: 120000,
+                        maxBuffer: 8192,
+                    });
+                    const published = JSON.parse(stdout);
+                    if (published.kind !== 'native_hub_game_registered' ||
+                        published.game_id !== gameId ||
+                        published.checkpoint_sha256 !== verified.checkpointDigest)
+                        throw Error('Native Bees gallery publication lacks verified Hub model identity.');
+                }
+                return true;
             },
             model_checkpoint_sha256(context) {
                 return verifiedOutput(jobRound(context), jobRoot(context)).checkpointDigest;
