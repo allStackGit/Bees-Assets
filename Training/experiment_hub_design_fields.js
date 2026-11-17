@@ -192,8 +192,17 @@ function validateCatalog(raw,installed=[],approved={}) {
         if(raw.courier.training_schema_sha256!==undefined&&
             !/^[0-9a-f]{64}$/.test(raw.courier.training_schema_sha256))
             throw Error('Courier PPO Design settings require an approved training schema digest.');
-        result.courier={...validateFields(raw.courier),
+        const fields=validateFields(raw.courier);
+        const curriculum=raw.courier.curriculum_fields??[];
+        const approvedFields=new Set(fields.fields.filter(field=>
+            field.section==='environment').map(field=>field.key));
+        if(!Array.isArray(curriculum)||curriculum.length>64||
+            new Set(curriculum).size!==curriculum.length||
+            curriculum.some(key=>typeof key!=='string'||!approvedFields.has(key)))
+            throw Error('Courier curriculum capabilities must name approved environment fields.');
+        result.courier={...fields,
             config_sha256:raw.courier.config_sha256,
+            curriculum_fields:curriculum.slice(),
             metric_catalog:metricCatalog(raw.courier.metric_catalog),
             ...(raw.courier.training_schema_sha256
                 ?{training_schema_sha256:raw.courier.training_schema_sha256}:{})};
