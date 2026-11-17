@@ -979,7 +979,7 @@ fn remote_side_owns_input(host: &RolloutHost, action: &NativePlayerInput, side: 
             match &input.action {
                 NativeHeldFireAction::Begin { squads, .. } => {
                     // Do not take over a local player's existing gesture.
-                    if world.state.has_held_fire() { return false; }
+                    if world.state.has_live_held_fire() { return false; }
                     squads.as_slice()
                 },
                 NativeHeldFireAction::Aim { .. } | NativeHeldFireAction::End => {
@@ -3554,7 +3554,8 @@ fn run_battle(
             let world = host.simulation().world(0).expect("remote play has one Level");
             let world_id = world.id;
             let revision = world.episode_revision();
-            for order in server.poll(world_id, revision) {
+            let live_held_weapons = world.state.has_live_held_fire();
+            for order in server.poll(world_id, revision, live_held_weapons) {
                 if !remote_side_owns_input(&host, &order.action, order.side) {
                     server.reply(order.peer, order.request_id,
                         Err("stale world, unauthorized side, or unavailable squad"));
