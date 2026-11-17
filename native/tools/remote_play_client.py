@@ -15,7 +15,10 @@ import threading
 
 
 def remote_token(side):
-    """Resolve the caller's explicitly configured identity, never guess a side."""
+    """Resolve the caller's identity; a player needs only their own secret."""
+    own = os.environ.get("BEES_NATIVE_REMOTE_TOKEN")
+    if own:
+        return own
     if "BEES_NATIVE_REMOTE_SIDE_TOKENS" in os.environ:
         if side is None:
             raise ValueError("specify --side 1 or --side 2 for independent multiplayer")
@@ -57,9 +60,10 @@ HELP = """Commands:
 
 
 class RemoteConsole:
-    def __init__(self, connection, *, silent=False):
+    def __init__(self, connection, *, silent=False, expected_side=None):
         self.socket = connection
         self.silent = silent
+        self.expected_side = expected_side
         self.notifications = SimpleQueue()
         self.lock = threading.Lock()
         self.latest = None
@@ -77,9 +81,17 @@ class RemoteConsole:
                         with self.lock:
                             self.latest = message
                     elif kind == "welcome":
-                        self.notifications.put("Authenticated; native battle stream ready")
+                        side = message.get("side")
+                        if self.expected_side is not None and side != self.expected_side:
+                            self.notifications.put(f"Authenticated as side {side}, expected {self.expected_side}; disconnecting")
+                            try:
+                                self.socket.shutdown(socket.SHUT_RDWR)
+                            except OSError:
+                                pass
+                            break
+                        self.notifications.put(f"Authenticated; player side {side} ready")
                         if not self.silent:
-                            print(f"Authenticated; player side {message.get('side')} ready")
+                            print(f"Authenticated; player side {side} ready")
                     elif kind == "input_result":
                         note = f"Order {message['request_id']}: {message['feedback']}"
                         self.notifications.put(note)
@@ -268,7 +280,7 @@ def main():
         parser.error(str(error))
     with socket.create_connection((args.host, args.port), timeout=10) as connection:
         connection.settimeout(None)
-        console = RemoteConsole(connection)
+        console = RemoteConsole(connection, expected_side=args.side)
         connection.sendall((json.dumps({"kind": "hello", "token": token}) +
                             "\n").encode("utf-8"))
         receiver = threading.Thread(target=console.receive, daemon=True)
