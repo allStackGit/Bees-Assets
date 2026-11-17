@@ -1517,10 +1517,14 @@ recipe or policy-identity inputs, so a resumed session may change machine
 or bind port. The receiver is plain HTTP: **never expose it to the public
 Internet**, send the token over untrusted networks, or bypass a private
 overlay/SSH tunnel or TLS-terminating reverse proxy. The uploader also
-supports an HTTPS URL with ordinary certificate verification. Machine reservations, launching remote worker commands and selecting
-which machines perform which issued allocations remain Experiment Hub or
-operator responsibilities. Both the inputs and outputs can now transfer
-directly through the authenticated endpoint, without manual file copies.
+supports an HTTPS URL with ordinary certificate verification. Machine leases and execution remain owned by Experiment Hub. With an
+explicitly preapproved `--hub-dispatch-plan`, the learner can now submit
+each issued native collection round to the Hub's existing atomic resource
+bundle and scheduled-Start APIs, including restart-safe duplicate detection.
+See `Training/EXPERIMENT_HUB.md` for machine allocation JSON and GPU
+approval requirements. Without that option, collectors remain manually
+queued or externally orchestrated. Both inputs and outputs can transfer
+directly through the authenticated endpoint, without manual copies.
 
 For collectors on a machine without a mounted learner inbox, omit the
 last positional `bundle_inbox` argument from the collector command and add
