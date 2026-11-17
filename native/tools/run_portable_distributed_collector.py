@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -87,7 +88,9 @@ def main():
             *([] if upload_url is None else ["--upload-url", upload_url]),
             *([] if not args.stage_diagnostics else ["--stage-diagnostics"]),
         ]
-        subprocess.run(command, check=True)
+        env = os.environ.copy()
+        env["BEES_NATIVE_MODEL_STORE"] = str((inputs / "models").resolve(strict=True))
+        subprocess.run(command, check=True, env=env)
         # Native collection receipt and uploaded archive are now durable.
         # The input checkpoint copy is a disposable staging artifact only.
         shutil.rmtree(attempt)
