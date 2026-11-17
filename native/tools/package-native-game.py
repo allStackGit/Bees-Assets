@@ -53,12 +53,12 @@ def package_game_library(
     include_policies: bool = False, python_command: str = "python3",
     policy_device: str | None = None,
 ) -> bool:
-    """Copy exactly one selected native library and its transitive JSON.
+    """Freeze a game library and all of its native source dependencies.
 
-    This works for built-in Levels and newly authored user campaigns. The
-    package still has one immutable examples/native-library.json entry
-    point; source filenames under the selected library's content root
-    retain their original relative hierarchy.
+    Internal scenes retain their authored names; explicitly referenced
+    external scenes/Stage assets are content-addressed inside the package.
+    Every Level therefore resolves only assets shipped with the release.
+    The launcher uses the one stable examples/native-library.json entry.
     """
     library = library.resolve(strict=True)
     if library.suffix != ".json" or not library.is_file():
@@ -68,6 +68,39 @@ def package_game_library(
     copied: dict[str, str] = {}
     copied_manifests: set[str] = set()
     has_policy = False
+
+    def game_asset(run_source: Path, run_destination: Path,
+                   value: str, kind: str) -> str:
+        """Copy a run's authored scene/Stage asset into the portable tree.
+
+        User-authored campaigns can refer to absolute files from the
+        training workspace. These source references must be frozen inside
+        the package, not left pointing to inaccessible paths on the
+        original machine. Shared in-root assets keep their original
+        names; external inputs receive a content-addressed name.
+        """
+        if not isinstance(value, str) or not value or "\\" in value:
+            raise ValueError(f"Invalid native {kind} asset path")
+        file = (run_source.parent / value).resolve(strict=True)
+        if file.suffix != ".json" or not file.is_file():
+            raise ValueError(f"Native {kind} must reference a JSON file")
+        within_root = file.is_relative_to(source_root)
+        relative = file.relative_to(source_root) if within_root else None
+        if (relative is not None and len(relative.parts) <= 8 and
+                len(relative.as_posix()) <= 255):
+            # The ordinary library traversal still owns the exact same
+            # in-root file, ensuring duplicate references cannot conflict.
+            pending.append((relative.as_posix(), kind))
+            packaged = destination / relative
+        else:
+            payload = file.read_bytes()
+            digest = hashlib.sha256(payload).hexdigest()
+            packaged = destination / "source-assets" / f"{digest}-{kind}.json"
+            packaged.parent.mkdir(parents=True, exist_ok=True)
+            if not packaged.exists():
+                packaged.write_bytes(payload)
+        return Path(os.path.relpath(packaged, run_destination.parent)).as_posix()
+
     while pending:
         relative, kind = pending.pop()
         path = Path(relative)
@@ -152,11 +185,16 @@ def package_game_library(
                 raise ValueError(
                     f"Release has incomplete model-worker routing: {label}"
                 )
+            packaged_run = destination / path
             for level in data["levels"]:
-                pending.append((str(path.parent / level["scene"]), "scene"))
+                level["scene"] = game_asset(
+                    source, packaged_run, level["scene"], "scene"
+                )
             if data.get("collision_matrix") and data.get("stage_palette"):
                 for asset in ("collision_matrix", "stage_palette"):
-                    pending.append((str(path.parent / data[asset]), "stage_asset"))
+                    data[asset] = game_asset(
+                        source, packaged_run, data[asset], "stage_asset"
+                    )
             elif data.get("collision_matrix") or data.get("stage_palette"):
                 raise ValueError("native legacy Stage assets must include both matrix and palette")
         elif kind not in ("scene", "stage_asset"):
@@ -166,7 +204,7 @@ def package_game_library(
         output = (destination / "native-library.json"
                   if kind == "library" else destination / path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        if kind == "run" and data.get("model_manifest"):
+        if kind == "run":
             output.write_text(
                 json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
@@ -276,7 +314,7 @@ def write_launchers(output: Path, binary_name: str) -> None:
 def create_manifest(output: Path) -> None:
     files = []
     for path in sorted(output.rglob("*")):
-        if not path.is_file() or path.name == "manifest.json":
+        if not path.is_file() or path == output / "manifest.json":
             continue
         digest = hashlib.sha256()
         with path.open("rb") as stream:
