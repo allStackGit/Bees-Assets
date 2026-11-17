@@ -333,6 +333,7 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          physics_workers: int | None, torch_threads: int | None,
                          optimizer_device: str, rollout_binary: Path | None,
                          distributed_plan: Path | None, bundle_inbox: Path | None,
+                         bundle_archive_inbox: Path | None,
                          collector_timeout_seconds: int, auto_balance_collectors: bool,
                          evaluation_run_config: Path | None, evaluation_side: int | None,
                          evaluation_policy_seed: int,
@@ -378,6 +379,10 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         command.extend(["--distributed-plan", str(distributed_plan.resolve(strict=True)),
                         "--bundle-inbox", str(bundle_inbox.resolve(strict=True)),
                         "--collector-timeout-seconds", str(collector_timeout_seconds)])
+    if bundle_archive_inbox is not None:
+        command.extend([
+            "--bundle-archive-inbox", str(bundle_archive_inbox.resolve(strict=True)),
+        ])
     if auto_balance_collectors:
         command.append("--auto-balance-collectors")
     if evaluation_run_config is not None:
@@ -437,6 +442,8 @@ def main() -> None:
                         help="existing native collection plan for Experiment Hub multi-machine rounds")
     parser.add_argument("--bundle-inbox", type=Path,
                         help="existing writable directory for distributed collection receipts")
+    parser.add_argument("--bundle-archive-inbox", type=Path,
+                        help="optional incoming collector tar directory; imports after verified upload")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0)
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="conservatively rebalance native distributed arena windows from verified collector throughput")
@@ -498,6 +505,9 @@ def main() -> None:
         parser.error("self-play requires training rounds, a distinct opponent model slot, and a positive refresh interval")
     if (args.distributed_plan is None) != (args.bundle_inbox is None):
         parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
+    if args.bundle_archive_inbox is not None and (
+            args.distributed_plan is None or not args.bundle_archive_inbox.is_dir()):
+        parser.error("--bundle-archive-inbox requires distributed collection and an existing directory")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds must be nonnegative")
     if args.auto_balance_collectors and args.distributed_plan is None:
@@ -523,6 +533,7 @@ def main() -> None:
         parser.error("--evaluation-policy-seed requires an evaluation run")
     if args.train_rounds is None and any((
         args.distributed_plan is not None, args.bundle_inbox is not None,
+        args.bundle_archive_inbox is not None,
         args.holdout_worlds is not None, args.evaluation_run_config is not None,
         args.evaluation_side is not None,
         args.evaluation_policy_seed != 0, args.collector_timeout_seconds != 0,
@@ -607,6 +618,7 @@ def main() -> None:
             args.physics_workers, args.torch_threads,
             args.optimizer_device, args.rollout_binary,
             args.distributed_plan, args.bundle_inbox,
+            args.bundle_archive_inbox,
             args.collector_timeout_seconds, args.auto_balance_collectors,
             (output / "holdout-run.json" if args.holdout_worlds is not None
              else args.evaluation_run_config),
