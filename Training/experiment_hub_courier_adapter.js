@@ -124,6 +124,7 @@ function courierMetrics(source) {
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':
+            name==='training_gpu_snapshot_work_share'&&value>=0&&value<=1?'ratio':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
                     ?'rate':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
