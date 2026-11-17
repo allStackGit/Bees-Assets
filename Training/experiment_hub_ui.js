@@ -1485,8 +1485,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                     slots--;
                                 }
                         }
+                        const limited=!allSelected&&
+                            categoryOptions.some(option=>!option.selected);
                         source.dispatchEvent(new Event('change',{bubbles:true}));
                         draw();
+                        if(limited)
+                            count.textContent+=' · 96-metric limit: deselect other metrics to add the rest';
                     });
                     nodes.push(heading);
                     for(const option of options) {
