@@ -9,7 +9,7 @@
 //! Protocol: newline-delimited JSON. Hello {kind:"hello", token}; then
 //! {kind:"input", request_id:u64, action:NativePlayerInput}. The host replies
 //! with kind:"input_result" and projects side-filtered kind:"world_state".
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Instant;
@@ -30,6 +30,7 @@ const MAX_ACCEPTS_PER_POLL: usize = 8;
 const MAX_ORDERS_PER_PEER_POLL: usize = 8;
 const MAX_LINE: usize = 64 * 1024;
 const MAX_PENDING: usize = 4 * 1024 * 1024;
+const MAX_RELIABLE_PENDING: usize = 256 * 1024;
 const READ_BYTES_PER_POLL: usize = 128 * 1024;
 const MAX_ORDERS_PER_POLL: usize = 64;
 const STATE_EVERY_TICKS: u64 = 5;
@@ -54,48 +55,83 @@ struct Peer {
     side: Option<i32>,
     last_request_id: u64,
     incoming: Vec<u8>,
+    // At most one frame is on the socket. Reliable replies queue separately
+    // and are never discarded, while stale unsent state is replaceable.
     outgoing: Vec<u8>,
     written: usize,
+    writing_state: bool,
+    reliable: VecDeque<Vec<u8>>,
+    reliable_bytes: usize,
+    newest_state: Option<Vec<u8>>,
     closed: bool,
     accepted_at: Instant,
 }
 
 impl Peer {
     fn enqueue(&mut self, message: &Value) -> io::Result<()> {
-        let data = serde_json::to_vec(message)
+        let mut data = serde_json::to_vec(message)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        if self.outgoing.len().saturating_sub(self.written) +
-            data.len() + 1 > MAX_PENDING {
+        data.push(b'\n');
+        if data.len() > MAX_RELIABLE_PENDING ||
+            self.reliable_bytes + data.len() > MAX_RELIABLE_PENDING {
             self.closed = true;
             return Err(io::Error::new(io::ErrorKind::InvalidData,
-                "remote peer cannot keep up with world snapshots"));
+                "remote peer cannot keep up with authoritative replies"));
         }
-        if self.written == self.outgoing.len() {
-            self.outgoing.clear();
-            self.written = 0;
-        } else if self.written > MAX_PENDING / 2 {
-            self.outgoing.drain(..self.written);
-            self.written = 0;
-        }
-        self.outgoing.extend_from_slice(&data);
-        self.outgoing.push(b'\n');
+        self.reliable_bytes += data.len();
+        self.reliable.push_back(data);
         Ok(())
     }
 
-    fn flush(&mut self) {
-        while self.written < self.outgoing.len() {
+    /// State is lossy presentation data. Preserve the current partially
+    /// transmitted line (TCP framing), but replace any *unsent* old state
+    /// with the latest tick. Reply messages never participate in coalescing.
+    fn enqueue_state(&mut self, state: &[u8]) -> bool {
+        if state.len() + 1 > MAX_PENDING {
+            self.closed = true;
+            return false;
+        }
+        let mut data = Vec::with_capacity(state.len() + 1);
+        data.extend_from_slice(state);
+        data.push(b'\n');
+        if self.writing_state && self.written == 0 {
+            self.outgoing = data;
+            return true;
+        }
+        self.newest_state.replace(data).is_some()
+    }
+
+    /// Returns actual state payload bytes written, not just queued traffic.
+    /// A partially written JSON line is always finished before another one.
+    fn flush(&mut self) -> u64 {
+        let mut bytes = 0u64;
+        while !self.closed {
+            if self.written == self.outgoing.len() {
+                self.outgoing.clear();
+                self.written = 0;
+                self.writing_state = false;
+                if let Some(message) = self.reliable.pop_front() {
+                    self.reliable_bytes -= message.len();
+                    self.outgoing = message;
+                } else if let Some(state) = self.newest_state.take() {
+                    self.outgoing = state;
+                    self.writing_state = true;
+                } else {
+                    break;
+                }
+            }
             match self.socket.write(&self.outgoing[self.written..]) {
                 Ok(0) => { self.closed = true; break; }
-                Ok(n) => self.written += n,
+                Ok(n) => {
+                    self.written += n;
+                    if self.writing_state { bytes += n as u64; }
+                }
                 Err(ref error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(ref error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(_) => { self.closed = true; break; }
             }
         }
-        if self.written == self.outgoing.len() {
-            self.outgoing.clear();
-            self.written = 0;
-        }
+        bytes
     }
 }
 
@@ -109,6 +145,7 @@ pub struct RemotePlayMeasurements {
     pub orders_rejected: u64,
     pub state_frames: u64,
     pub state_bytes: u64,
+    pub states_superseded: u64,
     pub disconnected_peers: u64,
 }
 
@@ -198,7 +235,9 @@ impl NativeRemotePlay {
             self.measurements.connections_accepted += 1;
             self.peers.push(Peer {
                 id, socket, side: None, last_request_id: 0, incoming: Vec::new(),
-                outgoing: Vec::new(), written: 0, closed: false,
+                outgoing: Vec::new(), written: 0, writing_state: false,
+                reliable: VecDeque::new(), reliable_bytes: 0,
+                newest_state: None, closed: false,
                 accepted_at: Instant::now(),
             });
         }
@@ -301,7 +340,7 @@ impl NativeRemotePlay {
             }
             if start > 0 { peer.incoming.drain(..start); }
             if peer.incoming.len() > MAX_LINE { peer.closed = true; }
-            if !peer.closed { peer.flush(); }
+            if !peer.closed { self.measurements.state_bytes += peer.flush(); }
         }
         self.reap();
         orders
@@ -323,7 +362,7 @@ impl NativeRemotePlay {
             }),
         };
         let _ = peer.enqueue(&reply);
-        peer.flush();
+        self.measurements.state_bytes += peer.flush();
     }
 
     pub fn broadcast(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) {
@@ -341,24 +380,12 @@ impl NativeRemotePlay {
             let encoded = snapshots.entry(side).or_insert_with(||
                 serde_json::to_vec(&current_state(view, bounds, side))
                     .unwrap_or_default());
-            if encoded.len() > MAX_PENDING / 2 {
-                peer.closed = true;
-                continue;
+            if peer.enqueue_state(encoded) {
+                self.measurements.states_superseded += 1;
             }
-            if peer.outgoing.len().saturating_sub(peer.written) + encoded.len() + 1 > MAX_PENDING {
-                // Drop a lagging observer rather than accumulating unbounded
-                // snapshots or slowing the authoritative fixed-step loop.
-                peer.closed = true;
-                continue;
+            if !peer.closed {
+                self.measurements.state_bytes += peer.flush();
             }
-            if peer.written == peer.outgoing.len() {
-                peer.outgoing.clear();
-                peer.written = 0;
-            }
-            peer.outgoing.extend_from_slice(encoded);
-            peer.outgoing.push(b'\n');
-            peer.flush();
-            self.measurements.state_bytes += encoded.len() as u64;
         }
         self.measurements.state_frames += 1;
         self.reap();
