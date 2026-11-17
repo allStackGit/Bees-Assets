@@ -8,6 +8,7 @@ Requires BEES_NATIVE_REMOTE_TOKEN to match the server's environment.
 import argparse
 import json
 import os
+from queue import SimpleQueue
 import shlex
 import socket
 import threading
@@ -38,8 +39,10 @@ HELP = """Commands:
 
 
 class RemoteConsole:
-    def __init__(self, connection):
+    def __init__(self, connection, *, silent=False):
         self.socket = connection
+        self.silent = silent
+        self.notifications = SimpleQueue()
         self.lock = threading.Lock()
         self.latest = None
         self.selected = []
@@ -56,15 +59,25 @@ class RemoteConsole:
                         with self.lock:
                             self.latest = message
                     elif kind == "welcome":
-                        print("Authenticated; native battle stream ready")
+                        self.notifications.put("Authenticated; native battle stream ready")
+                        if not self.silent:
+                            print("Authenticated; native battle stream ready")
                     elif kind == "input_result":
-                        print(f"Order {message['request_id']}: {message['feedback']}")
+                        note = f"Order {message['request_id']}: {message['feedback']}"
+                        self.notifications.put(note)
+                        if not self.silent:
+                            print(note)
                     else:
-                        print(f"Host: {message}")
+                        self.notifications.put(f"Host: {message}")
+                        if not self.silent:
+                            print(f"Host: {message}")
         except (OSError, ValueError) as error:
-            print(f"Connection failed: {error}")
+            self.notifications.put(f"Connection failed: {error}")
+            if not self.silent:
+                print(f"Connection failed: {error}")
         finally:
             self.alive = False
+            self.notifications.put("Connection closed")
 
     def snapshot(self):
         with self.lock:
