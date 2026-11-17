@@ -31,7 +31,7 @@ impl CampaignDialogueSpec {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UploadMilestone {
     Ten,
     TwentyFour,
@@ -54,7 +54,7 @@ impl UploadMilestone {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CampaignCue {
     MinesweeperBriefing,
     FireTankSpotted { object_id: i64 },
