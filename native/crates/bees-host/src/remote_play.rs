@@ -17,6 +17,7 @@ use std::time::Instant;
 use bees_sim::collision::Aabb;
 use bees_sim::level_discovery::DiscoveryKind;
 use bees_sim::obstacle::ObstacleKind;
+use bees_sim::physics::ShipShape;
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire};
@@ -732,9 +733,30 @@ fn current_state(
         // client-side resource map. Missing or depleted mining rock bodies
         // cannot appear in selectable remote objectives.
         let map = view.combat.map_object(object.entity_id);
+        // The host already owns the collider used by movement, weapons
+        // and navigation. Send its small render-only description so
+        // remote players can see genuine walls and mining asteroid hulls,
+        // not fabricated point-sized obstacles. Unusually large polygon
+        // paths use bounds-only fallback to limit per-frame bandwidth.
+        let hull = match body.shape() {
+            ShipShape::Circle { offset, radius } =>
+                json!({"kind":"circle","offset":[offset.x,offset.y],"radius":radius}),
+            ShipShape::Box { offset, half_extents } =>
+                json!({"kind":"box","offset":[offset.x,offset.y],
+                       "half_extents":[half_extents.x,half_extents.y]}),
+            ShipShape::Polygon(vertices) if vertices.len() <= 64 =>
+                json!({"kind":"polygon","vertices":vertices.iter()
+                    .map(|p| [p.x,p.y]).collect::<Vec<_>>()}),
+            _ => Value::Null,
+        };
+        let collider_bounds = body.primary_bounds().map(|bounds| [
+            [bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y],
+        ]);
         Some(json!({
             "id": object.entity_id,
             "kind": object.kind as u8,
+            "collider": hull,
+            "collider_bounds": collider_bounds,
             "mining": object.kind == ObstacleKind::MiningAsteroid,
             "x": body.pose.position.x, "y": body.pose.position.y,
             "rotation": body.pose.rotation_degrees,
