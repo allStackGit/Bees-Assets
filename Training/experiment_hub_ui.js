@@ -2285,6 +2285,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         ?' with unused leased CPU capacity'
                         :' (not evidence of hardware saturation)')
                 :'';
+            const idleTailOwner=measured.training_sim_idle_tail_ratio_owner?.value;
+            const courierImbalanceSignal=job.project_id==='courier'&&
+                measured.training_sim_imbalance_pressure?.value===1&&
+                Number.isSafeInteger(idleTailOwner)&&idleTailOwner>=0&&idleTailOwner<64
+                ?' · Sustained idle-tail after physical shard replies at PPO lineage '+
+                    idleTailOwner+' (suggests imbalanced map-shard workloads, not CPU idle%)'
+                :'';
             const resourceFlags=[
                 ['pipeline_cpu_lease_pressure','CPU lease nearly occupied'],
                 ['pipeline_cpu_throttle_pressure','CPU quota throttling'],
@@ -2314,7 +2321,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
-                enginePressureSignal+courierQueueSignal+resourceSignal+
+                enginePressureSignal+courierQueueSignal+courierImbalanceSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2397,6 +2404,11 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_sim_prestaged_actions',
         'training_sim_prestage_max_seconds',
         'training_sim_dispatch_copy_max_seconds',
+        'training_sim_idle_tail_max_ratio',
+        'training_sim_idle_tail_ratio_owner',
+        'training_sim_owner_tail_max_seconds',
+        'training_sim_idle_tail_work_share',
+        'training_sim_imbalance_pressure',
         'training_sim_queue_work_share','training_sim_queue_pressure',
         'training_sim_cpu_underuse_evidence',
         'training_sim_topology_trial_lineages','training_sim_topology_accepted',
