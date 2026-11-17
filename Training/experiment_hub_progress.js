@@ -143,6 +143,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_prefetch_validated_batches',
             'training_gpu_optimizer_peak_allocated_mb',
             'training_cpu_parallelism','training_queue_max_seconds',
+            'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
+            'training_sim_queue_max_seconds','training_sim_queue_peak_shards',
+            'training_sim_prestaged_actions',
+            'training_sim_prestage_max_seconds',
+            'training_sim_dispatch_copy_max_seconds',
             'training_sim_early_dispatches',
             'training_sim_topology_trial_lineages','training_sim_topology_accepted',
             'training_sim_topology_rejected','training_sim_topology_unavailable',
@@ -183,6 +188,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_guard_wait_pressure',
             'training_gpu_guard_readback_work_share',
             'training_queue_work_share','training_reply_gap_work_share',
+            'training_sim_queue_work_share','training_sim_queue_pressure',
+            'training_sim_parallelism_underuse_evidence',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
             'pipeline_optimization_dominant','pipeline_remote_wait_work_share',
@@ -604,6 +611,27 @@ class BottleneckEvidence {
             // contributes to the experiment's critical path. This wait
             // INCLUDES pending GPU work, so it is not a GPU busy fraction.
             const slowest=metrics.training_slowest_worker?.value;
+            const simQueue=metrics.training_sim_queue_max_ratio;
+            const simQueueShare=simQueue?.unit==='ratio'&&
+                Number.isFinite(simQueue.value)&&simQueue.value>=0&&
+                simQueue.value<=1?simQueue.value:null;
+            if(simQueueShare!==null)
+                add('training_sim_queue_work_share',simQueueShare);
+            const simQueueOwner=metrics.training_sim_queue_ratio_owner?.value;
+            const slowestSimulation=Number.isSafeInteger(slowest)
+                ?seconds('worker_'+slowest+'_simulation_seconds'):null;
+            const slowestCollection=Number.isSafeInteger(slowest)
+                ?seconds('worker_'+slowest+'_collection_seconds'):null;
+            // A queued map shard is a scheduling delay, not evidence
+            // that the host needs more CPUs. Only diagnose an exposed
+            // simulator bottleneck when the same PPO lineage actually
+            // limits the completed batch and simulation dominates its work.
+            const simQueueCritical=simQueueShare!==null&&
+                simQueueShare>=0.25&&
+                Number.isSafeInteger(simQueueOwner)&&simQueueOwner===slowest&&
+                slowestSimulation!==null&&slowestCollection>0&&
+                slowestSimulation>=0.45*slowestCollection&&
+                slowestSimulation>=0.20*wall;
             const guard=(Number.isSafeInteger(slowest)&&
                 slowest>=0&&slowest<count)
                 ?seconds('worker_'+slowest+'_gpu_guard_readback_seconds'):null;
@@ -658,6 +686,7 @@ class BottleneckEvidence {
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,stageHints,resourceHints,
                     courierQueue:queueShare!==null&&queueShare>=0.20,
+                    courierSimQueue:simQueueCritical,
                     // With queued lineages, the last completion may be a
                     // normal admission wave rather than a slow worker.
                     courierTail:gapShare!==null&&gapShare>=0.25&&
@@ -675,6 +704,11 @@ class BottleneckEvidence {
                 const sustained=fn=>recent.filter(fn).length>=5;
                 if(sustained(x=>x.courierQueue))
                     add('training_queue_pressure',1,'count');
+                if(sustained(x=>x.courierSimQueue))
+                    add('training_sim_queue_pressure',1,'count');
+                if(sustained(x=>x.courierSimQueue)&&
+                    sustained(x=>x.resourceHints?.cpuIdle))
+                    add('training_sim_parallelism_underuse_evidence',1,'count');
                 if(sustained(x=>x.courierTail))
                     add('training_final_join_pressure',1,'count');
                 if(sustained(x=>x.courierRemoteGap))
