@@ -152,14 +152,15 @@ impl NativeRemotePlay {
         }
         let listener = TcpListener::bind(&address)?;
         listener.set_nonblocking(true)?;
+        let mut configured_sides = side_tokens.keys().copied().collect::<Vec<_>>();
+        configured_sides.sort_unstable();
         println!("{}", json!({
             "kind": "native_remote_listening",
             "address": listener.local_addr()?.to_string(),
             "max_peers": MAX_PEERS,
             "mode": if side_tokens.len() > 1 { "independent_player_sides" }
                     else { "shared_player_authority" },
-            "configured_sides": { let mut sides = side_tokens.keys().copied().collect::<Vec<_>>();
-                                  sides.sort_unstable(); sides },
+            "configured_sides": configured_sides,
         }));
         Ok(Some(Self {
             listener, side_tokens, peers: Vec::new(),
