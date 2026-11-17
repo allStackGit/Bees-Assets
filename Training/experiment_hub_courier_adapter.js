@@ -605,25 +605,45 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 !evaluator.evaluation_suites.includes(context.evaluation_suite_id)))
                 throw Error('Courier snapshot publishing requires a matching dispatch and suite.');
             const predecessor=context.continuation_of_job_id;
-            let limit=max_rounds, files=[],resumeMapSize=null;
+            let limit=max_rounds, files=[];
+            let resumeMapSize=null,resumeMoveCost=null,resumeFoodMode=null;
             if(predecessor) {
                 const source=path.join(artifacts,predecessor);
                 const saved=completedCheckpoint(source,max_rounds);
                 if(!saved.environment.equals(environment)) {
                     if(context.continuation_mode!=='curriculum')
-                        throw Error('Courier checkpoint environment changed; select a curriculum continuation for compatible map changes.');
+                        throw Error('Courier checkpoint environment changed; explicitly select a curriculum continuation.');
                     const previous=JSON.parse(saved.environment.toString('utf8'));
                     const next=JSON.parse(environment.toString('utf8'));
-                    if(!isDeepStrictEqual(previous,next)) {
-                        // Courier's installed --map-size preserves its fixed
-                        // observation/action schema. Other changes need their
-                        // own explicit trainer migration capability.
-                        if(next.width!==next.height||
-                            !Number.isSafeInteger(next.width)||next.width<4||next.width>32||
-                            !isDeepStrictEqual({...previous,width:next.width,height:next.height},next))
-                            throw Error('Courier curriculum currently supports only square map resizing; all other environment settings and policy interfaces must remain unchanged.');
-                        resumeMapSize=next.width;
+                    // These three controls are supported by the installed
+                    // Courier trainer on resume and preserve its policy schema.
+                    // Never mistake a new observation/action mode for a
+                    // compatible curriculum step.
+                    const mapChanged=next.width!==previous.width||
+                        next.height!==previous.height;
+                    const moveCostChanged=next.move_cost!==previous.move_cost;
+                    const foodModeChanged=next.food_spawn_mode!==previous.food_spawn_mode;
+                    if(mapChanged&&(!Number.isSafeInteger(next.width)||
+                        next.width!==next.height||next.width<4||next.width>32))
+                        throw Error('Courier curriculum map resizing requires a square map between 4 and 32 tiles.');
+                    if(moveCostChanged&&(typeof next.move_cost!=='number'||
+                        !Number.isFinite(next.move_cost)||
+                        next.move_cost<0.01||next.move_cost>100))
+                        throw Error('Courier curriculum movement cost must be between 0.01 and 100.');
+                    if(foodModeChanged&&!['uniform','patches'].includes(next.food_spawn_mode))
+                        throw Error('Courier curriculum food distribution must be uniform or patches.');
+                    const expected={...previous};
+                    if(mapChanged) {
+                        expected.width=next.width;
+                        expected.height=next.height;
                     }
+                    if(moveCostChanged)expected.move_cost=next.move_cost;
+                    if(foodModeChanged)expected.food_spawn_mode=next.food_spawn_mode;
+                    if(!isDeepStrictEqual(expected,next))
+                        throw Error('Courier curriculum changes to observation modes or other environment settings require an approved trainer migration.');
+                    if(mapChanged)resumeMapSize=next.width;
+                    if(moveCostChanged)resumeMoveCost=next.move_cost;
+                    if(foodModeChanged)resumeFoodMode=next.food_spawn_mode;
                 }
                 files=saved.files;
                 if(context.expected_parent_model_sha256&&
@@ -656,7 +676,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     path.join(out,'hub-training-overrides.json')]:[]),
                 ...(reporting_benchmarks===true?['--reporting-benchmarks']:[]),
                 ...(predecessor?['--resume']:[]),
-                ...(resumeMapSize===null?[]:['--map-size',String(resumeMapSize)])];
+                ...(resumeMapSize===null?[]:['--map-size',String(resumeMapSize)]),
+                ...(resumeMoveCost===null?[]:['--move-cost',String(resumeMoveCost)]),
+                ...(resumeFoodMode===null?[]:['--food-spawn-mode',resumeFoodMode])];
         },
         readProgress(context) {
             const root=jobRoot(context);
