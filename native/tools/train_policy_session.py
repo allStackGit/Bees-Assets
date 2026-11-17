@@ -682,7 +682,9 @@ def main():
     parser.add_argument("--distributed-plan", type=Path,
                         help="explicit multi-machine collector windows; Experiment Hub executes orders")
     parser.add_argument("--bundle-inbox", type=Path,
-                        help="shared directory for collector deliveries in distributed mode")
+                        help="directory for verified collector bundles in distributed mode")
+    parser.add_argument("--bundle-archive-inbox", type=Path,
+                        help="optional directory receiving atomically uploaded *.tar collector archives")
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="redistribute contiguous native arena windows conservatively between verified distributed rounds")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0,
@@ -737,6 +739,8 @@ def main():
         parser.error("torch threads must be between 1 and 256")
     if (args.distributed_plan is None) != (args.bundle_inbox is None):
         parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
+    if args.bundle_archive_inbox is not None and args.distributed_plan is None:
+        parser.error("--bundle-archive-inbox requires --distributed-plan and --bundle-inbox")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds cannot be negative")
     if args.auto_balance_collectors and args.distributed_plan is None:
@@ -818,6 +822,11 @@ def main():
     if args.distributed_plan is not None:
         recipe["distributed_plan"] = pinned(args.distributed_plan)
         recipe["bundle_inbox"] = str(args.bundle_inbox.resolve(strict=True))
+        if args.bundle_archive_inbox is not None:
+            archive_inbox = args.bundle_archive_inbox.resolve(strict=True)
+            if not archive_inbox.is_dir():
+                parser.error("--bundle-archive-inbox must be an existing directory")
+            recipe["bundle_archive_inbox"] = str(archive_inbox)
         recipe["collector_timeout_seconds"] = args.collector_timeout_seconds
         read_plan(Path(recipe["distributed_plan"]["path"]))
         if args.auto_balance_collectors:
@@ -980,6 +989,10 @@ def main():
                     progress=lambda kind, details: print(json.dumps(
                         {"kind": kind, "round": index, **details},
                     ), flush=True),
+                    archive_inbox=(
+                        Path(recipe["bundle_archive_inbox"])
+                        if "bundle_archive_inbox" in recipe else None
+                    ),
                 )
                 # Only a newly published order yields a real end-to-end
                 # measurement. A restarted learner can collect receipts
