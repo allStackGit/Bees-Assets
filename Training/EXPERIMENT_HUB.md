@@ -2487,9 +2487,34 @@ budgeted CPU evaluator with a matching TinyBrains checkout and Python
 environment. Pass an operator-approved checkpoint, its SHA-256, and
 the Hub dispatch it belongs to. The evaluator copies and verifies the
 checkpoint before loading it, exports the candidate with TinyBrains'
-native checks, and plays Nano on both seats for each map/seed pair.
-A win counts as a success. Draws count toward trials. Use held-out
-seeds and a stable suite ID for a fixed map, seed, and turn-limit set.
+native checks, and plays a fixed Nano (default) or Micro opponent on both
+seats for each map/seed pair. A win counts as a success; draws count
+toward trials. Use held-out seeds and a stable suite ID for each fixed
+opponent, map, seed and turn-limit set. Micro suites require pinned SHA-256
+hashes of both the opponent's model and manifest; optional pins are also
+accepted for Nano. The evaluator verifies both before and after all matches.
+
+For the first TinyBrains baseline, create two immutable, runtime-pinned
+100-match suites (50 seeds x both seats) on the simplest two-player board.
+Use an installed TinyBrains Python environment, with its local CLI and
+cartridge cache ready. Run this **from the updated Hub worktree**:
+
+```sh
+mkdir -p "$HOME/ai/experiments/tinybrains-baseline-suites"
+python -B Training/experiment_hub_tinybrains_baseline_suites.py \
+    --out-dir "$HOME/ai/experiments/tinybrains-baseline-suites"
+```
+
+The generator creates `tinybrains_nano_tiny_v1.json` and
+`tinybrains_micro_tiny_v1.json`, pins the evaluator/runtime and both
+opponent files, and prints the suite digests. It refuses to overwrite an
+existing suite with different content. Reserve these seed IDs for independent
+evaluation, not training. For use as an automated Hub evaluation stop, the
+evaluator must advertise the exact suite IDs and the job's policy must pin
+the printed suite SHA-256. Reuse the *same* suite definition for every
+checkpoint being compared.
+
+A legacy Nano-only suite (still supported) is:
 
 ```json
 {"suite_id":"nano_heldout","maps":["basic-tiny-2p"],"seeds":[419033,419039],"max_turns":150}
