@@ -107,7 +107,9 @@ impl HealRun {
             return Err(err);
         }
         if run.assigned.is_empty() { return Ok(None); }
-        run.register_arrivals(world);
+        // Do not alter the previous command's active-arrival markers
+        // during preparation; activation can still fail below.
+        run.register_arrivals(world, false);
         if let Err(err) = run.move_waiting(world) {
             run.release_startup_claims(world);
             return Err(err);
@@ -150,7 +152,7 @@ impl HealRun {
         Ok(())
     }
 
-    fn register_arrivals(&mut self, world: &CombatWorld) {
+    fn register_arrivals(&mut self, world: &mut CombatWorld, committed: bool) {
         let mut i = 0;
         while i < self.waiting.len() {
             let id = self.waiting[i];
@@ -160,6 +162,9 @@ impl HealRun {
             };
             if world.ship_touches_beehive_healing_zone(id, hive) {
                 self.healing.push(self.waiting.remove(i));
+                if committed {
+                    world.set_command_healing_active(id, hive, true);
+                }
                 if self.healing_timer.is_none() {
                     self.healing_timer = Some(ScaledTimer::new(1.0, true, false));
                 }
@@ -291,11 +296,22 @@ impl HealRun {
             self.healing.is_empty())
     }
 
+    /// Committing one replacement transfers physical reservations without
+    /// inheriting the old command's reached-hive state if the new command
+    /// has not entered its authored healing collider.
+    pub(super) fn commit_active_arrivals(&self, world: &mut CombatWorld) {
+        for (&id, &hive) in &self.assigned {
+            world.set_command_healing_active(
+                id, hive, self.healing.contains(&id),
+            );
+        }
+    }
+
     pub(super) fn advance(
         &mut self, world: &mut CombatWorld,
         command_poll: &mut Option<ScaledTimer>, dt: f32,
     ) -> Result<(Option<CommandFinishCause>, u64), GameCommandError> {
-        self.register_arrivals(world);
+        self.register_arrivals(world, true);
         let mut callbacks = 0;
         if let Some(due) = command_poll.as_mut()
             .and_then(|timer| timer.begin_update(dt)) {
