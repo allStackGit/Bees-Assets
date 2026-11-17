@@ -21,11 +21,38 @@ import sys
 import tempfile
 from pathlib import Path
 
+from package_policy_manifest import export_model
+
 ROOT = Path(__file__).resolve().parents[2]
 AUDIO_SOURCE = ROOT / "native/crates/bees-host/src/game_audio.rs"
 CONVERTER = ROOT / "native/tools/import-ship-sprites.py"
 EXAMPLES = ("native-duel", "native-skirmish", "native-two-player", "native-wave-defense")
-def package_game_library(destination: Path, library: Path) -> None:
+
+POLICY_RUNTIME_MODULES = (
+    "bees_mlagents_ppo_compat.py",
+    "bees_mlagents_structured_policy.py",
+    "bees_learner_stall_diagnostics.py",
+    "bees_log_categories.py",
+    "bees_mlagents_factorized_poca.py",
+    "bees_process_safety.py",
+)
+
+
+def package_policy_runtime(destination: Path) -> None:
+    worker = destination / "native/tools/policy_worker.py"
+    worker.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / "native/tools/policy_worker.py", worker)
+    modules = destination / "Training"
+    modules.mkdir()
+    for name in POLICY_RUNTIME_MODULES:
+        shutil.copy2(ROOT / "Training" / name, modules / name)
+
+
+def package_game_library(
+    destination: Path, library: Path, *,
+    include_policies: bool = False, python_command: str = "python3",
+    policy_device: str | None = None,
+) -> bool:
     """Copy exactly one selected native library and its transitive JSON.
 
     This works for built-in Levels and newly authored user campaigns. The
@@ -39,6 +66,8 @@ def package_game_library(destination: Path, library: Path) -> None:
     source_root = library.parent
     pending = [(library.name, "library")]
     copied: dict[str, str] = {}
+    copied_manifests: set[str] = set()
+    has_policy = False
     while pending:
         relative, kind = pending.pop()
         path = Path(relative)
@@ -73,10 +102,41 @@ def package_game_library(destination: Path, library: Path) -> None:
                 if route is not None:
                     pending.append((str(path.parent / route["config"]), "run"))
         elif kind == "run":
-            # Native game release content is source-authored and operates
-            # independently of policy-worker Python or distributed training.
-            if data.get("model_manifest") or data.get("hivemind"):
-                raise ValueError(f"Native desktop release cannot package external model/Hub dependencies: {label}")
+            if data.get("hivemind") or data.get("model_updates") or (
+                    data.get("recover_notifications") or
+                    data.get("recover_outcome_journals")):
+                raise ValueError(
+                    f"Desktop release requires an offline, immutable Level: {label}"
+                )
+            manifest = data.get("model_manifest")
+            if manifest:
+                if not include_policies:
+                    raise ValueError(
+                        f"Trained battle {label} requires --include-policies"
+                    )
+                if not isinstance(manifest, str) or not manifest.strip():
+                    raise ValueError("model_manifest must name a native manifest")
+                original = (source.parent / manifest).resolve(strict=True)
+                if not original.is_file():
+                    raise ValueError("trained policy manifest must be a regular file")
+                digest = hashlib.sha256(original.read_bytes()).hexdigest()
+                if digest not in copied_manifests:
+                    models_root = destination.parent / "assets/policies"
+                    models_root.mkdir(parents=True, exist_ok=True)
+                    # The existing portable model exporter verifies all
+                    # checkpoints and preserves exact policy slots and ABI.
+                    export_model(original, models_root / digest,
+                                 target_device=policy_device)
+                    copied_manifests.add(digest)
+                data["python"] = python_command
+                data["policy_worker"] = "../native/tools/policy_worker.py"
+                data["model_manifest"] = f"../assets/policies/{digest}/manifest.json"
+                data["policy_capture"] = None
+                has_policy = True
+            elif data.get("python") or data.get("policy_worker"):
+                raise ValueError(
+                    f"Release has incomplete model-worker routing: {label}"
+                )
             for level in data["levels"]:
                 pending.append((str(path.parent / level["scene"]), "scene"))
         elif kind != "scene":
@@ -86,8 +146,15 @@ def package_game_library(destination: Path, library: Path) -> None:
         output = (destination / "native-library.json"
                   if kind == "library" else destination / path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, output)
+        if kind == "run" and data.get("model_manifest"):
+            output.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        else:
+            shutil.copy2(source, output)
         copied[label] = kind
+    return has_policy
 
 
 def original_audio_paths() -> list[tuple[Path, Path]]:
@@ -219,13 +286,26 @@ def main() -> None:
     parser.add_argument("--library", type=Path,
                         default=ROOT / "native/examples/native-library.json",
                         help="native game library to package (built-in or Unity-free authored campaign)")
+    parser.add_argument("--include-policies", action="store_true",
+                        help="include SHA-verified model manifests, weights and the native worker")
+    parser.add_argument("--python-command",
+                        help="bare target-machine Python executable (python3, python, py)")
+    parser.add_argument("--policy-device", choices=("cpu", "cuda"),
+                        help="target inference device (cpu works on Linux/Windows, cuda needs supported torch)")
     args = parser.parse_args()
+    if args.policy_device is not None and not args.include_policies:
+        parser.error("--policy-device requires --include-policies")
     binary = args.binary.resolve()
     output = args.output.resolve()
     if not binary.is_file() or binary.name not in ("bees", "bees.exe"):
         parser.error("Provide a compiled native graphical bees or bees.exe binary")
     if output.exists():
         parser.error("Output already exists; native releases are immutable")
+    python_command = args.python_command or (
+        "python" if binary.suffix.lower() == ".exe" else "python3"
+    )
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", python_command):
+        parser.error("--python-command must be a single executable name from PATH")
     output.parent.mkdir(parents=True, exist_ok=True)
 
     audio = original_audio_paths()
@@ -246,9 +326,15 @@ def main() -> None:
             shutil.copy2(source, destination)
         examples = staging / "examples"
         examples.mkdir()
-        package_game_library(examples, args.library)
-        # Remote controllers are optional Python/Tk tools. The actual
-        # packaged native game and training core remain Python-free.
+        policy_used = package_game_library(
+            examples, args.library, include_policies=args.include_policies,
+            python_command=python_command, policy_device=args.policy_device,
+        )
+        if policy_used:
+            package_policy_runtime(staging)
+        # Remote controllers are optional Python/Tk tools. The canonical
+        # simulation core stays Rust-native; trained policy inference
+        # requires local Python/NumPy and its selected model backend.
         clients = staging / "clients"
         clients.mkdir()
         for name in ("remote_play_client.py", "remote_play_window.py"):
@@ -263,7 +349,9 @@ def main() -> None:
     finally:
         if staging.exists():
             shutil.rmtree(staging)
-    print(f"Packaged {len(audio)} original audio tracks and native game artwork at {output}")
+    print(f"Packaged {len(audio)} original audio tracks, native game artwork"
+          f" and {'trained-policy assets' if policy_used else 'game-only assets'}"
+          f" at {output}")
 
 
 if __name__ == "__main__":

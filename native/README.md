@@ -831,9 +831,27 @@ python3 native/tools/package-native-game.py \
 python3 native/tools/package-native-game.py \
   --binary native/target/release/bees --output dist/my-fleet \
   --library my-native-campaign/library.json
+
+# Ship a trained-policy challenge/campaign with its verified model weights:
+python3 native/tools/package-native-game.py \
+  --binary native/target/release/bees --output dist/my-trained-battle \
+  --library challenge-best/library.json --include-policies \
+  --policy-device cpu
 ```
 
-Use the corresponding `bees.exe` binary on Windows. The packager
+Use the corresponding `bees.exe` binary on Windows. Trained-policy
+packages copy source-hash-verified weights, the native worker and its
+actor-compatibility modules into the distribution, and rewrite game
+configs to point to these internal assets, not to the training machine's
+directories. They still require a compatible Python 3 environment with
+NumPy and the selected backend (ML-Agents/PyTorch or ONNX Runtime) on the
+target machine; **they do not require Unity**. `--policy-device cpu` is
+portable across supported Windows/Linux CPUs, while `cuda` requires a
+compatible Torch accelerator and source ONNX GPU providers are not
+automatically reconfigured. `--python-command` selects the bare target
+Python executable (`python3` on Linux or `python` on Windows by default).
+The finished native release manifest includes all copied model binaries
+and inference scripts, allowing normal package integrity verification. The packager
 requires Pillow only during asset preparation, refuses to overwrite an
 existing release and creates `play-bees.sh` on Linux or
 `play-bees.cmd` on Windows as the main desktop entry point. The former

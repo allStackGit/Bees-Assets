@@ -37,7 +37,7 @@ def sync_directory(path):
             os.close(fd)
 
 
-def export_model(source_manifest, destination):
+def export_model(source_manifest, destination, target_device=None):
     source_manifest = source_manifest.resolve(strict=True)
     content = source_manifest.read_bytes()
     if len(content) > 1024 * 1024:
@@ -64,6 +64,13 @@ def export_model(source_manifest, destination):
                 any(c not in "0123456789abcdef" for c in sha)):
             raise ValueError("invalid model slot or artifact digest")
         slots.add(slot)
+        if target_device not in (None, "cpu", "cuda"):
+            raise ValueError("target policy device must be cpu or cuda")
+        if backend == "onnx" and target_device == "cuda":
+            raise ValueError(
+                "ONNX GPU inference requires explicit provider configuration; "
+                "use the source provider manifest or choose --policy-device cpu"
+            )
         original = (source_manifest.parent / filename).resolve(strict=True)
         if not original.is_file():
             raise ValueError("model artifact is not a file")
@@ -91,6 +98,11 @@ def export_model(source_manifest, destination):
                 )
             written.add(relative)
         model["path"] = relative.as_posix()
+        if target_device is not None:
+            if backend == "onnx":
+                model["providers"] = ["CPUExecutionProvider"]
+            else:
+                model["device"] = target_device
     manifest_path = destination / "manifest.json"
     write_json(manifest_path, manifest)
     receipt = {
