@@ -209,6 +209,10 @@ class BundleReceiver:
         self.active_orders = None
         self.input_archives = {}
         self.inflight = set()
+        self.input_bytes_served = 0
+        self.upload_bytes_received = 0
+        self.upload_and_verify_seconds = 0.0
+        self.completed_uploads = 0
         self.lock = threading.Lock()
         self.server = LimitedHTTPServer((host, port), _receiver_handler(self))
         self.worker = None
@@ -230,6 +234,23 @@ class BundleReceiver:
         if self.worker is not None:
             self.worker.join()
 
+    def transfer_metrics(self):
+        with self.lock:
+            return {
+                "collector_input_bytes_served": self.input_bytes_served,
+                "collector_output_bytes_received": self.upload_bytes_received,
+                "collector_upload_and_verify_wall_seconds": self.upload_and_verify_seconds,
+                "collector_uploads_received": self.completed_uploads,
+            }
+
+    def record_transfer(self, *, input_bytes=0, upload_bytes=0, upload_seconds=0.0):
+        with self.lock:
+            self.input_bytes_served += input_bytes
+            self.upload_bytes_received += upload_bytes
+            self.upload_and_verify_seconds += upload_seconds
+            if upload_bytes:
+                self.completed_uploads += 1
+
     def activate(self, orders, input_archives=None):
         if orders.get("kind") != "native_distributed_collection_orders":
             raise ValueError("bundle receiver needs issued collection orders")
@@ -240,6 +261,10 @@ class BundleReceiver:
         with self.lock:
             self.active_orders = orders
             self.input_archives = dict(archives)
+            self.input_bytes_served = 0
+            self.upload_bytes_received = 0
+            self.upload_and_verify_seconds = 0.0
+            self.completed_uploads = 0
 
     def deactivate(self):
         with self.lock:
@@ -331,10 +356,12 @@ def _receiver_handler(owner):
                             break
                         self.wfile.write(data)
                         remaining -= len(data)
-                if owner.on_event and remaining == 0:
-                    owner.on_event("native_collector_inputs_served", {
-                        "collector_id": collector_id, "archive_bytes": expected_size,
-                    })
+                if remaining == 0:
+                    owner.record_transfer(input_bytes=expected_size)
+                    if owner.on_event:
+                        owner.on_event("native_collector_inputs_served", {
+                            "collector_id": collector_id, "archive_bytes": expected_size,
+                        })
             except LookupError as error:
                 self.respond(404, {"error": str(error)})
             except ValueError as error:
@@ -402,6 +429,8 @@ def _receiver_handler(owner):
                     "receipt": imported["bundle"],
                     "receive_and_verify_wall_seconds": time.perf_counter() - started,
                 }
+                owner.record_transfer(upload_bytes=count,
+                                      upload_seconds=result["receive_and_verify_wall_seconds"])
                 if owner.on_event:
                     owner.on_event("native_bundle_received", result)
                 self.respond(200, result)
