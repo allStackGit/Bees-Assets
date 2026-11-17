@@ -495,95 +495,76 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         let pool = &self.physics_pool.as_ref()
             .expect("multi-worker physics pool initialized above").1;
         report.direct_dispatch = parallel_count == workers;
-        // Common small-arena path: one live physics world per available
-        // worker. Rayon owns the bounded queue internally, so building a
-        // second Mutex-protected iterator would cause an unnecessary lock
-        // acquisition for every individual world on every inference tick.
-        // Preserve the exact same per-world result and panic handling.
-        let outcomes = if parallel_count == workers {
-            let jobs = self.worlds.iter_mut().zip(actions).enumerate()
-                .filter_map(|(index, (world, action))| {
-                    if serialized_indices.binary_search(&index).is_ok() {
-                        return None;
-                    }
-                    action.as_ref().map(|action|
-                        (index, world, action.as_slice()))
-                }).collect::<Vec<_>>();
-            pool.install(|| jobs.into_par_iter().map(|(index, world, action)| {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let started = Instant::now();
-                    let mut measurements = Measurements::default();
-                    let mut failures = Vec::new();
-                    if let Err(error) = step_one(
-                        rules, dt, sample, world, action, &mut measurements,
-                    ) {
-                        failures.push((index, error));
-                    }
-                    (measurements, 1usize, failures, started.elapsed())
-                }))
-            }).collect::<Vec<_>>())
-        } else {
-            // For larger, heterogeneous battles, dynamically claim
-            // independent arenas with one short mutex acquisition per
-            // world. Game physics and model decisions run outside it.
-            let pending = Mutex::new(self.worlds.iter_mut().zip(actions)
-                .enumerate().filter_map(|(index, (world, action))| {
-                    if serialized_indices.binary_search(&index).is_ok() {
-                        return None;
-                    }
-                    action.as_ref().map(|action|
-                        (index, world, action.as_slice()))
-                }));
-            let work = || {
-                let started = Instant::now();
-                let mut measurements = Measurements::default();
-                let mut failures = Vec::new();
-                let mut arenas = 0;
-                loop {
-                    let next = pending.lock()
-                        .expect("native model-step arena queue poisoned").next();
-                    let Some((index, world, actions)) = next else { break };
-                    arenas += 1;
-                    if let Err(error) = step_one(
-                        rules, dt, sample, world, actions, &mut measurements,
-                    ) {
-                        failures.push((index, error));
-                    }
-                }
-                (measurements, arenas, failures, started.elapsed())
-            };
-            let outcomes = pool.install(|| {
-                (0..workers).into_par_iter().map(|_| {
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(&work))
-                }).collect::<Vec<_>>()
-            });
-            // Drop mutable arena borrows before the shared failure/report
-            // path can mark worlds or merge measurements.
-            drop(pending);
-            outcomes
+        // Rayon already owns a persistent, bounded work-stealing queue.
+        // Iterating disjoint world/action slices in parallel removes BOTH
+        // the temporary Vec of direct-dispatch jobs and the old per-arena
+        // claim mutex for large heterogeneous model batches. fold() retains
+        // worker-local measurements and error vectors across consecutive
+        // claims, so the common successful step does not allocate or lock.
+        // This stays exclusively on the shared physics path: game and
+        // training cannot drift into different collision implementations.
+        let outcomes = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            pool.install(|| {
+                self.worlds.par_iter_mut().zip(actions.par_iter()).enumerate()
+                    .filter_map(|(index, (world, action))| {
+                        if serialized_indices.binary_search(&index).is_ok() {
+                            None
+                        } else {
+                            action.as_ref().map(|action|
+                                (index, world, action.as_slice()))
+                        }
+                    })
+                    .fold(
+                        || (rayon::current_thread_index(),
+                            Measurements::default(), 0_usize, Vec::new(),
+                            Instant::now()),
+                        |(worker, mut measurements, arenas, mut failures, started),
+                            (index, world, action)| {
+                            if let Err(error) = step_one(
+                                rules, dt, sample, world, action, &mut measurements,
+                            ) {
+                                failures.push((index, error));
+                            }
+                            (worker, measurements, arenas + 1, failures, started)
+                        },
+                    )
+                    .map(|(worker, measurements, arenas, failures, started)|
+                        (worker, measurements, arenas, failures, started.elapsed()))
+                    .collect::<Vec<_>>()
+            })
+        }));
+        let outcomes = match outcomes {
+            Ok(outcomes) => outcomes,
+            Err(_) => {
+                // A worker panic may have left arbitrary world scratch and
+                // policy state partly mutated. Retire the complete batch.
+                for world in &mut self.worlds { world.failed = true; }
+                panic!("native model-step physics worker panicked");
+            }
         };
         report.parallel_workers = workers;
-        let mut panicked = false;
-        for outcome in outcomes {
-            match outcome {
-                Ok((measurements, arenas, mut failures, elapsed)) => {
-                    report.worlds_stepped += measurements.ticks as usize;
-                    report.worker_loads.push(ParallelWorkerMeasurements::from_report(
-                        arenas, &measurements, elapsed,
-                    ));
-                    self.measurements.merge(&measurements);
-                    report.failed_worlds.append(&mut failures);
-                }
-                Err(_) => panicked = true,
-            }
+        // Rayon's fold may split one physical worker into several tasks.
+        // Merge by its actual pool thread index after all workers join so
+        // measurements remain one entry per contributing CPU worker.
+        let mut per_worker = (0..pool.current_num_threads())
+            .map(|_| (Measurements::default(), 0_usize, Duration::ZERO))
+            .collect::<Vec<_>>();
+        for (worker, measurements, arenas, mut failures, elapsed) in outcomes {
+            if arenas == 0 { continue; }
+            let (aggregate, assigned, duration) =
+                &mut per_worker[worker.expect("native physics task ran outside worker pool")];
+            aggregate.merge(&measurements);
+            *assigned += arenas;
+            *duration += elapsed;
+            report.failed_worlds.append(&mut failures);
         }
-        if panicked {
-            // A panicking policy/physics callback may have left the world
-            // partly mutated. Never reuse any trajectory from this batch.
-            for world in &mut self.worlds {
-                world.failed = true;
-            }
-            panic!("native model-step physics worker panicked");
+        for (measurements, arenas, elapsed) in per_worker {
+            if arenas == 0 { continue; }
+            report.worlds_stepped += measurements.ticks as usize;
+            report.worker_loads.push(ParallelWorkerMeasurements::from_report(
+                arenas, &measurements, elapsed,
+            ));
+            self.measurements.merge(&measurements);
         }
         report.failed_worlds.sort_unstable_by_key(|(index, _)| *index);
         Ok(report)
