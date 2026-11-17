@@ -742,7 +742,10 @@ pub struct NativeLevelState<M, A> {
     /// The source's default decision period is 5 physics steps.
     pub decisions: NativeDecisionCadence,
     pub campaign_dialogue: Option<crate::campaign_dialogue::CampaignDialogue>,
-    pub(crate) held_fire_ships: Vec<i64>,
+    /// Gesture-selected weapon groups belong to the authoritative Level.
+    /// Controller 0 is local play; authenticated network controllers use
+    /// their nonzero connection IDs. No remote peer owns separate physics.
+    pub(crate) held_fire_ships: HashMap<u64, Vec<i64>>,
     /// Reused source Level.State.Squads snapshot; no per-frame allocation.
     command_friendlies: Vec<NativeFriendlySquad>,
     command_bomber_contacts: Vec<NativeBomberContact>,
@@ -800,7 +803,7 @@ impl<M, A> NativeLevelState<M, A> {
             combat, events, metadata, allocate_minion,
             decisions: NativeDecisionCadence::new(period),
             campaign_dialogue: None,
-            held_fire_ships: Vec::new(),
+            held_fire_ships: HashMap::new(),
             command_friendlies: Vec::new(),
             command_bomber_contacts: Vec::new(),
             hivemind_observers: Vec::new(),
