@@ -978,6 +978,7 @@ function courierLineageHost(snapshot,job,machine) {
         item.id===job.frozen_parameters?.learner_job_id);
     if(!learner||learner.project_id!=='courier'||
         learner.frozen_parameters?.remote_lineages!==true||
+        learner.distributed_abort_requested_at||
         !['waiting_adapter','start_requested','launch_requested','running'].includes(learner.status)||
         !learner.assigned_machine_id||!machine||
         machine.id===learner.assigned_machine_id||
@@ -1001,9 +1002,9 @@ function courierLineageHost(snapshot,job,machine) {
         return false;
     return !snapshot.jobs.some(other=>other.id!==job.id&&
         other.project_id==='courier_lineage'&&
-        other.status!=='cancelled'&&
-        other.frozen_parameters?.learner_job_id===learner.id&&
+        !['cancelled','finished','stopped'].includes(other.status)&&
         (other.assigned_machine_id===machine.id||
+            other.frozen_parameters?.learner_job_id===learner.id&&
             other.frozen_parameters?.slot===job.frozen_parameters.slot));
 }
 function allocationBlockReason(machines,job,preferredMachineId=null) {
@@ -5022,6 +5023,9 @@ class ExperimentHub {
                 throw Error('Courier remote lineage requires CPU only or one exclusive GPU.');
             const hosts=machines.filter(host=>
                 host.status==='connected'&&host.courier_lineage_endpoint===endpoints[index]&&
+                !snapshot.jobs.some(other=>other.project_id==='courier_lineage'&&
+                    !['cancelled','finished','stopped'].includes(other.status)&&
+                    other.assigned_machine_id===host.id)&&
                 host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
                 host.courier_lineage_max_shards===shards[index]&&
                 host.installed_projects?.includes('courier_lineage')&&
