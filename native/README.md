@@ -61,6 +61,29 @@ For playback with no original Unity authoring tools, both the game and
 headless executable need only the compiled native assets and generated
 JSON. Authoring Python is not a runtime dependency.
 
+The same battle author also exposes the real native game objective rules:
+
+```sh
+# Hold a defensible base until the timer completes:
+python3 native/tools/author-battle.py defend-base \
+  --bees 21:4,2:1 --humans 13:8 --control bees \
+  --objective survival --protect-type 2 --survive-seconds 90
+
+# Reach the enemy-side extraction zone with your surviving mobile fleet:
+python3 native/tools/author-battle.py escape-route \
+  --bees 21:4,18:1 --humans 13:6 --control bees \
+  --objective extraction --extraction-center 95 0
+```
+
+`--objective-side` selects the defending/extracting faction, and
+`--extraction-radius` configures the authored activation trigger.
+These write the normal `levels[0].survival` or `levels[0].extraction`
+contracts consumed by the *same* native combat and terminal rules.
+They work as standalone battles or missions in an authored campaign.
+The native policy-training author currently permits only elimination
+episodes; it rejects `--trainable` with survival/extraction rather
+than silently mixing incompatible training episode contracts.
+
 To turn an authored battle into a **real native MA-POCA training session**,
 add `--trainable` when generating it. This writes a second source scene/run
 with real policy controller identities, known Bomb observation metadata,

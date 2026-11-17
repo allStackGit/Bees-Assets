@@ -114,6 +114,13 @@ def author(args) -> tuple[dict, dict, dict]:
     if not isinstance(dt, (float, int)) or not math.isfinite(dt) or dt <= 0:
         raise ValueError("invalid authored native fixed time step")
     rounds = round(args.minutes * 60 / dt)
+    if args.trainable and args.objective != "elimination":
+        raise ValueError(
+            "native MA-POCA source episodes currently require elimination rules; "
+            "create survival and extraction as playable campaigns"
+        )
+    if args.objective_side is not None and args.objective_side not in (1, 2):
+        raise ValueError("objective owner must be side 1 or 2")
     if not 1 <= rounds < 1 << 32:
         raise ValueError("battle duration cannot be represented as native fixed ticks")
 
@@ -291,6 +298,54 @@ def author(args) -> tuple[dict, dict, dict]:
         "scene": "battle.scene.json", "world_id": 1, "level_id": 1,
         "seed": args.seed, "scripted_queues": queues,
     }]
+    # These are the native Level's real survival/extraction contracts,
+    # consumed by the same CombatWorld/terminal as campaign and training.
+    # Authoring never installs a second special-objective simulator.
+    owner = args.objective_side or (host if host is not None else 1)
+    level = run["levels"][0]
+    if args.objective == "survival":
+        defender = by_side[owner]
+        if not any(ship["base_speed"] > 0 for ship in defender):
+            raise ValueError("survival defenders need at least one mobile physical ship")
+        candidates = [ship for ship in defender if
+                      args.protect_type is None or ship["ship_type"] == args.protect_type]
+        if not candidates:
+            raise ValueError("survival protected hull type is not in the defending fleet")
+        # Prefer an authored stationary support/base when no hull type was
+        # specified; otherwise protect the first exact ship of that type.
+        target = (next((ship for ship in candidates
+                        if ship["base_speed"] == 0), candidates[0])
+                  if args.protect_type is None else candidates[0])
+        seconds = (args.survive_seconds if args.survive_seconds is not None
+                   else args.minutes * 60)
+        if (not math.isfinite(seconds) or seconds <= 0 or
+                math.ceil(seconds / dt) > rounds):
+            raise ValueError("survival seconds must be positive and fit the battle's fixed ticks")
+        level["survival"] = {
+            "defending_side": owner,
+            "protected_ship_id": target["entity_id"],
+            "seconds": seconds,
+        }
+    elif args.objective == "extraction":
+        if owner not in controlled:
+            raise ValueError("extraction requires the selected side to have player-controlled squads")
+        if not any(ship["base_speed"] > 0 for ship in by_side[owner]):
+            raise ValueError("extraction requires at least one mobile player ship")
+        center = (args.extraction_center
+                  if args.extraction_center is not None
+                  else scene["starting_positions"][2 - owner])
+        lower, upper = scene["bounds"]["min"], scene["bounds"]["max"]
+        if (not all(math.isfinite(v) for v in center) or
+                not all(lower[i] + 5 < center[i] < upper[i] - 5
+                        for i in range(2))):
+            raise ValueError("extraction center must be inside the native map with room for its exit zone")
+        if not math.isfinite(args.extraction_radius) or args.extraction_radius <= 0:
+            raise ValueError("extraction activation radius must be finite and positive")
+        level["extraction"] = {
+            "player_side": owner, "center": center,
+            "half_extents": [5.0, 5.0],
+            "activation_radius": args.extraction_radius, "layer": 19,
+        }
     library = {
         "library_schema": 1,
         "games": [{
@@ -426,6 +481,19 @@ def main() -> None:
     parser.add_argument("--title", default="Custom Native Battle")
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--minutes", type=int, default=4)
+    parser.add_argument("--objective", choices=("elimination", "survival", "extraction"),
+                        default="elimination",
+                        help="native elimination, protect-a-ship or escape-zone terminal condition")
+    parser.add_argument("--objective-side", type=int, choices=(1, 2),
+                        help="defending or extracting faction; defaults to local player side")
+    parser.add_argument("--protect-type", type=int,
+                        help="survival only: authored ship type to defend (first instance)")
+    parser.add_argument("--survive-seconds", type=float,
+                        help="survival only: survival duration (default: battle duration)")
+    parser.add_argument("--extraction-center", type=float, nargs=2,
+                        help="extraction only: world X Y (default: enemy home)")
+    parser.add_argument("--extraction-radius", type=float, default=15,
+                        help="extraction only: activation distance before exit trigger appears")
     parser.add_argument("--spacing", type=float, default=24)
     parser.add_argument("--fog", action="store_true",
                         help="use the authoritative native player fog system")
@@ -443,6 +511,12 @@ def main() -> None:
                         default=EXAMPLES / "native-skirmish.run.json",
                         help="paired native run with the same map/physics asset matrix")
     args = parser.parse_args()
+    if args.objective != "survival" and (
+            args.protect_type is not None or args.survive_seconds is not None):
+        parser.error("--protect-type and --survive-seconds require --objective survival")
+    if args.objective != "extraction" and (
+            args.extraction_center is not None or args.extraction_radius != 15):
+        parser.error("--extraction-center and --extraction-radius require --objective extraction")
     try:
         scene, run, library = author(args)
         policy = author_policy_scene(scene, run, args) if args.trainable else None
@@ -476,6 +550,7 @@ def main() -> None:
         "player_sides": sorted({s["side"] for s in scene["squads"]
                                 if s["user_controlled"]}),
         "fixed_rounds": run["max_rounds"],
+        "objective": args.objective,
         "native_policy_run": (str(output / "battle.policy.run.json")
                               if args.trainable else None),
     }, sort_keys=True))
