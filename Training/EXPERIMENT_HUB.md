@@ -2514,6 +2514,29 @@ evaluator must advertise the exact suite IDs and the job's policy must pin
 the printed suite SHA-256. Reuse the *same* suite definition for every
 checkpoint being compared.
 
+To compare preserved checkpoints *before* choosing a new training lineage,
+run the independent baseline audit against both suites. The command does
+not resume training, modify checkpoints, or write a Hub authorization
+receipt. It writes checkpoint hashes, individual match outcomes,
+win/loss/draw totals and draw-adjusted score rates to a new report:
+
+```sh
+python -B Training/experiment_hub_tinybrains_baseline_compare.py \
+    --candidate imitation=/absolute/path/to/imitation-checkpoint.pt \
+    --candidate prior=/absolute/path/to/previous-checkpoint.pt \
+    --suite "$HOME/ai/experiments/tinybrains-baseline-suites/tinybrains_nano_tiny_v1.json" \
+    --suite "$HOME/ai/experiments/tinybrains-baseline-suites/tinybrains_micro_tiny_v1.json" \
+    --scratch /absolute/private/evaluation-scratch \
+    --out "$HOME/ai/experiments/tinybrains-baseline-report.json"
+```
+
+All `--candidate` paths are operator-supplied immutable full checkpoints.
+The scratch directory must already exist. A report is partial if interrupted;
+a completed report has `"complete": true`. Choose a new output path for each
+audit; existing reports are never silently overwritten. This first tiny-map
+comparison is a sanity benchmark, not proof of wider-map competence. Expand
+the held-out suite only after establishing a reproducible baseline.
+
 A legacy Nano-only suite (still supported) is:
 
 ```json
