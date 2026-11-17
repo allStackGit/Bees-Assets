@@ -3299,6 +3299,8 @@ class ExperimentHub {
                 if(parent?.courier_remote_key_fingerprint!==intent.key_fingerprint||
                     JSON.stringify(parent?.courier_remote_lineage_endpoints)!==
                         JSON.stringify(intent.learner_endpoints)||
+                    JSON.stringify(parent?.courier_remote_max_shards)!==
+                        JSON.stringify(intent.learner_shards)||
                     workers.some(worker=>{
                         const owner=intent.collector_owners.find(item=>item.job_id===worker.id);
                         const host=snapshot.machines.find(item=>
@@ -3306,6 +3308,7 @@ class ExperimentHub {
                         return !host||!owner||
                             host.courier_lineage_endpoint!==owner.endpoint||
                             host.courier_lineage_key_fingerprint!==owner.key_fingerprint||
+                            host.courier_lineage_max_shards!==owner.max_shards||
                             owner.key_fingerprint!==intent.key_fingerprint;
                     })) {
                     disarm('Courier remote private endpoint or shared key identity changed.');
@@ -5170,10 +5173,12 @@ class ExperimentHub {
                     machine_id:machine.id,lease_id:worker.lease_id,
                     endpoint:machine.courier_lineage_endpoint,
                     key_fingerprint:machine.courier_lineage_key_fingerprint,
+                    max_shards:machine.courier_lineage_max_shards,
                     slot:worker.frozen_parameters.slot};
             }),
             key_fingerprint:host.courier_remote_key_fingerprint,
             learner_endpoints:endpoints.slice(),
+            learner_shards:host.courier_remote_max_shards.slice(),
             agent_instances:owners,resume_after_restart:false,
             recovery_pending:false,status:'pending',
             reason:'Awaiting all verified remote PPO native owners before learner Start.',
