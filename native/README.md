@@ -588,6 +588,20 @@ The library lists explicit `campaign` and `battle` entries with stable
 IDs and relative JSON configuration paths; it does not scan arbitrary
 installed files or copy Unity scenes.
 
+After a deterministic game records a completed input trace, the home screen
+offers **Watch Recorded Battles**. This lists finished quick battles and
+campaign missions from the current player's save directory, newest battle
+number first; abandoned/incomplete traces are excluded. Selecting one runs
+the existing verified native replay engine, not a second approximation of
+the game. Each new campaign mission also saves its battle-start purchases,
+squad assignments, tactics and losses alongside the trace, so watching
+an earlier mission does not depend on today's fleet. Replay outputs have
+their own numbered save folders and never advance campaign progress.
+Replays fail explicitly if the recorded source scenes, configuration or
+required policy artifacts have changed. Battles using asynchronous
+navigation or other non-deterministic external sources do not advertise
+unsupported recordings.
+
 The package also includes `clients/remote_play_client.py` and
 `clients/remote_play_window.py` for optional remote players. The packaged
 game requires neither Python nor Unity to run. The current audio
