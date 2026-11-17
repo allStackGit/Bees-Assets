@@ -25,6 +25,8 @@ use crate::player_trace::NativePlayerInput;
 use crate::presentation::NativeRenderWorldView;
 
 const MAX_PEERS: usize = 4;
+const MAX_ACCEPTS_PER_POLL: usize = 8;
+const MAX_ORDERS_PER_PEER_POLL: usize = 8;
 const MAX_LINE: usize = 64 * 1024;
 const MAX_PENDING: usize = 4 * 1024 * 1024;
 const READ_BYTES_PER_POLL: usize = 128 * 1024;
@@ -100,6 +102,8 @@ pub struct RemotePlayMeasurements {
     pub authenticated_peers: u64,
     pub rejected_connections: u64,
     pub orders_received: u64,
+    pub orders_processed: u64,
+    pub orders_rejected: u64,
     pub state_frames: u64,
     pub state_bytes: u64,
     pub disconnected_peers: u64,
@@ -149,7 +153,14 @@ impl NativeRemotePlay {
     /// Poll at an authoritative tick boundary before advancing the Level.
     /// Never block simulation on a slow network or remote client.
     pub fn poll(&mut self) -> Vec<RemoteOrder> {
-        while let Ok((socket, _)) = self.listener.accept() {
+        // A connection flood must not monopolize the authoritative game
+        // tick. Unaccepted sockets remain queued by the OS.
+        for _ in 0..MAX_ACCEPTS_PER_POLL {
+            let (socket, _) = match self.listener.accept() {
+                Ok(accepted) => accepted,
+                Err(ref error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(_) => break,
+            };
             if self.peers.len() >= MAX_PEERS || socket.set_nonblocking(true).is_err() {
                 self.measurements.rejected_connections += 1;
                 continue;
@@ -167,6 +178,7 @@ impl NativeRemotePlay {
         let mut orders = Vec::new();
         for peer in &mut self.peers {
             if peer.closed { continue; }
+            let mut peer_orders = 0;
             // Never allow an unauthenticated socket to occupy a slot forever.
             if !peer.authenticated && peer.accepted_at.elapsed().as_secs() > 10 {
                 peer.closed = true;
@@ -212,10 +224,25 @@ impl NativeRemotePlay {
                         }));
                     }
                     Ok(WireInput::Input { request_id, action }) if peer.authenticated => {
-                        if orders.len() >= MAX_ORDERS_PER_POLL {
+                        // Held-fire is a continuing, per-controller gesture.
+                        // The present cooperative protocol has no peer-owned
+                        // release lifecycle: rejecting it avoids an orphaned
+                        // shared fire lock when a network peer disappears.
+                        if matches!(action, NativePlayerInput::HeldFire(_)) {
+                            let _ = peer.enqueue(&json!({
+                                "kind": "input_result", "request_id": request_id,
+                                "processed": false,
+                                "feedback": "remote held fire is not supported; use point fire",
+                            }));
+                            self.measurements.orders_rejected += 1;
+                            continue;
+                        }
+                        if orders.len() >= MAX_ORDERS_PER_POLL ||
+                           peer_orders >= MAX_ORDERS_PER_PEER_POLL {
                             peer.closed = true;
                             break;
                         }
+                        peer_orders += 1;
                         self.measurements.orders_received += 1;
                         orders.push(RemoteOrder {
                             peer: peer.id, request_id, action,
@@ -235,6 +262,8 @@ impl NativeRemotePlay {
     pub fn reply(&mut self, peer_id: u64, request_id: u64, result: Result<&str, &str>) {
         let Some(peer) = self.peers.iter_mut()
             .find(|peer| peer.id == peer_id && peer.authenticated) else { return };
+        if result.is_ok() { self.measurements.orders_processed += 1; }
+        else { self.measurements.orders_rejected += 1; }
         let reply = match result {
             Ok(feedback) => json!({
                 "kind": "input_result", "request_id": request_id,
