@@ -1378,6 +1378,12 @@ def main():
             if args.stage_diagnostics:
                 command.append("--stage-diagnostics")
             launch_round(command, log)
+            # The learner can finish successfully even if an operator edits
+            # an authored scene during the rollout. Never accept such mixed
+            # environment observations into a verified checkpoint lineage.
+            if file_sha256(Path(stage_run["path"])) != stage_run["sha256"]:
+                raise ValueError("native curriculum source changed during rollout")
+            check_native_input_dependencies(recipe)
             record, next_manifest, next_checkpoint = verify_round(
                 directory, file_sha256(next_manifest), file_sha256(next_checkpoint),
                 args.learner_slot, refreshing,
