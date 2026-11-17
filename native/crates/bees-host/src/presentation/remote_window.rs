@@ -631,10 +631,14 @@ fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) 
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
-    held_fire_active: bool, visual: &RemoteVisual, fraction: f32) {
-    for scanline in pixels.chunks_exact_mut(WIDTH) {
-        scanline[..FIELD].fill(0x080f1a);
-        scanline[FIELD..].fill(0x152439);
+    held_fire_active: bool, visual: &RemoteVisual, fraction: f32,
+    artwork: &RemoteArtwork) {
+    // Source sprites are drawn once onto the same cached software atlas
+    // framebuffer used by local play, then copied behind multiplayer HUD.
+    for (line, sprites) in pixels.chunks_exact_mut(WIDTH)
+        .zip(artwork.raster.pixels().chunks_exact(FIELD)) {
+        line[..FIELD].copy_from_slice(sprites);
+        line[FIELD..].fill(0x152439);
     }
     text::draw_at(pixels, WIDTH, FIELD + 14, 18, "BEES NATIVE", 2, TEXT);
     text::draw_at(pixels, WIDTH, FIELD + 14, 57,
@@ -651,13 +655,18 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         }
         for obj in state["obstacles"].as_array().into_iter().flatten() {
             if let Some(point)=visual.position(obj, 2, fraction) {
+                if artwork.asteroids.contains(&obj["id"].as_i64().unwrap_or(-1)) {
+                    continue;
+                }
                 let coord=screen(camera,point);
                 circle(pixels,coord,5,if obj["mining"]==true {GOLD} else {0x7d92aa});
             }
         }
         for shot in state["projectiles"].as_array().into_iter().flatten() {
-            if let Some(point)=visual.position(shot, 1, fraction) {
-                circle(pixels,screen(camera,point),2,0xf8d798);
+            if !artwork.projectiles.contains(&shot["id"].as_i64().unwrap_or(-1)) {
+                if let Some(point)=visual.position(shot, 1, fraction) {
+                    circle(pixels,screen(camera,point),2,0xf8d798);
+                }
             }
         }
         // Build selected ship membership once per rendered snapshot.
@@ -677,12 +686,20 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             let color=if friendly {GREEN} else {RED};
             let angle=visual.heading(ship, fraction).to_radians();
             let (sin,cos)=angle.sin_cos();
-            let tip=(center.0+(cos*12.0) as i32,center.1-(sin*12.0) as i32);
-            let left=(center.0+((-cos*7.0-sin*7.0) as i32),
-                      center.1-((-sin*7.0+cos*7.0) as i32));
-            let right=(center.0+((-cos*7.0+sin*7.0) as i32),
-                       center.1-((-sin*7.0-cos*7.0) as i32));
-            line(pixels,tip,left,color);line(pixels,left,right,color);line(pixels,right,tip,color);
+            let painted = artwork.ships.contains(&ship["id"].as_i64().unwrap_or(-1));
+            // When genuine source artwork is installed, do not redraw the
+            // approximation on top. Missing sprites retain recognizable
+            // geometric fallback. Selected ship HUD is unchanged.
+            if !painted {
+                let tip=(center.0+(cos*12.0) as i32,center.1-(sin*12.0) as i32);
+                let left=(center.0+((-cos*7.0-sin*7.0) as i32),
+                          center.1-((-sin*7.0+cos*7.0) as i32));
+                let right=(center.0+((-cos*7.0+sin*7.0) as i32),
+                           center.1-((-sin*7.0-cos*7.0) as i32));
+                line(pixels,tip,left,color);
+                line(pixels,left,right,color);
+                line(pixels,right,tip,color);
+            }
             let health=ship["health"].as_f64().unwrap_or(0.0);
             let maximum=ship["max_health"].as_f64().unwrap_or(1.0).max(1.0);
             if health.is_finite() && maximum.is_finite() {
@@ -878,6 +895,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         WindowOptions::default())?;
     window.set_target_fps(30);
     let mut pixels=vec![0;WIDTH*HEIGHT];
+    let mut artwork=RemoteArtwork::new()?;
     let mut camera:Option<NativeCamera>=None;
     let mut current_episode=(0_u64,0_u64);
     let mut selected:Vec<i64>=Vec::new();
@@ -1181,9 +1199,12 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         if visual_fraction < 1.0 && !peer.visual.previous.is_empty() {
             peer.metrics.interpolated_draw_frames += 1;
         }
+        if let (Some(state),Some(cam))=(peer.state.as_ref(),camera) {
+            artwork.paint(state,cam,&peer.visual,visual_fraction,&mut peer.metrics);
+        }
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
-            held_fire_active,&peer.visual,visual_fraction);
+            held_fire_active,&peer.visual,visual_fraction,&artwork);
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
     }
     println!("{}",json!({
@@ -1194,6 +1215,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "snapshots_rendered":peer.metrics.snapshots,
         "snapshot_pairs_interpolated":peer.metrics.snapshot_pairs_interpolated,
         "interpolated_draw_frames":peer.metrics.interpolated_draw_frames,
+        "ship_sprite_draws":peer.metrics.ship_sprite_draws,
+        "projectile_sprite_draws":peer.metrics.projectile_sprite_draws,
+        "asteroid_sprite_draws":peer.metrics.asteroid_sprite_draws,
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
         "connection_closed":!peer.connected,
