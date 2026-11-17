@@ -185,7 +185,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'remote_collector_co_limiting_count',
             'remote_collector_exposed_wait_seconds',
             'remote_collector_exposed_wait_owner',
-            'remote_transport_connected_collectors',
+            'remote_transport_new_connections',
             'remote_transport_reused_collectors',
             'remote_transport_connect_max_seconds',
             'remote_transport_connect_owner',
@@ -339,7 +339,7 @@ class BottleneckEvidence {
             const ownerWait=Number.isSafeInteger(candidate)&&candidate>0&&
                 candidate<MAX_TINYBRAINS_COLLECTORS
                 ?seconds('collector_'+candidate+'_wait_after_local_seconds'):null;
-            const connected=metrics.remote_transport_connected_collectors;
+            const connected=metrics.remote_transport_new_connections;
             const reused=metrics.remote_transport_reused_collectors;
             const validCount=value=>value?.unit==='count'&&
                 Number.isSafeInteger(value.value)&&value.value>=0;
