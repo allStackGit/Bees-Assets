@@ -70,6 +70,7 @@ class RemoteBattleWindow:
         ttk.Label(self.sidebar, text="Shooting priority (1-40)").pack(
             anchor="w", pady=(10, 0))
         self.strategy = tk.StringVar(value="1")
+        self.strategy_owner = None
         self.strategy_picker = ttk.Combobox(
             self.sidebar, textvariable=self.strategy, width=7, state="readonly",
             values=[str(i) for i in range(1, 41)],
@@ -302,8 +303,11 @@ class RemoteBattleWindow:
                 ))
             else:
                 self.squad_detail.set("Select a friendly squad to issue orders")
-            if details and details[0].get("shooting") is not None:
-                self.strategy.set(str(details[0]["shooting"]))
+            first_owner = details[0]["owner"] if details else None
+            if first_owner != self.strategy_owner:
+                self.strategy_owner = first_owner
+                if details and details[0].get("shooting") is not None:
+                    self.strategy.set(str(details[0]["shooting"]))
         finally:
             self.sidebar_updating = False
 
