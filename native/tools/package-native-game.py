@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 AUDIO_SOURCE = ROOT / "native/crates/bees-host/src/game_audio.rs"
 CONVERTER = ROOT / "native/tools/import-ship-sprites.py"
-EXAMPLES = ("native-duel", "native-skirmish")
+EXAMPLES = ("native-duel", "native-skirmish", "native-two-player")
 
 
 def original_audio_paths() -> list[tuple[Path, Path]]:
@@ -150,6 +150,12 @@ def main() -> None:
             for ext in ("run.json", "scene.json"):
                 shutil.copy2(ROOT / "native/examples" / f"{name}.{ext}",
                              examples / f"{name}.{ext}")
+        # Remote controllers are optional Python/Tk tools. The actual
+        # packaged native game and training core remain Python-free.
+        clients = staging / "clients"
+        clients.mkdir()
+        for name in ("remote_play_client.py", "remote_play_window.py"):
+            shutil.copy2(ROOT / "native/tools" / name, clients / name)
         write_launchers(staging, binary.name)
         create_manifest(staging)
         # Publish only a complete, freshly validated package and preserve
