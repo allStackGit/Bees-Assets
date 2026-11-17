@@ -808,7 +808,12 @@ Only the host reads both secrets; each player receives **only their
 individual** secret in their own private token file. The library's
 **Host Multiplayer** action launches the existing native
 `bees play` simulation with this binding in a separate child process
-and returns to the library when the battle ends. The child process avoids
+and returns to the library when the battle ends. Set the host's saved
+`multiplayer-host.json` `game_id` to `fleet-skirmish` to select
+independent fleet sizes through the same native builder before hosting;
+both factions then retain their real player-controlled squads and the
+ordinary authenticated remote commands. The source run and scene are
+frozen beside that hosted battle for replay. The child process avoids
 mutating the parent game's environment. No game state, model or simulated
 physics is duplicated. The multiplayer server remains plain TCP, so bind
 only to a private network/VPN interface or use a secured tunnel.

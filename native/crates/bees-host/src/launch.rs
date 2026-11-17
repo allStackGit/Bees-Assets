@@ -2283,13 +2283,16 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         settings.listen.chars().any(char::is_control) {
         return Err(invalid("native multiplayer host requires a private-network listen address").into());
     }
-    let game_source = if let Some(index)=library.games.iter().position(|entry|
+    let custom_fleet = settings.game_id == fleet_builder::GAME_ID;
+    let game_source = if custom_fleet {
+        None
+    } else if let Some(index)=library.games.iter().position(|entry|
         entry.id==settings.game_id && entry.kind=="battle") {
-        games[index].clone()
+        Some(games[index].clone())
     } else {
-        trained.iter().find(|model| model.id==settings.game_id)
+        Some(trained.iter().find(|model| model.id==settings.game_id)
             .ok_or_else(|| invalid("multiplayer host game ID is neither a native battle nor a registered trained checkpoint"))?
-            .verified_run()?
+            .verified_run()?)
     };
     let token_file=if settings.tokens_file.is_absolute(){
         settings.tokens_file
@@ -2319,9 +2322,23 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // The authoritative host reads its existing protected environment
     // configuration. A child avoids process-global env mutations in the
     // parent UI and keeps one battle runtime / one source physics engine.
+    // In custom-fleet mode both source sides retain genuine player
+    // permissions; the existing per-side token map authorizes their remote
+    // orders, without inventing a scripted AI or a second lobby protocol.
+    let fleet = if custom_fleet {
+        fleet_builder::choose_multiplayer()?
+    } else { None };
+    if custom_fleet && fleet.is_none() { return Ok(()); }
     let output=new_library_battle_output(save_root,&settings.game_id)?;
+    let source = if let Some(choice) = fleet {
+        let parent = output.parent().ok_or_else(||
+            invalid("custom multiplayer fleet has no archive directory"))?;
+        fleet_builder::archive(parent, choice)?
+    } else {
+        game_source.expect("validated static or trained multiplayer source")
+    };
     let outcome=std::process::Command::new(env::current_exe()?)
-        .arg("play").arg(&game_source)
+        .arg("play").arg(&source)
         .arg("--output-dir").arg(output)
         .env("BEES_NATIVE_REMOTE_LISTEN",&settings.listen)
         .env("BEES_NATIVE_REMOTE_SIDE_TOKENS",&token_map)

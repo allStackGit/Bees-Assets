@@ -44,6 +44,21 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(mode) = select_library(&rows, &mut selection, false)? else {
         return Ok(None);
     };
+    Ok(choose_sizes()?.map(|fleet_sizes| FleetChoice {
+        player_side: match mode { 0 => Some(1), 1 => Some(2), _ => None },
+        fleet_sizes,
+    }))
+}
+
+/// The existing private host authenticates a separate remote commander
+/// per side; no new network controller, simulation or permission model.
+pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>> {
+    Ok(choose_sizes()?.map(|fleet_sizes| FleetChoice {
+        player_side: None, fleet_sizes,
+    }))
+}
+
+fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
     let mut fleet_sizes = [1_usize, 1_usize];
     for (index, title) in ["Bees fleet", "Humans fleet"].into_iter().enumerate() {
         let descriptions = FLEET_SIZES.iter().map(|&size|
@@ -58,10 +73,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         };
         fleet_sizes[index] = FLEET_SIZES[choice];
     }
-    Ok(Some(FleetChoice {
-        player_side: match mode { 0 => Some(1), 1 => Some(2), _ => None },
-        fleet_sizes,
-    }))
+    Ok(Some(fleet_sizes))
 }
 
 fn write_json_new(path: &Path, value: &Value) -> Result<(), Box<dyn Error>> {
