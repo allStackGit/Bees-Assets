@@ -15,6 +15,7 @@ use std::net::{TcpListener, TcpStream};
 use std::time::Instant;
 
 use bees_sim::level_discovery::DiscoveryKind;
+use bees_sim::obstacle::ObstacleKind;
 use bees_sim::geometry::Vec2;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -319,6 +320,24 @@ fn current_state(view: &NativeRenderWorldView<'_>) -> Value {
             "owned": owned, "discovered": discovered,
         }))
     }).collect();
+    let obstacles: Vec<_> = view.combat.render_obstacles().filter_map(|(object, body)| {
+        if fog && !sources.iter().any(|&(position, radius)|
+            (body.pose.position - position).length_squared() <= radius * radius) {
+            return None;
+        }
+        // These are canonical collision/level objects, not an approximate
+        // client-side resource map. Missing or depleted mining rock bodies
+        // cannot appear in selectable remote objectives.
+        let map = view.combat.map_object(object.entity_id);
+        Some(json!({
+            "id": object.entity_id,
+            "kind": object.kind as u8,
+            "mining": object.kind == ObstacleKind::MiningAsteroid,
+            "x": body.pose.position.x, "y": body.pose.position.y,
+            "health": object.vitals.map(|v| v.health)
+                .or_else(|| map.map(|v| v.health)),
+        }))
+    }).collect();
     let squads: Vec<_> = view.roster.active_lifetimes().filter_map(|owner| {
         let squad = view.roster.get(owner)?;
         let owned = view.is_local_player_squad(owner);
@@ -337,6 +356,6 @@ fn current_state(view: &NativeRenderWorldView<'_>) -> Value {
         "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
         "viewer_side": viewer,
         "terminal_result": view.terminal_result.map(|result| result.winner_side),
-        "ships": ships, "squads": squads,
+        "ships": ships, "squads": squads, "obstacles": obstacles,
     })
 }
