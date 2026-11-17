@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 from native_session_selection import publish_latest_playable
+from native_game_registration import register_playable
 from native_training_artifacts import file_sha256
 
 
@@ -72,8 +73,25 @@ def main():
     parser.add_argument("source_run", type=Path)
     parser.add_argument("round_receipt", type=Path)
     parser.add_argument("output_dir", type=Path)
+    parser.add_argument("--library-save-root", type=Path,
+                        help="opt-in player save root; register this learner in the native game")
+    parser.add_argument("--library-game-id",
+                        help="stable ID unique across training jobs (1..40 ASCII letters/numbers/-/_)")
+    parser.add_argument("--library-title", help="display name for the saved game library")
     args = parser.parse_args()
-    print(json.dumps(publish(args.source_run, args.round_receipt, args.output_dir)))
+    if (args.library_save_root is None) != (args.library_game_id is None):
+        parser.error("--library-save-root and --library-game-id must be supplied together")
+    if args.library_title is not None and args.library_game_id is None:
+        parser.error("--library-title requires --library-game-id")
+    receipt = publish(args.source_run, args.round_receipt, args.output_dir)
+    if args.library_save_root is not None:
+        path = register_playable(
+            args.library_save_root, args.library_game_id,
+            args.library_title or args.library_game_id,
+            args.output_dir.resolve() / "latest-playable.json",
+        )
+        receipt["game_registration"] = str(path)
+    print(json.dumps(receipt))
 
 
 if __name__ == "__main__":
