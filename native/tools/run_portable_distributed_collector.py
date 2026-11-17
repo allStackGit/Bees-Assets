@@ -56,6 +56,8 @@ def main():
     parser.add_argument("--expected-worlds", type=int)
     parser.add_argument("--expected-workers", type=int)
     parser.add_argument("--expected-physics-workers", type=int)
+    parser.add_argument("--permit-leased-gpu", action="store_true",
+                        help="Hub confirmed one exclusive GPU binding for this job")
     args = parser.parse_args()
     if args.input_url and not args.collector_id:
         parser.error("--collector-id is required with --input-url")
@@ -69,7 +71,7 @@ def main():
                     args.expected_worlds, args.expected_workers,
                     args.expected_physics_workers))):
             parser.error("Hub collector requires an exact job identity, inbox, quota and frozen work order")
-    elif any(value is not None for value in (
+    elif args.permit_leased_gpu or any(value is not None for value in (
             args.cpu_quota, args.expected_collection_id, args.expected_bundle_directory,
             args.expected_source_contract, args.expected_seed_offset, args.expected_world_start, args.expected_worlds,
             args.expected_workers, args.expected_physics_workers)):
@@ -126,13 +128,23 @@ def main():
                     workers * physics > args.cpu_quota):
                 raise ValueError("issued native simulations exceed the acknowledged Hub CPU lease")
             models = json.loads((inputs / "manifest.json").read_text(encoding="utf-8"))
+            requires_gpu = False
             for model in models["models"]:
                 if model.get("backend") == "onnx":
-                    if any(provider != "CPUExecutionProvider"
-                           for provider in model.get("providers", ["CPUExecutionProvider"])):
-                        raise ValueError("CPU-only Hub collector was issued a GPU ONNX model")
-                elif model.get("device", "cpu") != "cpu":
-                    raise ValueError("CPU-only Hub collector was issued GPU model weights")
+                    providers = model.get("providers", ["CPUExecutionProvider"])
+                    if not isinstance(providers, list) or not providers:
+                        raise ValueError("native portable model needs explicit inference providers")
+                    requires_gpu |= any(provider != "CPUExecutionProvider"
+                                        for provider in providers)
+                else:
+                    device = model.get("device", "cpu")
+                    if device not in ("cpu", "cuda", "cuda:0"):
+                        raise ValueError("native collector model requested an unleased GPU ordinal")
+                    requires_gpu |= device != "cpu"
+            if requires_gpu != args.permit_leased_gpu:
+                raise ValueError(
+                    "native model GPU inference requirement differs from the approved Hub GPU lease"
+                )
         command = [
             sys.executable,
             str(Path(__file__).with_name("run_distributed_collector.py")),
