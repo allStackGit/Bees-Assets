@@ -57,8 +57,8 @@ function renderPage(html) {
         .replace('</style>',
             '#bees-controls,[data-hub-tab][data-project="bees"],'+
             '#hub-copy-bees-form,#hub-save-bees-draft{display:none!important}\n</style>')
-        .replace('<section data-hub-tab="machines">',
-            '<section data-hub-tab="machines">'+panel)
+        .replace('<h2>Machine inventory and resource admission</h2>',
+            '<h2>Machine inventory and resource admission</h2>'+panel)
         .replace('<body>','<body>\n<div class="hub-standalone" role="status">'+
             '<strong>NATIVE EXPERIMENT HUB</strong> — Bees/Unity training controls are unavailable. '+
             'Only an enrolled worker with a locally installed trusted adapter may execute a job.'+
