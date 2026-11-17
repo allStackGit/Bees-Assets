@@ -623,7 +623,19 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub(super) fn begin_remote_art(&mut self, camera: NativeCamera) {
         self.camera = camera;
+        self.sprite_raster_candidate_pixels = 0;
+        self.sprite_raster_opaque_pixels = 0;
+        self.sprite_raster_blended_pixels = 0;
         self.pixels.fill(0x080f1a);
+    }
+
+    #[cfg(feature = "client")]
+    pub(super) fn remote_raster_counts(&self) -> (u64, u64, u64) {
+        (
+            self.sprite_raster_candidate_pixels,
+            self.sprite_raster_opaque_pixels,
+            self.sprite_raster_blended_pixels,
+        )
     }
 
     #[cfg(feature = "client")]
