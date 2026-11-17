@@ -26,7 +26,7 @@ from native_training_artifacts import (
 from transfer_policy_bundle import checked_order
 
 CHUNK = 1024 * 1024
-MAX_BYTES = 8 * 1024 ** 3
+MAX_BYTES = 8 * 1024 ** 3 - 1024 * 1024  # leave room for tar headers/padding
 MAX_FILES = 512
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 RESERVED = {"inputs.json", "orders.json", "run.json", "manifest.json",
