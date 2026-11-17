@@ -553,6 +553,105 @@ fn outline(pixels: &mut [u32], x: i32,y: i32, w: i32,h: i32,color: u32) {
     line(pixels,(x,y+h),(x,y),color);
 }
 
+/// Read only bounded wire geometry. The host supplied the real collider
+/// used by gameplay; the remote client only paints its contour.
+fn point_from_wire(value: &Value) -> Option<Vec2> {
+    let coordinates = value.as_array()?;
+    if coordinates.len() != 2 { return None; }
+    let x = coordinates[0].as_f64()? as f32;
+    let y = coordinates[1].as_f64()? as f32;
+    (x.is_finite() && y.is_finite()).then_some(Vec2::new(x, y))
+}
+
+fn draw_remote_obstacle_hull(
+    pixels: &mut [u32], item: &Value, camera: NativeCamera,
+    center: Vec2, rotation_degrees: f32,
+) -> bool {
+    let bounds = item["collider_bounds"].as_array()
+        .filter(|points| points.len() == 2)
+        .and_then(|points| Some((
+            point_from_wire(&points[0])?,
+            point_from_wire(&points[1])?,
+        )));
+    if let Some((min, max)) = bounds {
+        let top_left = screen(camera, Vec2::new(min.x, max.y));
+        let bottom_right = screen(camera, Vec2::new(max.x, min.y));
+        if bottom_right.0 < 0 || top_left.0 > FIELD as i32 ||
+            bottom_right.1 < 0 || top_left.1 > HEIGHT as i32 {
+            return true;
+        }
+    }
+    let color=if item["mining"]==true {GOLD} else {0x7d92aa};
+    let pose = Pose { position: center, rotation_degrees };
+    let draw_polygon = |pixels: &mut [u32], points: &[Vec2]| {
+        for index in 0..points.len() {
+            let a = screen(camera, pose.transform_point(points[index]));
+            let b = screen(camera, pose.transform_point(points[(index + 1) % points.len()]));
+            line(pixels, a, b, color);
+        }
+    };
+    match item["collider"]["kind"].as_str() {
+        Some("box") => {
+            let (Some(offset), Some(half)) = (
+                point_from_wire(&item["collider"]["offset"]),
+                point_from_wire(&item["collider"]["half_extents"]),
+            ) else { return false };
+            if half.x < 0.0 || half.y < 0.0 { return false }
+            let points = [
+                offset + Vec2::new(-half.x, -half.y),
+                offset + Vec2::new(half.x, -half.y),
+                offset + Vec2::new(half.x, half.y),
+                offset + Vec2::new(-half.x, half.y),
+            ];
+            draw_polygon(pixels, &points);
+            return true;
+        },
+        Some("circle") => {
+            let (Some(offset), Some(radius)) = (
+                point_from_wire(&item["collider"]["offset"]),
+                item["collider"]["radius"].as_f64().map(|r| r as f32)
+                    .filter(|r| r.is_finite() && *r >= 0.0),
+            ) else { return false };
+            let center = pose.transform_point(offset);
+            let diameter = radius * camera.pixels_per_unit * 2.0;
+            let segments = ((diameter * 0.2) as usize).clamp(12, 64);
+            let mut previous = screen(camera, center + Vec2::new(radius, 0.0));
+            for index in 1..=segments {
+                let angle = std::f32::consts::TAU * index as f32 / segments as f32;
+                let next = screen(camera, center +
+                    Vec2::new(angle.cos(), angle.sin()) * radius);
+                line(pixels, previous, next, color);
+                previous = next;
+            }
+            return true;
+        },
+        Some("polygon") => {
+            let Some(vertices) = item["collider"]["vertices"].as_array()
+                .filter(|points| (3..=64).contains(&points.len()))
+            else { return false };
+            let Some(points) = vertices.iter()
+                .map(point_from_wire).collect::<Option<Vec<Vec2>>>()
+            else { return false };
+            draw_polygon(pixels, &points);
+            return true;
+        },
+        _ => {},
+    }
+    // Bounded fallback for unusually complex imported polygon colliders.
+    // Its source primary AABB is authoritative, unlike a guessed radius.
+    let Some((min, max)) = bounds else { return false };
+    if min.x > max.x || min.y > max.y { return false }
+    let points = [
+        Vec2::new(min.x, min.y), Vec2::new(max.x, min.y),
+        Vec2::new(max.x, max.y), Vec2::new(min.x, max.y),
+    ];
+    for index in 0..4 {
+        line(pixels, screen(camera, points[index]),
+            screen(camera, points[(index + 1) % 4]), color);
+    }
+    true
+}
+
 fn first_selected<'a>(state: Option<&'a Value>, selected: &[i64]) -> Option<&'a Value> {
     state?.get("squads")?.as_array()?.iter().find(|squad|
         squad["owned"] == true && squad["owner"]["squad_id"]
