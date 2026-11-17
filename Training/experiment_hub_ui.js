@@ -2281,7 +2281,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 measured.training_sim_queue_pressure?.value===1&&
                 Number.isSafeInteger(queueOwner)&&queueOwner>=0&&queueOwner<64
                 ?' · Sustained simulation shard backlog at PPO lineage '+queueOwner+
-                    (measured.training_sim_parallelism_underuse_evidence?.value===1
+                    (measured.training_sim_cpu_underuse_evidence?.value===1
                         ?' with unused leased CPU capacity'
                         :' (not evidence of hardware saturation)')
                 :'';
@@ -2398,7 +2398,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_sim_prestage_max_seconds',
         'training_sim_dispatch_copy_max_seconds',
         'training_sim_queue_work_share','training_sim_queue_pressure',
-        'training_sim_parallelism_underuse_evidence',
+        'training_sim_cpu_underuse_evidence',
         'training_sim_topology_trial_lineages','training_sim_topology_accepted',
         'training_sim_topology_rejected','training_sim_topology_unavailable',
         'training_sim_topology_unverified','training_sim_topology_migrations',
