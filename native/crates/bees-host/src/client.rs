@@ -622,7 +622,10 @@ impl NativeClient {
                 mouse.and_then(|(x, y)| self.renderer.tactical_action_at(x, y))
                     == Some(action))
         } else { None };
-        if clicked_hud.is_some() { self.tactical_button_clicks += 1; }
+        if clicked_hud.is_some() {
+            self.tactical_button_clicks += 1;
+            self.audio.click_ui();
+        }
         if accepts_orders && pointer_active &&
             self.held_fire_target.is_none() && (
             clicked_hud == Some(HudAction::Shooting) ||
@@ -650,6 +653,7 @@ impl NativeClient {
                     == Some(owner))
         } else { None };
         if let Some(owner) = clicked_tab {
+            self.audio.click_ui();
             let additive = self.window.is_key_down(Key::LeftCtrl) ||
                 self.window.is_key_down(Key::RightCtrl);
             if self.renderer.selection.select_squad(&view, owner, additive) {
