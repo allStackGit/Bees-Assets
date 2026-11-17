@@ -1380,12 +1380,20 @@ def main():
                 completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
                 recipe=recipe,
             ))
-            if "evaluation_config" in recipe and evaluation_due(index, args.rounds, recipe):
-                check_native_input_dependencies(recipe)
-                evaluations[str(directory)] = ensure_evaluation(directory, next_manifest, recipe)
-                best_evaluated = publish_best_evaluated(
-                    root, recipe, completed, evaluations, baseline_holdout,
-                )
+            if "evaluation_config" in recipe:
+                due = evaluation_due(index, args.rounds, recipe)
+                if due:
+                    check_native_input_dependencies(recipe)
+                    evaluations[str(directory)] = ensure_evaluation(
+                        directory, next_manifest, recipe,
+                    )
+                # A scene transition changes the playable world even if
+                # there is no holdout at this optimizer round. Re-publish
+                # the already verified best checkpoint for the new Level.
+                if due or (curriculum is not None and stage_start == index):
+                    best_evaluated = publish_best_evaluated(
+                        root, recipe, completed, evaluations, baseline_holdout,
+                    )
             stop_state = early_stop_decision(
                 completed, evaluations, baseline_holdout, recipe,
             )
