@@ -2195,9 +2195,39 @@ document.addEventListener('DOMContentLoaded', () => {
             // device saturation or justify buying additional resources.
             const measured=p.metrics||{};
             const remoteWaitOwner=measured.pipeline_remote_wait_owner?.value;
+            let remoteWaitHost=null;
+            if(job.project_id==='tinybrains'&&
+                job.distributed_rollout_managed===true&&
+                Number.isSafeInteger(remoteWaitOwner)&&remoteWaitOwner>=1) {
+                const learner=(state.machines||[]).find(
+                    host=>host.id===job.assigned_machine_id);
+                const endpoint=learner?.tinybrains_remote_rollout_endpoints?.[
+                    remoteWaitOwner-1];
+                if(endpoint&&learner.tinybrains_remote_key_fingerprint) {
+                    // The learner's ordered, approved endpoint identity must
+                    // match exactly one originally assigned native worker.
+                    // Do not guess a physical host from collector index alone.
+                    const matching=(state.jobs||[]).filter(worker=>{
+                        if(worker.project_id!=='tinybrains_rollout'||
+                            worker.frozen_parameters?.learner_job_id!==job.id)
+                            return false;
+                        const host=(state.machines||[]).find(
+                            machine=>machine.id===worker.assigned_machine_id);
+                        return host?.tinybrains_rollout_endpoint===endpoint&&
+                            host.tinybrains_rollout_key_fingerprint===
+                                learner.tinybrains_remote_key_fingerprint;
+                    });
+                    if(matching.length===1) {
+                        const host=(state.machines||[]).find(
+                            machine=>machine.id===matching[0].assigned_machine_id);
+                        remoteWaitHost=host?.name||host?.id||null;
+                    }
+                }
+            }
             const remoteWaitLabel=Number.isSafeInteger(remoteWaitOwner)&&
                 remoteWaitOwner>=1&&remoteWaitOwner<=16
-                ?' (Collector '+remoteWaitOwner+')'
+                ?' (Collector '+remoteWaitOwner+
+                    (remoteWaitHost?' on '+remoteWaitHost:'')+')'
                 :measured.pipeline_remote_wait_competing_collectors?.value===1
                     ?' (multiple similar collector completion times)'
                     :' (no stable collector owner)';
