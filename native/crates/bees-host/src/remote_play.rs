@@ -195,6 +195,7 @@ pub struct RemotePlayMeasurements {
     pub fog_visibility_queries: u64,
     pub fog_visibility_candidate_checks: u64,
     pub fog_visibility_sources_indexed: u64,
+    pub fog_visibility_grid_queries: u64,
 }
 
 pub struct NativeRemotePlay {
@@ -570,20 +571,36 @@ fn constant_time_matches(expected: &[u8], actual: &[u8]) -> bool {
 }
 
 /// The remote snapshot has no camera-specific fog framebuffer: visible
-/// enemy/object/shot positions must be checked in world space. Sort live
-/// source centers once by X per authenticated side; then query only source
-/// centers inside the maximum possible sight radius. Small formations use
-/// the direct scan to avoid sorting overhead. This is precisely the prior
-/// union-of-circles predicate, NOT a replacement for source vision rules,
-/// discovery, or the local graphical fog stencil.
+/// enemy/object/shot positions must be checked in world space. This indexes
+/// the SAME exact source-vision circles, once per authenticated side:
+/// direct scan for small fleets; X-sorted pruning for medium fleets; and a
+/// sparse 2D center grid for large fleets (including long vertical columns,
+/// where X pruning alone cannot help). No new visibility rule or physics.
 struct RemoteFogSources {
     sources: Vec<(Vec2, f32)>,
     largest_radius: f32,
     indexed: bool,
+    grid: Option<HashMap<(i64, i64), Vec<usize>>>,
 }
 
 impl RemoteFogSources {
+    fn grid_cell(point: Vec2, radius: f64) -> Option<(i64, i64)> {
+        if !point.is_finite() || !radius.is_finite() || radius <= 0.0 {
+            return None;
+        }
+        let x = (f64::from(point.x) / radius).floor();
+        let y = (f64::from(point.y) / radius).floor();
+        // Guard checked +/-1 neighbor lookups and extreme source coordinate
+        // ratios. The X-sorted scan remains the exact conservative fallback.
+        let limit = (i64::MAX / 4) as f64;
+        (x.abs() < limit && y.abs() < limit)
+            .then_some((x as i64, y as i64))
+    }
+
     fn new(mut sources: Vec<(Vec2, f32)>, stats: &mut RemotePlayMeasurements) -> Self {
+        // Non-finite source positions never covered a physical target in
+        // the original squared-distance predicate either.
+        sources.retain(|(point, _)| point.is_finite());
         let indexed = sources.len() > 8;
         let largest_radius = sources.iter().fold(0.0_f32, |radius, source|
             radius.max(source.1));
@@ -592,12 +609,47 @@ impl RemoteFogSources {
                 left.0.x.total_cmp(&right.0.x));
             stats.fog_visibility_sources_indexed += sources.len() as u64;
         }
-        Self { sources, largest_radius, indexed }
+        let grid = if sources.len() > 24 {
+            let mut buckets = HashMap::<(i64, i64), Vec<usize>>::new();
+            let mut valid = true;
+            for (index, (position, _)) in sources.iter().enumerate() {
+                let Some(cell) = Self::grid_cell(*position, f64::from(largest_radius))
+                else { valid = false; break };
+                buckets.entry(cell).or_default().push(index);
+            }
+            valid.then_some(buckets)
+        } else { None };
+        Self { sources, largest_radius, indexed, grid }
     }
 
     fn covers(&self, target: Vec2, stats: &mut RemotePlayMeasurements) -> bool {
         stats.fog_visibility_queries += 1;
         if !target.is_finite() { return false; }
+        if let Some(grid) = &self.grid {
+            if let Some((x, y)) = Self::grid_cell(
+                target, f64::from(self.largest_radius),
+            ) {
+                stats.fog_visibility_grid_queries += 1;
+                // If a source circle covers the target, its center differs
+                // by at most one cell on each axis. The nine lookups yield
+                // the EXACT same distance check as a full scan, with no
+                // source duplication or per-query temporary allocation.
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        if let Some(indices) = grid.get(&(x + dx, y + dy)) {
+                            for &index in indices {
+                                let (center, radius) = self.sources[index];
+                                stats.fog_visibility_candidate_checks += 1;
+                                if (target - center).length_squared() <= radius * radius {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+        }
         let candidates = if self.indexed {
             let lower = target.x - self.largest_radius;
             let upper = target.x + self.largest_radius;
