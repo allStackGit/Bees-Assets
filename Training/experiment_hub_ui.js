@@ -108,12 +108,14 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
     // group. Read the separately reserved remote jobs; never infer resources
     // from collector counts, measured rates or machine CPU capacity.
     const allocation=job=>{
-        const distributed=job.distributed_rollout_managed===true;
+        const courierGroup=job.project_id==='courier'&&
+            job.distributed_courier_managed===true;
+        const distributed=job.distributed_rollout_managed===true||courierGroup;
         const workers=distributed?allJobs.filter(other=>
-            other.project_id==='tinybrains_rollout'&&
+            other.project_id===(courierGroup?'courier_lineage':'tinybrains_rollout')&&
             other.frozen_parameters?.learner_job_id===job.id):[];
-        if(distributed&&(workers.length<1||workers.length>8))return null;
-        const pinnedThreads=distributed&&workers.every(worker=>
+        if(distributed&&(workers.length<1||workers.length>(courierGroup?16:8)))return null;
+        const pinnedThreads=distributed&&!courierGroup&&workers.every(worker=>
             Number.isSafeInteger(worker.frozen_parameters?.threads)&&
             worker.frozen_parameters.threads>=1&&
             Number.isSafeInteger(worker.resources?.cpus)&&
@@ -2869,16 +2871,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 :j.checkpoint_reinspection_requested_at?' · Checkpoint recheck pending':'';
             const noTrainer=j.prelaunch_absence_verified===true
                 ?' · No trainer started':'';
-            const groupWorkers=j.project_id==='tinybrains'&&
+            const courierGroup=j.project_id==='courier'&&
+                j.distributed_courier_managed===true;
+            const groupWorkers=courierGroup||j.project_id==='tinybrains'&&
                 j.distributed_rollout_managed===true
-                ?state.jobs.filter(worker=>worker.project_id==='tinybrains_rollout'&&
+                ?state.jobs.filter(worker=>
+                    worker.project_id===(courierGroup?'courier_lineage':'tinybrains_rollout')&&
                     worker.frozen_parameters?.learner_job_id===j.id):[];
             const scheduledGroup=(state.distributed_group_plans||[])
                 .filter(plan=>plan.learner_job_id===j.id).at(-1);
             const unresolvedScheduledGroup=scheduledGroup&&
                 ['pending','needs_review'].includes(scheduledGroup.status);
-            const distributedLaunch=(state.distributed_launches||[]).find(launch=>
-                launch.learner_job_id===j.id);
+            const distributedLaunch=(state.distributed_launch_plans||[]).find(launch=>
+                launch.learner_job_id===j.id&&launch.status==='pending');
             const launchText=distributedLaunch
                 ?' · Coordinated Start '+distributedLaunch.status+
                     (distributedLaunch.recovery_pending?' (coordinator restart recovery)':'')+
@@ -2893,7 +2898,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Startup abort requested: native collector shutdown and verified claim release pending'
                 :'';
             const distributedSummary=groupWorkers.length
-                ?' · Distributed collectors: '+groupWorkers.map(worker=>
+                ?' · Distributed '+(courierGroup?'PPO lineages':'collectors')+': '+groupWorkers.map(worker=>
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
                     (worker.capacity_released_at?' (released)':'')).join('; ')
                 :'';
