@@ -2197,7 +2197,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const remoteWaitOwner=measured.pipeline_remote_wait_owner?.value;
             const remoteWaitLabel=Number.isSafeInteger(remoteWaitOwner)&&
                 remoteWaitOwner>=1&&remoteWaitOwner<=16
-                ?' (Collector '+remoteWaitOwner+')':'';
+                ?' (Collector '+remoteWaitOwner+')'
+                :measured.pipeline_remote_wait_competing_collectors?.value===1
+                    ?' (multiple similar collector completion times)'
+                    :' (no stable collector owner)';
             const delay=measured.pipeline_remote_wait_dominant?.value===1
                 ?'remote collector join wait'+remoteWaitLabel
                 :measured.pipeline_merge_dominant?.value===1
@@ -2327,7 +2330,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'pipeline_collection_dominant','pipeline_optimization_dominant',
         'pipeline_remote_wait_work_share','pipeline_merge_work_share',
         'pipeline_remote_exposed_work_share','pipeline_remote_wait_owner',
+        'pipeline_remote_wait_competing_collectors',
         'remote_collector_exposed_wait_seconds','remote_collectors_pending_after_local',
+        'remote_collector_co_limiting_count',
         'remote_collector_exposed_wait_owner',
         'pipeline_remote_wait_dominant','pipeline_merge_dominant',
         'pipeline_cpu_lease_pressure','pipeline_cpu_throttle_pressure',
