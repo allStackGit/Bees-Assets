@@ -240,6 +240,10 @@ pub struct Simulation<S, R> {
     // Shared by model-batched ticks and independent long-window rollouts.
     // Rebuilt only if the explicit worker allocation changes.
     physics_pool: Option<(usize, rayon::ThreadPool)>,
+    /// One reusable decision buffer per logical rollout worker; these
+    /// persist across windows even when Rayon's physical thread changes.
+    /// Model-batched inference retains its own separate action buffers.
+    window_action_buffers: Vec<Vec<Decision>>,
 }
 
 impl<S, R: GameRules<S>> Simulation<S, R> {
@@ -256,6 +260,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             sample_every: None,
             measurements: Measurements::default(),
             physics_pool: None,
+            window_action_buffers: Vec::new(),
         })
     }
 
@@ -598,15 +603,18 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             self.ensure_physics_pool(workers)
                 .expect("unable to allocate persistent native physics workers");
         }
+        if self.window_action_buffers.len() < workers {
+            self.window_action_buffers.resize_with(workers, Vec::new);
+        }
         let rules = &self.rules;
         let dt = self.dt_seconds;
         let sample = self.sample_every;
 
         if workers == 1 {
-            let mut decisions = Vec::new();
+            let decisions = &mut self.window_action_buffers[0];
             let mut part = ParallelWindow::default();
             run_partition(
-                rules, dt, sample, &mut self.worlds, steps, decide, &mut decisions,
+                rules, dt, sample, &mut self.worlds, steps, decide, decisions,
                 &mut part,
             );
             part.worker_loads.push(ParallelWorkerMeasurements::from_report(
@@ -624,10 +632,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             .expect("multi-worker physics pool initialized above").1;
         let outcomes = if dynamic_claims {
             let pending = Mutex::new(self.worlds.iter_mut());
-            let work = || {
+            let work = |decisions: &mut Vec<Decision>| {
                 let worker_started = Instant::now();
                 let mut report = ParallelWindow::default();
-                let mut decisions = Vec::new();
                 let mut assigned = 0;
                 loop {
                     let next = pending.lock()
@@ -636,7 +643,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                     assigned += 1;
                     run_partition(
                         rules, dt, sample,
-                        std::slice::from_mut(world), steps, decide, &mut decisions,
+                        std::slice::from_mut(world), steps, decide, decisions,
                         &mut report,
                     );
                 }
@@ -646,9 +653,11 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             // rollout windows and also serves model-batched physics.
             // Every worker owns a reusable action buffer for its claimed
             // arena sequence; only claims take the short queue mutex.
-            pool.install(|| (0..workers).into_par_iter().map(|_| {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(&work))
-            }).collect::<Vec<_>>())
+            pool.install(|| self.window_action_buffers[..workers]
+                .par_iter_mut().map(|decisions| {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+                        work(decisions)))
+                }).collect::<Vec<_>>())
         } else {
             // Disjoint, near-equal contiguous partitions use the existing
             // pool instead of starting up to (workers-1) OS threads on EVERY
@@ -664,19 +673,20 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 chunks.push(chunk);
                 remaining = rest;
             }
-            pool.install(|| chunks.into_par_iter().map(|chunk| {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let worker_started = Instant::now();
-                    let assigned = chunk.len();
-                    let mut decisions = Vec::new();
-                    let mut report = ParallelWindow::default();
-                    run_partition(
-                        rules, dt, sample, chunk, steps, decide, &mut decisions,
-                        &mut report,
-                    );
-                    (report, assigned, worker_started.elapsed())
-                }))
-            }).collect::<Vec<_>>())
+            pool.install(|| chunks.into_par_iter()
+                .zip(self.window_action_buffers[..workers].par_iter_mut())
+                .map(|(chunk, decisions)| {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let worker_started = Instant::now();
+                        let assigned = chunk.len();
+                        let mut report = ParallelWindow::default();
+                        run_partition(
+                            rules, dt, sample, chunk, steps, decide, decisions,
+                            &mut report,
+                        );
+                        (report, assigned, worker_started.elapsed())
+                    }))
+                }).collect::<Vec<_>>())
         };
 
         let mut panicked = false;
