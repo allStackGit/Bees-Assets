@@ -1309,6 +1309,37 @@ mapping its local source/config/model paths while retaining the pinned hashes:
 python native/tools/run_distributed_collector.py collection-round-00001.json halifax run.json checkpoint.pt manifest.json trainer.yaml /local/scratch /shared/native-inbox --rollout-binary /path/to/policy_rollout
 ```
 
+For collectors on a machine without a mounted learner inbox, use a **local**
+inbox with the same collector command and append
+`--archive-output /local/outgoing/halifax.tar`. The archive contains the
+completed receipt and its SHA-256-verified captures, not model weights or
+another training implementation. Transfer it by SSH/SFTP, SMB or another
+file transport to the learner's archive inbox, naming the finished file
+`<bundle_directory>.tar` where `bundle_directory` is recorded in that
+round's `collection-round-NNNNN.json`. Upload as `.tar.pending` and
+rename after the copy completes so the learner never reads a partial file.
+
+On the learner, add `--bundle-archive-inbox /learner/uploads` to
+`train_policy_session.py` alongside the ordinary
+`--bundle-inbox /learner/native-inbox`. Both directories must already
+exist. The waiting session verifies each newly arrived archive against
+its issued work order, extracts all captures with content verification,
+and atomically publishes the familiar `rollout-bundle.json` directory
+to the normal inbox. It then proceeds with the **existing** MA-POCA
+aggregation and checkpoint lineage; resume reuses completed imports.
+
+An operator may import an archive before starting or resuming the
+learner instead:
+
+```sh
+python native/tools/transfer_policy_bundle.py import --orders native-session/collection-round-00001.json --collector-id halifax --archive /learner/uploads/halifax.tar --inbox /learner/native-inbox
+```
+
+The worker-side equivalent `transfer_policy_bundle.py export` accepts
+`--orders`, `--collector-id`, `--receipt`, and `--archive`; it can
+package a Hub-owned completed bundle without starting another collector.
+Archives never overwrite published output and contain no unapproved paths.
+
 When a worker is **already managed by Experiment Hub**, use its
 installed `createNativeBeesAdapter({collectOnly:true,bundleInbox:...})`
 (`bees_native_collect`) instead of launching a second collector
