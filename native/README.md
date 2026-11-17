@@ -311,7 +311,15 @@ or use F point fire, T attack, G guard, M mine, H hold, Z cease fire,
 C chase, L lock on, V speed match, A select all, E heal, W retreat,
 P two-corner patrol, B beacon, D detonate, Q charge, and Page Up/Down
 to choose shooting strategy 1–40. Mouse wheel/arrow keys adjust the
-camera, and Esc disconnects. The client renders only the ships,
+camera. The **1–0 keys** select the original authored squad number
+(with the same dead-squad gap and modulo wrapping as local play); Tab
+cycles surviving numbered squads and focuses the camera. Friendly AI
+ships remain visibly allied but are not player-commandable. Esc first
+cancels a pending tactical target, then disconnects. In supported
+campaign missions, the same authored dialogue cues appear in the remote
+window; Enter advances the visible line and Backspace reviews the
+previous line without changing the host's campaign progression.
+The client renders only the ships,
 obstacles, projectiles, health, orders and fog-limited coordinates that the
 authoritative host transmitted. It never runs client-side physics.
 Connect/return statistics include received bytes, snapshots and order
