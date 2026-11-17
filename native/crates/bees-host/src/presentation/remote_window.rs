@@ -567,7 +567,7 @@ fn point_from_wire(value: &Value) -> Option<Vec2> {
 fn draw_remote_obstacle_hull(
     pixels: &mut [u32], item: &Value, camera: NativeCamera,
     center: Vec2, rotation_degrees: f32,
-) -> bool {
+) -> Option<bool> {
     let bounds = item["collider_bounds"].as_array()
         .filter(|points| points.len() == 2)
         .and_then(|points| Some((
@@ -579,7 +579,7 @@ fn draw_remote_obstacle_hull(
         let bottom_right = screen(camera, Vec2::new(max.x, min.y));
         if bottom_right.0 < 0 || top_left.0 > FIELD as i32 ||
             bottom_right.1 < 0 || top_left.1 > HEIGHT as i32 {
-            return true;
+            return Some(false);
         }
     }
     let color=if item["mining"]==true {GOLD} else {0x7d92aa};
@@ -596,8 +596,8 @@ fn draw_remote_obstacle_hull(
             let (Some(offset), Some(half)) = (
                 point_from_wire(&item["collider"]["offset"]),
                 point_from_wire(&item["collider"]["half_extents"]),
-            ) else { return false };
-            if half.x < 0.0 || half.y < 0.0 { return false }
+            ) else { return None };
+            if half.x < 0.0 || half.y < 0.0 { return None }
             let points = [
                 offset + Vec2::new(-half.x, -half.y),
                 offset + Vec2::new(half.x, -half.y),
@@ -605,14 +605,14 @@ fn draw_remote_obstacle_hull(
                 offset + Vec2::new(-half.x, half.y),
             ];
             draw_polygon(pixels, &points);
-            return true;
+            return Some(true);
         },
         Some("circle") => {
             let (Some(offset), Some(radius)) = (
                 point_from_wire(&item["collider"]["offset"]),
                 item["collider"]["radius"].as_f64().map(|r| r as f32)
                     .filter(|r| r.is_finite() && *r >= 0.0),
-            ) else { return false };
+            ) else { return None };
             let center = pose.transform_point(offset);
             let diameter = radius * camera.pixels_per_unit * 2.0;
             let segments = ((diameter * 0.2) as usize).clamp(12, 64);
@@ -624,24 +624,28 @@ fn draw_remote_obstacle_hull(
                 line(pixels, previous, next, color);
                 previous = next;
             }
-            return true;
+            return Some(true);
         },
         Some("polygon") => {
             let Some(vertices) = item["collider"]["vertices"].as_array()
                 .filter(|points| (3..=64).contains(&points.len()))
-            else { return false };
-            let Some(points) = vertices.iter()
-                .map(point_from_wire).collect::<Option<Vec<Vec2>>>()
-            else { return false };
-            draw_polygon(pixels, &points);
-            return true;
+            else { return None };
+            // Fixed stack space: a fog-visible source polygon never
+            // allocates its vertices again on every rendered frame.
+            let mut points = [Vec2::ZERO; 64];
+            for (index, source) in vertices.iter().enumerate() {
+                let Some(point) = point_from_wire(source) else { return None };
+                points[index] = point;
+            }
+            draw_polygon(pixels, &points[..vertices.len()]);
+            return Some(true);
         },
         _ => {},
     }
     // Bounded fallback for unusually complex imported polygon colliders.
     // Its source primary AABB is authoritative, unlike a guessed radius.
-    let Some((min, max)) = bounds else { return false };
-    if min.x > max.x || min.y > max.y { return false }
+    let Some((min, max)) = bounds else { return None };
+    if min.x > max.x || min.y > max.y { return None }
     let points = [
         Vec2::new(min.x, min.y), Vec2::new(max.x, min.y),
         Vec2::new(max.x, max.y), Vec2::new(min.x, max.y),
@@ -650,7 +654,7 @@ fn draw_remote_obstacle_hull(
         line(pixels, screen(camera, points[index]),
             screen(camera, points[(index + 1) % 4]), color);
     }
-    true
+    Some(true)
 }
 
 fn first_selected<'a>(state: Option<&'a Value>, selected: &[i64]) -> Option<&'a Value> {
@@ -794,14 +798,16 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 if artwork.asteroids.contains(&obj["id"].as_i64().unwrap_or(-1)) {
                     continue;
                 }
-                if draw_remote_obstacle_hull(
+                match draw_remote_obstacle_hull(
                     pixels, obj, camera, point,
                     visual.heading_for(obj, 2, fraction),
                 ) {
-                    *obstacle_hull_draws += 1;
-                } else {
-                    let coord=screen(camera,point);
-                    circle(pixels,coord,5,if obj["mining"]==true {GOLD} else {0x7d92aa});
+                    Some(true) => *obstacle_hull_draws += 1,
+                    Some(false) => {}, // collider wholly offscreen
+                    None => {
+                        let coord=screen(camera,point);
+                        circle(pixels,coord,5,if obj["mining"]==true {GOLD} else {0x7d92aa});
+                    }
                 }
             }
         }
