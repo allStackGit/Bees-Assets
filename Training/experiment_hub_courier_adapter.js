@@ -100,7 +100,15 @@ function courierMetrics(source) {
     // of the population at the old 253-field adapter limit. Reserve space
     // for the envelope, host data and optional derived diagnoses.
     let retained=0;
-    for(const [name,value] of Object.entries(stats)) {
+    // A 64-lineage run can exceed the neutral 512-field/32-KiB report.
+    // Preserve the handful of whole-run GPU placement decisions before
+    // optional per-lineage details. The append-only Courier event still
+    // contains every original measurement for full native history.
+    const primary=name=>name.startsWith('training_gpu_placement_')||
+        /^training_gpu_device_[0-7]_next_lineages$/.test(name);
+    const entries=Object.entries(stats).sort(
+        ([a],[b])=>Number(primary(b))-Number(primary(a)));
+    for(const [name,value] of entries) {
         if(retained>=480)break;
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
