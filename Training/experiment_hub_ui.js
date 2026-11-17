@@ -3198,7 +3198,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){feedback('hub-job-message',error.message);}
                     await reload();
                 }));
-            if(j.status==='waiting_adapter'&&readiness?.eligible===true)
+            if(j.status==='waiting_adapter'&&readiness?.eligible===true&&
+                j.project_id!=='courier_lineage')
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
                     const gpu=j.resources.gpu_count>0;
