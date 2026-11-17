@@ -1003,8 +1003,7 @@ def main():
                     root, index, seed_offset, allocation_plan,
                     run, next_checkpoint, next_manifest, args.learner_slot,
                 )
-                if receiver is not None:
-                    receiver.activate(orders)
+                prepared_inputs = {}
                 if args.collector_input_outbox is not None:
                     outbox = args.collector_input_outbox.resolve(strict=True)
                     order_digest = file_sha256(order_path)
@@ -1043,11 +1042,16 @@ def main():
                                 **identity,
                                 "archive_sha256": result["archive_sha256"],
                             })
+                        prepared_inputs[job["id"]] = (
+                            str(archive), result["archive_sha256"], result["archive_bytes"],
+                        )
                         print(json.dumps({
                             "kind": "native_distributed_collector_inputs_ready",
                             "round": index, "collector_id": job["id"],
                             **result,
                         }, sort_keys=True), flush=True)
+                if receiver is not None:
+                    receiver.activate(orders, prepared_inputs)
                 print(json.dumps({"kind": "native_distributed_collection_orders_ready",
                                   "round": index, "orders": str(order_path),
                                   "jobs": orders["jobs"]}), flush=True)
