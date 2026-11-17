@@ -380,7 +380,7 @@ def verify_bundle(path, job, orders):
 
 
 def wait_for_collections(inbox, orders, timeout_seconds, progress=None,
-                         archive_inbox=None):
+                         archive_inbox=None, check_unfinished=None):
     if not inbox.is_dir():
         raise ValueError(f"collector inbox must be an existing directory: {inbox}")
     if archive_inbox is not None:
@@ -419,6 +419,14 @@ def wait_for_collections(inbox, orders, timeout_seconds, progress=None,
                     })
         if len(results) == len(orders["jobs"]):
             break
+        # The Hub-aware learner can inspect already-recorded native job
+        # outcomes here. This is the existing collector barrier, not a
+        # separate polling owner or source of simulation truth. It runs only
+        # for collector IDs whose verified rollout is still missing.
+        if check_unfinished is not None:
+            check_unfinished(tuple(
+                job["id"] for job in orders["jobs"] if job["id"] not in results
+            ))
         if timeout_seconds > 0 and time.monotonic() - started >= timeout_seconds:
             missing = [job["id"] for job in orders["jobs"] if job["id"] not in results]
             raise TimeoutError(f"distributed native collectors have not delivered: {missing}")
