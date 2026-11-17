@@ -327,6 +327,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.learner_wait_after_local_seconds,'seconds');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
+        add('collector_'+i+'_connect_seconds',
+            worker.collector_client_connect_seconds,'seconds');
+        add('collector_'+i+'_connection_reused',
+            worker.collector_client_connection_reused,'count');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
         add('collector_'+i+'_completion_seconds',worker.learner_completion_seconds,'seconds');
         add('collector_'+i+'_service_seconds',worker.collector_service_seconds,'seconds');
@@ -340,6 +344,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.collector_supports_weight_blob,'count');
         add('collector_'+i+'_weight_blob_used',
             worker.collector_weight_blob_used,'count');
+        add('collector_'+i+'_policy_upload_groups',
+            worker.collector_policy_upload_groups,'count');
         for(const [suffix,name] of [
             ['gpu_allocated_mb','collector_gpu_allocated_mb'],
             ['gpu_reserved_mb','collector_gpu_reserved_mb'],
