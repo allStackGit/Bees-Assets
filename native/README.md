@@ -378,7 +378,8 @@ bees connect 127.0.0.1:7284 --token-file ~/.config/bees/player.token --side 1
 This opens the built-in cross-platform minifb tactical window; **Python
 and Tkinter are not required**. Select one or multiple owned squads by
 clicking/dragging (Shift adds), right-click to move, attack, guard or mine,
-or use F point fire, T attack, G guard, M mine, H hold, Z cease fire,
+or use F point fire, **hold J to aim continuous manual fire**, T attack,
+G guard, M mine, H hold, Z cease fire,
 C chase, L lock on, V speed match, A select all, E heal, W retreat,
 P two-corner patrol, B beacon, D detonate, Q charge, and Page Up/Down
 to choose shooting strategy 1–40. Mouse wheel/arrow keys adjust the
@@ -416,8 +417,14 @@ It is a lightweight 2D **remote view**, not a separate physics engine or
 the source-art native local renderer. The optional Python/Tk implementation
 requires Python and Tkinter (`python3-tk` on Debian); the new built-in
 native window, compiled local game and headless learner do not.
-The server rejects remote held-fire gestures until per-connection release
-semantics exist, but explicit point fire works. Up to four connections
+The native server accepts one active held-fire gesture across the shared
+Level, owned by the authenticated controller that began it. Press and hold J
+with a selected squad, move the pointer within the battlefield to aim, and
+release J to stop. The host releases the live ship targets if that peer
+disconnects or the episode changes; other controllers cannot seize the
+gesture, including the local host window. End, aim and begin requests go
+through the original canonical weapon input and are counted separately in
+remote-play measurements. Up to four connections
 share **one** player-side authority.
 
 #### Independent two-player native battles
