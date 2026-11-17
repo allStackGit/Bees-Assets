@@ -88,7 +88,8 @@ impl PeerClient {
         let mut buffer = [0_u8; 32768];
         let mut read = 0_usize;
         while read < READ_BUDGET && self.connected {
-            match self.socket.read(&mut buffer[..buffer.len().min(READ_BUDGET - read)]) {
+            let limit = buffer.len().min(READ_BUDGET - read);
+            match self.socket.read(&mut buffer[..limit]) {
                 Ok(0) => { self.connected = false; self.notice = "Host disconnected".into(); break; }
                 Ok(n) => {
                     read += n;
