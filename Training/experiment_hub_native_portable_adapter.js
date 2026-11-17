@@ -67,7 +67,7 @@ function createNativeBeesPortableCollectorAdapter({
     if(artifacts===scratch)throw Error('Hub collection artifacts and scratch must differ.');
     const credential=trustedFile(tokenFile);
     const stat=fs.statSync(credential);
-    if(stat.size<33||stat.size>512||
+    if(stat.size<32||stat.size>512||
         process.platform!=='win32'&&(stat.mode&0o077)!==0)
         throw Error('Native bundle credential must be a private local secret file.');
     const receiver=trustedReceiver(receiverUrl);
