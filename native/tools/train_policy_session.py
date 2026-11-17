@@ -1035,7 +1035,7 @@ def main():
                         }
                     else:
                         result = export_inputs(
-                            order_path, "all", Path(run["path"]),
+                            order_path, "@round", Path(run["path"]),
                             Path(trainer["path"]), Path(next_checkpoint),
                             Path(next_manifest), archive,
                         )
