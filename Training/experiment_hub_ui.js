@@ -5652,11 +5652,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function newLineageWarning(predecessor,parameters) {
         if(predecessor)return '';
         return 'NO PREVIOUS JOB SELECTED.\n\n'+
-            'This queues a NEW, independent training run. It will NOT resume '+
-            'training progress or optimizer state from an earlier Hub job.\n'+
+            'This queues a NEW, independent Hub job, not a continuation '+
+            'of a previously queued job.\n'+
             (parameters?.import_checkpoint!==undefined
-                ?'The saved checkpoint import can seed this new run, but does not continue that previous job.\n'
-                :'')+
+                ?'This configuration imports a checkpoint as its starting state, '+
+                    'which may include learned weights and optimizer state.\n'
+                :'It will not resume a previous Hub job checkpoint or optimizer state.\n')+
             '\n';
     }
     // Distributed groups are frozen and claimed atomically. The operator
