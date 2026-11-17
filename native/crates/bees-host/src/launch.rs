@@ -868,7 +868,18 @@ impl RunNetwork {
     }
 }
 
-fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Result<&'static str, String> {
+/// Human-readable acknowledgement plus whether the authoritative Level
+/// actually accepted the command. A routine user rejection must not abort
+/// multiplayer, but must not be reported as a successful weapon gesture.
+#[derive(Clone, Copy)]
+struct PlayerInputFeedback {
+    message: &'static str,
+    accepted: bool,
+}
+
+fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput)
+    -> Result<PlayerInputFeedback, String>
+{
     use bees_host::runtime::{HostPlayerInputError, NativePlayerInputOutcome as Outcome};
     use bees_gameplay::player_inputs::{NativePlayerSupportAction, NativePlayerShipSpecialKind};
     // Live window and offline playback use precisely the same host-level
@@ -876,7 +887,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
     let outcome = match host.apply_player_input(&action) {
         Ok(outcome) => outcome,
         Err(HostPlayerInputError::Gameplay(error)) if error.is_rejection() =>
-            return Ok(match action {
+            return Ok(PlayerInputFeedback { accepted: false, message: match action {
                 NativePlayerInput::Move(_) => "Squad cannot accept that move",
                 NativePlayerInput::Support(_) => "Squad cannot accept that command",
                 NativePlayerInput::Fire(_) | NativePlayerInput::HeldFire(_) =>
@@ -887,8 +898,22 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
                 NativePlayerInput::Shooting(_) => "Squad cannot change shooting priority",
                 NativePlayerInput::LockOn(_) => "Squad cannot change Lock On",
                 NativePlayerInput::Chase(_) => "Squad cannot change Chase",
-            }),
+            }}),
         Err(error) => return Err(format!("native player input: {error:?}")),
+    };
+    // All these typed outcomes are produced by the same host dispatcher.
+    // Distinguish a valid-but-ineligible selection from a successfully
+    // applied command without inferring success from display text alone.
+    let accepted = match outcome {
+        Outcome::Move(counts) => counts.accepted_squads > 0,
+        Outcome::Support(counts) => counts.accepted_squads > 0 ||
+            counts.stopped_chases > 0,
+        Outcome::Fire(counts) | Outcome::CeaseFire(counts) |
+        Outcome::Special(counts) | Outcome::MatchSpeed(counts) |
+        Outcome::Shooting(counts) | Outcome::LockOn(counts) |
+        Outcome::Chase(counts) => counts.accepted_squads > 0,
+        Outcome::HeldFire(message) =>
+            message != "No selected weapons accepted held fire",
     };
     let feedback = match (action, outcome) {
         (NativePlayerInput::Move(_), Outcome::Move(counts)) => {
@@ -956,7 +981,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
         }
         _ => return Err("native host returned an input outcome for a different action".to_owned()),
     };
-    Ok(feedback)
+    Ok(PlayerInputFeedback { message: feedback, accepted })
 }
 
 /// Reject a remote input before touching any Level or HiveMind reservation.
@@ -1011,7 +1036,7 @@ fn remote_side_owns_input(host: &RolloutHost, action: &NativePlayerInput, side: 
 /// Clearing the scope is mandatory on rejection as well as on success.
 fn apply_remote_side_input(
     host: &mut RolloutHost, action: NativePlayerInput, side: i32,
-) -> Result<&'static str, String> {
+) -> Result<PlayerInputFeedback, String> {
     if !remote_side_owns_input(host, &action, side) {
         return Err("remote player does not own every requested live squad".to_owned());
     }
@@ -3579,7 +3604,9 @@ fn run_battle(
                     }
                 }
                 match apply_remote_side_input(&mut host, order.action, order.side) {
-                    Ok(message) => server.reply(order.peer, order.request_id, Ok(message)),
+                    Ok(feedback) => server.reply(order.peer, order.request_id,
+                        if feedback.accepted { Ok(feedback.message) }
+                        else { Err(feedback.message) }),
                     Err(error) => {
                         server.reply(order.peer, order.request_id, Err("authoritative input failed"));
                         failed_window = Some(error);
@@ -3616,7 +3643,7 @@ fn run_battle(
                 },
                 Ok(bees_host::client::NativeClientAction::Input { action: input, step }) => {
                     match apply_player_input(&mut host, input) {
-                        Ok(feedback) => client.report_move(feedback),
+                        Ok(feedback) => client.report_move(feedback.message),
                         Err(error) => {
                             failed_window = Some(error);
                             break;
