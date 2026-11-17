@@ -446,7 +446,7 @@ where
         -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
     where M: NativeLevelPlayerContext
     {
-        self.apply_player_fire(input, false, 0)
+        self.apply_player_fire(input, false, input.controller_id)
     }
 
     pub fn player_held_fire(&mut self, input: bees_gameplay::player_inputs::NativePlayerHeldFire)
@@ -458,7 +458,7 @@ where
             NativeHeldFireAction::Begin { squads, target } => {
                 let counts = self.apply_player_fire(&NativePlayerSquadFire {
                     world_id: input.world_id, episode_revision: input.episode_revision, squads,
-                    target: Some(target),
+                    controller_id: input.controller_id, target: Some(target),
                 }, true, input.controller_id)?;
                 return Ok(if counts.accepted_squads == 0 { "No selected weapons accepted held fire" }
                     else { "Manual fire active" });
