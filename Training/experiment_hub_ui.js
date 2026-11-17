@@ -2388,7 +2388,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'remote_collector_exposed_wait_seconds','remote_collectors_pending_after_local',
         'remote_collector_co_limiting_count',
         'remote_collector_exposed_wait_owner',
-        'remote_transport_connected_collectors',
+        'remote_transport_new_connections',
         'remote_transport_reused_collectors',
         'remote_transport_connect_max_seconds',
         'remote_transport_connect_owner',
