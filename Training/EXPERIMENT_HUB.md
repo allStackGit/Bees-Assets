@@ -1604,6 +1604,66 @@ suitable RAM/GPU allocation. The Hub-generated job UUID is **not**
 the collector ID; the adapter owns mapping its immutable Hub job
 artifacts to the correct learner-issued collector work order.
 
+For **unattended round-by-round dispatch**, the learner may use the
+existing Hub's loopback operator API rather than manually creating each
+collector job. This requires an explicitly approved local plan and 2–16
+collector allocations per round (the current atomic Hub resource-bundle
+limit). The native distributed allocation plan still determines source
+World windows and physics-worker counts. The new Hub plan supplies only
+the selected machines and the resources the operator is authorizing:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "native_hub_round_dispatch",
+  "schedule_start": true,
+  "confirm_unattended_start": true,
+  "confirm_gpu_start": false,
+  "collectors": [
+    {
+      "id": "halifax",
+      "machine_id": "halifax",
+      "resources": {"cpus": 12, "ram_mb": 16384, "gpu_count": 0}
+    },
+    {
+      "id": "exeter",
+      "machine_id": "exeter",
+      "resources": {"cpus": 6, "ram_mb": 8192, "gpu_count": 0}
+    }
+  ]
+}
+```
+
+The collector IDs must exactly match the existing
+`--distributed-plan`; each requested CPU budget must cover the
+round's fixed `rollout_workers * physics_workers`. Set
+`confirm_gpu_start: true` only when expressly approving one exclusive
+GPU for a collector. GPU starts still require fresh agent hardware proof,
+and a scheduled GPU bundle expires if its safety conditions are not met.
+CPU-only groups also require live, qualified agents; this mechanism
+does not bypass the Hub's native process owner.
+
+Start the learner on the **Hub host** with all three existing distributed
+transport options plus `--hub-dispatch-plan /private/hub-machines.json`
+(and optionally `--hub-dispatch-port 7148`). It exports one shared
+content-pinned source archive per round, creates immutable Hub
+`bees_native_collect` configurations, atomically reserves their
+machines and resources as one bundle, and submits the exact
+preapproved `resource-bundles/schedule-start` action. The Hub waits
+for fresh machine/lease readiness, launches through its normal OS owner,
+and releases completed native leases under its existing terminal
+policy. Verified collector uploads unblock the existing native learner.
+
+A crash/restart reuses configurations identified by the issued order
+digest and reconciles exact previously reserved bundle identities.
+Partial, changed or review-required Hub ownership **fails closed**,
+rather than starting duplicate work or silently recycling a GPU.
+An operator must explicitly resolve such a state. This is opt-in;
+without the dispatch flag, existing manual and externally managed
+collectors work as before. Hub history currently limits the number of
+stored jobs, so long multi-round experiments still need normal Hub
+archival/retention management.
+
 An incorrect, stale or mismatched remote order fails **before any native
 simulation runs**. Completed collector captures follow the established
 Hub `bees_native_collect` artifact sync for comparison and observation;
