@@ -83,11 +83,18 @@ impl RemoteArtwork {
     /// for projectile animation. All sprite scaling/pivots/frames use
     /// the same native source artwork already loaded for local play.
     fn paint(&mut self, state: &Value, camera: NativeCamera,
-             visual: &RemoteVisual, fraction: f32, stats: &mut WireCounts) {
+             visual: &RemoteVisual, fraction: f32, stats: &mut WireCounts,
+             show_art: bool) {
         self.raster.begin_remote_art(camera);
         self.ships.clear();
         self.projectiles.clear();
         self.asteroids.clear();
+        if !show_art {
+            // No cached artwork or animation bookkeeping in geometry-only
+            // mode, so old systems avoid the sprite sampler entirely.
+            self.shot_first_seen.clear();
+            return;
+        }
         let episode = (
             state["world_id"].as_u64().unwrap_or(0),
             state["episode_revision"].as_u64().unwrap_or(0),
@@ -799,7 +806,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         "PgUp/Dn shooting (1-40)",
         "B beacon D detonate Q charge",
         "E heal W retreat P patrol",
-        "R reset +/- zoom Arrows pan",
+        "F6 sprites R reset +/- zoom",
         "Esc cancel / disconnect",
     ];
     for (index,label) in instructions.iter().enumerate(){
@@ -909,9 +916,18 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut dialogue_line=0usize;
     let mut held_fire_active=false;
     let mut held_fire_target:Option<Vec2>=None;
+    let mut show_art=true;
     let started=Instant::now();
 
     while window.is_open() {
+        if window.is_key_pressed(Key::F6, KeyRepeat::No) {
+            show_art=!show_art;
+            peer.notice=if show_art {
+                "Native source sprites enabled".into()
+            } else {
+                "Fast geometric display enabled".into()
+            };
+        }
         if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
             if mode.is_some() {
                 mode=None;patrol_start=None;drag_start=None;
@@ -1200,7 +1216,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             peer.metrics.interpolated_draw_frames += 1;
         }
         if let (Some(state),Some(cam))=(peer.state.as_ref(),camera) {
-            artwork.paint(state,cam,&peer.visual,visual_fraction,&mut peer.metrics);
+            artwork.paint(state,cam,&peer.visual,visual_fraction,
+                &mut peer.metrics,show_art);
         }
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
@@ -1218,6 +1235,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "ship_sprite_draws":peer.metrics.ship_sprite_draws,
         "projectile_sprite_draws":peer.metrics.projectile_sprite_draws,
         "asteroid_sprite_draws":peer.metrics.asteroid_sprite_draws,
+        "source_art_enabled":show_art,
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
         "connection_closed":!peer.connected,
