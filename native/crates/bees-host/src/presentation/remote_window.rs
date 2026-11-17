@@ -46,12 +46,11 @@ struct WireCounts {
     ship_sprite_draws: u64,
     projectile_sprite_draws: u64,
     asteroid_sprite_draws: u64,
+    sprite_candidate_pixels: u64,
+    sprite_opaque_pixels: u64,
+    sprite_blended_pixels: u64,
 }
 
-/// Presentation-only interpolation between two authenticated snapshots.
-/// The host still owns every position and all click targets refer to the
-/// latest authoritative entity IDs. Old poses never create ships or reveal
-/// fogged entities in the current packet.
 /// The existing native source-art renderer, reused for authenticated
 /// remote snapshots. Its framebuffer is composited behind remote HUD
 /// controls; it never creates CombatWorld, ShipVitals or any gameplay actor.
@@ -85,16 +84,16 @@ impl RemoteArtwork {
     fn paint(&mut self, state: &Value, camera: NativeCamera,
              visual: &RemoteVisual, fraction: f32, stats: &mut WireCounts,
              show_art: bool) {
-        self.raster.begin_remote_art(camera);
         self.ships.clear();
         self.projectiles.clear();
         self.asteroids.clear();
         if !show_art {
-            // No cached artwork or animation bookkeeping in geometry-only
-            // mode, so old systems avoid the sprite sampler entirely.
+            // F6 skips the entire texture renderer (and framebuffer
+            // clear/copy), retaining only the existing geometric UI.
             self.shot_first_seen.clear();
             return;
         }
+        self.raster.begin_remote_art(camera);
         let episode = (
             state["world_id"].as_u64().unwrap_or(0),
             state["episode_revision"].as_u64().unwrap_or(0),
@@ -145,9 +144,16 @@ impl RemoteArtwork {
                 stats.ship_sprite_draws += 1;
             }
         }
+        let (candidates, opaque, blended) = self.raster.remote_raster_counts();
+        stats.sprite_candidate_pixels += candidates;
+        stats.sprite_opaque_pixels += opaque;
+        stats.sprite_blended_pixels += blended;
     }
 }
 
+/// Presentation-only interpolation between two authenticated snapshots.
+/// Old poses never create ships or reveal previously visible enemies outside
+/// the latest host packet. Gameplay authority never leaves the host.
 #[derive(Clone, Copy)]
 struct RemotePose {
     position: Vec2,
@@ -639,13 +645,20 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
     held_fire_active: bool, visual: &RemoteVisual, fraction: f32,
-    artwork: &RemoteArtwork) {
-    // Source sprites are drawn once onto the same cached software atlas
-    // framebuffer used by local play, then copied behind multiplayer HUD.
-    for (line, sprites) in pixels.chunks_exact_mut(WIDTH)
-        .zip(artwork.raster.pixels().chunks_exact(FIELD)) {
-        line[..FIELD].copy_from_slice(sprites);
-        line[FIELD..].fill(0x152439);
+    artwork: &RemoteArtwork, show_art: bool) {
+    // F6 avoids allocating or clearing a second per-frame art layer,
+    // while normal mode reuses the exact local game sprite raster.
+    if show_art {
+        for (line, sprites) in pixels.chunks_exact_mut(WIDTH)
+            .zip(artwork.raster.pixels().chunks_exact(FIELD)) {
+            line[..FIELD].copy_from_slice(sprites);
+            line[FIELD..].fill(0x152439);
+        }
+    } else {
+        for line in pixels.chunks_exact_mut(WIDTH) {
+            line[..FIELD].fill(0x080f1a);
+            line[FIELD..].fill(0x152439);
+        }
     }
     text::draw_at(pixels, WIDTH, FIELD + 14, 18, "BEES NATIVE", 2, TEXT);
     text::draw_at(pixels, WIDTH, FIELD + 14, 57,
@@ -686,6 +699,14 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         for ship in state["ships"].as_array().into_iter().flatten() {
             let Some(point)=visual.position(ship, 0, fraction) else { continue };
             let center=screen(camera,point);
+            let selected_ship=ship["owned"]==true &&
+                highlighted.contains(&ship["id"].as_i64().unwrap_or(-1));
+            if !selected_ship && (center.0 < -24 || center.0 > FIELD as i32 + 24 ||
+                center.1 < -24 || center.1 > HEIGHT as i32 + 24) {
+                // The host still supplied the authoritative entity; only
+                // drawing work outside the actual viewport is skipped.
+                continue;
+            }
             // Side allegiance and command rights are separate. The host
             // includes AI-controlled friendly ships but never permits a
             // remote peer to select their unowned squad.
@@ -715,7 +736,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                      (center.0-10+(20.0*(health/maximum).clamp(0.0,1.0)) as i32,center.1+14),
                      color);
             }
-            if ship["owned"]==true && highlighted.contains(&ship["id"].as_i64().unwrap_or(-1)) {
+            if selected_ship {
                 outline(pixels,center.0-15,center.1-17,30,34,0xf9f0a1);
                 if let Some(destination)=ship["destination"].as_array() {
                     if destination.len()==2 {
@@ -1221,7 +1242,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         }
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
-            held_fire_active,&peer.visual,visual_fraction,&artwork);
+            held_fire_active,&peer.visual,visual_fraction,&artwork,show_art);
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
     }
     println!("{}",json!({
@@ -1235,6 +1256,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "ship_sprite_draws":peer.metrics.ship_sprite_draws,
         "projectile_sprite_draws":peer.metrics.projectile_sprite_draws,
         "asteroid_sprite_draws":peer.metrics.asteroid_sprite_draws,
+        "sprite_candidate_pixels":peer.metrics.sprite_candidate_pixels,
+        "sprite_opaque_pixels":peer.metrics.sprite_opaque_pixels,
+        "sprite_blended_pixels":peer.metrics.sprite_blended_pixels,
         "source_art_enabled":show_art,
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
