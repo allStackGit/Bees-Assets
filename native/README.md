@@ -865,7 +865,11 @@ actor-compatibility modules into the distribution, and rewrite game
 configs to point to these internal assets, not to the training machine's
 directories. They still require a compatible Python 3 environment with
 NumPy and the selected backend (ML-Agents/PyTorch or ONNX Runtime) on the
-target machine; **they do not require Unity**. `--policy-device cpu` is
+target machine; **they do not require Unity**. The packager computes
+manifest/worker locations relative to each packaged run, including
+runs inside nested folders, verifies the source manifest hash through
+model export, and retains any explicitly referenced source collision
+matrix and Stage palette JSON assets. `--policy-device cpu` is
 portable across supported Windows/Linux CPUs, while `cuda` requires a
 compatible Torch accelerator and source ONNX GPU providers are not
 automatically reconfigured. `--python-command` selects the bare target

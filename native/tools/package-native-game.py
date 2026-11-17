@@ -120,17 +120,32 @@ def package_game_library(
                 if not original.is_file():
                     raise ValueError("trained policy manifest must be a regular file")
                 digest = hashlib.sha256(original.read_bytes()).hexdigest()
+                models_root = destination.parent / "assets/policies"
                 if digest not in copied_manifests:
-                    models_root = destination.parent / "assets/policies"
                     models_root.mkdir(parents=True, exist_ok=True)
                     # The existing portable model exporter verifies all
                     # checkpoints and preserves exact policy slots and ABI.
-                    export_model(original, models_root / digest,
-                                 target_device=policy_device)
+                    receipt = export_model(original, models_root / digest,
+                                           target_device=policy_device)
+                    if receipt["input_manifest_sha256"] != digest:
+                        raise ValueError(
+                            "native source model manifest changed during portable export"
+                        )
                     copied_manifests.add(digest)
+                # One source library may nest run configs under subfolders.
+                # Resolve the *packaged* worker and model relative to this
+                # particular run, not always to examples/ at the top level.
+                packaged_run = destination / path
+                relative_to_run = lambda asset: Path(os.path.relpath(
+                    asset, packaged_run.parent,
+                )).as_posix()
                 data["python"] = python_command
-                data["policy_worker"] = "../native/tools/policy_worker.py"
-                data["model_manifest"] = f"../assets/policies/{digest}/manifest.json"
+                data["policy_worker"] = relative_to_run(
+                    destination.parent / "native/tools/policy_worker.py"
+                )
+                data["model_manifest"] = relative_to_run(
+                    models_root / digest / "manifest.json"
+                )
                 data["policy_capture"] = None
                 has_policy = True
             elif data.get("python") or data.get("policy_worker"):
@@ -139,7 +154,12 @@ def package_game_library(
                 )
             for level in data["levels"]:
                 pending.append((str(path.parent / level["scene"]), "scene"))
-        elif kind != "scene":
+            if data.get("collision_matrix") and data.get("stage_palette"):
+                for asset in ("collision_matrix", "stage_palette"):
+                    pending.append((str(path.parent / data[asset]), "stage_asset"))
+            elif data.get("collision_matrix") or data.get("stage_palette"):
+                raise ValueError("native legacy Stage assets must include both matrix and palette")
+        elif kind not in ("scene", "stage_asset"):
             raise ValueError(f"Unknown native package asset kind: {kind}")
         # A custom library can be named library.json, but the packaged
         # launcher has one stable entry point across Windows and Linux.
