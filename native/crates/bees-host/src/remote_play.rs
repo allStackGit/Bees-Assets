@@ -540,6 +540,19 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
                 json!({"sequence": sequence, "lines": lines})
             })
         } else { None },
+        // Mission timing and wave ownership come from the same native
+        // Level controller as local gameplay; clients cannot schedule waves.
+        "campaign_objective": if view.player_authority.player_viewer_side() == Some(side) {
+            view.survival.map(|status| json!({
+                "protected_ship_id": status.protected_ship_id,
+                "elapsed_seconds": status.elapsed_seconds,
+                "duration_seconds": status.duration_seconds,
+                "seconds_remaining": status.seconds_remaining,
+                "reinforcements_pending": view.reinforcement_waves_pending,
+                "next_reinforcement_tick": view.next_reinforcement_tick,
+                "last_reinforcement_tick": view.last_reinforcement_tick,
+            }))
+        } else { None },
         "ships": ships, "squads": squads, "obstacles": obstacles,
         "projectiles": projectiles,
     })
