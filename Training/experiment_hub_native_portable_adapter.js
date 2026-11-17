@@ -132,7 +132,7 @@ function createNativeBeesPortableCollectorAdapter({
         config_sha256:configSha256,
         args(parameters,context) {
             const required=[
-                'config_sha256','collection_id','seed_offset',
+                'config_sha256','collector_id','collection_id','seed_offset',
                 'rollout_workers','physics_workers','rollout_world_start',
                 'rollout_worlds','bundle_directory','source_run_contract_sha256',
             ];
@@ -140,6 +140,7 @@ function createNativeBeesPortableCollectorAdapter({
                 Object.keys(parameters).length!==required.length||
                 required.some(key=>!Object.hasOwn(parameters,key))||
                 parameters.config_sha256!==configSha256||
+                !/^[A-Za-z0-9_-]{1,96}$/.test(String(parameters.collector_id||''))||
                 !SHA.test(String(parameters.collection_id||''))||
                 !SHA.test(String(parameters.source_run_contract_sha256||''))||
                 !Number.isSafeInteger(parameters.seed_offset)||parameters.seed_offset<0||
@@ -152,7 +153,7 @@ function createNativeBeesPortableCollectorAdapter({
                 parameters.rollout_workers>parameters.rollout_worlds||
                 !Number.isSafeInteger(parameters.physics_workers)||
                 parameters.physics_workers<1||parameters.physics_workers>128||
-                parameters.bundle_directory!==context?.job_id||
+                !/^[A-Za-z0-9_-]{1,96}$/.test(String(parameters.bundle_directory||''))||
                 context?.continuation_of_job_id!=null||
                 context?.gpu_pci_address!==undefined||
                 context?.gpu_pci_addresses!==undefined||
@@ -164,12 +165,13 @@ function createNativeBeesPortableCollectorAdapter({
                     throw Error('Native portable collector runtime changed since adapter installation.');
             }
             return ['-B',runner,
-                '--input-url',receiver,'--collector-id',context.job_id,
+                '--input-url',receiver,'--collector-id',parameters.collector_id,
                 '--scratch',scratch,'--rollout-binary',binary,
                 '--bundle-inbox',artifacts,'--token-file',credential,
                 '--hub-job-id',context.job_id,
                 '--cpu-quota',String(context.cpu_quota),
                 '--expected-collection-id',parameters.collection_id,
+                '--expected-bundle-directory',parameters.bundle_directory,
                 '--expected-source-contract',parameters.source_run_contract_sha256,
                 '--expected-seed-offset',String(parameters.seed_offset),
                 '--expected-world-start',String(parameters.rollout_world_start),
