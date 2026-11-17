@@ -28,12 +28,15 @@ def main():
     parser.add_argument("model_manifest", type=Path)
     parser.add_argument("trainer_config", type=Path)
     parser.add_argument("scratch_directory", type=Path)
-    parser.add_argument("bundle_inbox", type=Path)
+    parser.add_argument("bundle_inbox", type=Path, nargs="?",
+                        help="local/shared inbox; omit with --archive-output for direct archive delivery")
     parser.add_argument("--rollout-binary", type=Path, required=True)
     parser.add_argument("--stage-diagnostics", action="store_true")
     parser.add_argument("--archive-output", type=Path,
                         help="publish a portable verified tar for transfer to a different machine")
     args = parser.parse_args()
+    if args.bundle_inbox is None and args.archive_output is None:
+        parser.error("supply a bundle inbox or --archive-output")
 
     orders_path = args.orders.resolve(strict=True)
     orders = json.loads(orders_path.read_text(encoding="utf-8"))
@@ -73,9 +76,9 @@ def main():
         parser.error("compiled native rollout binary is required")
     trainer = args.trainer_config.resolve(strict=True)
     scratch = args.scratch_directory.resolve(strict=True)
-    inbox = args.bundle_inbox.resolve(strict=True)
-    if not scratch.is_dir() or not inbox.is_dir():
-        parser.error("scratch directory and shared bundle inbox must already exist")
+    inbox = args.bundle_inbox.resolve(strict=True) if args.bundle_inbox else None
+    if not scratch.is_dir() or (inbox is not None and not inbox.is_dir()):
+        parser.error("scratch directory and optional bundle inbox must already exist")
 
     # Retain every interrupted local attempt for diagnosis. Only a
     # successfully collected, atomically delivered receipt is consumed
@@ -89,7 +92,7 @@ def main():
         str(trainer), str(output),
         "--model-manifest", str(args.model_manifest.resolve()),
         "--rollout-binary", str(binary),
-        "--bundle-inbox", str(inbox),
+        *([] if inbox is None else ["--bundle-inbox", str(inbox)]),
         *job["collector_options"],
     ]
     if orders["learner_slot"] is not None:
@@ -103,7 +106,10 @@ def main():
         "rollout_workers": job["rollout_workers"],
     }), flush=True)
     subprocess.run(command, check=True)
-    receipt_path = inbox / job["bundle_directory"] / "rollout-bundle.json"
+    receipt_path = (
+        output / "rollout-bundle.json" if inbox is None
+        else inbox / job["bundle_directory"] / "rollout-bundle.json"
+    )
     receipt = verify_bundle(receipt_path, job, orders)
     if args.archive_output is not None:
         archive = export_bundle_archive(
