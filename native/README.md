@@ -595,10 +595,15 @@ number first; abandoned/incomplete traces are excluded. Selecting one runs
 the existing verified native replay engine, not a second approximation of
 the game. Each new campaign mission also saves its battle-start purchases,
 squad assignments, tactics and losses alongside the trace, so watching
-an earlier mission does not depend on today's fleet. Replay outputs have
-their own numbered save folders and never advance campaign progress.
-Replays fail explicitly if the recorded source scenes, configuration or
-required policy artifacts have changed. Battles using asynchronous
+an earlier mission does not depend on today's fleet. When opening a
+verified trained model, the launcher freezes that exact small playable
+run configuration alongside the battle. Future training rounds can update
+`latest-playable-run.json` without changing the recorded game's scene
+or policy identity; the original immutable model manifests and checkpoint
+files must still remain accessible. Replay outputs have their own numbered
+save folders and never advance campaign progress. Replays fail explicitly
+if the recorded source scenes, configuration or required policy artifacts
+have changed. Battles using asynchronous
 navigation or other non-deterministic external sources do not advertise
 unsupported recordings.
 
