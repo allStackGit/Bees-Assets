@@ -165,6 +165,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
             'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
             'pipeline_remote_wait_dominant',
+            'pipeline_remote_wait_owner',
+            'pipeline_remote_exposed_work_share',
+            'remote_collectors_pending_after_local',
+            'remote_collector_exposed_wait_seconds',
+            'remote_collector_exposed_wait_owner',
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
             'training_remote_gap_pressure','training_remote_codec_pressure',
@@ -289,6 +294,33 @@ class BottleneckEvidence {
             const mergeShare=collection>0&&merge!==null&&merge<=collection
                 ?merge/collection:null;
             if(waitShare!==null)add('pipeline_remote_wait_work_share',waitShare);
+            const remoteExposed=seconds('remote_collector_exposed_wait_seconds');
+            const remotePending=metrics.remote_collectors_pending_after_local;
+            const remoteOwnerMetric=metrics.remote_collector_exposed_wait_owner;
+            const remoteCount=metrics.collector_count;
+            const exposedShare=(collection>0&&remoteExposed!==null&&
+                remoteExposed<=collection)?remoteExposed/collection:null;
+            if(exposedShare!==null)
+                add('pipeline_remote_exposed_work_share',exposedShare);
+            // The owner is the last learner-visible collector completion,
+            // not a worker's isolated service time or physical GPU usage.
+            // Verify the matching per-worker receipt before attribution.
+            const candidate=remoteOwnerMetric?.value;
+            const ownerWait=Number.isSafeInteger(candidate)&&candidate>0&&
+                candidate<MAX_TINYBRAINS_COLLECTORS
+                ?seconds('collector_'+candidate+'_wait_after_local_seconds'):null;
+            const remoteOwner=(remoteCount?.unit==='count'&&
+                remotePending?.unit==='count'&&
+                Number.isSafeInteger(remoteCount.value)&&
+                Number.isSafeInteger(remotePending.value)&&
+                candidate>0&&candidate<remoteCount.value&&
+                remotePending.value>=1&&
+                remotePending.value<remoteCount.value&&
+                exposedShare!==null&&exposedShare>=0.25&&
+                remoteExposed>=0.25&&ownerWait!==null&&
+                Math.abs(ownerWait-remoteExposed)<=
+                    Math.max(1e-6,remoteExposed*0.001))
+                    ?candidate:null;
             if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
             const localGpuWait=seconds('local_gpu_wait_after_local_max_seconds');
             const localGpuShare=(collection>0&&localGpuWait!==null&&
@@ -429,7 +461,7 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,mergeShare,
-                    localGpuShare,localGpuOwner,localGpuLease,
+                    localGpuShare,localGpuOwner,localGpuLease,remoteOwner,
                     stageHints,simHints,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
@@ -444,8 +476,16 @@ class BottleneckEvidence {
                     add('pipeline_collection_dominant',1,'count');
                 else if(recent.filter(x=>x.fraction<=0.3).length>=5)
                     add('pipeline_optimization_dominant',1,'count');
-                if(recent.filter(x=>x.waitShare!==null&&x.waitShare>=0.5).length>=5)
+                if(recent.filter(x=>x.waitShare!==null&&x.waitShare>=0.5).length>=5) {
                     add('pipeline_remote_wait_dominant',1,'count');
+                    // Require five of six completed measurements to name
+                    // the same uniquely exposed remote collector.
+                    const owner=recent.at(-1).remoteOwner;
+                    if(owner!==null&&recent.filter(x=>
+                        x.remoteOwner===owner&&x.waitShare!==null&&
+                        x.waitShare>=0.5).length>=5)
+                        add('pipeline_remote_wait_owner',owner,'count');
+                }
                 if(recent.filter(x=>x.localGpuShare!==null&&
                     x.localGpuShare>=0.5).length>=5) {
                     add('pipeline_local_gpu_wait_dominant',1,'count');
@@ -676,7 +716,8 @@ class BottleneckEvidence {
         // limit. Never evict a project-owned source metric for a diagnosis.
         const priority=name=>
             (name==='pipeline_local_gpu_wait_owner'||
-             name==='pipeline_local_gpu_lease_index')?0:
+             name==='pipeline_local_gpu_lease_index'||
+             name==='pipeline_remote_wait_owner')?0:
             name.startsWith('pipeline_')&&(
                 name.endsWith('_pressure')||name.endsWith('_evidence'))?0:
             name.startsWith('pipeline_')&&name.endsWith('_dominant')?0:
