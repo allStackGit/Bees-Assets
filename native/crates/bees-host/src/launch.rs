@@ -2066,7 +2066,7 @@ struct NativeLibraryGame {
 /// mission unlocks and battle picker; quick battles use run_session directly.
 #[cfg(feature = "client")]
 fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Error>> {
-    use bees_host::presentation::{BattleMenuRow, NativeBattleMenuAction, select_battle};
+    use bees_host::presentation::{BattleMenuRow, select_library};
     use std::path::Component;
 
     let library_path = library_path.canonicalize()?;
@@ -2126,11 +2126,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 unlocked: true,
             }
         }).collect::<Vec<_>>();
-        let action = select_battle(
-            &rows, &mut selected, launch_failed,
-            &[], &[], &[], 0, &[], &[], &[],
-        )?;
-        let Some(NativeBattleMenuAction::Play(index)) = action else { break };
+        let Some(index) = select_library(&rows, &mut selected, launch_failed)?
+            else { break };
         let item = &library.games[index];
         let result = if item.kind == "campaign" {
             run_menu(&games[index], &save_root.join("campaigns").join(&item.id))
