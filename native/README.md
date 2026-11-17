@@ -99,12 +99,30 @@ only after it actually arrives. Waves retain unique stable physical IDs,
 the existing formation and collision rules, and the same headless
 gameplay result as windowed play. Both factions need some initially
 deployed ships; wave times must precede the battle end.
-These source-authored waves do not invent obstacle navigation at an
-off-map spawn: delayed hulls use their original distinct authored slots.
-The native policy-training author currently permits only elimination
-episodes without deferred waves; it rejects `--trainable` with
-survival/extraction or reinforcements rather than mixing incompatible
-group membership and reward episode contracts.
+
+A wave can also be triggered by the death of an initially deployed
+physical ship, using its side and source ship type:
+
+```sh
+python3 native/tools/author-battle.py flagship-defense \
+  --bees 21:4,2:1 --humans 13:10 --control bees \
+  --objective survival --protect-type 2 \
+  --reinforcement-on-death 1:2:2:13:5
+```
+
+The five-part format is
+`TRIGGER_SIDE:TRIGGER_TYPE:ARRIVING_SIDE:ARRIVING_TYPE:COUNT`.
+The author maps the trigger to the real initially deployed ship ID; a
+source-type trigger with no active ship is rejected. Ordinary waves
+of more than ten members become separate same-trigger native wave
+records, because one native reinforcement wave can contain multiple
+squads only for an actual Carrier-child group. Linked Carrier children
+are not independently deferred. Source-authored waves do not invent
+obstacle navigation at an off-map spawn: delayed hulls use their
+distinct original authored slots. Native policy-training authoring
+currently permits only elimination episodes without deferred waves;
+`--trainable` rejects survival/extraction or reinforcements rather
+than mixing incompatible group membership and reward contracts.
 
 To turn an authored battle into a **real native MA-POCA training session**,
 add `--trainable` when generating it. This writes a second source scene/run

@@ -61,6 +61,26 @@ def reinforcement(value: str) -> tuple[float, int, int, int]:
     return seconds, side, kind, count
 
 
+def death_reinforcement(value: str) -> tuple[int, int, int, int, int]:
+    """TRIGGER_SIDE:TRIGGER_TYPE:ARRIVING_SIDE:ARRIVING_TYPE:COUNT."""
+    parts = value.split(":")
+    if len(parts) != 5:
+        raise argparse.ArgumentTypeError(
+            "on-death wave format: TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE:COUNT"
+        )
+    try:
+        trigger_side, trigger_kind, side, kind, count = map(int, parts)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("invalid on-death wave numbers") from error
+    if (trigger_side not in (1, 2) or side not in (1, 2) or
+            not 0 <= trigger_kind < 24 or not 0 <= kind < 24 or
+            not 1 <= count <= 1024):
+        raise argparse.ArgumentTypeError(
+            "on-death wave needs sides 1/2, ship types 0..23 and count 1..1024"
+        )
+    return trigger_side, trigger_kind, side, kind, count
+
+
 def load_json(path: Path) -> dict:
     content = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(content, dict):
@@ -159,15 +179,31 @@ def author(args) -> tuple[dict, dict, dict]:
         (side, kind): count for side, units in requested.items()
         for kind, count in units
     }
+    waves = [
+        (when, side, kind, count, None)
+        for when, side, kind, count in args.reinforcements
+    ] + [
+        (None, side, kind, count, (trigger_side, trigger_kind))
+        for trigger_side, trigger_kind, side, kind, count
+        in args.death_reinforcements
+    ]
     deferred_counts: dict[tuple[int, int], int] = {}
     prior_time = 0.0
-    for when, side, kind, count in args.reinforcements:
+    for when, side, kind, count, trigger in waves:
         key = (side, kind)
-        if when < prior_time or when >= args.minutes * 60:
+        if when is not None:
+            if when < prior_time or when >= args.minutes * 60:
+                raise ValueError(
+                    "reinforcements must have nondecreasing times strictly before battle end"
+                )
+            prior_time = when
+        if kind in (8, 19) or (
+                kind == 5 and any(child in dict(requested[side])
+                                  for child in (8, 19))):
             raise ValueError(
-                "reinforcements must have nondecreasing times strictly before battle end"
+                "carrier children and linked carriers cannot deploy in "
+                "separate waves; use ordinary initial Carrier squads"
             )
-        prior_time = when
         deferred_counts[key] = deferred_counts.get(key, 0) + count
         if deferred_counts[key] > requested_counts.get(key, 0):
             raise ValueError(
@@ -293,7 +329,7 @@ def author(args) -> tuple[dict, dict, dict]:
     # Partition those real hulls into disjoint deferred squads, so the
     # native Level can reserve them at construction and deploy them once.
     # The first (count - deferred) ships remain immediately playable.
-    wave_members = [set() for _ in args.reinforcements]
+    wave_members = [set() for _ in waves]
     by_kind = {
         (side, kind): [ship["entity_id"] for ship in entries
                        if ship["ship_type"] == kind]
@@ -304,7 +340,7 @@ def author(args) -> tuple[dict, dict, dict]:
         key: len(ships) - deferred_counts.get(key, 0)
         for key, ships in by_kind.items()
     }
-    for index, (_, side, kind, count) in enumerate(args.reinforcements):
+    for index, (_, side, kind, count, _) in enumerate(waves):
         key = (side, kind)
         start = wave_cursor[key]
         wave_members[index].update(by_kind[key][start:start + count])
@@ -314,12 +350,12 @@ def author(args) -> tuple[dict, dict, dict]:
         for ship_id in members
     }
     by_side_squads: dict[int, list[dict]] = {1: [], 2: []}
-    wave_squads: list[list[int]] = [[] for _ in args.reinforcements]
+    wave_squads: list[list[int]] = [[] for _ in waves]
     for side, units in requested.items():
         squad_id = squad_base + (side - 1) * side_span
         for kind, _ in units:
             matching = by_kind[(side, kind)]
-            for wave in [None, *range(len(args.reinforcements))]:
+            for wave in [None, *range(len(waves))]:
                 members = [ship_id for ship_id in matching
                            if deferred_owner.get(ship_id) == wave]
                 for start in range(0, len(members), MAX_SQUAD_MEMBERS):
@@ -396,13 +432,34 @@ def author(args) -> tuple[dict, dict, dict]:
         "scene": "battle.scene.json", "world_id": 1, "level_id": 1,
         "seed": args.seed, "scripted_queues": queues,
     }]
-    if args.reinforcements:
-        # Reserved hulls spawn at distinct, preauthored map positions,
-        # avoiding invented pathfinding around obstacles at wave entry.
-        run["levels"][0]["reinforcements"] = [
-            {"after_seconds": when, "squad_item_ids": wave_squads[index]}
-            for index, (when, _, _, _) in enumerate(args.reinforcements)
-        ]
+    if waves:
+        # Each native wave with several squad IDs must represent one
+        # Carrier's linked child squads, not unrelated formation groups.
+        # Publish each ordinary chunk as its own same-tick wave instead.
+        # Reserved hulls use distinct authored positions rather than
+        # invented pathfinding through unknown authored obstacles.
+        deployments = []
+        for index, (when, _, _, _, trigger) in enumerate(waves):
+            if trigger is None:
+                activation = {"after_seconds": when}
+            else:
+                trigger_side, trigger_kind = trigger
+                eligible = [
+                    ship["entity_id"] for ship in by_side[trigger_side]
+                    if ship["ship_type"] == trigger_kind and
+                    ship["entity_id"] not in deferred_owner
+                ]
+                if not eligible:
+                    raise ValueError(
+                        f"on-death reinforcement trigger side {trigger_side} "
+                        f"type {trigger_kind} has no initially deployed hull"
+                    )
+                activation = {"on_ship_destroyed": eligible[0]}
+            for squad_id in wave_squads[index]:
+                deployments.append({
+                    **activation, "squad_item_ids": [squad_id],
+                })
+        run["levels"][0]["reinforcements"] = deployments
     # These are the native Level's real survival/extraction contracts,
     # consumed by the same CombatWorld/terminal as campaign and training.
     # Authoring never installs a second special-objective simulator.
@@ -603,6 +660,9 @@ def main() -> None:
     parser.add_argument("--reinforcement", action="append", default=[],
                         type=reinforcement, dest="reinforcements",
                         help="defer part of a faction's fleet until SECONDS:SIDE:TYPE:COUNT; repeat in time order")
+    parser.add_argument("--reinforcement-on-death", action="append", default=[],
+                        type=death_reinforcement, dest="death_reinforcements",
+                        help="deploy when an initially active ship dies: TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE:COUNT")
     parser.add_argument("--fog", action="store_true",
                         help="use the authoritative native player fog system")
     parser.add_argument("--empty-map", action="store_true",
@@ -619,7 +679,7 @@ def main() -> None:
                         default=EXAMPLES / "native-skirmish.run.json",
                         help="paired native run with the same map/physics asset matrix")
     args = parser.parse_args()
-    if args.trainable and args.reinforcements:
+    if args.trainable and (args.reinforcements or args.death_reinforcements):
         parser.error(
             "native policy episodes cannot defer source group membership "
             "into physical reinforcement waves"
@@ -664,8 +724,11 @@ def main() -> None:
                                 if s["user_controlled"]}),
         "fixed_rounds": run["max_rounds"],
         "objective": args.objective,
-        "reinforcement_waves": len(args.reinforcements),
-        "reinforcement_ships": sum(wave[3] for wave in args.reinforcements),
+        "reinforcement_waves": len(run["levels"][0].get("reinforcements", [])),
+        "reinforcement_ships": (
+            sum(wave[3] for wave in args.reinforcements) +
+            sum(wave[4] for wave in args.death_reinforcements)
+        ),
         "native_policy_run": (str(output / "battle.policy.run.json")
                               if args.trainable else None),
     }, sort_keys=True))
