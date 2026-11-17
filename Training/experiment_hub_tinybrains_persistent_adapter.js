@@ -99,7 +99,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_backward_seconds','ppo_metric_readback_seconds',
         'ppo_diagnostic_aggregation_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
-        'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
+        'ppo_parameter_finite_check_seconds',
+        // CPU preparation may overlap GPU work; only wait is an exposed
+        // learner stall. Pinned transfer enqueue is host wall, not PCIe time.
+        'ppo_prep_cpu_seconds','ppo_prep_wait_seconds',
+        'ppo_prep_pin_seconds','ppo_prep_h2d_enqueue_seconds',
+        'ppo_gpu_stream_sync_seconds',
         'ppo_gpu_stream_interval_seconds'])
         add(name,row[name],'seconds');
     for(const name of ['simulation_active_matches','simulation_target_matches',
@@ -115,6 +120,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'truncated_groups','terminal_groups','collector_count',
         'simulation_prefetch_engine_steps',
         'ppo_minibatches','ppo_microbatches',
+        'ppo_prep_batches','ppo_prep_async_h2d_copies',
         'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
         'ppo_gpu_pixel_budget',
         'ppo_gpu_batch_target_pixels','ppo_gpu_batch_next_target',
@@ -189,6 +195,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('simulation_global_cadence_gain',
         row.simulation_global_cadence_gain,'scalar');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
+    add('ppo_prep_board_bytes',row.ppo_prep_board_bytes,'bytes');
+    add('ppo_prep_async_h2d_bytes',row.ppo_prep_async_h2d_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
     add('remote_policy_shared_bytes',row.remote_policy_shared_bytes,'bytes');
