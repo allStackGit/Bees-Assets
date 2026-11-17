@@ -284,7 +284,7 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None):
         models = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
         if models.get("format") != "bees-native-model-v1" or not isinstance(models.get("models"), list):
             raise ValueError("collector model manifest is invalid")
-        expected_files = set(RESERVED)
+        expected_files = set(RESERVED) - {"inputs.json"}
         for model in models["models"]:
             name = relative_artifact(model["path"])
             expected_files.add(name)
