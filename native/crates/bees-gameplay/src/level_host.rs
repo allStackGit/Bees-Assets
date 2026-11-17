@@ -523,6 +523,9 @@ pub struct NativeRuntimeStatus {
     pub special_game_barge_charges_started: u64,
     pub special_game_barge_charge_hits: u64,
     pub special_game_barge_charge_completions: u64,
+    /// Authored Beehive.Kill secondary losses of ships actively healing
+    /// inside its collider, not waiting ships holding a reservation.
+    pub game_healing_cascade_kills: u64,
     /// Actual one-second player chase timer/visibility/activation work,
     /// summed over current episodes and never interpreted as a lifetime
     /// rate without accounting for world resets.
@@ -1226,6 +1229,7 @@ impl NativeLevelBatchDriver {
             special_game_barge_charges_started: 0,
             special_game_barge_charge_hits: 0,
             special_game_barge_charge_completions: 0,
+            game_healing_cascade_kills: 0,
             player_chase: crate::level_rules::NativePlayerChaseMeasurements::default(),
             player_controls: crate::level_rules::NativePlayerControlGauges::default(),
             reinforcements: crate::level_rules::NativeReinforcementGauges::default(),
@@ -1305,6 +1309,8 @@ impl NativeLevelBatchDriver {
             status.special_game_barge_charges_started += game_barges.starts;
             status.special_game_barge_charge_hits += game_barges.hits;
             status.special_game_barge_charge_completions += game_barges.completions;
+            status.game_healing_cascade_kills +=
+                world.state.combat.game_healing_cascade_kills();
             status.player_chase.merge(
                 world.state.metadata.player_chase_measurements(),
             );
