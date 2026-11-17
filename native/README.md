@@ -1407,6 +1407,11 @@ enabled. The independent fixed holdout evaluation remains unchanged, so
 victory measurements across curriculum stages use one consistent reference.
 When early stopping is enabled, plateau patience begins anew at the final
 curriculum stage; an easy-stage plateau cannot cancel later authored stages.
+The progress snapshot groups successful world steps, learner updates and
+receipt-matched fleet throughput by stage. The best-evaluated checkpoint
+continues to be selected using the unchanged fixed holdout; its generated
+playable run uses the *currently active* curriculum scene, including when
+the stage changes between scheduled holdout evaluations.
 
 After interruption or a failed round, repeat the command with `--resume`;
 `--rounds` counts the total desired successful rounds and may be increased
