@@ -124,6 +124,29 @@ impl TrainedGame {
         let _ = checkpoint; // explicit verification is the model identity.
         Ok(run)
     }
+
+    /// Preserve the exact game configuration for this completed battle.
+    /// Training may republish latest-playable-run.json after the next round;
+    /// its manifest/checkpoint are already SHA-pinned immutable artifacts,
+    /// so only these small run-config bytes need to be archived here.
+    pub fn archive_playable(&self, parent: &Path)
+        -> Result<PathBuf, Box<dyn Error>>
+    {
+        use std::io::Write;
+        let run = self.verified_run()?;
+        let receipt = self.published_receipt()?;
+        let bytes = fs::read(&run)?;
+        if format!("{:x}", Sha256::digest(&bytes)) !=
+            text_field(&receipt, "playable_run_sha256")? {
+            return Err(invalid("trained run was republished during game launch").into());
+        }
+        let archived = parent.join("replay-source-run.json");
+        let mut output = fs::OpenOptions::new().write(true).create_new(true)
+            .open(&archived)?;
+        output.write_all(&bytes)?;
+        output.sync_all()?;
+        Ok(archived)
+    }
 }
 
 /// Opt-in gallery. The player lists their training receipts in the private
