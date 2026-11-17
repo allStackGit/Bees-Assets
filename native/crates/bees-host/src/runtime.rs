@@ -446,7 +446,7 @@ where
         -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
     where M: NativeLevelPlayerContext
     {
-        self.apply_player_fire(input, false)
+        self.apply_player_fire(input, false, 0)
     }
 
     pub fn player_held_fire(&mut self, input: bees_gameplay::player_inputs::NativePlayerHeldFire)
@@ -459,7 +459,7 @@ where
                 let counts = self.apply_player_fire(&NativePlayerSquadFire {
                     world_id: input.world_id, episode_revision: input.episode_revision, squads,
                     target: Some(target),
-                }, true)?;
+                }, true, input.controller_id)?;
                 return Ok(if counts.accepted_squads == 0 { "No selected weapons accepted held fire" }
                     else { "Manual fire active" });
             }
@@ -475,16 +475,17 @@ where
         if world.is_failed() || world.state.events.is_failed() || world.state.events.completed() {
             return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::InactiveWorld));
         }
-        if !world.state.has_held_fire() {
+        if !world.state.has_held_fire_for(input.controller_id) {
             return Ok(if target.is_some() { "No selected weapons accepted held fire" } else { "Manual fire released" });
         }
         self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
-        self.simulation.world_mut(index).expect("located world").state.update_held_fire(target)
+        self.simulation.world_mut(index).expect("located world").state.update_held_fire(input.controller_id, target)
             .map_err(HostPlayerInputError::Gameplay)?;
         Ok(if target.is_some() { "Manual fire active" } else { "Manual fire released" })
     }
 
-    fn apply_player_fire(&mut self, input: &bees_gameplay::player_inputs::NativePlayerSquadFire, held: bool)
+    fn apply_player_fire(&mut self, input: &bees_gameplay::player_inputs::NativePlayerSquadFire,
+                         held: bool, controller_id: u64)
         -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
     where M: NativeLevelPlayerContext
     {
@@ -511,17 +512,32 @@ where
             };
             match NativePlayerFirePlan::prepare(world, input.world_id, input.episode_revision,
                 selected_ship, input.target) {
-                Ok(plan) => plans.push(plan),
+                Ok(plan) => {
+                    // Independent players share the same physical ships,
+                    // but never one another's continuous weapon targets.
+                    if plan.ship_ids().any(|id|
+                        world.state.ship_held_by_other(controller_id, id)) {
+                        counts.rejected_squads += 1;
+                    } else {
+                        plans.push(plan);
+                    }
+                },
                 Err(error) if error.is_rejection() => counts.rejected_squads += 1,
                 Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
             }
         }
-        if plans.is_empty() && (!held || !world.state.has_held_fire()) { return Ok(counts); }
+        if plans.is_empty() && (!held || !world.state.has_held_fire_for(controller_id)) {
+            return Ok(counts);
+        }
         self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
         let world = self.simulation.world_mut(index).expect("located world");
-        if held { world.state.update_held_fire(None).map_err(HostPlayerInputError::Gameplay)?; }
+        if held {
+            world.state.update_held_fire(controller_id, None)
+                .map_err(HostPlayerInputError::Gameplay)?;
+        }
         for plan in plans {
-            let result = if held { plan.begin_held_fire(world) } else { plan.execute(world) };
+            let result = if held { plan.begin_held_fire(world, controller_id) }
+                else { plan.execute(world) };
             if result.map_err(HostPlayerInputError::Gameplay)? > 0 {
                 counts.accepted_squads += 1;
             } else { counts.unavailable_squads += 1; }
