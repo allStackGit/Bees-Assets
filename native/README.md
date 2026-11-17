@@ -1420,9 +1420,10 @@ python native/tools/run_distributed_collector.py collection-round-00001.json hal
 
 ### Direct cross-machine native collection delivery
 
-Distributed native sessions can receive verified rollouts over an
-authenticated streaming HTTP endpoint, without shared file mounts, manual
-archive copies or a second training implementation. The learner owns the
+Distributed native sessions can publish each issued collector's
+complete input artifacts and receive its finished rollouts over the
+**same authenticated streaming HTTP endpoint**, without shared file mounts,
+manual checkpoint/archive copies or another training implementation. The learner owns the
 existing immutable round orders, validated collector receipts and checkpoint
 lineage. Create an existing writable collector inbox, generate a long
 random token, and start the learner:
@@ -1432,9 +1433,44 @@ random token, and start the learner:
 export BEES_NATIVE_BUNDLE_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
 python3 native/tools/train_policy_session.py run.json checkpoint.pt trainer.yaml native-session \
   --rounds 100 --distributed-plan collectors.json \
-  --bundle-inbox /learner/native-inbox --bundle-receiver-listen 127.0.0.1:7391 \
-  --device cuda
+  --bundle-inbox /learner/native-inbox \
+  --collector-input-outbox /learner/outbox \
+  --bundle-receiver-listen 127.0.0.1:7391 --device cuda
 ```
+
+The inbox and outbox must already exist. After issuing each round's
+`collection-round-NNNNN.json`, the learner exports immutable, per-machine
+`<bundle_directory>.inputs.tar` archives. Each includes the exact issued
+order, physical Level scenes, optional Stage assets, pinned model manifest,
+checkpoint and any other referenced model weights. Publication and resumed
+reuse are SHA-256 checked. The learner serves an archive only while its
+corresponding round is active.
+
+On each allocated worker (with the matching native policy-worker source and
+compiled `policy_rollout` binary), run one command over a private tunnel or
+authenticated overlay. This downloads its unique allocation, imports and
+verifies all source files, reconstructs local Python/scene paths without
+changing the physical source identity, runs the existing collector and
+uploads its verified output to the same learner endpoint:
+
+```sh
+export BEES_NATIVE_BUNDLE_TOKEN="<same private transport token>"
+python3 native/tools/run_portable_distributed_collector.py \
+  --input-url http://127.0.0.1:7391 --collector-id halifax \
+  --scratch /local/scratch --rollout-binary /path/to/policy_rollout
+```
+
+`--input-url` also accepts HTTPS; a private tunnel must be configured if the
+learner listens on loopback. The remote worker retains failed attempts for
+diagnosis, but discards disposable input copies after a successfully
+delivered collector run. Input bundles require a **portable manifest** with
+relative model paths, such as `checkpoint.pt`; they refuse absolute model
+paths and accept only model files whose SHA-256 matches the manifest.
+The same `--collector-input-outbox` option is available from the native
+`bootstrap_policy.py --train-rounds` entry point. For disconnected sites,
+`transfer_policy_inputs.py export/import` and
+`run_portable_distributed_collector.py --input-archive` provide the
+identical verified work without an HTTP endpoint.
 
 The listener accepts uploads **only after** that round's
 `collection-round-NNNNN.json` work order is issued, and publishes
@@ -1473,10 +1509,10 @@ recipe or policy-identity inputs, so a resumed session may change machine
 or bind port. The receiver is plain HTTP: **never expose it to the public
 Internet**, send the token over untrusted networks, or bypass a private
 overlay/SSH tunnel or TLS-terminating reverse proxy. The uploader also
-supports an HTTPS URL with ordinary certificate verification. Collection
-scheduling, the distribution of model/input files and machine reservations
-remain with Experiment Hub or the operator; direct archive delivery does
-not pretend to perform orchestration.
+supports an HTTPS URL with ordinary certificate verification. Machine reservations, launching remote worker commands and selecting
+which machines perform which issued allocations remain Experiment Hub or
+operator responsibilities. Both the inputs and outputs can now transfer
+directly through the authenticated endpoint, without manual file copies.
 
 For collectors on a machine without a mounted learner inbox, omit the
 last positional `bundle_inbox` argument from the collector command and add
