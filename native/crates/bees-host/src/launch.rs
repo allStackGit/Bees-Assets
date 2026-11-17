@@ -1126,10 +1126,10 @@ impl CampaignReplaySetup {
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             lost_fleet_ids: mission.lost_fleet_ids.cloned(),
-            purchased_ships: mission.purchased_ships.map(<[_]>::to_vec),
-            created_squads: mission.created_squads.map(<[_]>::to_vec),
-            tactics: mission.tactics.map(<[_]>::to_vec),
-            authored_roster: mission.authored_roster.map(<[_]>::to_vec),
+            purchased_ships: mission.purchased_ships.map(|ships| ships.to_vec()),
+            created_squads: mission.created_squads.map(|squads| squads.to_vec()),
+            tactics: mission.tactics.map(|tactics| tactics.to_vec()),
+            authored_roster: mission.authored_roster.map(|roster| roster.to_vec()),
         })
     }
 
