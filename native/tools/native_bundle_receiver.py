@@ -44,7 +44,7 @@ def bundle_token():
     return token
 
 
-def upload_bundle_archive(path, collector_id, base_url, token=None):
+def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha256=None):
     """Stream a verified portable archive without reading it into RAM."""
     archive = Path(path).resolve(strict=True)
     if not archive.is_file() or archive.is_symlink():
@@ -63,7 +63,9 @@ def upload_bundle_archive(path, collector_id, base_url, token=None):
     endpoint = parts.path.rstrip("/") + "/v1/bundles/" + collector_id
     connection_class = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
     started = time.perf_counter()
-    sha256 = file_sha256(archive)
+    sha256 = archive_sha256 or file_sha256(archive)
+    if not DIGEST_RE.fullmatch(sha256):
+        raise ValueError("invalid collector archive checksum")
     connection = connection_class(parts.hostname, parts.port, timeout=60)
     try:
         connection.putrequest("POST", endpoint)
@@ -168,14 +170,10 @@ class BundleReceiver:
         if orders.get("kind") != "native_distributed_collection_orders":
             raise ValueError("bundle receiver needs issued collection orders")
         with self.lock:
-            if self.inflight:
-                raise RuntimeError("cannot change issued orders during collector upload")
             self.active_orders = orders
 
     def deactivate(self):
         with self.lock:
-            if self.inflight:
-                raise RuntimeError("cannot close issued orders during collector upload")
             self.active_orders = None
 
     def claim(self, collector_id):
