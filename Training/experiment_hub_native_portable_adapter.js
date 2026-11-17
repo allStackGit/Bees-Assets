@@ -21,13 +21,16 @@ const safeLocalArg = value => typeof value === 'string' && value.length <= 1024 
     (process.platform === 'win32' ? !/[\x00\r\n]/.test(value) : SAFE_ARG.test(value));
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
-function trustedFile(file) {
+function trustedFile(file,{preserveInvocation=false}={}) {
     if(typeof file !== 'string'||!path.isAbsolute(file)||!safeLocalArg(file))
         throw Error('Native portable collector needs an absolute safe local file path.');
     const resolved=fs.realpathSync(file);
     if(!fs.statSync(resolved).isFile()||!safeLocalArg(resolved))
         throw Error('Native portable collector executable/source was redirected.');
-    return resolved;
+    // Invoking a venv's python symlink by the real target path can silently
+    // select system site-packages instead of the machine's approved venv.
+    // Preserve the invocation path, while pinning its actual content.
+    return preserveInvocation?file:resolved;
 }
 
 function trustedDirectory(directory) {
@@ -60,7 +63,7 @@ function createNativeBeesPortableCollectorAdapter({
             !PCI.test(pci)||typeof uuid!=='string'||!ROCM_UUID.test(uuid)))
         throw Error('Invalid machine-owned native GPU PCI-to-ROCr UUID binding.');
     const rocr_gpu_uuids=Object.freeze({...rocrGpuUuids});
-    const executable=trustedFile(pythonPath);
+    const executable=trustedFile(pythonPath,{preserveInvocation:true});
     const binary=trustedFile(rolloutBinary);
     const artifacts=trustedDirectory(artifactRoot);
     const scratch=trustedDirectory(scratchRoot);
@@ -84,6 +87,7 @@ function createNativeBeesPortableCollectorAdapter({
         'policy_worker.py',
     ];
     const pinned=new Map([
+        [executable,sha256(fs.readFileSync(executable))],
         [binary,sha256(fs.readFileSync(binary))],
         ...names.map(name=>{
             const file=trustedFile(path.join(tools,name));
