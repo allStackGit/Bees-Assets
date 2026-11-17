@@ -346,6 +346,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.collector_weight_blob_used,'count');
         add('collector_'+i+'_policy_upload_groups',
             worker.collector_policy_upload_groups,'count');
+        add('collector_'+i+'_policy_apply_groups',
+            worker.collector_policy_apply_groups,'count');
         for(const [suffix,name] of [
             ['gpu_allocated_mb','collector_gpu_allocated_mb'],
             ['gpu_reserved_mb','collector_gpu_reserved_mb'],
@@ -430,6 +432,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('collector_'+i+'_'+suffix,worker[name],'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
+        // GPU stream interval around a copied immutable policy version.
+        // Includes stream waits; not measured PCIe/peer bandwidth.
+        add('collector_'+i+'_model_copy_gpu_stream_seconds',
+            worker.model_copy_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_snapshot_cache_files',
             worker.snapshot_cache_files,'count');
         add('collector_'+i+'_snapshot_cache_bytes',
@@ -512,6 +518,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'supports_weight_blob','weight_blob_used',
                 'gpu_ordinal','gpu_batch_used_pixels',
                 'gpu_batch_vram_capped','model_prepare_seconds',
+                'model_copy_gpu_stream_seconds','policy_apply_groups',
                 // Preserve the physical lease index, live simulation count,
                 // effective throughput, critical stage and join wait ahead
                 // of secondary resource details under maximum fanout.
