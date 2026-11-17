@@ -12,12 +12,13 @@ const {parseArgs}=require('node:util');
 const NAMES={
     coordinator:'bees-experiment-hub.service',
     agent:'bees-experiment-hub-agent.service',
+    standalone:'bees-experiment-hub-standalone.service',
 };
 // Reject systemd specifiers, shell expansion, whitespace and escapes rather
 // than pretending a path containing them is safely quoted in a unit file.
 const UNIT_PATH=/^\/[A-Za-z0-9._/@:+-]+$/;
 const DIRECTORY_KINDS=new Set([
-    'Training directory','Courier project','Courier snapshots',
+    'Training directory','Standalone Hub data','Courier project','Courier snapshots',
     'Training artifacts','Evaluator scratch','Evaluator receipts',
 ]);
 function localPath(input,kind) {
@@ -44,7 +45,7 @@ function privateEnvironmentFile(input) {
     return file;
 }
 function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath,
-    environmentFile=null}={}) {
+    environmentFile=null,dataRoot=null}={}) {
     if(process.platform!=='linux')
         throw Error('User systemd service generation is supported on Linux only.');
     if(!Object.hasOwn(NAMES,kind))
@@ -52,18 +53,30 @@ function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath
     const directory=localPath(trainingDir,'Training directory');
     const node=localPath(nodePath,'Node executable');
     const entry=localPath(path.join(directory,kind==='coordinator'
-        ?'bees_experiments.js':'experiment_hub_agent.js'),'Service entrypoint');
+        ?'bees_experiments.js':kind==='standalone'
+            ?'experiment_hub_standalone.js':'experiment_hub_agent.js'),'Service entrypoint');
+    let extraArgs='';
+    if(kind==='standalone') {
+        if(!dataRoot)throw Error('Standalone coordinator requires --data-root.');
+        const root=localPath(dataRoot,'Standalone Hub data');
+        const stat=fs.statSync(root);
+        if(stat.uid!==process.getuid()||(stat.mode&0o077)!==0||
+            !fs.statSync(path.join(root,'hub-v1.json')).isFile())
+            throw Error('Standalone Hub data must contain the existing registry in a private user-owned directory.');
+        extraArgs=' --data-root '+root;
+    }
     let envLine='';
     if(kind==='agent'&&!environmentFile)
         throw Error('Agent service needs --env-file containing its machine ID and enrollment token.');
     if(environmentFile) {
         envLine='EnvironmentFile='+privateEnvironmentFile(environmentFile)+'\n';
     }
-    const title=kind==='coordinator'
-        ?'Bees experiment coordinator':'Experiment Hub native machine agent';
+    const title=kind==='coordinator'?'Bees experiment coordinator':
+        kind==='standalone'?'Standalone Experiment Hub coordinator':
+            'Experiment Hub native machine agent';
     // The Bees operator owns its training children, not the coordinator
     // service. Stop/restart must not kill an independently running learner.
-    const killMode=kind==='coordinator'?'process':'control-group';
+    const killMode=kind==='agent'?'control-group':'process';
     return [
         '[Unit]',
         'Description='+title,
@@ -74,7 +87,7 @@ function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath
         '[Service]',
         'Type=exec',
         'WorkingDirectory='+directory,
-        'ExecStart='+node+' '+entry,
+        'ExecStart='+node+' '+entry+extraArgs,
         ...(envLine?[envLine.trimEnd()]:[]),
         'UMask=0077',
         'Restart=on-failure',
@@ -178,6 +191,7 @@ function main(argv=process.argv.slice(2)) {
             'training-dir':{type:'string'},
             'node':{type:'string'},
             'env-file':{type:'string'},
+            'data-root':{type:'string'},
             'install':{type:'boolean'},
             'project':{type:'string'},
             'machine':{type:'string'},
@@ -226,6 +240,7 @@ function main(argv=process.argv.slice(2)) {
         trainingDir:values['training-dir']||__dirname,
         nodePath:values.node||process.execPath,
         environmentFile:values['env-file']||null,
+        dataRoot:values['data-root']||null,
     });
     if(!values.install) {
         process.stdout.write(unit);
