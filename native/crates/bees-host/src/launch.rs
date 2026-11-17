@@ -2374,7 +2374,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         games.push(config);
     }
     fs::create_dir_all(save_root)?;
-    let trained = trained_library::load(save_root)?;
+    let mut trained = trained_library::load(save_root)?;
     println!("{}", json!({
         "kind": "native_game_library_ready",
         "games": library.games.len(),
@@ -2387,6 +2387,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
     let saved_network = save_root.join("multiplayer.json");
     let saved_host = save_root.join("multiplayer-host.json");
     loop {
+        // The session controller can publish a new verified checkpoint or
+        // register a second independent learner while this game is open.
+        // Refresh only between menu selections, never in the render loop.
+        trained = trained_library::load(save_root)?;
         let status = library.games.iter().zip(&games).map(|(item, config)| {
             if item.kind != "campaign" {
                 return Ok("  [Battle]".to_string());
