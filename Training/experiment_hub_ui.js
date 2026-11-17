@@ -2388,6 +2388,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_sim_topology_unverified','training_sim_topology_migrations',
         'training_topology_max_migration_seconds',
         'training_topology_max_pred_gain_ratio','training_topology_migration_owner',
+            'training_topology_sps_change_pct','training_topology_result_owner',
         'remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds','ppo_microbatches','states_per_microbatch','actor_grad_norm',
         'group_grad_norm','baseline_grad_norm','policy_lag',
