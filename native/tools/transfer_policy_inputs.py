@@ -33,18 +33,11 @@ RESERVED = {"inputs.json", "orders.json", "run.json", "manifest.json",
             "checkpoint.pt", "trainer.yaml"}
 
 
-def relative_artifact(value):
-    if not isinstance(value, str) or not value or chr(92) in value or ":" in value:
-        raise ValueError("model manifest needs portable relative artifact paths")
-    if value == "checkpoint.pt":
-        return value
-    path = PurePosixPath(value)
-    if (path.is_absolute() or path.as_posix() != value or
-            any(part in ("", ".", "..") for part in path.parts) or
-            len(path.parts) > 8 or value in RESERVED or
-            path.parts[0] in ("scene", "source", ".") or len(value) > 255):
-        raise ValueError(f"invalid portable model artifact path: {value!r}")
-    return value
+def model_artifact_name(digest):
+    if not isinstance(digest, str) or SHA.fullmatch(digest) is None:
+        raise ValueError("native model manifest has invalid weight digest")
+    return f"models/{digest}.model"
+
 
 
 def resolve_source(root, value):
@@ -95,17 +88,22 @@ def source_files(run_path, trainer_path, checkpoint_path, manifest_path, orders)
     for name in ("collision_matrix", "stage_palette"):
         if document.get(name) is not None:
             source[f"source/{name}.json"] = resolve_source(run_path.parent, document[name])
+    # The *original* manifest bytes remain pinned by the work order. Its
+    # paths may refer to previous round directories or even a Windows drive.
+    # Ship verified bytes under content addresses instead; the resident
+    # policy worker resolves these on the collector without rewriting the
+    # pinned manifest or its Rust ABI handshake.
     for model in models["models"]:
-        if not isinstance(model, dict) or not SHA.fullmatch(str(model.get("sha256", ""))):
-            raise ValueError("model manifest contains an invalid checkpoint identity")
-        name = relative_artifact(model.get("path"))
-        artifact = resolve_source(manifest_path.parent, name)
-        if file_sha256(artifact) != model["sha256"]:
-            raise ValueError("manifest model weight differs from its pinned digest")
-        if name in source:
-            if source[name] != artifact or file_sha256(source[name]) != model["sha256"]:
-                raise ValueError("model file collides with a different pinned source file")
-        else:
+        if not isinstance(model, dict):
+            raise ValueError("native model manifest contains an invalid slot")
+        digest = model.get("sha256")
+        name = model_artifact_name(digest)
+        artifact = resolve_source(manifest_path.parent, model.get("path"))
+        if file_sha256(artifact) != digest:
+            raise ValueError("manifest model weights differ from pinned digest")
+        if digest == orders["input_checkpoint_sha256"]:
+            continue  # checkpoint.pt already travels once in the archive
+        if name not in source:
             source[name] = artifact
     if not 1 <= len(source) <= MAX_FILES:
         raise ValueError("portable input bundle exceeds source-file limit")
@@ -241,9 +239,9 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None):
                 # Tar member names are never used until validated against
                 # the schema's allowable paths and the fresh staging root.
                 if name not in RESERVED:
-                    allowed = name.startswith("scene/") and re.fullmatch(r"scene/[0-9]{4}\.json", name) or (
-                        name in ("source/collision_matrix.json", "source/stage_palette.json")
-                    ) or name == relative_artifact(name)
+                    allowed = (re.fullmatch(r"scene/[0-9]{4}\.json", name) is not None or
+                        name in ("source/collision_matrix.json", "source/stage_palette.json") or
+                        re.fullmatch(r"models/[0-9a-f]{64}\.model", name) is not None)
                     if not allowed:
                         raise ValueError(f"unsafe native input artifact path: {name}")
                 member_path = PurePosixPath(name)
@@ -285,11 +283,19 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None):
         if models.get("format") != "bees-native-model-v1" or not isinstance(models.get("models"), list):
             raise ValueError("collector model manifest is invalid")
         expected_files = set(RESERVED) - {"inputs.json"}
+        checkpoint_sha = orders["input_checkpoint_sha256"]
         for model in models["models"]:
-            name = relative_artifact(model["path"])
-            expected_files.add(name)
-            if file_sha256(root / name) != model["sha256"]:
-                raise ValueError("portable collector model weights failed verification")
+            if not isinstance(model, dict):
+                raise ValueError("portable model has invalid slot")
+            digest = model.get("sha256")
+            name = model_artifact_name(digest)
+            if digest == checkpoint_sha:
+                if file_sha256(root / "checkpoint.pt") != digest:
+                    raise ValueError("portable learner checkpoint changed")
+            else:
+                expected_files.add(name)
+                if file_sha256(root / name) != digest:
+                    raise ValueError("portable frozen model weights failed verification")
         run = json.loads((root / "run.json").read_text(encoding="utf-8"))
         for index in range(len(run.get("levels", []))):
             expected_files.add(f"scene/{index:04d}.json")
@@ -298,6 +304,19 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None):
                 expected_files.add(f"source/{name}.json")
         if set(files) != expected_files:
             raise ValueError("collector input archive contains unissued source artifacts")
+        # Materialize the learner checkpoint's content-addressed alias
+        # without duplicating its bytes on normal local filesystems.
+        models_dir = root / "models"
+        models_dir.mkdir(exist_ok=True)
+        checkpoint_alias = models_dir / (checkpoint_sha + ".model")
+        if not checkpoint_alias.exists():
+            try:
+                os.link(root / "checkpoint.pt", checkpoint_alias)
+            except OSError:
+                import shutil
+                shutil.copyfile(root / "checkpoint.pt", checkpoint_alias)
+        if file_sha256(checkpoint_alias) != checkpoint_sha:
+            raise ValueError("portable model-store checkpoint alias changed")
         if len(run.get("levels", [])) != len([
                 name for name in files if re.fullmatch(r"scene/[0-9]{4}\.json", name)]):
             raise ValueError("collector Level source count changed")
