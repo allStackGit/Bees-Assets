@@ -4650,7 +4650,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const subset=machine?.courier_lineage_subset===true;
         const available=match.filter(hosts=>hosts.length===1).map(hosts=>hosts[0]);
         const budgetHost=machine?machine.id+':'+subset:null;
-        const population=selected.parameters.workers;
+        // The native Courier adapter defaults an omitted population to 12.
+        // Match that immutable default rather than disabling valid subsets.
+        const population=selected.parameters.workers??12;
         if(courierBudgetHost!==budgetHost) {
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
