@@ -31,7 +31,7 @@ const RED: u32 = 0xed7e85;
 const GOLD: u32 = 0xe7be69;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum TargetMode { Fire, Attack, Guard, Mine, Heal, Retreat }
+enum TargetMode { Fire, Attack, Guard, Mine, Heal, Retreat, Patrol }
 
 #[derive(Default)]
 struct WireCounts {
@@ -303,7 +303,8 @@ fn hit<'a>(state: &'a Value, camera: NativeCamera, x:i32,y:i32)
 }
 
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
-    selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>, metrics: &WireCounts) {
+    selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
+    patrol_start: Option<Vec2>, metrics: &WireCounts) {
     for scanline in pixels.chunks_exact_mut(WIDTH) {
         scanline[..FIELD].fill(0x080f1a);
         scanline[FIELD..].fill(0x152439);
@@ -316,6 +317,10 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             let a=screen(camera,map.min);
             let b=screen(camera,map.max);
             outline(pixels,a.0,b.1,b.0-a.0,a.1-b.1,0x395772);
+        }
+        if let Some(corner)=patrol_start {
+            outline(pixels,screen(camera,corner).0-7,
+                screen(camera,corner).1-7,14,14,0xf7d68f);
         }
         for obj in state["obstacles"].as_array().into_iter().flatten() {
             if let Some(point)=position(obj) {
@@ -397,8 +402,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         "C chase  L lock  V speed",
         "PgUp/Dn shooting (1-40)",
         "B beacon D detonate Q charge",
-        "E heal  W retreat",
-        "R reset  +/- zoom  Arrows pan",
+        "E heal W retreat P patrol",
+        "R reset +/- zoom Arrows pan",
         "Esc disconnect",
     ];
     for (index,label) in instructions.iter().enumerate(){
@@ -413,6 +418,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 TargetMode::Mine=>"Click mining asteroid to MINE",
                 TargetMode::Heal=>"Click friendly Beehive to HEAL",
                 TargetMode::Retreat=>"Click friendly WarpGate to RETREAT",
+                TargetMode::Patrol=>"Click first / second PATROL corner",
             },1,[255,221,151]);
     }
     text::draw_at(pixels,WIDTH,10,HEIGHT-25,text::fit(notice,FIELD-20),1,TEXT);
@@ -451,7 +457,7 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
             ("support",json!({"action":{"FullRetreat":{"warp_gate_id":target["id"]}}}))
         }
         (Some(TargetMode::Attack|TargetMode::Guard|TargetMode::Mine|
-              TargetMode::Heal|TargetMode::Retreat),_) =>
+              TargetMode::Heal|TargetMode::Retreat|TargetMode::Patrol),_) =>
             return Err(invalid("select a matching visible target").into()),
         (Some(TargetMode::Fire),_) => {
             let point=camera.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
@@ -495,6 +501,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut current_episode=(0_u64,0_u64);
     let mut selected:Vec<i64>=Vec::new();
     let mut mode:Option<TargetMode>=None;
+    let mut patrol_start:Option<Vec2>=None;
     let mut last_left=false;
     let mut last_right=false;
     let mut drag_start:Option<(i32,i32)>=None;
@@ -512,6 +519,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     current_episode=episode;
                     selected.clear();
                     mode=None;
+                    patrol_start=None;
                 }
             }
             selected.retain(|id|state["squads"].as_array().into_iter().flatten()
@@ -530,12 +538,13 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                         }
                         None
                     }
-                    Key::F=>{mode=Some(TargetMode::Fire);None}
-                    Key::T=>{mode=Some(TargetMode::Attack);None}
-                    Key::G=>{mode=Some(TargetMode::Guard);None}
-                    Key::M=>{mode=Some(TargetMode::Mine);None}
-                    Key::E=>{mode=Some(TargetMode::Heal);None}
-                    Key::W=>{mode=Some(TargetMode::Retreat);None}
+                    Key::F=>{mode=Some(TargetMode::Fire);patrol_start=None;None}
+                    Key::T=>{mode=Some(TargetMode::Attack);patrol_start=None;None}
+                    Key::G=>{mode=Some(TargetMode::Guard);patrol_start=None;None}
+                    Key::M=>{mode=Some(TargetMode::Mine);patrol_start=None;None}
+                    Key::E=>{mode=Some(TargetMode::Heal);patrol_start=None;None}
+                    Key::W=>{mode=Some(TargetMode::Retreat);patrol_start=None;None}
+                    Key::P=>{mode=Some(TargetMode::Patrol);patrol_start=None;None}
                     Key::R=>{
                         if let Some(map)=peer.state.as_ref().and_then(bounds) {
                             cam=NativeCamera::fit(map,FIELD,HEIGHT);
@@ -613,9 +622,30 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 if !left&&last_left {
                     if mode.is_some() {
                         drag_start=None;
-                        if let Err(error)=order_at(&mut peer,&selected,cam,x,y,mode) {
-                            peer.notice=error.to_string();
-                        } else {mode=None;}
+                        if x>=0 && x<FIELD as i32 && y>=0 && y<HEIGHT as i32 {
+                            if mode == Some(TargetMode::Patrol) {
+                                let point=cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
+                                if let Some(first)=patrol_start {
+                                    let fields=json!({"action":{"Patrol":{
+                                        "top_left":{"x":first.x.min(point.x),
+                                                    "y":first.y.max(point.y)},
+                                        "bottom_right":{"x":first.x.max(point.x),
+                                                        "y":first.y.min(point.y)}
+                                    }}});
+                                    if let Err(error)=peer.order(&selected,"support",fields) {
+                                        peer.notice=error.to_string();
+                                    } else {
+                                        mode=None;
+                                        patrol_start=None;
+                                    }
+                                } else {
+                                    patrol_start=Some(point);
+                                    peer.notice="Choose the second patrol corner".into();
+                                }
+                            } else if let Err(error)=order_at(&mut peer,&selected,cam,x,y,mode) {
+                                peer.notice=error.to_string();
+                            } else {mode=None;}
+                        }
                     } else if let Some((sx,sy))=drag_start.take() {
                         if let Some(state)=peer.state.as_ref() {
                             let additive=window.is_key_down(Key::LeftShift)||
@@ -663,7 +693,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             camera=Some(cam);
         }
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
-            expected_side,mode,&peer.metrics);
+            expected_side,mode,patrol_start,&peer.metrics);
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
     }
     println!("{}",json!({
