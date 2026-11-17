@@ -52,6 +52,9 @@ mod battle_catalog;
 #[cfg(feature = "client")]
 #[path = "trained_library.rs"]
 mod trained_library;
+#[cfg(feature = "client")]
+#[path = "recorded_library.rs"]
+mod recorded_library;
 
 type MinionAllocator = Box<
     dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError> + Send,
@@ -2317,6 +2320,13 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         // Multiplayer configuration belongs to the player's save directory.
         // It is discovered on each return to the library, so a user can
         // change servers without rebuilding or editing the game package.
+        let recordings = recorded_library::list(
+            save_root,
+            library.games.iter().enumerate()
+                .filter(|(_, item)| item.kind == "battle")
+                .map(|(index, item)|
+                    (item.id.clone(), item.title.clone(), games[index].clone())),
+        )?;
         let join_available=saved_network.is_file();
         let host_available=saved_host.is_file();
         if join_available {
@@ -2331,6 +2341,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 unlocked: true,
             });
         }
+        if !recordings.is_empty() {
+            rows.push(BattleMenuRow {
+                title: "Watch Recorded Battles",
+                status: "  [Saved replays]", unlocked: true,
+            });
+        }
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
         let trained_index = (index >= library.games.len() &&
@@ -2339,7 +2355,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let remote = join_available && index == library.games.len() + trained.len();
         let hosting = host_available &&
             index == library.games.len() + trained.len() + usize::from(join_available);
-        let (game_id, game_kind, game_title) = if remote {
+        let watching = !recordings.is_empty() &&
+            index == library.games.len() + trained.len() +
+                usize::from(join_available) + usize::from(host_available);
+        let (game_id, game_kind, game_title) = if watching {
+            ("recordings", "recording_library", "Watch Recorded Battles")
+        } else if remote {
             ("multiplayer", "remote", "Join Multiplayer")
         } else if hosting {
             ("multiplayer-host", "host", "Host Multiplayer")
@@ -2356,7 +2377,21 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             "game_id": game_id,
             "game_kind": game_kind,
         }));
-        let result: Result<(), Box<dyn Error>> = if remote {
+        let result: Result<(), Box<dyn Error>> = if watching {
+            (|| {
+                let rows = recordings.iter().map(|recording| BattleMenuRow {
+                    title: &recording.title, status: &recording.status, unlocked: true,
+                }).collect::<Vec<_>>();
+                let mut replay_selected = 0;
+                if let Some(chosen) = select_library(&rows, &mut replay_selected, false)? {
+                    let recording = &recordings[chosen];
+                    let output = new_library_battle_output(save_root, &recording.game_id)?;
+                    run_session(&recording.source_config, true, true, Some(output),
+                        None, Some(recording.trace.clone()), None)?;
+                }
+                Ok::<(), Box<dyn Error>>(())
+            })()
+        } else if remote {
             (|| {
                 let connection: NativeSavedNetwork =
                     serde_json::from_slice(&fs::read(&saved_network)?)?;
