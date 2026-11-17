@@ -5,7 +5,7 @@
 //! The mixer has bounded voices and sound clips are preloaded at client
 //! startup, avoiding file I/O during combat frames.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
@@ -76,6 +76,12 @@ impl Effect {
             _ => None,
         }
     }
+}
+
+#[inline]
+fn on_screen(viewport: Aabb, point: Vec2) -> bool {
+    point.x >= viewport.min.x && point.x <= viewport.max.x &&
+        point.y >= viewport.min.y && point.y <= viewport.max.y
 }
 
 fn source_audio_root() -> Option<PathBuf> {
@@ -364,7 +370,7 @@ impl NativeGameAudio {
             if self.seen_projectiles.insert(projectile.entity_id, view.tick).is_some() {
                 continue;
             }
-            if !visible.contains(body.motion.position) { continue; }
+            if !on_screen(visible, body.motion.position) { continue; }
             if let Some(effect) = Effect::projectile(projectile.projectile_type) {
                 if budget > 0 {
                     budget -= 1;
@@ -407,7 +413,7 @@ impl NativeGameAudio {
                 ),
                 _ => continue,
             };
-            if point.is_some_and(|point| !visible.contains(point)) {
+            if point.is_some_and(|point| !on_screen(visible, point)) {
                 continue;
             }
             if budget > 0 {
