@@ -836,7 +836,10 @@ pub struct CombatWorld {
     support_zone_ids: HashMap<(u8, i32), Vec<i64>>,
     /// Unity Beehive.ShipsHealingHere is a shared four-ship resource across
     /// every squad's Heal command, not one reservation set per command.
-    healing_hive_by_ship: HashMap<i64, i64>,
+    /// Reservation and its actual arrival state. Waiting ships own a
+    /// capacity slot but do not die with the Beehive. Only Heal commands
+    /// that reached the authored child collider are active casualties.
+    healing_hive_by_ship: HashMap<i64, (i64, bool)>,
     healing_slots_used_by_hive: HashMap<i64, u8>,
     /// Shared FullRetreat/live-game WarpGate opening sessions. Inactive
     /// gates have no timer or per-step cost.
