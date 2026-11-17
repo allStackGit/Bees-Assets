@@ -956,6 +956,46 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
     Ok(feedback)
 }
 
+/// Reject a remote input before touching any Level or HiveMind reservation.
+ /// The source scene must explicitly mark every submitted squad on this
+ /// authenticated side as player controlled. A peer cannot borrow the local
+ /// UI's side or take an AI/policy squad by choosing its lifetime ID.
+fn remote_side_owns_input(host: &RolloutHost, action: &NativePlayerInput, side: i32) -> bool {
+    if !(1..=2).contains(&side) { return false; }
+    let Some(owners) = action.squad_owners() else { return false };
+    if owners.is_empty() { return false; }
+    let Some(world) = host.simulation().world(0) else { return false };
+    let (id, revision) = action.episode();
+    if world.id != id || world.episode_revision() != revision ||
+        world.is_failed() || world.state.events.completed() ||
+        world.state.events.is_failed() { return false; }
+    owners.iter().all(|&owner| {
+        world.state.events.roster().get(owner).is_some_and(|squad|
+            squad.side == side &&
+            bees_gameplay::player_inputs::NativePlayerAuthority::player_permissions(
+                &world.state.metadata, owner
+            ).is_some_and(|permission|
+                permission.user_controlled && permission.can_accept_input))
+    })
+}
+
+/// Temporarily bind the authenticated peer's viewer/command side only
+/// around the SAME synchronous host input dispatcher as the local client.
+/// Clearing the scope is mandatory on rejection as well as on success.
+fn apply_remote_side_input(
+    host: &mut RolloutHost, action: NativePlayerInput, side: i32,
+) -> Result<&'static str, String> {
+    if !remote_side_owns_input(host, &action, side) {
+        return Err("remote player does not own every requested live squad".to_owned());
+    }
+    host.edit_level(0, |state, _| state.metadata.set_remote_player_side(Some(side)))
+        .map_err(|error| format!("remote player authority setup: {error:?}"))?;
+    let result = apply_player_input(host, action);
+    host.edit_level(0, |state, _| state.metadata.set_remote_player_side(None))
+        .map_err(|error| format!("remote player authority cleanup: {error:?}"))?;
+    result
+}
+
 const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
        bees menu <catalog.json> --output-dir <battle-runs>
        bees status <catalog.json> --output-dir <battle-runs>
@@ -2926,7 +2966,27 @@ fn run_battle(
     if remote_step_interval.is_some() && (config.levels.len() != 1 || playback.is_some()) {
         return Err(invalid("remote co-op requires one live Level, not multi-world rollout or replay").into());
     }
-    let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment()?;
+    let local_player_side = host.render_world(0)
+        .and_then(|view| view.player_authority.player_viewer_side()).unwrap_or(0);
+    if remote_step_interval.is_some() && !(1..=2).contains(&local_player_side) {
+        return Err(invalid("remote play requires an authored local player side").into());
+    }
+    let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(local_player_side)?;
+    if let Some(server) = &remote {
+        let world = host.render_world(0)
+            .ok_or_else(|| invalid("remote player Level disappeared"))?;
+        for side in server.configured_sides() {
+            if !world.roster.active_lifetimes().any(|owner|
+                world.roster.get(owner).is_some_and(|squad| squad.side == side) &&
+                world.player_authority.player_permissions(owner)
+                    .is_some_and(|permission| permission.user_controlled)
+            ) {
+                return Err(invalid(format!(
+                    "remote player side {side} has no authored user-controlled squad in the live Level",
+                )).into());
+            }
+        }
+    }
     let mut remote_deadline = Instant::now();
     println!("{}", json!({
         "kind": "run_started",
@@ -3079,7 +3139,12 @@ fn run_battle(
                     failed_window = Some(format!("player trace diverged at round {rounds}, world {}", id.0));
                     break 'battle;
                 }
-                if let Err(error) = apply_player_input(&mut host, entry.action) {
+                let applied = if let Some(side) = entry.remote_side {
+                    apply_remote_side_input(&mut host, entry.action, side)
+                } else {
+                    apply_player_input(&mut host, entry.action)
+                };
+                if let Err(error) = applied {
                     failed_window = Some(error);
                     break 'battle;
                 }
@@ -3106,11 +3171,9 @@ fn run_battle(
         if let Some(server) = &mut remote {
             for order in server.poll() {
                 let (world_id, revision) = order.action.episode();
-                let matches = host.simulation().world(0).is_some_and(|world|
-                    world.id == world_id && world.episode_revision() == revision
-                );
-                if !matches {
-                    server.reply(order.peer, order.request_id, Err("stale world or episode"));
+                if !remote_side_owns_input(&host, &order.action, order.side) {
+                    server.reply(order.peer, order.request_id,
+                        Err("stale world, unauthorized side, or unavailable squad"));
                     continue;
                 }
                 #[cfg(feature = "client")]
@@ -3119,12 +3182,13 @@ fn run_battle(
                     if let Err(error) = writeln!(trace, "{}", json!({
                         "kind": "player_input", "round": rounds,
                         "tick": tick, "action": &order.action,
+                        "remote_side": order.side,
                     })) {
                         failed_window = Some(format!("recording remote player input: {error}"));
                         break 'battle;
                     }
                 }
-                match apply_player_input(&mut host, order.action) {
+                match apply_remote_side_input(&mut host, order.action, order.side) {
                     Ok(message) => server.reply(order.peer, order.request_id, Ok(message)),
                     Err(error) => {
                         server.reply(order.peer, order.request_id, Err("authoritative input failed"));
