@@ -6,7 +6,7 @@
 //! never traverses arbitrary user directories or loads training records.
 
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -41,12 +41,15 @@ fn complete_trace(path: &Path) -> io::Result<bool> {
     if len < 64 { return Ok(false); }
     let start = len.saturating_sub(4096);
     file.seek(SeekFrom::Start(start))?;
-    let mut tail = String::new();
-    file.read_to_string(&mut tail)?;
-    // The first line may be truncated when the trace is longer than 4 KiB.
-    let Some(line) = tail.lines().rev().find(|line| !line.trim().is_empty())
+    let mut tail = Vec::new();
+    file.read_to_end(&mut tail)?;
+    // Read raw bytes because this bounded tail may begin in the middle
+    // of a UTF-8 player chat/notice. The complete final JSON line is
+    // parsed only after splitting on newline boundaries.
+    let Some(line) = tail.rsplit(|&byte| byte == b'\n')
+        .find(|line| !line.iter().all(u8::is_ascii_whitespace))
     else { return Ok(false); };
-    let Ok(end): Result<Value, _> = serde_json::from_str(line) else {
+    let Ok(end): Result<Value, _> = serde_json::from_slice(line) else {
         return Ok(false);
     };
     Ok(end["kind"] == "player_input_trace_end" &&
