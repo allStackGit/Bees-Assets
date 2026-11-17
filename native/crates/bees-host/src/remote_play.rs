@@ -438,9 +438,27 @@ impl NativeRemotePlay {
             if !peer.closed { self.measurements.state_bytes += peer.flush(); }
         }
         self.reap();
-        orders.extend(self.pending_releases.drain(..).filter(|order|
-            order.action.episode() == (world_id, revision)));
-        orders
+        // A peer that was already firing when it disconnected must release
+        // before another peer's new Begin at this same tick boundary. But
+        // a newly admitted Begin from a peer that disconnected mid-poll
+        // must run before THAT peer's release. Preserve each peer's order
+        // while allowing an unrelated player to take over a freed squad.
+        let mut before = Vec::new();
+        let mut after = Vec::new();
+        for release in self.pending_releases.drain(..).filter(|order|
+            order.action.episode() == (world_id, revision)) {
+            if orders.iter().any(|order|
+                order.peer == release.peer &&
+                matches!(&order.action, NativePlayerInput::HeldFire(input)
+                    if matches!(&input.action, NativeHeldFireAction::Begin { .. }))) {
+                after.push(release);
+            } else {
+                before.push(release);
+            }
+        }
+        before.extend(orders);
+        before.extend(after);
+        before
     }
 
     pub fn held_fire_active(&self) -> bool { !self.held_fire.is_empty() }
