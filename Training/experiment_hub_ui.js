@@ -358,16 +358,15 @@ const HUB_GPU_METRIC_SUFFIXES=Object.freeze({
 function hubMetricDescription(name,units=[]) {
     if(Object.hasOwn(HUB_METRIC_DESCRIPTIONS,name))return HUB_METRIC_DESCRIPTIONS[name];
     const gpu=/^host_gpu_(\d+)_(busy_pct|used_vram_mb|temperature_c|hotspot_temperature_c|power_w)$/.exec(name);
-    if(gpu)return 'Physical GPU '+gpu[1]+': '+HUB_GPU_METRIC_SUFFIXES[gpu[2]]+
-        '. Host-wide measurement, not isolated job usage.';
+    if(gpu)return 'Physical GPU '+gpu[1]+': '+HUB_GPU_METRIC_SUFFIXES[gpu[2]];
     const collector=/^collector_(\d+)_(.+)$/.exec(name);
     if(collector&&Object.hasOwn(HUB_COLLECTOR_METRIC_SUFFIXES,collector[2]))
         return 'Rollout collector '+collector[1]+': '+
-            HUB_COLLECTOR_METRIC_SUFFIXES[collector[2]]+'.';
-    const local=/^local_engine_(\\d+)_(.+)$/.exec(name);
+            HUB_COLLECTOR_METRIC_SUFFIXES[collector[2]];
+    const local=/^local_engine_(\d+)_(.+)$/.exec(name);
     if(local&&Object.hasOwn(HUB_LOCAL_ENGINE_METRIC_SUFFIXES,local[2]))
         return 'Local engine '+local[1]+': '+
-            HUB_LOCAL_ENGINE_METRIC_SUFFIXES[local[2]]+'.';
+            HUB_LOCAL_ENGINE_METRIC_SUFFIXES[local[2]];
     const display=name.replace(/_/g,' ');
     const unit=units.length?' (units: '+units.join('/')+')':'';
     return 'Uncatalogued '+display+unit+
