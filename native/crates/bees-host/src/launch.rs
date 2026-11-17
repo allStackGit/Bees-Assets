@@ -3202,9 +3202,9 @@ fn run_battle(
         #[cfg(not(feature = "client"))]
         let checkpoint_limit = u64::MAX;
         let count = nonzero(remaining.min(source_pulse_limit).min(checkpoint_limit)
-            .min(u64::from(if view || playback.is_some() {
-                client_step_budget
-            } else { window.get() })) as u32, "window")?;
+            .min(u64::from(if remote.is_some() { 1 }
+                else if view || playback.is_some() { client_step_budget }
+                else { window.get() })) as u32, "window")?;
         let physical_result = if !view && playback.is_none() &&
             physical_workers.get() > 1 && config.levels.len() > 1
         {
