@@ -2882,7 +2882,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(plan=>plan.learner_job_id===j.id).at(-1);
             const unresolvedScheduledGroup=scheduledGroup&&
                 ['pending','needs_review'].includes(scheduledGroup.status);
-            const distributedLaunch=(state.distributed_launch_plans||[]).find(launch=>
+            const distributedLaunch=(state.distributed_launches||[]).find(launch=>
                 launch.learner_job_id===j.id&&launch.status==='pending');
             const launchText=distributedLaunch
                 ?' · Coordinated Start '+distributedLaunch.status+
