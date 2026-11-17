@@ -72,7 +72,8 @@ impl Effect {
             4 => Some(Self::FlagshipLaser),
             5 => Some(Self::RocketLaunch),
             10 | 11 => Some(Self::QueenLaser),
-            12 => Some(Self::StrikerBomb),
+            // Source StrikerBombDropped is the single authoritative
+            // release cue. Do not replay it at the same projectile birth.
             _ => None,
         }
     }
@@ -385,7 +386,7 @@ impl NativeGameAudio {
             let (effect, point): (Effect, Option<Vec2>) = match event {
                 CombatEvent::ShipDied { victim_id, .. } => (
                     if view.combat.ship(*victim_id)
-                        .is_some_and(|ship| matches!(ship.ship_type, 7 | 11 | 17)) {
+                        .is_some_and(|ship| matches!(ship.ship_type, 7 | 10 | 11 | 17)) {
                         Effect::HugeExplosion
                     } else { Effect::Explosion },
                     view.combat.ship_body(*victim_id)
@@ -396,7 +397,8 @@ impl NativeGameAudio {
                     view.combat.ship_body(*ship_id)
                         .map(|body| body.motion.position),
                 ),
-                CombatEvent::FireBargeDetonated { .. } |
+                // Fire Barge death is already represented by ShipDied;
+                // sounding both would double the same physical explosion.
                 CombatEvent::FireTankExploded { .. } |
                 CombatEvent::BombDetonated { .. } => (
                     Effect::HugeExplosion, None,
