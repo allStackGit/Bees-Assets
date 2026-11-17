@@ -3170,7 +3170,6 @@ fn run_battle(
         // Process it at this fixed-tick boundary, never during physics.
         if let Some(server) = &mut remote {
             for order in server.poll() {
-                let (world_id, revision) = order.action.episode();
                 if !remote_side_owns_input(&host, &order.action, order.side) {
                     server.reply(order.peer, order.request_id,
                         Err("stale world, unauthorized side, or unavailable squad"));
