@@ -38,6 +38,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_placement_moved_lineage',
     'training_gpu_metric_readbacks','training_gpu_metric_rows',
     'training_gpu_guard_readbacks',
+    'training_gpu_snapshot_reused_lineages','training_gpu_snapshot_owner',
     'training_gpu_h2d_async_batches',
     'training_gpu_h2d_packed_batches',
     'training_gpu_copy_stream_batches',
@@ -108,7 +109,8 @@ function courierMetrics(source) {
     // contains every original measurement for full native history.
     const primary=name=>name.startsWith('training_gpu_placement_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
-        /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name);
+        /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
+        /^training_gpu_snapshot_(?:max_seconds|reused_lineages|owner|work_share)$/.test(name);
     const entries=Object.entries(stats).sort(
         ([a],[b])=>Number(primary(b))-Number(primary(a)));
     for(const [name,value] of entries) {
@@ -118,7 +120,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':
