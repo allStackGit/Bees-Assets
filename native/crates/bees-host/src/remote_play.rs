@@ -172,6 +172,10 @@ impl NativeRemotePlay {
         &self.measurements
     }
 
+    pub fn configured_sides(&self) -> impl Iterator<Item = i32> + '_ {
+        self.side_tokens.keys().copied()
+    }
+
     /// Poll at an authoritative tick boundary before advancing the Level.
     /// Never block simulation on a slow network or remote client.
     pub fn poll(&mut self) -> Vec<RemoteOrder> {
