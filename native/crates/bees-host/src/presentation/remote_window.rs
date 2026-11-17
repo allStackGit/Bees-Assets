@@ -472,6 +472,33 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         if !state["terminal_result"].is_null() {
             text::draw_at(pixels,WIDTH,16,20,
                 &format!("Result: winner side {}",state["terminal_result"]),2,[255,210,129]);
+        } else if let Some(objective)=state["campaign_objective"].as_object() {
+            let remaining=objective.get("seconds_remaining").and_then(Value::as_f64);
+            let elapsed=objective.get("elapsed_seconds").and_then(Value::as_f64);
+            let duration=objective.get("duration_seconds").and_then(Value::as_f64);
+            if let (Some(remaining),Some(elapsed),Some(duration))=(remaining,elapsed,duration) {
+                if remaining.is_finite()&&elapsed.is_finite()&&
+                    duration.is_finite()&&duration>0.0 {
+                    let percent=(100.0*elapsed/duration).clamp(0.0,100.0);
+                    let waves=objective.get("reinforcements_pending")
+                        .and_then(Value::as_u64).unwrap_or(0);
+                    let eta=objective.get("next_reinforcement_tick")
+                        .and_then(Value::as_u64).map(|next|{
+                            let tick=state["tick"].as_u64().unwrap_or(next);
+                            let dt=state["fixed_step_seconds"].as_f64().unwrap_or(0.0);
+                            ((next.saturating_sub(tick) as f64)*dt).max(0.0)
+                        });
+                    let status=if let Some(seconds)=eta.filter(|s|s.is_finite()) {
+                        format!("Defend {:.0}s  {:.0}%  Waves {}  Next {:.0}s",
+                            remaining,percent,waves,seconds)
+                    }else {
+                        format!("Defend {:.0}s  {:.0}%  Waves {}",
+                            remaining,percent,waves)
+                    };
+                    text::draw_at(pixels,WIDTH,16,23,
+                        text::fit(&status,FIELD-32),1,[255,211,130]);
+                }
+            }
         }
     } else {
         text::draw_at(pixels,WIDTH,30,30,"Waiting for authoritative battle state",2,TEXT);
