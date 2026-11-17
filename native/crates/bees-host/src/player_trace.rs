@@ -12,6 +12,7 @@ use bees_gameplay::player_inputs::{
     NativePlayerSquadChase,
 };
 use bees_sim::simulation::WorldId;
+use bees_hivemind::session::SquadLifetime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -30,6 +31,24 @@ pub enum NativePlayerInput {
 }
 
 impl NativePlayerInput {
+    /// The exact submitted lifetimes for network-side authorization.
+    /// Held fire needs connection-owned release semantics and is not
+    /// supported by the remote transport.
+    pub fn squad_owners(&self) -> Option<&[SquadLifetime]> {
+        match self {
+            Self::Move(v) => Some(&v.squads),
+            Self::Support(v) => Some(&v.squads),
+            Self::Fire(v) => Some(&v.squads),
+            Self::HeldFire(_) => None,
+            Self::CeaseFire(v) => Some(&v.squads),
+            Self::Special(v) => Some(&v.squads),
+            Self::MatchSpeed(v) => Some(&v.squads),
+            Self::Shooting(v) => Some(&v.squads),
+            Self::LockOn(v) => Some(&v.squads),
+            Self::Chase(v) => Some(&v.squads),
+        }
+    }
+
     pub fn episode(&self) -> (WorldId, u64) {
         match self {
             Self::Move(input) => (input.world_id, input.episode_revision),
@@ -65,7 +84,13 @@ enum TraceRecord {
         policy_manifest_sha256: Option<String>,
         levels: Vec<NativeTraceLevel>,
     },
-    PlayerInput { round: u64, tick: u64, action: NativePlayerInput },
+    PlayerInput {
+        round: u64, tick: u64, action: NativePlayerInput,
+        /// Absent in old/local traces. Replayed remote orders use the
+        /// original authenticated side, never the local window's side.
+        #[serde(default)]
+        remote_side: Option<i32>,
+    },
     /// Schema4 adds a gameplay/command/faction-memory signature.
     /// Older traces have no gameplay_sha256 and remain readable.
     PhysicalStateCheckpoint {
@@ -83,6 +108,7 @@ pub struct NativeTraceInput {
     pub round: u64,
     pub tick: u64,
     pub action: NativePlayerInput,
+    pub remote_side: Option<i32>,
 }
 
 pub struct NativeTraceCheckpoint {
@@ -285,8 +311,8 @@ impl NativePlayerTrace {
                 return Err(trace_error("player trace event missed its assigned round"));
             }
             match record {
-                TraceRecord::PlayerInput { round, tick, action } => {
-                    self.inputs.push_back(NativeTraceInput { round, tick, action });
+                TraceRecord::PlayerInput { round, tick, action, remote_side } => {
+                    self.inputs.push_back(NativeTraceInput { round, tick, action, remote_side });
                     self.measurements.loaded_inputs += 1;
                 }
                 TraceRecord::PhysicalStateCheckpoint {
