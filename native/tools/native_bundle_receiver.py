@@ -19,7 +19,6 @@ import json
 import os
 from pathlib import Path
 import re
-import socket
 import tempfile
 import tarfile
 import threading
@@ -47,9 +46,12 @@ def bundle_token():
 
 def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha256=None):
     """Stream a verified portable archive without reading it into RAM."""
-    archive = Path(path).resolve(strict=True)
-    if not archive.is_file() or archive.is_symlink():
-        raise ValueError("archive must be a regular non-symlink file")
+    original = Path(path).absolute()
+    if original.is_symlink():
+        raise ValueError("collector archive cannot be a symlink")
+    archive = original.resolve(strict=True)
+    if not archive.is_file():
+        raise ValueError("collector archive must be a regular file")
     if not BUNDLE_NAME.fullmatch(collector_id):
         raise ValueError("invalid collector identity")
     size = archive.stat().st_size
