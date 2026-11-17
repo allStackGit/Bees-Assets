@@ -31,15 +31,19 @@ pub enum NativePlayerInput {
 }
 
 impl NativePlayerInput {
-    /// The exact submitted lifetimes for network-side authorization.
-    /// Held fire needs connection-owned release semantics and is not
-    /// supported by the remote transport.
+    /// Exact submitted lifetimes for network-side authorization.
+    /// A held-fire Begin carries owners; subsequent Aim/End inputs are
+    /// authorized using the transport's authenticated peer gesture lease.
     pub fn squad_owners(&self) -> Option<&[SquadLifetime]> {
         match self {
             Self::Move(v) => Some(&v.squads),
             Self::Support(v) => Some(&v.squads),
             Self::Fire(v) => Some(&v.squads),
-            Self::HeldFire(_) => None,
+            Self::HeldFire(value) => match &value.action {
+                bees_gameplay::player_inputs::NativeHeldFireAction::Begin { squads, .. } =>
+                    Some(squads),
+                _ => None,
+            },
             Self::CeaseFire(v) => Some(&v.squads),
             Self::Special(v) => Some(&v.squads),
             Self::MatchSpeed(v) => Some(&v.squads),
