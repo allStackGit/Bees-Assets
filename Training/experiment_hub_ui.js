@@ -1365,9 +1365,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 const priority={'Learning outcomes':0,'Performance and resources':1};
                 for(const [group,options] of [...groups].sort(([a],[b])=>
                     (priority[a]??2)-(priority[b]??2)||a.localeCompare(b))) {
-                    const heading=document.createElement('div');
+                    // Operate on the complete category, even while a search
+                    // shows only some of its members. Train selection is
+                    // capped at 96; Compare has no artificial chart limit.
+                    const categoryOptions=[...source.options].filter(option=>
+                        (option.dataset.category||'Other metrics')===group);
+                    const selectedCount=categoryOptions.filter(option=>option.selected).length;
+                    const allSelected=selectedCount===categoryOptions.length;
+                    const heading=document.createElement('button');
+                    heading.type='button';
                     heading.className='hub-metric-group-title';
-                    heading.textContent=group+' · '+options.length;
+                    heading.setAttribute('aria-pressed',String(allSelected));
+                    const actionText=allSelected?'Deselect all':'Select all';
+                    heading.textContent=group+' · '+selectedCount+'/'+
+                        categoryOptions.length+' selected · '+actionText+
+                        (options.length!==categoryOptions.length
+                            ?' ('+options.length+' shown)':'');
+                    heading.setAttribute('aria-label',actionText+' metrics in '+group+
+                        ' ('+selectedCount+' of '+categoryOptions.length+' selected)');
+                    heading.title=allSelected?'Remove every metric in this category.'
+                        :'Select every metric in this category (up to the 96-metric Train limit).';
+                    heading.addEventListener('click',()=>{
+                        if(allSelected)for(const option of categoryOptions)option.selected=false;
+                        else {
+                            let slots=selectionLimit===null?Infinity:
+                                Math.max(0,selectionLimit-source.selectedOptions.length);
+                            for(const option of categoryOptions)
+                                if(!option.selected&&slots>0) {
+                                    option.selected=true;
+                                    slots--;
+                                }
+                        }
+                        source.dispatchEvent(new Event('change',{bubbles:true}));
+                        draw();
+                    });
                     nodes.push(heading);
                     for(const option of options) {
                         const label=document.createElement('label');
