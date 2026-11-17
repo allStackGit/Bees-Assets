@@ -11,6 +11,7 @@ import math
 from pathlib import Path
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256
+from native_curriculum import selected_curriculum_run
 
 
 def _candidate(round_number, checkpoint, evaluation, learner_slot, episodes):
@@ -133,9 +134,15 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
         if candidate["wins"] > best["wins"]:
             best = candidate
 
-    source = Path(recipe["run_config"]["path"]).resolve(strict=True)
-    if file_sha256(source) != recipe["run_config"]["sha256"]:
-        raise ValueError("native source run changed during checkpoint selection")
+    # A curriculum's playable environment must advance with the session.
+    # Keep best-policy selection on one fixed holdout, but load that policy
+    # into the *active* authored Level rather than resetting to stage one.
+    source_run, active_stage_start = selected_curriculum_run(
+        recipe["run_config"], recipe.get("curriculum"), max(1, len(completed)),
+    )
+    source = Path(source_run["path"]).resolve(strict=True)
+    if file_sha256(source) != source_run["sha256"]:
+        raise ValueError("native playable source run changed during checkpoint selection")
     selected_run = _playable_run(source, best)
     root = Path(root)
     atomic_json(root / "best-evaluated-run.json", selected_run)
@@ -154,7 +161,9 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
         "baseline_win_rate": baseline["win_rate"],
         "selected": best,
         "source_run_config": str(source),
-        "source_run_config_sha256": recipe["run_config"]["sha256"],
+        "source_run_config_sha256": source_run["sha256"],
+        **({"curriculum_stage_start_round": active_stage_start}
+           if "curriculum" in recipe else {}),
         "playable_run": str(root / "best-evaluated-run.json"),
         "playable_run_sha256": file_sha256(root / "best-evaluated-run.json"),
     }
