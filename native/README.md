@@ -223,6 +223,25 @@ The gallery is opt-in and read-only. Remove `trained-models.json` to
 return to the original game library. Neither the gallery nor the
 headless learner scans unrelated directories for model weights.
 
+**Single-round Experiment Hub native learners** also produce usable
+checkpoints without a full multi-round session. Publish one using the
+*original physical source run* from the issued collector, the completed
+`round-result.json`, and a **new** export directory:
+
+```sh
+python native/tools/publish_round_playable.py \
+  /absolute/path/to/source-run.json \
+  /absolute/path/to/hub-round/round-result.json \
+  /absolute/path/to/hub-model-playable
+```
+
+The command checks that the source run's raw SHA-256 matches the learner
+receipt, validates the checkpoint/manifest, and delegates to the same
+`publish_latest_playable` used by continuous sessions. The output's
+`latest-playable.json` can be registered directly in the native library.
+This does not alter the Hub's artifact or checkpoint lineage; model and
+scene paths must be accessible on the game machine.
+
 Native Bees checkpoints from separate Experiment Hub jobs can now be
 independently ranked and continued, rather than selected from training
 reward metrics. Compile a native `policy_rollout` executable for the
