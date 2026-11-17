@@ -169,6 +169,7 @@ pub(super) fn list_campaigns(
             Ok(meta) if !meta.file_type().is_dir() => continue,
             Ok(_) => {},
         }
+        let mut candidates = Vec::new();
         for entry in fs::read_dir(&directory)? {
             let entry = entry?;
             let Some(name) = entry.file_name().to_str().map(str::to_owned)
@@ -178,14 +179,20 @@ pub(super) fn list_campaigns(
                     suffix.bytes().all(|ch| ch.is_ascii_digit()))
                 .and_then(|suffix| suffix.parse::<u64>().ok())
             else { continue };
-            if !entry.file_type()?.is_dir() { continue; }
-            let run = entry.path().join("run");
+            if entry.file_type()?.is_dir() {
+                candidates.push((number, entry.path()));
+            }
+        }
+        candidates.sort_unstable_by(|left,right| right.0.cmp(&left.0));
+        let mut included = 0_usize;
+        for (number, battle_path) in candidates {
+            let run = battle_path.join("run");
             if !fs::symlink_metadata(&run)
                 .is_ok_and(|meta| meta.file_type().is_dir()) { continue; }
             let trace = run.join("player-inputs.jsonl");
             if !complete_trace(&trace).unwrap_or(false) { continue; }
 
-            let setup = entry.path().join("campaign-replay-setup.json");
+            let setup = battle_path.join("campaign-replay-setup.json");
             let Ok(metadata) = fs::symlink_metadata(&setup) else { continue };
             if !metadata.file_type().is_file() || metadata.len() > 256 * 1024 {
                 continue;
@@ -208,6 +215,8 @@ pub(super) fn list_campaigns(
                 trace,
                 number,
             });
+            included += 1;
+            if included == 256 { break; }
         }
     }
     sort_recent(&mut clips);
