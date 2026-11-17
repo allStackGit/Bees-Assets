@@ -285,6 +285,8 @@ internal static class NativePhysicalSceneExporter
         public int source_frame_count = Time.frameCount;
         public string level_name;
         public string stage_name;
+        // Authored MapData.Location, used only by the client soundtrack.
+        public string music_location;
         public float fixed_dt_seconds;
         // Actual Stage presentation speed, independent of physics fixed dt.
         public float time_scale;
@@ -361,6 +363,8 @@ internal static class NativePhysicalSceneExporter
             fixed_dt_seconds = level.Stage.FixedDeltaTime,
             time_scale = level.Stage.TimeScale,
             stage_name = level.Stage.gameObject.name,
+            music_location = level.MapData != null
+                ? level.MapData.Location.ToString().ToLowerInvariant() : null,
             shots_harmless = level.Stage.MakeShotsHarmless,
             activate_collision_asteroids = level.ActivateCollisionAsteroids,
             activate_mining = level.ActivateMining,

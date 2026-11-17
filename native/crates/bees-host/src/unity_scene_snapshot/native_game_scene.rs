@@ -12,6 +12,8 @@ struct GameScene {
     native_game_schema: u32,
     level_name: String,
     stage_name: String,
+    #[serde(default)]
+    music_location: Option<NativeMusicLocation>,
     bounds: GameBounds,
     fixed_dt_seconds: f32,
     #[serde(default = "default_time_scale")]
@@ -1348,6 +1350,7 @@ impl NativePhysicalScene {
             schema_version: SNAPSHOT_VERSION,
             level_name: raw.level_name,
             stage_name: raw.stage_name,
+            music_location: raw.music_location,
             bounds,
             starting_positions,
             fixed_dt_seconds: raw.fixed_dt_seconds,

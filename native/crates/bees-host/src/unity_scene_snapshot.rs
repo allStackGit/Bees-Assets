@@ -125,6 +125,7 @@ struct UnitySnapshot {
     schema_version: u32,
     level_name: String,
     stage_name: String,
+    music_location: Option<NativeMusicLocation>,
     fixed_dt_seconds: f32,
     time_scale: Option<f32>,
     shots_harmless: bool,
@@ -712,6 +713,14 @@ pub struct NativeSquadClone {
     pub by: [f32; 2],
 }
 
+/// Source MapData.Location is cosmetic soundtrack metadata. It never
+/// affects simulation time, physics, replay identity or learning policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeMusicLocation {
+    Pluto, Neptune, Uranus, Titania,
+}
+
 /// A source-authored INITIAL physical scene, ready to compose with actual
 /// squad identities, full RL metadata, episode configuration and model slots.
 /// Records are owned, but shared immutable prefab geometry stays in the
@@ -725,6 +734,7 @@ pub struct NativePhysicalScene {
     pub level_name: String,
     /// Source Stage identity for validating the loaded prefab palette.
     pub stage_name: String,
+    pub music_location: Option<NativeMusicLocation>,
     pub bounds: Aabb,
     /// Exact Stage-owned home coordinates indexed by source Side-1.
     pub starting_positions: Option<[Vec2; 2]>,
@@ -3602,6 +3612,7 @@ impl NativePhysicalScene {
             schema_version: raw.schema_version,
             level_name: raw.level_name,
             stage_name: raw.stage_name,
+            music_location: raw.music_location,
             bounds: Aabb { min, max },
             starting_positions,
             fixed_dt_seconds: raw.fixed_dt_seconds,
