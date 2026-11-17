@@ -450,6 +450,9 @@ fn current_state(view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32) -> V
                     .map(|destination| [destination.x, destination.y])
             } else { None },
             "health": ship.vitals.health(), "max_health": ship.vitals.max_health(),
+            // Allegiance is not command permission. AI-owned allies must
+            // remain friendly in the remote view but never become selectable.
+            "friendly": ship.side == side,
             "owned": owned, "discovered": discovered,
         }))
     }).collect();
