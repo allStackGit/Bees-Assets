@@ -2673,6 +2673,115 @@ class ExperimentHub {
         this.advancePendingDistributedGroups();
         return copy(this.state.distributed_group_plans.find(plan=>plan.id===intent.id));
     }
+    // A one-use operator approval covers the entire original Courier
+    // reservation, including GPU qualification that may finish later.
+    // Reuse the Hub's heartbeat-driven distributed plan lifecycle; no
+    // second scheduler or speculative remote-process retry is introduced.
+    scheduleCourierGroup(value) {
+        if(!object(value)||value.confirm_schedule!==true||
+            value.confirm_learner_start!==true||
+            !UUID.test(String(value.learner_job_id||''))||
+            !Array.isArray(value.expected_lineage_job_ids)||
+            !value.expected_lineage_job_ids.length||
+            value.expected_lineage_job_ids.length>16||
+            value.expected_lineage_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_lineage_job_ids).size!==value.expected_lineage_job_ids.length||
+            Object.keys(value).some(key=>![
+                'learner_job_id','expected_lineage_job_ids',
+                'confirm_schedule','confirm_learner_start'].includes(key)))
+            throw Error('Approve the exact reserved Courier learner and remote lineage membership.');
+        const snapshot=this.snapshot();
+        const learner=snapshot.jobs.find(job=>job.id===value.learner_job_id);
+        const host=snapshot.machines.find(machine=>
+            machine.id===learner?.assigned_machine_id);
+        const endpoints=host?.courier_remote_lineage_endpoints;
+        const ceilings=host?.courier_remote_max_shards;
+        if(!learner||learner.project_id!=='courier'||
+            learner.distributed_courier_managed!==true||
+            learner.frozen_parameters?.remote_lineages!==true||
+            learner.status!=='waiting_adapter'||learner.dispatch_id||
+            learner.distributed_abort_requested_at||
+            !learner.lease_id||predecessorBlock(snapshot,learner)||
+            !host||host.status!=='connected'||
+            !host.installed_projects?.includes('courier')||
+            !Array.isArray(endpoints)||
+            endpoints.length!==value.expected_lineage_job_ids.length||
+            !Array.isArray(ceilings)||ceilings.length!==endpoints.length||
+            !SHA256.test(String(host.courier_remote_key_fingerprint||'')))
+            throw Error('Courier future Start requires the original, pinned learner and approved remote population.');
+        if((this.state.distributed_group_plans||[]).some(plan=>
+            plan.learner_job_id===learner.id&&
+            ['pending','needs_review'].includes(plan.status))||
+            (this.state.distributed_launch_plans||[]).some(plan=>
+                plan.learner_job_id===learner.id&&plan.status==='pending'))
+            throw Error('Cancel an earlier pending Courier distributed approval before authorizing another.');
+        const workers=snapshot.jobs.filter(job=>
+            job.project_id==='courier_lineage'&&
+            job.frozen_parameters?.learner_job_id===learner.id&&
+            job.status!=='cancelled');
+        const ids=new Set(value.expected_lineage_job_ids);
+        if(workers.length!==endpoints.length||
+            workers.some(job=>!ids.has(job.id)||job.status!=='waiting_adapter'||
+                job.dispatch_id))
+            throw Error('The complete original Courier remote population must remain unstarted.');
+        const ordered=endpoints.map((endpoint,index)=>
+            workers.find(worker=>worker.frozen_parameters?.slot===
+                learner.frozen_parameters.workers-endpoints.length+index));
+        if(ordered.some(worker=>!worker)||
+            new Set(ordered.map(worker=>worker.id)).size!==ordered.length)
+            throw Error('Courier remote policy slot-to-endpoint membership changed.');
+        const seen=new Set(),members=[learner,...ordered].map((job,index)=>{
+            const machine=snapshot.machines.find(item=>item.id===job.assigned_machine_id);
+            const lease=snapshot.reservations.find(item=>
+                item.id===job.lease_id&&item.job_id===job.id&&
+                item.machine_id===job.assigned_machine_id&&
+                item.project_id===job.project_id&&
+                item.issued_by==='experiment-hub'&&
+                ['offered','acknowledged'].includes(item.status));
+            if(!machine||!lease||!job.assigned_machine_id||
+                seen.has(machine.id))
+                throw Error('Courier group needs distinct registered machines and original resource leases.');
+            seen.add(machine.id);
+            if(index>0&&(machine.courier_lineage_endpoint!==endpoints[index-1]||
+                machine.courier_lineage_key_fingerprint!==
+                    host.courier_remote_key_fingerprint||
+                machine.courier_lineage_max_shards!==ceilings[index-1]))
+                throw Error('Courier group endpoint/key/process ceiling no longer matches its original slot.');
+            const agent=this.agentReports.get(machine.id);
+            if(!UUID.test(String(agent?.instance_id||'')))
+                throw Error('Courier group requires a current native agent identity on every original machine.');
+            return {job_id:job.id,lease_id:lease.id,machine_id:machine.id,
+                ...(index>0?{endpoint:endpoints[index-1],
+                    slot:job.frozen_parameters.slot,max_shards:ceilings[index-1]}:{})};
+        });
+        const plans=copy(this.state.distributed_group_plans||[]);
+        if(plans.length>=64) {
+            const index=plans.findIndex(plan=>!['pending','needs_review'].includes(plan.status));
+            if(index<0)throw Error('Resolve earlier future group approvals.');
+            plans.splice(index,1);
+        }
+        const at=Date.now(),intent={
+            id:crypto.randomUUID(),kind:'courier',
+            learner_job_id:learner.id,
+            collector_job_ids:ordered.map(job=>job.id),
+            frozen_members:members,
+            learner_endpoints:endpoints.slice(),
+            learner_shards:ceilings.slice(),
+            key_fingerprint:host.courier_remote_key_fingerprint,
+            agent_instances:Object.fromEntries(members.map(member=>[
+                member.machine_id,this.agentReports.get(member.machine_id).instance_id,
+            ])),
+            resume_after_restart:false,recovery_pending:false,status:'pending',
+            reason:'Waiting for original Courier native leases and GPU access proof.',
+            approved_at:new Date(at).toISOString(),
+            expires_at:new Date(at+DISTRIBUTED_LAUNCH_TTL_MS).toISOString(),
+        };
+        plans.push(intent);
+        const next=copy(this.state);next.distributed_group_plans=plans;
+        this.commit(next);
+        this.advancePendingDistributedGroups();
+        return copy(this.state.distributed_group_plans.find(item=>item.id===intent.id));
+    }
     cancelScheduledDistributedGroup(value) {
         if(!object(value)||value.confirm_cancel!==true||
             !UUID.test(String(value.plan_id||''))||
