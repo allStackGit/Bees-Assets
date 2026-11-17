@@ -1007,47 +1007,49 @@ def main():
                 if args.collector_input_outbox is not None:
                     outbox = args.collector_input_outbox.resolve(strict=True)
                     order_digest = file_sha256(order_path)
-                    for job in orders["jobs"]:
-                        archive = outbox / (job["bundle_directory"] + ".inputs.tar")
-                        receipt_path = outbox / (job["bundle_directory"] + ".inputs.json")
-                        identity = {
-                            "kind": "native_distributed_collector_input_archive",
-                            "collector_id": job["id"],
-                            "collection_id": job["collection_id"],
-                            "orders_sha256": order_digest,
-                            "checkpoint_sha256": orders["input_checkpoint_sha256"],
-                            "manifest_sha256": orders["input_manifest_sha256"],
+                    # Every collector's physical source and model weights
+                    # are identical for the issued round. Export once and
+                    # serve the immutable archive to all authorized jobs.
+                    # Only their already-issued World windows differ.
+                    archive = outbox / f"collection-round-{index:05d}.inputs.tar"
+                    receipt_path = outbox / f"collection-round-{index:05d}.inputs.json"
+                    identity = {
+                        "kind": "native_distributed_round_input_archive",
+                        "orders_sha256": order_digest,
+                        "checkpoint_sha256": orders["input_checkpoint_sha256"],
+                        "manifest_sha256": orders["input_manifest_sha256"],
+                    }
+                    if archive.exists() or receipt_path.exists():
+                        if not archive.is_file() or not receipt_path.is_file():
+                            raise ValueError("previous native round source export is incomplete")
+                        previous = read_json(receipt_path)
+                        if (any(previous.get(key) != value
+                                for key, value in identity.items()) or
+                                previous.get("archive_sha256") != file_sha256(archive)):
+                            raise ValueError("issued round input archive differs from previous export")
+                        result = {
+                            "archive": str(archive),
+                            "archive_sha256": previous["archive_sha256"],
+                            "archive_bytes": archive.stat().st_size,
+                            "reused": True,
                         }
-                        if archive.exists() or receipt_path.exists():
-                            if not archive.is_file() or not receipt_path.is_file():
-                                raise ValueError("previous native collector input export is incomplete")
-                            previous = read_json(receipt_path)
-                            if (any(previous.get(key) != value
-                                    for key, value in identity.items()) or
-                                    previous.get("archive_sha256") != file_sha256(archive)):
-                                raise ValueError("previous collector input export changed; cannot reuse it")
-                            result = {
-                                "archive": str(archive),
-                                "archive_sha256": previous["archive_sha256"],
-                                "archive_bytes": archive.stat().st_size,
-                                "reused": True,
-                            }
-                        else:
-                            result = export_inputs(
-                                order_path, job["id"], Path(run["path"]),
-                                Path(trainer["path"]), Path(next_checkpoint),
-                                Path(next_manifest), archive,
-                            )
-                            atomic_json(receipt_path, {
-                                **identity,
-                                "archive_sha256": result["archive_sha256"],
-                            })
+                    else:
+                        result = export_inputs(
+                            order_path, "all", Path(run["path"]),
+                            Path(trainer["path"]), Path(next_checkpoint),
+                            Path(next_manifest), archive,
+                        )
+                        atomic_json(receipt_path, {
+                            **identity, "archive_sha256": result["archive_sha256"],
+                        })
+                    for job in orders["jobs"]:
                         prepared_inputs[job["id"]] = (
                             str(archive), result["archive_sha256"], result["archive_bytes"],
                         )
                         print(json.dumps({
                             "kind": "native_distributed_collector_inputs_ready",
                             "round": index, "collector_id": job["id"],
+                            "shared_round_archive": True,
                             **result,
                         }, sort_keys=True), flush=True)
                 if receiver is not None:
@@ -1083,9 +1085,9 @@ def main():
                     window = {
                         "schema_version": 1,
                         "kind": "native_distributed_collection_window",
-                        "collector_input_archive_count": len(prepared_inputs),
-                        "collector_input_archive_bytes_published": sum(
-                            size for _, _, size in prepared_inputs.values()
+                        "collector_input_archive_count": 1 if prepared_inputs else 0,
+                        "collector_input_archive_bytes_published": (
+                            next(iter(prepared_inputs.values()))[2] if prepared_inputs else 0
                         ),
                         **({} if receiver is None else receiver.transfer_metrics()),
                         "round": index,
