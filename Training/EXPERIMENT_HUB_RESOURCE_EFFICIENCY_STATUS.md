@@ -71,6 +71,25 @@ host wall; the Hub maps these source fields and derives sustained
 CUDA/ROCm live SPS, device switching and checkpoint continuation remain to
 be qualified; existing independent-policy Courier population semantics remain.
 
+- **2026-11-17 shared-CPU useful-SPS acceptance:** `allStackGit/TinyBrains:feat/tinybrains-global-cadence-cpu-tuning-20261117` now makes each shared-host native simulator pool prove its own ≥12% local
+collection-rate improvement **and** a ≥5% improvement in completed whole-PPO
+action throughput before accepting the extra native processes. The learner
+publishes one actual completed update duration through the existing
+HostMemoryLease; rollout-launch simulation revisions, action shares, GPU batch
+layouts and independently tuning remote pools guard comparisons. A single
+bounded rolling receipt per update is read on the next collection, without a
+new queue, thread or telemetry service. Poor global outcomes roll back only
+the trial engine target at episode boundaries and keep the shared admission
+lock until the pool is stable. CPU-count-based initial engine allocation
+remains; all local and remote engine pools may now calibrate up to the
+existing 512-engine/RAM-admission bound instead of stopping at four times
+leased CPU threads. Updated performance identities prevent stale ceiling
+receipts silently restoring an old cap. Hub metrics expose actual complete
+update cadence, per-collector global evidence counts, gain and rejection
+counts; neither controller outcome nor observed host activity proves CPU
+hardware saturation. Actual heterogeneous useful-SPS and recovery
+qualification remain.
+
 ## Significant remaining development
 
 1. **Exercise the exact executable native-engine path:** qualify early dispatched pooled engine steps, episode/seat identity, replay attribution, graceful retirement and checkpoint continuation using actual TinyBrains binaries and training environments. Synthetic scheduling checks preserve action indices and show potential latency savings, not measured real SPS. On the next native profiling run, nonzero `collector_N_sim_prefetch_engine_steps` plus reduced `collector_N_sim_exposed_wait_share` with improved useful decisions/s would support the expected benefit; absent early dispatch or unchanged exposed wait would falsify it. Full removal of the slowest-child barrier would also require explicit in-flight transition ownership, terminal reward completion, and deterministic policy sampling across out-of-order engine returns; that change has **not** been implemented.
