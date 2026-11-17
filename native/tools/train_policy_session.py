@@ -27,6 +27,7 @@ from native_bundle_receiver import BundleReceiver
 from transfer_policy_inputs import export_inputs
 from native_distributed_collection import (
     read_plan, make_orders, wait_for_collections, balanced_round_plan,
+    derive_hub_resource_plan,
 )
 from native_session_selection import publish_best_evaluated
 
@@ -796,6 +797,8 @@ def main():
                         help="opt-in machine/resource allocation and preapproved native Hub Start for each issued round")
     parser.add_argument("--hub-dispatch-port", type=int, default=7148,
                         help="loopback Experiment Hub operator API port (default: 7148)")
+    parser.add_argument("--hub-auto-worlds", type=int,
+                        help="derive the native collector plan and fixed total World budget from the approved Hub machine CPU allocations")
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="redistribute contiguous native arena windows conservatively between verified distributed rounds")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0,
@@ -848,18 +851,23 @@ def main():
         parser.error("rollout world start must be nonnegative")
     if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
         parser.error("torch threads must be between 1 and 256")
-    if (args.distributed_plan is None) != (args.bundle_inbox is None):
-        parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
-    if args.bundle_archive_inbox is not None and args.distributed_plan is None:
-        parser.error("--bundle-archive-inbox requires --distributed-plan and --bundle-inbox")
-    if args.bundle_receiver_listen is not None and args.distributed_plan is None:
-        parser.error("--bundle-receiver-listen requires --distributed-plan and --bundle-inbox")
-    if args.collector_input_outbox is not None and args.distributed_plan is None:
-        parser.error("--collector-input-outbox requires --distributed-plan and --bundle-inbox")
+    if args.hub_auto_worlds is not None and (
+            args.hub_dispatch_plan is None or args.distributed_plan is not None or
+            not 2 <= args.hub_auto_worlds <= 16384):
+        parser.error("--hub-auto-worlds requires a Hub dispatch plan, no separate distributed plan, and 2..16384 total Worlds")
+    distributed_requested = args.distributed_plan is not None or args.hub_auto_worlds is not None
+    if distributed_requested != (args.bundle_inbox is not None):
+        parser.error("distributed sessions require a collector plan or --hub-auto-worlds and --bundle-inbox")
+    if args.bundle_archive_inbox is not None and not distributed_requested:
+        parser.error("--bundle-archive-inbox requires distributed collection and --bundle-inbox")
+    if args.bundle_receiver_listen is not None and not distributed_requested:
+        parser.error("--bundle-receiver-listen requires distributed collection and --bundle-inbox")
+    if args.collector_input_outbox is not None and not distributed_requested:
+        parser.error("--collector-input-outbox requires distributed collection and --bundle-inbox")
     if args.collector_input_outbox is not None and not args.collector_input_outbox.is_dir():
         parser.error("--collector-input-outbox must be an existing directory")
     if args.hub_dispatch_plan is not None and (
-            args.distributed_plan is None or
+            not distributed_requested or
             args.bundle_receiver_listen is None or
             args.collector_input_outbox is None):
         parser.error("--hub-dispatch-plan requires distributed collection, a receiver and published collector inputs")
@@ -867,9 +875,9 @@ def main():
         parser.error("--hub-dispatch-port must be a valid TCP port")
     if args.collector_timeout_seconds < 0:
         parser.error("--collector-timeout-seconds cannot be negative")
-    if args.auto_balance_collectors and args.distributed_plan is None:
-        parser.error("--auto-balance-collectors requires --distributed-plan")
-    if args.distributed_plan is not None and any(
+    if args.auto_balance_collectors and not distributed_requested:
+        parser.error("--auto-balance-collectors requires distributed collection")
+    if distributed_requested and any(
         value is not None for value in (
             args.rollout_workers, args.rollout_worlds, args.rollout_world_start,
             args.physics_workers,
@@ -943,8 +951,11 @@ def main():
         recipe["physics_workers"] = args.physics_workers
     if self_play is not None:
         recipe["self_play"] = self_play
-    if args.distributed_plan is not None:
-        recipe["distributed_plan"] = pinned(args.distributed_plan)
+    if distributed_requested:
+        if args.distributed_plan is not None:
+            recipe["distributed_plan"] = pinned(args.distributed_plan)
+        else:
+            recipe["hub_auto_worlds"] = args.hub_auto_worlds
         recipe["bundle_inbox"] = str(args.bundle_inbox.resolve(strict=True))
         if args.bundle_archive_inbox is not None:
             archive_inbox = args.bundle_archive_inbox.resolve(strict=True)
@@ -952,8 +963,9 @@ def main():
                 parser.error("--bundle-archive-inbox must be an existing directory")
             recipe["bundle_archive_inbox"] = str(archive_inbox)
         recipe["collector_timeout_seconds"] = args.collector_timeout_seconds
-        read_plan(Path(recipe["distributed_plan"]["path"]))
-        if args.auto_balance_collectors:
+        if args.distributed_plan is not None:
+            read_plan(Path(recipe["distributed_plan"]["path"]))
+        if args.auto_balance_collectors or args.hub_auto_worlds is not None:
             recipe["auto_balance_collectors"] = True
         if args.hub_dispatch_plan is not None:
             recipe["hub_dispatch_plan"] = pinned(args.hub_dispatch_plan)
@@ -990,6 +1002,28 @@ def main():
         ) if args.bundle_receiver_listen is not None else nullcontext(None)
     )
     with session_lock(root), receiver_context as receiver:
+        if args.hub_auto_worlds is not None:
+            hub_plan = recipe["hub_dispatch_plan"]
+            if file_sha256(Path(hub_plan["path"])) != hub_plan["sha256"]:
+                raise ValueError("Hub resource allocation changed before native session setup")
+            derived = derive_hub_resource_plan(
+                read_json(Path(hub_plan["path"])), args.hub_auto_worlds,
+            )
+            allocation_path = root / "hub-derived-collectors.json"
+            if args.resume:
+                if not allocation_path.is_file() or read_json(allocation_path) != derived:
+                    raise ValueError("native Hub-derived World allocation changed on resume")
+            else:
+                if allocation_path.exists():
+                    raise ValueError("native Hub allocation file already exists")
+                atomic_json(allocation_path, derived)
+            recipe["distributed_plan"] = pinned(allocation_path)
+            print(json.dumps({
+                "kind": "native_hub_derived_collector_plan",
+                "total_worlds": args.hub_auto_worlds,
+                "collectors": derived["collectors"],
+                "measured_world_balancing": True,
+            }, sort_keys=True), flush=True)
         config_path = root / "session-config.json"
         if args.resume:
             previous = read_json(config_path)
