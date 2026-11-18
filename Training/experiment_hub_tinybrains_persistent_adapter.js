@@ -141,6 +141,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_opponent_readback_models','rollout_opponent_readbacks_saved',
         'rollout_opponent_pixel_samples',
         'rollout_opponent_max_group_pixels',
         'rollout_opponent_batch_budget_pixels',
@@ -364,6 +365,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_shape_groups,'count');
         add('collector_'+i+'_opponent_readbacks',
             worker.rollout_opponent_readbacks,'count');
+        add('collector_'+i+'_opp_readback_models',
+            worker.rollout_opponent_readback_models,'count');
+        add('collector_'+i+'_opp_readbacks_saved',
+            worker.rollout_opponent_readbacks_saved,'count');
         add('collector_'+i+'_opp_gpu_stream_seconds',
             worker.rollout_opponent_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_opp_budget_pixels',
@@ -577,7 +582,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'inference_forward_chunks','opponent_shape_groups',
                 'board_uploads_saved','board_packed_bytes',
                 'inference_max_group_px','bootstrap_seconds','returns_seconds',
-                'opponent_readbacks',
+                'opponent_readbacks','opp_readback_models','opp_readbacks_saved',
                 'snapshot_cache_files','snapshot_cache_bytes',
                 'policy_upload_groups',
                 'record_packed','record_board_groups',
