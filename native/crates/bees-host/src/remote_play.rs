@@ -772,6 +772,15 @@ fn collect_remote_audio(
                 ("impact", view.combat.ship_body(hit.target_id)
                     .map(|body| body.motion.position))
             },
+            CombatEvent::StaticObstacleImpact { projectile_id, obstacle_id } |
+            CombatEvent::AsteroidDamaged { projectile_id, obstacle_id, .. } |
+            CombatEvent::MapObjectDamaged {
+                projectile_id, object_id: obstacle_id, ..
+            } => {
+                impact = Some((*projectile_id, *obstacle_id, false));
+                ("impact", view.combat.obstacle_body(*obstacle_id)
+                    .map(|body| body.pose.position))
+            },
             CombatEvent::ShipDied { victim_id, .. } => (
                 if view.combat.ship(*victim_id)
                     .is_some_and(|ship| matches!(ship.ship_type, 7 | 10 | 11 | 17)) {
