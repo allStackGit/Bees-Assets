@@ -114,6 +114,23 @@ pub struct AuthoredPolicyAgent {
 /// The authentic 16x16 team sight memory starts fresh for each native
 /// episode, then advances on the same canonical fixed-step clock as combat.
 /// Observer-local 21x21 navigation remains in the perception assembler.
+/// Source-controlled Queen minion binding outcomes, sampled once per real
+/// spawn. No gameplay, model, or group work is repeated for measurements.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct NativeQueenControllerMeasurements {
+    pub policy_minions_bound: u64,
+    pub ungrouped_policy_minions_bound: u64,
+    pub ordinary_minions_preserved: u64,
+}
+
+impl NativeQueenControllerMeasurements {
+    pub fn merge(&mut self, other: Self) {
+        self.policy_minions_bound += other.policy_minions_bound;
+        self.ungrouped_policy_minions_bound += other.ungrouped_policy_minions_bound;
+        self.ordinary_minions_preserved += other.ordinary_minions_preserved;
+    }
+}
+
 pub struct AuthoredPolicySide {
     pub side: i32,
     pub exploration: TeamExplorationGrid,
@@ -181,6 +198,7 @@ pub struct NativePolicyOnlyMetadata {
     sides: HashMap<i32, AuthoredPolicySide>,
     beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
     queen_templates: HashMap<i64, Arc<NativeQueenTemplate>>,
+    pub queen_controller_measurements: NativeQueenControllerMeasurements,
     player: NativeSourcePlayerInputs,
     pub(crate) reinforcements: std::collections::VecDeque<crate::reinforcements::ReinforcementWave>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
@@ -373,7 +391,9 @@ impl NativePolicyOnlyMetadata {
             explorers: Vec::new(),
             agents: agent_map, next_dynamic_group_agent_id,
             sides: side_map, beacon_templates,
-            queen_templates: HashMap::new(), player,
+            queen_templates: HashMap::new(),
+            queen_controller_measurements: NativeQueenControllerMeasurements::default(),
+            player,
             reinforcements: std::collections::VecDeque::new(),
             scripted_queues: Vec::new(),
             scripted_members: Vec::new(),
@@ -405,6 +425,22 @@ impl NativePolicyOnlyMetadata {
         }
         self.queen_templates = templates;
         Ok(())
+    }
+
+    /// A native neural controller owns an actual *side*, not whichever
+    /// World happened to contain a model. Preserve the Queen's source
+    /// controller first, then select a deterministic same-side route if the
+    /// Queen itself is an ordinary ship in a side-wide neural battle.
+    /// The metadata retains original routes after ship death, just as the
+    /// Unity policy group retains its episode team while reusing agents.
+    fn queen_policy_controller(
+        &self, queen_id: i64, side: i32,
+    ) -> Option<&AuthoredPolicyAgent> {
+        self.agents.get(&queen_id)
+            .filter(|agent| agent.side == side)
+            .or_else(|| self.agents.values()
+                .filter(|agent| agent.side == side)
+                .min_by_key(|agent| agent.ship_id))
     }
 
     /// A rendered Level may change externally authored ship/controller
@@ -480,11 +516,10 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         &mut self, world: &mut CombatWorld,
         events: &mut bees_gameplay::level_events::NativeLevelEventProcessor,
     ) -> Result<(), CombatPerceptionError> {
-        // Game-only Levels have no policy controllers. The physical Queen
-        // waves and source roster still execute without a learner.
-        if self.agents.is_empty() || self.queen_templates.is_empty() {
-            return Ok(());
-        }
+        // A policy on the OTHER faction must never claim this Queen's
+        // children. Game-only Levels remain valid, and mixed scripted vs
+        // policy matches need an independent command owner per side.
+        if self.queen_templates.is_empty() { return Ok(()); }
         let born: Vec<_> = world.events().iter().filter_map(|event| {
             match event {
                 CombatEvent::QueenMinionSpawned { queen_id, minion_id, .. } =>
@@ -500,17 +535,15 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             // metadata is still retained for death attribution.
             if child.vitals.is_dead() { continue; }
             let side = child.side;
+            // A non-policy faction retains its ordinary physical minions
+            // and script/HiveMind/player command ownership. No model route
+            // or policy-only Bomb observation is required for that faction.
+            let Some(parent_agent) = self.queen_policy_controller(queen_id, side) else {
+                self.queen_controller_measurements.ordinary_minions_preserved += 1;
+                continue;
+            };
             let template = self.queen_templates.get(&queen_id).ok_or_else(invalid)?;
             let bomb = template.policy_weapon.ok_or_else(invalid)?;
-            // A Queen's team and its currently loaded model slot are
-            // authoritative. Reuse that *team*, not a guessed model index.
-            let parent_agent = self.agents.get(&queen_id)
-                .or_else(||
-                    self.agents.values()
-                        .filter(|a| a.side == side &&
-                            world.policy_frame(a.ship_id).is_some())
-                        .min_by_key(|a| a.ship_id)
-                ).ok_or_else(invalid)?;
             // Unity's group keeps the controller's episode frame after
             // the Queen dies. The live world may already have retired its
             // runtime by the time this newborn is enrolled.
@@ -540,13 +573,19 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             capability.healing_possible =
                 bee && yellow.x < hive.x && yellow.y < hive.y;
             capability.warp_possible = !bee;
-            let group_id = self.next_dynamic_group_agent_id;
-            let next_group_id = group_id.checked_add(1).ok_or_else(invalid)?;
-            let group = events.group_delivery_mut().ok_or_else(invalid)?;
-            if group.team_id(side) != Some(route.team_id) ||
-                parent_agent.source_group_agent_id.is_none() ||
-                self.agents.contains_key(&minion_id)
-            { return Err(invalid()); }
+            // Training has an authenticated MA-POCA group; an ordinary
+            // native game can play a trained checkpoint without one. Only
+            // group-owned episodes allocate/register an agent identity.
+            let group_id = if let Some(group) = events.group_delivery_mut() {
+                if group.team_id(side) != Some(route.team_id) ||
+                    parent_agent.source_group_agent_id.is_none()
+                { return Err(invalid()); }
+                Some(self.next_dynamic_group_agent_id)
+            } else { None };
+            if self.agents.contains_key(&minion_id) { return Err(invalid()); }
+            let next_group_id = group_id.map(|id|
+                id.checked_add(1).ok_or_else(invalid)
+            ).transpose()?;
             let mut own_weapons = [None; 5];
             let slot = template.physical.minion.special_weapon.slot;
             let mut weapon = bomb;
@@ -570,11 +609,17 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
                 world.configure_policy_warp(minion_id,
                     self.player.human_side).map_err(|_| invalid())?;
             }
-            group.register_agent(side, group_id).map_err(|_| invalid())?;
-            self.next_dynamic_group_agent_id = next_group_id;
+            if let Some(group_id) = group_id {
+                events.group_delivery_mut().ok_or_else(invalid)?
+                    .register_agent(side, group_id).map_err(|_| invalid())?;
+                self.next_dynamic_group_agent_id = next_group_id.ok_or_else(invalid)?;
+            } else {
+                self.queen_controller_measurements.ungrouped_policy_minions_bound += 1;
+            }
+            self.queen_controller_measurements.policy_minions_bound += 1;
             self.agents.insert(minion_id, AuthoredPolicyAgent {
                 ship_id: minion_id, side, route, frame, controller, capability,
-                source_group_agent_id: Some(group_id),
+                source_group_agent_id: group_id,
                 parent_carrier_id: None, own_weapons,
             });
         }
