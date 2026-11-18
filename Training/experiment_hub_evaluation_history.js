@@ -219,7 +219,22 @@ class EvaluationHistory {
             }
             throw Error('An existing historical report with this identity is invalid.');
         }
-        const observed=new Date().toISOString(),seen=new Set(),suites=new Map(),rows=[];
+        let observed=new Date().toISOString();
+        if(fs.existsSync(file)) {
+            // Recover only a previously completed append. Preserve the
+            // original receipt time so a retry has identical bytes.
+            const raw=fs.readFileSync(file,'utf8');
+            if(!raw.endsWith('\n'))
+                throw Error('Interrupted historical archive is incomplete; retained for inspection.');
+            const first=JSON.parse(raw.split('\n')[0]);
+            if(first.source_report_sha256!==value.source_report_sha256||
+                typeof first.observed_at!=='string'||
+                !Number.isFinite(Date.parse(first.observed_at))||
+                new Date(first.observed_at).toISOString()!==first.observed_at)
+                throw Error('Previous historical import identity is inconsistent.');
+            observed=first.observed_at;
+        }
+        const seen=new Set(),suites=new Map(),rows=[];
         for(const raw of value.results) {
             if(!raw||typeof raw!=='object'||Array.isArray(raw)||
                 typeof raw.suite_definition_canonical!=='string'||

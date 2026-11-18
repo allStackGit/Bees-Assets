@@ -131,10 +131,13 @@ def publish_report(report, suites, output, run_name):
         })
     if not isinstance(run_name, str) or not 1 <= len(run_name.strip()) <= 100:
         raise ValueError("Historical comparison run name must be 1–100 characters.")
+    report_bytes = read_bounded(output, 64 * 1024 * 1024)
+    if json.loads(report_bytes) != report:
+        raise ValueError("Baseline report changed after it was validated; no Hub import attempted.")
     request = {
         "project_id": "tinybrains", "complete": True,
         "run_name": run_name.strip(),
-        "source_report_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+        "source_report_sha256": hashlib.sha256(report_bytes).hexdigest(),
         "results": items,
     }
     body = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
