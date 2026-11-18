@@ -137,6 +137,12 @@ function courierMetrics(source) {
     // optional per-lineage details. The append-only Courier event still
     // contains every original measurement for full native history.
     const primary=name=>name.startsWith('training_gpu_placement_')||
+        name.startsWith('training_gpu_output_')||
+        name.startsWith('training_gpu_input_device_')||
+        name.startsWith('training_shared_gpu_input_device_')||
+        name.startsWith('training_shared_gpu_output_')||
+        name==='training_gpu_state_pack_reuse_batches'||
+        name==='training_shared_gpu_state_pack_reused'||
         name==='training_total_useful_steps'||name==='training_tracked_active_seconds'||
         name.startsWith('training_collector_probe_')||
         /^worker_[0-9]{1,2}_probe_maps_(?:before|after)$/.test(name)||
