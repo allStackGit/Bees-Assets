@@ -870,6 +870,9 @@ label.hub-toggle-row > input[type="checkbox"] {
           <label id="hub-evaluation-frequency-label">Evaluate every N training updates / rounds
             <input id="hub-evaluation-frequency" type="number" min="1" max="1000000" step="1" value="10">
           </label>
+          <label id="hub-evaluation-minutes-label">Minimum elapsed minutes between completed evaluations (optional)
+            <input id="hub-evaluation-minutes" type="number" min="1" max="10080" step="1" placeholder="No clock limit">
+          </label>
           <label id="hub-evaluation-baseline-label"><input id="hub-evaluation-baseline" type="checkbox" checked> Evaluate first available checkpoint (baseline)</label>
           <label id="hub-evaluation-final-label"><input id="hub-evaluation-final" type="checkbox" checked> Evaluate verified final checkpoint (if available)</label>
           <label id="hub-evaluation-regression-enable-label"><input id="hub-evaluation-regression-enable" type="checkbox"> Flag sustained regression in independent success rate (observation only)</label>
@@ -890,7 +893,7 @@ label.hub-toggle-row > input[type="checkbox"] {
           <div class="hub-controls wide">
             <button id="hub-evaluation-add-suite" type="button">Add another evaluation suite</button>
           </div>
-          <small class="muted wide">For monitoring without stopping, each additional suite can override the common update interval. Different intervals require independently scheduled one-suite evaluator services. Success-based stopping retains one checkpoint-coherent batch.</small>
+          <small class="muted wide">Monitoring can require both new checkpoint updates and a minimum wall-clock interval. The clock interval does not create checkpoints or postpone an eligible final checkpoint. Additional suites can override the shared update interval when monitoring without stopping; different intervals require independently scheduled one-suite evaluator services. Success-based stopping retains one checkpoint-coherent batch.</small>
           <details class="wide">
             <summary>Advanced: edit the multi-suite list as JSON instead</summary>
             <p class="muted">Clear the individual suite fields above when using JSON. The editor uses the same validated suite definitions.</p>

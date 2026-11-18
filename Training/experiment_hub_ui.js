@@ -3713,6 +3713,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-rate').disabled=!hasStop;
         $('hub-evaluation-frequency-label').hidden=!monitor;
         $('hub-evaluation-frequency').disabled=!monitor;
+        $('hub-evaluation-minutes-label').hidden=!monitor;
+        $('hub-evaluation-minutes').disabled=!monitor;
         $('hub-evaluation-baseline-label').hidden=!monitor;
         $('hub-evaluation-final-label').hidden=!monitor;
         const regression=$('hub-evaluation-regression-enable');
@@ -3799,6 +3801,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-rate').value=stopBySuite.get(first?.suite_id)
             ?.min_success_rate??first?.min_success_rate??'';
         $('hub-evaluation-frequency').value=String(policy?.every_n_checkpoints??10);
+        $('hub-evaluation-minutes').value=String(
+            policy?.min_minutes_between_evaluations??'');
         $('hub-evaluation-baseline').checked=policy?.include_baseline!==false;
         $('hub-evaluation-final').checked=policy?.include_final!==false;
         $('hub-evaluation-regression-enable').checked=Boolean(monitor&&policy?.regression_alert);
@@ -3822,6 +3826,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const cadence=monitor?Number($('hub-evaluation-frequency').value):null;
         if(monitor&&(!Number.isSafeInteger(cadence)||cadence<1||cadence>1000000))
             throw Error('Evaluation update interval must be an integer from 1 to 1,000,000.');
+        const timeEntry=monitor?$('hub-evaluation-minutes').value.trim():'';
+        const minMinutes=timeEntry?Number(timeEntry):null;
+        if(timeEntry&&(!Number.isSafeInteger(minMinutes)||
+            minMinutes<1||minMinutes>10080))
+            throw Error('Minimum evaluator spacing must be 1–10,080 minutes.');
         const rawRule=(suite,digest,trials,rate)=>{
             if(!suite&&!digest&&!trials&&!rate)return null;
             if(!suite||!trials||(stop&&(!rate||Number(rate)<=0)))
@@ -3889,6 +3898,7 @@ document.addEventListener('DOMContentLoaded', () => {
             regression.minimum_drop<=0||regression.minimum_drop>1))
             throw Error('Regression detection needs 2–20 checkpoints in each window and a drop threshold in (0, 1].');
         const options={
+            ...(minMinutes?{min_minutes_between_evaluations:minMinutes}:{}),
             ...(regression?{regression_alert:regression}:{}),
             ...(!$('hub-evaluation-baseline').checked?{include_baseline:false}:{}),
             ...(!$('hub-evaluation-final').checked?{include_final:false}:{}),
@@ -4835,6 +4845,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     (machine?.name||j.assigned_machine_id||'unassigned')+
                     ' · '+(monitoring?'Periodic monitoring':'Stop-gated evaluation')+
                     (monitoring&&j.evaluation_stop?' with optional success Stop':'')+
+                    (monitoring&&j.evaluation_monitor.min_minutes_between_evaluations
+                        ?' · at least '+j.evaluation_monitor.min_minutes_between_evaluations+
+                            ' minutes between completed evaluations':'')+
                     (monitoring&&j.evaluation_monitor.include_final===false
                         ?' · final checkpoint evaluation disabled':'');
                 details.append(description);
