@@ -572,10 +572,12 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                         # cohort: time spacing applies only after all suites
                         # finished the same previous checkpoint.
                         if len(seen) == len(ordered) and len(set(seen)) == 1:
-                            sid = ordered[0][0]
-                            if completed_recently(
+                            # Enforce spacing since the last completed
+                            # suite, not the first suite in a long batch.
+                            if any(completed_recently(
                                 args.receipt_root / f"{dispatch}.{sid}.json",
-                                dispatch, sid, definitions[sid], interval):
+                                dispatch, sid, definitions[sid], interval)
+                                for sid, _ in ordered):
                                 continue
                 if not file.is_file():
                     continue
