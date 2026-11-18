@@ -2355,9 +2355,10 @@ impl NativeSoftwareRenderer {
         let message = text::fit(hint, self.width.saturating_sub(72).min(760));
         let w = (text::width(message, 1) + 20).min(self.width);
         let left = (self.width - w) / 2;
-        // The command strip starts at height-134. Draw this hint ABOVE
-        // its buttons instead of obscuring the first row.
-        let top = if self.height >= 430 { self.height - 166 }
+        // The 24-action strip now occupies five rows starting at
+        // height-164; place the transient feedback ABOVE the entire panel,
+        // not across its first row where it blocks tactical button labels.
+        let top = if self.height >= 430 { self.height - 196 }
             else { self.height - 42 };
         for y in top..(top + text::HEIGHT + 12).min(self.height) {
             self.pixels[y * self.width + left
