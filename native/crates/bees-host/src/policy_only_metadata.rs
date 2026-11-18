@@ -544,6 +544,7 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
     fn register_spawned_policy_ships(
         &mut self, world: &mut CombatWorld,
         events: &mut bees_gameplay::level_events::NativeLevelEventProcessor,
+        completed_tick: u64,
     ) -> Result<(), CombatPerceptionError> {
         // A policy on the OTHER faction must never claim this Queen's
         // children. Game-only Levels remain valid, and mixed scripted vs
@@ -641,6 +642,11 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             if let Some(group_id) = group_id {
                 events.group_delivery_mut().ok_or_else(invalid)?
                     .register_agent(side, group_id).map_err(|_| invalid())?;
+                let binding_revision = world.policy_binding_revision(minion_id)
+                    .ok_or_else(invalid)?;
+                events.record_policy_controller_admitted(
+                    completed_tick, minion_id, binding_revision, side, group_id,
+                ).map_err(|_| invalid())?;
                 self.next_dynamic_group_agent_id = next_group_id.ok_or_else(invalid)?;
             } else {
                 self.queen_controller_measurements.ungrouped_policy_minions_bound += 1;
