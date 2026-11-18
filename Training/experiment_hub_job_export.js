@@ -376,7 +376,8 @@ class JobExporter {
                     },{
                         job_id:job.id,label:'hub-host-observations',
                         path:hostFile,
-                    },...(job.evaluation_monitor||job.evaluation_stop
+                    },...(job.evaluation_monitor||job.evaluation_stop||
+                        fs.existsSync(evidence.path)
                         ?[evidence]:[])];
                 }),...linkedCollectorSources,...mounted,...mirrored],
         }),{flag:'wx',mode:0o600});
