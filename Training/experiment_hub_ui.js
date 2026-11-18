@@ -3519,7 +3519,8 @@ document.addEventListener('DOMContentLoaded', () => {
         tinyBrainsUpdates.value='1000';
         tinyBrainsThreads.value='';
         tinyBrainsDevice.value='';
-        setEvaluationEditor();
+        setEvaluationEditor(state?.projects.find(p=>p.id===project)
+            ?.default_evaluation_monitor||null,true);
         syncTinyBrainsEditor(JSON.parse($('hub-config-json').value));
         renderDesignEditor(true);
         $('hub-config-save').textContent='Save draft';
@@ -3605,6 +3606,62 @@ document.addEventListener('DOMContentLoaded', () => {
         return {evaluation_monitor:monitor?policy:null,
             evaluation_stop:monitor?null:policy};
     }
+    // Worker-advertised suite names are suggestions, not execution authority.
+    // A disconnected worker must not erase a saved suite ID or its fingerprint.
+    function renderEvaluationSuiteChoices() {
+        const available=new Map();
+        for(const machine of state?.machines||[]) {
+            if(machine.status!=='connected')continue;
+            for(const id of machine.evaluation_suites?.[project]||[]) {
+                if(!available.has(id))available.set(id,[]);
+                available.get(id).push(machine.name||machine.id);
+            }
+        }
+        $('hub-evaluation-suite-options').replaceChildren(
+            ...[...available].sort(([a],[b])=>a.localeCompare(b)).map(
+                ([id,machines])=>new Option(machines.join(', '),id)));
+        $('hub-evaluation-available-suites').textContent=available.size
+            ?available.size+' suite IDs advertised by connected '+project+
+                ' workers. Suggestions do not verify evaluator timer health.'
+            :'No connected machine currently advertises '+project+
+                ' evaluation suites. Existing approved suite IDs remain editable.';
+        const defaults=state?.projects.find(p=>p.id===project)
+            ?.default_evaluation_monitor;
+        $('hub-evaluation-default-status').textContent=defaults
+            ?'Project monitoring default saved. New configurations inherit it; existing configurations and jobs stay unchanged.'
+            :'No project monitoring default saved. Existing configurations and jobs stay unchanged.';
+    }
+    async function saveEvaluationDefaults(clear) {
+        const current=state?.projects.find(p=>p.id===project);
+        if(!current||project==='bees')return;
+        try {
+            if(!clear&&$('hub-evaluation-mode').value!=='monitor')
+                throw Error('Project defaults support monitoring only; switch evaluation mode to Monitor.');
+            const policy=clear?null:evaluationFromEditor().evaluation_monitor;
+            if(!clear&&!policy)
+                throw Error('Choose at least one evaluation suite before saving project defaults.');
+            if(!confirm(clear
+                ?'Clear project monitoring defaults? Existing configurations and jobs stay unchanged.'
+                :'Save these monitoring suites as defaults for new '+current.name+
+                    ' configurations? Existing configurations and jobs stay unchanged.'))
+                return;
+            await action('hub/projects/evaluation-defaults',{
+                project_id:project,expected_revision:current.evaluation_defaults_revision||0,
+                evaluation_monitor:policy,
+            });
+            await reload();
+            feedback('hub-evaluation-default-status',clear
+                ?'Project evaluation defaults cleared.'
+                :'Project monitoring defaults saved for new configurations.');
+        }catch(error) {
+            feedback('hub-evaluation-default-status',error.message);
+        }
+    }
+    $('hub-evaluation-save-project-defaults').addEventListener('click',
+        ()=>saveEvaluationDefaults(false));
+    $('hub-evaluation-clear-project-defaults').addEventListener('click',
+        ()=>saveEvaluationDefaults(true));
+
     // New jobs inherit a project-specific measurement priority, not a claim
     // that every candidate metric is available in every worker version.
     // Individual job choices remain editable without changing the project
@@ -3951,6 +4008,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderJobMetricSelection();
         $('hub-copy-bees-form').hidden=project!=='bees';
         $('hub-config-evaluation').hidden=project==='bees';
+        renderEvaluationSuiteChoices();
         displayTinyBrainsProfiles();
         renderDesignEditor();
         $('hub-config-rows').replaceChildren();
