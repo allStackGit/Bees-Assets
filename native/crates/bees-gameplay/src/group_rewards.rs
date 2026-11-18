@@ -152,6 +152,13 @@ impl NativeGroupRewardDelivery {
         Ok(())
     }
 
+    /// Snapshot the actual active group at an episode boundary. Authored
+    /// future-wave reservations are deliberately absent; the journal
+    /// records their real enrollment at physical deployment instead.
+    pub fn participants_by_team(&self) -> std::collections::BTreeMap<u8, BTreeSet<u64>> {
+        self.teams.into_iter().zip(self.participants.iter().cloned()).collect()
+    }
+
     /// Constant-time membership check for the event journal's physical
     /// admission receipt. No fabricated agent or team is accepted.
     pub fn is_registered(&self, side: i32, agent: u64) -> bool {
