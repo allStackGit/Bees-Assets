@@ -118,9 +118,8 @@ function monitoringPolicy(value) {
             throw Error('Monitoring requires 2–8 distinct independent suites and a valid cadence.');
         const rules=value.all_of.map(rule=>{
             if(record(rule)&&(Object.hasOwn(rule,'regression_alert')||
-                Object.hasOwn(rule,'min_minutes_between_evaluations')||
                 Object.hasOwn(rule,'preferred_metrics')))
-                throw Error('Regression and time-spacing parameters belong to the policy, not individual suite rules.');
+                throw Error('Regression and chart preferences belong to the policy, not individual suite rules.');
             return monitoringPolicy(rule);
         });
         if(rules.some(rule=>!rule||rule.all_of||
@@ -184,8 +183,9 @@ function compatibleMonitoringStop(monitor,stop) {
     // Per-suite monitoring frequencies run independently. Stop proof must
     // remain a same-checkpoint batch; no asynchronous suite results can
     // authorize a native transition or model promotion.
-    if(monitor.all_of?.some(rule=>rule.every_n_checkpoints!==undefined))
-        throw Error('Evaluation-based stopping requires one common multi-suite cadence; remove per-suite frequency overrides.');
+    if(monitor.all_of?.some(rule=>rule.every_n_checkpoints!==undefined||
+        rule.min_minutes_between_evaluations!==undefined))
+        throw Error('Evaluation-based stopping requires one coordinated multi-suite schedule; remove per-suite update/time frequency overrides.');
     const watched=evaluationRules(monitor);
     const gated=evaluationRules(stop);
     const byId=new Map(watched.map(rule=>[rule.suite_id,rule]));
