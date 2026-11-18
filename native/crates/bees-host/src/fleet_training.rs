@@ -372,6 +372,12 @@ fn pin_trainer_config(
     Ok((Some(destination), Some(sha)))
 }
 
+/// A game-only release can play without Python or Rust. Keep training
+/// actions inaccessible unless their canonical runtime is actually present.
+pub(super) fn training_available() -> bool {
+    converter_script().is_ok()
+}
+
 fn new_training_job(save_root: &Path) -> io::Result<(PathBuf, String)> {
     let root = save_root.join("training").join("fleet-skirmish");
     fs::create_dir_all(&root)?;
