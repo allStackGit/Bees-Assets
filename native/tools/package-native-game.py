@@ -49,6 +49,57 @@ PROTECTED_SOURCE_NAMES = {
 }
 
 
+
+def executable_target(source: Path) -> tuple[str, str]:
+    """Read the actual OS/CPU target, not an executable's arbitrary filename.
+
+    A transferred native release is useful only when the visual game,
+    headless rollout engine and canonical policy ABI manifest generator
+    were built for the same operating system and CPU architecture.
+    """
+    with source.open("rb") as stream:
+        header = stream.read(64)
+        if header[:4] == b"\\x7fELF":
+            if len(header) < 20 or header[4] not in (1, 2) or header[5] not in (1, 2):
+                raise ValueError(f"invalid native ELF executable header: {source}")
+            byte_order = "little" if header[5] == 1 else "big"
+            machine = int.from_bytes(header[18:20], byte_order)
+            platform = "linux"
+            architectures = {62: "x86_64", 183: "aarch64"}
+        elif header[:2] == b"MZ":
+            if len(header) < 64:
+                raise ValueError(f"invalid native Windows executable header: {source}")
+            offset = int.from_bytes(header[0x3c:0x40], "little")
+            if not 64 <= offset <= 1024 * 1024:
+                raise ValueError(f"invalid native PE header offset: {source}")
+            stream.seek(offset)
+            coff = stream.read(24)
+            if len(coff) != 24 or coff[:4] != b"PE\\x00\\x00":
+                raise ValueError(f"invalid native Windows PE executable: {source}")
+            machine = int.from_bytes(coff[4:6], "little")
+            platform = "windows"
+            architectures = {0x8664: "x86_64", 0xAA64: "aarch64"}
+        else:
+            raise ValueError(f"native release requires a compiled Windows/Linux executable: {source}")
+    if machine not in architectures:
+        raise ValueError(f"unsupported native {platform} CPU architecture: {machine:#x}")
+    return platform, architectures[machine]
+
+
+def check_compiled_training_targets(
+    root: Path, game: Path, rollout: Path | None, manifest: Path | None,
+) -> tuple[str, str]:
+    target = executable_target(game)
+    if target[0] != ("windows" if game.suffix == ".exe" else "linux"):
+        raise ValueError(f"native game binary name differs from executable platform: {game}")
+    for label, binary in (("rollout", rollout), ("manifest", manifest)):
+        if binary is not None and executable_target(binary) != target:
+            raise ValueError(
+                f"native {label} binary has a different OS/CPU target from the game"
+            )
+    return target
+
+
 def package_native_training_runtime(
     destination: Path, rollout_binary: Path | None,
     manifest_binary: Path | None,
@@ -454,6 +505,18 @@ def verify_native_package(directory: Path) -> dict:
 
     if not any((directory / name).is_file() for name in ("bees", "bees.exe")):
         raise ValueError("native release is missing the game executable")
+    game = directory / ("bees.exe" if (directory / "bees.exe").is_file() else "bees")
+    check_compiled_training_targets(
+        directory, game,
+        directory / ("policy_rollout.exe" if game.suffix == ".exe"
+                     else "policy_rollout") if (
+                         directory / ("policy_rollout.exe" if game.suffix == ".exe"
+                                      else "policy_rollout")).is_file() else None,
+        directory / ("policy_manifest.exe" if game.suffix == ".exe"
+                     else "policy_manifest") if (
+                         directory / ("policy_manifest.exe" if game.suffix == ".exe"
+                                      else "policy_manifest")).is_file() else None,
+    )
     if manifest.get("training_runtime", False) not in (True, False):
         raise ValueError("invalid native training distribution marker")
     training_runtime = manifest.get("training_runtime", False)
@@ -635,6 +698,7 @@ def main() -> None:
     output = args.output.resolve()
     if not binary.is_file() or binary.name not in ("bees", "bees.exe"):
         parser.error("Provide a compiled native graphical bees or bees.exe binary")
+    check_compiled_training_targets(output, binary, rollout_binary, manifest_binary)
     if output.exists():
         parser.error("Output already exists; native releases are immutable")
     python_command = args.python_command or (
