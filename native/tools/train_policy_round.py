@@ -235,6 +235,19 @@ def rollout_metrics(summary_path, config, manifest_sha):
         metrics["reinforcement_arrivals"] = {
             key: arrivals[key] for key in keys
         }
+    queens = summary.get("queen_minion_controllers")
+    if queens is not None:
+        keys = ("policy_minions_bound", "ungrouped_policy_minions_bound",
+                "ordinary_minions_preserved")
+        if (not isinstance(queens, dict) or
+                any(type(queens.get(key)) is not int or queens[key] < 0
+                    for key in keys) or
+                queens["ungrouped_policy_minions_bound"] >
+                queens["policy_minions_bound"]):
+            raise ValueError("native rollout has invalid dynamic Queen controller measurements")
+        metrics["queen_minion_controllers"] = {
+            key: queens[key] for key in keys
+        }
     # Preserve actual model-step CPU utilization reported by the native
     # simulator, not just the requested per-process thread limit. These
     # counters distinguish real parallel rounds from Stage-order fallbacks.
@@ -372,6 +385,8 @@ def combined_rollout_metrics(shards, wall_seconds):
             "requested_physics_workers": shard["requested_physics_worker_slots"],
             **({"reinforcement_arrivals": shard["reinforcement_arrivals"]}
                if "reinforcement_arrivals" in shard else {}),
+            **({"queen_minion_controllers": shard["queen_minion_controllers"]}
+               if "queen_minion_controllers" in shard else {}),
             **({key: shard[key] for key in (
                 "parallel_physics_rounds",
                 "parallel_physics_direct_rounds",
@@ -390,6 +405,12 @@ def combined_rollout_metrics(shards, wall_seconds):
         metrics["reinforcement_arrivals"] = {
             key: sum(shard["reinforcement_arrivals"][key] for shard in shards)
             for key in ("waves", "squads", "ships", "policy_agents")
+        }
+    if all("queen_minion_controllers" in shard for shard in shards):
+        metrics["queen_minion_controllers"] = {
+            key: sum(shard["queen_minion_controllers"][key] for shard in shards)
+            for key in ("policy_minions_bound", "ungrouped_policy_minions_bound",
+                        "ordinary_minions_preserved")
         }
     samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
     if samples:
