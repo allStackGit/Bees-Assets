@@ -121,6 +121,28 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     return wins, trials
 
 
+def evaluate_with_metrics(checkpoint, digest, suite, work):
+    """Evaluate a frozen checkpoint and reconcile all independent outcomes."""
+    counts = {"win": 0, "loss": 0, "draw": 0}
+
+    def observe(result):
+        outcome = result.get("outcome")
+        if outcome not in counts:
+            raise ValueError("Invalid TinyBrains evaluation outcome.")
+        counts[outcome] += 1
+
+    wins, trials = evaluate(checkpoint, digest, suite, work, on_result=observe)
+    expected = 2 * len(suite["maps"]) * len(suite["seeds"])
+    if trials != expected or wins != counts["win"] or sum(counts.values()) != trials:
+        raise ValueError("Unexpected TinyBrains independent match trial counts.")
+    return {"successes": wins, "metrics": {
+        "win_count": {"value": counts["win"], "unit": "count"},
+        "loss_count": {"value": counts["loss"], "unit": "count"},
+        "draw_count": {"value": counts["draw"], "unit": "count"},
+        "score_rate": {"value": (wins + counts["draw"] / 2) / trials, "unit": "ratio"},
+    }}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for option in ("checkpoint", "suite", "scratch", "receipt-root"):
