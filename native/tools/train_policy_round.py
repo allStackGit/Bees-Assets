@@ -294,10 +294,14 @@ def rollout_metrics(summary_path, config, manifest_sha):
     if ship_slots is not None:
         keys = ("integrated_bodies", "inactive_ship_slots_skipped",
                 "inactive_ship_grid_slots_skipped")
+        optional = ("inactive_obstacle_slots_skipped",
+                    "inactive_obstacle_grid_slots_skipped")
+        if isinstance(ship_slots, dict) and any(key in ship_slots for key in optional):
+            keys += optional
         if (not isinstance(ship_slots, dict) or
                 any(type(ship_slots.get(key)) is not int or ship_slots[key] < 0
                     for key in keys)):
-            raise ValueError("native rollout contains inconsistent active ship slot work")
+            raise ValueError("native rollout contains inconsistent active body slot work")
         metrics["ship_slot_work"] = {key: ship_slots[key] for key in keys}
     # Preserve actual model-step CPU utilization reported by the native
     # simulator, not just the requested per-process thread limit. These
@@ -429,6 +433,16 @@ def combined_rollout_metrics(shards, wall_seconds):
             key: sum(shard["ship_slot_work"][key] for shard in shards)
             for key in slot_keys
         }
+        # Old binaries did not yet track pooled asteroid slots. Do not
+        # fabricate zeros for the missing physical evidence.
+        obstacle_keys = ("inactive_obstacle_slots_skipped",
+                         "inactive_obstacle_grid_slots_skipped")
+        if all(all(key in shard["ship_slot_work"] for key in obstacle_keys)
+               for shard in shards):
+            metrics["ship_slot_work"].update({
+                key: sum(shard["ship_slot_work"][key] for shard in shards)
+                for key in obstacle_keys
+            })
     # Mixed historical collector binaries may report only the older
     # parallel-physics totals. Preserve unknown dispatch provenance as
     # absent, never treat missing direct rounds as zero.
