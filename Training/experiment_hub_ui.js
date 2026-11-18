@@ -3965,8 +3965,16 @@ document.addEventListener('DOMContentLoaded', () => {
             ?project==='tinybrains'?['score_rate']
                 :project==='courier'?['survival_rate']:[]
             :preferences);
+        const supported=evaluationChartOptions[project]||[];
+        const names=new Set(supported.map(([name])=>name));
+        // Preserve previously frozen preferences even if a newer adapter
+        // version stops advertising a measurement. Editing a draft must not
+        // silently erase its historical chart intentions.
+        const choices=[...supported,...[...selected]
+            .filter(name=>!names.has(name))
+            .map(name=>[name,name+' (not in current project catalogue)'])];
         $('hub-evaluation-measurements').replaceChildren(
-            ...(evaluationChartOptions[project]||[]).map(([name,label])=>{
+            ...choices.map(([name,label])=>{
                 const field=document.createElement('label');
                 const checkbox=document.createElement('input');
                 checkbox.type='checkbox';
