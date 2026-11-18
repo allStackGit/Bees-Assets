@@ -20,7 +20,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_collector_resume_restored',
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
     'training_rollout_compressed_collectors',
-    'training_policy_compressed_workers',
+    'training_policy_compressed_workers','training_policy_early_dispatch_count',
     'training_policy_delta_workers','training_policy_delta_ram_denied',
     'training_policy_delta_bases_ready',
     'training_policy_ram_denied','training_policy_digest_reused',
