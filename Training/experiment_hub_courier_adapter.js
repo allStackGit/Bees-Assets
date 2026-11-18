@@ -119,7 +119,7 @@ function courierMetrics(source) {
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
         /^training_gpu_rollout_input_(?:packs|seconds|owner)$/.test(name)||
         /^training_remote_progress_(?:seen|sent|skipped|bytes|max_seconds|encode_seconds|owner)$/.test(name)||
-        /^training_ingestion_(?:logical_bytes|shards|final_shard_seconds|max_seconds)$/.test(name)||
+        /^training_ingestion_(?:logical_bytes|shards|final_shard_seconds|exposed_seconds|max_seconds)$/.test(name)||
         /^training_(?:local_gpu_rollout_lineages|gpu_rollout_(?:next_lineages|trial))$/.test(name)||
         /^training_gpu_snapshot_(?:max_seconds|stream_max_seconds|reused_lineages|owner|work_share)$/.test(name);
     const entries=Object.entries(stats).sort(
