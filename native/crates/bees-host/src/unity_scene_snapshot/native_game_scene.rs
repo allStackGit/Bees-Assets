@@ -141,6 +141,8 @@ struct GameShip {
     #[serde(default)]
     user_controlled: bool,
     #[serde(default)]
+    can_override_bounds: bool,
+    #[serde(default)]
     cease_fire: bool,
     #[serde(default)]
     turrets: Vec<GameTurret>,
@@ -1160,6 +1162,7 @@ impl NativePhysicalScene {
             entities.push(NativeAuthoredEntity::Ship(NativeAuthoredShip {
                 entity_id: id, ship_type: ship.ship_type, side: ship.side,
                 vitals, motion, game_movement,
+                can_override_bounds: ship.can_override_bounds,
                 original_health: ship.original_health, size_class: ship.size_class,
                 healing_zone: if ship.ship_type == 2 { support_zone.clone() } else { None },
                 warp_zone: if ship.ship_type == 20 { support_zone } else { None },
