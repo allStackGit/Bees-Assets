@@ -19,7 +19,8 @@ const JOB_FIELDS=[
     'assigned_machine_id','continuation_of_job_id','artifact_lineage_root_id',
     'checkpoint_model_sha256','checkpoint_ready_verified',
     'checkpoint_stop_verified','created_at','capacity_released_at',
-    'evaluation_stop','evaluation_monitor','evaluation_stop_evidence','evaluation_candidates',
+    'evaluation_stop','evaluation_monitor','evaluation_stop_evidence',
+    'evaluation_regression_stop_evidence','evaluation_candidates',
     'last_evaluation','final_progress','final_resource_usage',
     'execution_diagnostic','native_bees_run_id',
 ];
