@@ -32,6 +32,8 @@ pub struct StepCounts {
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
     pub inactive_ship_grid_slots_skipped: u64,
+    pub inactive_obstacle_slots_skipped: u64,
+    pub inactive_obstacle_grid_slots_skipped: u64,
     pub broadphase_candidates: u64,
     pub ship_grid_overflow_bodies: u64,
     pub obstacle_grid_overflow_bodies: u64,
@@ -89,6 +91,8 @@ pub struct Measurements {
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
     pub inactive_ship_grid_slots_skipped: u64,
+    pub inactive_obstacle_slots_skipped: u64,
+    pub inactive_obstacle_grid_slots_skipped: u64,
     pub broadphase_candidates: u64,
     pub ship_grid_overflow_bodies: u64,
     pub obstacle_grid_overflow_bodies: u64,
@@ -161,6 +165,8 @@ impl Default for Measurements {
             integrated_bodies: 0,
             inactive_ship_slots_skipped: 0,
             inactive_ship_grid_slots_skipped: 0,
+            inactive_obstacle_slots_skipped: 0,
+            inactive_obstacle_grid_slots_skipped: 0,
             broadphase_candidates: 0,
             ship_grid_overflow_bodies: 0,
             obstacle_grid_overflow_bodies: 0,
@@ -222,6 +228,8 @@ impl Measurements {
         self.integrated_bodies += counts.integrated_bodies;
         self.inactive_ship_slots_skipped += counts.inactive_ship_slots_skipped;
         self.inactive_ship_grid_slots_skipped += counts.inactive_ship_grid_slots_skipped;
+        self.inactive_obstacle_slots_skipped += counts.inactive_obstacle_slots_skipped;
+        self.inactive_obstacle_grid_slots_skipped += counts.inactive_obstacle_grid_slots_skipped;
         self.broadphase_candidates += counts.broadphase_candidates;
         self.ship_grid_overflow_bodies += counts.ship_grid_overflow_bodies;
         self.obstacle_grid_overflow_bodies += counts.obstacle_grid_overflow_bodies;
@@ -297,6 +305,8 @@ impl Measurements {
         self.integrated_bodies += other.integrated_bodies;
         self.inactive_ship_slots_skipped += other.inactive_ship_slots_skipped;
         self.inactive_ship_grid_slots_skipped += other.inactive_ship_grid_slots_skipped;
+        self.inactive_obstacle_slots_skipped += other.inactive_obstacle_slots_skipped;
+        self.inactive_obstacle_grid_slots_skipped += other.inactive_obstacle_grid_slots_skipped;
         self.broadphase_candidates += other.broadphase_candidates;
         self.ship_grid_overflow_bodies += other.ship_grid_overflow_bodies;
         self.obstacle_grid_overflow_bodies += other.obstacle_grid_overflow_bodies;
