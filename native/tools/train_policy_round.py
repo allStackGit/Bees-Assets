@@ -553,7 +553,8 @@ def verified_gpu_forwards(log_path):
 
 
 def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
-                          gpu_ids=None, gpu_mask=None, leased_gpu_inference=False):
+                          gpu_ids=None, gpu_mask=None, leased_gpu_inference=False,
+                          leased_gpu_count=1):
     """Supervise one immutable rollout subprocess per process allocation.
 
     Any failed exit OR invalid completed summary makes the collection
@@ -577,6 +578,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     stdout=log, stderr=subprocess.STDOUT if log is not None else None,
                     env=rollout_worker_environment(
                         gpu_ids, gpu_mask, index, leased_gpu_inference,
+                        leased_gpu_count,
                     ),
                     start_new_session=os.name != "nt",
                     creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
@@ -762,6 +764,8 @@ def main() -> None:
         help="GPU isolation selector; default CUDA_VISIBLE_DEVICES (ROCR for ROCm Linux)")
     parser.add_argument("--leased-gpu-inference", action="store_true",
                         help="use an externally supervised exclusive GPU for native inference")
+    parser.add_argument("--leased-gpu-count", type=int, default=1,
+                        help="number of externally verified exclusive ROCm GPUs (1 or 2)")
     parser.add_argument("--rollout-worlds", type=int,
                         help="independent native Worlds in this collector's reproducible window")
     parser.add_argument("--rollout-world-start", type=int,
@@ -813,6 +817,9 @@ def main() -> None:
     if args.leased_gpu_inference and (
             rollout_gpus is not None or args.rollout_gpu_mask is not None):
         parser.error("supervised GPU leases and standalone GPU allocations are exclusive")
+    if args.leased_gpu_count not in (1, 2) or (
+            args.leased_gpu_count != 1 and not args.leased_gpu_inference):
+        parser.error("two leased GPUs require explicitly authorized GPU inference")
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
     inbox = args.bundle_inbox.resolve(strict=True) if args.bundle_inbox else None
@@ -963,7 +970,8 @@ def main() -> None:
     # model process per assigned GPU. Keep a larger authored worker budget,
     # but never leave explicitly selected GPUs idle by default.
     workers = (args.rollout_workers if args.rollout_workers is not None else
-               max(template_workers, len(rollout_gpus or ())))
+               max(template_workers, len(rollout_gpus or ()),
+                   args.leased_gpu_count if args.leased_gpu_inference else 1))
     physics_workers = (args.physics_workers if args.physics_workers is not None
                        else config.get("physics_workers", 1))
     if type(physics_workers) is not int or not 1 <= physics_workers <= 128:
@@ -978,6 +986,8 @@ def main() -> None:
         parser.error("rollout_world_start must be a nonnegative integer")
     if type(workers) is not int or not 1 <= workers <= min(len(levels), 256):
         parser.error("rollout_workers must be between one and the number of Levels (maximum 256)")
+    if args.leased_gpu_inference and workers < args.leased_gpu_count:
+        parser.error("each leased GPU needs at least one native rollout process")
     try:
         gpu_mask = validate_gpu_allocation(
             rollout_gpus, args.rollout_gpu_mask, workers, manifest,
@@ -1033,13 +1043,16 @@ def main() -> None:
                       "rollout_processes": workers,
                       "physics_workers_per_process": physics_workers,
                       **({"gpu_allocation": gpu_allocation} if gpu_allocation else {}),
-                      **({"leased_gpu_inference": True} if args.leased_gpu_inference else {}),
+                      **({"leased_gpu_inference": True,
+                          "leased_gpu_count": args.leased_gpu_count}
+                         if args.leased_gpu_inference else {}),
                       "seed_offset": args.seed_offset,
                       "input_manifest_sha256": input_manifest_sha,
                       "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
     rollout = run_parallel_rollouts(
         shards, command, input_manifest_sha, args.stage_diagnostics,
         rollout_gpus, gpu_mask, args.leased_gpu_inference,
+        args.leased_gpu_count,
     )
     if args.collect_only:
         captures = []
@@ -1078,7 +1091,9 @@ def main() -> None:
             "rollout_processes": workers,
             "physics_workers_per_process": physics_workers,
             **({"gpu_allocation": gpu_allocation} if gpu_allocation else {}),
-            **({"leased_gpu_inference": True} if args.leased_gpu_inference else {}),
+            **({"leased_gpu_inference": True,
+                "leased_gpu_count": args.leased_gpu_count}
+               if args.leased_gpu_inference else {}),
             "partition": {
                 "source_run_id": config["run_id"],
                 "world_start": world_start,
@@ -1111,6 +1126,7 @@ def main() -> None:
         result["gpu_allocation"] = gpu_allocation
     if args.leased_gpu_inference:
         result["leased_gpu_inference"] = True
+        result["leased_gpu_count"] = args.leased_gpu_count
     if workers > 1:
         result["rollout_shards"] = [
             {"run_config": str(path), "run_config_sha256": file_sha256(path),
