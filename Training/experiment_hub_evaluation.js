@@ -233,6 +233,10 @@ function evaluationFailure(value,context) {
         'dispatch_id','suite_id','suite_sha256','checkpoint_sha256',
         'runtime_sha256','steps_completed','attempted_at','reason'];
     if(!record(value)||!record(context)||
+        !SUITE.test(String(context.project_id||''))||
+        !SUITE.test(String(context.suite_id||''))||
+        !UUID.test(String(context.job_id||''))||
+        !UUID.test(String(context.dispatch_id||''))||
         Object.keys(value).some(key=>!keys.includes(key))||
         value.schema_version!==1||value.evaluation_status!=='failed'||
         value.project_id!==context.project_id||
