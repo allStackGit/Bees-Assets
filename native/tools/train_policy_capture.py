@@ -512,6 +512,19 @@ def _validate_dynamic_episode(
             identities[agent] = identity
             by_agent[agent].append(tick)
 
+    # A controller can die before its first neural decision. Its authentic
+    # terminal/retirement boundary still identifies the physical binding.
+    # Read it before determining whether a decision was due.
+    for frame in episode_boundaries.values():
+        for agent, row in frame.items():
+            if agent not in teams:
+                raise ValueError("unknown controller in dynamic policy boundary")
+            identity = int(row["ship"]), int(row["binding_revision"])
+            if agent in admissions and identity != admissions[agent][:2]:
+                raise ValueError("dynamic policy boundary disagrees with enrollment")
+            if agent in identities and identities[agent] != identity:
+                raise ValueError("policy identity changed across decision and boundary")
+            identities[agent] = identity
     # A controller can be born and die before requesting its first action.
     # It still participates in the group but contributes no PPO trajectory.
     closing = {}
