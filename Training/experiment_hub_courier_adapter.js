@@ -242,7 +242,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // bounded backend capability manifest allows the same Hub adapter to
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
-    let sharedPolicy=false;
+    let sharedPolicy=false,sharedCapacityProbe=false;
     let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false,gpuMulti=false;
     let gpuSpareRollout=false;
     let persistentWorlds=false,maxSimulationShards=1;
@@ -286,10 +286,15 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     !Number.isSafeInteger(capabilities.courier_max_simulation_shards)))||
             (capabilities.courier_shared_policy!==undefined&&
                 typeof capabilities.courier_shared_policy!=='boolean')||
+            (capabilities.courier_shared_capacity_probe!==undefined&&
+                typeof capabilities.courier_shared_capacity_probe!=='boolean')||
+            (capabilities.courier_shared_capacity_probe===true&&
+                capabilities.courier_shared_policy!==true)||
             (capabilities.courier_remote_lineage_transport!==undefined&&
                 typeof capabilities.courier_remote_lineage_transport!=='boolean'))
             throw Error('Unsupported Courier backend capabilities manifest.');
         sharedPolicy=capabilities.courier_shared_policy===true;
+        sharedCapacityProbe=sharedPolicy&&capabilities.courier_shared_capacity_probe===true;
         if(sharedPolicy&&(fs.realpathSync(sharedScript)!==sharedScript||
             !fs.statSync(sharedScript).isFile()))
             throw Error('Courier shared-policy learner entry point is missing.');
@@ -577,6 +582,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     '--optimizer-device','cuda',
                     ...(windows?[]:['--optimizer-gpu-pci',context.gpu_pci_address])]:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
+                ...(sharedCapacityProbe&&!predecessor?['--probe-collectors']:[]),
                 ...(predecessor?['--resume']:[])];
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
                 '--seed',String(seed),'--workers',String(chosenWorkers),
