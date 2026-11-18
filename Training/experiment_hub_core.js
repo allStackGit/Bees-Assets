@@ -2026,6 +2026,9 @@ class ExperimentHub {
                 min_success_rate:job.evaluation_monitor?0:rule.min_success_rate,
                 ...(job.evaluation_monitor?{
                     monitor_only:true,
+                    ...(job.evaluation_monitor.min_minutes_between_evaluations
+                        ?{min_minutes_between_evaluations:
+                            job.evaluation_monitor.min_minutes_between_evaluations}:{}),
                     every_n_checkpoints:rule.every_n_checkpoints||
                         job.evaluation_monitor.every_n_checkpoints||1,
                     ...(job.evaluation_monitor.include_baseline===false
