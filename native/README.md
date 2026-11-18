@@ -779,8 +779,9 @@ python3 native/tools/import-ship-sprites.py
 The converter reads the tracked source PNGs, Unity texture metadata and
 `ConfigData.ChangeableShipColors` palettes and writes `native/assets/ship-sprites.rgba`,
 `native/assets/projectile-sprites.rgba`,
-`native/assets/asteroid-sprites.rgba` and
-`native/assets/ship-animations.rgba`. The animation atlas includes the
+`native/assets/asteroid-sprites.rgba`,
+`native/assets/ship-animations.rgba` and
+`native/assets/ship-remains.rgba`. The living animation atlas includes the
 original 12 FPS Carpenter mining, 10 FPS Factory mining, 8 FPS WarpGate
 opening and 10 FPS WarpGate ready-loop sprites, including their original
 recolorable-pixel masks. The renderer uses actual Mining command collider
@@ -794,10 +795,10 @@ changing combat physics or training clocks. Rocket and Fire Barge explosion
 atlases are included; their 1024-pixel source frames are reduced with
 corresponding pixels-per-unit scaling to preserve visual world size without
 excessive memory use on older computers.
-For a manual deployment, copy all four atlases into an `assets/`
+For a manual deployment, copy all five atlases into an `assets/`
 directory beside `bees` or `bees.exe`, or point `BEES_NATIVE_ASSETS`
-at their directory. Older deployments without `ship-animations.rgba`
-still render static ship art and authoritative physical hulls.
+at their directory. Older deployments without optional living-animation
+or remains atlases still render static ship art and physical hulls.
 The native renderer recolors only the same source-matched ship pixels for
 squads with authored custom colors, preserving original alpha and unaffected
 details. Source-numbered collision asteroids, spawned shards and fading
@@ -806,17 +807,20 @@ bodies. Mining rocks and other obstacles still use their real hull outlines.
 Recolored sprites are cached per ship type/color and measured in
 `presentation_final`; no recoloring or art loading happens in headless
 training. The visible native game also projects genuine `ShipDied`
-combat events into short explosion flashes and five-second fading
-ship remains; these are renderer-owned images at the actual last ship
-pose, not physical colliders or extra training actors. The same
+combat events into short explosion flashes and five-second source
+ShipRemains animations; these are renderer-owned images at the actual
+last ship pose, not physical colliders or extra training actors. The
+source's 20-frame wreck animations hold their final sprite until the
+five-second retirement time, using the original recolor masks and
+frame rates. The remains atlas loads lazily on the first graphical
+death, not during gameplay startup or headless training. The same
 effect renderer is used for LAN play: the host attaches visible
 ship-death identities to its already-buffered, side-filtered audio/event
 cues, preserving deaths between five-tick network snapshots without
 revealing enemies hidden by fog. Effects have a fixed 512-record limit
 and expire on simulation time; counts of captured, drawn and evicted
-effects appear in presentation measurements. The current remains image
-is a fading native ship sprite/geometry approximation rather than the
-unported source corpse animation. Existing BSS1 atlases remain readable without color overrides.
+effects appear in presentation measurements. If an older build lacks the source remains atlas, the renderer uses
+a fading ordinary ship sprite or geometric marker instead. Existing BSS1 atlases remain readable without color overrides.
 Neither Python nor Pillow is needed to run the compiled game; headless
 simulation/inference never loads art. Absent or invalid optional artwork
 falls back to the real physical hulls. The Queen animation and unsupported
