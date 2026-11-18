@@ -2315,6 +2315,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'';
             const gpuFwdOwner=measured.training_gpu_forward_owner?.value;
             const sharedGpuFwdOwner=measured.training_shared_gpu_fwd_owner?.value;
+            const tbLocalFwdOwner=measured.pipeline_local_gpu_fwd_owner?.value;
+            const tbRemoteFwdOwner=measured.pipeline_remote_gpu_fwd_owner?.value;
+            const tbGpuFwdSignal=job.project_id==='tinybrains'&&
+                measured.pipeline_local_gpu_fwd_pressure?.value===1&&
+                Number.isSafeInteger(tbLocalFwdOwner)&&tbLocalFwdOwner>=0&&
+                tbLocalFwdOwner<=16
+                ?' · Sustained exposed forward-stream work on local GPU collector '+
+                    tbLocalFwdOwner+' (not proof of GPU hardware saturation)'
+                :job.project_id==='tinybrains'&&
+                    measured.pipeline_remote_gpu_fwd_pressure?.value===1&&
+                    Number.isSafeInteger(tbRemoteFwdOwner)&&tbRemoteFwdOwner>=1&&
+                    tbRemoteFwdOwner<=16
+                    ?' · Sustained exposed forward-stream work on remote collector '+
+                        tbRemoteFwdOwner+' (not proof of GPU hardware saturation)'
+                    :'';
             const courierGpuFwdSignal=job.project_id==='courier'&&
                 measured.training_gpu_forward_pressure?.value===1&&
                 Number.isSafeInteger(gpuFwdOwner)&&gpuFwdOwner>=0&&gpuFwdOwner<64
@@ -2357,7 +2372,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
                 enginePressureSignal+connectSignal+remotePrepSignal+dispatchSignal+
-                courierQueueSignal+courierImbalanceSignal+courierGpuFwdSignal+resourceSignal+
+                courierQueueSignal+courierImbalanceSignal+courierGpuFwdSignal+
+                tbGpuFwdSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
