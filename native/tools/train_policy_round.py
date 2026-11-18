@@ -27,6 +27,9 @@ from native_training_artifacts import (
     native_source_contract_sha256,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
+from native_gpu_allocation import (
+    parse_rollout_gpus, validate_gpu_allocation, rollout_worker_environment,
+)
 
 
 def resolved(base: Path, value: str) -> str:
@@ -510,7 +513,8 @@ def stop_parallel_rollout_workers(processes):
             pass
 
 
-def run_parallel_rollouts(shards, command, manifest_sha, diagnostics):
+def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
+                          gpu_ids=None, gpu_mask=None):
     """Supervise one immutable rollout subprocess per process allocation.
 
     Any failed exit OR invalid completed summary makes the collection
@@ -523,13 +527,14 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics):
     settled = set()
     with ExitStack() as files:
         try:
-            for shard, config_path in shards:
+            for index, (shard, config_path) in enumerate(shards):
                 log = (files.enter_context(
                     config_path.with_name("rollout.log").open("x", encoding="utf-8")
                 ) if diagnostics else None)
                 processes.append(subprocess.Popen(
                     [*command, str(config_path)],
                     stdout=log, stderr=subprocess.STDOUT if log is not None else None,
+                    env=rollout_worker_environment(gpu_ids, gpu_mask, index),
                     start_new_session=os.name != "nt",
                     creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
                 ))
@@ -693,6 +698,11 @@ def main() -> None:
                         help="fixed number of parallel native rollout processes")
     parser.add_argument("--physics-workers", type=int,
                         help="CPU physics threads per rollout process (1..128); shared model inference remains batched")
+    parser.add_argument("--rollout-gpus",
+                        help="comma-separated physical GPUs shared round-robin among rollout processes")
+    parser.add_argument("--rollout-gpu-mask", choices=(
+        "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES"),
+        help="GPU isolation selector; default CUDA_VISIBLE_DEVICES (ROCR for ROCm Linux)")
     parser.add_argument("--rollout-worlds", type=int,
                         help="independent native Worlds in this collector's reproducible window")
     parser.add_argument("--rollout-world-start", type=int,
@@ -737,6 +747,10 @@ def main() -> None:
         parser.error("--rollout-workers must be between 1 and 256")
     if args.physics_workers is not None and not 1 <= args.physics_workers <= 128:
         parser.error("--physics-workers must be between 1 and 128")
+    try:
+        rollout_gpus = parse_rollout_gpus(args.rollout_gpus)
+    except ValueError as error:
+        parser.error(str(error))
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
     inbox = args.bundle_inbox.resolve(strict=True) if args.bundle_inbox else None
@@ -783,6 +797,7 @@ def main() -> None:
     }
     if "rollout_bundles" in run_document:
         if (args.rollout_workers is not None or args.physics_workers is not None or
+                rollout_gpus is not None or args.rollout_gpu_mask is not None or
                 args.rollout_worlds is not None or
                 args.rollout_world_start is not None or
                 "rollout_world_start" in run_document or "rollout_worlds" in run_document):
@@ -897,6 +912,17 @@ def main() -> None:
         parser.error("rollout_world_start must be a nonnegative integer")
     if type(workers) is not int or not 1 <= workers <= min(len(levels), 256):
         parser.error("rollout_workers must be between one and the number of Levels (maximum 256)")
+    try:
+        gpu_mask = validate_gpu_allocation(
+            rollout_gpus, args.rollout_gpu_mask, workers, manifest,
+        )
+    except ValueError as error:
+        parser.error(str(error))
+    gpu_allocation = (None if rollout_gpus is None else {
+        "visibility_environment": gpu_mask,
+        "physical_gpu_ids": list(rollout_gpus),
+        "worker_gpu_ids": [rollout_gpus[i % len(rollout_gpus)] for i in range(workers)],
+    })
     if workers > 1 or args.collect_only:
         if args.rollout_binary is None or config.get("hivemind") is not None or any(
             config.get(key) for key in ("recover_notifications", "recover_outcome_journals")
@@ -938,11 +964,13 @@ def main() -> None:
                       "rollout_worlds": len(levels), "rollout_world_start": world_start,
                       "rollout_processes": workers,
                       "physics_workers_per_process": physics_workers,
+                      **({"gpu_allocation": gpu_allocation} if gpu_allocation else {}),
                       "seed_offset": args.seed_offset,
                       "input_manifest_sha256": input_manifest_sha,
                       "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
     rollout = run_parallel_rollouts(
         shards, command, input_manifest_sha, args.stage_diagnostics,
+        rollout_gpus, gpu_mask,
     )
     if args.collect_only:
         captures = []
@@ -980,6 +1008,7 @@ def main() -> None:
             "rollout_worlds": len(levels),
             "rollout_processes": workers,
             "physics_workers_per_process": physics_workers,
+            **({"gpu_allocation": gpu_allocation} if gpu_allocation else {}),
             "partition": {
                 "source_run_id": config["run_id"],
                 "world_start": world_start,
@@ -1008,6 +1037,8 @@ def main() -> None:
         journal=first["notifications"],
         rollout_metrics=rollout,
     )
+    if gpu_allocation is not None:
+        result["gpu_allocation"] = gpu_allocation
     if workers > 1:
         result["rollout_shards"] = [
             {"run_config": str(path), "run_config_sha256": file_sha256(path),
