@@ -194,13 +194,21 @@ class EvaluationHistory {
                     continue;
                 }
                 if(row.evaluation_status!=null&&row.evaluation_status!=='complete'||
-                    typeof row.suite_id!=='string'||!SUITE.test(row.suite_id)||
-                    typeof row.checkpoint_sha256!=='string'||
-                    !SHA256.test(row.checkpoint_sha256)||
-                    !Number.isSafeInteger(row.trials)||row.trials<1||
-                    !Number.isSafeInteger(row.successes)||row.successes<0||
-                    row.successes>row.trials)
+                    !SUITE.test(String(row.suite_id||''))||
+                    !SHA256.test(String(row.suite_sha256||''))||
+                    typeof row.observed_at!=='string'||
+                    !Number.isFinite(Date.parse(row.observed_at))||
+                    new Date(row.observed_at).toISOString()!==row.observed_at)
                     throw Error('Invalid independent evaluation archive record.');
+                // A previously persisted receipt must satisfy the same
+                // project-neutral evidence/measurement contract as a live
+                // receipt. Otherwise malformed historical scores could
+                // reappear after a restart without passing native checks.
+                // Older accepted receipts may lack an update coordinate;
+                // preserve them without fabricating a comparison point.
+                evaluationEvidence(row,{
+                    suite_id:row.suite_id,suite_sha256:row.suite_sha256,
+                },row.dispatch_id);
                 const key=row.dispatch_id+':'+row.suite_id+':'+row.checkpoint_sha256;
                 if(seen.has(key))throw Error('Duplicate evaluation history record.');
                 seen.set(key,JSON.stringify(row));
