@@ -25,7 +25,7 @@ import sys
 import tempfile
 
 from experiment_hub_eval_io import SHA256, suite_digest
-from experiment_hub_tinybrains_evaluate import evaluate, read_suite
+from experiment_hub_tinybrains_evaluate import evaluate_with_metrics, read_suite
 from experiment_hub_tinybrains_runtime import configure_engine
 
 
@@ -87,20 +87,10 @@ def audit(args) -> dict:
             with frozen.open("rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
             for suite in suites:
-                counts = {"win": 0, "loss": 0, "draw": 0}
-
-                def observe(result):
-                    outcome = result.get("outcome")
-                    if outcome not in counts:
-                        raise ValueError("Invalid historical match outcome.")
-                    counts[outcome] += 1
-
                 work = temp / ("evaluation-" + suite["suite_id"])
                 work.mkdir()
-                wins, trials = evaluate(frozen, digest, suite, work, on_result=observe)
-                required_trials = 2 * len(suite["maps"]) * len(suite["seeds"])
-                if trials != required_trials or wins != counts["win"] or sum(counts.values()) != trials:
-                    raise ValueError("Historical match counts failed independent verification.")
+                measured = evaluate_with_metrics(frozen, digest, suite, work)
+                trials = 2 * len(suite["maps"]) * len(suite["seeds"])
                 canonical = json.dumps(suite, sort_keys=True)
                 results.append({
                     "checkpoint_name": original.name,
@@ -112,16 +102,8 @@ def audit(args) -> dict:
                     "runtime_sha256": suite["runtime_sha256"],
                     "evaluated_at": datetime.now(timezone.utc).isoformat(
                         timespec="milliseconds").replace("+00:00", "Z"),
-                    "trials": trials, "successes": wins,
-                    "metrics": {
-                        "win_count": {"value": counts["win"], "unit": "count"},
-                        "loss_count": {"value": counts["loss"], "unit": "count"},
-                        "draw_count": {"value": counts["draw"], "unit": "count"},
-                        "score_rate": {
-                            "value": (wins + counts["draw"] / 2) / trials,
-                            "unit": "ratio",
-                        },
-                    },
+                    "trials": trials, "successes": measured["successes"],
+                    "metrics": measured["metrics"],
                 })
 
     identity = hashlib.sha256(json.dumps(results, sort_keys=True,
