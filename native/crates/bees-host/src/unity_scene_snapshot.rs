@@ -656,6 +656,10 @@ pub struct NativeLevelLayout {
     pub remove_static_ids: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub add_static_boxes: Vec<NativePlacedStaticBox>,
+    /// Live source MapBorder colliders. These confine/kill or stop ships and
+    /// asteroids, but are NOT discoverable static obstacles or mining TSV.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub add_map_borders: Vec<NativePlacedStaticBox>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub add_static_polygons: Vec<NativePlacedStaticPolygon>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1701,6 +1705,7 @@ impl NativePhysicalScene {
         use bees_sim::obstacle::ObstacleKind;
         let invalid = NativeSnapshotError::InvalidNativeLayout;
         if layout.remove_static_ids.is_empty() && layout.add_static_boxes.is_empty() &&
+            layout.add_map_borders.is_empty() &&
             layout.add_static_polygons.is_empty() && layout.translate_squads.is_empty() &&
             layout.clone_squads.is_empty() && layout.remove_squads.is_empty()
         {
@@ -1748,7 +1753,11 @@ impl NativePhysicalScene {
         let highest_original_id = self.entities.iter()
             .map(NativeAuthoredEntity::entity_id).max().unwrap_or(0);
         let mut new_ids = HashSet::new();
-        for placement in &layout.add_static_boxes {
+        for (placement, kind) in layout.add_static_boxes.iter()
+            .map(|p| (p, ObstacleKind::StaticObstacle))
+            .chain(layout.add_map_borders.iter()
+                .map(|p| (p, ObstacleKind::MapBorder)))
+        {
             if placement.entity_id <= highest_original_id ||
                 placement.entity_id <= 0 || placement.entity_id == i64::MAX ||
                 !new_ids.insert(placement.entity_id) {
@@ -1757,8 +1766,12 @@ impl NativePhysicalScene {
             let Some(asset) = boxes.by_name(&placement.prefab_name) else {
                 return Err(invalid("new obstacle requires a verified source box prefab"));
             };
-            if asset.kind != ObstacleKind::StaticObstacle || asset.authored_health <= 0 {
-                return Err(invalid("native box placement must be a real damage-free static obstacle"));
+            if asset.kind != kind ||
+                (kind == ObstacleKind::StaticObstacle && asset.authored_health <= 0) {
+                return Err(invalid("native box placement must match the source static/border kind"));
+            }
+            if kind == ObstacleKind::MapBorder && placement.local_corners.is_none() {
+                return Err(invalid("authored map borders require exact live collider corners"));
             }
             let position = Vec2::new(placement.position[0], placement.position[1]);
             let pose = Pose {
@@ -2012,11 +2025,15 @@ impl NativePhysicalScene {
                 }
             }
         }
-        for placement in &layout.add_static_boxes {
-            let asset = boxes.by_name(&placement.prefab_name)
-                .expect("validated immutable box prefab");
-            self.source_static_discovery_values
-                .insert(placement.entity_id, asset.authored_health);
+        for (placement, is_static) in layout.add_static_boxes.iter().map(|p| (p, true))
+            .chain(layout.add_map_borders.iter().map(|p| (p, false)))
+        {
+            if is_static {
+                let asset = boxes.by_name(&placement.prefab_name)
+                    .expect("validated immutable static box prefab");
+                self.source_static_discovery_values
+                    .insert(placement.entity_id, asset.authored_health);
+            }
             self.entities.push(NativeAuthoredEntity::BoxObstacle {
                 entity_id: placement.entity_id,
                 prefab_name: placement.prefab_name.clone(),
