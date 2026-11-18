@@ -176,6 +176,22 @@ function learnerMeasurements(metrics) {
 
 // Expose only actual simulator receipts. Older runners may omit some
 // parallel-physics counters; missing measurements are never fabricated.
+function rolloutGpuMeasurements(rollout) {
+    const proof = rollout?.gpu_inference;
+    if (proof == null) return {};
+    const names = ['verified_workers', 'model_forwards', 'agent_rows'];
+    if (names.some(name => !Number.isSafeInteger(proof[name]) ||
+            proof[name] < 1) ||
+        proof.model_forwards > proof.agent_rows ||
+        proof.agent_rows > rollout.successful_policy_rows)
+        throw Error('Invalid native Bees measured GPU inference receipt.');
+    return {
+        rollout_gpu_verified_workers: {value: proof.verified_workers, unit: 'count'},
+        rollout_gpu_model_forwards: {value: proof.model_forwards, unit: 'count'},
+        rollout_gpu_agent_rows: {value: proof.agent_rows, unit: 'count'},
+    };
+}
+
 function rolloutPhysicsMeasurements(rollout) {
     const result = {};
     for (const field of [
@@ -767,6 +783,7 @@ function createNativeBeesAdapter({
                         },
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
                         ...rolloutPhysicsMeasurements(rollout),
+                        ...rolloutGpuMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),
                         ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
@@ -816,6 +833,7 @@ function createNativeBeesAdapter({
                 metrics: {
                     ...(rollout ? {
                         ...rolloutPhysicsMeasurements(rollout),
+                        ...rolloutGpuMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),
                         ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
