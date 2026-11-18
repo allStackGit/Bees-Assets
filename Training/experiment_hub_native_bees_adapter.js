@@ -124,6 +124,7 @@ function learnerMeasurements(metrics) {
     for (const name of ['capture_peak_inflight_decisions', 'capture_peak_inflight_episodes',
         'empty_policy_terminal_boundaries',
         'capture_compact_opponent_decisions', 'capture_compact_opponent_boundaries',
+        'episodes_without_policy_decisions', 'episodes_without_learner_decisions',
         'dynamic_policy_episodes', 'dynamic_policy_admissions',
         'dynamic_policy_admissions_without_decisions',
         'dynamic_policy_decision_phases_max',
