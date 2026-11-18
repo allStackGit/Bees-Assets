@@ -501,7 +501,7 @@ def exclusive_native_training_owner(output: Path):
             owner.seek(0)
             if not owner.read(1):
                 owner.seek(0)
-                owner.write(b"\\0")
+                owner.write(b"\0")
                 owner.flush()
             owner.seek(0)
             try:
