@@ -46,6 +46,54 @@ fn command_identity(selection: &NativeCommandSelection) -> serde_json::Value {
     }
 }
 
+/// One physical authored scene's completed episode results, keyed by the
+/// exact content digest already bound to the source Level. Only terminal
+/// notifications update this map; physics and inference never touch it.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct NativeSceneOutcomes {
+    pub episodes_finished: u64,
+    pub episodes_timed_out: u64,
+    pub draws: u64,
+    pub victories_by_side: BTreeMap<i32, u64>,
+    pub total_episode_seconds: f64,
+}
+
+impl NativeSceneOutcomes {
+    fn record(&mut self, winner: i32, timed_out: bool, seconds: f32) {
+        self.episodes_finished = self.episodes_finished.saturating_add(1);
+        self.episodes_timed_out = self.episodes_timed_out
+            .saturating_add(u64::from(timed_out));
+        self.total_episode_seconds += f64::from(seconds);
+        if winner == 0 {
+            self.draws = self.draws.saturating_add(1);
+        } else {
+            let wins = self.victories_by_side.entry(winner).or_default();
+            *wins = wins.saturating_add(1);
+        }
+    }
+
+    fn delta_since(&self, previous: &Self) -> Option<Self> {
+        let mut victories_by_side = BTreeMap::new();
+        for (&side, &wins) in &self.victories_by_side {
+            victories_by_side.insert(side, wins.checked_sub(
+                previous.victories_by_side.get(&side).copied().unwrap_or(0),
+            )?);
+        }
+        if previous.victories_by_side.iter().any(|(&side, &wins)|
+            self.victories_by_side.get(&side).copied().unwrap_or(0) < wins)
+        {
+            return None;
+        }
+        Some(Self {
+            episodes_finished: self.episodes_finished.checked_sub(previous.episodes_finished)?,
+            episodes_timed_out: self.episodes_timed_out.checked_sub(previous.episodes_timed_out)?,
+            draws: self.draws.checked_sub(previous.draws)?,
+            victories_by_side,
+            total_episode_seconds: self.total_episode_seconds - previous.total_episode_seconds,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct NativeDiagnosticMeasurements {
     /// Exactly one outcome per durably delivered EpisodeFinal record.
@@ -67,6 +115,9 @@ pub struct NativeDiagnosticMeasurements {
     /// Winner identities are canonical source side IDs, not model teams.
     pub victories_by_side: BTreeMap<i32, u64>,
     pub total_episode_seconds: f64,
+    /// Current cumulative, authoritative results grouped by imported or
+    /// native-authored Level scene content, never inferred from model team.
+    pub by_scene_sha256: BTreeMap<String, NativeSceneOutcomes>,
     /// Group-only rewards, keyed by the model team in the actual episode.
     /// ELO outcome markers are not included in these PPO reward totals.
     pub immediate_reward_by_team: [f64; 2],
@@ -97,6 +148,17 @@ impl NativeDiagnosticMeasurements {
         ) {
             return None;
         }
+        let mut by_scene_sha256 = BTreeMap::new();
+        for (scene, outcomes) in &self.by_scene_sha256 {
+            let empty = NativeSceneOutcomes::default();
+            let earlier = previous.by_scene_sha256.get(scene).unwrap_or(&empty);
+            by_scene_sha256.insert(scene.clone(), outcomes.delta_since(earlier)?);
+        }
+        if previous.by_scene_sha256.keys().any(|scene|
+            !self.by_scene_sha256.contains_key(scene))
+        {
+            return None;
+        }
         Some(Self {
             episodes_finished:
                 self.episodes_finished.checked_sub(previous.episodes_finished)?,
@@ -116,6 +178,7 @@ impl NativeDiagnosticMeasurements {
             unattributed_tsv_loss: self.unattributed_tsv_loss
                 .checked_sub(previous.unattributed_tsv_loss)?,
             victories_by_side,
+            by_scene_sha256,
             total_episode_seconds:
                 self.total_episode_seconds - previous.total_episode_seconds,
             immediate_reward_by_team: std::array::from_fn(|i|
@@ -133,7 +196,7 @@ impl NativeDiagnosticMeasurements {
         })
     }
 
-    fn record(&mut self, event: &NativeLevelNotification) {
+    fn record(&mut self, event: &NativeLevelNotification, scene_sha256: Option<&str>) {
         match &event.kind {
             NativeLevelNotificationKind::VisionCommandCredit(credit) => {
                 self.vision_command_credits = self.vision_command_credits.saturating_add(1);
@@ -159,6 +222,13 @@ impl NativeDiagnosticMeasurements {
                 );
             }
             NativeLevelNotificationKind::EpisodeFinal(finalized) => {
+                if let Some(scene) = scene_sha256 {
+                    self.by_scene_sha256.entry(scene.to_owned()).or_default().record(
+                        finalized.result.winner_side,
+                        finalized.result.timed_out,
+                        finalized.result.duration_seconds,
+                    );
+                }
                 self.episodes_finished = self.episodes_finished.saturating_add(1);
                 self.episodes_timed_out = self.episodes_timed_out
                     .saturating_add(u64::from(finalized.result.timed_out));
@@ -653,7 +723,10 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
             // the file has synchronized. This matches the exact durable
             // prefix acknowledged by the Level event outbox.
             for event in &notifications[committed..committed + buffered] {
-                self.measurements.record(event);
+                let scene = self.evaluation_contexts.get(&world.0)
+                    .filter(|(revision, _)| *revision == episode_revision)
+                    .map(|(_, context)| context.scene_sha256.as_str());
+                self.measurements.record(event, scene);
             }
             self.prepared.extend(self.pending_prepared.drain(..));
             committed += buffered;
