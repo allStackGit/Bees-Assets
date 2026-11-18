@@ -466,8 +466,10 @@ class LinuxSupervisor {
         // A proof of denial requires a second GPU render node that the same
         // unconfined account can open. Do not mistake a UNIX ACL failure for
         // a working eBPF device filter.
-        if(!plan.unselected.length||plan.selected.length!==1)
-            throw Error('GPU access qualification needs one selected and at least one excluded AMD render node.');
+        if(![1,2].includes(plan.selected.length)||
+            (plan.selected.length===1&&!plan.unselected.length)||
+            (plan.selected.length===2&&runtimeProof===null))
+            throw Error('GPU access qualification needs excluded-device evidence or a dual-GPU HIP attestation.');
         const denied=plan.unselected.map(device=>device.node).sort();
         verifyUnconfinedDeviceAccess(plan,this.fs);
         const nonce=crypto.randomUUID(),unit=
@@ -503,29 +505,37 @@ class LinuxSupervisor {
                 ?[path.join(__dirname,'experiment_hub_linux_gpu_probe.js'),
                     plan.kfd.node,plan.selected[0].node,...denied]
                 :[path.join(__dirname,'experiment_hub_linux_gpu_launch_check.js'),
-                    bindings[0].id,bindings[0].pci_address,bindings[0].vram_mb,
-                    deviceIdentity(plan),runtimeProof.executable,...runtimeProof.verifyArgs])];
+                    ...gpuAttestationArgs(bindings,plan,runtimeProof)])];
         let failure=null;
         try {
             const response=await this.runner(SYSTEMD_RUN,args,
                 {timeout:runtimeProof===null?20000:45000,
                     maxBuffer:8192,windowsHide:true});
             const actual=JSON.parse(response.stdout.trim());
+            const allowed=plan.selected.map(device=>device.node);
+            const observedAllowed=Array.isArray(actual.allowed)?actual.allowed:[actual.allowed];
+            const observedAccess=Array.isArray(actual.allowed_access)
+                ?actual.allowed_access:[actual.allowed_access];
             if(actual.kfd!==plan.kfd.node||
-                actual.allowed!==plan.selected[0].node||
+                observedAllowed.length!==allowed.length||
+                allowed.some((node,index)=>observedAllowed[index]!==node)||
                 !Array.isArray(actual.denied)||
                 actual.denied.length!==denied.length||
                 denied.some((node,index)=>actual.denied[index]!==node)||
-                actual.kfd_access!==true||actual.allowed_access!==true||
+                actual.kfd_access!==true||
+                observedAccess.length!==allowed.length||
+                observedAccess.some(access=>access!==true)||
                 !Array.isArray(actual.denied_access)||
                 actual.denied_access.length!==denied.length||
                 actual.denied_access.some(access=>access!==false))
                 throw Error('Linux device filter did not prove allowed and denied GPU access.');
             if(runtimeProof!==null&&
                 (!Array.isArray(actual.pci_addresses)||
-                    actual.pci_addresses.length!==1||
-                    actual.pci_addresses[0]!==bindings[0].pci_address))
-                throw Error('Linux GPU runtime preflight did not attest the leased PCI device.');
+                    actual.pci_addresses.length!==bindings.length||
+                    new Set(actual.pci_addresses).size!==bindings.length||
+                    actual.pci_addresses.some(pci=>
+                        !bindings.some(binding=>binding.pci_address===pci))))
+                throw Error('Linux HIP runtime preflight did not attest the leased PCI devices.');
         }catch(error){failure=error;}
         // A timed-out device probe may still be running. Only control the
         // uniquely named, exactly matching service, never an arbitrary PID.
