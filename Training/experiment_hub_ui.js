@@ -3134,6 +3134,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 candidate_selection:job.candidate_selection||null,
                 last_evaluation:job.last_evaluation||null,
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
+                evaluation_regression_stop_evidence:
+                    job.evaluation_regression_stop_evidence||null,
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
                 evaluation_history:evalByJob.get(id)||[],
@@ -3812,6 +3814,8 @@ document.addEventListener('DOMContentLoaded', () => {
         regression.disabled=!monitor;
         $('hub-evaluation-regression-enable-label').hidden=!monitor;
         const regressionActive=monitor&&regression.checked;
+        $('hub-evaluation-regression-stop-label').hidden=!regressionActive;
+        $('hub-evaluation-regression-stop').disabled=!regressionActive;
         for(const field of ['window','drop']) {
             const label=$('hub-evaluation-regression-'+field+'-label');
             label.hidden=!regressionActive;
@@ -3897,6 +3901,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-baseline').checked=policy?.include_baseline!==false;
         $('hub-evaluation-final').checked=policy?.include_final!==false;
         $('hub-evaluation-regression-enable').checked=Boolean(monitor&&policy?.regression_alert);
+        $('hub-evaluation-regression-stop').checked=Boolean(monitor&&
+            policy?.regression_alert?.stop_on_regression===true);
         $('hub-evaluation-regression-window').value=String(
             policy?.regression_alert?.window_checkpoints??3);
         $('hub-evaluation-regression-drop').value=String(
@@ -3911,6 +3917,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-evaluation-mode').addEventListener('change',refreshEvaluationEditor);
     $('hub-evaluation-optional-stop').addEventListener('change',refreshEvaluationEditor);
     $('hub-evaluation-regression-enable').addEventListener('change',refreshEvaluationEditor);
+    $('hub-evaluation-regression-stop').addEventListener('change',refreshEvaluationEditor);
     function evaluationFromEditor() {
         const monitor=$('hub-evaluation-mode').value==='monitor';
         const stop=!monitor||$('hub-evaluation-optional-stop').checked;
@@ -3982,12 +3989,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const regression=alertEnabled?{
             window_checkpoints:Number($('hub-evaluation-regression-window').value),
             minimum_drop:Number($('hub-evaluation-regression-drop').value),
+            ...($('hub-evaluation-regression-stop').checked
+                ?{stop_on_regression:true}:{}),
         }:null;
         if(regression&&(!Number.isSafeInteger(regression.window_checkpoints)||
             regression.window_checkpoints<2||regression.window_checkpoints>20||
             !Number.isFinite(regression.minimum_drop)||
             regression.minimum_drop<=0||regression.minimum_drop>1))
             throw Error('Regression detection needs 2–20 checkpoints in each window and a drop threshold in (0, 1].');
+        if(regression?.stop_on_regression&&
+            !$('hub-evaluation-final').checked)
+            throw Error('Regression-based Stop requires final-checkpoint evaluation.');
         const options={
             ...(minMinutes?{min_minutes_between_evaluations:minMinutes}:{}),
             ...(regression?{regression_alert:regression}:{}),
@@ -4937,9 +4949,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const regressionSignals=comparisonProject===project
                 ?comparisonData?.evaluation_regressions?.filter(row=>row.job_id===j.id)||[]
                 :[];
-            const regressionText=regressionSignals.some(row=>row.status==='regressed')
-                ?' · Independent evaluation regression detected (inspect details)'
-                :'';
+            const regressionText=j.evaluation_regression_stop_evidence
+                ?' · Verified regression Stop requested on '+j.evaluation_regression_stop_evidence.suite_id+
+                    ' (not promotion authority)'
+                :regressionSignals.some(row=>row.status==='regressed')
+                    ?' · Independent evaluation regression detected (inspect details)'
+                    :'';
             const learningCell=cell(tr,learningSummary(j)+evaluation+availability+regressionText);
             if(policy) {
                 const details=document.createElement('details');
@@ -5026,6 +5041,16 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ?' (change '+(100*row.drop).toFixed(1)+' percentage points)':'')+
                             '; '+row.reason).join(' | ')
                         :'Regression monitoring configured. Historical analysis requires loaded independent evaluation history.';
+                    if(j.evaluation_monitor.regression_alert.stop_on_regression===true)
+                        info.textContent+=' · Automatic native Stop enabled only for confirmed independent regression under identical frozen suite and runtime fingerprints.';
+                    if(j.evaluation_regression_stop_evidence)
+                        info.textContent+=' · Stop evidence: checkpoint '+
+                            j.evaluation_regression_stop_evidence.checkpoint_sha256+
+                            ', update '+j.evaluation_regression_stop_evidence.steps_completed+
+                            ', independent suite '+j.evaluation_regression_stop_evidence.suite_sha256+
+                            ', runtime '+j.evaluation_regression_stop_evidence.runtime_sha256+
+                            ', absolute decline '+(100*j.evaluation_regression_stop_evidence.drop).toFixed(1)+
+                            ' percentage points.';
                     details.append(info);
                 }
                 const currentUpdate=j.live_execution?.progress?.steps_completed??
