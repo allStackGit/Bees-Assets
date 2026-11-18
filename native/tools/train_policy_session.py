@@ -906,7 +906,7 @@ def main():
                         help="primary fixed-seed Levels used for checkpoint selection and stopping")
     parser.add_argument("--monitor-evaluation-run-config", type=Path, action="append", default=[],
                         help="additional fixed-seed suite monitored against every evaluated checkpoint; repeatable")
-    parser.add_argument("--checkpoint-selection", choices=("primary", "mean", "worst"),
+    parser.add_argument("--checkpoint-selection", choices=("primary", "mean", "worst", "mean-scene", "worst-scene"),
                         default="primary",
                         help="choose the best model by primary victories, mean suite win rate, or weakest suite win rate")
     parser.add_argument("--evaluation-side", type=int,
@@ -994,8 +994,8 @@ def main():
         parser.error("additional monitoring suites require a primary --evaluation-run-config")
     if len(args.monitor_evaluation_run_config) > 16:
         parser.error("no more than 16 independent monitoring suites per session")
-    if args.checkpoint_selection != "primary" and not args.monitor_evaluation_run_config:
-        parser.error("mean/worst checkpoint ranking requires additional monitoring suites")
+    if args.checkpoint_selection in ("mean", "worst") and not args.monitor_evaluation_run_config:
+        parser.error("mean/worst suite ranking requires additional monitoring suites")
     if not 1 <= args.evaluation_every <= 99999 or (
             args.evaluation_every != 1 and args.evaluation_run_config is None):
         parser.error("--evaluation-every must be positive and requires a fixed holdout suite")

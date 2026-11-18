@@ -2170,8 +2170,12 @@ do **not** change early stopping or best-checkpoint selection. With
 `--checkpoint-selection mean` or `--checkpoint-selection worst` at
 session creation, the best playable checkpoint instead maximizes the
 equal-weight mean win rate or the weakest win rate across **all** pinned
-suites. Only fully evaluated checkpoints qualify, and ties retain the
-earlier checkpoint. Early stopping still observes the primary holdout,
+suites. For multi-scene holdouts, `--checkpoint-selection mean-scene` or
+`worst-scene` instead ranks by individual physical-scene win rates, equal
+weight per scene and suite. These modes require at least two distinct
+source scene digests, but no extra suite if the primary holdout contains
+multiple authored battles. Only fully evaluated checkpoints qualify, and
+ties retain the earlier checkpoint. Early stopping still observes the primary holdout,
 regardless of the optional best-model ranking.
 A monitoring suite is pinned for the entire training session and must be
 specified again, unchanged and in the same order, when resuming. Source

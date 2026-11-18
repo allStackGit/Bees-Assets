@@ -608,7 +608,7 @@ def main() -> None:
                         help="existing holdout native Levels evaluated after each finished learner update")
     parser.add_argument("--monitor-evaluation-run-config", type=Path, action="append", default=[],
                         help="extra independent native holdout suites (repeatable, requires primary holdout)")
-    parser.add_argument("--checkpoint-selection", choices=("primary", "mean", "worst"), default="primary",
+    parser.add_argument("--checkpoint-selection", choices=("primary", "mean", "worst", "mean-scene", "worst-scene"), default="primary",
                         help="optional model selection by primary, mean or worst independent holdout")
     parser.add_argument("--evaluation-side", type=int, choices=(1, 2),
                         help="source side to measure during holdout evaluation")
@@ -753,7 +753,7 @@ def main() -> None:
         parser.error("extra monitoring suites require training and a primary holdout")
     if len(args.monitor_evaluation_run_config) > 16:
         parser.error("no more than 16 independent native monitoring suites")
-    if args.checkpoint_selection != "primary" and not args.monitor_evaluation_run_config:
+    if args.checkpoint_selection in ("mean", "worst") and not args.monitor_evaluation_run_config:
         parser.error("multi-suite model selection requires extra monitoring suites")
     if (args.holdout_worlds is None and args.evaluation_run_config is None) != (
         args.evaluation_side is None

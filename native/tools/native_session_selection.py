@@ -118,11 +118,13 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
     mode = recipe.get("checkpoint_selection", "primary")
     if mode == "primary":
         return primary_candidate
-    if mode not in ("mean", "worst"):
-        raise ValueError("unknown native multi-suite checkpoint ranking")
+    if mode not in ("mean", "worst", "mean-scene", "worst-scene"):
+        raise ValueError("unknown native checkpoint ranking")
     suites = recipe.get("monitor_evaluations", [])
-    if not suites or len(monitor_results) != len(suites):
-        raise ValueError("multi-suite checkpoint selection requires all scheduled holdouts")
+    if len(monitor_results) != len(suites) or (
+            mode in ("mean", "worst") and not suites):
+        raise ValueError("native checkpoint selection requires all scheduled holdouts")
+    source_receipts = [("primary", primary)]
     all_suites = [{
         "suite_id": "primary",
         "source_run_config_sha256": recipe["evaluation_config"]["sha256"],
@@ -146,6 +148,7 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
         candidate = _candidate(
             round_number, checkpoint, result, learner_slot, result["episodes"],
         )
+        source_receipts.append((suite_id, result))
         all_suites.append({
             "suite_id": suite_id,
             "source_run_config_sha256": source["sha256"],
@@ -153,10 +156,37 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
             "episodes": candidate["episodes"],
             "win_rate": candidate["win_rate"],
         })
-    rates = [suite["win_rate"] for suite in all_suites]
-    primary_candidate["selection_score"] = (
-        sum(rates) / len(rates) if mode == "mean" else min(rates)
-    )
+    if mode in ("mean-scene", "worst-scene"):
+        scene_rows = []
+        distinct_scenes = set()
+        for suite_id, receipt in source_receipts:
+            scenes = receipt.get("by_scene_sha256")
+            if not isinstance(scenes, dict) or not scenes:
+                raise ValueError("per-scene checkpoint selection requires authentic physical scene receipts")
+            for scene_sha, scene in sorted(scenes.items()):
+                episodes, wins = scene.get("episodes"), scene.get("side_victories")
+                if (not isinstance(scene_sha, str) or len(scene_sha) != 64 or
+                        type(episodes) is not int or episodes <= 0 or
+                        type(wins) is not int or not 0 <= wins <= episodes or
+                        scene.get("side_win_rate") != wins / episodes):
+                    raise ValueError("invalid native per-scene model selection outcome")
+                distinct_scenes.add(scene_sha)
+                scene_rows.append({
+                    "suite_id": suite_id, "scene_sha256": scene_sha,
+                    "episodes": episodes, "wins": wins, "win_rate": wins / episodes,
+                })
+        if len(distinct_scenes) < 2:
+            raise ValueError("per-scene checkpoint ranking requires at least two different physical scenes")
+        rates = [row["win_rate"] for row in scene_rows]
+        primary_candidate["selection_score"] = (
+            sum(rates) / len(rates) if mode == "mean-scene" else min(rates)
+        )
+        primary_candidate["evaluation_scenes"] = scene_rows
+    else:
+        rates = [suite["win_rate"] for suite in all_suites]
+        primary_candidate["selection_score"] = (
+            sum(rates) / len(rates) if mode == "mean" else min(rates)
+        )
     primary_candidate["evaluation_suites"] = all_suites
     return primary_candidate
 
@@ -237,6 +267,8 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
             "primary": "most_fixed_seed_side_victories_with_earliest_tie",
             "mean": "highest_equal_weight_mean_fixed_suite_win_rate_with_earliest_tie",
             "worst": "highest_minimum_fixed_suite_win_rate_with_earliest_tie",
+            "mean-scene": "highest_equal_weight_mean_fixed_scene_win_rate_with_earliest_tie",
+            "worst-scene": "highest_minimum_fixed_scene_win_rate_with_earliest_tie",
         }[recipe.get("checkpoint_selection", "primary")],
         "learner_side": baseline_holdout["learner_side"],
         "learner_slot": learner_slot,
