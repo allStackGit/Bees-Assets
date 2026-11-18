@@ -592,6 +592,12 @@ def aggregate_collection_metrics(bundles):
             for key in ("policy_minions_bound", "ungrouped_policy_minions_bound",
                         "ordinary_minions_preserved")
         }
+        if all("retired_policy_routes_reclaimed" in row["queen_minion_controllers"]
+               for row in rows):
+            result["queen_minion_controllers"]["retired_policy_routes_reclaimed"] = sum(
+                row["queen_minion_controllers"]["retired_policy_routes_reclaimed"]
+                for row in rows
+            )
     if sampled:
         result["sampled_model_timing"] = {
             key: sum(sample[key] for sample in sampled)
