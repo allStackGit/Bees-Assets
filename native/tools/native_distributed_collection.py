@@ -470,6 +470,15 @@ def verify_bundle(path, job, orders):
         raise ValueError(f"collector supplied a GPU device count without a verified lease: {path}")
     if receipt.get("gpu_allocation") is not None or receipt.get("leased_gpu_inference"):
         proof = metrics.get("gpu_inference")
+        if count == 2 and (
+                not isinstance(proof, dict) or
+                not isinstance(proof.get("gpu_pci_addresses"), list) or
+                len(proof["gpu_pci_addresses"]) != 2 or
+                len(set(proof["gpu_pci_addresses"])) != 2 or
+                any(not isinstance(pci, str) or
+                    re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", pci) is None
+                    for pci in proof["gpu_pci_addresses"])):
+            raise ValueError(f"GPU collector did not verify both physical HIP devices: {path}")
         if (not isinstance(proof, dict) or
                 type(proof.get("verified_workers")) is not int or
                 proof["verified_workers"] != receipt["rollout_processes"] or
