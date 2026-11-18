@@ -298,6 +298,11 @@ class LocalExecution {
                         artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                         continuation_of_job_id:job.continuation_of_job_id||null,
                         frozen_parameters:job.frozen_parameters,
+                        ...(lease.gpu_bindings?.length===1
+                            ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
+                            :lease.gpu_bindings?.length===2
+                                ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
+                                :{}),
                     }))!==true)
                     throw Error('Local adapter did not verify resumable checkpoint artifacts.');
                 if(state==='finished')report.checkpoint_ready_verified=true;
@@ -317,6 +322,11 @@ class LocalExecution {
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     frozen_parameters:job.frozen_parameters,
+                    ...(lease.gpu_bindings?.length===1
+                        ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
+                        :lease.gpu_bindings?.length===2
+                            ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
+                            :{}),
                 }));
                 if(!/^[a-f0-9]{64}$/.test(String(digest||'')))
                     throw Error('Invalid resumable model fingerprint.');
