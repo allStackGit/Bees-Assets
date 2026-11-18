@@ -19,9 +19,13 @@ MAP = re.compile(r"[a-zA-Z0-9_-]{1,80}")
 
 def read_suite(file):
     suite = json.loads(read_bounded(file, 8192))
-    if not isinstance(suite, dict) or set(suite) - {"runtime_sha256"} != {"suite_id", "maps", "seeds", "max_turns"}:
-        raise ValueError("Expected suite_id, maps, seeds, max_turns, and optional runtime_sha256.")
+    required = {"suite_id", "maps", "seeds", "max_turns"}
+    optional = {"runtime_sha256", "opponent", "opponent_model_sha256", "opponent_manifest_sha256"}
+    if not isinstance(suite, dict) or not required <= suite.keys() or set(suite) - required - optional:
+        raise ValueError("Expected suite_id, maps, seeds, max_turns, and optional pinned opponent/runtime.")
     maps, seeds, turns = suite["maps"], suite["seeds"], suite["max_turns"]
+    opponent = suite.get("opponent", "nano")
+    pins = ("opponent_model_sha256", "opponent_manifest_sha256")
     if (
         not isinstance(suite["suite_id"], str) or not SUITE_ID.fullmatch(suite["suite_id"])
         or not isinstance(maps, list) or not 1 <= len(maps) <= 16
@@ -32,19 +36,37 @@ def read_suite(file):
         or len(set(seeds)) != len(seeds)
         or len(maps) * len(seeds) * 2 > 256
         or type(turns) is not int or not 1 <= turns <= 1000
-        or ("runtime_sha256" in suite and (not isinstance(suite["runtime_sha256"], str)
-            or not SHA256.fullmatch(suite["runtime_sha256"])))
+        or opponent not in ("nano", "micro")
+        or (opponent == "micro" and not all(key in suite for key in pins))
+        or (any(key in suite for key in pins) and not all(key in suite for key in pins))
+        or any(key in suite and (not isinstance(suite[key], str)
+            or not SHA256.fullmatch(suite[key]))
+            for key in (*pins, "runtime_sha256"))
     ):
         raise ValueError("Invalid TinyBrains evaluation suite.")
     return suite
 
 
-def evaluate(checkpoint, digest, suite, work):
+def verify_opponent(suite, directory):
+    # Pin both submitted opponent files, not just an opponent name. Legacy
+    # Nano suites retain their original runtime contract.
+    for filename, key in (("model.onnx", "opponent_model_sha256"),
+                          ("manifest.json", "opponent_manifest_sha256")):
+        expected = suite.get(key)
+        if expected is None:
+            continue
+        with (directory / filename).open("rb") as stream:
+            actual = hashlib.file_digest(stream, "sha256").hexdigest()
+        if actual != expected:
+            raise ValueError(f"TinyBrains evaluation {filename} differs from the suite pin.")
+
+
+def evaluate(checkpoint, digest, suite, work, *, on_result=None):
     with pinned_runtime("tinybrains", suite):
-        return _evaluate(checkpoint, digest, suite, work)
+        return _evaluate(checkpoint, digest, suite, work, on_result=on_result)
 
 
-def _evaluate(checkpoint, digest, suite, work):
+def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     from ants_mapoca.artifacts import export
     from ants_mapoca.runtime import STARTER, configure, dump, run_cli
 
@@ -56,14 +78,16 @@ def _evaluate(checkpoint, digest, suite, work):
             raise ValueError("Checkpoint did not match the pinned SHA-256.")
     candidate = work / "candidate"
     export(pinned, candidate)
-    nano = STARTER / "models/nano-bc"
+    opponent = suite.get("opponent", "nano")
+    fixed = STARTER / f"models/{opponent}-bc"
+    verify_opponent(suite, fixed)
     replay_root = work / "replays"
     match_file = work / "match.json"
     wins = trials = 0
     for board in suite["maps"]:
         for seed in suite["seeds"]:
             for seat in (0, 1):
-                models = (candidate, nano) if seat == 0 else (nano, candidate)
+                models = (candidate, fixed) if seat == 0 else (fixed, candidate)
                 match = f"heldout-{trials}"
                 dump(match_file, {
                     "game": "ants", "vars": {"max_turns": suite["max_turns"]},
@@ -71,7 +95,7 @@ def _evaluate(checkpoint, digest, suite, work):
                         "id": match, "seed": seed, "map": board, "seat_count": 2,
                         "seats": [{"seat": index, "weights": str(model / "model.onnx"),
                                    "manifest": str(model / "manifest.json"),
-                                   "label": "candidate" if index == seat else "nano"}
+                                   "label": "candidate" if index == seat else opponent}
                                   for index, model in enumerate(models)],
                     }],
                 })
@@ -84,8 +108,16 @@ def _evaluate(checkpoint, digest, suite, work):
                 ranks = replay["engine_ranks"]
                 if not isinstance(ranks, list) or len(ranks) != 2 or any(type(rank) is not int for rank in ranks):
                     raise ValueError("TinyBrains replay has invalid engine ranks.")
-                wins += ranks[seat] < ranks[1 - seat]
+                outcome = "win" if ranks[seat] < ranks[1 - seat] else (
+                    "loss" if ranks[seat] > ranks[1 - seat] else "draw")
+                wins += outcome == "win"
                 trials += 1
+                if on_result is not None:
+                    on_result({"map": board, "seed": seed, "candidate_seat": seat,
+                               "opponent": opponent, "outcome": outcome,
+                               "ranks": ranks, "scores": replay.get("scores"),
+                               "turns": replay.get("turns")})
+    verify_opponent(suite, fixed)
     return wins, trials
 
 
@@ -117,7 +149,7 @@ def main():
             "trials": trials, "successes": wins,
         }
         print(publish(receipts, result))
-        print(f"TinyBrains held-out wins: {wins}/{trials}")
+        print(f"TinyBrains vs {suite.get('opponent', 'nano')} held-out wins: {wins}/{trials}")
         return 0
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
         print(f"TinyBrains evaluation failed: {exc}", file=sys.stderr)
