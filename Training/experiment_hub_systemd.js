@@ -120,10 +120,14 @@ function evaluatorDefinition({
     project,machine,trainingDir=__dirname,pythonPath,port=null,suites,
     projectRoot,artifactRoot,snapshotRoot,scratch,receiptRoot,enginePath,
     environmentFile=null,cpus,ramMb,interval='180',timeout='7200',
+    unitId=null,
 }={}) {
     if(process.platform!=='linux')throw Error('Evaluator timers are Linux-only.');
     if(!['courier','tinybrains'].includes(project)||!/^[a-z][a-z0-9_-]{0,47}$/.test(machine||''))
         throw Error('Select a supported evaluator project and registered machine ID.');
+    if(unitId!==null&&(!/^[a-z][a-z0-9_-]{0,31}$/.test(unitId)||
+        ('bees-experiment-hub-'+project+'-'+machine+'-evaluator-'+unitId).length>180))
+        throw Error('Evaluator unit ID must be 1–32 lowercase letters, digits, underscores or hyphens.');
     if(!Array.isArray(suites)||suites.length<1||suites.length>8||
         new Set(suites).size!==suites.length)
         throw Error('Supply 1–8 distinct --suite files for a coordinated benchmark batch.');
@@ -152,7 +156,11 @@ function evaluatorDefinition({
     const memoryBudget=positiveInt(ramMb,512,1048576,'Evaluator RAM MiB');
     const period=positiveInt(interval,60,86400,'Evaluator interval seconds');
     const timeoutSeconds=positiveInt(timeout,60,86400,'Evaluator timeout seconds');
-    const name='bees-experiment-hub-'+project+'-'+machine+'-evaluator';
+    // Legacy units retain their existing names. Separately scheduled suites
+    // use different explicit IDs, avoiding unit collisions without
+    // changing any installed service or timer.
+    const name='bees-experiment-hub-'+project+'-'+machine+'-evaluator'+
+        (unitId?'-'+unitId:'');
     const service=[
         '[Unit]','Description=Independent '+project+' evaluation for '+machine,
         'After=network.target','',
@@ -211,6 +219,7 @@ function main(argv=process.argv.slice(2)) {
             'ram-mb':{type:'string'},
             'interval':{type:'string'},
             'timeout':{type:'string'},
+            'evaluator-id':{type:'string'},
         }});
     if(positionals.length!==1||
         !(Object.hasOwn(NAMES,positionals[0])||positionals[0]==='evaluator'))
@@ -228,6 +237,7 @@ function main(argv=process.argv.slice(2)) {
             enginePath:values['engine-path'],
             cpus:values.cpus,ramMb:values['ram-mb'],
             interval:values.interval||'180',timeout:values.timeout||'7200',
+            unitId:values['evaluator-id']||null,
         });
         if(!values.install) {
             process.stdout.write('# '+result.name+'.service\n'+result.service+
