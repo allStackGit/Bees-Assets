@@ -279,6 +279,44 @@ function boundedReport(value) {
         throw Error('Shared GPU execution requires an opted-in native adapter.');
     const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
         .map(([project,ids])=>[project,suiteIds(ids)]));
+    const serviceIssue=value.evaluator_service_issue??null;
+    const rawServices=value.evaluator_services??[];
+    if((serviceIssue!==null&&(typeof serviceIssue!=='string'||
+        serviceIssue.length<1||serviceIssue.length>160))||
+        !Array.isArray(rawServices)||rawServices.length>16)
+        throw Error('Invalid evaluator service health report.');
+    const services=rawServices.map(row=>{
+        if(!object(row)||
+            !['courier','tinybrains'].includes(row.project)||
+            !['systemd-user','windows-service'].includes(row.executor)||
+            (row.executor==='systemd-user')!==(value.platform==='linux')||
+            (row.executor==='windows-service')!==(value.platform==='win32')||
+            typeof row.unit!=='string'||
+            !(row.executor==='systemd-user'
+                ?/^bees-experiment-hub-(courier|tinybrains)-[a-z][a-z0-9_-]{0,47}-evaluator(?:-[a-z][a-z0-9_-]{0,31})?\.service$/.test(row.unit)
+                :/^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$/.test(row.unit))||
+            (row.executor==='systemd-user'&&
+                !row.unit.startsWith('bees-experiment-hub-'+row.project+'-'+value.machine_id+'-evaluator'))||
+            !['running','stopped','failed','unknown'].includes(row.service_state)||
+            !['active','inactive','unknown'].includes(row.scheduler_state)||
+            !['completed','failed','unknown'].includes(row.last_result)||
+            (row.last_exit_code!=null&&(!Number.isSafeInteger(row.last_exit_code)||
+                row.last_exit_code<0||row.last_exit_code>255))||
+            (row.last_finished_at!=null&&
+                (typeof row.last_finished_at!=='string'||
+                 !Number.isFinite(Date.parse(row.last_finished_at))||
+                 new Date(row.last_finished_at).toISOString()!==row.last_finished_at))||
+            (row.diagnostic!=null&&(typeof row.diagnostic!=='string'||
+                row.diagnostic.length>160)))
+            throw Error('Invalid evaluator scheduler service observation.');
+        return {project:row.project,unit:row.unit,executor:row.executor,
+            service_state:row.service_state,scheduler_state:row.scheduler_state,
+            last_result:row.last_result,last_exit_code:row.last_exit_code??null,
+            last_finished_at:row.last_finished_at??null,
+            diagnostic:row.diagnostic??null};
+    });
+    if(new Set(services.map(row=>row.unit)).size!==services.length)
+        throw Error('Duplicate evaluator services in machine heartbeat.');
     return {cpus:value.cpus,ram_mb:value.ram_mb,
         free_ram_mb:freeRam,available_ram_mb:availableRam,
         host_cpu_busy_pct:cpuBusy,
@@ -289,6 +327,7 @@ function boundedReport(value) {
             ['linux','win32'].includes(value.platform)&&preflight,
         native_preflight_reason:reason||null,
         evaluation_suites:localExecutor?evaluationSuites:{},
+        evaluator_services:services,evaluator_service_issue:serviceIssue,
         tinybrains_profiles:profiles,
         design_catalog:designCatalog,
         tinybrains_cuda_profiles:cudaProfiles.slice(),
@@ -1323,6 +1362,8 @@ class ExperimentHub {
                 machine.native_preflight_reason = report.native_preflight_reason;
                 machine.installed_projects = report.installed_projects.slice();
                 machine.evaluation_suites = copy(report.evaluation_suites);
+                machine.evaluator_services=copy(report.evaluator_services||[]);
+                machine.evaluator_service_issue=report.evaluator_service_issue||null;
                 machine.tinybrains_profiles = copy(report.tinybrains_profiles||{});
                 machine.design_catalog=copy(report.design_catalog||{});
                 machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();
