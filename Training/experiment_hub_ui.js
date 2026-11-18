@@ -93,6 +93,9 @@ function hubComparisonPoints(run) {
                     dispatch_id:row.dispatch_id,
                     runtime_sha256:row.runtime_sha256||null,
                     evaluated_at:row.evaluated_at||row.observed_at,
+                    source_kind:row.source_kind||null,
+                    source_report_sha256:row.source_report_sha256||null,
+                    source_checkpoint_name:row.source_checkpoint_name||null,
                     trials:row.trials,successes:row.successes,
                 },
                 metrics:{[prefix]:{value:row.successes/row.trials,unit:'ratio'},
@@ -1785,7 +1788,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderComparison() {
         if(!state)return;
         const jobs=project==='bees'?(state.bees?.runs||[]):
-            state.jobs.filter(j=>j.project_id===project);
+            [...state.jobs,...(state.historical_evaluation_jobs||[])]
+                .filter(j=>j.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const evalSamples=comparisonProject===project&&comparisonData?.evaluations||[];
         $('hub-compare-selection-panel').hidden=project==='bees';
@@ -1812,10 +1816,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     hubJobLabel(j)+
                     trialBatchLabel(j)+
                     ' · job '+(jobs.indexOf(j)+1)+
-                    (j.continuation_of_job_id
-                        ?j.continuation_mode==='curriculum'
-                            ?' · curriculum stage':' · continuation'
-                        :' · initial run')+
+                    (j.evaluation_history_only
+                        ?' · historical checkpoint audit'
+                        :j.continuation_of_job_id
+                            ?j.continuation_mode==='curriculum'
+                                ?' · curriculum stage':' · continuation'
+                            :' · initial run')+
                     ' · '+j.status+
                     ' · '+new Date(j.created_at).toLocaleDateString(),j.id)));
             const desired=chooseDefaults&&i<2
@@ -1851,7 +1857,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-compare-selection-queue').textContent=readyForRanking
             ?'Queue best evaluated continuation':'Schedule candidate selection';
         $('hub-compare-selection-queue').disabled=chosenIds.length<2||
-            new Set(chosenIds).size!==chosenIds.length||!configs.length;
+            new Set(chosenIds).size!==chosenIds.length||!configs.length||
+            chosenIds.some(id=>jobs.find(j=>j.id===id)?.evaluation_history_only);
         const allPlans=(state.candidate_selections||[])
             .filter(p=>p.project_id===project);
         const plans=allPlans.slice(-5).reverse();
@@ -1975,6 +1982,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
+        if(runs.some(run=>run.job.evaluation_history_only))
+            warnings.push('Historical checkpoint audits are operator-imported, read-only observations. The Hub did not authorize or supervise their evaluation; verify the source report and frozen suite definitions. They cannot be promoted or resumed.');
         const definitions=new Map(),runtimes=new Map(),unidentifiedRuntimes=new Set();
         for(const run of runs)for(const row of run.evaluation_points||[]) {
             if(!definitions.has(row.suite_id))definitions.set(row.suite_id,new Set());
@@ -2846,6 +2855,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     line('Checkpoint SHA-256: '+evaluated.checkpoint_sha256);
                     line('Evaluator runtime SHA-256: '+(evaluated.runtime_sha256||'unreported'));
                     line('Evaluation dispatch: '+(evaluated.dispatch_id||'unreported'));
+                    if(evaluated.source_kind==='historical_checkpoint_audit') {
+                        line('Source: operator-imported historical checkpoint audit (not Hub native proof)');
+                        line('Source report SHA-256: '+evaluated.source_report_sha256);
+                        line('Source checkpoint: '+evaluated.source_checkpoint_name);
+                    }
                     line('Successes / trials: '+evaluated.successes+' / '+evaluated.trials);
                     line('Evaluated at: '+(evaluated.evaluated_at||'unreported'));
                 }else line('Segment: '+(closest.point.segment_id||'unknown'));
@@ -2924,7 +2938,8 @@ document.addEventListener('DOMContentLoaded', () => {
             throw Error('Select at least one recorded metric for CSV export.');
         const chosen=new Set(metrics);
         const jobs=project==='bees'?(state.bees?.runs||[]):
-            state.jobs.filter(job=>job.project_id===project);
+            [...state.jobs,...(state.historical_evaluation_jobs||[])]
+                .filter(job=>job.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const byJob=new Map(samples.map(sample=>
             [sample.job_id,sample.points||[]]));
@@ -2970,6 +2985,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
                 evaluation_history:evalByJob.get(id)||[],
+                historical_evaluation_only:job.evaluation_history_only===true,
+                historical_source_report_sha256:job.source_report_sha256||null,
+                historical_suite_definitions:job.source_suites||null,
                 points:hubComparisonPoints({job,points:byJob.get(id)||[],
                     evaluation_points:evalByJob.get(id)||[]})
                     .map(point=>({...point,
