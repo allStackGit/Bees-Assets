@@ -126,7 +126,11 @@ class EvaluationHistory {
     }
     load(jobId,projectId) {
         const existing=this.loaded.get(jobId);
-        if(existing)return existing;
+        if(existing) {
+            if(existing.project_id!==projectId)
+                throw Error('Independent evaluation job ID belongs to another project.');
+            return existing;
+        }
         this.directoryReady();
         const file=this.file(jobId);
         const records=[],diagnostics=[],seen=new Map(),issueKeys=new Set(),
