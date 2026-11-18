@@ -227,6 +227,83 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     completed = set()
     queued_decisions = 0
     all_episodes_match = len(terminals) == len(all_terminals)
+    def emit_ready():
+        nonlocal queued_decisions
+        while first_seen and first_seen[0] in ready:
+            key = first_seen.popleft()
+            ready.remove(key)
+            ticks = frames.pop(key)
+            queued_decisions -= sum(len(frame) for frame in ticks.values())
+            episode_boundaries = boundaries.pop(key, {})
+            completed.add(key)
+            rollout = _validate_completed_episode(
+                key, ticks, episode_boundaries, terminals, ended_teams,
+                retirements, rewards, learner_agents_by_episode.pop(key), journal_id,
+                admissions.get(key, {}),
+            )
+            if stats is not None:
+                if key in admissions:
+                    enrolled = admissions[key]
+                    decided = {agent for frame in ticks.values() for agent in frame}
+                    stats["dynamic_policy_episodes"] = (
+                        stats.get("dynamic_policy_episodes", 0) + 1
+                    )
+                    stats["dynamic_policy_admissions"] = (
+                        stats.get("dynamic_policy_admissions", 0) + len(enrolled)
+                    )
+                    stats["dynamic_policy_admissions_without_decisions"] = (
+                        stats.get("dynamic_policy_admissions_without_decisions", 0) +
+                        len(enrolled.keys() - decided)
+                    )
+                    stats["dynamic_policy_decision_phases_max"] = max(
+                        stats.get("dynamic_policy_decision_phases_max", 0),
+                        len({tick % terminals[key]["evaluation_context"]["decision_period"]
+                             for tick in ticks}),
+                    )
+                    stats["dynamic_policy_decision_rows"] = (
+                        stats.get("dynamic_policy_decision_rows", 0) +
+                        sum(agent in enrolled for frame in ticks.values() for agent in frame)
+                    )
+                    learner_agents = rollout[6]
+                    stats["dynamic_policy_learner_decision_rows"] = (
+                        stats.get("dynamic_policy_learner_decision_rows", 0) +
+                        sum(agent in learner_agents and agent in enrolled
+                            for frame in ticks.values() for agent in frame)
+                    )
+                    # Physical participation is [binding, retirement);
+                    # count simultaneous controllers, not total historical
+                    # wave births or reserved future reinforcement IDs.
+                    intervals = sorted(
+                        [(start, 1) for agent, start in rollout[7].items()
+                         if rollout[3][agent] > start] +
+                        [(end, -1) for agent, end in rollout[3].items()
+                         if end > rollout[7][agent]]
+                    )
+                    living = peak = 0
+                    for _, delta in intervals:
+                        living += delta
+                        peak = max(peak, living)
+                    stats["dynamic_policy_peak_live_agents"] = max(
+                        stats.get("dynamic_policy_peak_live_agents", 0), peak,
+                    )
+                accumulate_training_outcome(
+                    stats, terminals[key], rollout[5], learner_slots,
+                    combat_by_episode.get(key, {}),
+                )
+            # The rollout retains its own reward-list references. Drop the
+            # journal's completed-episode indices before ingesting the next
+            # episode, without weakening post-terminal identity checks.
+            combat_by_episode.pop(key, None)
+            ended_teams.pop(key, None)
+            retirements.pop(key, None)
+            # All future identity checks for this episode have already
+            # completed; release the per-episode admission index too.
+            admitted_bindings.pop(key, None)
+            admissions.pop(key, None)
+            for team in set(rollout[1].values()):
+                rewards.pop((key, team), None)
+            yield rollout
+
     for generation, rows in capture_frames(capture, journal_id):
         # Retain full observations only for the selected learner. Opposing
         # controllers still need their identity and team verified at every
@@ -361,80 +438,42 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         # A completed episode can be handed to MA-POCA and released before
         # the rest of a long capture is loaded. Do not reorder episodes:
         # keep the learner's trajectory input sequence stable.
-        while first_seen and first_seen[0] in ready:
-            key = first_seen.popleft()
-            ready.remove(key)
-            ticks = frames.pop(key)
-            queued_decisions -= sum(len(frame) for frame in ticks.values())
-            episode_boundaries = boundaries.pop(key, {})
-            completed.add(key)
-            rollout = _validate_completed_episode(
-                key, ticks, episode_boundaries, terminals, ended_teams,
-                retirements, rewards, learner_agents_by_episode.pop(key), journal_id,
-                admissions.get(key, {}),
-            )
+        yield from emit_ready()
+
+    # The capture writes no terminal frame when *no bound policy ship*
+    # remains. An empty observation boundary is valid only if all group
+    # controllers retired before terminal according to the same durable
+    # source journal. Never invent missing policy observations or actions.
+    for key in first_seen:
+        if key in ready:
+            continue
+        terminal_tick = terminals[key]["tick"]
+        if terminal_tick in boundaries.get(key, {}):
+            continue
+        original = terminals[key]["evaluation_context"]["group_agents_by_team"]
+        members = {int(agent) for agents in original.values() for agent in agents}
+        observed = {}
+        for frame in [*frames[key].values(), *boundaries.get(key, {}).values()]:
+            for agent, row in frame.items():
+                binding = int(row["ship"]), int(row["binding_revision"])
+                if agent in observed and observed[agent] != binding:
+                    raise ValueError("policy identity changed before the empty terminal")
+                observed[agent] = binding
+        for agent, (ship, revision, _side, _tick) in admissions.get(key, {}).items():
+            binding = ship, revision
+            if agent in observed and observed[agent] != binding:
+                raise ValueError("late agent identity disagrees with enrollment")
+            observed[agent] = binding
+        if (members and observed.keys() == members and
+                all(retirements[key].get(binding, terminal_tick) < terminal_tick
+                    for binding in observed.values())):
+            boundaries[key][terminal_tick] = {}
+            ready.add(key)
             if stats is not None:
-                if key in admissions:
-                    enrolled = admissions[key]
-                    decided = {agent for frame in ticks.values() for agent in frame}
-                    stats["dynamic_policy_episodes"] = (
-                        stats.get("dynamic_policy_episodes", 0) + 1
-                    )
-                    stats["dynamic_policy_admissions"] = (
-                        stats.get("dynamic_policy_admissions", 0) + len(enrolled)
-                    )
-                    stats["dynamic_policy_admissions_without_decisions"] = (
-                        stats.get("dynamic_policy_admissions_without_decisions", 0) +
-                        len(enrolled.keys() - decided)
-                    )
-                    stats["dynamic_policy_decision_phases_max"] = max(
-                        stats.get("dynamic_policy_decision_phases_max", 0),
-                        len({tick % terminals[key]["evaluation_context"]["decision_period"]
-                             for tick in ticks}),
-                    )
-                    stats["dynamic_policy_decision_rows"] = (
-                        stats.get("dynamic_policy_decision_rows", 0) +
-                        sum(agent in enrolled for frame in ticks.values() for agent in frame)
-                    )
-                    learner_agents = rollout[6]
-                    stats["dynamic_policy_learner_decision_rows"] = (
-                        stats.get("dynamic_policy_learner_decision_rows", 0) +
-                        sum(agent in learner_agents and agent in enrolled
-                            for frame in ticks.values() for agent in frame)
-                    )
-                    # Physical participation is [binding, retirement);
-                    # count simultaneous controllers, not total historical
-                    # wave births or reserved future reinforcement IDs.
-                    intervals = sorted(
-                        [(start, 1) for agent, start in rollout[7].items()
-                         if rollout[3][agent] > start] +
-                        [(end, -1) for agent, end in rollout[3].items()
-                         if end > rollout[7][agent]]
-                    )
-                    living = peak = 0
-                    for _, delta in intervals:
-                        living += delta
-                        peak = max(peak, living)
-                    stats["dynamic_policy_peak_live_agents"] = max(
-                        stats.get("dynamic_policy_peak_live_agents", 0), peak,
-                    )
-                accumulate_training_outcome(
-                    stats, terminals[key], rollout[5], learner_slots,
-                    combat_by_episode.get(key, {}),
+                stats["empty_policy_terminal_boundaries"] = (
+                    stats.get("empty_policy_terminal_boundaries", 0) + 1
                 )
-            # The rollout retains its own reward-list references. Drop the
-            # journal's completed-episode indices before ingesting the next
-            # episode, without weakening post-terminal identity checks.
-            combat_by_episode.pop(key, None)
-            ended_teams.pop(key, None)
-            retirements.pop(key, None)
-            # All future identity checks for this episode have already
-            # completed; release the per-episode admission index too.
-            admitted_bindings.pop(key, None)
-            admissions.pop(key, None)
-            for team in set(rollout[1].values()):
-                rewards.pop((key, team), None)
-            yield rollout
+    yield from emit_ready()
 
     if completed != terminals.keys():
         raise ValueError("completed episode missing decisions or policy boundary")
