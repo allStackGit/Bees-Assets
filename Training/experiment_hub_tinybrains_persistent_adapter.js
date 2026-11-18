@@ -139,6 +139,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_gpu_batch_vram_capped',
         'rollout_inference_pixel_samples',
         'ppo_prestaged_board_states','ppo_reused_board_states',
+        'ppo_board_cache_full_batches','ppo_board_cache_partial_batches',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'rollout_opponent_readback_models','rollout_opponent_readbacks_saved',
@@ -216,6 +217,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('simulation_global_cadence_gain',
         row.simulation_global_cadence_gain,'scalar');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
+    add('ppo_board_baseline_h2d_bytes',row.ppo_board_baseline_h2d_bytes,'bytes');
+    add('ppo_board_iterative_h2d_bytes',row.ppo_board_iterative_h2d_bytes,'bytes');
+    add('ppo_board_saved_h2d_bytes',row.ppo_board_saved_h2d_bytes,'bytes');
     add('ppo_prep_board_bytes',row.ppo_prep_board_bytes,'bytes');
     add('ppo_prep_async_h2d_bytes',row.ppo_prep_async_h2d_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
