@@ -93,7 +93,14 @@ policy, group-free playable policy and ordinary-AI minion admissions.
 These roles also carry into the matching headless MA-POCA scenario: ships
 with source-supported policy actors use policy input, while the remaining
 non-policy squads retain the same authored native script ownership. `--fog`, `--empty-map`, `--minutes`,
-and `--spacing` are supported. `--source-scene` and
+and `--spacing` are supported. Add `--empty-map --arena-size 512` to
+create a square physical arena with Unity's actual four map-border triggers
+(24 units thick, 48 units of overlap) instead of merely stretching the
+rendered map. The same exact collider geometry and bounds are authored into
+the playable and optional `--trainable` policy scenes; native navigation,
+projectiles, asteroid contacts, and reinforcement spawns use that Level.
+Map sizes use four-unit steps from 64 to 4000; resizing a populated source
+map is refused rather than guessing where its authored resources should go. `--source-scene` and
 `--source-run` allow a larger native-authored arena or other verified
 archetypes without Unity. The default catalogue uses the existing
 native Queen example and skirmish stage: types are available only on
@@ -1252,7 +1259,11 @@ or 128 ships per side. The dense 128-ship layout admits only original
 6x6 Wasp/Gunship fighters; mixed fleets up to 64 ships still offer
 all-fighter, balanced, support-heavy or specialist
 fleets for each faction, and open, classic, flanking-cover or dense-cover
-terrain. The one-player skirmish and CPU-only native benchmark creators
+terrain. A separate arena choice preserves the original 320×200 geometry
+or offers 512×512, 1024×1024, and 2048×2048 physical battlefields.
+The larger maps include the original MapBorder trigger collision profile,
+not an independent graphical-only edge, and carry unchanged into recorded
+battles, saved-fleet MA-POCA training and native CPU benchmarks. The one-player skirmish and CPU-only native benchmark creators
 also offer a tactical-doctrine selector: aggressive, circling, left or
 right swipe, strike-and-withdraw, or mixed source maneuvers. Every
 selection uses the same native Squad command director as headless
