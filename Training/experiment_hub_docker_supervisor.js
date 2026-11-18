@@ -23,6 +23,22 @@ const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const SAFE=/^[A-Za-z0-9_./:@=+,\-]+$/;
 const ACTIVE=new Set(['launch_requested','running','stop_requested','unverified']);
 const STATES=new Set(['launch_requested','running','stop_requested','unverified','finished','stopped','failed']);
+const GPU_DENIAL_CHECK=[
+    'import errno, json, os, stat, sys',
+    'node, major, minor = sys.argv[1:]',
+    'info = os.stat(node)',
+    'if not stat.S_ISCHR(info.st_mode) or (os.major(info.st_rdev), os.minor(info.st_rdev)) != (int(major), int(minor)):',
+    '    raise RuntimeError("Control does not see the leased render device")',
+    'os.close(os.open("/dev/kfd", os.O_RDWR))',
+    'try:',
+    '    fd = os.open(node, os.O_RDWR)',
+    'except OSError as error:',
+    '    if error.errno != errno.EPERM: raise',
+    'else:',
+    '    os.close(fd)',
+    '    raise RuntimeError("Control obtained unleased render access")',
+    'print(json.dumps({"denied_render_node": node}))',
+].join('\n');
 
 function containerName(id) {
     if(!UUID.test(String(id)))throw Error('Invalid Docker job ID.');
@@ -61,7 +77,7 @@ function fixedDockerSpec(adapter) {
         }
     return d;
 }
-function writeAtomic(file,value) {
+function writeAtomic(file,value,{exclusive=false}={}) {
     const tmp=file+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';
     try {
         fs.writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',
@@ -71,7 +87,8 @@ function writeAtomic(file,value) {
         const fd=fs.openSync(tmp,'r');
         try{fs.fsyncSync(fd);}
         finally{fs.closeSync(fd);}
-        fs.renameSync(tmp,file);
+        if(exclusive)fs.linkSync(tmp,file);
+        else fs.renameSync(tmp,file);
         // Persist the directory entry before the local owner is authorized
         // to continue. An fsync failure remains an ambiguous, fail-closed
         // condition rather than proof that a trainer can be relaunched.
@@ -328,11 +345,14 @@ class DockerSupervisor {
         const gpuNodes=record.gpu_nodes||[record.gpu_node].filter(Boolean);
         const expected=gpuNodes.length
             ?new Set(['/dev/kfd',...gpuNodes]):new Set();
-        const devices=doc.HostConfig.Devices.map(d=>d.PathOnHost);
+        const devices=doc.HostConfig.Devices;
         if(devices.length!==expected.size||
-            devices.some(d=>!expected.has(d)))
+            new Set(devices.map(d=>d.PathOnHost)).size!==expected.size||
+            devices.some(d=>!expected.has(d.PathOnHost)||
+                d.PathInContainer!==d.PathOnHost||d.CgroupPermissions!=='rwm')||
+            doc.HostConfig.DeviceRequests?.length||doc.HostConfig.DeviceCgroupRules?.length)
             throw Error('Docker accelerator device allowance changed.');
-        if(doc.State?.Running===true&&gpuNodes.length) {
+        if((doc.State?.Running===true||doc.State?.Status==='created')&&gpuNodes.length) {
             const pcis=record.gpu_pci_addresses||
                 [record.gpu_pci_address].filter(Boolean);
             if(pcis.length!==gpuNodes.length||!record.gpu_identity)
@@ -373,6 +393,8 @@ class DockerSupervisor {
     }
     async qualifyGpuDeviceAccess(bindings,proof) {
         if(!this.qualifiedAt||!this.gpuEnabled||!proof||
+            (proof.ram_mb!==undefined&&(!Number.isSafeInteger(proof.ram_mb)||
+                proof.ram_mb<128||proof.ram_mb>1000000))||
             !Array.isArray(bindings)||bindings.length<1||bindings.length>8||
             (bindings.length===2&&
                 this.adapters.tinybrains?.gpu_dual_execution!=='split-ppo')||
@@ -390,24 +412,42 @@ class DockerSupervisor {
                 throw Error('Multi-GPU Docker proof requires one immutable verification per PCI device.');
             for(let i=0;i<bindings.length;i++)
                 await this.qualifyGpuDeviceAccess(
-                    [bindings[i]],proof.singleProofs[i]);
+                    [bindings[i]],{...proof.singleProofs[i],ram_mb:proof.ram_mb});
         }
         const plan=resolveRocmDevices(bindings);
-        if(bindings.length===1&&!plan.unselected.length)
-            throw Error('Single-GPU Docker proof requires an excluded peer GPU.');
         const d=fixedDockerSpec(this.adapters.tinybrains);
         if(proof.executable!==this.adapters.tinybrains.executable)
             throw Error('GPU proof Python differs from the approved Docker adapter.');
         const image=await this.imageId(d.image);
+        if(bindings.length===1&&!plan.unselected.length)
+            await this.runGpuDeviceProbe(plan,d,image,proof,{denySelected:true});
+        await this.runGpuDeviceProbe(plan,d,image,proof);
+        const identity=deviceIdentity(plan);
+        if(deviceIdentity(resolveRocmDevices(bindings))!==identity)
+            throw Error('GPU device identity changed during Docker qualification.');
+        return {selected:bindings.map(b=>b.pci_address),runtime_pci_verified:true,
+            image_id:image,gpu_identity:identity};
+    }
+    async runGpuDeviceProbe(plan,d,image,proof,{denySelected=false}={}) {
+        if(this.gpuProbeCleanupPending())
+            throw Error('An unresolved Docker GPU proof requires cleanup.');
         const probeName='bees-hub-proof-'+crypto.randomBytes(8).toString('hex');
+        const selected=plan.selected[0];
+        const ram=Math.min(proof.ram_mb??4096,denySelected?256:4096);
         const flags=['run','--rm','--name='+probeName,'--network=none',
             '--read-only','--cap-drop=ALL','--security-opt=no-new-privileges',
             '--tmpfs=/tmp:rw,size=64m,mode=1777',
-            '--cpus=1','--memory=4096m','--memory-swap=4096m',
+            '--cpus=1','--memory='+ram+'m','--memory-swap='+ram+'m',
             '--user='+d.uid+':'+d.gid,
             '--device=/dev/kfd:/dev/kfd:rwm'];
-        for(const device of plan.selected)
-            flags.push('--device='+device.node+':'+device.node+':rwm');
+        if(denySelected) {
+            // Make the same character node visible to the control, with
+            // the same Unix groups, but withhold its device-cgroup rule.
+            flags.push('--mount=type=bind,source='+selected.node+',target='+selected.node);
+        }else{
+            for(const device of plan.selected)
+                flags.push('--device='+device.node+':'+device.node+':rwm');
+        }
         for(const id of new Set(['/dev/kfd',...plan.selected.map(d=>d.node)]
             .map(node=>fs.statSync(node).gid)))
             flags.push('--group-add='+id);
@@ -416,17 +456,21 @@ class DockerSupervisor {
                 (m.readonly?',readonly':''));
         for(const [key,value] of Object.entries(d.env))
             flags.push('--env='+key+'='+value);
-        flags.push('--workdir='+d.workdir,image,
-            proof.executable,...proof.verifyArgs);
+        flags.push('--workdir='+d.workdir,image,proof.executable,
+            ...(denySelected?['-c',GPU_DENIAL_CHECK,selected.node,
+                String(selected.major),String(selected.minor)]:proof.verifyArgs));
         writeAtomic(this.probeFile,{name:probeName,
-            devices:plan.selected.map(d=>d.pci_address)});
-        let answer,error=null;
+            devices:plan.selected.map(d=>d.pci_address)},{exclusive:true});
+        let error=null;
         try {
             const output=await this.call(flags,90000);
-            answer=JSON.parse(output.split('\n').at(-1));
-            if(JSON.stringify(answer?.pci_addresses)!==
-                JSON.stringify(bindings.map(b=>b.pci_address)))
-                throw Error('Container HIP PCI identities do not match the Hub GPU lease.');
+            const answer=JSON.parse(output.split('\n').at(-1));
+            if(denySelected?answer?.denied_render_node!==selected.node:
+                JSON.stringify(answer?.pci_addresses)!==
+                    JSON.stringify(plan.selected.map(b=>b.pci_address)))
+                throw Error(denySelected
+                    ?'Docker did not verify denial on the leased render node.'
+                    :'Container HIP PCI identities do not match the Hub GPU lease.');
         }catch(exc){error=exc;}
         // A timed-out Docker CLI can leave a daemon-owned container alive.
         // Never silently erase the pending proof in that case.
@@ -436,7 +480,6 @@ class DockerSupervisor {
         if(error||remains)
             throw Error('Docker GPU proof failed or requires cleanup: '+
                 String(error?.message||probeName).slice(0,130));
-        return {selected:bindings.map(b=>b.pci_address),runtime_pci_verified:true};
     }
     async start(job,lease) {
         if(!this.qualifiedAt||this.gpuProbeCleanupPending())
@@ -445,6 +488,34 @@ class DockerSupervisor {
             throw Error('Docker job already has an ownership record; reconcile instead.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,os,this.gpuEnabled);
+        const d=fixedDockerSpec(this.adapters[job.project_id]);
+        const remoteNetwork=job.frozen_parameters?.remote_rollouts===true;
+        if(remoteNetwork&&(job.project_id!=='tinybrains'||
+            d.remote_host_network!==true))
+            throw Error('Private tailnet access requires a trusted, opt-in TinyBrains Docker adapter.');
+        let gpuQualification=null;
+        if(invocation.gpu) {
+            const bindings=invocation.gpu.bindings;
+            const proof=gpuRuntimeProof(this.adapters[job.project_id],
+                job.frozen_parameters,{job_id:job.id,
+                    project_id:job.project_id,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    continuation_of_job_id:job.continuation_of_job_id||null,
+                    ...(bindings.length>=2
+                        ?{gpu_pci_addresses:bindings.map(b=>b.pci_address)}
+                        :{gpu_pci_address:bindings[0].pci_address})});
+            gpuQualification=await this.qualifyGpuDeviceAccess(
+                bindings,{...proof,ram_mb:invocation.ram_mb});
+        }
+        const imageId=gpuQualification?.image_id??await this.imageId(d.image);
+        const name=containerName(job.id);
+        if(await this.inspect(name))
+            throw Error('Deterministic Docker job name already exists outside the ownership journal.');
+        if(this.gpuProbeCleanupPending()||this.state.some(x=>x.job_id===job.id))
+            throw Error('Docker ownership or GPU qualification changed before Start.');
+        const plan=gpuQualification?resolveRocmDevices(invocation.gpu.bindings):null;
+        if(plan&&deviceIdentity(plan)!==gpuQualification.gpu_identity)
+            throw Error('GPU device identity changed before Docker Start.');
         const hostCpus=typeof os.availableParallelism==='function'
             ?os.availableParallelism():os.cpus().length;
         ensureLocalCpuRamCapacity(this.state,invocation.cpus,invocation.ram_mb,
@@ -452,11 +523,6 @@ class DockerSupervisor {
         const freeRam=availableMemoryMb(os);
         const memoryBlock=startHeadroom(job.resources,freeRam);
         if(memoryBlock)throw Error(memoryBlock);
-        const d=fixedDockerSpec(this.adapters[job.project_id]);
-        const remoteNetwork=job.frozen_parameters?.remote_rollouts===true;
-        if(remoteNetwork&&(job.project_id!=='tinybrains'||
-            d.remote_host_network!==true))
-            throw Error('Private tailnet access requires a trusted, opt-in TinyBrains Docker adapter.');
         if(invocation.gpu) {
             // The durable machine-local owner refuses overlaps even if the
             // coordinator's admission ledger has become stale.
@@ -482,24 +548,6 @@ class DockerSupervisor {
                     throw Error('Local cooperative GPU commitments exceed PCI-device capacity.');
             }
         }
-        let plan=null;
-        if(invocation.gpu) {
-            const bindings=invocation.gpu.bindings;
-            const proof=gpuRuntimeProof(this.adapters[job.project_id],
-                job.frozen_parameters,{job_id:job.id,
-                    project_id:job.project_id,
-                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
-                    continuation_of_job_id:job.continuation_of_job_id||null,
-                    ...(bindings.length>=2
-                        ?{gpu_pci_addresses:bindings.map(b=>b.pci_address)}
-                        :{gpu_pci_address:bindings[0].pci_address})});
-            await this.qualifyGpuDeviceAccess(bindings,proof);
-            plan=resolveRocmDevices(bindings);
-        }
-        const imageId=await this.imageId(d.image);
-        const name=containerName(job.id);
-        if(await this.inspect(name))
-            throw Error('Deterministic Docker job name already exists outside the ownership journal.');
         const record={
             job_id:job.id,lease_id:lease.id,project_id:job.project_id,
             artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,

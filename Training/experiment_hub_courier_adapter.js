@@ -9,14 +9,15 @@ const {fixedCpuParallelism,approvedEndpointSubset}=require('./experiment_hub_res
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const SHA256=/^[a-f0-9]{64}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const NVIDIA_UUID=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const COURIER_COUNT_FIELDS=new Set([
-    'training_profile_round','training_lineage_workers',
+    'training_profile_round','training_lineage_workers','training_collector_workers',
     'training_slowest_worker','training_last_reply_worker',
     'training_simulation_slowest_worker',
-    'training_simulated_steps','training_useful_steps',
+    'training_simulated_steps','training_useful_steps','training_collected_useful_steps',
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version','training_sim_early_dispatches',
@@ -222,6 +223,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     const artifacts=fs.realpathSync(artifactRoot);
     const executable=fs.realpathSync(pythonPath);
     const script=path.join(project,'courier.py');
+    const sharedScript=path.join(project,'courier_shared_training.py');
     if(!fs.statSync(artifacts).isDirectory()||!fs.statSync(executable).isFile()||
         !fs.statSync(script).isFile()||inside(project,artifacts)||inside(artifacts,project))
         throw Error('Courier needs an installed trainer and a dedicated artifact directory outside the project.');
@@ -229,6 +231,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // bounded backend capability manifest allows the same Hub adapter to
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
+    let sharedPolicy=false;
     let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false,gpuMulti=false;
     let gpuSpareRollout=false;
     let persistentWorlds=false,maxSimulationShards=1;
@@ -270,9 +273,15 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             (capabilities.courier_parallel_worlds===true&&
                 (capabilities.courier_episode_safe_process_groups!==true||
                     !Number.isSafeInteger(capabilities.courier_max_simulation_shards)))||
+            (capabilities.courier_shared_policy!==undefined&&
+                typeof capabilities.courier_shared_policy!=='boolean')||
             (capabilities.courier_remote_lineage_transport!==undefined&&
                 typeof capabilities.courier_remote_lineage_transport!=='boolean'))
             throw Error('Unsupported Courier backend capabilities manifest.');
+        sharedPolicy=capabilities.courier_shared_policy===true;
+        if(sharedPolicy&&(fs.realpathSync(sharedScript)!==sharedScript||
+            !fs.statSync(sharedScript).isFile()))
+            throw Error('Courier shared-policy learner entry point is missing.');
         boundedLearners=capabilities.courier_active_learners;
         autoLearners=boundedLearners&&capabilities.courier_auto_active_learners===true;
         optimizerGpu=capabilities.courier_gpu_optimizer===true;
@@ -300,6 +309,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     const parsed=JSON.parse(config.toString('utf8'));
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
         throw Error('Courier environment configuration must be a JSON object.');
+    const sharedMaps=parsed.colony===true?4:parsed.competitive===true?32:64;
     const configSha256=crypto.createHash('sha256').update(config).digest('hex');
     const windows=process.platform==='win32';
     // Endpoint order determines the last N immutable PPO lineage slots.
@@ -387,7 +397,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     }
 
     const within=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
-    function completedCheckpoint(source,maxRounds) {
+    function completedCheckpoint(source,maxRounds,shared=false) {
         const localFile=name=>{
             const file=path.join(source,name);
             if(fs.realpathSync(file)!==file)throw Error('Courier checkpoint file is redirected: '+name);
@@ -404,6 +414,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             !within(checkpoint.round,1,Number.MAX_SAFE_INTEGER-maxRounds)||
             !Array.isArray(checkpoint.lineage)||!within(checkpoint.lineage.length,1,64))
             throw Error('Courier checkpoint environment or population is invalid.');
+        if((checkpoint.training_mode==='shared-policy')!==shared||
+            (shared&&(checkpoint.workers!==1||checkpoint.lineage.length!==1||
+                checkpoint.lineage[0]!==0||!SHA256.test(String(checkpoint.model_sha256||''))||
+                modelFileSha256(localFile('lineage-0.zip'))!==checkpoint.model_sha256)))
+            throw Error('Courier checkpoint mode or shared-policy model digest differs.');
         const names=new Set(fs.readdirSync(source));
         const required=['checkpoint.json',...checkpoint.lineage.map((_,i)=>'lineage-'+i+'.zip')];
         const optional=['champion.zip','milestone.json','milestone-policy.zip',
@@ -416,6 +431,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         ...(remote?{
             courier_remote_lineage_endpoints:remote.endpoints.map(item=>item.endpoint),
             courier_lineage_subset:true,
+            courier_shared_policy_maps:sharedPolicy?sharedMaps:0,
             courier_remote_key_fingerprint:remote.fingerprint,
             courier_remote_max_shards:remote.endpoints.map(item=>item.maxShards),
         }:{}),
@@ -444,11 +460,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         checkpoint_ready(context) {
             if(context.frozen_parameters?.config_sha256!==configSha256)
                 throw Error('Courier checkpoint environment pin changed.');
-            completedCheckpoint(jobRoot(context),10000000);
+            completedCheckpoint(jobRoot(context),10000000,context.frozen_parameters?.shared_policy===true);
             return true;
         },
         model_checkpoint_sha256(context) {
-            const saved=completedCheckpoint(jobRoot(context),10000000);
+            const saved=completedCheckpoint(jobRoot(context),10000000,context.frozen_parameters?.shared_policy===true);
             const model=saved.files.find(file=>path.basename(file)==='lineage-0.zip');
             if(!model)throw Error('Courier evaluated policy is not available for promotion.');
             return modelFileSha256(model);
@@ -458,11 +474,21 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         args(parameters,context) {
             const {config_sha256,seed,workers,max_rounds,checkpoint_rounds,remote_lineage_plan}=parameters;
             const remotePlan=approvedCourierLineages(remote?.endpoints,remote_lineage_plan);
+            const shared=parameters.shared_policy===true;
+            const collectorCpus=parameters.shared_policy_cpus;
             if(Object.keys(parameters).some(key=>
                 !['config_sha256','seed','workers','max_rounds','checkpoint_rounds',
-                    'remote_lineages','remote_lineage_plan'].includes(key))||
+                    'remote_lineages','remote_lineage_plan','shared_policy','shared_policy_cpus'].includes(key))||
+                (parameters.shared_policy!==undefined&&typeof parameters.shared_policy!=='boolean')||
+                (!shared&&collectorCpus!==undefined)||
+                (shared&&(!sharedPolicy||parameters.remote_lineages!==true||
+                    !Array.isArray(remote_lineage_plan)||!Array.isArray(collectorCpus)||
+                    !remotePlan||remotePlan.length>sharedMaps||remotePlan.length!==collectorCpus.length||
+                    collectorCpus.some(cpu=>!within(cpu,1,256))||
+                    (workers!==undefined&&workers!==1)||context.gpu_pci_addresses!==undefined||
+                    !within(context.cpu_quota,1,256)||!within(context.ram_quota_mb,128,1000000)))||
                 config_sha256!==configSha256||!within(seed,0,4294967295)||
-                !(workers===undefined&&cpuParallelism==='allocation')&&
+                !(workers===undefined&&(shared||cpuParallelism==='allocation'))&&
                     !within(workers,1,64)||
                 !within(max_rounds,0,10000000)||
                 !within(checkpoint_rounds,1,10000000)||
@@ -476,7 +502,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // Keep population size independent of CPU lease changes.
             let chosenWorkers=workers===undefined?12:workers;
             const useRemote=parameters.remote_lineages===true;
-            if(useRemote&&remotePlan.length>=chosenWorkers)
+            if(useRemote&&!shared&&remotePlan.length>=chosenWorkers)
                 throw Error('Courier requires at least one local PPO lineage beside its remote workers.');
             const out=jobRoot(context);
             if(useRemote&&crypto.createHash('sha256')
@@ -490,7 +516,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             let limit=max_rounds, files=[];
             if(predecessor) {
                 const source=path.join(artifacts,predecessor);
-                const saved=completedCheckpoint(source,max_rounds);
+                const saved=completedCheckpoint(source,max_rounds,shared);
                 files=saved.files;
                 if(workers===undefined) {
                     // A continuation retains its original active population.
@@ -527,9 +553,20 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // The wrapper provides the same checkpoint-boundary Stop request
             // on both platforms; systemd remains the sole Linux service owner.
             const launch=[path.join(__dirname,'experiment_hub_courier_train.py'),
-                script,publish?snapshots:'-',publish?context.dispatch_id:'-',
+                shared?sharedScript:script,publish?snapshots:'-',publish?context.dispatch_id:'-',
                 path.join(out,'hub-stop.request')];
             const entry=windows?['-c',WINDOWS_ENTRY,path.join(out,'trainer.stderr.txt'),...launch]:launch;
+            if(shared)return ['-B',...entry,'--config',configFile,'--run-dir',out,
+                '--seed',String(seed),'--cpu-lease',String(context.cpu_quota),
+                '--ram-lease-mb',String(context.ram_quota_mb),
+                '--shared-policy-plan',remotePlan.map((item,index)=>
+                    item.endpoint+'@'+collectorCpus[index]).join(','),
+                '--remote-lineage-key-file',remote.keyFile,'--remote-job-id',context.job_id,
+                ...(context.gpu_pci_address!==undefined?[
+                    '--optimizer-device','cuda',
+                    ...(windows?[]:['--optimizer-gpu-pci',context.gpu_pci_address])]:[]),
+                '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
+                ...(predecessor?['--resume']:[])];
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
                 '--seed',String(seed),'--workers',String(chosenWorkers),
                 ...(boundedLearners?['--active-learners',String(Math.min(

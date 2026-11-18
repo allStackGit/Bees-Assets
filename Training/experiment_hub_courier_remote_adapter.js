@@ -69,7 +69,7 @@ function createCourierRemoteLineageAdapter({
         fs.realpathSync(pythonPath)!==pythonPath||!fs.statSync(pythonPath).isFile())
         throw Error('Courier remote Python must be an installed executable file.');
     const probe=spawnSync(pythonPath,['-B','-c',
-        'import courier_remote_lineage as r; assert hasattr(r, "serve")'],{
+        'import inspect, courier_remote_lineage as r; print(int("shared_policy" in inspect.signature(r.serve).parameters))'],{
         cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
     });
     if(probe.status!==0)
@@ -83,12 +83,14 @@ function createCourierRemoteLineageAdapter({
         if(gpuProbe.status!==0)
             throw Error('Installed Courier remote worker has no approved CUDA/ROCm runtime.');
     }
+    const sharedPolicy=probe.stdout.trim()==='1';
     const approved=Object.freeze({...rocrGpuUuids});
     return {
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
         courier_lineage_endpoint:endpoint,
         courier_lineage_key_fingerprint:fingerprint,
         courier_lineage_max_shards:maxShards,
+        courier_shared_policy_collector:sharedPolicy,
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
         ...(enableRocm?{
             rocr_gpu_uuids:approved,
@@ -102,7 +104,9 @@ function createCourierRemoteLineageAdapter({
         }:{}),
         args(parameters,context) {
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
-                Object.keys(parameters).some(key=>!['learner_job_id','slot'].includes(key))||
+                Object.keys(parameters).some(key=>!['learner_job_id','slot','shared_policy'].includes(key))||
+                (parameters.shared_policy!==undefined&&
+                    (parameters.shared_policy!==true||!sharedPolicy))||
                 !UUID.test(String(parameters.learner_job_id||''))||
                 !UUID.test(String(context?.job_id||''))||
                 context.job_id===parameters.learner_job_id||
@@ -138,6 +142,7 @@ function createCourierRemoteLineageAdapter({
                 '--work-dir',output,'--cpu-lease',String(context.cpu_quota),
                 '--ram-lease-mb',String(context.ram_quota_mb),
                 '--max-shards',String(maxShards),
+                ...(parameters.shared_policy===true?['--shared-policy']:[]),
                 ...(physical?[process.platform==='win32'?'--gpu-cuda-uuid':'--gpu-pci',
                     process.platform==='win32'?cuda:physical]:[])];
         },

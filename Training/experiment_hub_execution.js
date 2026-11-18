@@ -55,6 +55,8 @@ class LocalExecution {
             tinybrains_rollout_thread_limit:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_thread_limit||0,
             courier_remote_lineage_endpoints:[...(this.supervisor.adapters?.courier?.courier_remote_lineage_endpoints||[])],
             courier_lineage_subset:this.supervisor.adapters?.courier?.courier_lineage_subset===true,
+            courier_shared_policy_maps:this.supervisor.adapters?.courier?.courier_shared_policy_maps||0,
+            courier_shared_policy_collector:this.supervisor.adapters?.courier_lineage?.courier_shared_policy_collector===true,
             courier_remote_key_fingerprint:this.supervisor.adapters?.courier?.courier_remote_key_fingerprint||null,
             courier_remote_max_shards:[...(this.supervisor.adapters?.courier?.courier_remote_max_shards||[])],
             courier_lineage_endpoint:this.supervisor.adapters?.courier_lineage?.courier_lineage_endpoint||null,
@@ -69,8 +71,9 @@ class LocalExecution {
                 this.supervisor.adapters?.tinybrains?.gpu_multi_execution==='split-ppo-collectors'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_multi_gpu_profiles||[])]:[],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
-            linux_single_gpu_qualification:this.supervisor instanceof LinuxSupervisor&&
-                this.supervisor.gpuEnabled===true,
+            linux_single_gpu_qualification:this.supervisor.gpuEnabled===true&&
+                (this.supervisor instanceof LinuxSupervisor||
+                    this.supervisor instanceof DockerSupervisor),
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
                 (this.supervisor.gpuExecution==='cuda'

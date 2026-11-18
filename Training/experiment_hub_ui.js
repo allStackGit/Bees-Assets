@@ -4517,6 +4517,26 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-build-message',String(error.message||error));
         }
     });
+    function budgetMatchingControl() {
+        const input=document.createElement('input');
+        input.type='checkbox';
+        const label=document.createElement('label');
+        label.append(input,' Match budgets across the selected machines');
+        return {input,label};
+    }
+    function distributedBudgetRequest(budgets,matching,field) {
+        const ids=budgets.map(item=>item.machine_id);
+        if(matching&&ids.some(id=>typeof id!=='string'||!id))
+            throw Error('Enter a machine ID on each row to select the machines available for matching.');
+        return {[field]:budgets.map(({machine_id,...budget})=>({
+            ...budget,...(!matching&&machine_id!==undefined?{machine_id}:{}),
+        })),...(matching?{worker_machine_ids:ids}:{})};
+    }
+    function matchedWorkerSummary(leases) {
+        return ' Assigned '+leases.slice(1).map(lease=>lease.machine_id+
+            (lease.resources.gpus.length?' ('+lease.resources.gpus.join(', ')+')':' (CPU)'))
+            .join(', ')+'.';
+    }
     // Distributed groups are frozen and claimed atomically. The operator
     // chooses the CPU/RAM/GPU budgets; endpoint-to-machine identity is never
     // entered by the browser and comes from connected native agents instead.
@@ -4527,6 +4547,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const distributedBudgets=document.createElement('textarea');
     distributedBudgets.rows=5;
     distributedBudgets.placeholder='Worker machine IDs and resource budgets';
+    const distributedMatch=budgetMatchingControl();
     const distributedDetails=document.createElement('div');
     const distributedFeedback=document.createElement('div');
     const distributedMachineLabel=document.createElement('label');
@@ -4562,48 +4583,52 @@ document.addEventListener('DOMContentLoaded', () => {
             // a subsequent *advisory* allocation recommendation.
             const metricSelection=hubDistributedMetricSelection(
                 selectedJobMetrics(),budgets.length);
+            const matching=distributedMatch.input.checked&&!distributedMatch.label.hidden;
+            const budgetRequest=distributedBudgetRequest(budgets.map(item=>{
+                if(!item||typeof item!=='object'||Array.isArray(item))
+                    throw Error('Each collector budget must be a JSON object.');
+                const {machine_id,threads,...resources}=item;
+                return {resources,machine_id,...(threads===undefined?{}:{threads})};
+            }),matching,'collectors');
             if(!confirm('Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
                 ' on '+distributedMachine.value+
                 ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
-                ' reservations will be created together, but no process will start.'))return;
+                ' reservations will be created together, but no process will start.'+
+                (matching?' Budgets may be assigned to a different selected machine than the one on their row.':'')))return;
             const result=await action('hub/distributed/tinybrains',{
                 confirm_queue:true,
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:distributedMachine.value,resources,
                     metric_selection:metricSelection,
                     ...(predecessor?{continuation_of_job_id:predecessor}:{})},
-                collectors:budgets.map(item=>{
-                    if(!item||typeof item!=='object'||Array.isArray(item))
-                        throw Error('Each collector budget must be a JSON object.');
-                    const {machine_id,threads,...resources}=item;
-                    return {resources,...(threads===undefined?{}:{threads}),
-                        ...(machine_id===undefined?{}:{machine_id})};
-                }),
+                ...budgetRequest,
             });
             distributedFeedback.textContent='Queued learner '+result.learner.id+
                 ' and '+result.collectors.length+' separate collector jobs. All '+
-                result.leases.length+' claims await native receipts and explicit Starts.';
+                result.leases.length+' claims await native receipts and explicit Starts.'+
+                (matching?matchedWorkerSummary(result.leases):'');
             await reload();
         }catch(error){distributedFeedback.textContent=String(error.message||error);}
     });
     distributedPanel.append(distributedLegend,distributedMachineLabel,
-        distributedBudgetsLabel,distributedDetails,distributedQueue,distributedFeedback);
+        distributedBudgetsLabel,distributedMatch.label,distributedDetails,distributedQueue,distributedFeedback);
     $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
     // Courier reuses the same native group claims, but unlike TinyBrains
     // each remote process trains its own immutable recurrent PPO lineage.
     const courierPanel=document.createElement('fieldset');
     const courierLegend=document.createElement('legend');
-    courierLegend.textContent='Distributed Courier learner + PPO lineages';
+    courierLegend.textContent='Distributed Courier training';
     const courierMachine=document.createElement('select');
     const courierBudgets=document.createElement('textarea');
     courierBudgets.rows=5;
     courierBudgets.placeholder='Worker machine IDs and resource budgets';
+    const courierMatch=budgetMatchingControl();
     const courierDetails=document.createElement('div');
     const courierFeedback=document.createElement('div');
     const courierMachineLabel=document.createElement('label');
     courierMachineLabel.append('Learner machine ',courierMachine);
     const courierBudgetsLabel=document.createElement('label');
-    courierBudgetsLabel.append('Remote lineage budgets (JSON array) ',courierBudgets);
+    courierBudgetsLabel.append('Remote worker budgets (JSON array) ',courierBudgets);
     const courierQueue=button('Queue and reserve Courier group',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id==='courier'&&c.id===$('hub-job-configuration').value);
@@ -4619,6 +4644,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     Array.isArray(item)))
                 throw Error('Provide one CPU/RAM/GPU budget for each selected Courier worker.');
             const resources=JSON.parse($('hub-job-resources').value);
+            const matching=courierMatch.input.checked&&!courierMatch.label.hidden;
+            const budgetRequest=distributedBudgetRequest(
+                budgets.map(({machine_id,...resources})=>({resources,machine_id})),
+                matching,'lineages');
             const predecessor=$('hub-job-predecessor').value;
             if(predecessor) {
                 const parent=state.jobs.find(job=>job.id===predecessor);
@@ -4628,26 +4657,29 @@ document.addEventListener('DOMContentLoaded', () => {
                       parent.status==='stopped'&&parent.checkpoint_stop_verified===true))
                     throw Error('Courier distributed continuation requires a released, verified checkpoint on the original learner machine.');
             }
-            if(!confirm('Reserve a Courier learner with '+budgets.length+
-                ' independent remote PPO workers? All machine CPU/RAM/GPU claims are atomic; '+
-                'no process will Start without a separate native approval.'))return;
+            const role=selected.parameters.shared_policy===true
+                ?' shared-policy collectors':' independent PPO workers';
+            if(!confirm('Reserve a Courier learner with '+budgets.length+role+
+                '? All machine CPU/RAM/GPU claims are atomic; '+
+                'no process will Start without a separate native approval.'+
+                (matching?' Budgets may be assigned to a different selected machine than the one on their row.':'')))return;
             const result=await action('hub/distributed/courier',{
                 confirm_queue:true,
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:courierMachine.value,resources,
                     metric_selection:selectedJobMetrics(),
                     ...(predecessor?{continuation_of_job_id:predecessor}:{})},
-                lineages:budgets.map(({machine_id,...resources})=>({resources,
-                    ...(machine_id===undefined?{}:{machine_id})})),
+                ...budgetRequest,
             });
             courierFeedback.textContent='Reserved '+result.lineages.length+
                 ' remote PPO lineages and learner '+result.learner.id+
-                '. All '+result.leases.length+' independent native leases await receipts.';
+                '. All '+result.leases.length+' independent native leases await receipts.'+
+                (matching?matchedWorkerSummary(result.leases):'');
             await reload();
         }catch(error){courierFeedback.textContent=String(error.message||error);}
     });
     courierPanel.append(courierLegend,courierMachineLabel,
-        courierBudgetsLabel,courierDetails,courierQueue,courierFeedback);
+        courierBudgetsLabel,courierMatch.label,courierDetails,courierQueue,courierFeedback);
     distributedPanel.insertAdjacentElement('afterend',courierPanel);
     let courierBudgetHost=null;
     function renderCourierDistributedGroup() {
@@ -4657,15 +4689,19 @@ document.addEventListener('DOMContentLoaded', () => {
         courierPanel.hidden=project!=='courier'||
             selected?.parameters?.remote_lineages!==true;
         if(courierPanel.hidden)return;
+        const shared=selected.parameters.shared_policy===true;
+        courierLegend.textContent=shared?'Courier shared-policy learner and collectors'
+            :'Courier learner and independent PPO workers';
         const prior=courierMachine.value;
         const machines=state.machines.filter(machine=>
             machine.status==='connected'&&machine.local_executor_enabled&&
             machine.native_preflight_passed&&
             machine.installed_projects?.includes('courier')&&
-            machine.courier_remote_lineage_endpoints?.length);
+            machine.courier_remote_lineage_endpoints?.length&&
+            (!shared||machine.courier_shared_policy_maps>0));
         courierMachine.replaceChildren(...machines.map(machine=>new Option(
             (machine.name||machine.id)+' ('+machine.id+') · '+
-                machine.courier_remote_lineage_endpoints.length+' PPO lineages',machine.id)));
+                machine.courier_remote_lineage_endpoints.length+' approved endpoints',machine.id)));
         if(machines.some(machine=>machine.id===prior))courierMachine.value=prior;
         const machine=machines.find(item=>item.id===courierMachine.value);
         const endpoints=machine?.courier_remote_lineage_endpoints||[];
@@ -4674,27 +4710,31 @@ document.addEventListener('DOMContentLoaded', () => {
             host.courier_lineage_endpoint===endpoint&&
             host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
             host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i]&&
+            (!shared||host.courier_shared_policy_collector===true)&&
             host.installed_projects?.includes('courier_lineage')));
         const subset=machine?.courier_lineage_subset===true;
+        courierMatch.label.hidden=!subset;
         const available=match.filter(hosts=>hosts.length===1).map(hosts=>hosts[0]);
-        const budgetHost=machine?machine.id+':'+subset:null;
+        const budgetHost=machine?machine.id+':'+subset+':'+shared:null;
         const population=selected.parameters.workers;
+        const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
         if(courierBudgetHost!==budgetHost) {
+            courierMatch.input.checked=false;
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
-                (subset?available.slice(0,Math.max(0,population-1)):match).map(worker=>
+                (subset?available.slice(0,capacity):match).map(worker=>
                     ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),
                 null,2);
         }
         const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
-            population>1&&available.length>0&&
-            (subset||population>endpoints.length&&available.length===endpoints.length)&&
+            capacity>0&&available.length>0&&
+            (subset||capacity>=endpoints.length&&available.length===endpoints.length)&&
             new Set(available.map(host=>host.id)).size===available.length);
         courierQueue.disabled=!ready;
         courierDetails.textContent=ready
-            ?'Available PPO workers: '+available.map(host=>host.id).join(', ')+
+            ?'Available '+(shared?'collectors':'PPO workers')+': '+available.map(host=>host.id).join(', ')+
                 (subset?'. Keep the machines you want to allocate.':'. Supply one budget per worker in the listed order.')+
-                ' Leave at least one PPO lineage on the learner.'
+                (shared?' Each collector gets at least one whole map.':' Leave at least one PPO lineage on the learner.')
             :'Register the Courier lineage project and connect the approved workers.';
     }
     courierMachine.addEventListener('change',renderCourierDistributedGroup);
@@ -4728,9 +4768,11 @@ document.addEventListener('DOMContentLoaded', () => {
             m.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
             m.installed_projects?.includes('tinybrains_rollout')));
         const subset=machine?.tinybrains_rollout_subset===true;
+        distributedMatch.label.hidden=!subset;
         const available=workers.filter(items=>items.length===1).map(items=>items[0]);
         const budgetHost=machine?machine.id+':'+subset:null;
         if(distributedBudgetHost!==budgetHost) {
+            distributedMatch.input.checked=false;
             distributedBudgetHost=budgetHost;
             distributedBudgets.value=JSON.stringify((subset?available:workers).map(worker=>
                 ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),null,2);

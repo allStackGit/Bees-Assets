@@ -1318,6 +1318,12 @@ HIP PCI identity. Native Start repeats the denial control before recording
 ownership and checks the allowed node and HIP identity inside the job unit.
 Updated native Linux agents advertise support for this path.
 
+On a single-GPU Docker host, the control mounts the render node without
+granting device access. It verifies the character device's major/minor
+numbers and requires the kernel to reject opening it. The regular probe
+verifies the leased HIP device using the same pinned image, which the
+learner uses at Start. Both probes run without network access.
+
 For a native job, the agent constructs `runtimeProof` solely from the
 installed trusted adapter and the frozen job/lease. The same short-lived
 service also invokes that adapter's fixed ROCm verifier under the pinned
@@ -2848,6 +2854,12 @@ service to the public Internet.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
+   **Match budgets across the selected machines** lets the Hub fit the
+   worker budgets to that machine set. The API accepts
+   `worker_machine_ids` alongside collector or Courier lineage budgets
+   without individual `machine_id` fields. The Hub checks current lease
+   capacity and keeps the learner's approved endpoint order, including
+   any fixed rollout weights or Courier lineage slots.
 4. Allow each host's authenticated agent to acknowledge its offered claim,
    and qualify the learner's GPU access before launch. In **Train**, use
    **Start collectors only** to authorize all remote native Starts atomically
