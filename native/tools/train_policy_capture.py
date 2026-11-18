@@ -631,6 +631,10 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
 
     for tick, frame in frames:
         latest.update(frame)
+        # Multiple same-phase agents share the identical teammate state.
+        # Cache only for this decision tick; older frames are never held
+        # as a second cross-episode observation store.
+        group_status_cache = {}
         for agent, row in frame.items():
             if agent not in learning_agents:
                 continue
@@ -647,19 +651,24 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
             actions = ActionTuple(
                 row["sampled_continuous"], row["discrete"].astype(np.int32),
             )
-            mates = [
-                mate for mate in members if mate != agent and
-                starts[mate] <= tick < closing[mate] and mate in latest
-            ]
+            cache_key = team, next_tick
+            statuses = group_status_cache.get(cache_key)
+            if statuses is None:
+                statuses = {
+                    mate: AgentStatus(
+                        [latest[mate]["observations"]], 0.0,
+                        ActionTuple(
+                            latest[mate]["sampled_continuous"],
+                            latest[mate]["discrete"].astype(np.int32),
+                        ), closing[mate] <= next_tick,
+                    )
+                    for mate in members if
+                    starts[mate] <= tick < closing[mate] and mate in latest
+                }
+                group_status_cache[cache_key] = statuses
             group_status = [
-                AgentStatus(
-                    [latest[mate]["observations"]], 0.0,
-                    ActionTuple(
-                        latest[mate]["sampled_continuous"],
-                        latest[mate]["discrete"].astype(np.int32),
-                    ), closing[mate] <= next_tick,
-                )
-                for mate in mates
+                statuses[mate] for mate in members
+                if mate != agent and mate in statuses
             ]
             masks = [np.array([False, not bit]) for bit in row["fire_allowed"]]
             masks.append(row["special_allowed"] == 0)
