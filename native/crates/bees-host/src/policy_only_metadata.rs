@@ -234,8 +234,7 @@ impl NativePolicyOnlyMetadata {
         };
         let agent = self.agents.get(&ship.entity_id)
             .ok_or("Deferred policy ship has no authored controller metadata")?;
-        if !ship.motion.is_policy_controlled ||
-            agent.ship_id != ship.entity_id || agent.side != ship.side ||
+        if agent.ship_id != ship.entity_id || agent.side != ship.side ||
             agent.frame != policy.frame ||
             agent.controller.movement_disabled_for_team != policy.movement_disabled
         {
