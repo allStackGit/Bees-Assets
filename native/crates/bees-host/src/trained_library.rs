@@ -369,7 +369,7 @@ impl TrainedGame {
         serde_json::to_writer_pretty(&mut scene_out, &scene)?;
         scene_out.write_all(b"\n")?;
         scene_out.sync_all()?;
-        run["levels"][0]["scene"] = json!(scene_path.canonicalize()?);
+        run["levels"][0]["scene"] = json!("replay-source-scene.json");
         let run_path = parent.join("replay-source-run.json");
         let mut run_out = fs::OpenOptions::new().create_new(true)
             .write(true).open(&run_path)?;
@@ -406,10 +406,9 @@ impl TrainedGame {
             .ok_or_else(|| invalid("trained replay requires source Levels"))?;
         for (index, level) in levels.iter_mut().enumerate() {
             let source = PathBuf::from(text_field(level, "scene")?);
-            let archived = archive_source_scene(
-                &source, &parent.join(format!("replay-level-{index}.scene.json")),
-            )?;
-            level["scene"] = json!(archived);
+            let filename = format!("replay-level-{index}.scene.json");
+            archive_source_scene(&source, &parent.join(&filename))?;
+            level["scene"] = json!(filename);
         }
         let archived = parent.join("replay-source-run.json");
         let mut output = fs::OpenOptions::new().write(true).create_new(true)
