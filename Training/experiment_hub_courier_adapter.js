@@ -15,6 +15,8 @@ const NVIDIA_UUID=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers','training_collector_workers',
+    'training_ingestion_shards','training_ingestion_peak_parallel_copies',
+    'training_shared_last_reply_worker','training_shared_last_copy_worker',
     'training_slowest_worker','training_last_reply_worker',
     'training_simulation_slowest_worker',
     'training_simulated_steps','training_useful_steps','training_collected_useful_steps',
