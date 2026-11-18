@@ -2159,6 +2159,21 @@ rewritten and an unevaluated/incomplete round cannot become the selection.
 A best score on fixed holdout seeds is **not** proof of generalization,
 Unity parity or a release-qualified policy.
 
+Additional independent holdouts can be specified at session creation
+with repeated `--monitor-evaluation-run-config path/to/other-run.json`.
+Each suite retains its own source SHA-256, fixed policy RNG seed, baseline,
+per-checkpoint evaluation receipts, and interrupted-attempt recovery. The
+`session-progress.json` `monitoring_suites` array reports wins, draws,
+latest change from baseline, and every verified round. Monitoring suites
+use the primary holdout's evaluation side and cadence, but do **not**
+silently change early stopping or best-checkpoint selection: those remain
+controlled by the explicitly chosen primary `--evaluation-run-config`.
+A monitoring suite is pinned for the entire training session and must be
+specified again, unchanged and in the same order, when resuming. Source
+run configurations and all referenced scenes/assets are hash-pinned. This
+supports comparing different experiments against identical independent
+suites without mixing training observations with held-out performance.
+
 To reduce fixed-holdout overhead on high-SPS training, optionally
 add `--evaluation-every 4` alongside the pinned holdout suite. The
 session still evaluates the initial model and its final checkpoint, but

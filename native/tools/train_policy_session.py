@@ -441,6 +441,28 @@ def evaluation_attempt_exists(directory):
                for path in directory.iterdir())
 
 
+def evaluate_monitor_suites(directory, manifest, recipe, *, due):
+    """Run independent, immutable monitoring suites for this exact model.
+
+    Each suite gets its own interrupted-attempt ledger and source hash.
+    The primary holdout alone owns best-checkpoint and stopping decisions;
+    a monitor is evidence, not an implicit change of training objective.
+    """
+    evaluated = {}
+    for number, suite in enumerate(recipe.get("monitor_evaluations", []), 1):
+        suite_id = f"monitor-{number:03d}"
+        home = directory / suite_id
+        if not due and not (home.is_dir() and evaluation_attempt_exists(home)):
+            continue
+        if not home.exists():
+            home.mkdir()
+        if not home.is_dir():
+            raise ValueError(f"native monitor suite output is not a directory: {home}")
+        derived = {**recipe, "evaluation_config": suite}
+        evaluated[suite_id] = ensure_evaluation(home, manifest, derived)
+    return evaluated
+
+
 def measured_distributed_collection_windows(completed):
     """Only receipt-matched observed fleet windows contribute to fleet SPS.
 
@@ -578,8 +600,50 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
 
 def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None,
                       best_evaluated=None, stopping=None, recipe=None,
-                      latest_playable=None):
+                      latest_playable=None, monitor_baseline=None,
+                      monitor_observations=None):
     evaluations = evaluations or {}
+    monitor_baseline = monitor_baseline or {}
+    monitor_observations = monitor_observations or {}
+    monitor_report = []
+    for number, suite in enumerate(
+        (recipe or {}).get("monitor_evaluations", []), 1
+    ):
+        suite_id = f"monitor-{number:03d}"
+        baseline = monitor_baseline.get(suite_id)
+        if baseline is None:
+            raise ValueError(f"missing baseline for monitored native suite {suite_id}")
+        observations = [
+            (index, monitor_observations[str(directory)][suite_id])
+            for index, (directory, _) in enumerate(completed, 1)
+            if suite_id in monitor_observations.get(str(directory), {})
+        ]
+        for _, result in observations:
+            if (result["episodes"] != baseline["episodes"] or
+                    result["source_run_config_sha256"] != suite["sha256"] or
+                    result["learner_side"] != baseline["learner_side"] or
+                    result["policy_sampling_seed"] != baseline["policy_sampling_seed"]):
+                raise ValueError(f"incomparable monitored native suite: {suite_id}")
+        latest_round, latest = observations[-1] if observations else (None, None)
+        monitor_report.append({
+            "suite_id": suite_id,
+            "source_run_config": suite["path"],
+            "source_run_config_sha256": suite["sha256"],
+            "learner_side": baseline["learner_side"],
+            "policy_sampling_seed": baseline["policy_sampling_seed"],
+            "baseline": baseline,
+            "latest": latest,
+            "latest_round": latest_round,
+            "evaluated_rounds": len(observations),
+            "latest_win_rate_gain": (
+                latest["side_win_rate"] - baseline["side_win_rate"]
+                if latest is not None else None
+            ),
+            "results": [
+                {"round": index, "receipt": receipt}
+                for index, receipt in observations
+            ],
+        })
     world_steps = sum(record["rollout_metrics"]["successful_world_steps"]
                       for _, record in completed)
     policy_rows = sum(record["rollout_metrics"]["successful_policy_rows"]
@@ -682,6 +746,7 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
                 holdout_steps / holdout_wall if holdout_wall > 0 else None,
         }} if all_holdouts else {}),
         "latest_holdout_win_rate_gain": holdout_win_rate_gain,
+        **({"monitoring_suites": monitor_report} if monitor_report else {}),
         **({"holdout_stopping": stopping} if stopping is not None else {}),
         **({"best_evaluated": {
             "round": best_evaluated["selected"]["round"],
@@ -778,7 +843,9 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
              "refreshed_opponent_slot":
                  record["learner_metrics"].get("refreshed_opponent_slot"),
              "training_outcomes": record["learner_metrics"].get("training_outcomes", {}),
-             "holdout": evaluations.get(str(path))}
+             "holdout": evaluations.get(str(path)),
+             **({"monitor_holdouts": monitor_observations[str(path)]}
+                if monitor_observations.get(str(path)) else {})}
             for index, (path, record) in enumerate(completed, 1)
         ],
     }
@@ -821,7 +888,9 @@ def main():
     parser.add_argument("--curriculum-plan", type=Path,
                         help="pinned source-run changes between completed optimizer rounds")
     parser.add_argument("--evaluation-run-config", type=Path,
-                        help="independent fixed-seed Levels evaluated after each completed update")
+                        help="primary fixed-seed Levels used for checkpoint selection and stopping")
+    parser.add_argument("--monitor-evaluation-run-config", type=Path, action="append", default=[],
+                        help="additional fixed-seed suite monitored against every evaluated checkpoint; repeatable")
     parser.add_argument("--evaluation-side", type=int,
                         help="source side 1 or 2 whose victories are measured")
     parser.add_argument("--evaluation-policy-seed", type=int, default=0,
@@ -903,6 +972,10 @@ def main():
     if (not 0 <= args.evaluation_policy_seed < (1 << 63) or
             args.evaluation_run_config is None and args.evaluation_policy_seed != 0):
         parser.error("--evaluation-policy-seed requires a holdout and a nonnegative int63 seed")
+    if args.monitor_evaluation_run_config and args.evaluation_run_config is None:
+        parser.error("additional monitoring suites require a primary --evaluation-run-config")
+    if len(args.monitor_evaluation_run_config) > 16:
+        parser.error("no more than 16 independent monitoring suites per session")
     if not 1 <= args.evaluation_every <= 99999 or (
             args.evaluation_every != 1 and args.evaluation_run_config is None):
         parser.error("--evaluation-every must be positive and requires a fixed holdout suite")
@@ -1058,6 +1131,12 @@ def main():
         recipe["evaluation_policy_seed"] = args.evaluation_policy_seed
         if args.evaluation_every != 1:
             recipe["evaluation_every"] = args.evaluation_every
+    if args.monitor_evaluation_run_config:
+        suites = [pinned(path) for path in args.monitor_evaluation_run_config]
+        hashes = [recipe["evaluation_config"]["sha256"], *(suite["sha256"] for suite in suites)]
+        if len(set(hashes)) != len(hashes):
+            parser.error("primary and monitoring evaluation suites must have distinct pinned source bytes")
+        recipe["monitor_evaluations"] = suites
     if args.early_stop_patience is not None:
         recipe["early_stop"] = {
             "patience_rounds": args.early_stop_patience,
@@ -1066,6 +1145,7 @@ def main():
         }
     recipe["source_dependencies"] = native_input_dependencies(
         run, recipe.get("evaluation_config"),
+        *recipe.get("monitor_evaluations", []),
         *([] if curriculum is None else [item["run_config"] for item in curriculum["stages"]]),
     )
     root = args.output_dir.resolve()
@@ -1151,6 +1231,8 @@ def main():
             register_playable(args.library_save_root, args.library_game_id,
                               display_title, root / "latest-playable.json")
         evaluations = {}
+        monitor_baseline = {}
+        monitor_observations = {}
         baseline_holdout = None
         best_evaluated = None
         if "evaluation_config" in recipe:
@@ -1163,11 +1245,20 @@ def main():
             baseline_holdout = ensure_evaluation(
                 root, Path(manifest["path"]), recipe,
             )
+            monitor_baseline = evaluate_monitor_suites(
+                root, Path(manifest["path"]), recipe, due=True,
+            )
             for index, (directory, record) in enumerate(completed, 1):
-                if evaluation_due(index, args.rounds, recipe) or evaluation_attempt_exists(directory):
+                due = evaluation_due(index, args.rounds, recipe)
+                if due or evaluation_attempt_exists(directory):
                     evaluations[str(directory)] = ensure_evaluation(
                         directory, Path(record["next_manifest"]), recipe,
                     )
+                checked = evaluate_monitor_suites(
+                    directory, Path(record["next_manifest"]), recipe, due=due,
+                )
+                if checked:
+                    monitor_observations[str(directory)] = checked
             best_evaluated = publish_best_evaluated(
                 root, recipe, completed, evaluations, baseline_holdout,
             )
@@ -1187,6 +1278,8 @@ def main():
         atomic_json(root / "session-progress.json", progress_snapshot(
             completed, args.rounds, evaluations, baseline_holdout, best_evaluated, stop_state,
             recipe, latest_playable,
+            monitor_baseline=monitor_baseline,
+            monitor_observations=monitor_observations,
         ))
         if len(completed) > args.rounds:
             raise ValueError("target round count is smaller than the completed checkpoint lineage")
@@ -1455,6 +1548,8 @@ def main():
             atomic_json(root / "session-progress.json", progress_snapshot(
                 completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
                 recipe=recipe, latest_playable=latest_playable,
+                monitor_baseline=monitor_baseline,
+                monitor_observations=monitor_observations,
             ))
             if "evaluation_config" in recipe:
                 due = evaluation_due(index, args.rounds, recipe)
@@ -1463,6 +1558,11 @@ def main():
                     evaluations[str(directory)] = ensure_evaluation(
                         directory, next_manifest, recipe,
                     )
+                    checked = evaluate_monitor_suites(
+                        directory, next_manifest, recipe, due=True,
+                    )
+                    if checked:
+                        monitor_observations[str(directory)] = checked
                 # A scene transition changes the playable world even if
                 # there is no holdout at this optimizer round. Re-publish
                 # the already verified best checkpoint for the new Level.
@@ -1476,6 +1576,8 @@ def main():
             snapshot = progress_snapshot(
                 completed, args.rounds, evaluations, baseline_holdout, best_evaluated,
                 stop_state, recipe, latest_playable,
+                monitor_baseline=monitor_baseline,
+                monitor_observations=monitor_observations,
             )
             atomic_json(root / "session-progress.json", snapshot)
             print(json.dumps({"kind": "native_training_session_round_complete",
@@ -1486,7 +1588,8 @@ def main():
                               "optimizer_input_steps": record["learner_metrics"]["optimizer_input_steps"],
                               "next_checkpoint_sha256": record["next_checkpoint_sha256"],
                               "latest_playable_run": latest_playable["playable_run"],
-                              "latest_training_outcomes": snapshot["latest_training_outcomes"]}),
+                              "latest_training_outcomes": snapshot["latest_training_outcomes"],
+                              "monitoring_suite_count": len(monitor_baseline)}),
                   flush=True)
         stopped_early = (len(completed) < args.rounds and
                          stop_state is not None and stop_state["stop"])
