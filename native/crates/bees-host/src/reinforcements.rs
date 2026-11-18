@@ -498,8 +498,10 @@ impl NativePolicyOnlyMetadata {
         // has moved or destroyed collision asteroids. Refresh once per
         // arrival tick, only when a due wave has an obstacle-aware entry move.
         if !self.reinforcement_wakeup.may_be_due(tick, world, events) {
+            self.reinforcement_idle_ticks_skipped += 1;
             return Ok(());
         }
+        self.reinforcement_wakeup_scans += 1;
         let mut navigation_refreshed = false;
         let mut changed = false;
         let mut index = 0;
