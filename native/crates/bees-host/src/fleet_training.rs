@@ -455,16 +455,83 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         "model": job.join("model"),
     }));
     let can_resume = job.join("invocation.json").is_file();
-    let actions = [
-        BattleMenuRow {
-            title: "Back to Game Library",
-            status: "  [Inspection complete]", unlocked: true,
-        },
-        BattleMenuRow {
-            title: "Resume Training Job",
-            status: "  [Original source/checkpoint]", unlocked: can_resume,
-        },
+    let mut details = vec![
+        ("Back to Game Library".to_string(),
+         "  [Inspection complete]".to_string(), true),
+        ("Resume Training Job".to_string(),
+         "  [Original source/checkpoint]".to_string(), can_resume),
     ];
+    if progress.is_file() {
+        let measurement: Value = serde_json::from_slice(&fs::read(&progress)?)?;
+        let steps = measurement["total_world_steps"].as_u64().unwrap_or(0);
+        let policy_rows = measurement["total_policy_rows"].as_u64().unwrap_or(0);
+        details.push((
+            format!("Simulation: {steps} World steps / {policy_rows} policy rows"),
+            "  [Verified training output]".to_string(), false,
+        ));
+        if let Some(sps) = measurement["useful_training_throughput"]
+            ["world_steps_per_training_wall_second"].as_f64()
+            .filter(|number| number.is_finite())
+        {
+            details.push((
+                format!("Useful training SPS: {sps:.1}"),
+                "  [Collection + optimizer wall time]".to_string(), false,
+            ));
+        }
+        if let Some(sps) = measurement["world_steps_per_rollout_wall_second"]
+            .as_f64().filter(|number| number.is_finite())
+        {
+            details.push((
+                format!("Native simulation SPS: {sps:.1}"),
+                "  [Rollout wall time]".to_string(), false,
+            ));
+        }
+        let optimize = measurement["sum_round_optimizer_wall_seconds"]
+            .as_f64().unwrap_or(0.0);
+        let collect = measurement["sum_round_rollout_wall_seconds"]
+            .as_f64().unwrap_or(0.0);
+        details.push((
+            format!("Optimizer: {optimize:.1}s  |  Rollout: {collect:.1}s"),
+            "  [Total measured workload]".to_string(), false,
+        ));
+        if let Some(rate) = measurement["latest_holdout"]["side_win_rate"]
+            .as_f64().filter(|number| number.is_finite())
+        {
+            details.push((
+                format!("Latest holdout win rate: {:.1}%", rate * 100.0),
+                "  [Independent fixed-seed evaluation]".to_string(), false,
+            ));
+        }
+        if let Some(rate) = measurement["best_evaluated"]["side_win_rate"]
+            .as_f64().filter(|number| number.is_finite())
+        {
+            details.push((
+                format!("Best evaluated win rate: {:.1}%", rate * 100.0),
+                "  [Verified checkpoint selection]".to_string(), false,
+            ));
+        }
+        if let Some(count) = measurement["self_play_opponent_promotions"].as_u64() {
+            details.push((
+                format!("Self-play opponent promotions: {count}"),
+                "  [Completed model generations]".to_string(), false,
+            ));
+        }
+        if let Some(distributed) = measurement["distributed_collection_wall_time"]
+            .as_object()
+        {
+            if let Some(count) = distributed.get("distributed_rounds")
+                .and_then(Value::as_u64)
+            {
+                details.push((
+                    format!("Distributed collector rounds: {count}"),
+                    "  [Experiment Hub measured collection]".to_string(), false,
+                ));
+            }
+        }
+    }
+    let actions = details.iter().map(|(title, status, enabled)| BattleMenuRow {
+        title: title.as_str(), status: status.as_str(), unlocked: *enabled,
+    }).collect::<Vec<_>>();
     let mut action = 0;
     if select_library(&actions, &mut action, false)? == Some(1) {
         resume_training_job(job)?;
