@@ -151,7 +151,16 @@ function createNativeBeesPortableCollectorAdapter({
             metrics.wall_seconds<=0)
             throw Error('Native portable collector receipt is invalid or incomplete.');
         const gpu=metrics.gpu_inference;
-        if((receipt.leased_gpu_inference===true&&!gpu)||
+        const leased=receipt.leased_gpu_inference===true;
+        const expectedCount=Array.isArray(context.gpu_pci_addresses)
+            ?context.gpu_pci_addresses.length
+            :context.gpu_pci_address?1:0;
+        if((leased!==Boolean(expectedCount))||
+            (leased&&(![1,2].includes(receipt.leased_gpu_count)||
+                receipt.leased_gpu_count!==expectedCount||
+                receipt.leased_gpu_count>receipt.rollout_processes))||
+            (!leased&&receipt.leased_gpu_count!==undefined)||
+            (leased&&!gpu)||
             (gpu!=null&&(
                 !Number.isSafeInteger(gpu.verified_workers)||
                 gpu.verified_workers!==receipt.rollout_processes||
