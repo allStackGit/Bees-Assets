@@ -644,6 +644,10 @@ pub struct GameMapBorderMeasurements {
     /// Exact MapBorder contact damage in explicitly lethal native arenas.
     pub lethal_hits: u64,
     pub lethal_kills: u64,
+    pub confinement_position_corrections: u64,
+    pub confinement_velocity_clamps: u64,
+    pub confinement_unfittable_hulls: u64,
+    pub confinement_missing_profiles: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -829,6 +833,7 @@ pub struct CombatWorld {
     /// Explicit authored rule: lethal MapBorder contact is a real combat
     /// consequence for game and training, not a renderer or agent clamp.
     lethal_map_borders: bool,
+    constrain_map_borders: bool,
     ship_target_front_offsets: HashMap<i64, f32>,
     pending_weapon_range_exits: u64,
     weapon_range_candidates: Vec<usize>,
@@ -1025,6 +1030,7 @@ impl CombatWorld {
             weapon_rank_history: weapon_rank_history::WeaponRankHistory::default(),
             combat_activity: HashMap::new(),
             level_geometry: None, lethal_map_borders: false,
+            constrain_map_borders: false,
             ship_target_front_offsets: HashMap::new(),
             pending_weapon_range_exits: 0,
             weapon_range_candidates: Vec::new(), weapon_range_entering_ids: Vec::new(),
@@ -1347,10 +1353,18 @@ impl CombatWorld {
         self.map_border_measurements
     }
 
-    /// Scene-owned physical rule used by both scripted gameplay and native
-    /// MA-POCA. False is Unity's ordinary nonlethal MapBorder behavior.
-    pub fn configure_lethal_map_borders(&mut self, enabled: bool) {
-        self.lethal_map_borders = enabled;
+    /// A Level selects exactly one border consequence at authoring time.
+    /// Collision stop, lethal hit, and nonlethal arena confinement all act
+    /// on the same CombatWorld, whether controlled by user, script or PPO.
+    pub fn configure_map_border_behavior(
+        &mut self, lethal: bool, confine: bool,
+    ) -> Result<(), CombatWorldError> {
+        if lethal && confine {
+            return Err(CombatWorldError::InvalidLevelGeometry);
+        }
+        self.lethal_map_borders = lethal;
+        self.constrain_map_borders = confine;
+        Ok(())
     }
 
     pub fn tracked_order_measurements(&self) -> TrackedOrderMeasurements {
@@ -3640,6 +3654,70 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Unity's RL arena guard confines the complete rotated hull using
+    /// max(sprite half-width, half-height), then limits OUTWARD velocity
+    /// for the next fixed step. This runs only for explicitly authored
+    /// nonlethal arenas. Source sprite dimensions are the same gameplay
+    /// movement profiles used by scripted/AI ships; no extra PPO geometry.
+    fn constrain_arena_ships(&mut self, dt: f32) -> Result<(), CombatWorldError> {
+        if !self.constrain_map_borders { return Ok(()); }
+        let bounds = self.level_geometry
+            .ok_or(CombatWorldError::MissingLevelGeometry)?.map_bounds;
+        for index in 0..self.ships.len() {
+            if self.ships[index].vitals.is_dead() ||
+                !self.physics.ships()[index].active {
+                continue;
+            }
+            let id = self.ships[index].entity_id;
+            if self.game_barge_charges.get(&id)
+                .is_some_and(|charge| charge.can_override_bounds) ||
+                self.latest_game_point_orders.get(&id)
+                    .is_some_and(|order| order.can_override_bounds) {
+                continue;
+            }
+            let Some(profile) = self.game_ship_steering.get(&id)
+                .map(|steering| steering.profile) else {
+                // A just-admitted dynamic ship might not have its authored
+                // sprite profile until the Level finishes enrollment.
+                self.map_border_measurements.confinement_missing_profiles += 1;
+                continue;
+            };
+            let extent = profile.half_width.max(profile.half_height);
+            let min_x = bounds.min.x + extent;
+            let max_x = bounds.max.x - extent;
+            let min_y = bounds.min.y + extent;
+            let max_y = bounds.max.y - extent;
+            let motion = &mut self.physics.ships_mut()[index].motion;
+            if min_x > max_x || min_y > max_y {
+                motion.body_velocity = Vec2::ZERO;
+                self.map_border_measurements.confinement_unfittable_hulls += 1;
+                continue;
+            }
+            let original = motion.position;
+            motion.position.x = motion.position.x.clamp(min_x, max_x);
+            motion.position.y = motion.position.y.clamp(min_y, max_y);
+            if original != motion.position {
+                self.map_border_measurements.confinement_position_corrections += 1;
+            }
+            let original_velocity = motion.body_velocity;
+            let projected = motion.position + original_velocity * dt;
+            if projected.x < min_x && motion.body_velocity.x < 0.0 {
+                motion.body_velocity.x = (min_x - motion.position.x) / dt;
+            } else if projected.x > max_x && motion.body_velocity.x > 0.0 {
+                motion.body_velocity.x = (max_x - motion.position.x) / dt;
+            }
+            if projected.y < min_y && motion.body_velocity.y < 0.0 {
+                motion.body_velocity.y = (min_y - motion.position.y) / dt;
+            } else if projected.y > max_y && motion.body_velocity.y > 0.0 {
+                motion.body_velocity.y = (max_y - motion.position.y) / dt;
+            }
+            if original_velocity != motion.body_velocity {
+                self.map_border_measurements.confinement_velocity_clamps += 1;
+            }
+        }
+        Ok(())
+    }
+
     fn process_map_border_contacts(&mut self) {
         for index in 0..self.physics.obstacle_pair_entries().len() {
             let pair = self.physics.obstacle_pair_entries()[index];
@@ -4357,6 +4435,7 @@ impl CombatWorld {
         self.process_map_border_contacts();
         self.process_asteroid_ship_contacts()?;
         self.process_asteroid_hull_contacts();
+        self.constrain_arena_ships(dt)?;
         if let Some(random) = random {
             self.spawn_pending_asteroid_fragments(random)?;
         }
