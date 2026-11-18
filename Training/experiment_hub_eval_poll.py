@@ -313,6 +313,13 @@ def awaits_archive_ack(path: Path, job: dict, suite_id: str,
         not isinstance(receipt.get("checkpoint_sha256"), str) or
         not SHA256.fullmatch(receipt["checkpoint_sha256"])):
         raise ValueError("Published evaluator receipt has unexpected identity; retain for inspection.")
+    # On a verified terminal job, native Inspect is allowed to accept
+    # only the final model fingerprint. A pending intermediate receipt can
+    # no longer enter the archive and must not block the required final
+    # evaluation. Training and checkpoint ownership remain unchanged.
+    final = job.get("final_checkpoint_sha256")
+    if final is not None and final != receipt["checkpoint_sha256"]:
+        return False
     archived = job.get("archived_evaluation")
     # Compare complete, normalized measurement evidence. A matching model
     # digest alone cannot acknowledge a contradictory measured result.
