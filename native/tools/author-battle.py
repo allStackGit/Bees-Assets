@@ -732,6 +732,41 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         if source_ship is None:
             ship.pop("policy", None)
             continue
+        if ship["ship_type"] == 17:
+            # A Queen's YellowJacket is dynamically born by the original
+            # physical gameplay. Its neural Bomb observation is source
+            # metadata, not another physical special or a training simulator.
+            # Never copy the archetype's wave timing, spawn geometry or
+            # optional live-population cap into the player's battle.
+            queen = ship.get("special") or {}
+            reference_queen = source_ship.get("special") or {}
+            if (queen.get("kind") != "queen" or
+                    reference_queen.get("kind") != "queen"):
+                raise ValueError("policy Queen needs a real source-matched Queen special")
+            spawn = queen.get("spawn") or {}
+            reference_spawn = reference_queen.get("spawn") or {}
+            minion = spawn.get("minion") or {}
+            reference_minion = reference_spawn.get("minion") or {}
+            weapon = minion.get("special_weapon") or {}
+            reference_weapon = reference_minion.get("special_weapon") or {}
+            if (not all(isinstance(item, dict) for item in
+                        (minion, reference_minion, weapon, reference_weapon)) or
+                    not isinstance(reference_weapon.get("observation"), dict) or
+                    type(reference_minion.get("observed_weapon_type")) is not int):
+                raise ValueError("policy Queen needs verified child Bomb observation data")
+            def physical_minion(source_minion):
+                physical = copy.deepcopy(source_minion)
+                # Group observation and capacity are not copied. Source
+                # gameplay chooses the *real* capacity; a policy's example
+                # limit must never silently change that physical battle.
+                physical.pop("observed_weapon_type", None)
+                physical.pop("max_living_ships_per_side", None)
+                physical["special_weapon"].pop("observation", None)
+                return physical
+            if physical_minion(minion) != physical_minion(reference_minion):
+                raise ValueError("policy Queen child Bomb and physical hull differ from reference")
+            minion["observed_weapon_type"] = reference_minion["observed_weapon_type"]
+            weapon["observation"] = copy.deepcopy(reference_weapon["observation"])
         if ship.get("special_weapon") is not None:
             reference = source_ship.get("special_weapon") or {}
             physical = ship["special_weapon"]
@@ -909,8 +944,8 @@ def main() -> None:
                              "into their actual policy teams only on physical deployment "
                              "(otherwise they retain scripted AI)")
     parser.add_argument("--policy-archetypes", type=Path,
-                        default=EXAMPLES / "native-skirmish.policy.scene.json",
-                        help="existing native policy ship and Bomb observation definitions")
+                        default=EXAMPLES / "native-queen.policy.scene.json",
+                        help="existing native policy ship, Queen minion and Bomb observation definitions")
     parser.add_argument("--source-scene", type=Path,
                         default=EXAMPLES / "native-queen.scene.json",
                         help="native game scene supplying exact per-side ship archetypes")
