@@ -875,9 +875,15 @@ label.hub-toggle-row > input[type="checkbox"] {
           <label>Suite SHA-256 (optional) <input id="hub-evaluation-digest" maxlength="64" pattern="[0-9a-f]{64}"></label>
           <label>Minimum trials <input id="hub-evaluation-trials" type="number" min="1" max="1000000" step="1" placeholder="100"></label>
           <label id="hub-evaluation-rate-label">Minimum success rate (0–1, stop mode only) <input id="hub-evaluation-rate" type="number" min="0" max="1" step="any" placeholder="0.8"></label>
-          <label class="wide">All required benchmark suites (JSON array; use instead of the single-suite fields)
+          <div class="wide" id="hub-evaluation-more-suites"></div>
+          <div class="hub-controls wide">
+            <button id="hub-evaluation-add-suite" type="button">Add another evaluation suite</button>
+          </div>
+          <details class="wide">
+            <summary>Advanced: edit the multi-suite list as JSON instead</summary>
+            <p class="muted">Clear the individual suite fields above when using JSON. The editor uses the same validated suite definitions.</p>
             <textarea id="hub-evaluation-all-of" rows="5" placeholder='[{"suite_id":"short","min_trials":100,"min_success_rate":0.8},{"suite_id":"long","min_trials":100,"min_success_rate":0.7}]'></textarea>
-          </label>
+          </details>
           <p class="muted wide">Monitoring-only evaluations collect checkpoint results without requesting a Stop. Stop mode requires a success threshold for every suite; all suites must pass on one verified checkpoint. Supply 2–8 distinct suites in the JSON field, with optional per-suite hashes. Leave out min_success_rate in monitoring mode.</p>
           <div class="hub-controls wide">
             <button type="button" id="hub-evaluation-save-project-defaults">Save monitoring setup as project default</button>
