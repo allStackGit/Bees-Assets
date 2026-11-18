@@ -102,6 +102,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'rollout_gpu_batch_next_target','rollout_gpu_batch_settled',
             'rollout_gpu_batch_proven_target',
             'ppo_gpu_batch_proven_target',
+            'rollout_opponent_gpu_stream_seconds',
+            'rollout_opponent_batch_budget_pixels',
+            'rollout_opponent_wide_forward_chunks',
             'ppo_gpu_stream_work_share',
             'remote_policy_shared_collectors',
             'remote_policy_shared_encode_seconds',
@@ -136,6 +139,17 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_devices_active',
             'training_gpu_rollout_lineages',
             'training_local_gpu_rollout_lineages',
+            'training_gpu_forward_stream_max_seconds',
+            'training_gpu_forward_stream_workers',
+            'training_gpu_input_slots_reused',
+            'training_gpu_state_slots_reused',
+            'training_gpu_policy_moves_skipped',
+            'training_shared_gpu_forward_max_seconds',
+            'training_shared_gpu_forward_workers',
+            'training_shared_gpu_input_reused',
+            'training_shared_gpu_state_reused',
+            'training_gpu_forward_slowest_share',
+            'training_shared_gpu_forward_share',
             'training_gpu_rollout_next_devices',
             'training_gpu_rollout_next_lineages','training_gpu_rollout_trial',
             'training_gpu_rollout_spare_candidates',
@@ -582,6 +596,14 @@ class BottleneckEvidence {
                     inferenceStream<=inferenceHost)
                     add('collector_'+i+'_inference_gpu_stream_share',
                         inferenceStream/inferenceHost);
+                const opponentHost=seconds('collector_'+i+'_opponent_processing_seconds');
+                const opponentStream=seconds('collector_'+i+'_opp_gpu_stream_seconds');
+                if(opponentHost>0&&opponentStream!==null&&opponentStream<=opponentHost)
+                    // Stream time includes kernel launch gaps; this ratio
+                    // compares one collector's completed opponent stage,
+                    // not physical accelerator utilization or saturation.
+                    add('collector_'+i+'_opponent_stream_share',
+                        opponentStream/opponentHost);
                 const durations=sourceNames.map(name=>
                     seconds('collector_'+i+'_'+name));
                 if(durations.slice(0,4).some(x=>x===null))continue;
@@ -773,6 +795,13 @@ class BottleneckEvidence {
                 ?seconds('worker_'+slowest+'_simulation_seconds'):null;
             const slowestCollection=Number.isSafeInteger(slowest)
                 ?seconds('worker_'+slowest+'_collection_seconds'):null;
+            const forward=Number.isSafeInteger(slowest)
+                ?seconds('worker_'+slowest+'_gpu_fwd_stream_seconds'):null;
+            if(slowestCollection>0&&forward!==null&&forward<=slowestCollection)
+                // The longest worker is not necessarily the last reply.
+                // Report measured work share without asserting GPU saturation.
+                add('training_gpu_forward_slowest_share',
+                    forward/slowestCollection);
             const simDominant=slowestSimulation!==null&&slowestCollection>0&&
                 slowestSimulation>=0.45*slowestCollection&&
                 slowestSimulation>=0.20*wall;
@@ -982,6 +1011,15 @@ class BottleneckEvidence {
                     (raw.value-wire.value)/raw.value);
             const collection=seconds('training_collect_max_seconds');
             const optimization=seconds('training_optimize_max_seconds');
+            const wireOwner=metrics.training_shared_last_wire_worker?.value;
+            const replyOwner=metrics.training_shared_last_reply_worker?.value;
+            if(Number.isSafeInteger(wireOwner)&&wireOwner===replyOwner&&
+                wireOwner>=0&&wireOwner<metrics.training_collector_workers.value) {
+                const workerCollection=seconds('worker_'+wireOwner+'_collection_seconds');
+                const stream=seconds('worker_'+wireOwner+'_gpu_fwd_stream_seconds');
+                if(workerCollection>0&&stream!==null&&stream<=workerCollection)
+                    add('training_shared_gpu_forward_share',stream/workerCollection);
+            }
             const exposed=seconds('training_ingestion_exposed_seconds');
             const copied=seconds('training_ingestion_copy_wall_seconds');
             const gap=seconds('training_shared_reply_gap_seconds');
