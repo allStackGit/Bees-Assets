@@ -160,6 +160,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_resume_proof_rounds',
             'training_resume_proof_seconds',
             'training_collector_sim_trial_workers',
+            'training_collector_sim_eligible_workers',
             'training_sim_migration_workers',
             'training_sim_process_migrations',
             'training_sim_process_migration_denials',
