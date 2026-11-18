@@ -86,8 +86,8 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
             requiresGpuInference ||= gpuProvider;
             supportsGpuInference ||= gpuProvider;
         } else {
-            // The Hub leases at most one GPU to the Bees optimizer. A
-            // second CUDA ordinal cannot be reached through that lease.
+            // Each native policy child sees at most one GPU (cuda:0),
+            // including when the supervisor leases two physical GPUs.
             const device = model.device ?? 'cpu';
             if (!['cpu', 'cuda', 'cuda:0'].includes(device))
                 throw Error('Native Bees inference device exceeds the supported single-GPU lease.');
@@ -523,10 +523,38 @@ function createNativeBeesAdapter({
         return verifiedOutput(completedRound(parent), parent);
     }
 
+    function gpuLeaseCount(context) {
+        return Array.isArray(context.gpu_pci_addresses)
+            ?context.gpu_pci_addresses.length
+            :context.gpu_pci_address?1:0;
+    }
+
+    function verifyRoundGpuLease(context, receipt) {
+        const count=gpuLeaseCount(context);
+        // Inbox-only learners legitimately consume verified bundles with
+        // CPU-side collection performed on other workers. Direct rounds and
+        // collectors must prove exact device placement and real forwards.
+        if(inboxLearner||bundleRound)return;
+        const proof=receipt.rollout_metrics?.gpu_inference;
+        if(count>0?(
+            receipt.leased_gpu_inference!==true||
+            receipt.leased_gpu_count!==count||
+            receipt.rollout_processes<count||
+            proof?.verified_workers!==receipt.rollout_processes||
+            !Number.isSafeInteger(proof?.model_forwards)||
+            proof.model_forwards<receipt.rollout_processes
+        ):(
+            receipt.leased_gpu_inference!==undefined||
+            receipt.leased_gpu_count!==undefined
+        ))
+            throw Error('Native Bees round evidence disagrees with the exact Hub GPU lease.');
+    }
+
     function jobRound(context) {
         const output = jobRoot(context);
         const round = completedRound(output);
         if (!round) return null;
+        verifyRoundGpuLease(context, round.receipt);
         const inputs = roundInputs(context);
         if (round.receipt.input_checkpoint_sha256 !== inputs.checkpointDigest ||
             round.receipt.input_manifest_sha256 !== inputs.manifestDigest)
@@ -790,6 +818,7 @@ function createNativeBeesAdapter({
                     !Number.isSafeInteger(rollout.successful_world_steps) || rollout.successful_world_steps < 1 ||
                     !Number.isFinite(rollout.wall_seconds) || rollout.wall_seconds <= 0)
                     throw Error('Invalid native Bees rollout bundle receipt.');
+                verifyRoundGpuLease(context, receipt);
                 return validateProgress({
                     schema_version: 1, source: 'hub-metrics-v1',
                     experiment_id: context.job_id, segment_id: 'collection',
