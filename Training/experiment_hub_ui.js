@@ -4768,23 +4768,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     (monitoring&&j.evaluation_monitor.include_final===false
                         ?' · final checkpoint evaluation disabled':'');
                 details.append(description);
+                const currentUpdate=j.live_execution?.progress?.steps_completed??
+                    j.final_progress?.steps_completed;
+                const currentValid=Number.isSafeInteger(currentUpdate)&&currentUpdate>=0;
+                if(currentValid) {
+                    const progressLine=document.createElement('p');
+                    progressLine.textContent='Last trainer-reported update: '+
+                        currentUpdate.toLocaleString()+
+                        ' · evaluation requires a saved immutable checkpoint; a trainer update by itself is not a runnable checkpoint.';
+                    details.append(progressLine);
+                }
                 for(const rule of requiredSuites) {
                     const receipt=known.get(rule.suite_id);
                     const line=document.createElement('p');
                     if(!receipt) {
                         line.textContent=rule.suite_id+
-                            ': no accepted evaluation receipt yet. '+
+                            ': no accepted evaluation receipt yet'+
+                            (currentValid?' (trainer update '+currentUpdate.toLocaleString()+')':'')+
+                            '. '+
                             (monitoring&&j.evaluation_monitor.include_baseline===false
                                 ?'First available checkpoint establishes the schedule cursor.'
                                 :'Awaiting a checkpoint and compatible evaluator.');
                     }else {
                         const update=receipt.steps_completed;
                         const cadence=j.evaluation_monitor?.every_n_checkpoints||1;
+                        const next=Number.isSafeInteger(update)?update+cadence:null;
                         const eligible=monitoring
-                            ?Number.isSafeInteger(update)
-                                ?' · next checkpoint eligible at update ≥ '+
-                                    (update+cadence).toLocaleString()
-                                :' · next after '+cadence+' newer checkpoint update(s)'
+                            ?next===null
+                                ?' · next after '+cadence+' newer checkpoint update(s)'
+                                :currentValid&&currentUpdate>=next
+                                    ?' · evaluation eligibility reached by trainer counter; awaiting a saved checkpoint/evaluator receipt'
+                                    :' · next checkpoint eligible at update ≥ '+
+                                        next.toLocaleString()
                             :'';
                         line.textContent=rule.suite_id+': last completed '+
                             receipt.successes+'/'+receipt.trials+
