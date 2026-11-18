@@ -3213,6 +3213,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         line('Source: operator-imported historical checkpoint audit (not Hub native proof)');
                         line('Source report SHA-256: '+evaluated.source_report_sha256);
                         line('Source checkpoint: '+evaluated.source_checkpoint_name);
+                        const frozen=run.job.source_suites?.find(suite=>
+                            suite.suite_id===evaluated.suite_id&&
+                            suite.suite_sha256===evaluated.suite_sha256);
+                        if(typeof frozen?.definition==='string') {
+                            // The historical archive already verified that
+                            // this complete definition hashes to the exact
+                            // reported suite fingerprint. Display that
+                            // archived source, never infer maps or rules.
+                            const inspector=document.createElement('details');
+                            const summary=document.createElement('summary');
+                            summary.textContent='Inspect exact frozen suite definition';
+                            const definition=document.createElement('pre');
+                            definition.textContent=frozen.definition;
+                            definition.style.whiteSpace='pre-wrap';
+                            definition.style.wordBreak='break-word';
+                            definition.style.maxHeight='240px';
+                            definition.style.overflow='auto';
+                            inspector.append(summary,definition);
+                            item.append(inspector);
+                        }
+                    }else {
+                        line('Full frozen suite definition is not embedded in the native receipt; compare using the recorded SHA-256 and inspect its evaluator manifest.');
                     }
                     line('Successes / trials: '+evaluated.successes+' / '+evaluated.trials);
                     line('Archive status: '+(evaluated.comparison_status==='superseded'
