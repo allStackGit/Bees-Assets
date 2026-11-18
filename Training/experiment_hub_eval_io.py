@@ -26,8 +26,10 @@ def read_bounded(path: Path, limit: int) -> bytes:
     return data
 
 
-def publish(directory: Path, receipt: dict) -> Path:
-    destination = directory / f'{receipt["dispatch_id"]}.{receipt["suite_id"]}.json'
+def publish(directory: Path, receipt: dict, *, suffix: str = ".json") -> Path:
+    if suffix not in (".json", ".failed.json"):
+        raise ValueError("Invalid independent evaluation publication suffix.")
+    destination = directory / f'{receipt["dispatch_id"]}.{receipt["suite_id"]}{suffix}'
     fd, pending = tempfile.mkstemp(prefix=".hub-evaluation-receipt-", dir=directory)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
