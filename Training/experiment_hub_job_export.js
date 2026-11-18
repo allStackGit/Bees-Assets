@@ -188,10 +188,6 @@ class JobExporter {
         const missingLocalRoot=!legacy&&!approvedRoot&&(
             configuredRoot===undefined||
             typeof configuredRoot==='string'&&!fs.existsSync(configuredRoot));
-        const root=approvedRoot||(
-            missingLocalRoot?trustedRoot(this.dataRoot):null);
-        if(!root)
-            throw Error('The approved local artifact directory is unsafe or unavailable. Remote-only exports require a trusted Hub data root.');
         const python=typeof this.pythonExecutable==='function'
             ?this.pythonExecutable():this.pythonExecutable||
                 (process.platform==='win32'?'python':'python3');
@@ -212,6 +208,14 @@ class JobExporter {
                 JOB_FIELDS.filter(key=>Object.hasOwn(job,key))
                     .map(key=>[key,job[key]])));
         });
+        // A historical-only export reads solely from the private evaluation
+        // archive, never the configured trainer artifact root. It must still
+        // work if that unrelated trainer mount is unavailable or redirected.
+        const onlyHistorical=jobs.every(job=>job.evaluation_history_only===true);
+        const root=onlyHistorical?trustedRoot(this.dataRoot):
+            approvedRoot||(missingLocalRoot?trustedRoot(this.dataRoot):null);
+        if(!root)
+            throw Error('The approved local artifact directory is unsafe or unavailable. Remote-only exports require a trusted Hub data root.');
         const progress=legacy?this.legacyBees.progress():
             this.hub.progressComparison(project);
         progress.samples=progress.samples.filter(sample=>value.job_ids.includes(sample.job_id));
