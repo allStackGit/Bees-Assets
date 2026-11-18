@@ -13,6 +13,7 @@ use std::process::{Command, Stdio};
 
 use bees_host::presentation::{select_library, BattleMenuRow};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(ErrorKind::InvalidInput, message.into())
@@ -93,6 +94,90 @@ fn converter_script() -> Result<PathBuf, Box<dyn Error>> {
     ).into())
 }
 
+
+fn approved_hub_plan() -> Result<Option<(PathBuf, String, u16, String)>, Box<dyn Error>> {
+    let Some(path) = env::var_os("BEES_NATIVE_HUB_PLAN") else {
+        return Ok(None);
+    };
+    let plan = PathBuf::from(path).canonicalize()?;
+    let bytes = fs::read(&plan)?;
+    let source: Value = serde_json::from_slice(&bytes)?;
+    let collectors = source["collectors"].as_array();
+    if source["schema_version"].as_u64() != Some(1) ||
+        source["kind"].as_str() != Some("native_hub_round_dispatch") ||
+        source["schedule_start"].as_bool() != Some(true) ||
+        source["confirm_unattended_start"].as_bool() != Some(true) ||
+        source["confirm_gpu_start"].as_bool().is_none() ||
+        !collectors.is_some_and(|items| (2..=16).contains(&items.len()))
+    {
+        return Err(invalid(
+            "native Hub plan requires 2-16 allocated machines and explicit unattended Start approval"
+        ).into());
+    }
+    let listener = env::var("BEES_NATIVE_BUNDLE_LISTEN").map_err(|_|
+        invalid("Hub fleet training requires BEES_NATIVE_BUNDLE_LISTEN=HOST:PORT")
+    )?;
+    let token = env::var("BEES_NATIVE_BUNDLE_TOKEN").map_err(|_|
+        invalid("Hub fleet training requires an operator-owned BEES_NATIVE_BUNDLE_TOKEN")
+    )?;
+    if !(32..=256).contains(&token.len()) ||
+        !token.bytes().all(|ch| (33..=126).contains(&ch)) {
+        return Err(invalid("native collector bundle token must be 32..256 printable ASCII characters").into());
+    }
+    if listener.is_empty() || listener.len() > 255 ||
+        !listener.rsplit_once(':').is_some_and(|(host, port)|
+            !host.is_empty() && port.parse::<u16>().is_ok_and(|n| n != 0))
+    {
+        return Err(invalid("native collector receiver requires valid HOST:PORT").into());
+    }
+    let port = match env::var("BEES_NATIVE_HUB_PORT") {
+        Ok(value) => value.parse::<u16>().ok().filter(|value| *value > 0)
+            .ok_or_else(|| invalid("BEES_NATIVE_HUB_PORT must be between 1 and 65535"))?,
+        Err(env::VarError::NotPresent) => 7148,
+        Err(error) => return Err(error.into()),
+    };
+    Ok(Some((plan, listener, port, format!("{:x}", Sha256::digest(&bytes)))))
+}
+
+/// All machine allocation and start authorization stays in the unchanged
+/// user-approved Hub plan. The native game chooses only the aggregate World
+/// budget and forwards it to the already existing native Hub coordinator.
+fn hub_arguments(
+    command: &mut Command, job: &Path, source: &Value,
+) -> Result<(), Box<dyn Error>> {
+    let plan = PathBuf::from(source["hub_plan"].as_str()
+        .ok_or_else(|| invalid("Hub training invocation is missing its approved plan"))?);
+    let bytes = fs::read(&plan)?;
+    let expected = source["hub_plan_sha256"].as_str()
+        .ok_or_else(|| invalid("Hub training invocation is missing pinned plan identity"))?;
+    if format!("{:x}", Sha256::digest(&bytes)) != expected {
+        return Err(invalid("approved Hub machine allocation changed since native training selection").into());
+    }
+    let listener = source["hub_receiver_listen"].as_str()
+        .ok_or_else(|| invalid("native collector upload receiver is missing"))?;
+    let port = source["hub_port"].as_u64()
+        .filter(|value| (1..=65535).contains(value))
+        .ok_or_else(|| invalid("native Hub operator port is invalid"))?;
+    let worlds = source["hub_worlds"].as_u64()
+        .filter(|value| (2..=16384).contains(value))
+        .ok_or_else(|| invalid("native Hub World budget is invalid"))?;
+    // The learner receives archives over its authenticated streaming
+    // receiver. These are separate per-job directories, not shared
+    // checkpoints or uncontrolled writes to Experiment Hub's data root.
+    let inbox = job.join("bundle-inbox");
+    let outbox = job.join("collector-input-outbox");
+    fs::create_dir_all(&inbox)?;
+    fs::create_dir_all(&outbox)?;
+    command.arg("--hub-auto-worlds").arg(worlds.to_string())
+        .arg("--bundle-inbox").arg(inbox)
+        .arg("--collector-input-outbox").arg(outbox)
+        .arg("--bundle-receiver-listen").arg(listener)
+        .arg("--hub-dispatch-plan").arg(plan)
+        .arg("--hub-dispatch-port").arg(port.to_string())
+        .arg("--auto-balance-collectors");
+    Ok(())
+}
+
 fn new_training_job(save_root: &Path) -> io::Result<(PathBuf, String)> {
     let root = save_root.join("training").join("fleet-skirmish");
     fs::create_dir_all(&root)?;
@@ -126,10 +211,40 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     };
     let Some(rounds) = choose_count("MA-POCA optimizer rounds", &[1, 3, 10, 25, 100])?
         else { return Ok(()); };
-    let Some(worlds) = choose_count("Parallel native arenas", &[1, 2, 4, 8, 16, 32, 64])?
-        else { return Ok(()); };
-    let Some(workers) = choose_count("Native physics CPU workers", &[1, 2, 4, 8, 16, 32])?
-        else { return Ok(()); };
+    let hub = approved_hub_plan()?;
+    let use_hub = if hub.is_some() {
+        let rows = [
+            BattleMenuRow {
+                title: "Local CPU arenas", status: "  [This computer]",
+                unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Experiment Hub machines", status: "  [Approved resource plan]",
+                unlocked: true,
+            },
+        ];
+        let mut selected = 0;
+        let Some(choice) = select_library(&rows, &mut selected, false)? else {
+            return Ok(());
+        };
+        choice == 1
+    } else {
+        false
+    };
+    let (worlds, workers, hub_worlds) = if use_hub {
+        let Some(worlds) = choose_count(
+            "Total distributed native arenas", &[16, 32, 64, 128, 256, 512, 1024],
+        )? else { return Ok(()); };
+        (None, None, Some(worlds))
+    } else {
+        let Some(worlds) = choose_count(
+            "Parallel native arenas", &[1, 2, 4, 8, 16, 32, 64],
+        )? else { return Ok(()); };
+        let Some(workers) = choose_count(
+            "Native physics CPU workers", &[1, 2, 4, 8, 16, 32],
+        )? else { return Ok(()); };
+        (Some(worlds), Some(workers), None)
+    };
     let device_rows = [
         BattleMenuRow { title: "CPU", status: "  [Optimizer]", unlocked: true },
         BattleMenuRow { title: "PyTorch CUDA / ROCm GPU", status: "  [Optimizer]", unlocked: true },
@@ -163,6 +278,11 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "rounds": rounds,
         "worlds": worlds,
         "physics_workers": workers,
+        "hub_worlds": hub_worlds,
+        "hub_plan": if use_hub { hub.as_ref().map(|h| h.0.clone()) } else { None },
+        "hub_receiver_listen": if use_hub { hub.as_ref().map(|h| h.1.clone()) } else { None },
+        "hub_port": if use_hub { hub.as_ref().map(|h| h.2) } else { None },
+        "hub_plan_sha256": if use_hub { hub.as_ref().map(|h| h.3.clone()) } else { None },
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
         "holdout_worlds": 8,
         "evaluation_side": 1,
@@ -180,13 +300,18 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let stderr_path = job.join("trainer.stderr.log");
     let stdout = OpenOptions::new().write(true).create_new(true).open(&stdout_path)?;
     let stderr = OpenOptions::new().write(true).create_new(true).open(&stderr_path)?;
-    let process = Command::new(python)
-        .arg(&converter).arg(&source).arg(&prepared)
+    let mut command = Command::new(python);
+    command.arg(&converter).arg(&source).arg(&prepared)
         .arg("--bootstrap-output").arg(&model)
         .arg("--bootstrap-args")
-        .arg("--train-rounds").arg(rounds.to_string())
-        .arg("--rollout-worlds").arg(worlds.to_string())
-        .arg("--physics-workers").arg(workers.to_string())
+        .arg("--train-rounds").arg(rounds.to_string());
+    if use_hub {
+        hub_arguments(&mut command, &job, &recipe)?;
+    } else {
+        command.arg("--rollout-worlds").arg(worlds.expect("local arenas selected"))
+            .arg("--physics-workers").arg(workers.expect("local workers selected"));
+    }
+    let process = command
         .arg("--optimizer-device").arg(if device == 0 { "cpu" } else { "cuda" })
         .arg("--holdout-worlds").arg("8")
         .arg("--evaluation-side").arg("1")
@@ -204,6 +329,8 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "pid": process.id(),
         "worlds": worlds,
         "physics_workers": workers,
+        "hub_worlds": hub_worlds,
+        "allocation": if use_hub { "experiment_hub" } else { "local" },
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
         "rounds": rounds,
         "holdout_worlds": 8,
@@ -331,12 +458,20 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     let rounds = recipe["rounds"].as_u64()
         .filter(|value| (1..=99_999).contains(value))
         .ok_or_else(|| invalid("native training rounds are invalid"))?;
-    let worlds = recipe["worlds"].as_u64()
-        .filter(|value| (1..=1_024).contains(value))
-        .ok_or_else(|| invalid("native training worlds are invalid"))?;
-    let workers = recipe["physics_workers"].as_u64()
-        .filter(|value| (1..=128).contains(value))
-        .ok_or_else(|| invalid("native training worker allocation is invalid"))?;
+    let use_hub = recipe["hub_plan"].is_string();
+    let (worlds, workers) = if use_hub {
+        if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() {
+            return Err(invalid("Hub training resources cannot also claim local workers").into());
+        }
+        (None, None)
+    } else {
+        (Some(recipe["worlds"].as_u64()
+            .filter(|value| (1..=1_024).contains(value))
+            .ok_or_else(|| invalid("native training worlds are invalid"))?),
+         Some(recipe["physics_workers"].as_u64()
+            .filter(|value| (1..=128).contains(value))
+            .ok_or_else(|| invalid("native training worker allocation is invalid"))?))
+    };
     let device = recipe["optimizer_device"].as_str()
         .filter(|value| *value == "cpu" || *value == "cuda")
         .ok_or_else(|| invalid("native training optimizer device is invalid"))?;
@@ -385,10 +520,14 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
             .arg("--bootstrap-output").arg(&model)
             .arg("--bootstrap-args");
     }
-    command.arg("--train-rounds").arg(rounds.to_string())
-        .arg("--rollout-worlds").arg(worlds.to_string())
-        .arg("--physics-workers").arg(workers.to_string())
-        .arg("--optimizer-device").arg(device)
+    command.arg("--train-rounds").arg(rounds.to_string());
+    if use_hub {
+        hub_arguments(&mut command, job, &recipe)?;
+    } else {
+        command.arg("--rollout-worlds").arg(worlds.expect("local arenas"))
+            .arg("--physics-workers").arg(workers.expect("local workers"));
+    }
+    command.arg("--optimizer-device").arg(device)
         .arg("--holdout-worlds").arg("8")
         .arg("--evaluation-side").arg("1")
         .arg("--library-save-root").arg(&saves)
@@ -420,6 +559,7 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
         "job": job, "pid": child.id(), "model": model,
         "stdout": stdout_path, "stderr": stderr_path,
         "rounds": rounds, "worlds": worlds,
+        "hub_worlds": recipe["hub_worlds"],
     }));
     println!("Existing native fleet training lineage resumed; the learner validates its original bootstrap, receipts and source before proceeding.");
     Ok(())
