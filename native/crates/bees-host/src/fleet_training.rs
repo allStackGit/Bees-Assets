@@ -290,6 +290,21 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         "stderr": job.join("trainer.stderr.log"),
         "model": job.join("model"),
     }));
+    let can_resume = job.join("invocation.json").is_file();
+    let actions = [
+        BattleMenuRow {
+            title: "Back to Game Library",
+            status: "  [Inspection complete]", unlocked: true,
+        },
+        BattleMenuRow {
+            title: "Resume Training Job",
+            status: "  [Original source/checkpoint]", unlocked: can_resume,
+        },
+    ];
+    let mut action = 0;
+    if select_library(&actions, &mut action, false)? == Some(1) {
+        resume_training_job(job)?;
+    }
     Ok(())
 }
 
