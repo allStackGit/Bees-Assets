@@ -219,6 +219,33 @@ impl NativePolicyOnlyMetadata {
         Ok(())
     }
 
+    /// Admit an authored reinforcement policy binding only at its physical
+    /// deployment boundary. The metadata for future ships already exists to
+    /// preserve source controller and model identities, but no model actions
+    /// or MA-POCA group membership may be activated before a live hull exists.
+    pub(crate) fn deferred_policy_participant(
+        &self, ship: &crate::scene_builder::NativeAuthoredShip,
+    ) -> Result<Option<(i32, u64)>, &'static str> {
+        let Some(policy) = ship.policy else {
+            if ship.motion.is_policy_controlled || self.agents.contains_key(&ship.entity_id) {
+                return Err("Deferred ordinary ship has an inconsistent policy binding");
+            }
+            return Ok(None);
+        };
+        let agent = self.agents.get(&ship.entity_id)
+            .ok_or("Deferred policy ship has no authored controller metadata")?;
+        if !ship.motion.is_policy_controlled ||
+            agent.ship_id != ship.entity_id || agent.side != ship.side ||
+            agent.frame != policy.frame ||
+            agent.controller.movement_disabled_for_team != policy.movement_disabled
+        {
+            return Err("Deferred policy controller does not match its physical ship");
+        }
+        let source_group_id = agent.source_group_agent_id
+            .ok_or("Deferred policy agent needs an authored MA-POCA participant ID")?;
+        Ok(Some((agent.side, source_group_id)))
+    }
+
     /// Initial controller routes for the current episode, independent of reward groups.
     pub fn authored_policy_slots_by_side(&self) -> BTreeMap<i32, BTreeSet<u32>> {
         let mut slots = BTreeMap::<i32, BTreeSet<u32>>::new();
