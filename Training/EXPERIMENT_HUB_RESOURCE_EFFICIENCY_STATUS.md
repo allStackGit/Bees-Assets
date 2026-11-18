@@ -1,6 +1,6 @@
 # Resource-efficient training workstream
 
-Updated 2026-11-18. Branch: `feat/hub-shared-shard-pressure-20261118`, based on `feat/hub-resource-efficiency-20261112`.
+Updated 2026-11-18. Branch: `feat/hub-rollout-transfer-evidence-20261118` (continuing `feat/hub-shared-shard-pressure-20261118`).
 Scope: TinyBrains, Courier, future native projects; Bees remains with the unified native rewrite.
 The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimize useful training throughput inside those leases. Benchmarks below are not implied: these are source-level changes awaiting real workload qualification.
 
