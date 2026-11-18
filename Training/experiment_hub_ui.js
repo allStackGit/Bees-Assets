@@ -2010,11 +2010,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         for(const run of runs) {
             const recentIssue=run.evaluation_diagnostics?.at(-1);
-            if(recentIssue)warnings.push('Run '+run.slot+
-                ' recorded an independent-evaluation receipt availability issue'+
-                (recentIssue.suite_id?' for '+recentIssue.suite_id:'')+
-                ' at '+recentIssue.observed_at+': '+recentIssue.issue+
-                '. This is not a measured failure or zero score; inspect evaluator health and receipts.');
+            const resolved=recentIssue?.evaluation_status==='failed'&&
+                (run.evaluation_points||[]).some(receipt=>
+                    receipt.suite_id===recentIssue.suite_id&&
+                    receipt.checkpoint_sha256===recentIssue.checkpoint_sha256&&
+                    Number.isFinite(Date.parse(receipt.evaluated_at))&&
+                    Date.parse(receipt.evaluated_at)>=Date.parse(recentIssue.attempted_at));
+            if(recentIssue&&!resolved)warnings.push('Run '+run.slot+
+                (recentIssue.evaluation_status==='failed'
+                    ?' independently evaluated checkpoint '+recentIssue.checkpoint_sha256+
+                        ' failed for '+recentIssue.suite_id+
+                        (Number.isSafeInteger(recentIssue.steps_completed)
+                            ?' at update '+recentIssue.steps_completed:'')+
+                        ' ('+recentIssue.attempted_at+'): '+recentIssue.reason
+                    :' recorded an independent-evaluation receipt availability issue'+
+                        (recentIssue.suite_id?' for '+recentIssue.suite_id:'')+
+                        ' at '+recentIssue.observed_at+': '+recentIssue.issue)+
+                '. No match score or zero performance is implied; inspect evaluator health.');
             const job=run.job;
             if(job.evaluation_history_only||!(job.evaluation_monitor||job.evaluation_stop)||
                 !['running','stop_requested','stopped','finished','failed'].includes(job.status))
@@ -3150,7 +3162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             x_axis:$('hub-compare-x-axis').value,
             metric:selectedComparisonMetrics()[0]||null,metrics,
             source:'Experiment Hub validated project metrics',
-            interpretation:'Training curves and independent evaluation records are observational. Their horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Evaluation curves are checkpoint-bound and only directly comparable across matching frozen suite definitions. Evaluator receipt-availability diagnostics have no implied checkpoint, trial or performance result.',
+            interpretation:'Training curves and independent evaluation records are observational. Their horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Evaluation curves are checkpoint-bound and only directly comparable across matching frozen suite definitions. Failed independent evaluation attempts have verified checkpoint identities but no measured score. Unavailable receipt diagnostics have neither score nor checkpoint identity. Neither diagnostic can authorize Stop or promotion.',
             runs,
             candidate_selection_plans:(state.candidate_selections||[]).filter(p=>
                 p.candidate_job_ids?.some(id=>runs.some(r=>r.job_id===id))),
@@ -4989,11 +5001,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         row.job_id===j.id)?.events||[]:[];
                 if(archivedIssues.length) {
                     const historyLine=document.createElement('p');
-                    historyLine.textContent='Archived evaluator receipt-availability issues '+
-                        '(not measured match outcomes or checkpoint failures): '+
+                    historyLine.textContent='Archived evaluator diagnostics '+
+                        '(never measured match outcomes): '+
                         archivedIssues.slice(-5).map(row=>
                             row.observed_at+' · '+(row.suite_id||'suite unspecified')+
-                            ': '+row.issue).join(' | ');
+                            (row.evaluation_status==='failed'
+                                ?' · failed attempt on checkpoint '+row.checkpoint_sha256+
+                                    (Number.isSafeInteger(row.steps_completed)
+                                        ?' at update '+row.steps_completed:'')+
+                                    ' · frozen suite SHA-256 '+row.suite_sha256+
+                                    (row.runtime_sha256
+                                        ?' · runtime SHA-256 '+row.runtime_sha256:'')+
+                                    ' · attempted '+row.attempted_at+
+                                    ': '+row.reason
+                                :' · receipt unavailable: '+row.issue)).join(' | ');
                     details.append(historyLine);
                 }
                 if(monitoring&&j.evaluation_monitor.regression_alert) {
