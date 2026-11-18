@@ -458,7 +458,8 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             for agent in members
         }
         first_seen.append(key)
-        ready.add(key)
+        if terminal["tick"] in boundaries.get(key, {}):
+            ready.add(key)
 
     # The capture writes no terminal frame when *no bound policy ship*
     # remains. An empty observation boundary is valid only if all group
