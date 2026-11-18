@@ -139,10 +139,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.checkpoint_dir is not None:
-            if args.checkpoint or not args.update or len(args.update) > 64 or \
-               len(set(args.update)) != len(args.update) or any(
-                   not 1 <= update <= 99999999 for update in args.update
-               ):
+            if (args.checkpoint or not args.update or len(args.update) > 64 or
+                    len(set(args.update)) != len(args.update) or
+                    any(not 1 <= update <= 99999999 for update in args.update)):
                 raise ValueError(
                     "Use --checkpoint-dir with 1–64 distinct --update values; "
                     "do not combine with individual --checkpoint paths.")
