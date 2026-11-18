@@ -281,6 +281,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_reply_gap_work_share',
             'training_shared_ingestion_pressure',
             'training_shared_collector_wait_pressure',
+            'training_shared_wait_owner',
+            'training_shared_sim_headroom_candidate',
+            'training_shared_sim_headroom_owner',
             'training_shared_collection_dominant',
             'training_shared_optimization_dominant',
             'training_checkpoint_snapshot_seconds',
@@ -1182,6 +1185,26 @@ class BottleneckEvidence {
             const slowReply=wireShare!==null&&wireShare>=0.25&&
                 wireGap>=0.25&&wireOwner===decodedOwner&&
                 (exposedShare===null||exposedShare<=0.10);
+            // A stable last-wire owner identifies a limiting collector,
+            // not a saturated CPU/GPU. A process ceiling above its current
+            // process count only indicates room to *test* parallelism.
+            // Do not attribute a worker while its own topology is changing.
+            const validOwner=Number.isSafeInteger(wireOwner)&&wireOwner>=0&&
+                wireOwner<metrics.training_collector_workers.value;
+            const ownerTrial=validOwner
+                ?metrics['worker_'+wireOwner+'_sim_trial']?.value:null;
+            const sharedWaitOwner=slowReply&&validOwner&&ownerTrial!==1
+                ?wireOwner:null;
+            const processCount=validOwner
+                ?metrics['worker_'+wireOwner+'_sim_physical_processes']:null;
+            const processCeiling=validOwner
+                ?metrics['worker_'+wireOwner+'_sim_process_ceiling']:null;
+            const headroomCandidate=sharedWaitOwner!==null&&
+                processCount?.unit==='count'&&
+                processCeiling?.unit==='count'&&
+                Number.isSafeInteger(processCount.value)&&
+                Number.isSafeInteger(processCeiling.value)&&
+                processCeiling.value>processCount.value;
             const postwirePressure=postwireShare!==null&&
                 postwireShare>=0.20&&postwire>=0.25;
             const span=metrics.training_collector_span_ratio;
@@ -1201,6 +1224,8 @@ class BottleneckEvidence {
                 prior.samples.push({at,resourceHints,
                     sharedIngestion:ingestionDelay,
                     sharedReply:slowReply,
+                    sharedWaitOwner,
+                    sharedHeadroom:headroomCandidate?sharedWaitOwner:null,
                     sharedPostwire:postwirePressure,
                     sharedImbalance:imbalance,
                     sharedCollection:collectionDominant,
@@ -1218,6 +1243,23 @@ class BottleneckEvidence {
                     add('training_shared_ingestion_pressure',1,'count');
                 if(sustained(x=>x.sharedReply))
                     add('training_shared_collector_wait_pressure',1,'count');
+                // Require the SAME authenticated collector to own five
+                // of the six last complete wire arrivals. Avoid labeling
+                // transient fleet skew or a mixed group of slower hosts as
+                // one machine's hardware saturation.
+                const owners=recent.map(x=>x.sharedWaitOwner).filter(
+                    Number.isSafeInteger);
+                if(owners.length>=5) {
+                    const owner=owners.find(slot=>
+                        owners.filter(value=>value===slot).length>=5);
+                    if(owner!==undefined) {
+                        add('training_shared_wait_owner',owner,'count');
+                        if(recent.filter(x=>x.sharedHeadroom===owner).length>=5) {
+                            add('training_shared_sim_headroom_candidate',1,'count');
+                            add('training_shared_sim_headroom_owner',owner,'count');
+                        }
+                    }
+                }
                 if(sustained(x=>x.sharedPostwire))
                     add('training_shared_postwire_pressure',1,'count');
                 if(Number.isSafeInteger(gpuForwardOwner)&&
@@ -1276,6 +1318,8 @@ class BottleneckEvidence {
              name==='training_gpu_forward_owner'||
              name==='training_shared_gpu_fwd_pressure'||
              name==='training_shared_gpu_fwd_owner'||
+             name==='training_shared_wait_owner'||
+             name==='training_shared_sim_headroom_owner'||
              name==='pipeline_local_gpu_fwd_owner'||
              name==='pipeline_remote_gpu_fwd_owner'||
              name==='pipeline_local_gpu_wait_owner'||
