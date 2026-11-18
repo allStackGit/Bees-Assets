@@ -379,6 +379,24 @@ class EvaluationHistory {
             return false;
         }
     }
+    // The independent poller must not publish its next checkpoint over the
+    // only local receipt until this exact previous receipt is durable here.
+    // Native candidate caches are bounded, so they cannot acknowledge it.
+    latestAccepted(job,suiteId) {
+        if(!UUID.test(String(job?.id))||
+            !PROJECT.test(String(job?.project_id))||
+            !UUID.test(String(job?.dispatch_id))||
+            !SUITE.test(String(suiteId)))
+            throw Error('Invalid evaluation archive acknowledgement identity.');
+        const records=this.load(job.id,job.project_id).records;
+        for(let i=records.length-1;i>=0;i--) {
+            const row=records[i];
+            if(row.suite_id===suiteId&&row.dispatch_id===job.dispatch_id)
+                return evaluationEvidence(row,{suite_id:suiteId},
+                    job.dispatch_id);
+        }
+        return null;
+    }
     hasReceiptConflict(job) {
         const id=job?.id;
         if(!UUID.test(String(id))||!PROJECT.test(String(job?.project_id)))
