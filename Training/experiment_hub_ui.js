@@ -97,7 +97,9 @@ function hubComparisonPoints(run) {
 }
 function hubJobLabel(job) {
     const configuration=job?.configuration_name||job?.configuration_id||'Unnamed run';
-    return job?.run_name?job.run_name+' · '+configuration:configuration;
+    const base=job?.run_name?job.run_name+' · '+configuration:configuration;
+    return base+(job?.frozen_parameters?.training_stage
+        ?' · '+job.frozen_parameters.training_stage.replaceAll('_',' '):'');
 }
 function hubGenericMetricCatalog(runs) {
     const types=new Map();
@@ -816,7 +818,7 @@ function hubComparisonCsv(exported) {
         'slot','job_id','project_id','configuration_name','run_name','configuration_sha256',
         'selected_x_axis','selected_metric','selected_metrics','assigned_machine_id',
         'artifact_lineage_root_id','continuation_of_job_id','continuation_mode',
-        'environment_overrides_json','status',
+        'environment_overrides_json','training_stage','status',
         'observed_at','source_modified_at','experiment_id','segment_id',
         'break_before','steps_completed','x_value',
         'trial_batch_id','trial_batch_index','trial_batch_size',
@@ -851,6 +853,7 @@ function hubComparisonCsv(exported) {
         continuation_of_job_id:run.continuation_of_job_id,
         continuation_mode:run.continuation_mode,
         environment_overrides_json:JSON.stringify(run.environment_overrides||{}),
+        training_stage:run.training_stage,
         trial_batch_id:run.trial_batch?.id,
         trial_batch_index:run.trial_batch?.index,
         trial_batch_size:run.trial_batch?.size,
@@ -2921,7 +2924,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 resource_bundle:job.resource_bundle||null,
                 status:job.status,
                 execution_diagnostic:job.execution_diagnostic||null,
-                ...(project==='tinybrains'?{profile_sha256:job.frozen_parameters?.profile_sha256||null}:{}),
+                ...(project==='tinybrains'?{
+                    profile_sha256:job.frozen_parameters?.profile_sha256||null,
+                    training_stage:job.frozen_parameters?.training_stage||null,
+                }:{}),
                 final_resource_usage:job.final_resource_usage||null,
                 evaluation_stop:job.evaluation_stop||null,
                 evaluation_monitor:job.evaluation_monitor||null,
