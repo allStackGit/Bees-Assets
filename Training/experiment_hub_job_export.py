@@ -155,6 +155,9 @@ def export(spec: dict, output: Path) -> dict:
     ) or len(set(mounted_ids)) != len(mounted_ids):
         raise ValueError("Invalid selected machine-mounted job IDs")
     mounted = set(mounted_ids)
+    historical_ids = {
+        job["id"] for job in jobs if job.get("evaluation_history_only") is True
+    }
     if not isinstance(additional, list) or len(additional) > 6000 or any(
         not isinstance(entry, dict) or
         set(entry) != {"job_id", "label", "path"} or
@@ -202,6 +205,7 @@ def export(spec: dict, output: Path) -> dict:
         "project_id": project,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "selected_job_ids": [job["id"] for job in jobs],
+        "historical_evaluation_job_ids": sorted(historical_ids),
         "selected_metrics": metrics,
         "all_recorded_metrics": all_recorded_metrics,
         "full_project_histories": "available local files only",
@@ -465,13 +469,15 @@ def export(spec: dict, output: Path) -> dict:
         # Legacy Bees run artifacts live in separately approved named sources,
         # not a job-ID directory under the coordinator data root.
         scanned_jobs = [] if project == "bees" or missing_local_root else [
-            job for job in jobs if job["id"] not in mounted
+            job for job in jobs
+            if job["id"] not in mounted and job["id"] not in historical_ids
         ]
         if missing_local_root:
             missing_sources.extend({
                 "job_id": job["id"], "label": "artifacts",
                 "reason": "not_available",
-            } for job in jobs if job["id"] not in mounted)
+            } for job in jobs
+            if job["id"] not in mounted and job["id"] not in historical_ids)
         for job in scanned_jobs:
             job_id = job["id"]
             folder = root / job_id
@@ -517,7 +523,9 @@ def export(spec: dict, output: Path) -> dict:
                 found_by_job[job_id] += 1
                 # Hub evaluation histories are independently measured
                 # evidence, not trainer-owned artifact availability.
-                if not is_observation and entry["label"] != "hub-evaluations":
+                if not is_observation and entry["label"] not in (
+                    "hub-evaluations", "hub-historical-source"
+                ):
                     trainer_files_by_job[job_id] += 1
                 reason = None
             else:
@@ -539,7 +547,8 @@ def export(spec: dict, output: Path) -> dict:
         )
         manifest["missing_sources"] = missing_sources
         manifest["missing_artifact_job_ids"] = [
-            job_id for job_id, found in trainer_files_by_job.items() if not found
+            job_id for job_id, found in trainer_files_by_job.items()
+            if not found and job_id not in historical_ids
         ]
         manifest["exported_segments"] = entry_count
         add_bytes("export-manifest.json", json.dumps(manifest, indent=2).encode("utf-8"))
