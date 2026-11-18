@@ -139,7 +139,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_gpu_batch_vram_capped',
         'rollout_inference_pixel_samples',
         'ppo_prestaged_board_states','ppo_reused_board_states',
-        'ppo_board_cache_full_batches','ppo_board_cache_partial_batches',
+        'ppo_board_cache_full_chunks','ppo_board_cache_mixed_chunks',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'rollout_opponent_readback_models','rollout_opponent_readbacks_saved',
