@@ -172,12 +172,15 @@ function createNativeBeesPortableCollectorAdapter({
         stop_policy:'terminate-group',
         config_sha256:configSha256,
         gpu_execution:'cuda',
+        gpu_dual_execution:'native-rollouts',
         rocr_gpu_uuids,
         gpu_verify_args(_parameters,context) {
-            if(!PCI.test(String(context?.gpu_pci_address||''))||
-                context.gpu_pci_addresses!==undefined)
-                throw Error('Portable native Bees GPU validation requires one leased PCI device.');
-            return ['-B',gpuVerifier,context.gpu_pci_address];
+            const ids=context?.gpu_pci_addresses??[context?.gpu_pci_address];
+            if(!Array.isArray(ids)||![1,2].includes(ids.length)||
+                ids.some(pci=>!PCI.test(String(pci)))||
+                new Set(ids).size!==ids.length)
+                throw Error('Native portable collector needs one or two frozen PCI GPU identities.');
+            return ['-B',gpuVerifier,...ids];
         },
         args(parameters,context) {
             const required=[
@@ -185,7 +188,8 @@ function createNativeBeesPortableCollectorAdapter({
                 'rollout_workers','physics_workers','rollout_world_start',
                 'rollout_worlds','bundle_directory','source_run_contract_sha256',
             ];
-            const gpu = context?.gpu_pci_address!==undefined;
+            const dualGpu=Array.isArray(context?.gpu_pci_addresses);
+            const gpu=context?.gpu_pci_address!==undefined||dualGpu;
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
                 Object.keys(parameters).length!==required.length||
                 required.some(key=>!Object.hasOwn(parameters,key))||
@@ -205,9 +209,16 @@ function createNativeBeesPortableCollectorAdapter({
                 parameters.physics_workers<1||parameters.physics_workers>128||
                 !/^[A-Za-z0-9_-]{1,96}$/.test(String(parameters.bundle_directory||''))||
                 context?.continuation_of_job_id!=null||
-                context?.gpu_pci_addresses!==undefined||
-                (gpu&&(!PCI.test(String(context.gpu_pci_address))||
-                    context.gpu_mode!=='exclusive'))||
+                (dualGpu&&(
+                    context.gpu_pci_addresses.length!==2||
+                    context.gpu_pci_addresses.some(pci=>!PCI.test(String(pci)))||
+                    new Set(context.gpu_pci_addresses).size!==2||
+                    parameters.rollout_workers<2||parameters.rollout_worlds<2
+                ))||
+                (gpu&&(
+                    context.gpu_mode!=='exclusive'||
+                    (!dualGpu&&!PCI.test(String(context.gpu_pci_address)))
+                ))||
                 !Number.isSafeInteger(context?.cpu_quota)||
                 parameters.rollout_workers*parameters.physics_workers>context.cpu_quota)
                 throw Error('Native portable collector must fit the exact Hub-frozen CPU allocation and work order.');
@@ -229,7 +240,8 @@ function createNativeBeesPortableCollectorAdapter({
                 '--expected-worlds',String(parameters.rollout_worlds),
                 '--expected-workers',String(parameters.rollout_workers),
                 '--expected-physics-workers',String(parameters.physics_workers),
-                ...(gpu?['--permit-leased-gpu']:[])];
+                ...(gpu?['--permit-leased-gpu',
+                    ...(dualGpu?['--leased-gpu-count','2']:[])]:[])];
         },
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))
