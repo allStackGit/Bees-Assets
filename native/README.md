@@ -183,6 +183,12 @@ version. Training and evaluation use the same native `CombatWorld` and
 physical assets, with policy-only authority changed as required. The bridge
 materializes the game's clone offsets into explicit identities because native
 MA-POCA does not permit changing squad membership through run-time layout.
+New in-game fleet-builder skirmishes explicitly count every built combat
+ship toward initial fleet value and reward attribution, including cloned
+fighter and support hulls. Legacy native-layout clones remain temporary and
+non-valued unless their source order opted in. The prepared-source receipt
+records per-side valued ship counts, TSV and controller coverage and verifies
+unchanged physical battle configuration before bootstrap.
 Only ordinary fixed-roster elimination skirmishes are accepted; survival,
 extraction, benchmark runs and deferred reinforcement waves must not become
 training episodes silently. Trainer, CPU/GPU, Hub distributed collector and
