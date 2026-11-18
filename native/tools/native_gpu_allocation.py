@@ -109,8 +109,9 @@ def validate_leased_gpu_inference(manifest_path: Path) -> None:
     A standalone script cannot manufacture that proof. The worker still
     loads all pinned artifacts and refuses an unavailable CUDA/ROCm device.
     """
-    if not any(os.environ.get(name) for name in GPU_MASK_ENVIRONMENTS):
-        raise ValueError("leased GPU inference requires a nonempty supervisor GPU selector")
+    # Linux Hub can enforce an exclusive PCI-bound device cgroup without
+    # exporting any visibility variable. Its pre-start device verifier is
+    # authoritative; a missing CUDA/ROCR mask does not mean an unleased GPU.
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     models = manifest.get("models") if isinstance(manifest, dict) else None
     if not isinstance(models, list) or not models:
