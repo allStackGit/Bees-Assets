@@ -674,6 +674,24 @@ impl NativeLevelBatchDriver {
     pub fn policy_boundary_observations<M: NativeLevelObservationContext, A>(
         &self, index: usize, world: &World<NativeLevelState<M, A>>,
     ) -> Result<Vec<NativeTerminalObservation>, NativeLevelSourceError<M::Error>> {
+        self.policy_observations(index, world, None)
+    }
+
+    /// On a pure admission tick only the newly born controllers need an
+    /// initial observation. Capturing the entire live cohort on every
+    /// reinforcement would multiply the 7,743-float source observation
+    /// cost by all previous waves. Ship IDs must be in ascending order.
+    pub fn policy_admission_observations<M: NativeLevelObservationContext, A>(
+        &self, index: usize, world: &World<NativeLevelState<M, A>>,
+        admitted: &[i64],
+    ) -> Result<Vec<NativeTerminalObservation>, NativeLevelSourceError<M::Error>> {
+        self.policy_observations(index, world, Some(admitted))
+    }
+
+    fn policy_observations<M: NativeLevelObservationContext, A>(
+        &self, index: usize, world: &World<NativeLevelState<M, A>>,
+        admitted: Option<&[i64]>,
+    ) -> Result<Vec<NativeTerminalObservation>, NativeLevelSourceError<M::Error>> {
         let assembly = self.worlds.get(index)
             .ok_or(NativeLevelSourceError::MissingRegisteredWorld)?;
         if assembly.id != world.id {
@@ -688,6 +706,9 @@ impl NativeLevelBatchDriver {
         let mut writer = NativePerceptionWriter::new();
         let mut rows = Vec::new();
         for (ship_id, binding_revision) in combat.bound_policy_agent_bindings() {
+            if admitted.is_some_and(|ids| ids.binary_search(&ship_id).is_err()) {
+                continue;
+            }
             let Some(group_agent) = metadata.group_agent_for_ship(ship_id)
                 .map_err(NativeLevelSourceError::Source)? else { continue };
             let inputs = metadata.inputs_for_agent(combat, ship_id)
@@ -702,6 +723,7 @@ impl NativeLevelBatchDriver {
             rows.push(NativeTerminalObservation { ship_id, group_agent, binding_revision, features });
         }
         let [bee_side, human_side] = world.state.events.sides();
+        if admitted.is_none() {
         for event in combat.events() {
             let CombatEvent::ShipDied {
                 victim_id: ship_id, policy_binding_revision: Some(binding_revision), ..
@@ -724,6 +746,7 @@ impl NativeLevelBatchDriver {
             write_inactive_observation(&mut features, faction)
                 .expect("fixed-size observation and authored faction");
             rows.push(NativeTerminalObservation { ship_id, group_agent, binding_revision, features });
+        }
         }
         Ok(rows)
     }
