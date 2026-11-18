@@ -158,7 +158,14 @@ function createNativeBeesPortableCollectorAdapter({
         if((leased!==Boolean(expectedCount))||
             (leased&&(![1,2].includes(receipt.leased_gpu_count)||
                 receipt.leased_gpu_count!==expectedCount||
-                receipt.leased_gpu_count>receipt.rollout_processes))||
+                receipt.leased_gpu_count>receipt.rollout_processes||
+                (expectedCount===2&&(
+                    !Array.isArray(gpu?.gpu_pci_addresses)||
+                    gpu.gpu_pci_addresses.length!==2||
+                    new Set(gpu.gpu_pci_addresses).size!==2||
+                    gpu.gpu_pci_addresses.some(pci=>
+                        !context.gpu_pci_addresses.includes(pci))
+                ))))||
             (!leased&&receipt.leased_gpu_count!==undefined)||
             (leased&&!gpu)||
             (gpu!=null&&(
