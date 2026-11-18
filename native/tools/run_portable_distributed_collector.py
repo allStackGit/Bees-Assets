@@ -196,22 +196,25 @@ def main():
                 raise ValueError("issued native simulations exceed the acknowledged Hub CPU lease")
             models = json.loads((inputs / "manifest.json").read_text(encoding="utf-8"))
             requires_gpu = False
+            can_use_gpu = False
             for model in models["models"]:
                 if model.get("backend") == "onnx":
                     providers = model.get("providers", ["CPUExecutionProvider"])
                     if not isinstance(providers, list) or not providers:
                         raise ValueError("native portable model needs explicit inference providers")
-                    requires_gpu |= any(provider != "CPUExecutionProvider"
-                                        for provider in providers)
+                    uses_gpu = providers[0] != "CPUExecutionProvider"
+                    requires_gpu |= uses_gpu
+                    can_use_gpu |= uses_gpu
                 else:
                     device = model.get("device", "cpu")
                     if device not in ("cpu", "cuda", "cuda:0"):
                         raise ValueError("native collector model requested an unleased GPU ordinal")
                     requires_gpu |= device != "cpu"
-            if requires_gpu != args.permit_leased_gpu:
-                raise ValueError(
-                    "native model GPU inference requirement differs from the approved Hub GPU lease"
-                )
+                    can_use_gpu = True  # Pinned PyTorch weights are device-independent.
+            if requires_gpu and not args.permit_leased_gpu:
+                raise ValueError("GPU-bound native model has no authorized Hub GPU lease")
+            if args.permit_leased_gpu and not can_use_gpu:
+                raise ValueError("native Hub GPU lease cannot accelerate CPU-only ONNX inference")
         command = [
             sys.executable,
             str(Path(__file__).with_name("run_distributed_collector.py")),
@@ -226,6 +229,7 @@ def main():
             *([] if args.hub_job_id is None else [
                 "--hub-artifact-job-id", args.hub_job_id,
             ]),
+            *([] if not args.permit_leased_gpu else ["--leased-gpu-inference"]),
             *([] if not args.stage_diagnostics else ["--stage-diagnostics"]),
         ]
         env = os.environ.copy()
