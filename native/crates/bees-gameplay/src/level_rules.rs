@@ -163,8 +163,9 @@ impl NativePlayerControlGauges {
 }
 
 /// Deferred authored squads not yet admitted to the canonical CombatWorld.
-/// Derived at status-sampling time from the source wave queue, with no
-/// gameplay-tick counters, extra roster, or second reinforcement scheduler.
+/// Queue sizes are derived at status sampling; aggregate fast-path counters
+/// measure avoided scans without per-tick logs, a duplicate roster or a
+/// second reinforcement scheduler.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct NativeReinforcementGauges {
     pub pending_waves: usize,
@@ -174,6 +175,10 @@ pub struct NativeReinforcementGauges {
     pub timed_waves: usize,
     pub waiting_for_campaign_cue: usize,
     pub waiting_for_ship_death: usize,
+    /// Fixed ticks where cached source wakeups avoided inspecting any wave.
+    pub idle_ticks_skipped: u64,
+    /// Fixed ticks where a scheduled time or real source event merited a scan.
+    pub wakeup_scans: u64,
 }
 
 impl NativeReinforcementGauges {
@@ -184,6 +189,8 @@ impl NativeReinforcementGauges {
         self.timed_waves += other.timed_waves;
         self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
         self.waiting_for_ship_death += other.waiting_for_ship_death;
+        self.idle_ticks_skipped += other.idle_ticks_skipped;
+        self.wakeup_scans += other.wakeup_scans;
     }
 }
 
