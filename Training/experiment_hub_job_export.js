@@ -13,13 +13,15 @@ const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
 const METRIC=/^[a-z][a-z0-9_]{0,63}$/;
 const KEEP_MS=2*60*60*1000;
 const JOB_FIELDS=[
-    'id','project_id','configuration_name','run_name','configuration_sha256',
+    'id','project_id','configuration_id','configuration_revision',
+    'configuration_name','run_name','configuration_sha256',
     'frozen_parameters','metric_selection','resources','resource_bundle',
     'trial_batch','distributed_rollout_managed','status',
     'assigned_machine_id','continuation_of_job_id','artifact_lineage_root_id',
     'checkpoint_model_sha256','checkpoint_ready_verified',
     'checkpoint_stop_verified','created_at','capacity_released_at',
-    'evaluation_stop','evaluation_monitor','evaluation_stop_evidence',
+    'evaluation_stop','evaluation_monitor','evaluation_suite_definitions',
+    'evaluation_stop_evidence',
     'evaluation_regression_stop_evidence','evaluation_candidates',
     'last_evaluation','final_progress','final_resource_usage',
     'execution_diagnostic','native_bees_run_id',
