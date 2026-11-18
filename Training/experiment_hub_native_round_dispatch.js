@@ -79,9 +79,14 @@ function checkPlan(plan,orders) {
             !Number.isSafeInteger(allocation.cpus)||
             allocation.cpus<job.rollout_workers*physics||
             !Number.isSafeInteger(allocation.ram_mb)||allocation.ram_mb<128||
-            ![0,1].includes(allocation.gpu_count??0)||
-            (allocation.gpu_count===1&&allocation.gpu_mode!=='exclusive'))
-            throw Error('Issued collector must fit the explicit Hub CPU/RAM/GPU lease.');
+            ![0,1,2].includes(allocation.gpu_count??0)||
+            (allocation.gpu_count>0&&(
+                allocation.gpu_mode!=='exclusive'||
+                plan.confirm_gpu_start!==true||
+                job.rollout_workers<allocation.gpu_count||
+                job.world_count<allocation.gpu_count)))
+            )
+            throw Error('Issued collector must fit the explicit Hub CPU/RAM/GPU lease and one actor per GPU.');
     }
     return jobs;
 }
