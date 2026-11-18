@@ -461,9 +461,14 @@ def author(args) -> tuple[dict, dict, dict]:
     owner = args.objective_side or (host if host is not None else 1)
     level = run["levels"][0]
     if args.objective == "survival":
-        defender = by_side[owner]
+        # The protected hull must physically exist at tick zero; a hull
+        # reserved for a later reinforcement wave cannot be defended before
+        # it is deployed. Likewise the initially active defenders need a
+        # genuine mobile ship to play or learn the objective.
+        defender = [ship for ship in by_side[owner]
+                    if ship["entity_id"] not in deferred_owner]
         if not any(ship["base_speed"] > 0 for ship in defender):
-            raise ValueError("survival defenders need at least one mobile physical ship")
+            raise ValueError("survival requires an initially deployed mobile defender")
         candidates = [ship for ship in defender if
                       args.protect_type is None or ship["ship_type"] == args.protect_type]
         if not candidates:
@@ -491,8 +496,10 @@ def author(args) -> tuple[dict, dict, dict]:
     elif args.objective == "extraction":
         if owner not in controlled:
             raise ValueError("extraction requires the selected side to have player-controlled squads")
-        if not any(ship["base_speed"] > 0 for ship in by_side[owner]):
-            raise ValueError("extraction requires at least one mobile player ship")
+        if not any(ship["base_speed"] > 0 and
+                   ship["entity_id"] not in deferred_owner
+                   for ship in by_side[owner]):
+            raise ValueError("extraction requires an initially deployed mobile player ship")
         center = (args.extraction_center
                   if args.extraction_center is not None
                   else scene["starting_positions"][2 - owner])
