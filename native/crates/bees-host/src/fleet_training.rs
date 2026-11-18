@@ -153,6 +153,29 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let (job, game_id) = new_training_job(&saves)?;
     let prepared = job.join("prepared");
     let model = job.join("model");
+    // The game does not own learning state, but it needs the original
+    // user-selected immutable invocation to resume through the trainer's
+    // existing verified bootstrap/session contracts.
+    let recipe = json!({
+        "schema_version": 1,
+        "kind": "native_game_fleet_training_invocation",
+        "source": source,
+        "rounds": rounds,
+        "worlds": worlds,
+        "physics_workers": workers,
+        "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
+        "holdout_worlds": 8,
+        "evaluation_side": 1,
+        "game_id": game_id,
+        "title": format!("Trained: {title}"),
+        "save_root": saves,
+    });
+    let mut recipe_file = OpenOptions::new().write(true).create_new(true)
+        .open(job.join("invocation.json"))?;
+    serde_json::to_writer_pretty(&mut recipe_file, &recipe)?;
+    use std::io::Write;
+    recipe_file.write_all(b"\n")?;
+    recipe_file.sync_all()?;
     let stdout_path = job.join("trainer.stdout.log");
     let stderr_path = job.join("trainer.stderr.log");
     let stdout = OpenOptions::new().write(true).create_new(true).open(&stdout_path)?;
@@ -267,5 +290,122 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         "stderr": job.join("trainer.stderr.log"),
         "model": job.join("model"),
     }));
+    Ok(())
+}
+
+
+/// A stopped native game job has exactly one source contract and one model
+/// lineage. Let the existing bootstrapper decide whether its finished model
+/// may be reused; never copy checkpoints or fabricate a session cursor.
+fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
+    let recipe: Value = serde_json::from_slice(
+        &fs::read(job.join("invocation.json"))?
+    )?;
+    if recipe["schema_version"].as_u64() != Some(1) ||
+        recipe["kind"].as_str() != Some("native_game_fleet_training_invocation") {
+        return Err(invalid("native fleet training job lacks its immutable invocation").into());
+    }
+    let source = PathBuf::from(recipe["source"].as_str()
+        .ok_or_else(|| invalid("native training source is missing"))?);
+    let saves = PathBuf::from(recipe["save_root"].as_str()
+        .ok_or_else(|| invalid("native training save root is missing"))?);
+    let game_id = recipe["game_id"].as_str()
+        .ok_or_else(|| invalid("native training game ID is missing"))?;
+    let title = recipe["title"].as_str()
+        .ok_or_else(|| invalid("native training game title is missing"))?;
+    let rounds = recipe["rounds"].as_u64()
+        .filter(|value| (1..=99_999).contains(value))
+        .ok_or_else(|| invalid("native training rounds are invalid"))?;
+    let worlds = recipe["worlds"].as_u64()
+        .filter(|value| (1..=1_024).contains(value))
+        .ok_or_else(|| invalid("native training worlds are invalid"))?;
+    let workers = recipe["physics_workers"].as_u64()
+        .filter(|value| (1..=128).contains(value))
+        .ok_or_else(|| invalid("native training worker allocation is invalid"))?;
+    let device = recipe["optimizer_device"].as_str()
+        .filter(|value| *value == "cpu" || *value == "cuda")
+        .ok_or_else(|| invalid("native training optimizer device is invalid"))?;
+    if !source.is_file() || !saves.is_dir() ||
+        !job.starts_with(saves.join("training").join("fleet-skirmish")) ||
+        recipe["holdout_worlds"].as_u64() != Some(8) ||
+        recipe["evaluation_side"].as_u64() != Some(1)
+    {
+        return Err(invalid("native training source, holdout or private job root changed").into());
+    }
+    let model = job.join("model");
+    let prepared = job.join("prepared");
+    let progress = model.join("session").join("session-progress.json");
+    if progress.is_file() {
+        let snapshot: Value = serde_json::from_slice(&fs::read(&progress)?)?;
+        if snapshot["completed_rounds"].as_u64().is_some_and(|count| count >= rounds) {
+            println!("Native fleet training already finished all requested optimizer rounds.");
+            return Ok(());
+        }
+    }
+    let converter = converter_script()?;
+    let bootstrap = converter.with_file_name("bootstrap_policy.py");
+    if !bootstrap.is_file() {
+        return Err(invalid("native policy bootstrap script is missing").into());
+    }
+    let python = env::var_os("BEES_NATIVE_PYTHON")
+        .unwrap_or_else(|| std::ffi::OsString::from(
+            if cfg!(windows) { "python" } else { "python3" }
+        ));
+    let mut command = Command::new(python);
+    if model.is_dir() {
+        if !model.join("receipt.json").is_file() {
+            return Err(invalid("native model bootstrap is incomplete; no valid model to resume").into());
+        }
+        command.arg(&bootstrap).arg(&model).arg("--resume")
+            .arg("--scenario").arg("custom")
+            .arg("--source-scene").arg(prepared.join("battle.policy.scene.json"))
+            .arg("--source-run").arg(prepared.join("battle.policy.run.json"));
+    } else if prepared.is_dir() {
+        command.arg(&bootstrap).arg(&model)
+            .arg("--scenario").arg("custom")
+            .arg("--source-scene").arg(prepared.join("battle.policy.scene.json"))
+            .arg("--source-run").arg(prepared.join("battle.policy.run.json"));
+    } else {
+        command.arg(&converter).arg(&source).arg(&prepared)
+            .arg("--bootstrap-output").arg(&model)
+            .arg("--bootstrap-args");
+    }
+    command.arg("--train-rounds").arg(rounds.to_string())
+        .arg("--rollout-worlds").arg(worlds.to_string())
+        .arg("--physics-workers").arg(workers.to_string())
+        .arg("--optimizer-device").arg(device)
+        .arg("--holdout-worlds").arg("8")
+        .arg("--evaluation-side").arg("1")
+        .arg("--library-save-root").arg(&saves)
+        .arg("--library-game-id").arg(game_id)
+        .arg("--library-game-title").arg(title);
+    let mut pair = None;
+    for index in 1..u32::MAX {
+        let stdout_path = job.join(format!("trainer-resume-{index:06}.stdout.log"));
+        let stderr_path = job.join(format!("trainer-resume-{index:06}.stderr.log"));
+        match OpenOptions::new().write(true).create_new(true).open(&stdout_path) {
+            Ok(stdout) => {
+                let stderr = OpenOptions::new().write(true).create_new(true)
+                    .open(&stderr_path)?;
+                pair = Some((stdout_path, stderr_path, stdout, stderr));
+                break;
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let (stdout_path, stderr_path, stdout, stderr) =
+        pair.ok_or_else(|| invalid("native training resume log identities exhausted"))?;
+    let child = command.stdin(Stdio::null())
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()?;
+    println!("{}", json!({
+        "kind": "native_fleet_training_resumed",
+        "job": job, "pid": child.id(), "model": model,
+        "stdout": stdout_path, "stderr": stderr_path,
+        "rounds": rounds, "worlds": worlds,
+    }));
+    println!("Existing native fleet training lineage resumed; the learner validates its original bootstrap, receipts and source before proceeding.");
     Ok(())
 }
