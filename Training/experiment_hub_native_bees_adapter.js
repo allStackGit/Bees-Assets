@@ -229,6 +229,23 @@ function rolloutQueenControllerMeasurements(rollout) {
     return result;
 }
 
+// This is physical scheduler work across every completed arena, not an
+// estimate of a machine's available CPU or the number of pending waves.
+function rolloutReinforcementWakeupMeasurements(rollout) {
+    const work = rollout?.reinforcement_wakeup_work;
+    if (work == null) return {};
+    const result = {};
+    for (const key of ['idle_ticks_skipped', 'wakeup_scans']) {
+        if (!Number.isSafeInteger(work[key]) || work[key] < 0)
+            throw Error('Invalid native Bees reinforcement wakeup measurement.');
+        result['rollout_reinforcement_' + key] = {value: work[key], unit: 'count'};
+    }
+    if (work.idle_ticks_skipped + work.wakeup_scans >
+        rollout.successful_world_steps)
+        throw Error('Native reinforcement checks exceed executed world steps.');
+    return result;
+}
+
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
@@ -705,6 +722,7 @@ function createNativeBeesAdapter({
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
                         ...rolloutPhysicsMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),
+                        ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
                         ...(rollout.sampled_model_timing ? {
                             rollout_sampled_model_calls: {
@@ -752,6 +770,7 @@ function createNativeBeesAdapter({
                     ...(rollout ? {
                         ...rolloutPhysicsMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),
+                        ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
