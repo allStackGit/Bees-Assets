@@ -1261,7 +1261,7 @@ impl CombatWorld {
         }
         let side = self.ships[index].side;
         let was_mobile = self.physics.ships()[index].motion.mobile;
-        self.physics.ships_mut()[index].active = false;
+        self.physics.retire_ship(index);
         if was_mobile {
             if let Some(live) = self.live_mobile_ships_by_side.get_mut(&side) {
                 debug_assert!(*live > 0, "mobile roster decrement underflow");
@@ -4422,7 +4422,12 @@ impl CombatWorld {
         self.apply_unlocked_game_point_orders()?;
         self.advance_failed_game_paths(dt)?;
         self.advance_asteroid_navigation_refresh(dt)?;
-        for ship in self.physics.ships_mut() {
+        // Reuse the canonical physics live-slot registry. Retired ship
+        // arrays remain append-only for attribution, but never impose
+        // per-tick steering cost on long Queen/reinforcement battles.
+        let (active_slots, bodies) = self.physics.active_ships_mut();
+        for &index in active_slots {
+            let ship = &mut bodies[index];
             if !ship.active { continue; }
             // A switch to neural-policy ownership must drop stale gameplay
             // waypoints before the RL turn-suppression check reads
