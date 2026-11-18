@@ -895,6 +895,11 @@ label.hub-toggle-row > input[type="checkbox"] {
             <button id="hub-evaluation-add-suite" type="button">Add another evaluation suite</button>
           </div>
           <small class="muted wide">Monitoring can require both new checkpoint updates and a minimum wall-clock interval. The clock interval does not create checkpoints or postpone an eligible final checkpoint. Additional suites can override the shared update interval when monitoring without stopping; different intervals require independently scheduled one-suite evaluator services. Success-based stopping retains one checkpoint-coherent batch.</small>
+          <fieldset class="wide" id="hub-evaluation-measurements-panel">
+            <legend>Independent evaluation chart priorities</legend>
+            <div id="hub-evaluation-measurements" class="hub-controls"></div>
+            <small class="muted">Choose which validated, project-reported outcomes appear first in Metrics and Compare. Independent evaluators still record every available receipt measurement, even if not selected. This preference does not control evaluation execution, stopping, candidate ranking or promotion.</small>
+          </fieldset>
           <details class="wide">
             <summary>Advanced: edit the multi-suite list as JSON instead</summary>
             <p class="muted">Clear the individual suite fields above when using JSON. The editor uses the same validated suite definitions.</p>
