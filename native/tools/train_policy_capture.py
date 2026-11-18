@@ -1300,6 +1300,8 @@ def main():
         "opponent_steps": opponent_steps,
         "capture_peak_inflight_decisions": capture_stats.get("peak_inflight_decisions", 0),
         "capture_peak_inflight_episodes": capture_stats.get("peak_inflight_episodes", 0),
+        "empty_policy_terminal_boundaries":
+            capture_stats.get("empty_policy_terminal_boundaries", 0),
         "capture_compact_opponent_decisions": capture_stats.get("compact_opponent_decisions", 0),
         "capture_compact_opponent_boundaries": capture_stats.get("compact_opponent_boundaries", 0),
         "dynamic_policy_episodes": capture_stats.get("dynamic_policy_episodes", 0),
