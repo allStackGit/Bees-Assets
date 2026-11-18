@@ -96,7 +96,7 @@ pub trait NativeLevelRewardMetadata {
     /// observe another episode tick.
     fn register_spawned_policy_ships(
         &mut self, _world: &mut CombatWorld,
-        _events: &mut NativeLevelEventProcessor,
+        _events: &mut NativeLevelEventProcessor, _tick: u64,
     ) -> Result<(), CombatPerceptionError> { Ok(()) }
 
     /// Collect real registered/enabled HiveMindVision observers. A full
@@ -1106,7 +1106,7 @@ where
         state.combat.consume_weapon_rank_events()?;
         state.metadata.register_scout_beacons(&state.combat, state.combat.events())?;
         state.metadata.register_spawned_policy_ships(
-            &mut state.combat, &mut state.events,
+            &mut state.combat, &mut state.events, completed_tick,
         )?;
         counts.vision = state.refresh_vision_and_rewards(completed_tick)
             .map_err(NativeLevelStepError::Vision)?;
