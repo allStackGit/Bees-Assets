@@ -966,6 +966,10 @@ pub struct MovementObstacleHit {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PhysicsStepCounts {
     pub integrated_bodies: u64,
+    /// Historical dead hull slots bypassed by the active-only integration.
+    pub inactive_ship_slots_skipped: u64,
+    /// Additional dead slots avoided across actual ship-grid rebuilds.
+    pub inactive_ship_grid_slots_skipped: u64,
     pub broadphase_candidates: u64,
     /// Populations temporarily kept outside cells because their true
     /// bounds cross the grid edge or span >64 cells (ship/obstacle phases).
@@ -1399,6 +1403,8 @@ impl KinematicPhysics {
             },
         );
         self.counts.ship_grid_rebuilds += 1;
+        self.counts.inactive_ship_grid_slots_skipped +=
+            (self.ships.len() - self.active_ship_indices.len()) as u64;
         self.counts.ship_grid_cells_indexed += self.grid.active_buckets as u64;
         self.grid_contents = GridContents::Ships;
         true
@@ -1947,6 +1953,8 @@ impl KinematicPhysics {
             return Err(PhysicsError::InvalidStep);
         }
         self.counts = PhysicsStepCounts::default();
+        self.counts.inactive_ship_slots_skipped =
+            (self.ships.len() - self.active_ship_indices.len()) as u64;
         let mut has_active_ships = false;
         for &index in &self.active_ship_indices {
             let ship = &mut self.ships[index];
@@ -2013,6 +2021,8 @@ impl KinematicPhysics {
                 },
             );
             self.counts.ship_grid_rebuilds += 1;
+            self.counts.inactive_ship_grid_slots_skipped +=
+                (self.ships.len() - self.active_ship_indices.len()) as u64;
             self.counts.ship_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::Ships;
             self.counts.ship_grid_overflow_bodies = self.grid.overflow.len() as u64;
