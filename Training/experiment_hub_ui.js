@@ -87,6 +87,14 @@ function hubComparisonPoints(run) {
                 segment_id:'independent-evaluation',
                 source_modified_at:row.evaluated_at||row.observed_at,
                 observed_at:row.observed_at,break_before:false,
+                evaluation_identity:{
+                    suite_id:row.suite_id,suite_sha256:row.suite_sha256,
+                    checkpoint_sha256:row.checkpoint_sha256,
+                    dispatch_id:row.dispatch_id,
+                    runtime_sha256:row.runtime_sha256||null,
+                    evaluated_at:row.evaluated_at||row.observed_at,
+                    trials:row.trials,successes:row.successes,
+                },
                 metrics:{[prefix]:{value:row.successes/row.trials,unit:'ratio'},
                     ...Object.fromEntries(details)},
             };
@@ -2460,6 +2468,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         breakBefore:p.break_before,steps:p.steps_completed,
                         axis:hubComparisonAxisValue(p,xKey),
                         measurement:p.metrics?.[metricKey]||null,
+                        evaluation:p.evaluation_identity||null,
                     })),
                 })),
             });
@@ -2818,7 +2827,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const timestamp=closest.point.source_modified_at;
                 line('Published: '+(timestamp&&!Number.isNaN(Date.parse(timestamp))
                     ?new Date(timestamp).toLocaleString():'unknown'));
-                line('Segment: '+(closest.point.segment_id||'unknown'));
+                const evaluated=closest.point.evaluation_identity;
+                if(evaluated) {
+                    line('Independent suite: '+evaluated.suite_id);
+                    line('Frozen suite SHA-256: '+evaluated.suite_sha256);
+                    line('Checkpoint SHA-256: '+evaluated.checkpoint_sha256);
+                    line('Evaluator runtime SHA-256: '+(evaluated.runtime_sha256||'unreported'));
+                    line('Evaluation dispatch: '+(evaluated.dispatch_id||'unreported'));
+                    line('Successes / trials: '+evaluated.successes+' / '+evaluated.trials);
+                    line('Evaluated at: '+(evaluated.evaluated_at||'unreported'));
+                }else line('Segment: '+(closest.point.segment_id||'unknown'));
                 const summary=stats.get(run);
                 if(showAverage&&summary?.mean!==null&&summary?.mean!==undefined)
                     line('Sample mean: '+formattedValue(summary.mean));
