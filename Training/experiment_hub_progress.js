@@ -138,6 +138,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
+            // Exposed Python simulation packing is a cross-project CPU
+            // throughput clue, not an independent hardware saturation claim.
+            'training_info_pack_max_seconds',
+            'training_sim_pack_max_ratio','training_sim_pack_ratio_owner',
             'training_concurrency_limit','training_concurrency_next_limit',
             'training_tuner_adjustments','training_tuner_accepted',
             'training_tuner_settled',
