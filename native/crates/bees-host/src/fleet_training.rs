@@ -763,7 +763,8 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         state["completed_rounds"].as_u64().zip(state["target_rounds"].as_u64())
             .is_some_and(|(complete, target)| complete >= target)
     });
-    let can_resume = job.join("invocation.json").is_file() && !done;
+    let can_resume = training_available() &&
+        job.join("invocation.json").is_file() && !done;
     let mut details = vec![
         ("Back to Game Library".to_string(),
          "  [Inspection complete]".to_string(), true),
