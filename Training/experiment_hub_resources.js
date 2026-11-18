@@ -67,12 +67,39 @@ function remaining(machine,reservations) {
         ['active','offered','acknowledged'].includes(r.status));
     // A live authenticated agent may reduce a manually declared CPU/RAM
     // budget but never increase it. Stale measurements are not used.
-    const cpuBudget=machine.status==='connected' &&
+    const physicalCpus=machine.status==='connected' &&
         Number.isSafeInteger(machine.reported_cpus)
-        ?Math.min(machine.cpus,machine.reported_cpus):machine.cpus;
-    const ramBudget=machine.status==='connected' &&
+        ?machine.reported_cpus:machine.cpus;
+    const physicalRam=machine.status==='connected' &&
         Number.isSafeInteger(machine.reported_ram_mb)
-        ?Math.min(machine.ram_mb,machine.reported_ram_mb):machine.ram_mb;
+        ?machine.reported_ram_mb:machine.ram_mb;
+    // OS-bounded independent evaluator timers/services occupy a separate
+    // physical budget. Include their maximum simultaneous CPU/RAM ceilings
+    // for *new* admission, without creating a second Hub lease or resizing
+    // any already accepted training claim. Use the physical-minus-evaluator
+    // bound before the operator's Hub budget to avoid double subtracting
+    // capacity the operator has already withheld manually.
+    const evaluatorSlots=machine.status==='connected'&&
+        Array.isArray(machine.evaluator_services)
+        ?machine.evaluator_services.filter(service=>
+            service.scheduler_state==='active'||service.service_state==='running')
+        :[];
+    const evaluatorUnknown=evaluatorSlots.some(service=>
+        !Number.isSafeInteger(service.evaluator_cpus)||
+        service.evaluator_cpus<1||
+        !Number.isSafeInteger(service.evaluator_ram_mb)||
+        service.evaluator_ram_mb<1);
+    const reservedEvaluatorCpus=evaluatorSlots.reduce(
+        (total,service)=>total+(service.evaluator_cpus||0),0);
+    const reservedEvaluatorRam=evaluatorSlots.reduce(
+        (total,service)=>total+(service.evaluator_ram_mb||0),0);
+    // An observed active evaluator with an unknown quota must not be
+    // treated as zero resource consumption. This affects future placements
+    // only: existing native jobs, acknowledgements and leases are unchanged.
+    const cpuBudget=evaluatorUnknown?0:Math.min(machine.cpus,
+        Math.max(0,physicalCpus-reservedEvaluatorCpus));
+    const ramBudget=evaluatorUnknown?0:Math.min(machine.ram_mb,
+        Math.max(0,physicalRam-reservedEvaluatorRam));
     const usedCpus=claimed.reduce((sum,r)=>sum+(r.resources?.cpus||0),0);
     const usedRam=claimed.reduce((sum,r)=>sum+(r.resources?.ram_mb||0),0);
     // Physical GPU capacity is available only after matching a registered
@@ -130,6 +157,9 @@ function remaining(machine,reservations) {
     }
     return {cpus:Math.max(0,cpuBudget-usedCpus),
         ram_mb:Math.max(0,ramBudget-usedRam),
+        evaluator_reserved_cpus:reservedEvaluatorCpus,
+        evaluator_reserved_ram_mb:reservedEvaluatorRam,
+        evaluator_budget_unknown:evaluatorUnknown,
         gpus:capacity.filter(g=>!g.exclusive&&g.available_vram_mb>0&&
             g.available_compute_pct>0).map(g=>g.id),
         gpu_capacity:capacity};
@@ -192,7 +222,9 @@ function placements(machines,reservations,input) {
             fits:false,capacity_fits:capacityFits,
             suggested_gpus:capacityFits?selected.map(g=>g.id):[],
             reason:!online?'No currently authenticated agent; capacity preview only'
-                :capacityFits?'Agent connected; physical GPU identity matches, but resource isolation unavailable'
+                :available.evaluator_budget_unknown
+                    ?'Active independent evaluator has no verified CPU/RAM quota; new allocations withheld without changing existing leases'
+                :capacityFits?'Agent connected; verified evaluator budgets excluded from new training admission'
                 :wanted.gpu_count&&!available.gpu_capacity.length
                     ?'No physical GPU matched registered PCI identity on this connected agent'
                     :'Insufficient CPU, RAM, verified GPU VRAM, or advisory GPU compute budget'};
