@@ -200,9 +200,11 @@ def evaluation_outcome(result, trials: int) -> tuple[int, dict]:
 
 def receipt_provenance(job: dict, ordinal: int, suite: dict, coordinate=None) -> dict:
     """Record the tested checkpoint's training coordinate when available."""
-    step = (job.get("final_steps_completed")
-            if "final_checkpoint_sha256" in job else
-            coordinate if coordinate is not None else ordinal)
+    # A project adapter can provide the measured update stored inside the
+    # exact copied checkpoint. Prefer that to possibly stale trainer status.
+    step = (coordinate if coordinate is not None else
+            job.get("final_steps_completed")
+            if "final_checkpoint_sha256" in job else ordinal)
     fields = {"evaluated_at": datetime.now(timezone.utc)
               .isoformat(timespec="milliseconds").replace("+00:00", "Z")}
     if type(step) is int and 0 <= step <= 2**53 - 1:
@@ -476,9 +478,11 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
                         checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
                     if job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest:
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
-                    verified_checkpoint = checkpoint_digest
                     if verify_checkpoint is not None:
                         verify_checkpoint(frozen, checkpoint)
+                    # A copied model without matching update identity is
+                    # not a failed match at the previous training coordinate.
+                    verified_checkpoint = checkpoint_digest
                     # A new checkpoint filename is not proof of new policy
                     # bytes. Avoid repeated expensive deterministic matches
                     # against the same immutable model in monitoring mode.
@@ -718,9 +722,11 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
                     if any(job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest
                            for job in jobs):
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
-                    verified_checkpoint = checkpoint_digest
                     if verify_checkpoint is not None:
                         verify_checkpoint(frozen, checkpoint)
+                    # A copied model without matching update identity is
+                    # not a failed match at the previous training coordinate.
+                    verified_checkpoint = checkpoint_digest
                     if jobs[0].get("monitor_only") and all(
                         archive_matches_checkpoint(
                             job, checkpoint_digest, definitions[sid]
