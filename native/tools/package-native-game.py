@@ -59,7 +59,7 @@ def executable_target(source: Path) -> tuple[str, str]:
     """
     with source.open("rb") as stream:
         header = stream.read(64)
-        if header[:4] == b"\\x7fELF":
+        if header[:4] == b"\x7fELF":
             if len(header) < 20 or header[4] not in (1, 2) or header[5] not in (1, 2):
                 raise ValueError(f"invalid native ELF executable header: {source}")
             byte_order = "little" if header[5] == 1 else "big"
@@ -74,7 +74,7 @@ def executable_target(source: Path) -> tuple[str, str]:
                 raise ValueError(f"invalid native PE header offset: {source}")
             stream.seek(offset)
             coff = stream.read(24)
-            if len(coff) != 24 or coff[:4] != b"PE\\x00\\x00":
+            if len(coff) != 24 or coff[:4] != b"PE\x00\x00":
                 raise ValueError(f"invalid native Windows PE executable: {source}")
             machine = int.from_bytes(coff[4:6], "little")
             platform = "windows"
