@@ -1172,7 +1172,7 @@ label.hub-toggle-row > input[type="checkbox"] {
   </table></div>
   <div class="hub-standalone" id="hub-compare-selection-panel">
     <h3>Promote the best evaluated model</h3>
-    <p class="muted">Choose 2–16 independent candidate jobs above and an approved next-stage configuration below. The Hub compares only identical frozen benchmark suites and promotes only a resumable model whose exact bytes match its evaluation. Active candidates can be scheduled for automatic selection after completion.</p>
+    <p class="muted">Choose 2–16 independent candidate jobs and an approved next-stage configuration. Monitoring-only runs are eligible when final-checkpoint evaluation is enabled and receipts identify the evaluator runtime. Only matching frozen suites, verified final-checkpoint bytes, trial counts and runtime identities can select a resumable winner. Training curves and imported historical audits cannot authorize promotion. Active candidates can be scheduled for selection after completion.</p>
     <div class="formgrid">
       <label>Next-stage saved configuration<select id="hub-compare-selection-config"></select></label>
       <label>Next-stage CPU/RAM request (JSON)<input id="hub-compare-selection-resources" type="text" value='{"cpus":2,"ram_mb":2048,"gpu_count":0}'></label>
