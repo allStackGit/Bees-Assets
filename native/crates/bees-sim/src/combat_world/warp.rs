@@ -152,6 +152,13 @@ impl CombatWorld {
             .is_some_and(|session| session.waiting.insert(ship_id))
     }
 
+    /// Read-only source opening clock. An inactive or destroyed WarpGate
+    /// uses its original still sprite, not a renderer-owned game timer.
+    pub fn game_warp_gate_animation_elapsed(&self, gate_id: i64) -> Option<f32> {
+        self.game_warp_gate_position(gate_id)?;
+        self.game_warp_gate_sessions.get(&gate_id).map(|session| session.elapsed)
+    }
+
     /// Read-only animation state for renderer and headless commands.
     pub fn game_warp_gate_ready(&self, gate_id: i64) -> bool {
         self.game_warp_gate_sessions.get(&gate_id)

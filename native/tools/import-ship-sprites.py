@@ -29,6 +29,15 @@ SHIP_IMAGES = (
     "yellowjacket.png", None,
 )
 
+# (ShipTypes ID, animation variant, sheet, authored Unity animation clip).
+# Variant 0 is the working/opening animation, 1 is WarpGate's ready loop.
+SHIP_ANIMATIONS = (
+    (4, 0, "carpenter_anim.png", "Carpenter Bee Mining.anim"),
+    (9, 0, "factory_anim.png", "Factory Mining.anim"),
+    (20, 0, "warpgate_anim.png", "Warp Gate Opening.anim"),
+    (20, 1, "warpgate_loop.png", "Warp Gate Loop.anim"),
+)
+
 # Source CollisionAsteroidCatalog prefab numbers 1..28. Slot zero is
 # unused, so native sprites retain the real authored asteroid identities.
 ASTEROID_IMAGES = (None,) + tuple(f"Asteroid {n}.png" for n in range(1, 29))
@@ -178,6 +187,26 @@ def pack(images, directory, magic, animated, palettes=None):
     return data, len(entries)
 
 
+def pack_ship_animations(palettes):
+    """Portable BSA1 animation sheets with genuine source recolor masks."""
+    data = bytearray(struct.pack("<4sH", b"BSA1", len(SHIP_ANIMATIONS)))
+    for ship_type, variant, name, clip in SHIP_ANIMATIONS:
+        ppu, frames = source_frames(ROOT / "Sprites/Ships" / name, True)
+        text = (ROOT / "Sprites/Ships/Animations" / clip).read_text(encoding="utf-8")
+        match = re.search(r"^  m_SampleRate: (\d+)(?:\.0+)?$", text, re.MULTILINE)
+        if match is None or not 1 <= int(match[1]) <= 120:
+            raise ValueError(f"Missing native ship animation frame rate: {clip}")
+        if not 1 <= len(frames) <= 64:
+            raise ValueError(f"Invalid native ship animation frame count: {name}")
+        data.extend(struct.pack("<BBHHH", ship_type, variant, ppu,
+                                int(match[1]), len(frames)))
+        for frame in frames:
+            data.extend(struct.pack("<HH", frame.width, frame.height))
+            packed_pixels(data, frame)
+            packed_color_mask(data, frame, palettes[ship_type])
+    return data, len(SHIP_ANIMATIONS)
+
+
 def write_atomic(output: Path, data: bytearray):
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -203,11 +232,15 @@ def main():
                         default=ROOT / "native/assets/projectile-sprites.rgba")
     parser.add_argument("--asteroid-output", type=Path,
                         default=ROOT / "native/assets/asteroid-sprites.rgba")
+    parser.add_argument("--animation-output", type=Path,
+                        default=ROOT / "native/assets/ship-animations.rgba")
     args = parser.parse_args()
+    palettes = source_ship_color_palettes()
     ships, ship_count = pack(
         SHIP_IMAGES, ROOT / "Sprites/Ships", b"BSS2", False,
-        source_ship_color_palettes(),
+        palettes,
     )
+    animations, animation_count = pack_ship_animations(palettes)
     projectiles, projectile_count = pack(
         PROJECTILE_IMAGES, ROOT / "Sprites/Projectiles", b"BPS1", True,
     )
@@ -217,6 +250,9 @@ def main():
     ships_path = write_atomic(args.ship_output, ships)
     projectiles_path = write_atomic(args.projectile_output, projectiles)
     asteroids_path = write_atomic(args.asteroid_output, asteroids)
+    animations_path = write_atomic(args.animation_output, animations)
+    print(f"Ship animations: {animation_count} clips, "
+          f"{len(animations)} bytes at {animations_path}")
     print(f"Ship sprites: {ship_count} types, {len(ships)} bytes at {ships_path}")
     print(f"Projectile sprites: {projectile_count} types, "
           f"{len(projectiles)} bytes at {projectiles_path}")

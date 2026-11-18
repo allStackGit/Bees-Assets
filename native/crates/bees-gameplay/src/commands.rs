@@ -541,6 +541,13 @@ impl NativeSquadCommandDirector {
     /// actual collider contact. The active BTreeMap has one command per
     /// SquadLifetime, so no duplicate-ship count is possible. One
     /// ephemeral aggregate is updated per world/tick, not per agent.
+    /// Renderer-only read of the real mining command's entered-asteroid
+    /// membership. Headless worlds never query this visual state.
+    pub fn ship_is_mining(&self, owner: SquadLifetime, ship_id: i64) -> bool {
+        self.active.get(&owner).and_then(|active| active.mining.as_ref())
+            .is_some_and(|run| run.enrolled_ship(ship_id))
+    }
+
     pub fn collect_mining_squad_counts(
         &self, output: &mut HashMap<i64, u32>,
     ) {

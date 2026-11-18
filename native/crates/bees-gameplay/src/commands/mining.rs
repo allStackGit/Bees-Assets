@@ -126,6 +126,12 @@ impl MiningRun {
         (!self.currently_mining.is_empty()).then_some(self.target_id)
     }
 
+    /// Cosmetic presentation only; an outbound ship does not animate
+    /// mining before the actual asteroid hull contact has registered.
+    pub(super) fn enrolled_ship(&self, ship_id: i64) -> bool {
+        self.currently_mining.contains(&ship_id)
+    }
+
     pub(super) fn advance(
         &mut self,
         world: &mut CombatWorld,
