@@ -235,6 +235,18 @@ def rollout_metrics(summary_path, config, manifest_sha):
         metrics["reinforcement_arrivals"] = {
             key: arrivals[key] for key in keys
         }
+    wakeups = summary.get("reinforcement_wakeup_work")
+    if wakeups is not None:
+        keys = ("idle_ticks_skipped", "wakeup_scans")
+        if (not isinstance(wakeups, dict) or
+                any(type(wakeups.get(key)) is not int or wakeups[key] < 0
+                    for key in keys) or
+                sum(wakeups[key] for key in keys) >
+                counts["successful_world_steps"]):
+            raise ValueError("native rollout has inconsistent reinforcement wakeup measurements")
+        metrics["reinforcement_wakeup_work"] = {
+            key: wakeups[key] for key in keys
+        }
     queens = summary.get("queen_minion_controllers")
     if queens is not None:
         keys = ("policy_minions_bound", "ungrouped_policy_minions_bound",
@@ -385,6 +397,8 @@ def combined_rollout_metrics(shards, wall_seconds):
             "requested_physics_workers": shard["requested_physics_worker_slots"],
             **({"reinforcement_arrivals": shard["reinforcement_arrivals"]}
                if "reinforcement_arrivals" in shard else {}),
+            **({"reinforcement_wakeup_work": shard["reinforcement_wakeup_work"]}
+               if "reinforcement_wakeup_work" in shard else {}),
             **({"queen_minion_controllers": shard["queen_minion_controllers"]}
                if "queen_minion_controllers" in shard else {}),
             **({key: shard[key] for key in (
@@ -405,6 +419,11 @@ def combined_rollout_metrics(shards, wall_seconds):
         metrics["reinforcement_arrivals"] = {
             key: sum(shard["reinforcement_arrivals"][key] for shard in shards)
             for key in ("waves", "squads", "ships", "policy_agents")
+        }
+    if all("reinforcement_wakeup_work" in shard for shard in shards):
+        metrics["reinforcement_wakeup_work"] = {
+            key: sum(shard["reinforcement_wakeup_work"][key] for shard in shards)
+            for key in ("idle_ticks_skipped", "wakeup_scans")
         }
     if all("queen_minion_controllers" in shard for shard in shards):
         metrics["queen_minion_controllers"] = {
