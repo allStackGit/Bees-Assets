@@ -178,6 +178,17 @@ from summed collector-local simulation efficiency.
 You can select a saved PPO configuration from
 `<save-root>/training/configurations/*.yaml` or `*.yml`; the chosen
 file is copied and SHA-256 pinned to that experiment before model creation.
+Existing native environment curricula can be selected from
+`<save-root>/training/curricula/*.json`. Each curriculum JSON follows
+`{"schema_version":1,"stages":[{"start_round":5,"run_config":"hard.run.json"}]}`,
+where the positional fleet battle is Stage 1 and later Stage run files must
+already be complete native policy-enabled Levels using the same interpreter,
+policy worker and model slots. Stage run paths are relative to the curriculum
+file. The canonical learner validates and pins each stage's authored scene,
+run and complete physical simulation task before training; the game's chosen
+plan digest also remains fixed across restarts. A curriculum switches worlds
+only between completed optimizer rounds, never during active episodes.
+A Stage is not a separate Unity or training-only simulator.
 When a compiled `policy_rollout` executable is available, the menu also
 offers independent persistent rollout processes for faster multi-core
 collection. Set `BEES_NATIVE_ROLLOUT_BINARY` to an explicit executable if
