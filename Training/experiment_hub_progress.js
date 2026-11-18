@@ -179,6 +179,17 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_topology_max_migration_seconds',
             'training_topology_max_pred_gain_ratio','training_topology_migration_owner',
             'training_topology_sps_change_pct','training_topology_result_owner',
+            'training_ingestion_exposed_seconds',
+            'training_ingestion_copy_wall_seconds',
+            'training_ingestion_claim_wait_seconds',
+            'training_ingestion_peak_parallel_copies',
+            'training_shared_reply_gap_seconds',
+            'training_shared_ingestion_work_share',
+            'training_shared_reply_gap_work_share',
+            'training_shared_ingestion_pressure',
+            'training_shared_collector_wait_pressure',
+            'training_shared_collection_dominant',
+            'training_shared_optimization_dominant',
             'training_checkpoint_snapshot_seconds',
             'training_checkpoint_max_worker_seconds',
             'training_reply_gap_seconds','training_last_reply_worker',
@@ -934,6 +945,73 @@ class BottleneckEvidence {
                         'simulation','observation','collection_other'])
                         if(sustained(x=>x.stageHints?.[i]?.[stage]))
                             add('worker_'+i+'_'+stage+'_dominant',1,'count');
+            }
+        } else if(seconds('training_batch_wall_seconds')>0&&
+            metrics.training_collector_workers?.unit==='count'&&
+            Number.isSafeInteger(metrics.training_collector_workers.value)&&
+            metrics.training_collector_workers.value>=1&&
+            metrics.training_collector_workers.value<=16) {
+            // Shared-policy Courier owns ONE recurrent PPO update across
+            // remote shards, unlike independently optimized lineages above.
+            // All times are learner-clock intervals. Shard-copy work can
+            // overlap other copies and remote simulation; only the tail
+            // after the last complete reply is exposed ingestion latency.
+            const wall=seconds('training_batch_wall_seconds');
+            const collection=seconds('training_collect_max_seconds');
+            const optimization=seconds('training_optimize_max_seconds');
+            const exposed=seconds('training_ingestion_exposed_seconds');
+            const copied=seconds('training_ingestion_copy_wall_seconds');
+            const gap=seconds('training_shared_reply_gap_seconds');
+            const count=metrics.training_ingestion_peak_parallel_copies;
+            const measured=(collection!==null&&optimization!==null&&
+                collection<=wall*1.02&&optimization<=wall*1.02&&
+                exposed!==null&&exposed<=collection&&
+                copied!==null&&count?.unit==='count'&&
+                Number.isSafeInteger(count.value)&&count.value>=1&&
+                count.value<=metrics.training_collector_workers.value);
+            const exposedShare=measured?exposed/wall:null;
+            const gapShare=gap!==null&&gap<=wall?gap/wall:null;
+            if(exposedShare!==null)
+                add('training_shared_ingestion_work_share',exposedShare);
+            if(gapShare!==null)
+                add('training_shared_reply_gap_work_share',gapShare);
+            const ingestionDelay=exposedShare!==null&&
+                exposedShare>=0.20&&exposed>=0.25;
+            const slowReply=gapShare!==null&&gapShare>=0.25&&
+                gap>=0.25&&(exposedShare===null||exposedShare<=0.10);
+            const collectionDominant=measured&&collection>=0.70*wall&&
+                optimization<=0.30*wall;
+            const optimizationDominant=measured&&optimization>=0.70*wall&&
+                collection<=0.30*wall;
+            const {at,prior}=history();
+            if(Number.isFinite(at)&&at>prior.lastAt) {
+                prior.samples.push({at,resourceHints,
+                    sharedIngestion:ingestionDelay,
+                    sharedReply:slowReply,
+                    sharedCollection:collectionDominant,
+                    sharedOptimization:optimizationDominant});
+                if(prior.samples.length>8)prior.samples.shift();
+                prior.lastAt=at;
+            }
+            const recent=prior.samples.slice(-6);
+            add('training_timing_sample_count',recent.length,'count');
+            if(recent.length>=5&&
+                recent.at(-1).at-recent[0].at>=120000) {
+                const sustained=fn=>recent.filter(fn).length>=5;
+                if(sustained(x=>x.sharedIngestion))
+                    add('training_shared_ingestion_pressure',1,'count');
+                if(sustained(x=>x.sharedReply))
+                    add('training_shared_collector_wait_pressure',1,'count');
+                if(sustained(x=>x.sharedCollection))
+                    add('training_shared_collection_dominant',1,'count');
+                if(sustained(x=>x.sharedOptimization))
+                    add('training_shared_optimization_dominant',1,'count');
+                if(sustained(x=>x.resourceHints?.cpuBusy))
+                    add('pipeline_cpu_lease_pressure',1,'count');
+                if(sustained(x=>x.resourceHints?.throttled))
+                    add('pipeline_cpu_throttle_pressure',1,'count');
+                if(sustained(x=>x.resourceHints?.ramNear))
+                    add('pipeline_ram_lease_pressure',1,'count');
             }
         } else {
             // No comparable completed stage timing: do not retain a stale
