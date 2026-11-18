@@ -199,15 +199,17 @@ def author(args) -> tuple[dict, dict, dict]:
             not isinstance(run.get("fragment_spawn"), dict)):
         raise ValueError("the run template must contain native game-only stage assets")
     if args.arena_size is not None:
-        # Imported obstacle layouts and authored resource positions cannot
-        # be rescaled safely from a scalar map size. Require a deliberately
-        # empty source arena, rather than moving those gameplay objects.
+        # Imported obstacles and resource positions cannot be rescaled from
+        # a scalar map size. A deliberate empty layout can use the exact
+        # source MapBorder geometry without guessing those positions.
         if not args.empty_map:
             raise ValueError("--arena-size requires --empty-map (no authored resources to relocate)")
+        # Native NavigationGrid.Scale=4 and the one-million-cell safety
+        # limit cap a square physical arena at 4000 world units.
         if (not math.isfinite(args.arena_size) or
-                not 64 <= args.arena_size <= 8192 or
+                not 64 <= args.arena_size <= 4000 or
                 args.arena_size % 4 != 0):
-            raise ValueError("--arena-size must be a finite 4-unit step from 64 to 8192")
+            raise ValueError("--arena-size must be a finite 4-unit step from 64 to 4000")
         original_bounds = scene.get("bounds")
         if (not isinstance(original_bounds, dict) or
                 not isinstance(original_bounds.get("min"), list) or
@@ -218,13 +220,13 @@ def author(args) -> tuple[dict, dict, dict]:
                 any(original_bounds["min"][i] >= original_bounds["max"][i]
                     for i in (0, 1))):
             raise ValueError("resized native arena requires finite original Level bounds")
-        half = args.arena_size * 0.5
-        center = [(original_bounds["min"][i] + original_bounds["max"][i]) * 0.5
-                  for i in (0, 1)]
-        scene["bounds"] = {
-            "min": [center[i] - half for i in (0, 1)],
-            "max": [center[i] + half for i in (0, 1)],
-        }
+    if args.empty_map:
+        scene["mining_asteroids"] = []
+        scene["map_objects"] = []
+        scene["layout"] = {}
+        scene["activate_mining"] = False
+    if args.arena_size is not None:
+        resize_empty_arena(scene, args.arena_size)
     # Stage collision layers and asteroid prefab lists are immutable authored
     # assets, but the skirmish run template uses a smaller arena than the
     # Queen fleet source. A new battle must derive BOTH native fragment
@@ -355,14 +357,6 @@ def author(args) -> tuple[dict, dict, dict]:
         scene["local_player_side"] = host
     else:
         scene.pop("local_player_side", None)
-    if args.empty_map:
-        scene["mining_asteroids"] = []
-        scene["map_objects"] = []
-        scene["layout"] = {}
-        scene["activate_mining"] = False
-    if args.arena_size is not None:
-        resize_empty_arena(scene, args.arena_size)
-
     max_reserved = max(
         [0] +
         [ship["entity_id"] for ship in scene["ships"]] +
@@ -1029,7 +1023,7 @@ def main() -> None:
     parser.add_argument("--empty-map", action="store_true",
                         help="omit source mining resources, static boxes and map objects")
     parser.add_argument("--arena-size", type=float,
-                        help="with --empty-map: square physical arena in 4-unit steps (64..8192), including source-sized trigger borders")
+                        help="with --empty-map: square physical arena in 4-unit steps (64..4000), including source-sized trigger borders")
     parser.add_argument("--trainable", action="store_true",
                         help="also author a matching native MA-POCA policy scene and run")
     parser.add_argument("--policy-reinforcements", action="store_true",
