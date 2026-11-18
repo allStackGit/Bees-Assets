@@ -157,8 +157,13 @@ class EvaluationHistory {
         const records=[],diagnostics=[],seen=new Map(),issueKeys=new Set(),
             failureAttempts=new Map();
         let lastEntry=null,conflicted=false,stat=null;
-        for(const file of files) {
+        for(const [index,file] of files.entries()) {
             stat=fs.lstatSync(file);
+            // Every closed segment must have been genuinely full enough to
+            // require rotation by a bounded (<=8 KiB) next receipt. Reject
+            // forged, missing or prematurely truncated archive generations.
+            if(index<files.length-1&&stat.size<=MAX_BYTES-8192)
+                throw Error('Independent evaluation archive segment rotated before capacity.');
             if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||
                 stat.size>MAX_BYTES||
                 (typeof process.getuid==='function'&&
