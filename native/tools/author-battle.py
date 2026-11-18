@@ -461,6 +461,8 @@ def author(args) -> tuple[dict, dict, dict]:
     owner = args.objective_side or (host if host is not None else 1)
     level = run["levels"][0]
     if args.objective == "survival":
+        if owner not in controlled:
+            raise ValueError("survival requires the selected side to have player-controlled squads")
         # The protected hull must physically exist at tick zero; a hull
         # reserved for a later reinforcement wave cannot be defended before
         # it is deployed. Likewise the initially active defenders need a
