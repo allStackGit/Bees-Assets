@@ -1199,7 +1199,7 @@ label.hub-toggle-row > input[type="checkbox"] {
     <thead><tr><th>Run</th><th>Status / host</th><th>Project steps</th><th>Selected metric</th><th>Reported metrics</th><th>Segment</th><th>Latest summary</th></tr></thead>
     <tbody id="hub-compare-rows"></tbody>
   </table></div>
-  <p class="muted">CSV/JSON contain bounded Hub chart observations. Complete job diagnostics export the locally available project-owned histories and reports without model checkpoints; offline remote-worker artifacts must be exported from their original host.</p>
+  <p class="muted">Chart CSV/JSON contain bounded Hub observations. Complete ZIP exports include every locally archived independent checkpoint receipt as original JSONL and a separate unsampled evaluation-history CSV with suite, runtime, checkpoint and outcome identities. Historical TinyBrains audits are read-only export sources, not training jobs. Local project-owned reports are included when present; missing remote trainer artifacts must be retrieved from their original host. Model checkpoints are never included.</p>
   <h3>Independent evaluation receipts</h3>
   <details id="hub-historical-import" class="hub-standalone" hidden>
     <summary>Import an independently evaluated historical TinyBrains checkpoint audit</summary>
