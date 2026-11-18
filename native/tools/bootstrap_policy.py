@@ -401,6 +401,7 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          resume: bool = False,
                          self_play_opponent_slot: int | None = None,
                          self_play_refresh_every: int | None = None,
+                         curriculum_plan: Path | None = None,
                          library_save_root: Path | None = None,
                          library_game_id: str | None = None,
                          library_game_title: str | None = None) -> None:
@@ -425,6 +426,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
             "--self-play-opponent-slot", str(self_play_opponent_slot),
             "--self-play-refresh-every", str(self_play_refresh_every),
         ])
+    if curriculum_plan is not None:
+        command.extend(["--curriculum-plan", str(curriculum_plan.resolve(strict=True))])
     for option, value in (
         ("--rollout-worlds", rollout_worlds),
         ("--rollout-workers", rollout_workers),
@@ -550,6 +553,8 @@ def main() -> None:
                         help="also execute this many native MA-POCA rounds via the existing resumable session")
     parser.add_argument("--resume", action="store_true",
                         help="continue from an unchanged completed bootstrap and existing round receipts")
+    parser.add_argument("--curriculum-plan", type=Path,
+                        help="existing pinned native curriculum Stage plan, applied between optimizer rounds")
     parser.add_argument("--learner-slot", type=int,
                         help="model slot to optimize; defaults to the first slot for multi-slot sessions")
     parser.add_argument("--self-play-opponent-slot", type=int,
@@ -652,6 +657,8 @@ def main() -> None:
         parser.error("--train-rounds must be between 1 and 99999")
     if args.resume and args.train_rounds is None:
         parser.error("--resume requires --train-rounds")
+    if args.curriculum_plan is not None and args.train_rounds is None:
+        parser.error("--curriculum-plan requires --train-rounds")
     if not 1 <= args.evaluation_every <= 99999 or (
             args.evaluation_every != 1 and
             (args.holdout_worlds is None and args.evaluation_run_config is None)):
@@ -769,6 +776,7 @@ def main() -> None:
             any(value is not None for value in (
                 args.learner_slot, args.rollout_worlds, args.rollout_workers,
                 args.physics_workers, args.torch_threads, args.rollout_binary,
+                args.curriculum_plan,
             ))):
         parser.error("training allocation and learner options require --train-rounds")
     # A training-enabled native game distribution places the compiled
@@ -858,6 +866,7 @@ def main() -> None:
                 resume=args.resume and session.is_dir(),
                 self_play_opponent_slot=args.self_play_opponent_slot,
                 self_play_refresh_every=args.self_play_refresh_every,
+                curriculum_plan=args.curriculum_plan,
                 library_save_root=args.library_save_root,
                 library_game_id=args.library_game_id,
                 library_game_title=args.library_game_title,
