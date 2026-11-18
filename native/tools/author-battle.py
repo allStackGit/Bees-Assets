@@ -388,19 +388,12 @@ def author(args) -> tuple[dict, dict, dict]:
             if example["base_speed"] == 0:
                 orders = [{"kind": "hold"}]
             elif example.get("turrets") or example.get("special_weapon"):
-                # Never target a not-yet-deployed opponent: a native game
-                # order requires an authenticated live enemy SquadLifetime.
-                targets = [
-                    other for other in by_side_squads[3 - side]
-                    if other["item_id"] not in deferred_squad_ids
-                ]
-                orders = [
-                    {"kind": "aggressive", "enemy_squad_item_id": other["item_id"]}
-                    for other in targets
-                ]
-                if not orders:
-                    orders = [{"kind": "move_to_point",
-                               "destination": scene["starting_positions"][2 - side]}]
+                # One native command selects the nearest presently deployed
+                # enemy through the real Level roster. Its authenticated
+                # Aggressive lifetime ends on target death, then repeat
+                # selects another; don't author O(own * enemy) JSON orders
+                # or target ships reserved for a later reinforcement wave.
+                orders = [{"kind": "aggressive_nearest"}]
             else:
                 orders = [{"kind": "move_to_point",
                            "destination": scene["starting_positions"][2 - side]}]
