@@ -53,7 +53,7 @@ use crate::commands::{
 use crate::level_inputs::native_squad_order_from_catalog;
 use crate::squads::NativeSquadRoster;
 use crate::level_events::{
-    NativeLevelEventError, NativeLevelNotification,
+    NativeLevelEventError, NativeLevelNotification, NativeLevelNotificationKind,
 };
 use crate::level_rules::{
     NativeLevelCommandContext, NativeLevelRewardMetadata, NativeLevelRules,
@@ -1617,10 +1617,24 @@ impl NativeLevelBatchDriver {
                 for index in 0..simulation.world_count() {
                     let world = simulation.world(index).expect("registered world");
                     if world.is_failed() || world.state.events.completed() ||
-                        world.state.events.was_aborted() ||
-                        !world.state.combat.events().iter().any(|event| matches!(event,
-                            CombatEvent::ShipDied { policy_binding_revision: Some(_), .. }))
+                        world.state.events.was_aborted()
                     {
+                        continue;
+                    }
+                    let retired = world.state.combat.events().iter().any(|event| matches!(
+                        event, CombatEvent::ShipDied {
+                            policy_binding_revision: Some(_), ..
+                        },
+                    ));
+                    // Newly admitted Queen or deferred reinforcement
+                    // policies need their *real* groupmate observations
+                    // before they have ever requested a neural decision.
+                    // Inspect only this tick's notification suffix.
+                    let joined = world.state.events.pending_notifications().iter()
+                        .rev().take_while(|event| event.tick == world.tick())
+                        .any(|event| matches!(event.kind,
+                            NativeLevelNotificationKind::PolicyControllerAdmitted { .. }));
+                    if !retired && !joined {
                         continue;
                     }
                     let rows = self.policy_boundary_observations(index, world)
