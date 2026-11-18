@@ -759,7 +759,16 @@ fn collect_remote_audio(
         .then(|| remote_fog_sources(view, side, measurements));
     for event in view.combat.events() {
         let mut launched = None;
+        let mut impact = None;
         let (effect, point) = match event {
+            CombatEvent::Hit(hit) if hit.delta.applied_damage > 0 => {
+                // No separate hit simulation on LAN clients. Send only
+                // authenticated host damage with the same fog predicate as
+                // visible physical ships, over the bounded cue stream.
+                impact = Some((hit.projectile_id, hit.target_id, hit.delta.killed));
+                ("impact", view.combat.ship_body(hit.target_id)
+                    .map(|body| body.motion.position))
+            },
             CombatEvent::ShipDied { victim_id, .. } => (
                 if view.combat.ship(*victim_id)
                     .is_some_and(|ship| matches!(ship.ship_type, 7 | 10 | 11 | 17)) {
@@ -810,7 +819,8 @@ fn collect_remote_audio(
         // event limit and record each displaced/dropped cosmetic cue.
         let displaced = if pending.len() == MAX_PENDING_AUDIO_EVENTS &&
             matches!(event, CombatEvent::ShipDied { .. }) {
-            pending.iter().position(|cue| cue["effect"] == "projectile")
+            pending.iter().position(|cue| cue["effect"] == "impact" ||
+                cue["effect"] == "projectile")
         } else { None };
         if pending.len() < MAX_PENDING_AUDIO_EVENTS || displaced.is_some() {
             let mut cue = json!({
@@ -819,6 +829,13 @@ fn collect_remote_audio(
             if let Some((id, kind)) = launched {
                 cue["projectile_id"] = json!(id);
                 cue["projectile_type"] = json!(kind);
+            }
+            if let Some((projectile_id, target_id, fatal)) = impact {
+                cue["combat_impact"] = json!({
+                    "projectile_id": projectile_id,
+                    "target_id": target_id,
+                    "fatal": fatal,
+                });
             }
             // The host already buffers these side-filtered audio cues
             // across its five-tick state cadence. Attach an optional
