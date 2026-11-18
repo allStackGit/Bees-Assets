@@ -168,7 +168,9 @@ enum ScriptedOrderConfig {
     ClosestFriendly,
     Scouting { max_sight: f32, human_side: i32 },
     Mining { asteroid_id: i64 },
+    MiningNearest,
     Heal { beehive_ids: Vec<i64> },
+    HealAvailable,
     FullRetreat { warp_gate_id: i64 },
 }
 
@@ -599,10 +601,14 @@ fn make_setup(
                         },
                     ScriptedOrderConfig::Mining { asteroid_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::Mining { asteroid_id },
+                    ScriptedOrderConfig::MiningNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::MiningNearest,
                     ScriptedOrderConfig::Heal { beehive_ids } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::Heal {
                             beehive_ids: beehive_ids.into(),
                         },
+                    ScriptedOrderConfig::HealAvailable =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::HealAvailable,
                     ScriptedOrderConfig::FullRetreat { warp_gate_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::FullRetreat { warp_gate_id },
                 }).collect(),

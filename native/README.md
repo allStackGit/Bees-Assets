@@ -55,7 +55,13 @@ scripted-order director. Its `aggressive_nearest` order selects the
 nearest live enemy squad at command start, then retargets after that
 exact enemy squad retires. This replaces quadratic authored enemy-ID
 lists in large battles; physical targeting and movement remain in the
-ordinary native Aggressive command. `--fog`, `--empty-map`, `--minutes`,
+ordinary native Aggressive command. Uncontrolled Carpenter Bee/Factory
+squads with source mining asteroids execute real `mining_nearest`
+commands and select another asteroid after depletion. When an allied
+Beehive is authored, scripted combat squads attempt `heal_available`
+between attacks using the original capacity-reserved healing command.
+Resource scarcity does not create synthetic ore or healing: an unavailable
+single-order mining queue retries after one simulated second. `--fog`, `--empty-map`, `--minutes`,
 and `--spacing` are supported. `--source-scene` and
 `--source-run` allow a larger native-authored arena or other verified
 archetypes without Unity. The default catalogue uses the existing

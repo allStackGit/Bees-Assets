@@ -27,7 +27,13 @@ pub enum NativeLocalCommandAction<'a> {
     Guard { target: SquadLifetime },
     Patrol { top_left: Vec2, bottom_right: Vec2 },
     Mining { asteroid_id: i64 },
+    /// Choose the next living physical mining asteroid using the shared
+    /// MiningRun nearest-target selection, without authored obstacle IDs.
+    MiningNearest,
     Heal { beehive_ids: &'a [i64] },
+    /// Let the existing HealRun select live same-side Beehives by distance
+    /// and reserve actual free healing slots.
+    HealAvailable,
     FullRetreat { warp_gate_id: i64 },
 }
 
@@ -49,8 +55,8 @@ impl NativeLocalCommandAction<'_> {
             Self::ClosestFriendly => LocalCommandKind::ClosestFriendly,
             Self::Guard { .. } => LocalCommandKind::Guard,
             Self::Patrol { .. } => LocalCommandKind::Patrol,
-            Self::Mining { .. } => LocalCommandKind::Mining,
-            Self::Heal { .. } => LocalCommandKind::Heal,
+            Self::Mining { .. } | Self::MiningNearest => LocalCommandKind::Mining,
+            Self::Heal { .. } | Self::HealAvailable => LocalCommandKind::Heal,
             Self::FullRetreat { .. } => LocalCommandKind::FullRetreat,
         }
     }

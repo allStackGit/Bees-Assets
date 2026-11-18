@@ -387,13 +387,27 @@ def author(args) -> tuple[dict, dict, dict]:
             example = members[0]
             if example["base_speed"] == 0:
                 orders = [{"kind": "hold"}]
+            elif (example["ship_type"] in (4, 9) and
+                  scene.get("activate_mining") and scene.get("mining_asteroids")):
+                # The source Mining command already owns real ore extraction,
+                # timed contact, fleet credit, and command completion. Select
+                # a new live asteroid when the previous one is exhausted.
+                orders = [{"kind": "mining_nearest"}]
             elif example.get("turrets") or example.get("special_weapon"):
                 # One native command selects the nearest presently deployed
                 # enemy through the real Level roster. Its authenticated
                 # Aggressive lifetime ends on target death, then repeat
                 # selects another; don't author O(own * enemy) JSON orders
                 # or target ships reserved for a later reinforcement wave.
-                orders = [{"kind": "aggressive_nearest"}]
+                orders = []
+                if (example["ship_type"] != 2 and
+                        any(kind == 2 for kind, _ in requested[side])):
+                    # Between source combat lifetimes, repair injured
+                    # members at actual same-side Beehive healing zones.
+                    # If everyone is healthy, Heal is unavailable and the
+                    # ordinary attack starts on the following fixed tick.
+                    orders.append({"kind": "heal_available"})
+                orders.append({"kind": "aggressive_nearest"})
             else:
                 orders = [{"kind": "move_to_point",
                            "destination": scene["starting_positions"][2 - side]}]

@@ -231,6 +231,12 @@ pub struct NativeScriptedQueueMeasurements {
     pub nearest_enemy_resolutions: u64,
     /// Live opposing squads actually considered during those scans.
     pub nearest_enemy_candidates_scanned: u64,
+    /// Real mining command placements that selected a live asteroid.
+    pub mining_nearest_commands_started: u64,
+    /// Real healing commands that reserved a same-side Beehive.
+    pub healing_available_commands_started: u64,
+    /// Empty mining cycles deferred for one source second.
+    pub mining_unavailable_retries: u64,
     /// Authenticated source command had no current actionable target.
     pub orders_skipped_unavailable: u64,
     pub queues_completed: u64,
@@ -253,6 +259,9 @@ impl NativeScriptedQueueMeasurements {
         self.orders_skipped_target_gone += other.orders_skipped_target_gone;
         self.nearest_enemy_resolutions += other.nearest_enemy_resolutions;
         self.nearest_enemy_candidates_scanned += other.nearest_enemy_candidates_scanned;
+        self.mining_nearest_commands_started += other.mining_nearest_commands_started;
+        self.healing_available_commands_started += other.healing_available_commands_started;
+        self.mining_unavailable_retries += other.mining_unavailable_retries;
         self.orders_skipped_unavailable += other.orders_skipped_unavailable;
         self.queues_completed += other.queues_completed;
         self.queues_cancelled += other.queues_cancelled;

@@ -187,6 +187,9 @@ pub struct NativePolicyOnlyMetadata {
     scripted_members: Vec<bees_sim::squad_movement::SquadFormationMember>,
     scripted_friendlies: Vec<bees_gameplay::commands::NativeFriendlySquad>,
     scripted_counts: NativeScriptedQueueMeasurements,
+    /// Fixed-step interval for retrying an unavailable auto-mining target.
+    /// Set by the actual native Level on script installation.
+    scripted_retry_ticks: u64,
     /// One source-second chase clock shared by the player's starting
     /// squads, whose Unity timers are all armed at Squad.Setup.
     chase_elapsed_seconds: f32,
@@ -345,6 +348,7 @@ impl NativePolicyOnlyMetadata {
             scripted_members: Vec::new(),
             scripted_friendlies: Vec::new(),
             scripted_counts: NativeScriptedQueueMeasurements::default(),
+            scripted_retry_ticks: 1,
             chase_elapsed_seconds: 0.0,
             chase_measurements: NativePlayerChaseMeasurements::default(),
         })

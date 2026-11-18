@@ -55,7 +55,13 @@ pub enum NativeScriptedOrder {
     /// Genuine source Squad.MaxSight and ConfigData.HumanSide.
     Scouting { max_sight: f32, human_side: i32 },
     Mining { asteroid_id: i64 },
+    /// Reuse the live Level's nearest-asteroid mining selection on each
+    /// completed source command; the next ore body is never pre-scripted.
+    MiningNearest,
     Heal { beehive_ids: Arc<[i64]> },
+    /// Reuse the existing healing reservation controller's nearest-live
+    /// Beehive selection whenever this squad needs repairs.
+    HealAvailable,
     FullRetreat { warp_gate_id: i64 },
 }
 
@@ -88,8 +94,10 @@ impl NativeScriptedOrder {
             Self::Scouting { .. } => NativeLocalCommandAction::Scouting,
             Self::Mining { asteroid_id } =>
                 NativeLocalCommandAction::Mining { asteroid_id },
+            Self::MiningNearest => NativeLocalCommandAction::MiningNearest,
             Self::Heal { ref beehive_ids } =>
                 NativeLocalCommandAction::Heal { beehive_ids },
+            Self::HealAvailable => NativeLocalCommandAction::HealAvailable,
             Self::FullRetreat { warp_gate_id } =>
                 NativeLocalCommandAction::FullRetreat { warp_gate_id },
         }
@@ -111,7 +119,8 @@ impl NativeScriptedOrder {
             Self::Guard { friendly_squad_item_id } => friendly_squad_item_id > 0,
             Self::Patrol { top_left, bottom_right } =>
                 top_left.is_finite() && bottom_right.is_finite(),
-            Self::Hold | Self::ClosestFriendly | Self::AggressiveNearest => true,
+            Self::Hold | Self::ClosestFriendly | Self::AggressiveNearest |
+            Self::MiningNearest | Self::HealAvailable => true,
             Self::Scouting { max_sight, human_side } =>
                 max_sight.is_finite() && max_sight >= 0.0 && human_side > 0,
             Self::Mining { asteroid_id } => asteroid_id > 0,
@@ -299,6 +308,8 @@ impl NativePolicyOnlyMetadata {
         staged.sort_by_key(|state| squads.iter()
             .position(|squad| squad.owner == state.owner)
             .expect("validated live authored squad"));
+        self.scripted_retry_ticks =
+            (1.0_f64 / f64::from(dt_seconds)).ceil().max(1.0) as u64;
         self.scripted_queues = staged;
         Ok(())
     }
@@ -657,15 +668,31 @@ impl NativePolicyOnlyMetadata {
                 Activation::Applied { .. } => {
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.commands_started += 1;
+                    if matches!(order, NativeScriptedOrder::MiningNearest) {
+                        self.scripted_counts.mining_nearest_commands_started += 1;
+                    } else if matches!(order, NativeScriptedOrder::HealAvailable) {
+                        self.scripted_counts.healing_available_commands_started += 1;
+                    }
                     started += 1;
                 }
                 Activation::Unavailable(_) => {
-                    // The actual mining resource, warp gate, squad or
-                    // other source target can retire between queue setup
-                    // and execution. Skip without fabricating a command
-                    // lifetime or failing an otherwise healthy episode.
+                    // The actual mining resource, healing slot, warp gate,
+                    // squad or other source target may be unavailable. Never
+                    // fabricate a command or alter the physical world.
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.orders_skipped_unavailable += 1;
+                    if matches!(order, NativeScriptedOrder::MiningNearest) &&
+                        self.scripted_queues[index].orders.len() == 1 &&
+                        self.scripted_queues[index].repeat
+                    {
+                        // When all ore is depleted, a repeating mining
+                        // fleet must not scan the empty asteroid registry
+                        // on every fixed step. A new resource is discovered
+                        // on the next one-second source-time retry.
+                        self.scripted_queues[index].ready_tick =
+                            completed_tick.saturating_add(self.scripted_retry_ticks);
+                        self.scripted_counts.mining_unavailable_retries += 1;
+                    }
                 }
                 _ => return Err(NativeLevelEventError::Commands(
                     GameCommandError::MissingCombatSnapshot,
