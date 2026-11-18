@@ -34,7 +34,10 @@ const RED: u32 = 0xed7e85;
 const GOLD: u32 = 0xe7be69;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum TargetMode { Fire, Attack, Guard, Mine, Heal, Retreat, Patrol }
+enum TargetMode {
+    Fire, Attack, Circle, RightSwipe, LeftSwipe, InAndOut,
+    Guard, Mine, Heal, Retreat, Patrol,
+}
 
 #[derive(Default)]
 struct WireCounts {
@@ -958,13 +961,13 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         "Right: move/attack/mine",
         "1-0 select Tab cycle A all",
         "F point fire J held fire",
-        "G guard T attack H hold",
-        "M mine Z cease fire",
+        "T attack I circle O left U right",
+        "N in/out G guard H hold",
         "C chase L lock V speed",
         "PgUp/Dn shooting (1-40)",
         "B beacon D detonate Q charge",
         "E heal W retreat P patrol",
-        "F6 art F7 mute Space music",
+        "M mine Z cease  F6 art F7 mute",
         "R reset +/- zoom Esc back",
     ];
     for (index,label) in instructions.iter().enumerate(){
@@ -975,6 +978,10 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             match mode {
                 TargetMode::Fire=>"Click map to FIRE, Esc cancels",
                 TargetMode::Attack=>"Click visible enemy squad to ATTACK",
+                TargetMode::Circle=>"Click enemy squad to CIRCLE",
+                TargetMode::RightSwipe=>"Click enemy squad for RIGHT SWIPE",
+                TargetMode::LeftSwipe=>"Click enemy squad for LEFT SWIPE",
+                TargetMode::InAndOut=>"Click enemy squad for IN & OUT",
                 TargetMode::Guard=>"Click friendly squad to GUARD",
                 TargetMode::Mine=>"Click mining asteroid to MINE",
                 TargetMode::Heal=>"Click friendly Beehive to HEAL",
@@ -993,13 +1000,22 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
     let Some(state)=peer.state.as_ref() else{return Ok(())};
     let hit=hit(state,camera,x,y,&peer.visual,peer.visual.fraction());
     let action=match (mode,hit) {
-        (Some(TargetMode::Attack),Some(("ship",target))) |
+        (Some(TargetMode::Attack | TargetMode::Circle | TargetMode::RightSwipe |
+              TargetMode::LeftSwipe | TargetMode::InAndOut),Some(("ship",target))) |
         (None,Some(("ship",target))) if target["friendly"]==false => {
             let Some(squad)=squad_for_ship(state,target["id"].as_i64().unwrap_or(-1),
                 target["side"].as_i64().unwrap_or(0)) else {
                 return Err(invalid("enemy target has no visible squad").into())
             };
-            ("support",json!({"action":{"Attack":{"target":squad["owner"]}}}))
+            let target = &squad["owner"];
+            let action = match mode {
+                Some(TargetMode::Circle) => json!({"Circle":{"target":target}}),
+                Some(TargetMode::RightSwipe) => json!({"RightSwipe":{"target":target}}),
+                Some(TargetMode::LeftSwipe) => json!({"LeftSwipe":{"target":target}}),
+                Some(TargetMode::InAndOut) => json!({"InAndOut":{"target":target}}),
+                _ => json!({"Attack":{"target":target}}),
+            };
+            ("support",json!({"action":action}))
         }
         (Some(TargetMode::Guard),Some(("ship",target))) |
         (None,Some(("ship",target))) if target["friendly"]==true => {
@@ -1019,8 +1035,10 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
         (Some(TargetMode::Retreat),Some(("ship",target))) if target["friendly"]==true => {
             ("support",json!({"action":{"FullRetreat":{"warp_gate_id":target["id"]}}}))
         }
-        (Some(TargetMode::Attack|TargetMode::Guard|TargetMode::Mine|
-              TargetMode::Heal|TargetMode::Retreat|TargetMode::Patrol),_) =>
+        (Some(TargetMode::Attack|TargetMode::Circle|TargetMode::RightSwipe|
+              TargetMode::LeftSwipe|TargetMode::InAndOut|TargetMode::Guard|
+              TargetMode::Mine|TargetMode::Heal|TargetMode::Retreat|
+              TargetMode::Patrol),_) =>
             return Err(invalid("select a matching visible target").into()),
         (Some(TargetMode::Fire),_) => {
             let point=camera.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
@@ -1202,6 +1220,10 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     }
                     Key::F=>{mode=Some(TargetMode::Fire);patrol_start=None;None}
                     Key::T=>{mode=Some(TargetMode::Attack);patrol_start=None;None}
+                    Key::I=>{mode=Some(TargetMode::Circle);patrol_start=None;None}
+                    Key::U=>{mode=Some(TargetMode::RightSwipe);patrol_start=None;None}
+                    Key::O=>{mode=Some(TargetMode::LeftSwipe);patrol_start=None;None}
+                    Key::N=>{mode=Some(TargetMode::InAndOut);patrol_start=None;None}
                     Key::G=>{mode=Some(TargetMode::Guard);patrol_start=None;None}
                     Key::M=>{mode=Some(TargetMode::Mine);patrol_start=None;None}
                     Key::E=>{mode=Some(TargetMode::Heal);patrol_start=None;None}

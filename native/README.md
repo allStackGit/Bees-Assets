@@ -100,7 +100,10 @@ original enemy SquadLifetime and executes the source maneuver through the
 same movement, weapon, timer and navigation code as scripted/HiveMind
 commands. These authenticated player inputs are eligible for normal
 LAN transport and deterministic player-action recording, without a
-second player combat simulation.
+second player combat simulation. The remote native commander can issue
+the same command through **I** (Circle), **U** (Right Swipe), **O**
+(Left Swipe), or **N** (In & Out), followed by clicking a visible enemy
+ship. Remote authority and fog filtering are enforced by the host.
 
 The same battle author also exposes the real native game objective rules:
 
