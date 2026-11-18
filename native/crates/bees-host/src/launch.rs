@@ -153,6 +153,7 @@ enum ScriptedOrderConfig {
     MoveToPoint { destination: [f32; 2] },
     MoveToRandom { #[serde(default)] range: f32 },
     Aggressive { enemy_squad_item_id: i64 },
+    AggressiveNearest,
     TargetEnemy { enemy_squad_item_id: i64 },
     Retreat { enemy_squad_item_id: i64 },
     CircleSquad { enemy_squad_item_id: i64 },
@@ -537,6 +538,8 @@ fn make_setup(
                             enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
                                 .copied().unwrap_or(enemy_squad_item_id),
                         },
+                    ScriptedOrderConfig::AggressiveNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::AggressiveNearest,
                     ScriptedOrderConfig::TargetEnemy { enemy_squad_item_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::TargetEnemy {
                             enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)
