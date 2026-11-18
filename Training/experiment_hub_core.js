@@ -996,10 +996,15 @@ function waitingStageReason(job,byId) {
                     status='needs_review';
                     explanation='stopped without an eligible released evaluation result; dependent jobs remain blocked';
                 }
+            }else if(independentSequenceComplete(parent)&&
+                checkpointContinuationComplete(parent)&&
+                !parent.capacity_released_at) {
+                status='release_pending';
+                explanation='met the independent evaluation target with a verified resumable checkpoint; capacity release is required to unlock the prequeued next stage';
             }else {
                 status='needs_review';
                 explanation=checkpointContinuationComplete(parent)
-                    ?'saved a checkpoint on Stop; cancel the pending stage before queuing an explicit continuation'
+                    ?'saved a checkpoint on Stop without an accepted evaluation advancement result'
                     :'stopped without a verified resumable checkpoint';
             }
         }else {
