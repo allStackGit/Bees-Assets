@@ -262,7 +262,11 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                     print(f"{project} evaluation target {dispatch} requires a different suite definition.", file=sys.stderr)
                     continue
                 receipt = args.receipt_root / f"{dispatch}.{suite_id}.json"
-                if passed_receipt(receipt, dispatch, receipt_suite, job, digest):
+                # A monitoring-only result does not finish a suite: keep
+                # observing newer checkpoints. An exact final result is reusable.
+                if passed_receipt(receipt, dispatch, receipt_suite, job, digest) and (
+                    not job.get("monitor_only") or "final_checkpoint_sha256" in job
+                ):
                     continue
                 checkpoint = find_checkpoint(job)
                 if not checkpoint or ("final_checkpoint_sha256" not in job and checkpoint[0] <= cursor[dispatch]):
@@ -431,7 +435,10 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     seen.append(json.loads(read_bounded(destination, 4096))[
                         "checkpoint_sha256"])
                 else:
-                    if len(set(seen)) == 1:
+                    if len(set(seen)) == 1 and (
+                        not jobs[0].get("monitor_only") or
+                        "final_checkpoint_sha256" in jobs[0]
+                    ):
                         continue
                 checkpoint = find_checkpoint(jobs[0])
                 if not checkpoint or ("final_checkpoint_sha256" not in jobs[0] and checkpoint[0] <= cursor[dispatch]):
