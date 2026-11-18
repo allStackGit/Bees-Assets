@@ -4228,11 +4228,26 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-regression-drop').value=String(
             policy?.regression_alert?.minimum_drop??0.15);
         renderEvaluationChartOptions(policy?.preferred_metrics);
-        $('hub-evaluation-all-of').value='';
+        // The ordinary editor exposes a shared schedule for its first
+        // suite. An advanced policy can override that first suite too.
+        // Keep the exact frozen suite list in the existing JSON editor
+        // rather than silently changing inherited cadences on save.
+        const firstHasOverride=Boolean(multi?.[0]&&
+            (multi[0].every_n_checkpoints!==undefined||
+             multi[0].min_minutes_between_evaluations!==undefined));
         $('hub-evaluation-more-suites').replaceChildren();
-        for(const rule of multi?.slice(1)||[])
-            appendEvaluationSuite({...rule,min_success_rate:
-                stopBySuite.get(rule.suite_id)?.min_success_rate??rule.min_success_rate});
+        $('hub-evaluation-all-of').value=firstHasOverride
+            ?JSON.stringify(multi,null,2):'';
+        if(firstHasOverride) {
+            for(const id of ['hub-evaluation-suite','hub-evaluation-digest',
+                'hub-evaluation-trials','hub-evaluation-rate'])
+                $(id).value='';
+            $('hub-evaluation-all-of').closest('details').open=true;
+        }else {
+            for(const rule of multi?.slice(1)||[])
+                appendEvaluationSuite({...rule,min_success_rate:
+                    stopBySuite.get(rule.suite_id)?.min_success_rate??rule.min_success_rate});
+        }
         refreshEvaluationEditor();
     }
     $('hub-evaluation-mode').addEventListener('change',refreshEvaluationEditor);
