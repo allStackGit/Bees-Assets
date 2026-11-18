@@ -842,6 +842,13 @@ function hubComparisonCsv(exported) {
         'break_before','steps_completed','x_value',
         'trial_batch_id','trial_batch_index','trial_batch_size',
         'resource_bundle_id','resource_bundle_index','resource_bundle_size',
+        'evaluation_suite_id','evaluation_suite_sha256',
+        'evaluation_runtime_sha256','evaluation_checkpoint_sha256',
+        'evaluation_dispatch_id','evaluation_timestamp',
+        'evaluation_trials','evaluation_successes',
+        'evaluation_status','evaluation_source_kind',
+        'evaluation_source_checkpoint_name','evaluation_source_report_sha256',
+        'evaluation_archive_total_records','evaluation_export_is_sampled',
     ];
     const metrics=new Set(exported.metrics||[]);
     for(const key of [...metrics].sort())
@@ -880,6 +887,22 @@ function hubComparisonCsv(exported) {
         resource_bundle_index:run.resource_bundle?.index,
         resource_bundle_size:run.resource_bundle?.size,
         status:run.status,...point,
+        evaluation_suite_id:point.evaluation_identity?.suite_id,
+        evaluation_suite_sha256:point.evaluation_identity?.suite_sha256,
+        evaluation_runtime_sha256:point.evaluation_identity?.runtime_sha256,
+        evaluation_checkpoint_sha256:point.evaluation_identity?.checkpoint_sha256,
+        evaluation_dispatch_id:point.evaluation_identity?.dispatch_id,
+        evaluation_timestamp:point.evaluation_identity?.evaluated_at,
+        evaluation_trials:point.evaluation_identity?.trials,
+        evaluation_successes:point.evaluation_identity?.successes,
+        evaluation_status:point.evaluation_identity?.comparison_status,
+        evaluation_source_kind:point.evaluation_identity?.source_kind,
+        evaluation_source_checkpoint_name:
+            point.evaluation_identity?.source_checkpoint_name,
+        evaluation_source_report_sha256:
+            point.evaluation_identity?.source_report_sha256,
+        evaluation_archive_total_records:run.evaluation_history_total_records,
+        evaluation_export_is_sampled:run.evaluation_history_export_is_sampled,
         ...Object.fromEntries(Object.entries(point.metrics||{}).flatMap(
             ([key,metric])=>[
                 ['metric_'+key,metric.value],
