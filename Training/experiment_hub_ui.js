@@ -4112,9 +4112,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const label=row.querySelector('.hub-evaluation-extra-rate-label');
             label.hidden=!hasStop;
             label.querySelector('input').disabled=!hasStop;
-            const schedule=row.querySelector('.hub-evaluation-extra-frequency-label');
-            schedule.hidden=!monitor||hasStop;
-            schedule.querySelector('input').disabled=!monitor||hasStop;
+            for(const selector of [
+                '.hub-evaluation-extra-frequency-label',
+                '.hub-evaluation-extra-minutes-label',
+            ]) {
+                const schedule=row.querySelector(selector);
+                schedule.hidden=!monitor||hasStop;
+                schedule.querySelector('input').disabled=!monitor||hasStop;
+            }
         }
     }
     function appendEvaluationSuite(rule={}) {
@@ -4133,7 +4138,8 @@ document.addEventListener('DOMContentLoaded', () => {
             input.value=String(value??'');
             if(type==='number') {
                 input.min=className==='hub-evaluation-extra-rate'?'0':'1';
-                input.max=className==='hub-evaluation-extra-rate'?'1':'1000000';
+                input.max=className==='hub-evaluation-extra-rate'?'1':
+                    className==='hub-evaluation-extra-minutes'?'10080':'1000000';
                 input.step=className==='hub-evaluation-extra-rate'?'any':'1';
             }
             if(className==='hub-evaluation-extra-suite-id') {
@@ -4156,6 +4162,11 @@ document.addEventListener('DOMContentLoaded', () => {
             'hub-evaluation-extra-frequency',rule.every_n_checkpoints,'number');
         row.querySelector('.hub-evaluation-extra-frequency').parentElement
             .classList.add('hub-evaluation-extra-frequency-label');
+        field('Minimum minutes between evaluations (optional, overrides shared spacing)',
+            'hub-evaluation-extra-minutes',
+            rule.min_minutes_between_evaluations,'number');
+        row.querySelector('.hub-evaluation-extra-minutes').parentElement
+            .classList.add('hub-evaluation-extra-minutes-label');
         field('Minimum success rate (Stop only)',
             'hub-evaluation-extra-rate',rule.min_success_rate,'number');
         const remove=document.createElement('button');
@@ -4237,12 +4248,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 stop?value('.hub-evaluation-extra-rate'):'');
             if(!rule)throw Error('Complete or remove every additional evaluation suite.');
             const frequency=value('.hub-evaluation-extra-frequency');
-            if(frequency) {
-                if(stop)throw Error('Per-suite frequencies require monitoring without automatic Stop; coordinated stopping uses one shared frequency.');
-                const count=Number(frequency);
-                if(!Number.isSafeInteger(count)||count<1||count>1000000)
-                    throw Error('Each per-suite frequency must be 1–1,000,000 updates.');
-                rule.every_n_checkpoints=count;
+            const minutes=value('.hub-evaluation-extra-minutes');
+            if(frequency||minutes) {
+                if(stop)throw Error('Per-suite update/time frequencies require monitoring without automatic Stop; coordinated stopping uses one shared schedule.');
+                if(frequency) {
+                    const count=Number(frequency);
+                    if(!Number.isSafeInteger(count)||count<1||count>1000000)
+                        throw Error('Each per-suite frequency must be 1–1,000,000 updates.');
+                    rule.every_n_checkpoints=count;
+                }
+                if(minutes) {
+                    const count=Number(minutes);
+                    if(!Number.isSafeInteger(count)||count<1||count>10080)
+                        throw Error('Each per-suite time spacing must be 1–10,080 minutes.');
+                    rule.min_minutes_between_evaluations=count;
+                }
             }
             return rule;
         });
@@ -4259,8 +4279,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 policy.all_of.some(rule=>!Number.isFinite(rule.min_success_rate)||
                     rule.min_success_rate<=0||rule.min_success_rate>1)))
                 throw Error('Every stopping suite needs a success-rate threshold between 0 and 1.');
-            if(stop&&policy.all_of?.some(rule=>rule.every_n_checkpoints!==undefined))
-                throw Error('Per-suite checkpoint frequencies require monitoring only; automatic Stop requires same-checkpoint evaluation.');
+            if(stop&&policy.all_of?.some(rule=>
+                rule.every_n_checkpoints!==undefined||
+                rule.min_minutes_between_evaluations!==undefined))
+                throw Error('Per-suite update/time frequencies require monitoring only; automatic Stop requires same-checkpoint evaluation.');
         }else {
             const first=rawRule(suite,digest,trials,rate);
             if(!first&&extras.length)
@@ -5198,8 +5220,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · '+(monitoring?(j.evaluation_stop?'Monitoring suites with optional Stop':'Monitoring suites'):'Benchmark gates')+
                         ' ('+multi.length+' suites'+
                         (monitoring&&!j.evaluation_stop&&
-                            new Set(multi.map(rule=>rule.every_n_checkpoints||
-                                policy.every_n_checkpoints||1)).size>1
+                            new Set(multi.map(rule=>JSON.stringify([
+                                rule.every_n_checkpoints||
+                                    policy.every_n_checkpoints||1,
+                                rule.min_minutes_between_evaluations||
+                                    policy.min_minutes_between_evaluations||null,
+                            ]))).size>1
                             ?', independently scheduled':', same checkpoint')+'): '+
                         gateSummary+(j.evaluation_stop_evidence?' · Stop authorized':'')+
                         (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
@@ -5389,8 +5415,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const cadence=rule.every_n_checkpoints||
                             j.evaluation_monitor?.every_n_checkpoints||1;
                         const next=Number.isSafeInteger(update)?update+cadence:null;
-                        const interval=j.evaluation_monitor
-                            ?.min_minutes_between_evaluations;
+                        const interval=rule.min_minutes_between_evaluations||
+                            j.evaluation_monitor?.min_minutes_between_evaluations;
                         const receiptTime=Date.parse(receipt.evaluated_at||'');
                         const earliest=monitoring&&interval&&
                             Number.isFinite(receiptTime)
@@ -5429,8 +5455,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const lastUpdate=receipt?.steps_completed;
                     const updatesSince=Number.isSafeInteger(lastUpdate)
                         ?currentUpdate-lastUpdate:currentUpdate;
-                    const intervalMinutes=j.evaluation_monitor
-                        ?.min_minutes_between_evaluations;
+                    const intervalMinutes=rule.min_minutes_between_evaluations||
+                        j.evaluation_monitor?.min_minutes_between_evaluations;
                     const lastTime=Date.parse(receipt?.evaluated_at||'');
                     const throttled=intervalMinutes&&Number.isFinite(lastTime)&&
                         Date.now()<lastTime+intervalMinutes*60000;
