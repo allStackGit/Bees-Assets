@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacements,
-    startHeadroom,observedLoadPreference} = require('./experiment_hub_resources');
+    remaining: resourceRemaining,startHeadroom,observedLoadPreference} =
+    require('./experiment_hub_resources');
 const {validateProgress,selectChartMetrics}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
 const {evaluationPolicy,monitoringPolicy,compatibleMonitoringStop,activeEvaluation,
@@ -870,6 +871,23 @@ function nativeStartReadiness(snapshot, job) {
     if(gpuBlock)return block(gpuBlock);
     if(r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
         return block('Requested CPU/RAM exceeds the machine\'s fresh reported capacity.');
+    // A lease created before an evaluator timer was enabled may now compete
+    // with its OS quota. Do not revoke that lease or touch a running job,
+    // but withhold a *new* native Start if total outstanding claims plus
+    // active evaluator commitments now exceed physical CPU/RAM capacity.
+    const evaluatorCapacity=resourceRemaining(machine,snapshot.reservations);
+    if(evaluatorCapacity.evaluator_budget_unknown)
+        return block('An active independent evaluator has an unknown CPU/RAM budget; inspect its service configuration before starting another workload.');
+    const outstanding=snapshot.reservations.filter(item=>
+        item.machine_id===machine.id&&
+        ['offered','acknowledged','active'].includes(item.status));
+    const reservedCpus=outstanding.reduce((total,item)=>
+        total+(item.resources?.cpus||0),0);
+    const reservedRam=outstanding.reduce((total,item)=>
+        total+(item.resources?.ram_mb||0),0);
+    if(reservedCpus>evaluatorCapacity.evaluator_admission_cpu_budget||
+        reservedRam>evaluatorCapacity.evaluator_admission_ram_budget)
+        return block('New Start would exceed physical CPU/RAM capacity after independently scheduled evaluator reservations; existing workloads and leases are unchanged.');
     const bound=lease.gpu_bindings?.[0];
     const device=bound?machine.observed_gpus?.find(g=>
         g.pci_address===bound.pci_address):null;
