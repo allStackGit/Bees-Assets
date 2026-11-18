@@ -471,51 +471,78 @@ pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>>
         // publish independently while a player is in a native battle.
         files.sort_unstable();
         for path in files {
-            let registration: PublishedModelRegistration =
-                serde_json::from_slice(&fs::read(&path)?)?;
-            if registration.schema_version != 1 ||
-                path.file_stem().and_then(|part| part.to_str()) != Some(registration.id.as_str()) {
-                return Err(invalid("published model ID differs from its registration filename").into());
+            // Independent completed jobs publish atomically. A single stale
+            // or damaged job entry must not make the entire native game
+            // inaccessible, including other valid playable checkpoints.
+            let registered = (|| -> Result<RegisteredModel, Box<dyn Error>> {
+                let registration: PublishedModelRegistration =
+                    serde_json::from_slice(&fs::read(&path)?)?;
+                if registration.schema_version != 1 ||
+                    path.file_stem().and_then(|part| part.to_str()) != Some(registration.id.as_str()) {
+                    return Err(invalid("published model ID differs from its registration filename").into());
+                }
+                Ok(RegisteredModel {
+                    id: registration.id, title: registration.title,
+                    receipt: registration.receipt,
+                })
+            })();
+            match registered {
+                Ok(registration) => registrations.push(registration),
+                Err(error) => eprintln!(
+                    "Ignoring invalid native training registration {}: {error}",
+                    path.display(),
+                ),
             }
-            registrations.push(RegisteredModel {
-                id: registration.id, title: registration.title,
-                receipt: registration.receipt,
-            });
         }
     }
 
     let mut seen = HashSet::new();
     let mut games = Vec::with_capacity(registrations.len());
     for model in registrations {
-        if model.id.is_empty() || model.id.len() > 40 ||
-            !model.id.bytes().all(|ch| ch.is_ascii_alphanumeric() || ch == b'-' || ch == b'_') ||
-            !seen.insert(model.id.clone()) ||
-            model.title.trim().is_empty() || model.title.len() > 120 ||
-            model.receipt.as_os_str().is_empty() {
-            return Err(invalid("native trained-model registration has an invalid name or duplicate ID").into());
+        if seen.contains(&model.id) {
+            eprintln!("Ignoring duplicate native trained-model registration: {}", model.id);
+            continue;
         }
-        let receipt = if model.receipt.is_absolute() {
-            model.receipt.canonicalize()?
-        } else {
-            save_root.join(model.receipt).canonicalize()?
-        };
-        if !receipt.is_file() {
-            return Err(invalid("native trained-model receipt is not a file").into());
+        let registered = (|| -> Result<TrainedGame, Box<dyn Error>> {
+            if model.id.is_empty() || model.id.len() > 40 ||
+                !model.id.bytes().all(|ch| ch.is_ascii_alphanumeric() || ch == b'-' || ch == b'_') ||
+                model.title.trim().is_empty() || model.title.len() > 120 ||
+                model.receipt.as_os_str().is_empty() {
+                return Err(invalid("native trained-model registration has an invalid name").into());
+            }
+            let receipt = if model.receipt.is_absolute() {
+                model.receipt.canonicalize()?
+            } else {
+                save_root.join(&model.receipt).canonicalize()?
+            };
+            if !receipt.is_file() {
+                return Err(invalid("native trained-model receipt is not a file").into());
+            }
+            let kind: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
+            let label = match (kind["schema_version"].as_u64(), kind["kind"].as_str()) {
+                (Some(1), Some("native_training_latest_playable")) => "[Latest checkpoint]",
+                (Some(1), Some("native_training_best_evaluated")) => "[Best holdout]",
+                _ => return Err(invalid("gallery requires latest-playable or best-evaluated native receipts").into()),
+            };
+            let rounds = kind["completed_rounds"].as_u64()
+                .ok_or_else(|| invalid("trained-model receipt omits completed round count"))?;
+            Ok(TrainedGame {
+                id: format!("trained-{}", model.id),
+                title: model.title.clone(),
+                status: format!("  {label}  {rounds} rounds"),
+                receipt,
+            })
+        })();
+        match registered {
+            Ok(game) => {
+                seen.insert(model.id);
+                games.push(game);
+            }
+            Err(error) => eprintln!(
+                "Ignoring invalid native trained-model registration {}: {error}",
+                model.id,
+            ),
         }
-        let kind: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
-        let label = match (kind["schema_version"].as_u64(), kind["kind"].as_str()) {
-            (Some(1), Some("native_training_latest_playable")) => "[Latest checkpoint]",
-            (Some(1), Some("native_training_best_evaluated")) => "[Best holdout]",
-            _ => return Err(invalid("gallery requires latest-playable or best-evaluated native receipts").into()),
-        };
-        let rounds = kind["completed_rounds"].as_u64()
-            .ok_or_else(|| invalid("trained-model receipt omits completed round count"))?;
-        games.push(TrainedGame {
-            id: format!("trained-{}", model.id),
-            title: model.title,
-            status: format!("  {label}  {rounds} rounds"),
-            receipt,
-        });
     }
     Ok(games)
 }
