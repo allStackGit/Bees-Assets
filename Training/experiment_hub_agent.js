@@ -11,6 +11,7 @@ const {inspectHost,availableMemoryMb}=require('./experiment_hub_host');
 const {discoverAmdGpus,discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const {fromEnvironment}=require('./experiment_hub_execution');
 const {syncArtifacts}=require('./experiment_hub_artifact_agent');
+const {evaluatorHealth}=require('./experiment_hub_evaluator_health');
 const {MAX_BODY_BYTES}=require('./experiment_hub_agent_listener');
 const {request: resourceRequest}=require('./experiment_hub_resources');
 
@@ -214,6 +215,8 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         local_executor:advertisement.local_executor===true,
         installed_projects:advertisement.installed_projects||[],
         evaluation_suites:advertisement.evaluation_suites||{},
+        evaluator_services:advertisement.evaluator_services||[],
+        evaluator_service_issue:advertisement.evaluator_service_issue||null,
         design_catalog:advertisement.design_catalog||{},
         tinybrains_profiles:advertisement.tinybrains_profiles||{},
         tinybrains_cuda_profiles:advertisement.tinybrains_cuda_profiles||[],
@@ -302,6 +305,15 @@ async function main() {
         native_preflight_reason:nativePreflightReason,
         instance_id:crypto.randomUUID(),
     };
+    // Scheduler status is a cached observation, not native ownership.
+    // Refresh once per minute; keep the 15-second heartbeat inexpensive.
+    let evaluatorObservation=null;
+    const refreshEvaluatorObservation=()=>{
+        const tick=Date.now();
+        if(!evaluatorObservation||tick-evaluatorObservation.at>=60000)
+            evaluatorObservation={at:tick,value:evaluatorHealth(id)};
+        Object.assign(advertisement,evaluatorObservation.value);
+    };
     let active=false,executingNative=false,busyHeartbeat=null,
         last='initial',receipts=[],pendingReports=[],pendingGpuReports=[];
     const artifactCache=new Map();
@@ -332,6 +344,7 @@ async function main() {
             }
             return;
         }
+        refreshEvaluatorObservation();
         active=true;
         try{
             const response=await sendHeartbeat(url,id,token,receipts,
