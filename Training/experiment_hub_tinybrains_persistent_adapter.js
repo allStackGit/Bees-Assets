@@ -116,6 +116,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_memory_rejected_trials','simulation_workload_reprobes',
         'simulation_inconclusive_trials',
         'simulation_global_cadence_samples','simulation_global_cadence_rejections',
+        'simulation_native_engines_admitted','simulation_admission_denied',
+        'simulation_completed_retirements','simulation_draining_matches',
+        'simulation_layout_matches','simulation_layout_changing',
+        'local_lease_ram_admission_denials',
+        'local_lease_admission_denials_delta',
+        'local_lease_native_engines_admitted',
+        'local_lease_engines_admitted_delta',
+        'local_lease_active_native_pools',
         'local_lease_cadence_comparable','local_lease_completed_cadence_update',
         'simulation_proven_target',
         'ant_decisions','group_states','births','deaths',
@@ -206,6 +214,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // Multiple local native engine pools share ONE Python parent charge.
     // These values are measured against the same 75% RAM admission cap,
     // not raw machine RAM utilization or a physical OOM diagnosis.
+    for(const name of ['local_lease_admission_wait_seconds',
+        'local_lease_admission_wait_delta',
+        'local_lease_admission_sample_seconds',
+        'local_lease_admission_sample_delta',
+        'local_lease_admission_spawn_seconds',
+        'local_lease_admission_spawn_delta'])
+        add(name,row[name],'seconds');
     add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
     add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
     // Actual useful action target divided by completed end-to-end PPO wall.
@@ -325,7 +340,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['sim_accepted','simulation_tuner_accepted'],
             ['sim_settled','simulation_tuner_settled'],
             ['sim_restored','simulation_target_restored'],
-            ['sim_proven','simulation_proven_target']])
+            ['sim_proven','simulation_proven_target'],
+            ['sim_admitted','simulation_native_engines_admitted'],
+            ['sim_denied','simulation_admission_denied'],
+            ['sim_retired','simulation_completed_retirements']])
             add('collector_'+i+'_'+suffix,worker[name],'count');
         add('collector_'+i+'_sim_global_gain',
             worker.simulation_global_cadence_gain,'scalar');
@@ -570,6 +588,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'gpu_batch_next_target','gpu_batch_proven_target',
                 // Keep live/target/max simulation counts and real waits.
                 'sim_changes','sim_accepted','sim_settled',
+                'sim_admitted','sim_denied','sim_retired',
                 'sim_restored','sim_proven',
                 'sim_memory_rejections','sim_trial',
                 'sim_global_samples','sim_global_gain',
