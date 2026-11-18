@@ -6,7 +6,7 @@
 
 use std::env;
 use std::error::Error;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -159,15 +159,15 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         .arg(&converter).arg(&source).arg(&prepared)
         .arg("--bootstrap-output").arg(&model)
         .arg("--bootstrap-args")
-        .args(["--train-rounds", &rounds.to_string()])
-        .args(["--rollout-worlds", &worlds.to_string()])
-        .args(["--physics-workers", &workers.to_string()])
-        .args(["--optimizer-device", if device == 0 { "cpu" } else { "cuda" }])
-        .args(["--holdout-worlds", "8", "--evaluation-side", "1"])
-        .args(["--library-save-root", saves.to_str()
-            .ok_or_else(|| invalid("save directory requires valid native Unicode"))?])
-        .args(["--library-game-id", &game_id])
-        .args(["--library-game-title", &format!("Trained: {title}")])
+        .arg("--train-rounds").arg(rounds.to_string())
+        .arg("--rollout-worlds").arg(worlds.to_string())
+        .arg("--physics-workers").arg(workers.to_string())
+        .arg("--optimizer-device").arg(if device == 0 { "cpu" } else { "cuda" })
+        .arg("--holdout-worlds").arg("8")
+        .arg("--evaluation-side").arg("1")
+        .arg("--library-save-root").arg(&saves)
+        .arg("--library-game-id").arg(&game_id)
+        .arg("--library-game-title").arg(format!("Trained: {title}"))
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))
@@ -188,5 +188,81 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "game_id": game_id,
     }));
     println!("Native fleet training started. Progress is recorded in the training job logs; completed verified checkpoints will appear in the game library.");
+    Ok(())
+}
+
+
+/// A game-menu read of learner-owned atomic progress. No polling, process
+/// supervision, second measurement journal or checkpoint inspection occurs.
+pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Error>> {
+    let root = save_root.join("training").join("fleet-skirmish");
+    if !root.is_dir() {
+        println!("No saved native fleet training jobs.");
+        return Ok(());
+    }
+    let mut jobs = fs::read_dir(&root)?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()) &&
+            entry.file_name().to_string_lossy().starts_with("training-"))
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    jobs.sort_unstable_by(|a, b| b.cmp(a));
+    if jobs.is_empty() {
+        println!("No saved native fleet training jobs.");
+        return Ok(());
+    }
+    let mut labels = Vec::with_capacity(jobs.len());
+    let mut statuses = Vec::with_capacity(jobs.len());
+    for job in &jobs {
+        let path = job.join("model").join("session").join("session-progress.json");
+        let progress = fs::read(&path).ok().and_then(|bytes|
+            serde_json::from_slice::<Value>(&bytes).ok()
+        );
+        let completed = progress.as_ref()
+            .and_then(|data| data["completed_rounds"].as_u64());
+        let target = progress.as_ref()
+            .and_then(|data| data["target_rounds"].as_u64());
+        let sps = progress.as_ref()
+            .and_then(|data|
+                data["useful_training_throughput"]
+                    ["world_steps_per_training_wall_second"].as_f64());
+        let rounds = match (completed, target) {
+            (Some(done), Some(total)) => format!("{done}/{total} optimizer rounds"),
+            _ => "Preparing native model / training".to_string(),
+        };
+        let speed = sps.filter(|value| value.is_finite())
+            .map_or(String::new(), |value| format!("  |  {value:.0} measured SPS"));
+        labels.push(format!(
+            "{}  |  {rounds}{speed}",
+            job.file_name().unwrap_or_default().to_string_lossy()
+        ));
+        statuses.push(if job.join("model").join("session")
+            .join("latest-playable.json").is_file() {
+            "  [Playable checkpoint]"
+        } else {
+            "  [No published checkpoint]"
+        });
+    }
+    let rows = labels.iter().zip(&statuses).map(|(title, status)| BattleMenuRow {
+        title, status, unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selection = 0;
+    let Some(index) = select_library(&rows, &mut selection, false)? else {
+        return Ok(());
+    };
+    let job = &jobs[index];
+    let progress = job.join("model").join("session").join("session-progress.json");
+    println!("{}", json!({
+        "kind": "native_fleet_training_job",
+        "job": job,
+        "progress": if progress.is_file() {
+            Some(serde_json::from_slice::<Value>(&fs::read(&progress)?)?)
+        } else {
+            None
+        },
+        "stdout": job.join("trainer.stdout.log"),
+        "stderr": job.join("trainer.stderr.log"),
+        "model": job.join("model"),
+    }));
     Ok(())
 }
