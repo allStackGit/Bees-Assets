@@ -512,8 +512,8 @@ pub(super) fn archive(
     let level_name = scene["level_name"].as_str()
         .unwrap_or("Fleet Skirmish").to_owned();
     scene["level_name"] = json!(format!(
-        "{level_name}  |  Support: {} Beehives, {} Carriers",
-        support_count[0], support_count[1],
+        "{level_name}  |  Support: {} Beehives, {} Carriers  |  Specialists: {} Scouts, {} Fire Barges",
+        support_count[0], support_count[1], specialist_count[0], specialist_count[1],
     ));
     if !matches!(selected.terrain, Terrain::Original) {
         // The two-player template's id=30 tiny box is a real authored
@@ -574,9 +574,10 @@ pub(super) fn archive(
     }
     run["next_squad_item_id"] = json!(3_000);
     run["run_id"] = json!(format!(
-        "native-fleet-{}v{}-support-{}v{}-{}-{}",
+        "native-fleet-{}v{}-support-{}v{}-specialist-{}v{}-{}-{}",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
         support_count[0], support_count[1],
+        specialist_count[0], specialist_count[1],
         if selected.ai_both { "benchmark" }
         else { selected.player_side.map_or("local", |side|
             if side == 1 { "bees" } else { "humans" }) },
