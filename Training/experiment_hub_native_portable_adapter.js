@@ -156,8 +156,8 @@ function createNativeBeesPortableCollectorAdapter({
             ?context.gpu_pci_addresses.length
             :context.gpu_pci_address?1:0;
         if((leased!==Boolean(expectedCount))||
-            (leased&&(![1,2].includes(receipt.leased_gpu_count)||
-                receipt.leased_gpu_count!==expectedCount||
+            (leased&&(![1,2].includes(receipt.leased_gpu_count??1)||
+                (receipt.leased_gpu_count??1)!==expectedCount||
                 receipt.leased_gpu_count>receipt.rollout_processes||
                 (expectedCount===2&&(
                     !Array.isArray(gpu?.gpu_pci_addresses)||
