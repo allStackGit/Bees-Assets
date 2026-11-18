@@ -49,6 +49,43 @@ pub(crate) struct ReinforcementWave {
     group_agents: Vec<(i32, u64)>,
 }
 
+/// Cache only the earliest timed wakeup and which source event classes
+/// remain outstanding. This is derived solely from the authoritative queue,
+/// rebuilt when that queue changes, and never schedules separate gameplay.
+/// Hundreds of deferred squads can wait for minutes without an O(waves)
+/// scan on every simulation tick in every training arena.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct ReinforcementWakeup {
+    pub next_tick: Option<u64>,
+    campaign_event: bool,
+    ship_death_event: bool,
+}
+
+impl ReinforcementWakeup {
+    fn from_waves(waves: &VecDeque<ReinforcementWave>) -> Self {
+        let mut state = Self::default();
+        for wave in waves {
+            match wave.due {
+                ReinforcementDue::Tick(tick) =>
+                    state.next_tick = Some(state.next_tick.map_or(tick, |old| old.min(tick))),
+                ReinforcementDue::Event(NativeMissionEvent::CampaignCue(_)) =>
+                    state.campaign_event = true,
+                ReinforcementDue::Event(NativeMissionEvent::ShipDestroyed(_)) =>
+                    state.ship_death_event = true,
+            }
+        }
+        state
+    }
+
+    fn may_be_due(&self, tick: u64, world: &CombatWorld, events: &NativeLevelEventProcessor) -> bool {
+        self.next_tick.is_some_and(|at| tick >= at) ||
+            (self.campaign_event && events.campaign_cue_fired(tick, |_| true)) ||
+            (self.ship_death_event && world.events().iter().any(|event|
+                matches!(event, bees_sim::combat_world::CombatEvent::ShipDied { .. })
+            ))
+    }
+}
+
 impl ReinforcementWave {
     pub(crate) fn scheduled_tick(&self) -> Option<u64> {
         match self.due {
@@ -445,6 +482,8 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             wave.ships.sort_unstable_by_key(|ship| ship.entity_id);
         }
         self.metadata.reinforcements = VecDeque::from(waves);
+        self.metadata.reinforcement_wakeup =
+            ReinforcementWakeup::from_waves(&self.metadata.reinforcements);
         Ok(())
     }
 }
@@ -458,7 +497,11 @@ impl NativePolicyOnlyMetadata {
         // before planning, but deferred waves can arrive after the combat step
         // has moved or destroyed collision asteroids. Refresh once per
         // arrival tick, only when a due wave has an obstacle-aware entry move.
+        if !self.reinforcement_wakeup.may_be_due(tick, world, events) {
+            return Ok(());
+        }
         let mut navigation_refreshed = false;
+        let mut changed = false;
         let mut index = 0;
         while index < self.reinforcements.len() {
             if !self.reinforcements[index].is_due(tick, world, events) {
@@ -469,6 +512,7 @@ impl NativePolicyOnlyMetadata {
             // mission event. A later timed wave need not wait for an
             // unrelated earlier dialogue-triggered reinforcement.
             let wave = self.reinforcements.remove(index).expect("due wave");
+            changed = true;
             let (ships, squads) = (wave.ships.len(), wave.squads.len());
             let invalid = |error| NativeLevelStepError::Reinforcements(error);
             let mut attachments = Vec::new();
@@ -516,6 +560,11 @@ impl NativePolicyOnlyMetadata {
                 }
             }
             events.record_reinforcements(tick, ships, squads, policy_agents)?;
+        }
+        if changed {
+            self.reinforcement_wakeup = ReinforcementWakeup::from_waves(
+                &self.reinforcements,
+            );
         }
         Ok(())
     }
