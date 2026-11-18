@@ -566,7 +566,7 @@ function createNativeBeesAdapter({
         const proof=receipt.rollout_metrics?.gpu_inference;
         if(count>0?(
             receipt.leased_gpu_inference!==true||
-            receipt.leased_gpu_count!==count||
+            (receipt.leased_gpu_count??1)!==count||
             receipt.rollout_processes<count||
             proof?.verified_workers!==receipt.rollout_processes||
             (count===2&&(
