@@ -68,6 +68,9 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_shared_gpu_forward_workers',
     'training_shared_gpu_input_reused','training_shared_gpu_state_reused',
     'training_shared_gpu_moves_skipped',
+    'training_shared_optimizer_policy_reused',
+    'training_shared_optimizer_policy_kept',
+    'training_shared_snapshot_pinned_reused',
     'training_local_gpu_rollout_devices','training_gpu_rollout_next_devices',
     'training_local_gpu_rollout_lineages','training_gpu_rollout_next_lineages',
     'training_gpu_rollout_trial',
@@ -132,6 +135,10 @@ function courierMetrics(source) {
         name==='training_collector_resume_restored'||
         /^training_(?:gpu_forward_stream_|shared_gpu_forward_|gpu_input_slots_reused$|gpu_state_slots_reused$|gpu_policy_moves_skipped$|shared_gpu_input_reused$|shared_gpu_state_reused$)/.test(name)||
         name.startsWith('training_gpu_pin_')||
+        name.startsWith('training_shared_optimizer_')||
+        name.startsWith('training_shared_snapshot_pinned_')||
+        name.startsWith('training_shared_gpu_peak_')||
+        name.startsWith('training_shared_gpu_state_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
         /^training_gpu_rollout_input_(?:packs|seconds|owner)$/.test(name)||
