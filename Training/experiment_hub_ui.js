@@ -2099,6 +2099,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' regression analysis '+observation.status+': '+observation.reason);
         }
         for(const run of runs) {
+            const requested=run.job.evaluation_monitor?.preferred_metrics||[];
+            if(requested.length&&run.evaluation_points.length) {
+                const published=new Set(run.evaluation_points.flatMap(row=>
+                    Object.keys(row.metrics||{})));
+                const missing=requested.filter(name=>!published.has(name));
+                if(missing.length)
+                    warnings.push('Run '+run.slot+
+                        ' requested independent evaluation chart measurements '+
+                        missing.join(', ')+
+                        ', but none appear in its current chart receipts'+
+                        (run.evaluation_total_records>run.evaluation_points.length
+                            ?' (history is sampled)':'')+
+                        '. This is missing measurement evidence, not zero performance.');
+            }
             if(run.evaluation_total_records>run.evaluation_points.length)
                 warnings.push('Run '+run.slot+' displays '+
                     run.evaluation_points.length+' of '+
