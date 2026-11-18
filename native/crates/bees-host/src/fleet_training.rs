@@ -7,7 +7,7 @@
 use std::env;
 use std::error::Error;
 use std::fs::{self, OpenOptions, File};
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -626,6 +626,45 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 
+
+fn recent_job_logs(job: &Path) -> io::Result<(PathBuf, PathBuf, Option<String>)> {
+    // Read only the latest completed or active attempt's diagnostic tail.
+    // This is display-only: the native trainer's receipts, not log text,
+    // remain the authority for accepted training steps and model identity.
+    let mut last = None;
+    for entry in fs::read_dir(job)? {
+        let entry = entry?;
+        let filename = entry.file_name().to_string_lossy().into_owned();
+        let Some(number) = filename.strip_prefix("trainer-resume-")
+            .and_then(|name| name.strip_suffix(".stderr.log")) else { continue };
+        if number.len() == 6 && number.bytes().all(|ch| ch.is_ascii_digit()) &&
+            last.as_ref().is_none_or(|(old, _): &(String, PathBuf)| number > old)
+        {
+            last = Some((number.to_string(), entry.path()));
+        }
+    }
+    let stderr = last.as_ref().map_or_else(
+        || job.join("trainer.stderr.log"), |(_, path)| path.clone(),
+    );
+    let stdout = last.as_ref().map_or_else(
+        || job.join("trainer.stdout.log"), |(number, _)|
+            job.join(format!("trainer-resume-{number}.stdout.log")),
+    );
+    let message = if stderr.is_file() {
+        let mut file = File::open(&stderr)?;
+        let size = file.metadata()?.len();
+        file.seek(SeekFrom::Start(size.saturating_sub(16 * 1024)))?;
+        let mut tail = Vec::with_capacity((size.min(16 * 1024)) as usize);
+        file.read_to_end(&mut tail)?;
+        String::from_utf8_lossy(&tail).lines()
+            .rev().map(str::trim).find(|line| !line.is_empty())
+            .map(|line| line.chars().take(180).collect::<String>())
+    } else {
+        None
+    };
+    Ok((stdout, stderr, message))
+}
+
 /// A game-menu read of learner-owned atomic progress. No polling, process
 /// supervision, second measurement journal or checkpoint inspection occurs.
 pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Error>> {
@@ -673,11 +712,14 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         ));
         let stopped = progress.as_ref()
             .and_then(|row| row["holdout_stopping"]["stop"].as_bool()) == Some(true);
+        let has_diagnostics = recent_job_logs(job)?.2.is_some();
         statuses.push(if stopped {
             "  [Stopped at measured holdout plateau]"
         } else if job.join("model").join("session")
             .join("latest-playable.json").is_file() {
             "  [Playable checkpoint]"
+        } else if has_diagnostics {
+            "  [No checkpoint; recent diagnostics]"
         } else {
             "  [No published checkpoint]"
         });
@@ -690,6 +732,7 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         return Ok(());
     };
     let job = &jobs[index];
+    let (stdout, stderr, diagnostic) = recent_job_logs(job)?;
     let progress = job.join("model").join("session").join("session-progress.json");
     println!("{}", json!({
         "kind": "native_fleet_training_job",
@@ -699,8 +742,9 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         } else {
             None
         },
-        "stdout": job.join("trainer.stdout.log"),
-        "stderr": job.join("trainer.stderr.log"),
+        "stdout": stdout,
+        "stderr": stderr,
+        "recent_diagnostic": diagnostic,
         "model": job.join("model"),
     }));
     let snapshot = if progress.is_file() {
@@ -720,6 +764,12 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         ("Resume Training Job".to_string(),
          "  [Original source/checkpoint]".to_string(), can_resume),
     ];
+    if let Some(message) = diagnostic {
+        details.push((
+            format!("Latest training diagnostic: {message}"),
+            "  [See current attempt log for context]".to_string(), false,
+        ));
+    }
     if let Some(measurement) = &snapshot {
         let steps = measurement["total_world_steps"].as_u64().unwrap_or(0);
         let policy_rows = measurement["total_policy_rows"].as_u64().unwrap_or(0);
