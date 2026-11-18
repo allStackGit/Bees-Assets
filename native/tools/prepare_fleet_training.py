@@ -303,7 +303,8 @@ def verify_same_battle(scene: dict, run: dict,
     return source_id
 
 
-def convert(source: Path, destination: Path, archetypes: Path) -> dict:
+def convert(source: Path, destination: Path, archetypes: Path,
+            policy_reinforcements: bool = False) -> dict:
     source = source.resolve(strict=True)
     archetypes = archetypes.resolve(strict=True)
     scene_path = (source.parent / read_json(source)["levels"][0]["scene"]).resolve(strict=True)
@@ -333,7 +334,10 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
     reserved_ships = deferred_reinforcement_ships(scene, run)
     args = SimpleNamespace(
         policy_archetypes=archetypes, minutes=seconds / 60,
-        scripted_reinforcement_ship_ids=reserved_ships,
+        deferred_reinforcement_ship_ids=reserved_ships,
+        scripted_reinforcement_ship_ids=(
+            set() if policy_reinforcements else reserved_ships
+        ),
     )
     policy_scene, policy_run = policy_author()(scene, run, args)
     run["levels"][0]["scene"] = "battle.scene.json"
@@ -363,7 +367,15 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
         "source_scene_sha256": scene_sha,
         "policy_archetypes_sha256": archetypes_sha,
         "source_squad_clones": clone_count,
-        "scripted_reinforcement_ships": len(reserved_ships),
+        "scripted_reinforcement_ships": sum(
+            "policy" not in ship for ship in policy_scene["ships"]
+            if ship["entity_id"] in reserved_ships
+        ),
+        "policy_reinforcement_ships": sum(
+            "policy" in ship for ship in policy_scene["ships"]
+            if ship["entity_id"] in reserved_ships
+        ),
+        "policy_reinforcements_requested": policy_reinforcements,
         "physical_scene_sha256": physical_identity,
         "physical_objective": (
             "survival" if "survival" in run["levels"][0]
@@ -469,6 +481,9 @@ def main() -> None:
     parser.add_argument("output_dir", type=Path,
                         help="new directory for paired game and training configurations")
     parser.add_argument("--policy-archetypes", type=Path, default=POLICY_ARCHETYPES)
+    parser.add_argument("--policy-reinforcements", action="store_true",
+                        help="enroll supported deferred ships into MA-POCA only after their "
+                             "actual native reinforcement deployment (otherwise scripted AI)")
     parser.add_argument("--bootstrap-output", type=Path,
                         help="new checkpoint/session directory; optionally launch real native training")
     parser.add_argument("--bootstrap-args", nargs=argparse.REMAINDER, default=[],
@@ -481,7 +496,8 @@ def main() -> None:
                {"--scenario", "--source-scene", "--source-run", "--resume"}
                for value in args.bootstrap_args):
             parser.error("fleet source/scenario are immutable; resume via bootstrap_policy.py")
-    receipt = convert(args.fleet_run, args.output_dir, args.policy_archetypes)
+    receipt = convert(args.fleet_run, args.output_dir, args.policy_archetypes,
+                      policy_reinforcements=args.policy_reinforcements)
     print(json.dumps(receipt, sort_keys=True), flush=True)
     if args.bootstrap_output is not None:
         bootstrap_training(args.output_dir.resolve(), args.bootstrap_output,
