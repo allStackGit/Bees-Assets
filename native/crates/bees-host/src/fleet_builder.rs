@@ -273,6 +273,11 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
+    // The same published real-wave scenario can be profiled across many
+    // arenas, so dynamic admission costs are measurable rather than guessed.
+    let Some(reinforcements) = choose_reinforcements(fleet_sizes)? else {
+        return Ok(None);
+    };
     let Some(worlds) = choose_resource("Concurrent physical arenas",
         &[1, 2, 4, 8, 16, 32])? else { return Ok(None); };
     let workers = [1, 2, 4, 8, 16, 32].into_iter()
@@ -282,8 +287,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, mix, terrain, ai_both: true,
         ai_tactics, objective: Objective::Elimination, objective_side: None,
-        reinforcements: ReinforcementPattern::AllAtStart,
-        benchmark_worlds: worlds, benchmark_workers: threads,
+        reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
     }))
 }
 
@@ -564,6 +568,10 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
     let nearest_queries = scripted["nearest_enemy_resolutions"].as_u64().unwrap_or(0);
     let nearest_candidates = scripted["nearest_enemy_candidates_scanned"]
         .as_u64().unwrap_or(0);
+    let admissions = &summary["reinforcement_arrivals"];
+    let waves_arrived = admissions["waves"].as_u64().unwrap_or(0);
+    let squads_arrived = admissions["squads"].as_u64().unwrap_or(0);
+    let ships_arrived = admissions["ships"].as_u64().unwrap_or(0);
     // Separate configured tactical coverage from actually executed
     // source commands. The latter are episode-local counters, not an
     // invented measure of all lifetime combat maneuvers.
@@ -590,6 +598,9 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         "scripted_commands_started_current_episodes": started_commands,
         "nearest_enemy_queries_current_episodes": nearest_queries,
         "nearest_enemy_candidates_current_episodes": nearest_candidates,
+        "reinforcement_waves_arrived": waves_arrived,
+        "reinforcement_squads_arrived": squads_arrived,
+        "reinforcement_ships_arrived": ships_arrived,
         "summary": file,
     }));
     let labels = [
@@ -599,6 +610,7 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         format!("Current episodes: {started_commands} real scripted commands activated"),
         format!("Tactics: {configured_tactics} prepared / {circles} Circle / {swipes} Swipe / {strike_retreats} In-Out started"),
         format!("Current AI targeting: {nearest_queries} retarget checks / {nearest_candidates} live candidates"),
+        format!("Real reinforcements: {waves_arrived} waves / {squads_arrived} squads / {ships_arrived} ships deployed"),
         format!("Completed: {steps} world steps in {wall:.2}s"),
         "Full timing, physics and scripted-command measurements: rollout-summary.json".to_owned(),
     ];
