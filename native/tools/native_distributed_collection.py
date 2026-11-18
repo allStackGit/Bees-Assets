@@ -565,6 +565,7 @@ def aggregate_collection_metrics(bundles):
                 "worker_shards": row.get("worker_shards", []),
                 "sampled_model_timing": row.get("sampled_model_timing"),
                 "reinforcement_arrivals": row.get("reinforcement_arrivals"),
+                "queen_minion_controllers": row.get("queen_minion_controllers"),
                 "world_steps": row["successful_world_steps"],
                 "policy_rows": row["successful_policy_rows"],
                 "wall_seconds": row["wall_seconds"],
@@ -578,6 +579,12 @@ def aggregate_collection_metrics(bundles):
         result["reinforcement_arrivals"] = {
             key: sum(row["reinforcement_arrivals"][key] for row in rows)
             for key in ("waves", "squads", "ships", "policy_agents")
+        }
+    if all("queen_minion_controllers" in row for row in rows):
+        result["queen_minion_controllers"] = {
+            key: sum(row["queen_minion_controllers"][key] for row in rows)
+            for key in ("policy_minions_bound", "ungrouped_policy_minions_bound",
+                        "ordinary_minions_preserved")
         }
     if sampled:
         result["sampled_model_timing"] = {
