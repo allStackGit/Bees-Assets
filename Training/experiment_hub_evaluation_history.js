@@ -44,11 +44,10 @@ function regressionSignals(job,records) {
             job.evaluation_suite_definitions?.[rule.suite_id]||null;
         const definitions=new Set(rows.map(row=>row.suite_sha256));
         const runtimes=new Set(rows.map(row=>row.runtime_sha256));
-        if(definitions.size!==1||!SHA256.test([...definitions][0]||'')||
-            pinned&&[...definitions][0]!==pinned)
-            return state('incompatible','Frozen evaluation suite definitions differ or are missing.');
-        if(pinned&&![...definitions].includes(pinned))
-            return state('incompatible','Recorded evaluation suite does not match the pinned job definition.');
+        const exactDefinition=[...definitions][0];
+        if(definitions.size!==1||!SHA256.test(exactDefinition||'')||
+            pinned&&exactDefinition!==pinned)
+            return state('incompatible','Frozen evaluation suite definitions differ or do not match the job pin.');
         if(runtimes.size!==1||!SHA256.test([...runtimes][0]||''))
             return state('incompatible','Evaluation runtime fingerprint is missing or changed across checkpoints.');
         if(rows.some(row=>!Number.isSafeInteger(row.steps_completed)||
@@ -58,9 +57,14 @@ function regressionSignals(job,records) {
             row.successes>row.trials))
             return state('incompatible','Checkpoint coordinates, trial counts or outcome identities are unavailable.');
         const ordered=rows.slice().sort((a,b)=>a.steps_completed-b.steps_completed);
-        if(ordered.some((row,i)=>i>0&&
-            (row.steps_completed===ordered[i-1].steps_completed||
-             row.checkpoint_sha256===ordered[i-1].checkpoint_sha256)))
+        const seenUpdates=new Set(),seenCheckpoints=new Set();
+        if(ordered.some(row=>{
+            if(seenUpdates.has(row.steps_completed)||
+                seenCheckpoints.has(row.checkpoint_sha256))return true;
+            seenUpdates.add(row.steps_completed);
+            seenCheckpoints.add(row.checkpoint_sha256);
+            return false;
+        }))
             return state('incompatible','Multiple observations identify the same update or checkpoint.');
         const n=alert.window_checkpoints;
         if(ordered.length<2*n)
