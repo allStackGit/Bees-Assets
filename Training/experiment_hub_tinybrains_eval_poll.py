@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
-from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate, read_suite
+from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate_with_metrics, read_suite
 from experiment_hub_tinybrains_runtime import configure_engine
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
@@ -36,23 +36,7 @@ def latest_numbered_checkpoint(artifact_root, job):
 
 def poll(args, suites):
     def evaluated(job, file, digest, work, suite):
-        counts = {"win": 0, "loss": 0, "draw": 0}
-        def record(result):
-            outcome = result.get("outcome")
-            if outcome not in counts:
-                raise ValueError("Invalid TinyBrains evaluation outcome.")
-            counts[outcome] += 1
-
-        wins, observed = evaluate(file, digest, suite, work, on_result=record)
-        trials = 2 * len(suite["maps"]) * len(suite["seeds"])
-        if observed != trials or counts["win"] != wins or sum(counts.values()) != trials:
-            raise ValueError("Unexpected TinyBrains evaluation trial counts.")
-        return {"successes": wins, "metrics": {
-            "win_count": {"value": counts["win"], "unit": "count"},
-            "loss_count": {"value": counts["loss"], "unit": "count"},
-            "draw_count": {"value": counts["draw"], "unit": "count"},
-            "score_rate": {"value": (wins + counts["draw"] / 2) / trials, "unit": "ratio"},
-        }}
+        return evaluate_with_metrics(file, digest, suite, work)
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:
