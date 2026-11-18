@@ -982,7 +982,11 @@ pub(super) fn archive(
         // Both modes are physical Level rules; saved fleet training
         // materializes exactly these game scene bytes before PPO ownership.
         scene["lethal_map_borders"] = json!(selected.lethal_borders);
-        scene["constrain_map_borders"] = json!(!selected.lethal_borders);
+        // Classic maps have no generated MapBorder geometry: changing
+        // their historical free-flight behavior would silently alter
+        // existing saved battles, benchmarks and game replay results.
+        scene["constrain_map_borders"] =
+            json!(selected.arena_size.is_some() && !selected.lethal_borders);
         let name = scene["level_name"].as_str().unwrap_or("Fleet Skirmish");
         scene["level_name"] = json!(format!("{name}  |  Arena: {size} x {size}{}",
             if selected.lethal_borders { " (lethal borders)" } else { "" }));
