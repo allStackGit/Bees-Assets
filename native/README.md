@@ -218,7 +218,24 @@ python3 native/tools/bootstrap_policy.py native-new-model \
 The new policy scene uses the **same physical hulls and CombatWorld** as
 the playable `battle.run.json`. Only ship classes with checked-in native
 policy observations are assigned a controller; ordinary AI-controlled
-support squads retain the original scripted-command owner. The initializer
+support squads retain the original scripted-command owner.
+
+To train source-authored reinforcement waves as policy agents instead of
+scripted AI, add `--policy-reinforcements` alongside `--trainable`:
+
+```sh
+python3 native/tools/author-battle.py native-policy-waves \
+  --bees 21:4 --humans 13:5 --reinforcement 45:2:13:2 \
+  --trainable --policy-reinforcements --seed 42
+```
+
+Only ships with matching policy archetypes become policy participants;
+other reinforcements retain their existing scripted commands. Both factions
+must still have a deploy-time independent policy participant at tick zero.
+Each deferred agent preserves its authored model/team identity, remains
+absent from the reward group until physical arrival, and joins the ordinary
+fixed-step training/trajectory pipeline afterward. Without the flag,
+trainable authoring continues to leave all reinforcements scripted. The initializer
 uses the existing checkpoint serializer, pinned holdout evaluation,
 multi-round optimizer, resumable lineage and optional Experiment Hub
 distributed-collector controls. Custom scenario inputs are hash-pinned;
