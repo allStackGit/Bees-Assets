@@ -238,6 +238,29 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     } else {
         None
     };
+    let early_stop_patience = if rounds >= 10 {
+        let choices = [
+            BattleMenuRow {
+                title: "Full selected training rounds",
+                status: "  [No early stopping]", unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Stop after 3 stagnant holdouts",
+                status: "  [Verified learning plateau]", unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Stop after 5 stagnant holdouts",
+                status: "  [Conservative early stop]", unlocked: true,
+            },
+        ];
+        let mut selected = 0;
+        let Some(chosen) = select_library(&choices, &mut selected, false)? else {
+            return Ok(());
+        };
+        match chosen { 1 => Some(3_u32), 2 => Some(5_u32), _ => None }
+    } else {
+        None
+    };
     // A configured Hub plan is opt-in, not a prerequisite for local
     // training. An expired or malformed Hub plan must never prevent the
     // player from running an ordinary CPU-only experiment.
@@ -307,6 +330,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "source": source,
         "rounds": rounds,
         "self_play_refresh_every": refresh_every,
+        "early_stop_patience": early_stop_patience,
         "worlds": worlds,
         "physics_workers": workers,
         "hub_worlds": hub_worlds,
@@ -341,6 +365,9 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
             .arg("--self-play-opponent-slot").arg("1")
             .arg("--self-play-refresh-every").arg(every.to_string());
     }
+    if let Some(patience) = early_stop_patience {
+        command.arg("--early-stop-patience").arg(patience.to_string());
+    }
     if use_hub {
         hub_arguments(&mut command, &job, &recipe)?;
     } else {
@@ -370,6 +397,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
         "rounds": rounds,
         "self_play_refresh_every": refresh_every,
+        "early_stop_patience": early_stop_patience,
         "holdout_worlds": 8,
         "stdout": stdout_path,
         "stderr": stderr_path,
@@ -569,6 +597,13 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
             .filter(|value| (1..=99_999).contains(value) && rounds > 1)
             .ok_or_else(|| invalid("native self-play generation interval is invalid"))?)
     };
+    let early_stop_patience = if recipe["early_stop_patience"].is_null() {
+        None
+    } else {
+        Some(recipe["early_stop_patience"].as_u64()
+            .filter(|value| (1..=99_999).contains(value) && rounds >= 10)
+            .ok_or_else(|| invalid("native early stopping policy is invalid"))?)
+    };
     let use_hub = recipe["hub_plan"].is_string();
     let (worlds, workers) = if use_hub {
         if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() {
@@ -636,6 +671,9 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
         command.arg("--learner-slot").arg("0")
             .arg("--self-play-opponent-slot").arg("1")
             .arg("--self-play-refresh-every").arg(every.to_string());
+    }
+    if let Some(patience) = early_stop_patience {
+        command.arg("--early-stop-patience").arg(patience.to_string());
     }
     if use_hub {
         hub_arguments(&mut command, job, &recipe)?;
