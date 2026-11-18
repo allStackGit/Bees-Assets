@@ -771,13 +771,13 @@ fn bind_evaluation_episode(
             group_team_by_side.insert(side, team);
         }
     }
-    let mut group_agents_by_team = std::collections::BTreeMap::<_, std::collections::BTreeSet<_>>::new();
-    if let Some(group) = &level.groups {
-        for participant in &group.participants {
-            let team = group_team_by_side[&participant.side];
-            group_agents_by_team.entry(team).or_default().insert(participant.agent_id);
-        }
-    }
+    // The pinned initial cohort is the actual *physically enrolled*
+    // reward group. Future reinforcement reservations are absent here;
+    // dynamic admissions extend this cohort through their durable journal
+    // receipts, including Queen spawns and deferred squad deployment.
+    let group_agents_by_team = world.state.events.group_delivery()
+        .map(|group| group.participants_by_team())
+        .unwrap_or_default();
     let context = EpisodeEvaluationContext {
         level_id: level.level_id,
         seed,
