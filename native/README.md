@@ -125,10 +125,13 @@ records, because one native reinforcement wave can contain multiple
 squads only for an actual Carrier-child group. Linked Carrier children
 are not independently deferred. Source-authored waves do not invent
 obstacle navigation at an off-map spawn: delayed hulls use their
-distinct original authored slots. Native policy-training authoring
-currently permits only elimination episodes without deferred waves;
-`--trainable` rejects survival/extraction or reinforcements rather
-than mixing incompatible group membership and reward contracts.
+distinct original authored slots. Trainable elimination, survival,
+extraction and reinforcement battles use the same physical Level.
+Deferred squads remain scripted and acquire no policy agents before
+their real deployment; the initial policy-controlled fleet learns.
+A trainable survival deadline must fit the episode safety timeout;
+without `--survive-seconds` the author chooses the latest achievable
+fixed-step deadline automatically.
 
 To turn an authored battle into a **real native MA-POCA training session**,
 add `--trainable` when generating it. This writes a second source scene/run
