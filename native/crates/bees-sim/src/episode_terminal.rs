@@ -235,8 +235,7 @@ impl NativeEpisodeTerminal {
         // complete fixed-step deadline fits within that policy episode.
         // Gameplay with no policy timeout keeps the identical survival rules.
         if self.timeout_seconds.is_some_and(|timeout|
-            (ticks as u64).saturating_mul(1) as f64 *
-                fixed_dt_seconds as f64 > timeout as f64
+            (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
         ) || self.survival.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.defending_side) ||
