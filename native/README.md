@@ -928,7 +928,14 @@ command-ship defense with genuinely reserved enemy waves at 25 and 55
 seconds, or extraction at the far end of the map. These are the actual
 native Level survival, reinforcement and extraction rules; the same
 objectives run unchanged in headless simulation. Two-player and benchmark
-matches retain ordinary elimination. Cover is made of the real
+matches retain ordinary elimination. In **Two local commanders** mode,
+press **F9** to switch between the two real player factions in one
+window. The source-owned fog, selectable squads and command permissions
+switch together; selections and partial pointer gestures are cleared.
+The switch itself does not change physics. Issued commands are recorded
+with their actual side identity, so a replay authoritatively reapplies
+both factions' moves through the existing authenticated-side dispatcher.
+The performance summary reports the number of hot-seat switches. Cover is made of the real
 source-authored obstacle prefabs; its collisions, health, visibility and
 navigation all use the same native CombatWorld as training.
 This uses verified native squad cloning and the same physical

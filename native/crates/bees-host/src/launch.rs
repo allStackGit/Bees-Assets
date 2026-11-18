@@ -3511,6 +3511,25 @@ fn run_battle(
     #[cfg(feature = "client")]
     let mut client = if view {
         let mut client = bees_host::client::NativeClient::new(client_bounds[0])?;
+        // Hot-seat is restricted to a single offline source Level whose
+        // BOTH factions actually own selectable, input-enabled squads.
+        // This is never enabled for a policy opponent, campaign replay or
+        // authenticated multiplayer host. F9 changes only the player's
+        // temporary viewer/command side, not CombatWorld or source AI.
+        if replay_inputs.is_none() && remote_step_interval.is_none() &&
+            source_levels.len() == 1 &&
+            source_sides[0].iter().all(|&side| (1..=2).contains(&side)) &&
+            source_sides[0].iter().all(|&side|
+                source_levels[0].source_squads.iter().any(|squad|
+                    squad.side == side && !squad.members.is_empty() &&
+                    squad.player_permissions.user_controlled &&
+                    squad.player_permissions.can_accept_input))
+        {
+            let sides = source_sides[0];
+            let initial = source_levels[0].targeting_context.as_ref()
+                .map_or(sides[1], |context| context.user_side);
+            client.enable_hotseat(sides, initial);
+        }
         client.set_source_zoom_limits(client_zoom_limits);
         client.set_music_locations(
             source_levels.iter().map(|source| source.music_location).collect(),
@@ -3917,32 +3936,68 @@ fn run_battle(
         }
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
-            let Some(current) = host.render_world(client.selected_world()) else {
+            // Borrow the real native Level for rendering with precisely
+            // this local commander's perspective. The override is cleared
+            // BEFORE any world step, fingerprint or network delivery, so
+            // UI-only hot-seat selection never changes game physics.
+            let side = client.hotseat_side();
+            if let Some(side) = side {
+                if let Err(error) = host.edit_level(client.selected_world(), |state, _|
+                    state.metadata.set_remote_player_side(Some(side))
+                ) {
+                    failed_window = Some(format!("native local viewer setup: {error:?}"));
+                    break;
+                }
+            }
+            let observed = host.render_world(client.selected_world()).map(|current| {
+                let tick = current.tick;
+                let action = client.poll(current, client_bounds[client.selected_world()],
+                    host.simulation().world_count(),
+                    client_step_interval_by_level[client.selected_world()]);
+                (tick, action)
+            });
+            if side.is_some() {
+                if let Err(error) = host.edit_level(client.selected_world(), |state, _|
+                    state.metadata.set_remote_player_side(None)
+                ) {
+                    failed_window = Some(format!("native local viewer cleanup: {error:?}"));
+                    break;
+                }
+            }
+            let Some((tick, action)) = observed else {
                 failed_window = Some("selected Level disappeared".to_owned());
                 break;
             };
-            let tick = current.tick;
-            let action = client.poll(current, client_bounds[client.selected_world()],
-                host.simulation().world_count(), client_step_interval_by_level[client.selected_world()]);
-            if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input { action: input, .. })) = (&mut input_trace, &action) {
-                if let Err(error) = writeln!(trace, "{}", json!({
-                        "kind": "player_input",
-                        "round": rounds,
-                        "tick": tick,
-                        "action": input,
-                })) {
+            if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input { action: input, .. })) =
+                (&mut input_trace, &action)
+            {
+                // The existing native trace format already stores a
+                // per-input authenticated side for remote play. Reusing
+                // that contract allows a local two-commander battle to
+                // replay both players' commands without recording F9's
+                // purely visual selection state.
+                let mut entry = json!({
+                    "kind": "player_input", "round": rounds,
+                    "tick": tick, "action": input,
+                });
+                if let Some(side) = side { entry["remote_side"] = json!(side); }
+                if let Err(error) = writeln!(trace, "{entry}") {
                     failed_window = Some(format!("recording player input: {error}"));
                     break;
                 }
             }
             match action {
                 Ok(bees_host::client::NativeClientAction::Wait |
-                    bees_host::client::NativeClientAction::WorldChanged) => continue,
+                    bees_host::client::NativeClientAction::WorldChanged |
+                    bees_host::client::NativeClientAction::SideChanged) => continue,
                 Ok(bees_host::client::NativeClientAction::Step) => {
                     client_step_budget = client.pending_steps();
                 },
                 Ok(bees_host::client::NativeClientAction::Input { action: input, step }) => {
-                    match apply_player_input(&mut host, input) {
+                    let result = if let Some(side) = side {
+                        apply_remote_side_input(&mut host, input, side)
+                    } else { apply_player_input(&mut host, input) };
+                    match result {
                         Ok(feedback) => client.report_move(feedback.message),
                         Err(error) => {
                             failed_window = Some(error);
@@ -4724,6 +4779,8 @@ fn run_battle(
     if let Some(client) = &client {
         println!("{}", json!({ "kind": "presentation_final", "run_id": config.run_id,
             "rendered_frames": client.rendered_frames,
+            "hotseat_switches": client.hotseat_switches,
+            "hotseat_final_side": client.hotseat_side(),
             "audio": client.audio_measurements(),
             "fixed_steps_executed": client.fixed_steps_executed,
             "multi_step_frames": client.multi_step_frames,

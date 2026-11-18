@@ -20,7 +20,7 @@ use bees_sim::geometry::Vec2;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NativeClientAction {
-    Wait, Step, Quit, WorldChanged,
+    Wait, Step, Quit, WorldChanged, SideChanged,
     Input { action: NativePlayerInput, step: bool },
 }
 
@@ -107,6 +107,14 @@ impl NativeLivePerformance {
     }
 }
 
+/// Only a local, explicitly player-controlled two-faction game can
+/// enter hot-seat mode. This state belongs to the window, never physics.
+#[derive(Clone, Copy)]
+struct NativeHotseat {
+    sides: [i32; 2],
+    active: i32,
+}
+
 pub struct NativeClient {
     window: Window,
     renderer: NativeSoftwareRenderer,
@@ -115,6 +123,7 @@ pub struct NativeClient {
     bounds: Aabb,
     selected_world: usize,
     selection_owner: Option<(WorldId, u64)>,
+    hotseat: Option<NativeHotseat>,
     paused: bool,
     performance: NativeLivePerformance,
     /// The Unity game exposes mouse-edge scrolling as a user preference.
@@ -153,6 +162,7 @@ pub struct NativeClient {
     shooting_focus: u8,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
+    pub hotseat_switches: u64,
     pub fixed_steps_executed: u64,
     pub multi_step_frames: u64,
     pub max_steps_per_frame: u32,
@@ -213,7 +223,7 @@ impl NativeClient {
         let now = Instant::now();
         Ok(Self { window, renderer, audio: NativeGameAudio::new(),
             music_locations: Vec::new(), bounds,
-            selected_world: 0, selection_owner: None,
+            selected_world: 0, selection_owner: None, hotseat: None,
             paused: false, performance: NativeLivePerformance::new(now),
             edge_scroll_enabled: false,
             source_zoom_by_world: Vec::new(),
@@ -229,7 +239,8 @@ impl NativeClient {
             selection_drag: None, minimap_dragging: false,
             hud_press: None, squad_tab_press: None, shooting_press: None,
             shooting_focus: 1, support_mode: None,
-            rendered_frames: 0, fixed_steps_executed: 0, multi_step_frames: 0,
+            rendered_frames: 0, hotseat_switches: 0,
+            fixed_steps_executed: 0, multi_step_frames: 0,
             max_steps_per_frame: 0, pacing_lag_clamps: 0,
             rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
@@ -338,6 +349,18 @@ impl NativeClient {
     }
 
     pub fn selected_world(&self) -> usize { self.selected_world }
+
+    /// Used only with the source-authored two-local-player permission
+    /// preflight. Remote play has its own authenticated peer side instead.
+    pub fn enable_hotseat(&mut self, sides: [i32; 2], initial: i32) {
+        if sides[0] != sides[1] && sides.contains(&initial) {
+            self.hotseat = Some(NativeHotseat { sides, active: initial });
+        }
+    }
+
+    pub fn hotseat_side(&self) -> Option<i32> {
+        self.hotseat.map(|hotseat| hotseat.active)
+    }
 
     pub fn pending_steps(&self) -> u32 { self.pending_steps }
 
@@ -491,6 +514,40 @@ impl NativeClient {
             self.performance.render_at_start = self.render_wall_seconds;
             self.performance.present_at_start = self.window_update_wall_seconds;
             self.performance.clamps_at_start = self.pacing_lag_clamps;
+        }
+        if self.window.is_active() && self.window.is_key_pressed(Key::F9, KeyRepeat::No) &&
+            self.held_fire_target.is_none()
+        {
+            if let Some(hotseat) = &mut self.hotseat {
+                hotseat.active = if hotseat.active == hotseat.sides[0] {
+                    hotseat.sides[1]
+                } else { hotseat.sides[0] };
+                self.hotseat_switches += 1;
+                // A side switch never carries a selected squad, held HUD
+                // action or pointer drag across the faction permission
+                // boundary. The next frame builds a fresh borrowed view.
+                self.renderer.selected_ship = None;
+                self.renderer.selection.clear();
+                self.renderer.selection_box = None;
+                self.selection_drag = None;
+                self.minimap_dragging = false;
+                self.support_mode = None;
+                self.right_press = None;
+                self.hud_press = None;
+                self.squad_tab_press = None;
+                self.shooting_press = None;
+                self.renderer.show_shooting_menu = false;
+                self.last_left_press = None;
+                self.double_left_press = false;
+                self.left_was_down = self.window.get_mouse_down(MouseButton::Left);
+                self.right_was_down = self.window.get_mouse_down(MouseButton::Right);
+                self.input_feedback = if hotseat.active == hotseat.sides[0] {
+                    "Switched to Bees commander"
+                } else { "Switched to Humans commander" };
+                self.window.update();
+                self.next_step = Instant::now();
+                return Ok(NativeClientAction::SideChanged);
+            }
         }
         if self.window.is_key_pressed(Key::B, KeyRepeat::No) {
             self.renderer.show_weapon_ranges = !self.renderer.show_weapon_ranges;
@@ -1256,7 +1313,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, O lock, E chase, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, F7 mute, F8 metrics, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, O lock, E chase, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, F7 mute, F8 metrics, F9 side, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
