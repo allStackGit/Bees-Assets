@@ -154,7 +154,8 @@ function courierMetrics(source) {
         name.startsWith('training_collector_start_')||
         name.startsWith('training_resume_')||
         name.startsWith('training_sim_migration_')||
-        name.startsWith('training_sim_process_migration_')||
+        (name==='training_sim_process_migrations'||
+         name.startsWith('training_sim_process_migration_'))||
         (name==='training_collector_sim_trial_workers'||
          name==='training_collector_sim_eligible_workers')||
         /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
