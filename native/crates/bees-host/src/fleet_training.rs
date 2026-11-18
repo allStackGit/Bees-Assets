@@ -454,7 +454,11 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
             job.file_name().map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "training".to_string())
         ));
-        statuses.push(if job.join("model").join("session")
+        let stopped = progress.as_ref()
+            .and_then(|row| row["holdout_stopping"]["stop"].as_bool()) == Some(true);
+        statuses.push(if stopped {
+            "  [Stopped at measured holdout plateau]"
+        } else if job.join("model").join("session")
             .join("latest-playable.json").is_file() {
             "  [Playable checkpoint]"
         } else {
@@ -482,15 +486,24 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         "stderr": job.join("trainer.stderr.log"),
         "model": job.join("model"),
     }));
-    let can_resume = job.join("invocation.json").is_file();
+    let snapshot = if progress.is_file() {
+        Some(serde_json::from_slice::<Value>(&fs::read(&progress)?)?)
+    } else {
+        None
+    };
+    let done = snapshot.as_ref().is_some_and(|state| {
+        state["holdout_stopping"]["stop"].as_bool() == Some(true) ||
+        state["completed_rounds"].as_u64().zip(state["target_rounds"].as_u64())
+            .is_some_and(|(complete, target)| complete >= target)
+    });
+    let can_resume = job.join("invocation.json").is_file() && !done;
     let mut details = vec![
         ("Back to Game Library".to_string(),
          "  [Inspection complete]".to_string(), true),
         ("Resume Training Job".to_string(),
          "  [Original source/checkpoint]".to_string(), can_resume),
     ];
-    if progress.is_file() {
-        let measurement: Value = serde_json::from_slice(&fs::read(&progress)?)?;
+    if let Some(measurement) = &snapshot {
         let steps = measurement["total_world_steps"].as_u64().unwrap_or(0);
         let policy_rows = measurement["total_policy_rows"].as_u64().unwrap_or(0);
         details.push((
@@ -635,6 +648,10 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
         let snapshot: Value = serde_json::from_slice(&fs::read(&progress)?)?;
         if snapshot["completed_rounds"].as_u64().is_some_and(|count| count >= rounds) {
             println!("Native fleet training already finished all requested optimizer rounds.");
+            return Ok(());
+        }
+        if snapshot["holdout_stopping"]["stop"].as_bool() == Some(true) {
+            println!("Native fleet training already stopped on its approved fixed-holdout learning plateau.");
             return Ok(());
         }
     }
