@@ -4,10 +4,17 @@
 // for native Stop, candidate promotion, leases or checkpoint authorization.
 const fs=require('node:fs');
 const path=require('node:path');
+const crypto=require('node:crypto');
+const {evaluationEvidence}=require('./experiment_hub_evaluation');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
 const MAX_BYTES=64*1024*1024;
 const MAX_UI_POINTS=1024;
+const SHA256=/^[a-f0-9]{64}$/;
+const SUITE=/^[a-z][a-z0-9_-]{0,47}$/;
+const HISTORICAL_SUFFIX='.historical.json';
+const MAX_IMPORT_RECORDS=128;
+const MAX_IMPORT_BYTES=65536;
 
 class EvaluationHistory {
     constructor(root) {
@@ -127,6 +134,188 @@ class EvaluationHistory {
                 String(error.message||error).slice(0,160));
             return false;
         }
+    }
+    // Offline checkpoint audits are kept in the existing independent
+    // evaluation archive, but never added to the native job registry.
+    // These read-only sources cannot be dispatched, stopped or promoted.
+    historicalJobs() {
+        this.directoryReady();
+        const jobs=[];
+        for(const name of fs.readdirSync(this.directory)) {
+            if(!name.endsWith(HISTORICAL_SUFFIX))continue;
+            const id=name.slice(0,-HISTORICAL_SUFFIX.length);
+            if(!UUID.test(id))continue;
+            try {
+                const metaFile=path.join(this.directory,name);
+                const stat=fs.lstatSync(metaFile);
+                if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||
+                    stat.size<1||stat.size>32768||
+                    (typeof process.getuid==='function'&&
+                     (stat.uid!==process.getuid()||(stat.mode&0o077)!==0)))
+                    throw Error('Historical evaluation metadata is unsafe.');
+                const meta=JSON.parse(fs.readFileSync(metaFile,'utf8'));
+                if(meta.schema_version!==1||meta.id!==id||
+                    meta.project_id!=='tinybrains'||
+                    typeof meta.run_name!=='string'||meta.run_name.length<1||
+                    meta.run_name.length>100||
+                    !SHA256.test(String(meta.source_report_sha256||''))||
+                    !Number.isFinite(Date.parse(meta.created_at))||
+                    !Array.isArray(meta.suites)||!meta.suites.length||
+                    meta.suites.length>8)
+                    throw Error('Invalid historical evaluation source metadata.');
+                const records=this.load(id,meta.project_id).records;
+                if(!records.length||records.length>MAX_IMPORT_RECORDS||
+                    records.some(row=>row.source_kind!=='historical_checkpoint_audit'||
+                        row.source_report_sha256!==meta.source_report_sha256||
+                        row.evaluation_status!=='complete'))
+                    throw Error('Historical evaluation evidence lineage is incomplete.');
+                jobs.push({
+                    id,project_id:meta.project_id,
+                    configuration_name:meta.run_name,run_name:meta.run_name,
+                    status:'historical_evaluation',evaluation_history_only:true,
+                    created_at:meta.created_at,source_report_sha256:meta.source_report_sha256,
+                    source_suites:meta.suites,
+                });
+                this.issues.delete('historical:'+id);
+            }catch(error) {
+                this.issues.set('historical:'+id,
+                    'Historical evaluation '+id+' unavailable: '+
+                    String(error.message||error).slice(0,150));
+            }
+        }
+        return jobs;
+    }
+    importHistorical(value,existingIds=[]) {
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+            value.project_id!=='tinybrains'||value.complete!==true||
+            typeof value.run_name!=='string'||!value.run_name.trim()||
+            value.run_name.length>100||
+            !SHA256.test(String(value.source_report_sha256||''))||
+            !Array.isArray(value.results)||!value.results.length||
+            value.results.length>MAX_IMPORT_RECORDS)
+            throw Error('Expected a complete, bounded independent TinyBrains checkpoint audit.');
+        if(Buffer.byteLength(JSON.stringify(value),'utf8')>MAX_IMPORT_BYTES)
+            throw Error('Historical evaluation import exceeds the request limit.');
+        const seed=crypto.createHash('sha256').update(
+            value.project_id+':'+value.source_report_sha256).digest('hex');
+        // Deterministic identity makes resubmission idempotent and prevents
+        // the same immutable report from creating multiple comparison runs.
+        const id=seed.slice(0,8)+'-'+seed.slice(8,12)+'-5'+seed.slice(13,16)+
+            '-a'+seed.slice(17,20)+'-'+seed.slice(20,32);
+        if(existingIds.includes(id))
+            throw Error('Historical report identity collides with a native job.');
+        this.directoryReady();
+        const metaFile=path.join(this.directory,id+HISTORICAL_SUFFIX);
+        const file=this.file(id);
+        if(fs.existsSync(metaFile)) {
+            const existing=this.historicalJobs().find(job=>job.id===id);
+            if(existing&&existing.source_report_sha256===value.source_report_sha256)
+                return {job_id:id,imported:false,record_count:this.load(id,'tinybrains').records.length};
+            throw Error('An existing historical report with this identity is invalid.');
+        }
+        if(fs.existsSync(file))
+            throw Error('A previous historical import was interrupted; retained for inspection.');
+        const observed=new Date().toISOString(),seen=new Set(),suites=new Map(),rows=[];
+        for(const raw of value.results) {
+            if(!raw||typeof raw!=='object'||Array.isArray(raw)||
+                typeof raw.suite_definition_canonical!=='string'||
+                Buffer.byteLength(raw.suite_definition_canonical)>8192||
+                !SHA256.test(String(raw.suite_sha256||''))||
+                crypto.createHash('sha256').update(raw.suite_definition_canonical)
+                    .digest('hex')!==raw.suite_sha256||
+                !SHA256.test(String(raw.runtime_sha256||''))||
+                !Number.isSafeInteger(raw.steps_completed)||raw.steps_completed<0||
+                typeof raw.checkpoint_name!=='string'||
+                !/^[a-zA-Z0-9_.-]{1,128}$/.test(raw.checkpoint_name))
+                throw Error('Historical evaluation checkpoint or suite provenance is invalid.');
+            let suite;
+            try{suite=JSON.parse(raw.suite_definition_canonical);}
+            catch {throw Error('Historical evaluation suite definition is not JSON.');}
+            if(!suite||typeof suite!=='object'||Array.isArray(suite)||
+                !SUITE.test(String(suite.suite_id||''))||
+                suite.suite_id!==raw.suite_id||
+                suite.runtime_sha256!==raw.runtime_sha256||
+                !Array.isArray(suite.maps)||!Array.isArray(suite.seeds)||
+                !['nano','micro'].includes(suite.opponent||'nano')||
+                (suite.opponent==='micro'&&
+                    (!SHA256.test(String(suite.opponent_model_sha256||''))||
+                     !SHA256.test(String(suite.opponent_manifest_sha256||'')))))
+                throw Error('Historical evaluation suite differs from the claimed pinned runtime/opponent.');
+            const prior=suites.get(raw.suite_id);
+            if(prior&&prior.suite_sha256!==raw.suite_sha256)
+                throw Error('One historical suite ID has conflicting definitions.');
+            suites.set(raw.suite_id,{suite_id:raw.suite_id,
+                suite_sha256:raw.suite_sha256,
+                definition:raw.suite_definition_canonical});
+            if(suites.size>8)throw Error('Historical comparison supports at most eight suites.');
+            const evidence=evaluationEvidence({
+                schema_version:1,suite_id:raw.suite_id,dispatch_id:id,
+                checkpoint_sha256:raw.checkpoint_sha256,
+                suite_sha256:raw.suite_sha256,
+                runtime_sha256:raw.runtime_sha256,
+                steps_completed:raw.steps_completed,
+                evaluated_at:raw.evaluated_at,
+                trials:raw.trials,successes:raw.successes,metrics:raw.metrics,
+            },{suite_id:raw.suite_id,suite_sha256:raw.suite_sha256},id);
+            if(!evidence.evaluated_at||
+                !evidence.metrics||
+                !['win_count','loss_count','draw_count','score_rate'].every(
+                    key=>Object.hasOwn(evidence.metrics,key))||
+                evidence.metrics.win_count.value!==evidence.successes||
+                evidence.metrics.win_count.unit!=='count'||
+                evidence.metrics.loss_count.unit!=='count'||
+                evidence.metrics.draw_count.unit!=='count'||
+                evidence.metrics.score_rate.unit!=='ratio'||
+                evidence.metrics.win_count.value+evidence.metrics.loss_count.value+
+                    evidence.metrics.draw_count.value!==evidence.trials||
+                Math.abs(evidence.metrics.score_rate.value-
+                    (evidence.successes+evidence.metrics.draw_count.value/2)/
+                    evidence.trials)>1e-10)
+                throw Error('Historical match outcomes do not reconcile with success evidence.');
+            const unique=evidence.checkpoint_sha256+':'+evidence.suite_id;
+            if(seen.has(unique))throw Error('Repeated historical checkpoint/suite result.');
+            seen.add(unique);
+            rows.push({
+                ...evidence,job_id:id,project_id:value.project_id,
+                observed_at:observed,
+                source_kind:'historical_checkpoint_audit',
+                source_report_sha256:value.source_report_sha256,
+                source_checkpoint_name:raw.checkpoint_name,
+                evaluation_status:'complete',
+            });
+        }
+        rows.sort((a,b)=>a.steps_completed-b.steps_completed||
+            a.suite_id.localeCompare(b.suite_id));
+        const records=Buffer.from(rows.map(row=>JSON.stringify(row)).join('\n')+'\n');
+        if(records.length>MAX_BYTES||rows.some(row=>
+            Buffer.byteLength(JSON.stringify(row))>8192))
+            throw Error('Historical evaluation archive exceeds safe bounds.');
+        const meta={
+            schema_version:1,id,project_id:value.project_id,
+            run_name:value.run_name.trim(),created_at:observed,
+            source_report_sha256:value.source_report_sha256,
+            suites:[...suites.values()],
+        };
+        const metadata=Buffer.from(JSON.stringify(meta)+'\n');
+        if(metadata.length>32768)
+            throw Error('Historical suite definitions exceed metadata limit.');
+        const writeNew=(location,body)=>{
+            const fd=fs.openSync(location,'wx',0o600);
+            try {
+                for(let offset=0;offset<body.length;) {
+                    const count=fs.writeSync(fd,body,offset,body.length-offset);
+                    if(!Number.isSafeInteger(count)||count<=0)
+                        throw Error('Incomplete historical archive write.');
+                    offset+=count;
+                }
+                fs.fsyncSync(fd);
+            }finally{fs.closeSync(fd);}
+        };
+        // History first, discoverable metadata last. Neither operation
+        // modifies the native registry or any existing evaluation file.
+        writeNew(file,records);
+        writeNew(metaFile,metadata);
+        return {job_id:id,imported:true,record_count:rows.length};
     }
     snapshot(projectId,jobs) {
         const samples=[];
