@@ -3388,21 +3388,33 @@ fn run_battle(
         {
             return Err(invalid("The campaign player side has no authored player squad").into());
         }
+        // A mission side needs real command authority in either runtime:
+        // human player squads during ordinary play and authenticated group
+        // policy agents during training. Policy-owned squads deliberately
+        // clear user_controlled when authored; requiring it here would
+        // reject real extraction and survival episodes before simulation.
+        // Persisted campaign missions still require human control and never
+        // gain policy authority implicitly.
+        let objective_has_controller = |side| source.source_squads.iter().any(|squad|
+            squad.side == side && !squad.members.is_empty() &&
+            (squad.player_permissions.user_controlled ||
+             (mission.is_none() && level.groups.is_some() &&
+              squad.members.iter().any(|id|
+                  source.source_policy_bindings.contains_key(id))))
+        );
         if let Some(zone) = &level.extraction {
             if !sides.contains(&zone.player_side) ||
                 mission.is_some_and(|mission| mission.player_side != zone.player_side) ||
-                !source.source_squads.iter().any(|squad|
-                    squad.side == zone.player_side && squad.player_permissions.user_controlled)
+                !objective_has_controller(zone.player_side)
             {
-                return Err(invalid("Extraction must use the authored campaign player side").into());
+                return Err(invalid("Extraction requires an authenticated player or policy controller on its objective side").into());
             }
         }
         if let Some(objective) = &level.survival {
             if mission.is_some_and(|mission| mission.player_side != objective.defending_side) ||
-                !source.source_squads.iter().any(|squad|
-                    squad.side == objective.defending_side && squad.player_permissions.user_controlled)
+                !objective_has_controller(objective.defending_side)
             {
-                return Err(invalid("Survival must use the authored campaign player side").into());
+                return Err(invalid("Survival requires an authenticated player or policy controller on its defending side").into());
             }
             if mission.is_some() {
                 // The shared survival controller wins only after
