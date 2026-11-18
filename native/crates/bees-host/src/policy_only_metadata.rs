@@ -186,6 +186,9 @@ pub struct NativePolicyOnlyMetadata {
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_members: Vec<bees_sim::squad_movement::SquadFormationMember>,
     scripted_friendlies: Vec<bees_gameplay::commands::NativeFriendlySquad>,
+    /// Reused only when an authored AI script actually requests a nearest
+    /// enemy; no extra presentation or policy simulation cache.
+    scripted_centers: Vec<(SquadLifetime, i32, Vec2)>,
     scripted_counts: NativeScriptedQueueMeasurements,
     /// Fixed-step interval for retrying an unavailable auto-mining target.
     /// Set by the actual native Level on script installation.
@@ -347,6 +350,7 @@ impl NativePolicyOnlyMetadata {
             scripted_queues: Vec::new(),
             scripted_members: Vec::new(),
             scripted_friendlies: Vec::new(),
+            scripted_centers: Vec::new(),
             scripted_counts: NativeScriptedQueueMeasurements::default(),
             scripted_retry_ticks: 1,
             chase_elapsed_seconds: 0.0,
