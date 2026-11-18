@@ -576,12 +576,129 @@ def _validate_dynamic_episode(
     )
 
 
+def _dynamic_trajectories(rollout, horizon, behavior_id):
+    """Reconstruct real per-controller decision intervals for late agents.
+
+    A Queen child or deployed reinforcement has its own fixed decision
+    phase. A global-frame zip would truncate its action every time another
+    agent requests a decision. Keep the unchanged, faster common aligned
+    path for episodes with no late admissions.
+    """
+    from mlagents.trainers.trajectory import AgentExperience, AgentStatus, Trajectory
+    from mlagents.trainers.torch_entities.action_log_probs import LogProbsTuple
+    from mlagents_envs.base_env import ActionTuple
+
+    key, teams, frames, closing, boundaries, rewards, learning_agents, starts = rollout
+    terminal_tick = max(boundaries)
+    prefixes = {team: events.prefix() for team, events in rewards.items()}
+    decision_rows = defaultdict(list)
+    decision_ticks = defaultdict(list)
+    for tick, frame in frames:
+        for agent, row in frame.items():
+            if agent in learning_agents:
+                decision_ticks[agent].append(tick)
+                decision_rows[agent].append(row)
+
+    latest = {}
+    next_index = defaultdict(int)
+    experiences = defaultdict(list)
+    previous = {}
+    initial_action = np.zeros(6, dtype=np.int32)
+    # This list is stable across frames, so the group critic does not
+    # inherit arbitrary hash-map or model-dispatch ordering.
+    team_members = defaultdict(list)
+    for agent, team in teams.items():
+        if agent in learning_agents:
+            team_members[team].append(agent)
+
+    for tick, frame in frames:
+        latest.update(frame)
+        for agent, row in frame.items():
+            if agent not in learning_agents:
+                continue
+            slot = next_index[agent]
+            next_index[agent] += 1
+            times_for_agent = decision_ticks[agent]
+            next_tick = (
+                times_for_agent[slot + 1]
+                if slot + 1 < len(times_for_agent) else closing[agent]
+            )
+            done = next_tick == closing[agent]
+            team = teams[agent]
+            members = team_members[team]
+            actions = ActionTuple(
+                row["sampled_continuous"], row["discrete"].astype(np.int32),
+            )
+            mates = [
+                mate for mate in members if mate != agent and
+                starts[mate] <= tick < closing[mate] and mate in latest
+            ]
+            group_status = [
+                AgentStatus(
+                    [latest[mate]["observations"]], 0.0,
+                    ActionTuple(
+                        latest[mate]["sampled_continuous"],
+                        latest[mate]["discrete"].astype(np.int32),
+                    ), closing[mate] <= next_tick,
+                )
+                for mate in mates
+            ]
+            masks = [np.array([False, not bit]) for bit in row["fire_allowed"]]
+            masks.append(row["special_allowed"] == 0)
+            reward_ticks, reward_amounts = prefixes[team]
+            reward = float(
+                reward_amounts[bisect_right(reward_ticks, next_tick)] -
+                reward_amounts[bisect_right(reward_ticks, tick)]
+            )
+            steps = experiences[agent]
+            steps.append(AgentExperience(
+                [row["observations"]], 0.0, done, actions,
+                LogProbsTuple(
+                    row["continuous_log_probs"], row["discrete_log_probs"],
+                ), masks, previous.get(agent, initial_action), False, None,
+                group_status, reward,
+            ))
+            previous[agent] = actions.discrete
+            if not done and len(steps) < horizon:
+                continue
+
+            next_obs = (
+                boundaries[next_tick][agent]["observations"]
+                if done else decision_rows[agent][slot + 1]["observations"]
+            )
+            next_group = []
+            ending_frame = boundaries.get(next_tick) if done else None
+            for mate in members:
+                if mate == agent or starts[mate] > next_tick or (
+                    closing[mate] <= next_tick and next_tick != terminal_tick
+                ):
+                    continue
+                if ending_frame is not None:
+                    observation = ending_frame.get(mate)
+                else:
+                    indices = decision_ticks[mate]
+                    found = bisect_right(indices, next_tick) - 1
+                    observation = (decision_rows[mate][found]
+                                   if found >= 0 else None)
+                if observation is not None:
+                    next_group.append([observation["observations"]])
+            yield Trajectory(
+                steps, [next_obs], next_group,
+                f"{key[0]}:{key[1]}:{key[2]}:{agent}", behavior_id,
+            )
+            experiences[agent] = []
+
+
 def trajectories(rollouts, horizon, behavior_id):
     from mlagents.trainers.trajectory import AgentExperience, AgentStatus, Trajectory
     from mlagents.trainers.torch_entities.action_log_probs import LogProbsTuple
     from mlagents_envs.base_env import ActionTuple
 
-    for key, teams, frames, closing, boundaries, rewards, learning_agents in rollouts:
+    for rollout in rollouts:
+        if len(rollout) == 8:
+            yield from _dynamic_trajectories(rollout, horizon, behavior_id)
+            continue
+        key, teams, frames, closing, boundaries, rewards, learning_agents = rollout
         terminal_tick = max(boundaries)
         reward_prefix = {}
         for team, events in rewards.items():
