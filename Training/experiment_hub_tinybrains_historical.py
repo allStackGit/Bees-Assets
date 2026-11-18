@@ -125,8 +125,12 @@ def audit(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-name", required=True)
-    parser.add_argument("--checkpoint", required=True, type=Path, action="append",
+    parser.add_argument("--checkpoint", type=Path, action="append", default=[],
                         help="Repeat for exact existing update-NNNNNN.pt files.")
+    parser.add_argument("--checkpoint-dir", type=Path,
+                        help="Existing directory containing exact update-NNNNNN.pt checkpoints.")
+    parser.add_argument("--update", type=int, action="append", default=[],
+                        help="Repeat for PPO updates within --checkpoint-dir (e.g. 73, 100, 200).")
     parser.add_argument("--suite", required=True, type=Path, action="append",
                         help="Repeat for fixed Nano/Micro suite definitions.")
     parser.add_argument("--scratch", required=True, type=Path)
@@ -134,6 +138,29 @@ def main() -> int:
     parser.add_argument("--engine-path", type=Path)
     args = parser.parse_args()
     try:
+        if args.checkpoint_dir is not None:
+            if args.checkpoint or not args.update or len(args.update) > 64 or \
+               len(set(args.update)) != len(args.update) or any(
+                   not 1 <= update <= 99999999 for update in args.update
+               ):
+                raise ValueError(
+                    "Use --checkpoint-dir with 1–64 distinct --update values; "
+                    "do not combine with individual --checkpoint paths.")
+            directory = args.checkpoint_dir
+            if (not directory.is_absolute() or directory.is_symlink() or
+                    directory.resolve(strict=True) != directory or
+                    not directory.is_dir()):
+                raise ValueError(
+                    "Historical checkpoint directory must be an existing, "
+                    "absolute, non-redirected directory.")
+            args.checkpoint = [
+                directory / f"update-{update:06d}.pt"
+                for update in args.update
+            ]
+        elif args.update or not args.checkpoint:
+            raise ValueError(
+                "Provide explicit --checkpoint paths, or --checkpoint-dir "
+                "with one or more --update values.")
         report = audit(args)
         body = (json.dumps(report, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
         if len(body) > 65536:
