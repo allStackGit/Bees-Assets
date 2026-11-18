@@ -246,6 +246,9 @@ struct UnityShip {
     path_clearance: i32,
     mobile: bool,
     cannot_change_orders: bool,
+    /// Source Ship.CanOverrideBounds may be omitted by legacy snapshots.
+    #[serde(default)]
+    can_override_bounds: bool,
     user_controlled: bool,
     has_target_coordinates: bool,
     target_coordinates: UnityVec2,
@@ -3179,6 +3182,7 @@ impl NativePhysicalScene {
                 entity_id: ship.entity_id, ship_type: ship.ship_type,
                 cease_fire: ship.policy_cease_fire, turrets: authored_turrets,
                 side: ship.side, vitals, motion, game_movement,
+                can_override_bounds: ship.can_override_bounds,
                 original_health: ship.original_health,
                 size_class: ship.size_class,
                 healing_zone, warp_zone, policy_capabilities,
