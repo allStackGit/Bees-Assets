@@ -337,7 +337,7 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
         # Include the effective device in the resident-model cache identity.
         runtime_device = os.environ.get("BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE")
         if runtime_device is not None:
-            if runtime_device != "cuda:0":
+            if runtime_device not in ("cuda:0", "cpu"):
                 raise ValueError("unsupported native inference device override")
             if backend in ("torchscript", "mlagents"):
                 config = {**config, "device": runtime_device}
