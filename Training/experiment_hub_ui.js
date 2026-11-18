@@ -74,7 +74,7 @@ function hubComparisonPoints(run) {
             segment_id:'independent-evaluation',
             source_modified_at:row.evaluated_at||row.observed_at,
             observed_at:row.observed_at,break_before:false,
-            metrics:{['eval_'+row.suite_id+'_'+row.suite_sha256.slice(0,8)]:{
+            metrics:{['eval_'+row.suite_id.replace(/-/g,'_')+'_'+row.suite_sha256.slice(0,8)]:{
                 value:row.successes/row.trials,unit:'ratio',
             }},
         }));
@@ -374,7 +374,7 @@ const HUB_GPU_METRIC_SUFFIXES=Object.freeze({
     power_w: "Current physical GPU power draw. Indicates load, not energy attributable to this particular job.",
 });
 function hubMetricDescription(name,units=[]) {
-    if(/^eval_[a-z][a-z0-9_-]{0,47}_[a-f0-9]{8}$/.test(name))
+    if(/^eval_[a-z][a-z0-9_]{0,47}_[a-f0-9]{8}$/.test(name))
         return 'Independent fixed-suite evaluation success rate at a verified checkpoint. The suffix distinguishes frozen suite definitions; compare only matching definitions.';
     if(Object.hasOwn(HUB_METRIC_DESCRIPTIONS,name))return HUB_METRIC_DESCRIPTIONS[name];
     const gpu=/^host_gpu_(\d+)_(busy_pct|used_vram_mb|temperature_c|hotspot_temperature_c|power_w)$/.exec(name);
