@@ -1798,6 +1798,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const evalSamples=comparisonProject===project&&comparisonData?.evaluations||[];
         $('hub-compare-selection-panel').hidden=project==='bees';
+        $('hub-historical-import').hidden=project!=='tinybrains';
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
         const evalHistory=new Map(evalSamples.map(s=>[s.job_id,s.points||[]]));
         const evalDiagnostics=new Map((comparisonProject===project
@@ -5861,6 +5862,36 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-compare-add-run').addEventListener('click',()=>{
         addComparisonSlot();
         renderComparison();
+    });
+    $('hub-historical-import-submit').addEventListener('click',async()=>{
+        const input=$('hub-historical-audit-file'),file=input.files?.[0];
+        const note='hub-historical-import-status';
+        if(!file) {
+            feedback(note,'Choose a completed independent checkpoint audit JSON file.');
+            return;
+        }
+        if(project!=='tinybrains') {
+            feedback(note,'Historical checkpoint import is available only for TinyBrains.');
+            return;
+        }
+        try {
+            if(file.size<1||file.size>65536)
+                throw Error('Historical audit must be a nonempty JSON file of at most 64 KiB.');
+            const report=JSON.parse(await file.text());
+            if(!report||report.project_id!=='tinybrains'||report.complete!==true||
+                !Array.isArray(report.results)||!report.results.length||
+                report.results.length>128)
+                throw Error('Select a complete TinyBrains independent checkpoint audit.');
+            const result=await action('hub/evaluation/historical',report);
+            feedback(note,(result.imported?'Imported':'Previously imported')+
+                ' historical checkpoint audit: '+result.record_count+
+                ' frozen-suite observations. Source remains read-only.');
+            input.value='';
+            await reload();
+        }catch(error) {
+            feedback(note,'Historical audit import refused: '+
+                String(error.message||error));
+        }
     });
     $('hub-compare-metric').addEventListener('change',()=>{
         comparisonMetricOverrides.set(project,selectedComparisonMetrics());
