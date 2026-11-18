@@ -293,9 +293,17 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 ):
                     continue
                 checkpoint = find_checkpoint(job)
-                if not checkpoint or ("final_checkpoint_sha256" not in job and checkpoint[0] <= cursor[dispatch]):
+                if not checkpoint:
                     continue
                 update, file = checkpoint
+                if "final_checkpoint_sha256" not in job:
+                    cadence = job.get("every_n_checkpoints", 1)
+                    if type(cadence) is not int or not 1 <= cadence <= 1000000:
+                        raise ValueError("Invalid checkpoint evaluation cadence.")
+                    previous = cursor[dispatch]
+                    if update <= previous or (previous > 0 and
+                                              update - previous < cadence):
+                        continue
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 print(f"{project} evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
                 continue
@@ -466,9 +474,19 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     ):
                         continue
                 checkpoint = find_checkpoint(jobs[0])
-                if not checkpoint or ("final_checkpoint_sha256" not in jobs[0] and checkpoint[0] <= cursor[dispatch]):
+                if not checkpoint:
                     continue
                 update, file = checkpoint
+                if "final_checkpoint_sha256" not in jobs[0]:
+                    cadence = jobs[0].get("every_n_checkpoints", 1)
+                    if (type(cadence) is not int or not 1 <= cadence <= 1000000 or
+                        any(job.get("every_n_checkpoints", 1) != cadence
+                            for job in jobs)):
+                        raise ValueError("Invalid or inconsistent checkpoint evaluation cadence.")
+                    previous = cursor[dispatch]
+                    if update <= previous or (previous > 0 and
+                                              update - previous < cadence):
+                        continue
                 if not file.is_file():
                     continue
             except (OSError, ValueError, TypeError, KeyError) as exc:
