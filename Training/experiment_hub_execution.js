@@ -13,7 +13,7 @@ const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {matchingLeaseBudget}=require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
-const {evaluationEvidence,evaluationRules,suiteIds,supportsEvaluation}=
+const {activeEvaluation,evaluationEvidence,evaluationRules,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -258,10 +258,10 @@ class LocalExecution {
             (owned.artifact_lineage_root_id||owned.job_id)===
                 (job.artifact_lineage_root_id||job.id);
         if(ownsArtifacts&&(state==='running'&&lease.status==='acknowledged'||
-            lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256)&&job.evaluation_stop&&
+            lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256)&&activeEvaluation(job)&&
             supportsEvaluation(this.evaluationSuites,job)) {
             const results=[];
-            for(const rule of evaluationRules(job.evaluation_stop)) {
+            for(const rule of evaluationRules(activeEvaluation(job))) {
                 try {
                     const result=localAdapter.readEvaluation(Object.freeze({
                         job_id:job.id,project_id:job.project_id,
@@ -275,7 +275,7 @@ class LocalExecution {
                         String(error.message||error)).slice(0,160);
                 }
             }
-            if(job.evaluation_stop.all_of) {
+            if(activeEvaluation(job).all_of) {
                 if(results.length)report.evaluations=results;
             }else if(results.length) {
                 report.evaluation=results[0];
