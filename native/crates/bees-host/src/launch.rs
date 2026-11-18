@@ -3845,6 +3845,8 @@ fn run_battle(
     // world; collect completed episode totals only at the reset boundary.
     let mut past_reinforcement_arrivals =
         bees_gameplay::level_events::NativeReinforcementArrivals::default();
+    let mut past_queen_controllers =
+        bees_host::policy_only_metadata::NativeQueenControllerMeasurements::default();
     let mut next_status_round = status_every_rounds;
     #[cfg(feature = "client")]
     let mut user_closed = false;
@@ -4352,12 +4354,17 @@ fn run_battle(
                     replacement.metadata.enable_navigation_workers(workers)
                         .map_err(|error| contextual("episode navigation worker startup", error))?;
                 }
-                let prior = host.simulation().world(index)
-                    .ok_or_else(|| invalid("recycled world disappeared"))?
-                    .state.events.reinforcement_arrivals();
-                past_reinforcement_arrivals.merge(prior);
+                let old_world = host.simulation().world(index)
+                    .ok_or_else(|| invalid("recycled world disappeared"))?;
+                let prior_reinforcements = old_world.state.events.reinforcement_arrivals();
+                let prior_queens = old_world.state.metadata.queen_controller_measurements;
                 host.reset_world(index, seed, replacement)
                     .map_err(|error| contextual("guarded Level reset", error))?;
+                // Count only a successful ownership transfer. If reset
+                // fails, the original world remains the current snapshot;
+                // merging it before reset would double-count at finalization.
+                past_reinforcement_arrivals.merge(prior_reinforcements);
+                past_queen_controllers.merge(prior_queens);
                 bind_evaluation_episode(
                     &mut host, index, level, seed, &source_digests[index],
                     &gameplay_digest, completed_episodes[index], config.decision_period,
@@ -4744,14 +4751,17 @@ fn run_battle(
     // previously recycled worlds. This covers independent multi-episode
     // training and fixed-seed evaluation without requiring hot-path logs.
     let mut reinforcement_arrivals = past_reinforcement_arrivals;
+    let mut queen_controllers = past_queen_controllers;
     for index in 0..host.simulation().world_count() {
         if let Some(world) = host.simulation().world(index) {
             reinforcement_arrivals.merge(world.state.events.reinforcement_arrivals());
+            queen_controllers.merge(world.state.metadata.queen_controller_measurements);
         }
     }
     let mut final_summary = json!({
         "kind": "run_final",
         "reinforcement_arrivals": reinforcement_arrivals,
+        "queen_minion_controllers": queen_controllers,
         "remote_play": remote.as_ref().map(|server| server.measurements()),
         "run_id": config.run_id,
         "rounds": rounds,
