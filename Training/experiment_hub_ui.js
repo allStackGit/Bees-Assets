@@ -1981,13 +1981,41 @@ document.addEventListener('DOMContentLoaded', () => {
         // (which can all belong to Micro while Nano is never plotted).
         // Preserve explicit viewer selections and saved run preferences.
         const availableKeys=new Set(metricOptions.map(item=>item.key));
-        const evaluationDefaults=[...new Set(runs.flatMap(run=>
-            (run.evaluation_points||[]).map(hubEvaluationMetricPrefix)))]
-            .sort().map(prefix=>[
+        // Only complete, reported metrics can be charted. A frozen Design
+        // preference orders the series; it cannot invent measurements. Give
+        // every frozen suite/runtime cohort its first curve before assigning
+        // additional curves, so a multi-suite experiment remains visible.
+        const evaluationPreferences=new Map();
+        for(const run of runs)for(const receipt of run.evaluation_points||[]) {
+            const prefix=hubEvaluationMetricPrefix(receipt);
+            if(!evaluationPreferences.has(prefix))
+                evaluationPreferences.set(prefix,new Set());
+            for(const name of run.job.evaluation_monitor?.preferred_metrics||[])
+                evaluationPreferences.get(prefix).add(name);
+        }
+        const evaluationChoices=[...evaluationPreferences].sort(([a],[b])=>
+            a.localeCompare(b)).map(([prefix,preferred])=>{
+            const requested=[...preferred].map(name=>'metric:'+prefix+'_'+name)
+                .filter(key=>availableKeys.has(key));
+            const fallback=[
                 'metric:'+prefix+'_score_rate',
                 'metric:'+prefix+'_survival_rate',
                 'metric:'+prefix,
-            ].find(key=>availableKeys.has(key))).filter(Boolean);
+            ].filter(key=>availableKeys.has(key)&&!requested.includes(key));
+            return requested.concat(fallback);
+        });
+        const evaluationDefaults=[];
+        for(let index=0;evaluationDefaults.length<8;index++) {
+            let added=false;
+            for(const choices of evaluationChoices) {
+                if(evaluationDefaults.length>=8)break;
+                if(choices[index]) {
+                    evaluationDefaults.push(choices[index]);
+                    added=true;
+                }
+            }
+            if(!added)break;
+        }
         const learningDefaults=[...evaluationDefaults,
             ...['selection_candidate_survival_score',
             'selection_incumbent_survival_score','training_win_rate','training_score_rate',
@@ -3896,8 +3924,47 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Local progress unavailable: '+live.progress_issue;
         return job.dispatch_id?'Awaiting trusted project summary':'—';
     }
+    // The native evaluator always archives all validated measurements it
+    // reports. These project-specific choices only prioritize chart series,
+    // not receipt content, stopping, checkpoint selection or training.
+    const evaluationChartOptions={
+        tinybrains:[
+            ['score_rate','Draw-adjusted score'],
+            ['win_count','Wins'],['loss_count','Losses'],['draw_count','Draws'],
+        ],
+        courier:[
+            ['survival_rate','Survival rate'],
+            ['mean_lifespan','Mean lifespan'],
+            ['mean_survival_score','Mean survival score'],
+            ['mean_deliveries','Mean deliveries'],
+            ['total_deliveries','Total deliveries'],
+            ['pickup_rate','Pickup rate'],
+            ['mean_steps_per_delivery','Steps per delivery'],
+            ['gross_energy_per_step','Energy per step'],
+            ['mean_reward','Mean environment reward'],
+            ['mean_feedings','Mean feedings'],
+            ['mean_births','Mean births'],
+        ],
+    };
+    function renderEvaluationChartOptions(preferences) {
+        const selected=new Set(preferences===undefined
+            ?project==='tinybrains'?['score_rate']
+                :project==='courier'?['survival_rate']:[]
+            :preferences);
+        $('hub-evaluation-measurements').replaceChildren(
+            ...(evaluationChartOptions[project]||[]).map(([name,label])=>{
+                const field=document.createElement('label');
+                const checkbox=document.createElement('input');
+                checkbox.type='checkbox';
+                checkbox.value=name;
+                checkbox.checked=selected.has(name);
+                field.append(checkbox,document.createTextNode(' '+label));
+                return field;
+            }));
+    }
     function refreshEvaluationEditor() {
         const monitor=$('hub-evaluation-mode').value==='monitor';
+        $('hub-evaluation-measurements-panel').hidden=!monitor;
         const optionalStop=$('hub-evaluation-optional-stop');
         const hasStop=!monitor||optionalStop.checked;
         $('hub-evaluation-optional-stop-label').hidden=!monitor;
@@ -4007,6 +4074,7 @@ document.addEventListener('DOMContentLoaded', () => {
             policy?.regression_alert?.window_checkpoints??3);
         $('hub-evaluation-regression-drop').value=String(
             policy?.regression_alert?.minimum_drop??0.15);
+        renderEvaluationChartOptions(policy?.preferred_metrics);
         $('hub-evaluation-all-of').value='';
         $('hub-evaluation-more-suites').replaceChildren();
         for(const rule of multi?.slice(1)||[])
@@ -4101,6 +4169,8 @@ document.addEventListener('DOMContentLoaded', () => {
             !$('hub-evaluation-final').checked)
             throw Error('Regression-based Stop requires final-checkpoint evaluation.');
         const options={
+            preferred_metrics:[...$('hub-evaluation-measurements')
+                .querySelectorAll('input:checked')].map(input=>input.value),
             ...(minMinutes?{min_minutes_between_evaluations:minMinutes}:{}),
             ...(regression?{regression_alert:regression}:{}),
             ...(!$('hub-evaluation-baseline').checked?{include_baseline:false}:{}),
