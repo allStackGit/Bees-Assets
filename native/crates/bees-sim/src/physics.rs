@@ -1228,6 +1228,10 @@ enum GridContents { Stale, Ships, Obstacles, VisionObstacles }
 /// trigger entries; no PPO/Unity/rendering dependency is present.
 pub struct KinematicPhysics {
     ships: Vec<ShipBody>,
+    // Stable original slot order (not swap-removal): a dead Queen minion
+    // never costs another integration or ship-grid candidate scan. Body
+    // indices continue to identify the canonical original physics slots.
+    active_ship_indices: Vec<usize>,
     projectiles: Vec<ProjectileBody>,
     obstacles: Vec<ObstacleBody>,
     grid: SpatialGrid,
@@ -1271,6 +1275,7 @@ impl KinematicPhysics {
     pub fn new(area: Aabb, cell_size: f32) -> Result<Self, PhysicsError> {
         Ok(Self {
             ships: Vec::new(),
+            active_ship_indices: Vec::new(),
             projectiles: Vec::new(),
             obstacles: Vec::new(),
             grid: SpatialGrid::new(area, cell_size)?,
@@ -1386,10 +1391,13 @@ impl KinematicPhysics {
             }
             self.ship_hulls_dirty = false;
         }
-        self.grid.rebuild_with(self.ships.len(), |index| {
-            let ship = &self.ships[index];
-            if ship.active { ship.collider.bounds } else { None }
-        });
+        self.grid.rebuild_with_indices(
+            self.ships.len(), self.active_ship_indices.iter().copied(),
+            |index| {
+                let ship = &self.ships[index];
+                if ship.active { ship.collider.bounds } else { None }
+            },
+        );
         self.counts.ship_grid_rebuilds += 1;
         self.counts.ship_grid_cells_indexed += self.grid.active_buckets as u64;
         self.grid_contents = GridContents::Ships;
@@ -1601,6 +1609,19 @@ impl KinematicPhysics {
 
     pub fn ships(&self) -> &[ShipBody] { &self.ships }
 
+    pub fn active_ship_indices(&self) -> &[usize] { &self.active_ship_indices }
+
+    /// Mutable active-ship stream for the shared world movement pass. Keep
+    /// the original append-only index ordering of the dense array, while
+    /// avoiding inactive historic ships in every fixed simulation frame.
+    pub fn active_ships_mut(&mut self) -> (&[usize], &mut [ShipBody]) {
+        self.ship_hulls_dirty = true;
+        if self.grid_contents == GridContents::Ships {
+            self.grid_contents = GridContents::Stale;
+        }
+        (&self.active_ship_indices, &mut self.ships)
+    }
+
     /// Read-only Selection Box query against cached authored hulls. Build
     /// one exact box collider, reuse existing narrowphase, allocate no copy
     /// of the ship roster and do not feed UI selection into contact events.
@@ -1608,7 +1629,8 @@ impl KinematicPhysics {
         -> Result<impl Iterator<Item = i64> + '_, PhysicsError>
     {
         let query = Self::box_query(bounds)?;
-        Ok(self.ships.iter().filter_map(move |ship| {
+        Ok(self.active_ship_indices.iter().filter_map(move |&index| {
+            let ship = &self.ships[index];
             let pose = Pose { position: ship.motion.position,
                 rotation_degrees: ship.motion.rotation_degrees };
             (ship.active && ship.collider.overlaps_at_pose(&query, pose)).then_some(ship.id)
@@ -1621,7 +1643,8 @@ impl KinematicPhysics {
         -> Result<impl Iterator<Item = i64> + '_, PhysicsError>
     {
         let query = Self::box_query(bounds)?;
-        Ok(self.ships.iter().filter_map(move |ship| {
+        Ok(self.active_ship_indices.iter().filter_map(move |&index| {
+            let ship = &self.ships[index];
             if !ship.active { return None; }
             let pose = Pose { position: ship.motion.position,
                 rotation_degrees: ship.motion.rotation_degrees };
@@ -1833,6 +1856,9 @@ impl KinematicPhysics {
         ship.update_hull();
         let index = self.ships.len();
         self.ships.push(ship);
+        if self.ships[index].active {
+            self.active_ship_indices.push(index);
+        }
         // Invalidate a ship-owned grid so it includes the new collider.
         // Keep any pending dirtiness from prior ships_mut() calls intact;
         // the newly inserted hull does not make old hulls dirty.
@@ -1840,6 +1866,20 @@ impl KinematicPhysics {
             self.grid_contents = GridContents::Stale;
         }
         index
+    }
+
+    /// Canonical ship retirement. Do not reuse its slot: retained projectiles
+    /// and recorded contact IDs must continue to refer to their original
+    /// attacker/victim without being rebound to a later Queen minion.
+    pub(crate) fn retire_ship(&mut self, index: usize) {
+        debug_assert!(self.ships[index].active);
+        let position = self.active_ship_indices.binary_search(&index)
+            .expect("active ship's slot is registered");
+        self.active_ship_indices.remove(position);
+        self.ships[index].active = false;
+        if self.grid_contents == GridContents::Ships {
+            self.grid_contents = GridContents::Stale;
+        }
     }
 
     pub fn add_projectile(&mut self, projectile: ProjectileBody) -> Result<usize, PhysicsError> {
@@ -1908,7 +1948,8 @@ impl KinematicPhysics {
         }
         self.counts = PhysicsStepCounts::default();
         let mut has_active_ships = false;
-        for ship in &mut self.ships {
+        for &index in &self.active_ship_indices {
+            let ship = &mut self.ships[index];
             if !ship.active { continue; }
             has_active_ships = true;
             ship.motion.position += ship.motion.body_velocity * dt;
@@ -1964,10 +2005,13 @@ impl KinematicPhysics {
         let needs_ship_grid = has_active_ships &&
             (has_physical_projectiles || has_ship_proximity_sources);
         if needs_ship_grid {
-            self.grid.rebuild_with(self.ships.len(), |index| {
-                let ship = &self.ships[index];
-                if ship.active { ship.collider.bounds } else { None }
-            });
+            self.grid.rebuild_with_indices(
+                self.ships.len(), self.active_ship_indices.iter().copied(),
+                |index| {
+                    let ship = &self.ships[index];
+                    if ship.active { ship.collider.bounds } else { None }
+                },
+            );
             self.counts.ship_grid_rebuilds += 1;
             self.counts.ship_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::Ships;
