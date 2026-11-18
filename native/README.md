@@ -165,7 +165,10 @@ The native game's **Fleet Skirmish** builder saves a
 choose **Train Saved Fleet** to select an elimination skirmish, optimizer
 rounds, concurrent arenas, physics CPU workers, and CPU or PyTorch GPU
 optimizer. The native game starts the existing trainer outside the window
-and returns to the library immediately. **Fleet Training Progress** shows
+and returns to the library immediately. The menu can optionally
+enable MA-POCA self-play, promoting the learner's verified checkpoint to
+the opposing policy every 1, 3 or 5 completed rounds.
+**Fleet Training Progress** shows
 completed rounds, measured training SPS, and the path to each job's logs;
 newly published models appear in the same game library. Each job has its
 own `<save-root>/training/fleet-skirmish/training-NNNNNN/` directory
@@ -179,6 +182,23 @@ multi-machine resource allocation. The Python MA-POCA environment and
 native Rust tooling must be installed. Set `BEES_NATIVE_PYTHON` to the
 interpreter path and, for packaged installations without nearby sources,
 `BEES_NATIVE_TOOLS` to the existing `native/tools` directory.
+
+To use **Experiment Hub machines** instead of local physics workers, set
+`BEES_NATIVE_HUB_PLAN` to an existing `native_hub_round_dispatch` JSON
+plan with explicit unattended Start approval, `BEES_NATIVE_BUNDLE_LISTEN`
+to the learner's reachable private-network listener (HOST:PORT), and
+`BEES_NATIVE_BUNDLE_TOKEN` to the same 32–256-character secret configured
+for authenticated collector uploads. `BEES_NATIVE_HUB_PORT` optionally
+selects the local Hub operator API port (default 7148). Use a private
+network or a secure reverse proxy; the bundle receiver itself is HTTP, not
+Internet-facing TLS. The game presents a local/Hub choice only when
+`BEES_NATIVE_HUB_PLAN` is configured, and never invents a machine lease,
+queue approval, or Start authorization. Hub continues to own all remote
+allocations and remote worker execution. The learner rechecks the pinned
+dispatch-plan hash when resuming, and verified collector bundles, round
+receipts and measured per-machine throughput remain in the existing native
+training artifacts. The Node dispatch bridge and the configured Hub must
+be installed on the learner host.
 
 For explicit Hub distribution, resource flags, or automated scheduling,
 run the same underlying converter and learner from a terminal:
