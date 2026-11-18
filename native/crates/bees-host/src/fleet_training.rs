@@ -211,6 +211,33 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     };
     let Some(rounds) = choose_count("MA-POCA optimizer rounds", &[1, 3, 10, 25, 100])?
         else { return Ok(()); };
+    let refresh_every = if rounds > 1 {
+        let rows = [
+            BattleMenuRow {
+                title: "Fixed Opponent",
+                status: "  [Train learner only]", unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Self-Play (refresh every round)",
+                status: "  [Update real opponent policy]", unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Self-Play (refresh every 3 rounds)",
+                status: "  [Stabler opponent updates]", unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Self-Play (refresh every 5 rounds)",
+                status: "  [Longer opponent generations]", unlocked: true,
+            },
+        ];
+        let mut selected = 0;
+        let Some(index) = select_library(&rows, &mut selected, false)? else {
+            return Ok(());
+        };
+        match index { 1 => Some(1_u32), 2 => Some(3), 3 => Some(5), _ => None }
+    } else {
+        None
+    };
     // A configured Hub plan is opt-in, not a prerequisite for local
     // training. An expired or malformed Hub plan must never prevent the
     // player from running an ordinary CPU-only experiment.
@@ -279,6 +306,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "kind": "native_game_fleet_training_invocation",
         "source": source,
         "rounds": rounds,
+        "self_play_refresh_every": refresh_every,
         "worlds": worlds,
         "physics_workers": workers,
         "hub_worlds": hub_worlds,
@@ -308,6 +336,11 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         .arg("--bootstrap-output").arg(&model)
         .arg("--bootstrap-args")
         .arg("--train-rounds").arg(rounds.to_string());
+    if let Some(every) = refresh_every {
+        command.arg("--learner-slot").arg("0")
+            .arg("--self-play-opponent-slot").arg("1")
+            .arg("--self-play-refresh-every").arg(every.to_string());
+    }
     if use_hub {
         hub_arguments(&mut command, &job, &recipe)?;
     } else {
@@ -336,6 +369,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "allocation": if use_hub { "experiment_hub" } else { "local" },
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
         "rounds": rounds,
+        "self_play_refresh_every": refresh_every,
         "holdout_worlds": 8,
         "stdout": stdout_path,
         "stderr": stderr_path,
@@ -461,6 +495,13 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     let rounds = recipe["rounds"].as_u64()
         .filter(|value| (1..=99_999).contains(value))
         .ok_or_else(|| invalid("native training rounds are invalid"))?;
+    let refresh_every = if recipe["self_play_refresh_every"].is_null() {
+        None
+    } else {
+        Some(recipe["self_play_refresh_every"].as_u64()
+            .filter(|value| (1..=99_999).contains(value) && rounds > 1)
+            .ok_or_else(|| invalid("native self-play generation interval is invalid"))?)
+    };
     let use_hub = recipe["hub_plan"].is_string();
     let (worlds, workers) = if use_hub {
         if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() {
@@ -524,6 +565,11 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
             .arg("--bootstrap-args");
     }
     command.arg("--train-rounds").arg(rounds.to_string());
+    if let Some(every) = refresh_every {
+        command.arg("--learner-slot").arg("0")
+            .arg("--self-play-opponent-slot").arg("1")
+            .arg("--self-play-refresh-every").arg(every.to_string());
+    }
     if use_hub {
         hub_arguments(&mut command, job, &recipe)?;
     } else {
