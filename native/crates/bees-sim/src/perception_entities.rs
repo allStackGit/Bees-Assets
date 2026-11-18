@@ -144,8 +144,10 @@ fn write_ship(
     Ok(())
 }
 
-/// Port of Unity's closest-first sort. The scratch owns a grow-once Vec;
-/// no allocation occurs after the largest prior decision candidate set.
+/// Port of Unity's closest-first observation ordering. The scratch owns
+/// a grow-once Vec; retain only eligible nearest slots before the final
+/// ordered sort. Large battles need O(N) selection plus O(K log K) ordering,
+/// not a full O(N log N) ship sort for EACH policy-controlled combatant.
 #[derive(Default)]
 pub struct EntitySlotEncoder {
     sorted: Vec<ObservedShip>,
@@ -154,10 +156,13 @@ pub struct EntitySlotEncoder {
 impl EntitySlotEncoder {
     pub fn new() -> Self { Self::default() }
 
-    fn prepare(&mut self, ships: &[ObservedShip], position: Vec2) {
+    fn prepare(
+        &mut self, ships: &[ObservedShip], position: Vec2, slots: usize,
+        eligible: impl Fn(&ObservedShip) -> bool,
+    ) {
         self.sorted.clear();
-        self.sorted.extend_from_slice(ships);
-        self.sorted.sort_unstable_by(|left, right| {
+        self.sorted.extend(ships.iter().copied().filter(eligible));
+        let mut order = |left: &ObservedShip, right: &ObservedShip| {
             let left_distance = (left.position - position).length_squared();
             let right_distance = (right.position - position).length_squared();
             left_distance.total_cmp(&right_distance)
@@ -165,7 +170,12 @@ impl EntitySlotEncoder {
                 .then_with(|| left.fleet_ship_id.unwrap_or(i64::MAX)
                     .cmp(&right.fleet_ship_id.unwrap_or(i64::MAX)))
                 .then_with(|| left.entity_id.cmp(&right.entity_id))
-        });
+        };
+        if self.sorted.len() > slots {
+            self.sorted.select_nth_unstable_by(slots, &mut order);
+            self.sorted.truncate(slots);
+        }
+        self.sorted.sort_unstable_by(order);
     }
 
     /// The caller provides the true same-side Level registry of allies;
@@ -185,14 +195,11 @@ impl EntitySlotEncoder {
             candidates.iter().any(|ship| !observed_ship_valid(ship)) {
             return Err(PerceptionError::InvalidSource);
         }
-        self.prepare(candidates, observer_position);
+        self.prepare(candidates, observer_position, MAX_ALLIES, |ship|
+            ship.is_alive && ship.entity_id != own_ship_id && ship.side == own_side
+        );
         let mut used = 0;
         for &ship in &self.sorted {
-            if !ship.is_alive || ship.entity_id == own_ship_id ||
-                ship.side != own_side {
-                continue;
-            }
-            if used == MAX_ALLIES { break; }
             let start = ALLIES_START + used * ALLY_LEN;
             write_ship(&mut row[start..start + ENEMY_LEN],
                 ship, observer_position, frame, side_starting_tsv)?;
@@ -221,13 +228,11 @@ impl EntitySlotEncoder {
             visible_enemies.iter().any(|ship| !observed_ship_valid(ship)) {
             return Err(PerceptionError::InvalidSource);
         }
-        self.prepare(visible_enemies, observer_position);
+        self.prepare(visible_enemies, observer_position, MAX_ENEMIES, |ship|
+            ship.is_alive && ship.side != own_side
+        );
         let mut used = 0;
         for &ship in &self.sorted {
-            if !ship.is_alive || ship.side == own_side {
-                continue;
-            }
-            if used == MAX_ENEMIES { break; }
             let start = ENEMIES_START + used * ENEMY_LEN;
             write_ship(&mut row[start..start + ENEMY_LEN],
                 ship, observer_position, frame, side_starting_tsv)?;
