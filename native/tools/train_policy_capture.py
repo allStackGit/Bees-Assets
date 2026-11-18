@@ -483,12 +483,16 @@ def _validate_completed_episode(
     key, episode_ticks, episode_boundaries, terminals, ended_teams,
     retirements, rewards, learning_agents, journal_id, admissions=None,
 ):
-    if admissions:
+    """Preserve the fast aligned path; accept real early controller deaths."""
+    initial_groups = terminals[key]["evaluation_context"]["group_agents_by_team"]
+    initial_agents = {int(agent) for members in initial_groups.values()
+                      for agent in members}
+    first_frame = next(iter(episode_ticks.values()), {})
+    if admissions or (episode_ticks and first_frame.keys() != initial_agents):
         return _validate_dynamic_episode(
             key, episode_ticks, episode_boundaries, terminals, ended_teams,
-            retirements, rewards, learning_agents, journal_id, admissions,
+            retirements, rewards, learning_agents, journal_id, admissions or {},
         )
-    """Preserve source cohort, retirement, group reward and terminal checks."""
     ticks = episode_ticks
     context = terminals[key]["evaluation_context"]
     period = context["decision_period"]
