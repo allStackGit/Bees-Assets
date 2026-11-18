@@ -785,7 +785,12 @@ to a 180-second interval after the previous invocation finishes and a
 two-hour timeout; optional `--interval` and `--timeout` are seconds.
 Inspect generated service/timer units before using `--install`, then
 explicitly start the generated `...-evaluator.timer` for this machine session. Units are
-exclusive-create and not automatically enabled. systemd prevents overlapping
+exclusive-create and not automatically enabled. For separately scheduled
+monitoring-only suites, generate one single-suite evaluator per frequency and
+provide a unique `--evaluator-id nano` / `--evaluator-id micro` (or other
+explicit identifier). This preserves the legacy timer name for existing
+evaluators and avoids collisions. Same-checkpoint success-gated batches
+must continue using one coordinated multi-suite evaluator. systemd prevents overlapping
 runs of the same one-shot service and enforces the specified CPU and RAM caps.
 The evaluator still needs its approved project dependencies and access to
 the model/receipt directories. On a coordinator-local machine the generator
@@ -941,7 +946,16 @@ in Services and explicitly start it. The account needs its approved Python,
 project dependencies, engine and cache, read access to checkpoints/suites and
 write access to evaluator scratch, receipts and service state. Use distinct
 service names for different evaluation profiles. No boot or logon startup
-is enabled by this setup. Before installation, the compiled launcher's
+is enabled by this setup. To show Windows evaluator health in the native
+Hub, give the **machine agent** read-only access to the same private service
+state directory and set
+`EXPERIMENT_HUB_EVALUATOR_STATUS_ROOT=C:\Hub\Private`
+in its local agent environment. Without this optional setting, the agent
+reports that Windows evaluator service status is unavailable rather than
+assuming a timer or service is running. Linux agents inspect only the
+machine's local systemd user evaluator timers and services. These
+observations and failures are read-only diagnostics, not proof that a
+specific frozen suite ran or produced a valid checkpoint receipt. Before installation, the compiled launcher's
 `--run-once` command with an evaluator service configuration performs exactly
 one constrained poll without registering a service.
 
