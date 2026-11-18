@@ -644,6 +644,18 @@ These counts confirm device use, not a measured SPS improvement. An
 Experiment Hub GPU lease uses the supervisor's verified PCI/UUID binding
 instead of local numeric GPU flags; CPU-configured PyTorch checkpoints
 can run on that leased GPU without changing signed model bytes.
+On ROCm Linux, a machine may lease **two exclusive GPUs** to a native
+Bees rollout/collector job. The Hub's installed native adapter advertises
+that capability explicitly, verifies both physical PCI identities and device
+access before Start, and automatically assigns at least one persistent rollout
+actor to each GPU. Every actor reports its physical HIP device after a
+completed model forward. A two-GPU receipt is refused unless real inference
+used **both** distinct leased PCI devices; no assumption of doubled SPS is
+made. A bundle-only learner cannot claim dual-GPU rollout capability.
+For distributed machine plans, at least two Worlds and two rollout workers
+must be issued per two-GPU collector; the Hub resource-plan derivation supplies
+that worker minimum automatically. GPU starts still require explicit approval.
+Windows CUDA remains on its existing single-GPU verified path.
 
 Fixed holdouts can independently use `--evaluation-inference-device cpu`
 (or `cuda:0`). The selected device is pinned in resumable session
