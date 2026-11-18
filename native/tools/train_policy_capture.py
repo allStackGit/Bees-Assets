@@ -782,6 +782,10 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
                 f"{key[0]}:{key[1]}:{key[2]}:{agent}", behavior_id,
             )
             experiences[agent] = []
+        # The caller has already counted opponent steps. Dynamic training
+        # does not need to retain another copy of every historical decision
+        # frame after its actions and terminal references are handed off.
+        frame.clear()
 
 
 def trajectories(rollouts, horizon, behavior_id):
