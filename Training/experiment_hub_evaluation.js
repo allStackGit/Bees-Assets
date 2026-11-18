@@ -108,7 +108,7 @@ function evaluationMeasurements(metrics) {
         throw Error('Independent evaluation measurements must be a bounded object.');
     const normalized={};
     for(const [key,measurement] of Object.entries(metrics)) {
-        if(!/^[a-z][a-z0-9_]{0,47}$/.test(key)||
+        if(!/^[a-z][a-z0-9_]{0,23}$/.test(key)||
             !record(measurement)||
             Object.keys(measurement).some(k=>!['value','unit'].includes(k))||
             Object.keys(measurement).length!==2||
