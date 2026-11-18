@@ -242,6 +242,9 @@ collections abort instead of training partial buffers; checkpoint/restart
 owns recovery. Existing Hub metrics report logical bytes, number of
 ingested shards, total nested CPU validation/copy work and the precisely
 measured post-last-reply copy tail using the learner's own monotonic clock.
+The separately recorded last remote reply owner, last completed copy owner
+and final remote reply gap distinguish straggler exposure from ingestion
+exposure, without interpreting socket blocking as physical network saturation.
 The existing BottleneckEvidence analyzer separately detects sustained
 shared-collector, single-optimizer and genuinely exposed ingestion
 pressure, with source intervals never summed as exclusive work. Actual
