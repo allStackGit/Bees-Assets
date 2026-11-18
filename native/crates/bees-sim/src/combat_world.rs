@@ -4412,6 +4412,11 @@ impl CombatWorld {
                 }
             }
         }
+        // The source RL arena guard runs on the movement velocity BEFORE
+        // Physics2D integrates it. Running after physics discarded the
+        // projected-velocity clamp when the next fixed_step overwrote it,
+        // and exposed out-of-map contact positions for a full physics tick.
+        self.constrain_arena_ships(dt)?;
         // Turrets use the same ship pose updated above, and create real
         // projectile bodies before the subsequent shared physics step.
         self.consume_weapon_rank_events()?;
@@ -4453,7 +4458,6 @@ impl CombatWorld {
         self.process_map_border_contacts();
         self.process_asteroid_ship_contacts()?;
         self.process_asteroid_hull_contacts();
-        self.constrain_arena_ships(dt)?;
         if let Some(random) = random {
             self.spawn_pending_asteroid_fragments(random)?;
         }
