@@ -565,6 +565,7 @@ def aggregate_collection_metrics(bundles):
                 "worker_shards": row.get("worker_shards", []),
                 "sampled_model_timing": row.get("sampled_model_timing"),
                 "reinforcement_arrivals": row.get("reinforcement_arrivals"),
+                "reinforcement_wakeup_work": row.get("reinforcement_wakeup_work"),
                 "queen_minion_controllers": row.get("queen_minion_controllers"),
                 "world_steps": row["successful_world_steps"],
                 "policy_rows": row["successful_policy_rows"],
@@ -579,6 +580,11 @@ def aggregate_collection_metrics(bundles):
         result["reinforcement_arrivals"] = {
             key: sum(row["reinforcement_arrivals"][key] for row in rows)
             for key in ("waves", "squads", "ships", "policy_agents")
+        }
+    if all("reinforcement_wakeup_work" in row for row in rows):
+        result["reinforcement_wakeup_work"] = {
+            key: sum(row["reinforcement_wakeup_work"][key] for row in rows)
+            for key in ("idle_ticks_skipped", "wakeup_scans")
         }
     if all("queen_minion_controllers" in row for row in rows):
         result["queen_minion_controllers"] = {
