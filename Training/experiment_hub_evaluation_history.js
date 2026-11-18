@@ -241,7 +241,16 @@ class EvaluationHistory {
                 }
                 fs.fsyncSync(fd);
             }catch(error) {
-                fs.ftruncateSync(fd,st.size);
+                // A partial write must not become an apparent historical
+                // receipt after a crash. Roll back to the last confirmed
+                // boundary and make that truncation durable before retrying.
+                try {
+                    fs.ftruncateSync(fd,st.size);
+                    fs.fsyncSync(fd);
+                }catch(rollbackError) {
+                    throw Error('Independent evaluation append rollback failed: '+
+                        String(rollbackError.message||rollbackError));
+                }
                 throw error;
             }
             data.size+=body.length;
