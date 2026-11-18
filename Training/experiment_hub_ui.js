@@ -4933,6 +4933,37 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusLine.textContent+=' · last service-health check '+
                         machine.evaluator_service_checked_at;
                 details.append(statusLine);
+                const past=comparisonProject===project
+                    ?comparisonData?.evaluation_service_events?.find(sample=>
+                        sample.machine_id===j.assigned_machine_id)?.events||[]:[];
+                if(past.length) {
+                    const history=document.createElement('details');
+                    const header=document.createElement('summary');
+                    header.textContent='Evaluator service observations ('+
+                        past.length+' recent changes; read-only archived evidence)';
+                    history.append(header);
+                    for(const event of past.slice(-8).reverse()) {
+                        const paragraph=document.createElement('p');
+                        const services=event.services.filter(item=>
+                            item.project===j.project_id);
+                        paragraph.textContent=event.observed_at+
+                            ' · '+(event.issue
+                                ?'Service probe issue: '+event.issue
+                                :services.length
+                                    ?services.map(item=>item.unit+
+                                        ': scheduler '+item.scheduler_state+
+                                        ', service '+item.service_state+
+                                        ', last poll '+item.last_result+
+                                        (item.diagnostic?' ('+item.diagnostic+')':'')
+                                    ).join('; ')
+                                    :'No '+j.project_id+' evaluator scheduler reported.');
+                        history.append(paragraph);
+                    }
+                    const note=document.createElement('p');
+                    note.textContent='Only state changes and newly completed polls are archived. These observations do not verify a checkpoint evaluation or authorize Stop.';
+                    history.append(note);
+                    details.append(history);
+                }
                 if(monitoring&&j.evaluation_monitor.regression_alert) {
                     const info=document.createElement('p');
                     info.textContent=regressionSignals.length
