@@ -179,6 +179,11 @@ pub enum NativeLevelNotificationKind {
     Reward(RewardEmission),
     /// A ready-to-send group command, including terminal/ELO markers.
     GroupReward(GroupRewardEvent),
+    /// A physically spawned or deployed agent enters its authored group
+    /// only now, never at a future-wave reservation or by inference.
+    PolicyControllerAdmitted {
+        ship_id: i64, binding_revision: u64, side: i32, group_agent: u64,
+    },
     PolicyControllerRetired { ship_id: i64, binding_revision: u64 },
     EpisodeFinal(NativeEpisodeFinal),
     /// An unfinished, canceled or irrecoverably failed episode. The
@@ -887,6 +892,29 @@ impl NativeLevelEventProcessor {
         Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
         self.pending_notifications.push(NativeLevelNotification {
             tick, kind: NativeLevelNotificationKind::CampaignDialogue(cue),
+        });
+        Ok(())
+    }
+
+    /// Durable identity and exact completed-tick admission for a
+    /// dynamically joined MA-POCA agent. Trajectory reconstruction must
+    /// distinguish a future participant from an initially active one.
+    pub fn record_policy_controller_admitted(
+        &mut self, tick: u64, ship_id: i64, binding_revision: u64,
+        side: i32, group_agent: u64,
+    ) -> Result<(), NativeLevelEventError> {
+        if self.failed || self.completed() || tick == 0 ||
+            ship_id <= 0 || binding_revision == 0 || side <= 0 || group_agent == 0 ||
+            self.group_delivery.as_ref().is_none_or(|group|
+                !group.is_registered(side, group_agent))
+        {
+            return Err(NativeLevelEventError::InvalidGroupConfiguration);
+        }
+        Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
+        self.pending_notifications.push(NativeLevelNotification {
+            tick, kind: NativeLevelNotificationKind::PolicyControllerAdmitted {
+                ship_id, binding_revision, side, group_agent,
+            },
         });
         Ok(())
     }
