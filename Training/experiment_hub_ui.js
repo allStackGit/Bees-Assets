@@ -3540,6 +3540,14 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
             return;
         }
+        if(stage&&!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_curriculum_stages?.includes(stage))) {
+            feedback('hub-config-message',
+                'No connected worker with this approved profile advertises the selected curriculum stage. Install the stage-capable runtime or select existing maps.');
+            return;
+        }
         if(remoteRollouts&&(cpuFallback||!(state?.machines||[]).some(machine=>
             machine.status==='connected'&&machine.agent_platform==='linux'&&
             machine.tinybrains_profiles?.[profile]===digest&&
