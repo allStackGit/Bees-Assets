@@ -38,6 +38,36 @@ SHIP_ANIMATIONS = (
     (20, 1, "warpgate_loop.png", "Warp Gate Loop.anim"),
 )
 
+# Original ShipRemains and Beehive Shrinking sheets. The tuple is keyed
+# directly by ConfigData.ShipTypes; None denotes source classes without
+# authored wreck art. The 20-slice clips hold their final frame until the
+# source ShipRemains five-second Kill timer completes.
+SHIP_REMAINS = (
+    ("barge_remains.png", "Barge Remains.anim"), None,
+    ("beehive_shrinking.png", "Beehive Shrinking.anim"),
+    ("bumblebee_remains.png", None),
+    ("carpenterbee_remains.png", None),
+    ("carrier_remains.png", "Carrier Remains.anim"),
+    ("cruiser_remains.png", "Cruiser Remains.anim"),
+    ("dreadnought_remains.png", "Dreadnought Remains.anim"),
+    ("drone_remains.png", "Drone Remains.anim"),
+    ("factory_remains.png", "Factory Reamins.anim"),
+    None,  # Fire Barge explodes rather than leaving a persistent corpse
+    ("flagship_remains.png", "Flagship Remains.anim"),
+    ("frigate_remains.png", "Frigate Remains.anim"),
+    ("gunship_remains.png", "Gunship Remains.anim"),
+    ("honeybee_remains.png", None),
+    ("hornet_remains.png", None),
+    ("leafcutter_remains.png", None),
+    ("queen_remains.png", None),
+    ("scout_remains.png", "Scout Remains.anim"),
+    ("striker_remains.png", "Striker Remains.anim"),
+    ("warpgate_remains.png", "Warp Gate Remains.anim"),
+    ("wasp_remains.png", None),
+    ("yellowjacket_remains.png", None),
+    None,  # HumanTarget has no authored corpse
+)
+
 # Source CollisionAsteroidCatalog prefab numbers 1..28. Slot zero is
 # unused, so native sprites retain the real authored asteroid identities.
 ASTEROID_IMAGES = (None,) + tuple(f"Asteroid {n}.png" for n in range(1, 29))
@@ -207,6 +237,38 @@ def pack_ship_animations(palettes):
     return data, len(SHIP_ANIMATIONS)
 
 
+def pack_ship_remains(palettes):
+    """One independently lazy-loadable BSR1 atlas of original corpse art.
+
+    The same RGBA/mask RLE as the living sprite animation atlas preserves
+    Unity frame ordering, PPU and source custom-color behavior.
+    """
+    if len(SHIP_REMAINS) != len(SHIP_IMAGES):
+        raise ValueError("Ship remains map differs from source ShipTypes")
+    entries = [(kind, spec) for kind, spec in enumerate(SHIP_REMAINS) if spec]
+    data = bytearray(struct.pack("<4sH", b"BSR1", len(entries)))
+    for kind, (filename, clip) in entries:
+        path = ROOT / "Sprites/Ships/Parts/Remains" / filename
+        ppu, frames = source_frames(path, True)
+        fps = 1
+        if clip:
+            text = (ROOT / "Sprites/Ships/Animations" / clip).read_text(encoding="utf-8")
+            match = re.search(r"^  m_SampleRate: (\d+)(?:\.0+)?$", text, re.MULTILINE)
+            if match is None or not 1 <= int(match[1]) <= 120:
+                raise ValueError(f"Invalid native remains clip rate: {clip}")
+            fps = int(match[1])
+        if not 1 <= len(frames) <= 64:
+            raise ValueError(f"Invalid source ship remains frames: {filename}")
+        if len(frames) > 1 and not clip:
+            raise ValueError(f"Animated source ship remains need a real clip: {filename}")
+        data.extend(struct.pack("<BHHH", kind, ppu, fps, len(frames)))
+        for frame in frames:
+            data.extend(struct.pack("<HH", frame.width, frame.height))
+            packed_pixels(data, frame)
+            packed_color_mask(data, frame, palettes[kind])
+    return data, len(entries)
+
+
 def write_atomic(output: Path, data: bytearray):
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -234,6 +296,8 @@ def main():
                         default=ROOT / "native/assets/asteroid-sprites.rgba")
     parser.add_argument("--animation-output", type=Path,
                         default=ROOT / "native/assets/ship-animations.rgba")
+    parser.add_argument("--remains-output", type=Path,
+                        default=ROOT / "native/assets/ship-remains.rgba")
     args = parser.parse_args()
     palettes = source_ship_color_palettes()
     ships, ship_count = pack(
@@ -241,6 +305,7 @@ def main():
         palettes,
     )
     animations, animation_count = pack_ship_animations(palettes)
+    remains, remains_count = pack_ship_remains(palettes)
     projectiles, projectile_count = pack(
         PROJECTILE_IMAGES, ROOT / "Sprites/Projectiles", b"BPS1", True,
     )
@@ -251,6 +316,9 @@ def main():
     projectiles_path = write_atomic(args.projectile_output, projectiles)
     asteroids_path = write_atomic(args.asteroid_output, asteroids)
     animations_path = write_atomic(args.animation_output, animations)
+    remains_path = write_atomic(args.remains_output, remains)
+    print(f"Ship remains: {remains_count} classes, "
+          f"{len(remains)} bytes at {remains_path}")
     print(f"Ship animations: {animation_count} clips, "
           f"{len(animations)} bytes at {animations_path}")
     print(f"Ship sprites: {ship_count} types, {len(ships)} bytes at {ships_path}")
