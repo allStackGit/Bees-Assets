@@ -897,7 +897,11 @@ def main() -> None:
             world_start,
         )
     template_workers = config.pop("rollout_workers", 1)
-    workers = args.rollout_workers if args.rollout_workers is not None else template_workers
+    # A GPU allocation needs at least one independently batched resident
+    # model process per assigned GPU. Keep a larger authored worker budget,
+    # but never leave explicitly selected GPUs idle by default.
+    workers = (args.rollout_workers if args.rollout_workers is not None else
+               max(template_workers, len(rollout_gpus or ())))
     physics_workers = (args.physics_workers if args.physics_workers is not None
                        else config.get("physics_workers", 1))
     if type(physics_workers) is not int or not 1 <= physics_workers <= 128:
