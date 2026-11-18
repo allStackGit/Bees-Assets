@@ -62,11 +62,15 @@ function evaluationPolicy(value) {
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
 }
 
-// Regression monitoring is descriptive evidence only, never native Stop or
-// checkpoint-promotion authority. Require complete, bounded parameters.
+// Regression monitoring is descriptive by default. Explicit opt-in may
+// request a native Stop only after an independently verified archive proof;
+// neither alerts nor chart points can authorize model promotion.
 function regressionAlertPolicy(value) {
     if(value===undefined)return undefined;
-    if(!record(value)||Object.keys(value).length!==2||
+    if(!record(value)||Object.keys(value).some(key=>
+        !['window_checkpoints','minimum_drop','stop_on_regression'].includes(key))||
+        Object.keys(value).length!==(value.stop_on_regression===undefined?2:3)||
+        (value.stop_on_regression!==undefined&&value.stop_on_regression!==true)||
         !Number.isSafeInteger(value.window_checkpoints)||
         value.window_checkpoints<2||value.window_checkpoints>20||
         typeof value.minimum_drop!=='number'||
@@ -76,7 +80,8 @@ function regressionAlertPolicy(value) {
         !Object.hasOwn(value,'minimum_drop'))
         throw Error('Regression alerts need a 2–20 checkpoint window and an absolute success-rate drop in (0, 1].');
     return {window_checkpoints:value.window_checkpoints,
-        minimum_drop:value.minimum_drop};
+        minimum_drop:value.minimum_drop,
+        ...(value.stop_on_regression===true?{stop_on_regression:true}:{})};
 }
 
 // Monitoring suites share the immutable receipt contract, but have no
@@ -108,6 +113,8 @@ function monitoringPolicy(value) {
             rule.include_baseline!==undefined||rule.include_final!==undefined)||
             new Set(rules.map(rule=>rule.suite_id)).size!==rules.length)
             throw Error('Multi-suite monitoring requires distinct suite IDs; baseline and final scheduling are shared.');
+        if(value.regression_alert?.stop_on_regression===true&&value.include_final===false)
+            throw Error('Regression-based Stop requires final-checkpoint evaluation for independently verified recovery.');
         return {all_of:rules,...(value.every_n_checkpoints!=null
             ?{every_n_checkpoints:value.every_n_checkpoints}:{}),
             ...(value.regression_alert!==undefined
@@ -135,6 +142,8 @@ function monitoringPolicy(value) {
          (!Number.isSafeInteger(value.every_n_checkpoints)||
           value.every_n_checkpoints<1||value.every_n_checkpoints>1000000)))
         throw Error('Evaluation monitoring requires a suite ID, trial count and valid cadence.');
+    if(value.regression_alert?.stop_on_regression===true&&value.include_final===false)
+        throw Error('Regression-based Stop requires final-checkpoint evaluation for independently verified recovery.');
     return {suite_id:value.suite_id,min_trials:value.min_trials,
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{}),
         ...(value.every_n_checkpoints!=null
