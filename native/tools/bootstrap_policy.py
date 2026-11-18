@@ -97,8 +97,14 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     # Reject stale/mismatched authored scenarios and missing Rust tooling
     # before importing heavyweight learner libraries or allocating a GPU.
     trainer_config = trainer_config.resolve(strict=True)
-    if shutil.which(cargo) is None:
-        raise ValueError(f"native bootstrap requires an installed Rust cargo executable: {cargo}")
+    # Training-enabled native game releases can ship the exact compiled
+    # Rust ABI manifest generator. It uses the same bees-sim policy signature
+    # as cargo's example, but does not require a compiler on the target PC.
+    manifest_binary = ROOT / ("policy_manifest.exe" if os.name == "nt" else "policy_manifest")
+    if not manifest_binary.is_file() and shutil.which(cargo) is None:
+        raise ValueError(
+            f"native bootstrap requires a packaged policy_manifest binary or Rust cargo: {cargo}"
+        )
     example_dir = ROOT / "native" / "examples"
     if scenario == "custom":
         if source_scene_override is None or source_run_override is None:
@@ -256,12 +262,17 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     # Generate the frozen ABI signature from Rust itself. Never duplicate the
     # long observation/action signature in Python or the training config.
     manifest = output / "manifest.json"
-    subprocess.run([
-        cargo, "run", "--locked", "--quiet", "--manifest-path",
-        str(ROOT / "native" / "Cargo.toml"),
-        "-p", "bees-host", "--example", "policy_manifest", "--",
-        str(slot_file), str(manifest),
-    ], cwd=ROOT, check=True)
+    command = (
+        [str(manifest_binary), str(slot_file), str(manifest)]
+        if manifest_binary.is_file()
+        else [
+            cargo, "run", "--locked", "--quiet", "--manifest-path",
+            str(ROOT / "native" / "Cargo.toml"),
+            "-p", "bees-host", "--example", "policy_manifest", "--",
+            str(slot_file), str(manifest),
+        ]
+    )
+    subprocess.run(command, cwd=ROOT, check=True)
 
     # This is also the exact strict actor-loading path used by the resident
     # inference process, not just a JSON/hash format check.
