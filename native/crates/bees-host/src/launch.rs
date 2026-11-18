@@ -3845,6 +3845,8 @@ fn run_battle(
     // world; collect completed episode totals only at the reset boundary.
     let mut past_reinforcement_arrivals =
         bees_gameplay::level_events::NativeReinforcementArrivals::default();
+    let mut past_reinforcement_idle_ticks_skipped = 0_u64;
+    let mut past_reinforcement_wakeup_scans = 0_u64;
     let mut past_queen_controllers =
         bees_host::policy_only_metadata::NativeQueenControllerMeasurements::default();
     let mut next_status_round = status_every_rounds;
@@ -4357,6 +4359,8 @@ fn run_battle(
                 let old_world = host.simulation().world(index)
                     .ok_or_else(|| invalid("recycled world disappeared"))?;
                 let prior_reinforcements = old_world.state.events.reinforcement_arrivals();
+                let prior_idle_ticks = old_world.state.metadata.reinforcement_idle_ticks_skipped;
+                let prior_wakeup_scans = old_world.state.metadata.reinforcement_wakeup_scans;
                 let prior_queens = old_world.state.metadata.queen_controller_measurements;
                 host.reset_world(index, seed, replacement)
                     .map_err(|error| contextual("guarded Level reset", error))?;
@@ -4364,6 +4368,8 @@ fn run_battle(
                 // fails, the original world remains the current snapshot;
                 // merging it before reset would double-count at finalization.
                 past_reinforcement_arrivals.merge(prior_reinforcements);
+                past_reinforcement_idle_ticks_skipped += prior_idle_ticks;
+                past_reinforcement_wakeup_scans += prior_wakeup_scans;
                 past_queen_controllers.merge(prior_queens);
                 bind_evaluation_episode(
                     &mut host, index, level, seed, &source_digests[index],
@@ -4751,16 +4757,25 @@ fn run_battle(
     // previously recycled worlds. This covers independent multi-episode
     // training and fixed-seed evaluation without requiring hot-path logs.
     let mut reinforcement_arrivals = past_reinforcement_arrivals;
+    let mut reinforcement_idle_ticks_skipped = past_reinforcement_idle_ticks_skipped;
+    let mut reinforcement_wakeup_scans = past_reinforcement_wakeup_scans;
     let mut queen_controllers = past_queen_controllers;
     for index in 0..host.simulation().world_count() {
         if let Some(world) = host.simulation().world(index) {
             reinforcement_arrivals.merge(world.state.events.reinforcement_arrivals());
+            reinforcement_idle_ticks_skipped +=
+                world.state.metadata.reinforcement_idle_ticks_skipped;
+            reinforcement_wakeup_scans += world.state.metadata.reinforcement_wakeup_scans;
             queen_controllers.merge(world.state.metadata.queen_controller_measurements);
         }
     }
     let mut final_summary = json!({
         "kind": "run_final",
         "reinforcement_arrivals": reinforcement_arrivals,
+        "reinforcement_wakeup_work": {
+            "idle_ticks_skipped": reinforcement_idle_ticks_skipped,
+            "wakeup_scans": reinforcement_wakeup_scans,
+        },
         "queen_minion_controllers": queen_controllers,
         "remote_play": remote.as_ref().map(|server| server.measurements()),
         "run_id": config.run_id,
