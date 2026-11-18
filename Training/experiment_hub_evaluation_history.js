@@ -137,10 +137,15 @@ class EvaluationHistory {
                 if(!records.length)continue;
                 // Keep first and latest checkpoints and evenly sample the
                 // middle for interactive charting. All rows stay on disk.
-                const points=records.length<=MAX_UI_POINTS?records:
-                    records.filter((row,i)=>i===0||i===records.length-1||
-                        i%Math.ceil(records.length/(MAX_UI_POINTS-2))===0)
-                        .slice(-(MAX_UI_POINTS));
+                let points=records;
+                if(records.length>MAX_UI_POINTS) {
+                    const middle=[];
+                    const stride=Math.ceil((records.length-2)/(MAX_UI_POINTS-2));
+                    for(let i=1;i<records.length-1;i+=stride)
+                        middle.push(records[i]);
+                    points=[records[0],...middle.slice(0,MAX_UI_POINTS-2),
+                        records[records.length-1]];
+                }
                 samples.push({job_id:job.id,points});
                 this.issues.delete(job.id);
             }catch(error) {
