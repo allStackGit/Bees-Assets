@@ -933,7 +933,7 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
             self.player.cease_fire.insert(child, enabled);
         }
         self.player_queen_minion_added(world, child, queen_id, minion_id, minion_index)?;
-        self.enqueue_game_queen_minion(child)
+        self.enqueue_game_queen_minion(world, child, queen_id, minion_id)
     }
 
     fn player_queen_minion_added(
