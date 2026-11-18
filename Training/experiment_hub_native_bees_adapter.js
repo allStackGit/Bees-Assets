@@ -193,6 +193,23 @@ function rolloutPhysicsMeasurements(rollout) {
     return result;
 }
 
+// Report only authenticated completed native rollout admissions. Future
+// authored ships do not count as present policy agents before deployment.
+function rolloutReinforcementMeasurements(rollout) {
+    const admissions = rollout?.reinforcement_arrivals;
+    if (admissions == null) return {};
+    const result = {};
+    for (const key of ['waves', 'squads', 'ships', 'policy_agents']) {
+        const value = admissions[key];
+        if (!Number.isSafeInteger(value) || value < 0)
+            throw Error('Invalid native Bees reinforcement admission receipt.');
+        result['rollout_reinforcement_' + key] = {value, unit: 'count'};
+    }
+    if (admissions.policy_agents > admissions.ships)
+        throw Error('Policy admissions exceed physical reinforcement ships.');
+    return result;
+}
+
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
@@ -668,6 +685,7 @@ function createNativeBeesAdapter({
                         },
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
                         ...rolloutPhysicsMeasurements(rollout),
+                        ...rolloutReinforcementMeasurements(rollout),
                         ...(rollout.sampled_model_timing ? {
                             rollout_sampled_model_calls: {
                                 value: rollout.sampled_model_timing.calls, unit: 'count',
@@ -713,6 +731,7 @@ function createNativeBeesAdapter({
                 metrics: {
                     ...(rollout ? {
                         ...rolloutPhysicsMeasurements(rollout),
+                        ...rolloutReinforcementMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
