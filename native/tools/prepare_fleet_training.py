@@ -13,10 +13,14 @@ import copy
 import importlib.util
 import json
 import math
+import os
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-from native_training_artifacts import atomic_json, file_sha256
+from native_training_artifacts import atomic_json, file_sha256, sync_directory
 
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
@@ -180,15 +184,16 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
             file_sha256(archetypes) != archetypes_sha):
         raise ValueError("native fleet source changed while deriving its training contract")
     destination = destination.resolve()
-    destination.mkdir(parents=True, exist_ok=False)
+    if destination.exists():
+        raise FileExistsError(f"native fleet training source already exists: {destination}")
+    if not destination.parent.is_dir():
+        raise ValueError("native fleet training source parent must exist")
     files = {
         "battle.scene.json": scene,
         "battle.run.json": run,
         "battle.policy.scene.json": policy_scene,
         "battle.policy.run.json": policy_run,
     }
-    for name, value in files.items():
-        atomic_json(destination / name, value)
     receipt = {
         "schema_version": 1,
         "kind": "native_fleet_skirmish_training_source",
@@ -200,10 +205,50 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
         "source_squad_clones": clone_count,
         "physical_ship_count": len(scene["ships"]),
         "policy_ship_count": sum("policy" in ship for ship in policy_scene["ships"]),
-        "outputs_sha256": {name: file_sha256(destination / name) for name in files},
     }
-    atomic_json(destination / "training-source.json", receipt)
+    # Publish all four files and their joint receipt as one immutable
+    # directory. An interrupted authoring attempt must not leave a
+    # seemingly usable but incomplete model initialization source.
+    with tempfile.TemporaryDirectory(
+        prefix=f".{destination.name}.fleet-", dir=destination.parent,
+    ) as staging:
+        complete = Path(staging) / "complete"
+        complete.mkdir()
+        for name, value in files.items():
+            atomic_json(complete / name, value)
+        receipt["outputs_sha256"] = {
+            name: file_sha256(complete / name) for name in files
+        }
+        atomic_json(complete / "training-source.json", receipt)
+        sync_directory(complete)
+        if destination.exists():
+            raise FileExistsError(f"native fleet training source appeared: {destination}")
+        os.rename(complete, destination)
+        sync_directory(destination.parent)
     return receipt
+
+
+def bootstrap_training(source_dir: Path, output: Path, options: list[str]) -> None:
+    """Delegate all model/round/Hub authority to the existing native bootstrap."""
+    options = list(options)
+    if options and options[0] == "--":
+        options.pop(0)
+    # These three arguments must always identify the exact source just
+    # published. In particular, don't permit a forwarded flag to silently
+    # substitute a different physical scene or existing model lineage.
+    reserved = {"--scenario", "--source-scene", "--source-run", "--resume"}
+    if any(option.split("=", 1)[0] in reserved for option in options):
+        raise ValueError("fleet bootstrap source and scenario are fixed; resume with bootstrap_policy.py directly")
+    output = output.resolve()
+    if output.exists():
+        raise FileExistsError(f"native policy bootstrap destination exists: {output}")
+    subprocess.run([
+        sys.executable, str(Path(__file__).with_name("bootstrap_policy.py")),
+        str(output), "--scenario", "custom",
+        "--source-scene", str(source_dir / "battle.policy.scene.json"),
+        "--source-run", str(source_dir / "battle.policy.run.json"),
+        *options,
+    ], check=True)
 
 
 def main() -> None:
@@ -213,9 +258,23 @@ def main() -> None:
     parser.add_argument("output_dir", type=Path,
                         help="new directory for paired game and training configurations")
     parser.add_argument("--policy-archetypes", type=Path, default=POLICY_ARCHETYPES)
+    parser.add_argument("--bootstrap-output", type=Path,
+                        help="new checkpoint/session directory; optionally launch real native training")
+    parser.add_argument("--bootstrap-args", nargs=argparse.REMAINDER, default=[],
+                        help="forward bootstrap_policy.py options (after this flag), e.g. --train-rounds 3 --rollout-worlds 16")
     args = parser.parse_args()
-    print(json.dumps(convert(args.fleet_run, args.output_dir,
-                             args.policy_archetypes), sort_keys=True), flush=True)
+    if args.bootstrap_args and args.bootstrap_output is None:
+        parser.error("--bootstrap-args requires --bootstrap-output")
+    if args.bootstrap_output is not None:
+        if any(value.split("=", 1)[0] in
+               {"--scenario", "--source-scene", "--source-run", "--resume"}
+               for value in args.bootstrap_args):
+            parser.error("fleet source/scenario are immutable; resume via bootstrap_policy.py")
+    receipt = convert(args.fleet_run, args.output_dir, args.policy_archetypes)
+    print(json.dumps(receipt, sort_keys=True), flush=True)
+    if args.bootstrap_output is not None:
+        bootstrap_training(args.output_dir.resolve(), args.bootstrap_output,
+                           args.bootstrap_args)
 
 
 if __name__ == "__main__":
