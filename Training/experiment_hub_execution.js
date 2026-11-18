@@ -260,7 +260,7 @@ class LocalExecution {
         if(ownsArtifacts&&(state==='running'&&lease.status==='acknowledged'||
             lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256)&&activeEvaluation(job)&&
             supportsEvaluation(this.evaluationSuites,job)) {
-            const results=[];
+            const results=[],issues=[];
             for(const rule of evaluationRules(activeEvaluation(job))) {
                 try {
                     const result=localAdapter.readEvaluation(Object.freeze({
@@ -271,9 +271,15 @@ class LocalExecution {
                     if(result!=null&&(state==='running'||result.checkpoint_sha256===job.final_checkpoint_sha256))
                         results.push(evaluationEvidence(result,rule,order.dispatch_id));
                 }catch(error) {
-                    report.evaluation_issue=(rule.suite_id+': '+
-                        String(error.message||error)).slice(0,160);
+                    issues.push((rule.suite_id+': '+
+                        String(error.message||error)).slice(0,160));
                 }
+            }
+            if(issues.length) {
+                // Keep the original single-issue field for older Hub versions,
+                // while preserving every failing suite for the shared archive.
+                report.evaluation_issue=issues.at(-1);
+                report.evaluation_issues=issues;
             }
             if(activeEvaluation(job).all_of) {
                 if(results.length)report.evaluations=results;
