@@ -713,6 +713,12 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
     scripted_reinforcement_ships = set(
         getattr(args, "scripted_reinforcement_ship_ids", ())
     )
+    # Both teams require a physical policy participant at tick zero.
+    # Deferred participants use those real models only after deployment;
+    # counting them as starting controllers would admit empty policy teams.
+    deferred_reinforcement_ships = set(getattr(
+        args, "deferred_reinforcement_ship_ids", scripted_reinforcement_ships,
+    ))
     for ship in scene["ships"]:
         ship["user_controlled"] = False
         # Native episode starting TSV uses actual ShipVitals, not nominal
@@ -751,10 +757,12 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
             "quarter_turns": 0 if ship["side"] == 1 else 1,
             "movement_disabled": False,
         }
-        active[ship["side"]] += 1
+        if ship["entity_id"] not in deferred_reinforcement_ships:
+            active[ship["side"]] += 1
     if not all(active.values()):
         raise ValueError(
-            "native MA-POCA needs a source-backed policy ship on both sides; "
+            "native MA-POCA needs an initially deployed source-backed policy "
+            "ship on both sides; "
             f"available: {sorted(policies)}"
         )
     for squad in scene["squads"]:
@@ -896,6 +904,10 @@ def main() -> None:
                         help="omit source mining resources, static boxes and map objects")
     parser.add_argument("--trainable", action="store_true",
                         help="also author a matching native MA-POCA policy scene and run")
+    parser.add_argument("--policy-reinforcements", action="store_true",
+                        help="with --trainable, enroll supported authored reinforcement ships "
+                             "into their actual policy teams only on physical deployment "
+                             "(otherwise they retain scripted AI)")
     parser.add_argument("--policy-archetypes", type=Path,
                         default=EXAMPLES / "native-skirmish.policy.scene.json",
                         help="existing native policy ship and Bomb observation definitions")
@@ -906,6 +918,8 @@ def main() -> None:
                         default=EXAMPLES / "native-skirmish.run.json",
                         help="paired native run with the same map/physics asset matrix")
     args = parser.parse_args()
+    if args.policy_reinforcements and not args.trainable:
+        parser.error("--policy-reinforcements requires --trainable")
     if args.objective != "survival" and (
             args.protect_type is not None or args.survive_seconds is not None):
         parser.error("--protect-type and --survive-seconds require --objective survival")
@@ -922,7 +936,11 @@ def main() -> None:
             from prepare_fleet_training import (
                 deferred_reinforcement_ships, verify_same_battle,
             )
-            args.scripted_reinforcement_ship_ids = deferred_reinforcement_ships(scene, run)
+            reserved = deferred_reinforcement_ships(scene, run)
+            args.deferred_reinforcement_ship_ids = reserved
+            args.scripted_reinforcement_ship_ids = (
+                set() if args.policy_reinforcements else reserved
+            )
             policy = author_policy_scene(scene, run, args)
             verify_same_battle(scene, run, policy[0], policy[1])
         output = args.output_dir.resolve()
