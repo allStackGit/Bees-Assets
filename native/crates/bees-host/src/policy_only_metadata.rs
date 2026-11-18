@@ -423,6 +423,7 @@ impl NativePolicyOnlyMetadata {
             !self.authored_ships.contains_key(&id) ||
             !self.effective_vision.contains_key(&id) ||
             !template.physical.valid() || !template.perception.valid() ||
+            (self.agents.contains_key(&id) && template.policy_weapon.is_none()) ||
             template.vision.effective_range < 0 ||
             template.vision.trigger_range < 0 ||
             template.vision.enabled &&
@@ -443,6 +444,13 @@ impl NativePolicyOnlyMetadata {
     fn queen_policy_controller(
         &self, queen_id: i64, side: i32,
     ) -> Option<&AuthoredPolicyAgent> {
+        // Source-authored game Queen minions are autonomous unless the
+        // Queen's physical minion template also authenticates its neural
+        // Bomb observation. The existence of other side/model agents is
+        // never permission to invent a YellowJacket policy controller.
+        if !self.queen_templates.get(&queen_id)
+            .is_some_and(|template| template.policy_weapon.is_some())
+        { return None; }
         self.agents.get(&queen_id)
             .filter(|agent| agent.side == side)
             .or_else(|| self.agents.values()
