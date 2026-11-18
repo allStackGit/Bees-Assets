@@ -52,11 +52,14 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_cpu_optimizer_threads_settled','training_remote_cpu_optimizer_trials',
     'training_gpu_rollout_lineages','training_split_gpu_rollout_lineages',
     'training_local_gpu_rollout_devices','training_gpu_rollout_next_devices',
+    'training_local_gpu_rollout_lineages','training_gpu_rollout_next_lineages',
+    'training_gpu_rollout_trial',
     'training_gpu_rollout_spare_candidates',
     'training_gpu_rollout_batches','training_gpu_rollout_states',
     'training_gpu_rollout_lstm_steps','training_gpu_rollout_policy_reused',
     'training_gpu_policy_retained','training_gpu_policy_reused',
     'training_gpu_rollout_state_copy_batches',
+    'training_gpu_rollout_input_packs',
     'training_remote_gpu_rollout_trials','training_remote_gpu_rollout_tuned',
     'training_gpu_prefetched_batches',
     'training_gpu_prefetch_active_lineages',
@@ -110,6 +113,8 @@ function courierMetrics(source) {
     const primary=name=>name.startsWith('training_gpu_placement_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
+        /^training_gpu_rollout_input_(?:packs|seconds|owner)$/.test(name)||
+        /^training_(?:local_gpu_rollout_lineages|gpu_rollout_(?:next_lineages|trial))$/.test(name)||
         /^training_gpu_snapshot_(?:max_seconds|stream_max_seconds|reused_lineages|owner|work_share)$/.test(name);
     const entries=Object.entries(stats).sort(
         ([a],[b])=>Number(primary(b))-Number(primary(a)));
@@ -120,7 +125,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':

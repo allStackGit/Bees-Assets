@@ -119,6 +119,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_slowest_collector_id',
             'pipeline_collection_exposure_fraction',
             'collector_wait_seconds','collector_critical_path_seconds',
+            'collector_dispatch_queue_peak','collector_dispatch_queue_max_seconds',
+            'collector_dispatch_tail_seconds','collector_dispatch_tail_owner',
+            'pipeline_collector_dispatch_pressure','pipeline_collector_dispatch_owner',
             'pipeline_local_gpu_lease_index'])
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
@@ -131,8 +134,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_devices_assigned',
             'training_gpu_devices_active',
             'training_gpu_rollout_lineages',
+            'training_local_gpu_rollout_lineages',
             'training_gpu_rollout_next_devices',
+            'training_gpu_rollout_next_lineages','training_gpu_rollout_trial',
             'training_gpu_rollout_spare_candidates',
+            'training_gpu_rollout_input_packs','training_gpu_rollout_input_seconds',
+            'training_gpu_rollout_input_owner',
             'training_gpu_device_0_lineages',
             'training_gpu_device_1_lineages',
             'training_gpu_device_0_peak_allocated_mb',
@@ -403,6 +410,18 @@ class BottleneckEvidence {
             const remotePrepCritical=launchDelay!==null&&launchDelay<=collection&&
                 prepExposed!==null&&prepExposed<=launchDelay&&
                 prepExposed>=0.25&&prepExposed>=0.15*collection;
+            const dispatchTail=seconds('collector_dispatch_tail_seconds');
+            const dispatchMax=seconds('collector_dispatch_queue_max_seconds');
+            const tailOwner=metrics.collector_dispatch_tail_owner;
+            // Subtract all measured collection/optimization overlap from
+            // the queue tail to get a lower bound on exposed PPO delay.
+            const dispatchExposed=(dispatchTail!==null&&dispatchMax!==null&&
+                dispatchTail<=dispatchMax&&dispatchMax<=collection&&overlap!==null)
+                ?Math.max(0,dispatchTail-overlap):0;
+            const dispatchOwner=(validCount(tailOwner)&&tailOwner.value>0&&
+                validCount(remoteCount)&&tailOwner.value<remoteCount.value&&
+                dispatchExposed>=0.15&&dispatchExposed>=0.15*exposure)
+                ?tailOwner.value:null;
             if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
             const localGpuWait=seconds('local_gpu_wait_after_local_max_seconds');
             const localGpuShare=(collection>0&&localGpuWait!==null&&
@@ -545,7 +564,7 @@ class BottleneckEvidence {
                 prior.samples.push({at,fraction,waitShare,mergeShare,
                     prepShare,
                     localGpuShare,localGpuOwner,localGpuLease,remoteOwner,remoteCompeting,
-                    remoteConnectCritical,remotePrepCritical,
+                    remoteConnectCritical,remotePrepCritical,dispatchOwner,
                     stageHints,simHints,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
@@ -604,6 +623,12 @@ class BottleneckEvidence {
                 }
                 if(recent.filter(x=>x.remotePrepCritical).length>=5)
                     add('pipeline_remote_prep_pressure',1,'count');
+                const dispatchOwner=recent.at(-1).dispatchOwner;
+                if(Number.isSafeInteger(dispatchOwner)&&recent.filter(x=>
+                    x.dispatchOwner===dispatchOwner).length>=5) {
+                    add('pipeline_collector_dispatch_pressure',1,'count');
+                    add('pipeline_collector_dispatch_owner',dispatchOwner,'count');
+                }
                 if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
                     add('pipeline_merge_dominant',1,'count');
                 // Cross-stage capacity evidence requires *sustained* host
@@ -922,6 +947,7 @@ class BottleneckEvidence {
             (name==='pipeline_local_gpu_wait_owner'||
              name==='pipeline_local_gpu_lease_index'||
              name==='pipeline_remote_connect_owner'||
+             name==='pipeline_collector_dispatch_owner'||
              name==='pipeline_remote_wait_owner')?0:
             name.startsWith('pipeline_')&&(
                 name.endsWith('_pressure')||name.endsWith('_evidence'))?0:

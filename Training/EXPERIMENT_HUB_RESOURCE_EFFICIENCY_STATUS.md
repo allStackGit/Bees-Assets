@@ -181,6 +181,32 @@ diagnosis only for the verified last/slowest PPO lineage. These are not physical
 VRAM bus bandwidth, exclusive GPU kernel time or demonstrated SPS gains;
 CUDA/ROCm benchmarking and recovery qualification remain outstanding.
 
+- **TinyBrains collector allocation:** Persistent local and remote collectors
+  can retune their shares of a fixed PPO action quota after two stable
+  measurement windows show a new opportunity under the same lease.
+  Trials use completed decisions per second and skip active shared CPU
+  concurrency trials. Checkpoint receipts keep the last proven split and
+  reference timings. The Hub exposes re-probe counts and signed measured
+  trial gains through existing metrics. Native CPU pools reopen sizing
+  after a sustained quota or inference-width change. Trials with missing or
+  noisy throughput readings release shared tuning after episode-safe rollback.
+
+- **Courier rollout on shared optimizer GPUs:** The coordinator measures
+  full and partial GPU rollout groups against completed useful SPS. A
+  checkpointed width preserves mixed CPU/GPU rollout within one GPU's
+  policy group. Optimizer placement trials keep the same policies on GPU
+  rollout, and Hub metrics report executed and next-round local counts.
+
+- **TinyBrains local GPU placement:** Startup compares optimizer and primary
+  collector roles together using bounded PPO and directional policy-copy
+  timings. Matching checkpoints restore both physical slots. The primary
+  collector uses the same grouped refresh path measured by the probe.
+
+- **TinyBrains collector transport:** Large authenticated frames reuse a
+  receive chunk and release buffers at serialization boundaries. The Hub
+  reports learner dispatch queue depth and names an owner when a sustained
+  queue tail outlasts the other collectors and measured PPO overlap.
+
 ## Significant remaining development
 
 1. **Exercise the exact executable native-engine path:** qualify early dispatched pooled engine steps, episode/seat identity, replay attribution, graceful retirement and checkpoint continuation using actual TinyBrains binaries and training environments. Synthetic scheduling checks preserve action indices and show potential latency savings, not measured real SPS. On the next native profiling run, nonzero `collector_N_sim_prefetch_engine_steps` plus reduced `collector_N_sim_exposed_wait_share` with improved useful decisions/s would support the expected benefit; absent early dispatch or unchanged exposed wait would falsify it. Full removal of the slowest-child barrier would also require explicit in-flight transition ownership, terminal reward completion, and deterministic policy sampling across out-of-order engine returns; that change has **not** been implemented.

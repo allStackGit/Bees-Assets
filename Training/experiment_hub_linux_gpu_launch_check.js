@@ -28,7 +28,8 @@ function verify(argv) {
         throw Error('GPU topology changed before native workload startup.');
     let access;
     if(bindings.length===1) {
-        // Preserve the strict single-GPU denied-device proof unchanged.
+        // The supervisor has already checked denial using the excluded
+        // peers, or by withholding the only render node in a control unit.
         access=probe(plan.kfd.node,plan.selected[0].node,
             ...plan.unselected.map(device=>device.node));
     }else{

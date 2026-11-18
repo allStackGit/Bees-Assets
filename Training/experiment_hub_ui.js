@@ -2261,6 +2261,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const remotePrepSignal=measured.pipeline_remote_prep_pressure?.value===1
                 ?' · Learner regularly still preparing remote rollouts after local collectors finish'
                 :'';
+            const dispatchOwner=measured.pipeline_collector_dispatch_owner?.value;
+            const dispatchSignal=measured.pipeline_collector_dispatch_pressure?.value===1&&
+                Number.isSafeInteger(dispatchOwner)&&dispatchOwner>=1&&dispatchOwner<=16
+                ?' · Collector '+dispatchOwner+' regularly waits for learner dispatch'
+                :'';
             const measuredWorkers=[];
             for(let i=0;i<9;i++) {
                 for(const stageName of ['engine','observation','inference','opponent']) {
@@ -2337,7 +2342,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
-                enginePressureSignal+connectSignal+remotePrepSignal+
+                enginePressureSignal+connectSignal+remotePrepSignal+dispatchSignal+
                 courierQueueSignal+courierImbalanceSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
@@ -2404,6 +2409,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'remote_connect_exposed_seconds',
         'remote_network_launch_delay_seconds',
         'remote_network_prep_exposed_seconds',
+        'collector_dispatch_queue_peak','collector_dispatch_queue_max_seconds',
+        'collector_dispatch_tail_seconds','collector_dispatch_tail_owner',
+        'pipeline_collector_dispatch_pressure','pipeline_collector_dispatch_owner',
         'local_lease_ram_charged_mb',
         'local_lease_ram_headroom_mb',
         'remote_snapshot_cache_hits',
@@ -2451,6 +2459,10 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_cpu_optimizer_threads_settled','training_remote_cpu_optimizer_trials',
         'training_gpu_rollout_state_copy_batches','training_gpu_rollout_state_copy_bytes',
         'training_gpu_rollout_state_wait_seconds',
+        'training_gpu_rollout_input_packs','training_gpu_rollout_input_seconds',
+        'training_gpu_rollout_input_owner',
+        'training_local_gpu_rollout_lineages','training_gpu_rollout_next_lineages',
+        'training_gpu_rollout_trial',
         'training_sim_topology_rejected','training_sim_topology_unavailable',
         'training_sim_topology_unverified','training_sim_topology_migrations',
         'training_topology_max_migration_seconds',
@@ -2492,7 +2504,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_gpu_stream_interval_seconds',
         'simulation_active_matches','simulation_target_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
-        'simulation_tuner_settled','simulation_target_restored',
+        'simulation_tuner_settled','simulation_tuner_trial','simulation_target_restored',
+        'simulation_memory_rejected_trials','simulation_workload_reprobes',
+        'simulation_inconclusive_trials',
         'simulation_proven_target','simulation_engine_memory_mb',
         'simulation_learner_memory_mb','simulation_total_charged_memory_mb',
         'simulation_ram_lease_headroom_mb',
@@ -2502,6 +2516,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_board_uploads_saved','rollout_board_packed_bytes',
         'ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count',
@@ -2509,6 +2524,11 @@ document.addEventListener('DOMContentLoaded', () => {
         'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_next_update',
         'collector_balance_predicted_gain_ratio','collector_balance_noisy_rollbacks',
+        'collector_balance_drift_reprobes',
+        'collector_balance_trial_sps_gain',
+        'gpu_role_optimizer_lease_index','gpu_role_primary_lease_index','gpu_role_startup_seconds',
+        'rollout_model_refresh_groups',
+        'gpu_role_probe_valid','gpu_role_estimated_gain_ratio',
         // The TinyBrains learner, local GPU collectors and up to eight
         // network workers can occupy seventeen separately measured slots.
         ...Array.from({length:17},(_,i)=>[
@@ -2519,6 +2539,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_inference_shape_groups',
             'collector_'+i+'_inference_readbacks',
             'collector_'+i+'_inference_forward_chunks',
+            'collector_'+i+'_board_uploads_saved',
+            'collector_'+i+'_board_packed_bytes',
             'collector_'+i+'_opponent_shape_groups',
             'collector_'+i+'_opponent_readbacks',
             'collector_'+i+'_sim_matches',
@@ -3094,8 +3116,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     proof?.status==='verified'?'Recheck GPU device access':'Check GPU device access',async()=>{
                     if(!confirm('Run an inert Linux GPU access probe for '+
                         j.configuration_name+' on '+machine.name+
-                        '? It opens the selected and excluded render devices, '+
-                        'and starts a short isolated systemd probe. '+
+                        '? It checks which render devices a short isolated probe can open. '+
                         'It does NOT train, reserve VRAM, authorize GPU execution, '+
                         'or guarantee isolation from other host processes.'))return;
                     try{

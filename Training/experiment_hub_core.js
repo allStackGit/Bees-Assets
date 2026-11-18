@@ -311,6 +311,10 @@ function boundedReport(value) {
         new Set(gpuShared).size!==gpuShared.length||
         (gpuShared.length&&!['win32','linux'].includes(value.platform)))
         throw Error('Shared GPU execution requires an opted-in native adapter.');
+    const linuxSingleGpu=value.linux_single_gpu_qualification??false;
+    if(typeof linuxSingleGpu!=='boolean'||(linuxSingleGpu&&
+        (!localExecutor||value.platform!=='linux')))
+        throw Error('Single-GPU Linux qualification requires a local Linux executor.');
     const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
         .map(([project,ids])=>[project,suiteIds(ids)]));
     return {cpus:value.cpus,ram_mb:value.ram_mb,
@@ -348,6 +352,7 @@ function boundedReport(value) {
         courier_lineage_max_shards:courierWorkerShards,
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
+        linux_single_gpu_qualification:linuxSingleGpu,
         gpu_shared_projects:gpuShared.slice(),
         installed_projects:['linux','win32'].includes(value.platform)&&
             localExecutor?installed.slice():[]};
@@ -367,6 +372,11 @@ function config(value) {
     const serialized = JSON.stringify(value);
     if (serialized.length > 65536) throw Error('Configuration exceeds 64 KiB.');
     return JSON.parse(serialized);
+}
+function linuxGpuQualificationSupported(machine,count) {
+    const observed=machine.observed_gpus?.length??0;
+    return Number.isSafeInteger(count)&&count>=1&&observed>=count&&
+        (observed>=2||machine.linux_single_gpu_qualification===true);
 }
 function gpuStartBlock(job,lease,machine) {
     const r=job.resources,allocated=lease.resources;
@@ -407,8 +417,8 @@ function gpuStartBlock(job,lease,machine) {
     }
     if(machine.agent_platform!=='linux')
         return 'Native GPU execution is unavailable on this operating system.';
-    if(!(machine.observed_gpus?.length>=2))
-        return 'Native GPU Start requires at least two observed GPUs for device qualification.';
+    if(!linuxGpuQualificationSupported(machine,r.gpu_count))
+        return 'Native GPU Start requires a supported device qualification on the observed GPU set.';
     if(job.gpu_qualification?.current!==true)
         return 'Current device access and HIP runtime qualification for this exact GPU lease are required.';
     return null;
@@ -444,6 +454,7 @@ function gpuProbeBlock(job,lease,machine) {
         job.resources.gpu_mode==='exclusive';
     if(!gpuProbeWorkerReady(job,lease,machine)||!lease.receipt_fresh||
         !machine.installed_projects?.includes(job.project_id)||
+        !machine.gpu_projects?.includes(job.project_id)||
         !(count===1&&(job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&
                 machine.gpu_shared_projects?.includes(job.project_id))||dual||multiTiny||multi)||
@@ -458,8 +469,8 @@ function gpuProbeBlock(job,lease,machine) {
         return 'GPU access probe requires a fresh approved physical GPU lease on a qualified Linux agent.';
     const resourceBlock=nativeResourceBlock(job,lease);
     if(resourceBlock)return resourceBlock;
-    if(!(machine.observed_gpus?.length>=2))
-        return 'GPU access probe requires at least two observed physical GPUs.';
+    if(!linuxGpuQualificationSupported(machine,count))
+        return 'GPU access probe requires a supported qualification on the observed GPU set.';
     return null;
 }
 // Native finish can complete an independent sequence. Checkpoint continuations
@@ -1104,7 +1115,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                         r.gpu_count===1&&(r.gpu_mode==='exclusive'||
                             r.gpu_mode==='shared'&&
                                 machine.gpu_shared_projects?.includes(selected.project_id)))&&
-                        machine.observed_gpus?.length>=Math.max(2,r.gpu_count)))
+                        linuxGpuQualificationSupported(machine,r.gpu_count)))
         ).map(machine=>machine.id));
         const runnable=fits.filter(p=>ready.has(p.machine_id));
         if(runnable.length)return runnable;
@@ -1450,6 +1461,7 @@ class ExperimentHub {
                 machine.courier_lineage_max_shards=report.courier_lineage_max_shards;
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
+                machine.linux_single_gpu_qualification=report.linux_single_gpu_qualification;
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
             }
             return machine;
@@ -1966,7 +1978,7 @@ class ExperimentHub {
                                 (job.resources.gpu_mode==='exclusive'||
                                     job.resources.gpu_mode==='shared'&&
                                         machine.gpu_shared_projects?.includes(job.project_id)))&&
-                            machine.observed_gpus?.length>=Math.max(2,job.resources.gpu_count)
+                            linuxGpuQualificationSupported(machine,job.resources.gpu_count)
                         :machine.agent_platform==='win32'&&
                             machine.gpu_inventory_source==='nvidia-smi-v1'&&
                             machine.observed_gpus?.length>=1&&
@@ -2032,7 +2044,8 @@ class ExperimentHub {
                     // and must never dispatch a Linux-only probe.
                     if(machine?.agent_platform!=='linux'||
                         !machine.gpu_projects?.includes(job.project_id)||
-                        (machine.observed_gpus?.length||0)<2||!lease?.receipt_fresh)
+                        !linuxGpuQualificationSupported(machine,job.resources.gpu_count)||
+                        !lease?.receipt_fresh)
                         continue;
                     this.requestGpuQualification({job_id:job.id,confirm_qualify:true},'automation');
                     return transitioned('Requested GPU access probe on '+machine.id+
@@ -5188,7 +5201,7 @@ class ExperimentHub {
                             host.gpu_inventory_source==='nvidia-smi-v1'||
                         host.agent_platform==='linux'&&
                             host.gpu_inventory_source==='amdgpu-sysfs-v1'&&
-                            host.observed_gpus?.length>=2)));
+                            linuxGpuQualificationSupported(host,budget.gpu_count))));
             if(eligible.length!==1||seen.has(eligible[0].id)||
                 (byMachine&&eligible[0].id!==selection.machine_id))
                 throw Error('Every approved rollout endpoint must identify exactly one distinct connected, qualified worker.');
@@ -5303,7 +5316,7 @@ class ExperimentHub {
                         host.gpu_inventory_source==='nvidia-smi-v1'||
                     host.agent_platform==='linux'&&
                         host.gpu_inventory_source==='amdgpu-sysfs-v1'&&
-                        host.observed_gpus?.length>=2)));
+                        linuxGpuQualificationSupported(host,budget.gpu_count))));
             if(hosts.length!==1||used.has(hosts[0].id)||
                 (byMachine&&hosts[0].id!==selection.machine_id))
                 throw Error('Each Courier endpoint must match one distinct, qualified native worker machine.');

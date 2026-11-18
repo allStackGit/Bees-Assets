@@ -502,15 +502,32 @@ class LinuxSupervisor {
             !Number.isSafeInteger(runtimeProof.ram_mb)||
             runtimeProof.ram_mb<128||runtimeProof.ram_mb>1000000))
             throw Error('Invalid trusted Linux GPU runtime qualification request.');
-        const proofArgs=runtimeProof===null?[]:gpuSelectorArgs(runtimeProof.rocrUuid);
         const plan=resolveRocmDevices(bindings,{fsApi:this.fs});
-        // A proof of denial requires a second GPU render node that the same
-        // unconfined account can open. Do not mistake a UNIX ACL failure for
-        // a working eBPF device filter.
-        if(!plan.unselected.length||plan.selected.length!==1)
-            throw Error('GPU access qualification needs one selected and at least one excluded AMD render node.');
-        const denied=plan.unselected.map(device=>device.node).sort();
+        if(plan.selected.length!==1)
+            throw Error('GPU access qualification needs one selected AMD render node.');
         verifyUnconfinedDeviceAccess(plan,this.fs);
+        if(!plan.unselected.length)
+            await this.runGpuDeviceProbe(plan,bindings[0],null,{denySelected:true});
+        await this.runGpuDeviceProbe(plan,bindings[0],runtimeProof);
+        const observed=resolveRocmDevices(bindings,{fsApi:this.fs});
+        if(deviceIdentity(plan)!==deviceIdentity(observed))
+            throw Error('GPU device identity changed during the access probe.');
+        return {qualified_at:new Date().toISOString(),
+            selected:plan.selected.map(g=>g.pci_address),
+            runtime_pci_verified:runtimeProof!==null};
+    }
+
+    async runGpuDeviceProbe(plan,binding,runtimeProof,{denySelected=false}={}) {
+        if(denySelected&&runtimeProof!==null)
+            throw Error('The GPU denial control must run without a HIP workload.');
+        if(this.gpuProbeCleanupPending())
+            throw Error('Previous GPU access probe cleanup unconfirmed; inspect the recorded local service before retry.');
+        const selected=plan.selected[0].node;
+        const allowed=denySelected?'--deny-selected':selected;
+        const denied=denySelected?[selected]:plan.unselected.map(device=>device.node).sort();
+        const deviceProperties=denySelected?['DevicePolicy=closed','DeviceAllow=/dev/kfd rw']:
+            plan.device_properties;
+        const proofArgs=runtimeProof===null?[]:gpuSelectorArgs(runtimeProof.rocrUuid);
         const nonce=crypto.randomUUID(),unit=
             'experiment-hub-gpu-preflight-'+nonce.replace(/-/g,'')+'.service';
         const description='Experiment Hub GPU device preflight '+nonce;
@@ -537,14 +554,14 @@ class LinuxSupervisor {
             '--property=RuntimeMaxSec='+(runtimeProof===null?'10s':'35s'),
             '--property=TimeoutStopSec=3s',
             '--property=KillMode=control-group',
-            ...plan.device_properties.map(p=>'--property='+p),
+            ...deviceProperties.map(p=>'--property='+p),
             ...proofArgs,
             '--',process.execPath,
             ...(runtimeProof===null
                 ?[path.join(__dirname,'experiment_hub_linux_gpu_probe.js'),
-                    plan.kfd.node,plan.selected[0].node,...denied]
+                    plan.kfd.node,allowed,...denied]
                 :[path.join(__dirname,'experiment_hub_linux_gpu_launch_check.js'),
-                    bindings[0].id,bindings[0].pci_address,bindings[0].vram_mb,
+                    binding.id,binding.pci_address,binding.vram_mb,
                     deviceIdentity(plan),runtimeProof.executable,...runtimeProof.verifyArgs])];
         let failure=null;
         try {
@@ -553,11 +570,11 @@ class LinuxSupervisor {
                     maxBuffer:8192,windowsHide:true});
             const actual=JSON.parse(response.stdout.trim());
             if(actual.kfd!==plan.kfd.node||
-                actual.allowed!==plan.selected[0].node||
+                actual.allowed!==allowed||
                 !Array.isArray(actual.denied)||
                 actual.denied.length!==denied.length||
                 denied.some((node,index)=>actual.denied[index]!==node)||
-                actual.kfd_access!==true||actual.allowed_access!==true||
+                actual.kfd_access!==true||actual.allowed_access!==(denySelected?null:true)||
                 !Array.isArray(actual.denied_access)||
                 actual.denied_access.length!==denied.length||
                 actual.denied_access.some(access=>access!==false))
@@ -565,7 +582,7 @@ class LinuxSupervisor {
             if(runtimeProof!==null&&
                 (!Array.isArray(actual.pci_addresses)||
                     actual.pci_addresses.length!==1||
-                    actual.pci_addresses[0]!==bindings[0].pci_address))
+                    actual.pci_addresses[0]!==binding.pci_address))
                 throw Error('Linux GPU runtime preflight did not attest the leased PCI device.');
         }catch(error){failure=error;}
         // A timed-out device probe may still be running. Only control the
@@ -616,12 +633,6 @@ class LinuxSupervisor {
         if(failure)
             throw Error('GPU device access preflight failed: '+
                 String(failure.message||failure).slice(0,160));
-        const observed=resolveRocmDevices(bindings,{fsApi:this.fs});
-        if(deviceIdentity(plan)!==deviceIdentity(observed))
-            throw Error('GPU device identity changed during the access probe.');
-        return {qualified_at:new Date().toISOString(),
-            selected:plan.selected.map(g=>g.pci_address),
-            runtime_pci_verified:runtimeProof!==null};
     }
 
     terminalAfterUnload(record) {
@@ -827,14 +838,6 @@ class LinuxSupervisor {
             this.adapters,this.hostOs,this.gpuEnabled);
         if(job.resources?.gpu_count>1&&job.project_id!=='courier')
             throw Error('Multi-GPU native execution requires the approved Courier PPO backend.');
-        const cpuSlots=typeof this.hostOs.availableParallelism==='function'
-            ?this.hostOs.availableParallelism():this.hostOs.cpus().length;
-        ensureLocalCpuRamCapacity(this.state.records,invocation.cpus,
-            invocation.ram_mb,cpuSlots,
-            Math.floor(this.hostOs.totalmem()/1048576));
-        const availableRam=availableMemoryMb(this.hostOs,this.fs);
-        const ramBlock=startHeadroom(job.resources,availableRam);
-        if(ramBlock)throw Error(ramBlock);
         if(job.continuation_of_job_id) {
             const parent=this.state.records.find(r=>
                 r.job_id===job.continuation_of_job_id);
@@ -852,8 +855,6 @@ class LinuxSupervisor {
                 !(native.unit_exists===false||native.state==='finished'))
                 throw Error('Predecessor service is not demonstrably inactive.');
         }
-        if(this.state.records.length>=MAX_RECORDS)
-            throw Error('Supervisor history capacity reached; no launch permitted.');
         // Refuse to create a service when a deterministic unit already
         // exists but the local ledger has lost ownership of it.
         const unit=unitFor(job.id);
@@ -864,13 +865,31 @@ class LinuxSupervisor {
             throw Error('A matching systemd unit already exists without a local ownership record.');
         const gpuPlan=invocation.gpu
             ?resolveRocmDevices(invocation.gpu.bindings,{fsApi:this.fs}):null;
+        if(gpuPlan?.selected.length===1&&!gpuPlan.unselected.length) {
+            // Recheck denial before accepting local ownership. ExecStartPre
+            // will verify the topology and HIP PCI in the actual job unit.
+            verifyUnconfinedDeviceAccess(gpuPlan,this.fs);
+            await this.runGpuDeviceProbe(
+                gpuPlan,invocation.gpu.bindings[0],null,{denySelected:true});
+            if(deviceIdentity(gpuPlan)!==deviceIdentity(
+                resolveRocmDevices(invocation.gpu.bindings,{fsApi:this.fs})))
+                throw Error('GPU device identity changed before native workload startup.');
+        }
+        if(this.state.records.some(r=>r.job_id===job.id))
+            throw Error('Job already has a local launch record; reconcile rather than restart.');
+        if(this.state.records.length>=MAX_RECORDS)
+            throw Error('Supervisor history capacity reached; no launch permitted.');
+        const cpuSlots=typeof this.hostOs.availableParallelism==='function'
+            ?this.hostOs.availableParallelism():this.hostOs.cpus().length;
+        ensureLocalCpuRamCapacity(this.state.records,invocation.cpus,
+            invocation.ram_mb,cpuSlots,
+            Math.floor(this.hostOs.totalmem()/1048576));
+        const availableRam=availableMemoryMb(this.hostOs,this.fs);
+        const ramBlock=startHeadroom(job.resources,availableRam);
+        if(ramBlock)throw Error(ramBlock);
         const selectedPcis=new Set(gpuPlan?.selected.map(g=>g.pci_address)||[]);
         if(gpuPlan&&(
-            // A one-device service still needs an excluded device to
-            // verify eBPF enforcement. Multi-GPU Courier has separately
-            // qualified *every* selected GPU under this same filter.
-            (gpuPlan.selected.length===1&&!gpuPlan.unselected.length)||
-            this.fs.existsSync(this.gpuProbePending)||
+            this.gpuProbeCleanupPending()||
             this.state.records.some(record=>
                 !['finished','stopped','failed'].includes(record.state)&&
                 (record.gpu_pci_addresses||(

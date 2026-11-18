@@ -69,6 +69,8 @@ class LocalExecution {
                 this.supervisor.adapters?.tinybrains?.gpu_multi_execution==='split-ppo-collectors'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_multi_gpu_profiles||[])]:[],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
+            linux_single_gpu_qualification:this.supervisor instanceof LinuxSupervisor&&
+                this.supervisor.gpuEnabled===true,
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
                 (this.supervisor.gpuExecution==='cuda'

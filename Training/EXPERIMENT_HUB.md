@@ -1311,6 +1311,13 @@ service then applies DevicePolicy=closed and DeviceAllow entries for only
 the selected device and /dev/kfd to remain accessible while every
 baseline-openable excluded GPU is inaccessible.
 
+On a host with only one AMD GPU, a separate control unit allows /dev/kfd
+and withholds that GPU's render node. Qualification requires the control
+to fail to open the node and the regular probe to open it and attest its
+HIP PCI identity. Native Start repeats the denial control before recording
+ownership and checks the allowed node and HIP identity inside the job unit.
+Updated native Linux agents advertise support for this path.
+
 For a native job, the agent constructs `runtimeProof` solely from the
 installed trusted adapter and the frozen job/lease. The same short-lived
 service also invokes that adapter's fixed ROCm verifier under the pinned
