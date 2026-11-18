@@ -136,10 +136,26 @@ def author(args) -> tuple[dict, dict, dict]:
             scene.get("activate_hivemind") or
             not isinstance(scene.get("starting_positions"), list)):
         raise ValueError("authoring requires a native game scene with sides 1/2 and home positions")
-    if (run.get("fragment_spawn", {}).get("map_bounds") != scene.get("bounds") or
-            "native_stage" not in run or len(run.get("levels", [])) != 1 or
-            run.get("model_manifest") or run.get("hivemind")):
-        raise ValueError("the paired run template must contain the same native map and game-only stage assets")
+    if ("native_stage" not in run or len(run.get("levels", [])) != 1 or
+            run.get("model_manifest") or run.get("hivemind") or
+            not isinstance(run.get("fragment_spawn"), dict)):
+        raise ValueError("the run template must contain native game-only stage assets")
+    # Stage collision layers and asteroid prefab lists are immutable authored
+    # assets, but the skirmish run template uses a smaller arena than the
+    # Queen fleet source. A new battle must derive BOTH native fragment
+    # movement bounds and half-widths from the actual selected scene. This
+    # keeps asteroid respawns inside the same map in playable and PPO runs.
+    bounds = scene.get("bounds")
+    try:
+        low, high = bounds["min"], bounds["max"]
+        extents = [(float(high[i]) - float(low[i])) / 2 for i in (0, 1)]
+    except (KeyError, TypeError, ValueError, IndexError) as error:
+        raise ValueError("source native map bounds must have finite min/max coordinates") from error
+    if any(not math.isfinite(v) or v <= 0 for v in extents) or any(
+            not math.isfinite(float(v)) for point in (low, high) for v in point):
+        raise ValueError("source native map bounds must be finite and nonempty")
+    run["fragment_spawn"]["map_bounds"] = copy.deepcopy(bounds)
+    run["fragment_spawn"]["half_map_extents"] = extents
     if set(scene.get("layout", {})) - {"add_static_boxes", "add_static_polygons"}:
         raise ValueError("source layout contains squad-relative changes that cannot be safely cloned")
     if not math.isfinite(args.spacing) or args.spacing < 12:
