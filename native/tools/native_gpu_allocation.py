@@ -139,9 +139,12 @@ def rollout_worker_environment(
     index: int,
     leased_gpu_inference: bool = False,
 ) -> dict[str, str] | None:
-    if gpu_ids is None and not leased_gpu_inference:
-        return None  # Preserve historical process inheritance exactly.
     env = os.environ.copy()
+    # Never inherit an unrecorded developer override into a measured
+    # training round. Only the frozen allocation selects model placement.
+    env.pop("BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE", None)
+    if gpu_ids is None and not leased_gpu_inference:
+        return env
     if gpu_ids is not None:
         env[mask] = str(gpu_ids[index % len(gpu_ids)])
     # ROCm PyTorch intentionally uses the CUDA device API as well.
