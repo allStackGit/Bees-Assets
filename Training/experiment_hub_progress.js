@@ -98,6 +98,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_prep_wait_work_share',
             'pipeline_ppo_prep_wait_pressure',
             'ppo_prep_async_h2d_bytes',
+            'ppo_prestaged_board_bytes',
+            'ppo_board_iterative_h2d_bytes',
+            'ppo_board_saved_h2d_bytes',
+            'ppo_board_h2d_saved_share',
+            'ppo_board_cache_partial_batches',
             'rollout_gpu_batch_target_pixels',
             'rollout_gpu_batch_next_target','rollout_gpu_batch_settled',
             'rollout_gpu_batch_proven_target',
@@ -368,6 +373,19 @@ class BottleneckEvidence {
                 (unit!=='ratio'||value<=1))
                 derived[name]={value,unit};
         };
+        // The same immutable TinyBrains rollout boards are revisited
+        // every PPO epoch. Count one staging upload plus repeated misses
+        // against the un-cached input payload; no physical PCIe bandwidth,
+        // GPU busy percentage, or useful-SPS gain is inferred.
+        const boardBaseline=metrics.ppo_board_baseline_h2d_bytes;
+        const boardSaved=metrics.ppo_board_saved_h2d_bytes;
+        if(boardBaseline?.unit==='bytes'&&boardSaved?.unit==='bytes'&&
+            Number.isSafeInteger(boardBaseline.value)&&
+            Number.isSafeInteger(boardSaved.value)&&
+            boardBaseline.value>0&&boardSaved.value>=0&&
+            boardSaved.value<=boardBaseline.value)
+            add('ppo_board_h2d_saved_share',
+                boardSaved.value/boardBaseline.value);
         // The pinned staging ring reduces host allocation churn; a wait
         // for source reuse can run on the background CPU producer while the
         // optimizer proceeds. Neither counter is GPU busy evidence.
