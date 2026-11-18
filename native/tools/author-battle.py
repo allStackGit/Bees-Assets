@@ -460,9 +460,23 @@ def author(args) -> tuple[dict, dict, dict]:
     # Authoring never installs a second special-objective simulator.
     owner = args.objective_side or (host if host is not None else 1)
     level = run["levels"][0]
+    # No human is required for an automated benchmark or a policy-authored
+    # mission, but the objective faction must still have a real, initially
+    # deployed command owner. The shared Level accepts exactly the same
+    # immediate scripted squad that the gameplay command director drives.
+    initial_squad_ids = {
+        squad["item_id"] for squad in by_side_squads[owner]
+        if squad["item_id"] not in deferred_squad_ids
+    }
+    scripted_controller = any(
+        queue["squad_item_id"] in initial_squad_ids and
+        queue.get("activation", {"kind": "immediate"}) == {"kind": "immediate"} and
+        queue.get("orders")
+        for queue in queues
+    )
     if args.objective == "survival":
-        if owner not in controlled:
-            raise ValueError("survival requires the selected side to have player-controlled squads")
+        if owner not in controlled and not scripted_controller:
+            raise ValueError("survival needs an initially deployed player or scripted defending squad")
         # The protected hull must physically exist at tick zero; a hull
         # reserved for a later reinforcement wave cannot be defended before
         # it is deployed. Likewise the initially active defenders need a
@@ -496,8 +510,8 @@ def author(args) -> tuple[dict, dict, dict]:
             "seconds": seconds,
         }
     elif args.objective == "extraction":
-        if owner not in controlled:
-            raise ValueError("extraction requires the selected side to have player-controlled squads")
+        if owner not in controlled and not scripted_controller:
+            raise ValueError("extraction needs an initially deployed player or scripted extracting squad")
         if not any(ship["base_speed"] > 0 and
                    ship["entity_id"] not in deferred_owner
                    for ship in by_side[owner]):
