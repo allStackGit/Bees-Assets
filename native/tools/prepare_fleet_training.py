@@ -45,8 +45,15 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
         raise ValueError("requires one archived native fleet-builder skirmish, not a benchmark")
     level = levels[0]
     if (not isinstance(level, dict) or
-            any(key in level for key in ("survival", "extraction", "reinforcements"))):
-        raise ValueError("MA-POCA requires an elimination battle with a fixed starting roster")
+            any(key in level for key in ("survival", "reinforcements"))):
+        raise ValueError(
+            "native MA-POCA fleet training supports fixed-roster elimination "
+            "or extraction; survival/reinforcement terminal contracts differ"
+        )
+    if "extraction" in level:
+        objective = level["extraction"]
+        if not isinstance(objective, dict) or objective.get("player_side") not in (1, 2):
+            raise ValueError("native extraction training requires a physical faction-owned exit zone")
     source = level.get("scene")
     if not isinstance(source, str) or not source:
         raise ValueError("fleet builder Level has no authored physical scene")
@@ -274,6 +281,9 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
         "policy_archetypes_sha256": archetypes_sha,
         "source_squad_clones": clone_count,
         "physical_scene_sha256": physical_identity,
+        "physical_objective": (
+            "extraction" if "extraction" in run["levels"][0] else "elimination"
+        ),
         "physical_ship_count": len(scene["ships"]),
         "policy_ship_count": sum("policy" in ship for ship in policy_scene["ships"]),
         "episode_fleet_value_by_side": {
