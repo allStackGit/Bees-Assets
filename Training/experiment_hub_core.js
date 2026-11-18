@@ -3608,7 +3608,7 @@ class ExperimentHub {
             // Independently validate failed-attempt observations. They are
             // inert for Stop, continuation and candidate ranking and cannot
             // replace any successful checkpoint receipt.
-            if(state==='running'&&activeEvaluation(job)&&
+            if(report.state==='running'&&activeEvaluation(job)&&
                 supportsEvaluation(evaluationSuites,job)&&
                 report.evaluation_failures!=null)try {
                 const rules=evaluationRules(activeEvaluation(job));
@@ -4177,6 +4177,25 @@ class ExperimentHub {
             }
             for(const failure of acceptedReports.get(job.id)?.evaluationFailures||[])
                 this.evaluationHistory.recordFailure(job,failure);
+            // A released native owner may still report a failed attempt at
+            // its pinned final checkpoint. Archive only exact-final failures
+            // from an authenticated, verified terminal job. Do not revive
+            // the lease, add telemetry or treat a failure as a Stop result.
+            const terminalFailureReport=!acceptedReports.has(job.id)&&
+                ['finished','stopped'].includes(job.status)&&
+                report.state===job.status&&
+                job.capacity_released_at&&
+                job.assigned_machine_id===machine.id&&
+                report.lease_id===job.lease_id&&
+                SHA256.test(String(job.checkpoint_model_sha256||''))&&
+                (job.status==='finished'&&job.checkpoint_ready_verified===true||
+                 job.status==='stopped'&&job.checkpoint_stop_verified===true)&&
+                supportsEvaluation(machine.evaluation_suites||{},job);
+            if(terminalFailureReport&&Array.isArray(report.evaluation_failures)&&
+                report.evaluation_failures.length<=8)
+                for(const failure of report.evaluation_failures)
+                    if(failure?.checkpoint_sha256===job.checkpoint_model_sha256)
+                        this.evaluationHistory.recordFailure(job,failure);
             const raw=Array.isArray(report.evaluations)?report.evaluations:
                 report.evaluation?[report.evaluation]:[];
             for(const value of raw) {
