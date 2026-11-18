@@ -80,6 +80,11 @@ python3 native/tools/author-battle.py escape-route \
 These write the normal `levels[0].survival` or `levels[0].extraction`
 contracts consumed by the *same* native combat and terminal rules.
 They work as standalone battles or missions in an authored campaign.
+With `--control none`, the existing native scripted AI directs the real
+defending/extracting faction: survival squads guard the protected hull,
+while mobile extraction squads advance toward the authored exit and other
+ships provide combat cover. `--trainable` assigns policy controllers to
+source-backed active ships without inventing another combat engine.
 
 Timed multi-wave battles also use the native Level's existing
 reinforcement scheduler and source command director:
@@ -1083,8 +1088,10 @@ quick battles, including **Hold the Beehive**: an authored 110-second
 survival defense against two genuine deferred enemy waves (35s, 70s).
 **Build Fleet Skirmish** is also available in the native game library,
 including packaged custom libraries. Pick either player faction or two
-local commanders, then independently choose 1, 2, 4, 8, 16, 32 or 64 ships per
-side, then select all-fighter, balanced, support-heavy or specialist
+local commanders, then independently choose 1, 2, 4, 8, 16, 32, 64
+or 128 ships per side. The dense 128-ship layout admits only original
+6x6 Wasp/Gunship fighters; mixed fleets up to 64 ships still offer
+all-fighter, balanced, support-heavy or specialist
 fleets for each faction, and open, classic, flanking-cover or dense-cover
 terrain. Specialists add one genuine Bee Scout with its physical Beacon
 ability or one Human Fire Barge with its source-authored explosive weapon,
