@@ -16,6 +16,7 @@ import tempfile
 
 from experiment_hub_eval_io import read_bounded, suite_digest
 from experiment_hub_tinybrains_evaluate import evaluate, read_suite
+from experiment_hub_tinybrains_eval_poll import checkpoint_update
 from experiment_hub_tinybrains_runtime import configure_engine
 
 
@@ -50,6 +51,7 @@ def publish_report(report, suites, output, run_name):
     items = []
     seen = set()
     lineage = {}
+    verified_updates = {}
     for result in report["results"]:
         if not isinstance(result, dict):
             raise ValueError("Invalid baseline result.")
@@ -66,6 +68,14 @@ def publish_report(report, suites, output, run_name):
         update = int(match[1])
         if result.get("steps_completed", update) != update:
             raise ValueError("Historical checkpoint update does not match the file identity.")
+        identity_key = (str(file), result["checkpoint_sha256"])
+        if identity_key not in verified_updates:
+            # Reuse the native TinyBrains update-field verifier once per
+            # unique model; multiple frozen suites may test the same bytes.
+            verified_updates[identity_key] = checkpoint_update(file)
+        if verified_updates[identity_key] != update:
+            raise ValueError(
+                "Historical checkpoint filename disagrees with its saved PPO update.")
         candidate = result.get("candidate")
         if not isinstance(candidate, str) or not candidate:
             raise ValueError("Historical candidate label is missing.")
