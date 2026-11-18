@@ -331,8 +331,11 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         for (wave_idx, ids) in planned_squad_order.iter().enumerate() {
             for squad_id in ids {
                 for ship_id in &source_squads[squad_id].members {
+                    let ship = source_ships[ship_id];
+                    let group_team = self.groups.as_ref()
+                        .and_then(|groups| groups.delivery.team_id(ship.side));
                     if let Some(participant) = self.metadata.deferred_policy_participant(
-                        source_ships[ship_id],
+                        ship, group_team,
                     )? {
                         if !deferred_group_ids.insert(participant) {
                             return Err("Reinforcement MA-POCA participant identities must be unique");
