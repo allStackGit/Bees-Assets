@@ -209,7 +209,7 @@ pub(super) fn archive(
         let side = squad["side"].as_i64()
             .ok_or_else(|| invalid("fleet template squad is missing its faction"))?;
         let controlled = !selected.ai_both &&
-            selected.player_side.is_none_or(|player| player == side);
+            selected.player_side.is_none_or(|player| i64::from(player) == side);
         squad["user_controlled"] = json!(controlled);
         squad["can_accept_input"] = json!(controlled);
     }
