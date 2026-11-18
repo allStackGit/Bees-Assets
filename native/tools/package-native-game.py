@@ -87,7 +87,7 @@ def executable_target(source: Path) -> tuple[str, str]:
 
 
 def check_compiled_training_targets(
-    root: Path, game: Path, rollout: Path | None, manifest: Path | None,
+    game: Path, rollout: Path | None, manifest: Path | None,
 ) -> tuple[str, str]:
     target = executable_target(game)
     if target[0] != ("windows" if game.suffix == ".exe" else "linux"):
@@ -506,16 +506,12 @@ def verify_native_package(directory: Path) -> dict:
     if not any((directory / name).is_file() for name in ("bees", "bees.exe")):
         raise ValueError("native release is missing the game executable")
     game = directory / ("bees.exe" if (directory / "bees.exe").is_file() else "bees")
+    binary_suffix = ".exe" if game.suffix == ".exe" else ""
+    rollout = directory / ("policy_rollout" + binary_suffix)
+    generator = directory / ("policy_manifest" + binary_suffix)
     check_compiled_training_targets(
-        directory, game,
-        directory / ("policy_rollout.exe" if game.suffix == ".exe"
-                     else "policy_rollout") if (
-                         directory / ("policy_rollout.exe" if game.suffix == ".exe"
-                                      else "policy_rollout")).is_file() else None,
-        directory / ("policy_manifest.exe" if game.suffix == ".exe"
-                     else "policy_manifest") if (
-                         directory / ("policy_manifest.exe" if game.suffix == ".exe"
-                                      else "policy_manifest")).is_file() else None,
+        game, rollout if rollout.is_file() else None,
+        generator if generator.is_file() else None,
     )
     if manifest.get("training_runtime", False) not in (True, False):
         raise ValueError("invalid native training distribution marker")
@@ -698,7 +694,7 @@ def main() -> None:
     output = args.output.resolve()
     if not binary.is_file() or binary.name not in ("bees", "bees.exe"):
         parser.error("Provide a compiled native graphical bees or bees.exe binary")
-    check_compiled_training_targets(output, binary, rollout_binary, manifest_binary)
+    check_compiled_training_targets(binary, rollout_binary, manifest_binary)
     if output.exists():
         parser.error("Output already exists; native releases are immutable")
     python_command = args.python_command or (
