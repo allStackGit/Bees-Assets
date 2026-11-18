@@ -1941,8 +1941,18 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(key=>metricOptions.some(m=>m.key===key));
         // On a new project view, show actual learning outcomes before the
         // alphabetically first resource counter. Explicit user choices win.
-        const evaluationDefaults=metricOptions.filter(option=>
-            option.key.startsWith('metric:eval_')).map(option=>option.key);
+        // On first view choose one meaningful outcome per frozen evaluation
+        // suite/runtime, not the first five alphabetically sorted counters
+        // (which can all belong to Micro while Nano is never plotted).
+        // Preserve explicit viewer selections and saved run preferences.
+        const availableKeys=new Set(metricOptions.map(item=>item.key));
+        const evaluationDefaults=[...new Set(runs.flatMap(run=>
+            (run.evaluation_points||[]).map(hubEvaluationMetricPrefix)))]
+            .sort().map(prefix=>[
+                'metric:'+prefix+'_score_rate',
+                'metric:'+prefix+'_survival_rate',
+                'metric:'+prefix,
+            ].find(key=>availableKeys.has(key))).filter(Boolean);
         const learningDefaults=[...evaluationDefaults,
             ...['selection_candidate_survival_score',
             'selection_incumbent_survival_score','training_win_rate','training_score_rate',
@@ -1957,7 +1967,12 @@ document.addEventListener('DOMContentLoaded', () => {
             metricOptions.some(metric=>metric.key===key));
         const metricChoices=override?.length===0?[]:
             matchingOverride?.length?matchingOverride:
-                keep.length?keep:preferred.length?preferred:
+                keep.length?keep:evaluationDefaults.length
+                    ?[...evaluationDefaults.slice(0,8),
+                        ...preferred.filter(key=>
+                            !evaluationDefaults.includes(key)).slice(
+                                0,Math.max(0,5-evaluationDefaults.length))]
+                    :preferred.length?preferred:
                     learningDefaults.length?learningDefaults.slice(0,5):
                         [metricOptions[0]?.key];
         for(const option of metricSelect.options)
