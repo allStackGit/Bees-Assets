@@ -459,6 +459,8 @@ def verify_bundle(path, job, orders):
     per_process = receipt.get("physics_workers_per_process", 1)
     if type(per_process) is not int or not 1 <= per_process <= 128:
         raise ValueError(f"distributed collector has invalid physics allocation: {path}")
+    if "leased_gpu_inference" in receipt and receipt["leased_gpu_inference"] is not True:
+        raise ValueError(f"invalid leased-GPU collector receipt marker: {path}")
     if receipt.get("gpu_allocation") is not None or receipt.get("leased_gpu_inference"):
         proof = metrics.get("gpu_inference")
         if (not isinstance(proof, dict) or
