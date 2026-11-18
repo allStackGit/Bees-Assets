@@ -1043,6 +1043,34 @@ function allocationBlockReason(machines,job,preferredMachineId=null) {
     }
     return 'No eligible connected worker has enough remaining capacity.';
 }
+function splitMonitoringCadences(job) {
+    const policy=job?.evaluation_monitor;
+    if(!policy||job.evaluation_stop)return false;
+    const rules=evaluationRules(policy);
+    return rules.length>1&&new Set(rules.map(item=>
+        item.every_n_checkpoints||policy.every_n_checkpoints||1)).size>1;
+}
+// Prefer a machine with an independent evaluator configured for the actual
+// frozen suites when otherwise comparably suitable for training. This is
+// an ordering preference, not a Start gate: monitoring must not stop
+// training simply because an evaluator was not installed or available.
+function evaluatorSchedulerPreference(machine,job) {
+    const policy=activeEvaluation(job);
+    if(!policy)return 0;
+    const suiteIds=evaluationRules(policy).map(rule=>rule.suite_id);
+    const ready=(machine.evaluator_services||[]).filter(service=>
+        service.project===job.project_id&&
+        (service.scheduler_state==='active'||service.service_state==='running'));
+    if(!ready.length)return 2;
+    const verified=ready.filter(service=>
+        Number.isSafeInteger(service.evaluator_cpus)&&service.evaluator_cpus>0&&
+        Number.isSafeInteger(service.evaluator_ram_mb)&&service.evaluator_ram_mb>0);
+    if(splitMonitoringCadences(job)
+        ?suiteIds.every(id=>verified.some(service=>service.suite_ids?.includes(id)))
+        :verified.some(service=>suiteIds.every(id=>service.suite_ids?.includes(id))))
+        return 0;
+    return verified.some(service=>!service.suite_ids)?1:2;
+}
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
     following=[],futureMachinesFor=()=>machines,snapshot=null) {
     const eligibleOptions=(selected,hosts,preferred=null)=>{
@@ -1091,11 +1119,14 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         }
         return fits;
     };
+    const evaluatorPreference=machineId=>evaluatorSchedulerPreference(
+        machines.find(machine=>machine.id===machineId)||{},job);
     const options=eligibleOptions(job,machines,preferredMachineId)
         .sort((a,b)=>
             Number(Boolean(a.observed_headroom_block))-
                 Number(Boolean(b.observed_headroom_block))||
             observedLoadPreference(a,b,job.resources)||
+            evaluatorPreference(a.machine_id)-evaluatorPreference(b.machine_id)||
             a.available.cpus-b.available.cpus||
             a.available.ram_mb-b.available.ram_mb||
             a.machine_id.localeCompare(b.machine_id));
@@ -1132,7 +1163,8 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         Number(Boolean(a.observed_headroom_block))-
             Number(Boolean(b.observed_headroom_block))||
         loss.get(a.machine_id)-loss.get(b.machine_id)||
-        observedLoadPreference(a,b,job.resources));
+        observedLoadPreference(a,b,job.resources)||
+        evaluatorPreference(a.machine_id)-evaluatorPreference(b.machine_id));
     return options[0];
 }
 function writeAtomic(file, value) {
@@ -2093,10 +2125,7 @@ class ExperimentHub {
             // Split only monitoring-only suites with genuinely different
             // cadences. The existing coordinated batch remains unchanged
             // for success-gated jobs and same-cadence monitoring.
-            const independentCadences=job.evaluation_monitor&&!job.evaluation_stop&&
-                rules.length>1&&new Set(rules.map(item=>
-                    item.every_n_checkpoints||
-                    policy.every_n_checkpoints||1)).size>1;
+            const independentCadences=splitMonitoringCadences(job);
             return {job_id:job.id,dispatch_id:job.dispatch_id,
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 ...(frozenSuite?{suite_sha256:frozenSuite}:{}),
