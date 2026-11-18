@@ -19,6 +19,7 @@ use super::RunConfig;
 
 const SOURCE_SCENE: &str = include_str!("../../../examples/native-two-player.scene.json");
 const SOURCE_RUN: &str = include_str!("../../../examples/native-two-player.run.json");
+const SOURCE_ARCHETYPES: &str = include_str!("../../../examples/native-skirmish.scene.json");
 const FLEET_SIZES: [usize; 7] = [1, 2, 4, 8, 16, 32, 64];
 pub(super) const GAME_ID: &str = "fleet-skirmish";
 
@@ -27,6 +28,19 @@ enum Terrain { Open, Original, Cover, DenseCover }
 
 #[derive(Clone, Copy)]
 enum Objective { Elimination, Survival, Extraction }
+
+#[derive(Clone, Copy)]
+enum FleetMix { Fighters, Balanced, SupportHeavy }
+
+impl FleetMix {
+    fn support_count(self, total: usize) -> usize {
+        (match self {
+            Self::Fighters => 0,
+            Self::Balanced => total.div_ceil(4),
+            Self::SupportHeavy => total / 2,
+        }).min(total.saturating_sub(1))
+    }
+}
 
 impl Objective {
     fn label(self) -> &'static str {
@@ -43,6 +57,7 @@ pub(super) struct FleetChoice {
     /// None preserves the source's two human-controlled factions.
     player_side: Option<i32>,
     fleet_sizes: [usize; 2],
+    mix: [FleetMix; 2],
     terrain: Terrain,
     ai_both: bool,
     objective: Objective,
@@ -68,6 +83,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         return Ok(None);
     };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let objective = if mode == 2 {
         Objective::Elimination
@@ -77,7 +93,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     };
     Ok(Some(FleetChoice {
         player_side: match mode { 0 => Some(1), 1 => Some(2), _ => None },
-        fleet_sizes, terrain, ai_both: false, objective,
+        fleet_sizes, mix, terrain, ai_both: false, objective,
         benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -86,8 +102,9 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
 /// per side; no new network controller, simulation or permission model.
 pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     Ok(choose_terrain()?.map(|terrain| FleetChoice {
-        player_side: None, fleet_sizes, terrain, ai_both: false,
+        player_side: None, fleet_sizes, mix, terrain, ai_both: false,
         objective: Objective::Elimination,
         benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -97,6 +114,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
 /// exactly the same collision, command and ship code used in windowed play.
 pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some(worlds) = choose_resource("Concurrent physical arenas",
         &[1, 2, 4, 8, 16, 32])? else { return Ok(None); };
@@ -105,7 +123,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, terrain, ai_both: true,
+        player_side: None, fleet_sizes, mix, terrain, ai_both: true,
         objective: Objective::Elimination,
         benchmark_worlds: worlds, benchmark_workers: threads,
     }))
@@ -137,6 +155,38 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
         fleet_sizes[index] = FLEET_SIZES[choice];
     }
     Ok(Some(fleet_sizes))
+}
+
+fn choose_mix(fleet_sizes: [usize; 2])
+    -> Result<Option<[FleetMix; 2]>, Box<dyn Error>>
+{
+    let mut choices = [FleetMix::Fighters; 2];
+    for side in 0..2 {
+        let total = fleet_sizes[side];
+        if total == 1 { continue; }
+        let support_name = if side == 0 { "Beehives" } else { "Carriers" };
+        let options = [
+            (FleetMix::Fighters, format!("{total} fighters  |  No support")),
+            (FleetMix::Balanced, format!(
+                "{} fighters, {} {support_name}  |  Balanced",
+                total - FleetMix::Balanced.support_count(total),
+                FleetMix::Balanced.support_count(total),
+            )),
+            (FleetMix::SupportHeavy, format!(
+                "{} fighters, {} {support_name}  |  Support-heavy",
+                total - FleetMix::SupportHeavy.support_count(total),
+                FleetMix::SupportHeavy.support_count(total),
+            )),
+        ];
+        let rows = options.iter().map(|(_, title)| BattleMenuRow {
+            title, status: "  [Real source hulls]", unlocked: true,
+        }).collect::<Vec<_>>();
+        let mut selected = 0_usize;
+        let Some(index) = select_library(&rows, &mut selected, false)?
+            else { return Ok(None); };
+        choices[side] = options[index].0;
+    }
+    Ok(Some(choices))
 }
 
 fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
@@ -283,6 +333,18 @@ pub(super) fn archive(
         squad["user_controlled"] = json!(controlled);
         squad["can_accept_input"] = json!(controlled);
     }
+    // Source Ship.HasUser and Squad.IsUserControlled are separate
+    // permissions. Change both when authoring an AI side, rather than
+    // leaving the AI's physical hull masquerading as a player ship.
+    for ship in scene["ships"].as_array_mut().ok_or_else(||
+        invalid("fleet template has no authentic physical ships"))?
+    {
+        let side = ship["side"].as_i64().ok_or_else(||
+            invalid("fleet template ship is missing its source faction"))?;
+        let controlled = !selected.ai_both &&
+            selected.player_side.is_none_or(|player| i64::from(player) == side);
+        ship["user_controlled"] = json!(controlled);
+    }
     if selected.ai_both {
         scene.as_object_mut().ok_or_else(||
             invalid("fleet source scene must be a JSON object"))?
@@ -298,27 +360,98 @@ pub(super) fn archive(
 
     let mut cloned = NativeLevelLayout::default();
     let mut squad_ids = [vec![101_i64], vec![102_i64]];
+    let mut support_squads = Vec::new();
     let offsets = [
         fleet_offsets(0, selected.fleet_sizes[0]),
         fleet_offsets(1, selected.fleet_sizes[1]),
     ];
+    let support_count = [
+        selected.mix[0].support_count(selected.fleet_sizes[0]),
+        selected.mix[1].support_count(selected.fleet_sizes[1]),
+    ];
+    let fighter_count = [
+        selected.fleet_sizes[0] - support_count[0],
+        selected.fleet_sizes[1] - support_count[1],
+    ];
+    // Embed the actual side-specific source Beehive and Carrier
+    // archetypes ONLY when requested. Their healing/support capabilities,
+    // fleet metadata, visuals and colliders come from a known native game
+    // scene, never from an approximate handcrafted stats table.
+    let source_archetypes: Value = serde_json::from_str(SOURCE_ARCHETYPES)?;
+    let available = source_archetypes["ships"].as_array().ok_or_else(||
+        invalid("native skirmish has no source ship archetypes"))?;
+    for side in 0..2_usize {
+        if support_count[side] == 0 { continue; }
+        let side_id = side as i64 + 1;
+        let archetype = if side == 0 { 2 } else { 5 };
+        let template = available.iter().find(|ship|
+            ship["side"].as_i64() == Some(side_id) &&
+            ship["ship_type"].as_u64() == Some(archetype)
+        ).ok_or_else(|| invalid("native mixed fleet is missing its source support archetype"))?;
+        let ship_id = 13 + side as i64;
+        let squad_id = 103 + side as i64;
+        let controlled = !selected.ai_both &&
+            selected.player_side.is_none_or(|player| i64::from(player) == side_id);
+        let offset = offsets[side][fighter_count[side]];
+        let mut ship = template.clone();
+        ship["entity_id"] = json!(ship_id);
+        ship["position"] = json!([
+            (if side == 0 { -75.0 } else { 75.0 }) + offset[0], offset[1],
+        ]);
+        ship["user_controlled"] = json!(controlled);
+        ship["fleet_ship_id"] = json!(ship_id);
+        scene["ships"].as_array_mut().ok_or_else(||
+            invalid("native mixed fleet scene lost its physical roster"))?
+            .push(ship);
+        scene["squads"].as_array_mut().ok_or_else(||
+            invalid("native mixed fleet scene lost its real squad roster"))?
+            .push(json!({
+                "item_id": squad_id, "side": side_id,
+                "members": [ship_id],
+                "shooting_strategy_id": 1,
+                "user_controlled": controlled,
+                "can_accept_input": controlled,
+                "command_bans": [],
+            }));
+    }
     for side in 0..2_usize {
         for index in 1..selected.fleet_sizes[side] {
-            // New identities occupy disjoint faction ranges well beyond all
-            // source ship and obstacle IDs. Preserve them across different
-            // opponent fleet sizes for deterministic multiplayer/replays.
+            let supporting = index >= fighter_count[side];
+            let support_origin = fighter_count[side];
+            let source_squad = if supporting {
+                103 + side as i64
+            } else { 101 + side as i64 };
+            if supporting && index == support_origin {
+                // The first support ship is already a real source hull,
+                // not a duplicated or simulated clone.
+                squad_ids[side].push(source_squad);
+                support_squads.push(source_squad);
+                continue;
+            }
+            // Independent source-compatible entity/Stage identities per
+            // side, stable when the opposite fleet's composition changes.
             let side_base = (side as i64 + 1) * 100;
             let new_squad = 2_000 + side_base + index as i64;
             let new_ship = 10_000 + side_base + index as i64;
+            let offset = offsets[side][index];
+            let base = if supporting { offsets[side][support_origin] }
+                else { [0.0, 0.0] };
             cloned.clone_squads.push(NativeSquadClone {
-                source_squad_item_id: 101 + side as i64,
+                source_squad_item_id: source_squad,
                 new_squad_item_id: new_squad,
                 ship_ids: vec![new_ship],
-                by: offsets[side][index],
+                by: [offset[0] - base[0], offset[1] - base[1]],
             });
             squad_ids[side].push(new_squad);
+            if supporting { support_squads.push(new_squad); }
         }
     }
+    let level_name = scene["level_name"].as_str()
+        .unwrap_or("Fleet Skirmish").to_owned();
+    scene["level_name"] = json!(format!(
+        "{level_name}  |  Support: {} Beehives, {} Carriers",
+        support_count[0], support_count[1],
+    ));
     if !matches!(selected.terrain, Terrain::Original) {
         // The two-player template's id=30 tiny box is a real authored
         // static collider. Remove it when choosing a different map.
@@ -378,8 +511,9 @@ pub(super) fn archive(
     }
     run["next_squad_item_id"] = json!(3_000);
     run["run_id"] = json!(format!(
-        "native-fleet-{}v{}-{}-{}",
+        "native-fleet-{}v{}-support-{}v{}-{}-{}",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
+        support_count[0], support_count[1],
         if selected.ai_both { "benchmark" }
         else { selected.player_side.map_or("local", |side|
             if side == 1 { "bees" } else { "humans" }) },
@@ -428,21 +562,33 @@ pub(super) fn archive(
             continue;
         }
         for (position, &owner) in squad_ids[side].iter().enumerate() {
+            let supporting = support_squads.contains(&owner);
             let start = offsets[side][position];
-            let mut orders = vec![json!({
-                "kind": "move_to_point",
-                "destination": [
-                    (if side == 0 { -30.0 } else { 30.0 }) + start[0] * 0.25,
-                    start[1],
-                ],
-            })];
-            orders.extend(squad_ids[1 - side].iter().filter(|&&enemy|
-                !deferred_squads.contains(&enemy)
-            ).map(|&enemy| json!({
-                "kind": "aggressive", "enemy_squad_item_id": enemy,
-            })));
+            // Passive Beehives and Carriers have no source gun mounts.
+            // Never issue them Aggressive: that command requires real
+            // armed ships. Fighters still use the normal native target
+            // and command lifetime engine.
+            let mut orders = if supporting {
+                vec![json!({"kind": "hold"})]
+            } else {
+                vec![json!({
+                    "kind": "move_to_point",
+                    "destination": [
+                        (if side == 0 { -30.0 } else { 30.0 }) + start[0] * 0.25,
+                        start[1],
+                    ],
+                })]
+            };
+            if !supporting {
+                orders.extend(squad_ids[1 - side].iter().filter(|&&enemy|
+                    !deferred_squads.contains(&enemy)
+                ).map(|&enemy| json!({
+                    "kind": "aggressive", "enemy_squad_item_id": enemy,
+                })));
+            }
             let mut queue = json!({
-                "squad_item_id": owner, "repeat": true, "orders": orders,
+                "squad_item_id": owner, "repeat": !supporting,
+                "orders": orders,
             });
             if deferred_squads.contains(&owner) {
                 queue["activation"] = json!({"kind": "on_deployment"});

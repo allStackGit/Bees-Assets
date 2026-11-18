@@ -922,8 +922,14 @@ survival defense against two genuine deferred enemy waves (35s, 70s).
 **Build Fleet Skirmish** is also available in the native game library,
 including packaged custom libraries. Pick either player faction or two
 local commanders, then independently choose 1, 2, 4, 8, 16, 32 or 64 ships per
-side and open, classic, flanking-cover or dense-cover terrain.
-Single-player commanders can choose elimination, a 90-second protected
+side, then select all-fighter, balanced or support-heavy fleets for
+each faction, and open, classic, flanking-cover or dense-cover terrain.
+Mixed fleets use the original Beehive support hulls and Human Carrier
+hulls from the authored native skirmish; physical metadata, weapon
+eligibility, fleet/roster identity and support effects all come from
+the same source asset import and shared CombatWorld as training. At
+least one armed fighter remains per side. Single-player commanders
+can choose elimination, a 90-second protected
 command-ship defense with genuinely reserved enemy waves at 25 and 55
 seconds, or extraction at the far end of the map. These are the actual
 native Level survival, reinforcement and extraction rules; the same
