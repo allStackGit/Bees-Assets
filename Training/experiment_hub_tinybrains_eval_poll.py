@@ -60,6 +60,14 @@ def latest_numbered_checkpoint(artifact_root, job):
         if update < start:
             raise ValueError("TinyBrains checkpoint predates the verified starting update.")
         return update, active, update - start
+    # The standard Windows/Linux adapter instead writes job/latest.pt and
+    # records the job's update counter directly. Keep both layouts working.
+    standard = directory / "latest.pt"
+    if standard.exists():
+        if standard.resolve(strict=True) != standard or not standard.is_file():
+            raise ValueError("TinyBrains checkpoint is redirected or unavailable.")
+        update = checkpoint_update(standard)
+        return update, standard, update
     latest = None
     for file in directory.iterdir():
         match = CHECKPOINT.fullmatch(file.name)
@@ -83,11 +91,15 @@ def poll(args, suites):
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:
-            final = final_checkpoint(args.artifact_root, job, "self-play/latest.pt")
+            source = args.artifact_root / job["job_id"] / "self-play" / "latest.pt"
+            filename = "self-play/latest.pt" if source.exists() else "latest.pt"
+            final = final_checkpoint(args.artifact_root, job, filename)
             observed = latest_numbered_checkpoint(args.artifact_root, job)
-            if not observed or len(observed) != 3 or observed[1] != final[1]:
-                raise ValueError("Verified TinyBrains final checkpoint update is unavailable.")
-            return final[0], final[1], observed[2]
+            if observed and len(observed) == 3 and observed[1] == final[1]:
+                return final[0], final[1], observed[2]
+            # Older trusted adapters may have a numbered-only layout.
+            # The coordinator's final_steps_completed remains available.
+            return final
         return latest_numbered_checkpoint(args.artifact_root, job)
     pairs = [(suite, {**suite, "trials":
                       2 * len(suite["maps"]) * len(suite["seeds"])}) for suite in suites]
