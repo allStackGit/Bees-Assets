@@ -4130,13 +4130,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(service=>service.project===project&&
                     (service.scheduler_state==='active'||
                      service.service_state==='running'))
-                .map(service=>(machine.name||machine.id)+': '+service.unit))||[];
+                .map(service=>{
+                    const cpu=Number.isSafeInteger(service.evaluator_cpus)
+                        ?service.evaluator_cpus+' CPU':'CPU ceiling unreported';
+                    const ram=Number.isSafeInteger(service.evaluator_ram_mb)
+                        ?service.evaluator_ram_mb+' MiB RAM':'RAM ceiling unreported';
+                    return (machine.name||machine.id)+': '+service.unit+
+                        ' ('+cpu+'; '+ram+')';
+                }))||[];
         $('hub-evaluation-available-suites').textContent=available.size
             ?available.size+' suite IDs advertised by connected '+project+
                 ' workers. '+(running.length
                     ?'Observed evaluator services: '+running.slice(0,4).join('; ')+'.'
                     :'No active evaluator scheduler confirmed for this project.')+
-                ' Service observation does not prove frozen-suite compatibility or successful evaluations.'
+                ' Evaluator CPU/RAM ceilings are independent service limits, not training-job allocations. Service observation does not prove frozen-suite compatibility or successful evaluations.'
             :'No connected machine currently advertises '+project+
                 ' evaluation suites. Existing approved suite IDs remain editable.';
         const defaults=state?.projects.find(p=>p.id===project)
