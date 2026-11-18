@@ -76,6 +76,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     rewards = defaultdict(GroupRewardSeries)
     ended_teams = defaultdict(dict)
     retirements = defaultdict(dict)
+    admissions = defaultdict(dict)
     # Source combat hits are logged once per physical hit. Retain
     # aggregates, not individual hit events, until their episode closes.
     combat_by_episode = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
@@ -127,6 +128,19 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                     terminals[key] = row
             elif row["kind"] == "episode_aborted":
                 raise ValueError("aborted episode in training capture")
+            elif row["kind"] == "policy_controller_admitted":
+                payload = row["payload"]
+                agent = payload.get("group_agent")
+                ship = payload.get("ship_id")
+                revision = payload.get("binding_revision")
+                side = payload.get("side")
+                if (any(type(value) is not int or value <= 0
+                        for value in (agent, ship, revision, side)) or
+                        tick == 0 or agent in admissions[key] or
+                        any(entry[:2] == (ship, revision)
+                            for entry in admissions[key].values())):
+                    raise ValueError("repeated or invalid native policy enrollment")
+                admissions[key][agent] = (ship, revision, side, tick)
             elif row["kind"] == "policy_controller_retired":
                 payload = row["payload"]
                 controller = payload["ship_id"], payload["binding_revision"]
@@ -147,6 +161,27 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
 
     if not all_terminals:
         raise ValueError("reward journal has no completed episodes")
+    # The terminal's immutable evaluation context contains the *initial*
+    # physically registered cohort. The journal alone authorizes future
+    # participants; an authored reinforcement reservation is not an agent.
+    for episode_key, entrants in admissions.items():
+        final = all_terminals.get(episode_key)
+        if final is None:
+            raise ValueError("native policy admission belongs to an unfinished episode")
+        context = final["evaluation_context"]
+        groups = context["group_agents_by_team"]
+        original = {int(agent) for members in groups.values() for agent in members}
+        for agent, (ship, revision, side, joined) in entrants.items():
+            team = context["group_team_by_side"].get(str(side))
+            if (team is None or str(team) not in groups or
+                    agent in original or joined >= final["tick"] or
+                    (ship, revision) in retirements[episode_key] and
+                    retirements[episode_key][ship, revision] < joined):
+                raise ValueError("native policy admission violates episode group or physical time")
+            original.add(agent)
+            groups[str(team)].append(agent)
+        for members in groups.values():
+            members.sort()
     if not terminals:
         raise ValueError("capture contains no completed episodes for the selected policy manifest")
     # The journal parser has already checked the nonnegative, nondecreasing
@@ -334,6 +369,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             rollout = _validate_completed_episode(
                 key, ticks, episode_boundaries, terminals, ended_teams,
                 retirements, rewards, learner_agents_by_episode.pop(key), journal_id,
+                admissions.get(key, {}),
             )
             if stats is not None:
                 accumulate_training_outcome(
@@ -356,8 +392,13 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
 
 def _validate_completed_episode(
     key, episode_ticks, episode_boundaries, terminals, ended_teams,
-    retirements, rewards, learning_agents, journal_id,
+    retirements, rewards, learning_agents, journal_id, admissions=None,
 ):
+    if admissions:
+        return _validate_dynamic_episode(
+            key, episode_ticks, episode_boundaries, terminals, ended_teams,
+            retirements, rewards, learning_agents, journal_id, admissions,
+        )
     """Preserve source cohort, retirement, group reward and terminal checks."""
     ticks = episode_ticks
     context = terminals[key]["evaluation_context"]
