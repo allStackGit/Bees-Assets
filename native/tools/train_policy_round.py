@@ -260,6 +260,12 @@ def rollout_metrics(summary_path, config, manifest_sha):
         metrics["queen_minion_controllers"] = {
             key: queens[key] for key in keys
         }
+        reclaimed = queens.get("retired_policy_routes_reclaimed")
+        if reclaimed is not None:
+            if (type(reclaimed) is not int or reclaimed < 0 or
+                    reclaimed > queens["policy_minions_bound"]):
+                raise ValueError("invalid reclaimed dynamic policy route count")
+            metrics["queen_minion_controllers"]["retired_policy_routes_reclaimed"] = reclaimed
     # Preserve actual model-step CPU utilization reported by the native
     # simulator, not just the requested per-process thread limit. These
     # counters distinguish real parallel rounds from Stage-order fallbacks.
@@ -431,6 +437,12 @@ def combined_rollout_metrics(shards, wall_seconds):
             for key in ("policy_minions_bound", "ungrouped_policy_minions_bound",
                         "ordinary_minions_preserved")
         }
+        if all("retired_policy_routes_reclaimed" in shard["queen_minion_controllers"]
+               for shard in shards):
+            metrics["queen_minion_controllers"]["retired_policy_routes_reclaimed"] = sum(
+                shard["queen_minion_controllers"]["retired_policy_routes_reclaimed"]
+                for shard in shards
+            )
     samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
     if samples:
         metrics["sampled_model_timing"] = {
