@@ -565,11 +565,14 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             if !self.dynamic_policy_ships.remove(&old_id) ||
                 self.agents.remove(&old_id).is_none() ||
                 self.authored_ships.remove(&old_id).is_none() ||
-                self.effective_vision.remove(&old_id).is_none() ||
-                self.player.ships.remove(&old_id).is_none()
+                self.effective_vision.remove(&old_id).is_none()
             {
                 return Err(CombatPerceptionError::InvalidAuthoredMetadata);
             }
+            // A child that died on its birth tick may never have acquired
+            // player formation metadata. The original source fleet and
+            // reward identity are nonetheless preserved.
+            self.player.ships.remove(&old_id);
             // The persistent FleetShip/MA-POCA group records still own
             // accrued combat and group reward history. Only dead,
             // observation-only ship state is recycled here.
