@@ -911,22 +911,42 @@ pub(super) fn archive(
         if !defer_side(side) { continue; }
         let late = &squad_ids[side][1..];
         for (index, &squad) in late.iter().enumerate() {
-            let seconds = if index < late.len().div_ceil(2) { 25_u32 } else { 55 };
+            let seconds = if selected.reinforcements.on_command_ship_death() &&
+                !matches!(selected.objective, Objective::Survival)
+            {
+                // Events are ordered with other authored wave triggers
+                // and have no time barrier; they fire on the real source
+                // commander death inside the shared combat transaction.
+                0
+            } else if index < late.len().div_ceil(2) { 25_u32 } else { 55 };
             wave_times_and_squads.push((seconds, side, squad));
             deferred_squads.push(squad);
         }
     }
     if !wave_times_and_squads.is_empty() {
-        // The native wave constructor requires nondecreasing source times.
-        // Stable faction/squad tie ordering also gives every replay and
-        // training arena the same physical deployment sequence.
+        // The native wave constructor requires nondecreasing source times
+        // for timed plans. Death-triggered plans are separate event gates.
+        // Stable faction/squad ties also preserve physical spawn order.
         wave_times_and_squads.sort_unstable_by_key(|&(seconds, side, squad)|
             (seconds, side, squad));
         run["levels"][0]["reinforcements"] = json!(
-            wave_times_and_squads.iter().map(|&(seconds, _, squad)| json!({
-                "after_seconds": seconds as f32,
-                "squad_item_ids": [squad],
-            })).collect::<Vec<_>>()
+            wave_times_and_squads.iter().map(|&(seconds, side, squad)| {
+                if seconds == 0 {
+                    // The first source ship (11 Bees / 12 Humans) remains
+                    // deployed initially even when its faction has reserves.
+                    // The Level's death event, not a timer or UI condition,
+                    // is the sole activation source.
+                    json!({
+                        "on_ship_destroyed": if side == 0 { 11 } else { 12 },
+                        "squad_item_ids": [squad],
+                    })
+                } else {
+                    json!({
+                        "after_seconds": seconds as f32,
+                        "squad_item_ids": [squad],
+                    })
+                }
+            }).collect::<Vec<_>>()
         );
     }
     run["next_squad_item_id"] = json!(3_000);
