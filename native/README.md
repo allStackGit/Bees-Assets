@@ -980,7 +980,37 @@ python3 native/tools/package-native-game.py \
   --binary native/target/release/bees --output dist/my-trained-battle \
   --library challenge-best/library.json --include-policies \
   --policy-device cpu
+
+# Ship the actual native game AND the training system, not just gameplay.
+# The binaries must have been compiled for the same target OS as bees.
+python3 native/tools/package-native-game.py \
+  --binary /path/to/bees --output dist/bees-native-trainer \
+  --include-training \
+  --rollout-binary /path/to/policy_rollout \
+  --manifest-binary /path/to/policy_manifest
 ```
+
+A game-only package continues to run without Python. **Train Saved
+Fleet** is selectable when the canonical native training tools are
+present, either in a developer checkout or a release created with
+`--include-training`; otherwise the library marks that action unavailable.
+A training-enabled release includes the same native Rust source, authored
+collider metadata, policy templates, Python MA-POCA learner and Experiment
+Hub Node dispatch bridge. It does not copy local user saves, training results,
+package caches, or model checkpoints unless separately requested with
+`--include-policies`.
+
+For local training, install a compatible Python environment with NumPy,
+PyTorch and ML-Agents; use `BEES_NATIVE_PYTHON` to select it. With both
+`--manifest-binary` and `--rollout-binary`, the release starts native
+training without requiring Cargo: the packaged policy ABI generator creates
+the exact Rust manifest, and the existing compiled native rollout worker
+simulates arenas. Without the prebuilt binaries, the included native Rust
+workspace allows the same training tools to build the manifest or rollout
+using Cargo and the platform's Rust toolchain. For Experiment Hub collection
+also provide a running Hub, Node.js, an approved resource plan and an
+authenticated receiver as documented above. No Unity installation is
+required for either gameplay or training.
 
 Use the corresponding `bees.exe` binary on Windows. Trained-policy
 packages copy source-hash-verified weights, the native worker and its
