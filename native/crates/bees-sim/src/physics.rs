@@ -1465,15 +1465,19 @@ impl KinematicPhysics {
             // Update its authored primary/child hulls only when that
             // mutable API was used, never for an unrelated ship mutation.
             if self.obstacle_hulls_dirty {
-                for obstacle in &mut self.obstacles {
+                for &index in &self.active_obstacle_indices {
+                    let obstacle = &mut self.obstacles[index];
                     if obstacle.active { obstacle.update_hull(); }
                 }
                 self.obstacle_hulls_dirty = false;
             }
-            self.grid.rebuild_with(self.obstacles.len(), |index| {
-                let obstacle = &self.obstacles[index];
-                if obstacle.active { obstacle.collider.bounds } else { None }
-            });
+            self.grid.rebuild_with_indices(
+                self.obstacles.len(), self.active_obstacle_indices.iter().copied(),
+                |index| {
+                    let obstacle = &self.obstacles[index];
+                    if obstacle.active { obstacle.collider.bounds } else { None }
+                },
+            );
             self.counts.obstacle_grid_rebuilds += 1;
             self.counts.obstacle_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::Obstacles;
@@ -1497,14 +1501,16 @@ impl KinematicPhysics {
             self.obstacle_hulls_dirty;
         if rebuilt {
             if self.obstacle_hulls_dirty {
-                for obstacle in &mut self.obstacles {
+                for &index in &self.active_obstacle_indices {
+                    let obstacle = &mut self.obstacles[index];
                     if obstacle.active { obstacle.update_hull(); }
                 }
                 self.obstacle_hulls_dirty = false;
             }
-            self.grid.rebuild_with(self.obstacles.len(), |index| {
-                self.obstacles[index].vision_bounds()
-            });
+            self.grid.rebuild_with_indices(
+                self.obstacles.len(), self.active_obstacle_indices.iter().copied(),
+                |index| self.obstacles[index].vision_bounds(),
+            );
             self.counts.obstacle_grid_rebuilds += 1;
             self.counts.obstacle_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::VisionObstacles;
@@ -2017,7 +2023,8 @@ impl KinematicPhysics {
         let mut has_ship_contact_obstacles = false;
         let mut has_body_contact_obstacles = false;
         let mut has_ship_proximity_sources = false;
-        for obstacle in &mut self.obstacles {
+        for &index in &self.active_obstacle_indices {
+            let obstacle = &mut self.obstacles[index];
             if !obstacle.active { continue; }
             active_obstacle_count += 1;
             obstacle.pose.position += obstacle.linear_velocity * dt;
@@ -2091,7 +2098,8 @@ impl KinematicPhysics {
         // preserve exits but skip scanning static obstacles.
         self.proximity_ship_current.clear();
         if has_active_ships && has_ship_proximity_sources {
-            for obstacle in &self.obstacles {
+            for &slot in &self.active_obstacle_indices {
+                let obstacle = &self.obstacles[slot];
                 if !obstacle.active || !obstacle.tracks_body_contacts { continue; }
                 let (Some(proximity), Some(layer)) = (
                     obstacle.proximity_collider.as_ref(), obstacle.proximity_layer,
@@ -2136,10 +2144,13 @@ impl KinematicPhysics {
              (has_active_ships && has_ship_contact_obstacles) ||
              (active_obstacle_count > 1 && has_body_contact_obstacles));
         if needs_obstacle_grid {
-            self.grid.rebuild_with(self.obstacles.len(), |index| {
-                let obstacle = &self.obstacles[index];
-                if obstacle.active { obstacle.collider.bounds } else { None }
-            });
+            self.grid.rebuild_with_indices(
+                self.obstacles.len(), self.active_obstacle_indices.iter().copied(),
+                |index| {
+                    let obstacle = &self.obstacles[index];
+                    if obstacle.active { obstacle.collider.bounds } else { None }
+                },
+            );
             self.counts.obstacle_grid_rebuilds += 1;
             self.counts.obstacle_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::Obstacles;
@@ -2182,7 +2193,8 @@ impl KinematicPhysics {
         // proximity state must be imported before combat damage is enabled.
         self.proximity_obstacle_current.clear();
         if active_obstacle_count > 1 && has_body_contact_obstacles {
-            for source in &self.obstacles {
+            for &slot in &self.active_obstacle_indices {
+                let source = &self.obstacles[slot];
                 if !source.active || !source.tracks_body_contacts { continue; }
                 let (Some(proximity), Some(layer)) = (
                     source.proximity_collider.as_ref(), source.proximity_layer,
@@ -2218,9 +2230,10 @@ impl KinematicPhysics {
         // Keep the exit reconciliation below even when the last eligible
         // asteroid/border was retired during the preceding combat tick.
         let ships_to_check = if has_active_ships && has_ship_contact_obstacles {
-            self.ships.as_slice()
+            self.active_ship_indices.as_slice()
         } else { &[] };
-        for ship in ships_to_check {
+        for &slot in ships_to_check {
+            let ship = &self.ships[slot];
             if !ship.active { continue; }
             let Some(bounds) = ship.collider.bounds else { continue };
             self.grid.candidates(bounds, &mut self.candidates);
@@ -2243,7 +2256,8 @@ impl KinematicPhysics {
         }
         self.obstacle_pairs_current.clear();
         if active_obstacle_count > 1 && has_body_contact_obstacles {
-            for (source_index, source) in self.obstacles.iter().enumerate() {
+            for &source_index in &self.active_obstacle_indices {
+                let source = &self.obstacles[source_index];
                 if !source.active || !source.tracks_body_contacts { continue; }
                 let Some(bounds) = source.collider.bounds else { continue };
                 self.grid.candidates(bounds, &mut self.candidates);
