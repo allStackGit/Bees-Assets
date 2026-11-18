@@ -19,6 +19,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_collector_start_parallel',
     'training_collector_probe_layout_changed',
     'training_collector_resume_restored',
+    'training_resume_map_moves','training_resume_proof_ready',
+    'training_resume_proof_rounds',
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
     'training_rollout_compressed_collectors',
     'training_shared_last_reply_worker','training_shared_last_copy_worker',
@@ -147,6 +149,8 @@ function courierMetrics(source) {
         name.startsWith('training_collector_probe_')||
         /^worker_[0-9]{1,2}_probe_maps_(?:before|after)$/.test(name)||
         name.startsWith('training_collector_start_')||
+        name.startsWith('training_resume_')||
+        /^worker_[0-9]{1,2}_resume_maps_(?:before|after)$/.test(name)||
         name==='training_collector_resume_restored'||
         ['training_info_pack_max_seconds',
             'training_info_pack_work_seconds',
@@ -168,7 +172,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_probe_maps_(?:before|after)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:probe|resume)_maps_(?:before|after)$/.test(name)||
             /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
