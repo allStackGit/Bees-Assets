@@ -721,6 +721,16 @@ def main() -> None:
                 args.physics_workers, args.torch_threads, args.rollout_binary,
             ))):
         parser.error("training allocation and learner options require --train-rounds")
+    # A training-enabled native game distribution places the compiled
+    # physics rollout beside the game. Use that exact executable for
+    # collection and fixed-seed holdouts, including Hub sessions where
+    # remote collection workers are separately owned by Experiment Hub.
+    # Only new sessions auto-select it: a resume must preserve the original
+    # session's explicit (or Cargo-based) execution recipe.
+    if args.train_rounds is not None and args.rollout_binary is None and not args.resume:
+        candidate = ROOT / ("policy_rollout.exe" if os.name == "nt" else "policy_rollout")
+        if candidate.is_file():
+            args.rollout_binary = candidate
     if args.train_rounds is not None and args.rollout_workers is not None:
         worlds = args.rollout_worlds or 1
         if args.rollout_workers > worlds:
