@@ -210,6 +210,25 @@ function rolloutReinforcementMeasurements(rollout) {
     return result;
 }
 
+function rolloutQueenControllerMeasurements(rollout) {
+    const counts = rollout?.queen_minion_controllers;
+    if (counts == null) return {};
+    const fields = [
+        'policy_minions_bound', 'ungrouped_policy_minions_bound',
+        'ordinary_minions_preserved',
+    ];
+    const result = {};
+    for (const key of fields) {
+        const value = counts[key];
+        if (!Number.isSafeInteger(value) || value < 0)
+            throw Error('Invalid native Bees dynamic minion ownership receipt.');
+        result['rollout_queen_' + key] = {value, unit: 'count'};
+    }
+    if (counts.ungrouped_policy_minions_bound > counts.policy_minions_bound)
+        throw Error('Native ungrouped Queen minions exceed all neural minion bindings.');
+    return result;
+}
+
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
@@ -686,6 +705,7 @@ function createNativeBeesAdapter({
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
                         ...rolloutPhysicsMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),
+                        ...rolloutQueenControllerMeasurements(rollout),
                         ...(rollout.sampled_model_timing ? {
                             rollout_sampled_model_calls: {
                                 value: rollout.sampled_model_timing.calls, unit: 'count',
@@ -732,6 +752,7 @@ function createNativeBeesAdapter({
                     ...(rollout ? {
                         ...rolloutPhysicsMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),
+                        ...rolloutQueenControllerMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
