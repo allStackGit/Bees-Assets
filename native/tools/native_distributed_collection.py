@@ -670,6 +670,7 @@ def aggregate_collection_metrics(bundles):
                 "reinforcement_wakeup_work": row.get("reinforcement_wakeup_work"),
                 "queen_minion_controllers": row.get("queen_minion_controllers"),
                 "map_border_ships": row.get("map_border_ships"),
+                "ship_slot_work": row.get("ship_slot_work"),
                 "world_steps": row["successful_world_steps"],
                 "policy_rows": row["successful_policy_rows"],
                 "wall_seconds": row["wall_seconds"],
@@ -714,6 +715,13 @@ def aggregate_collection_metrics(bundles):
         result["map_border_ships"] = {
             key: sum(row["map_border_ships"][key] for row in rows)
             for key in border_keys
+        }
+    slot_keys = ("integrated_bodies", "inactive_ship_slots_skipped",
+                 "inactive_ship_grid_slots_skipped")
+    if all("ship_slot_work" in row for row in rows):
+        result["ship_slot_work"] = {
+            key: sum(row["ship_slot_work"][key] for row in rows)
+            for key in slot_keys
         }
     if sampled:
         result["sampled_model_timing"] = {
