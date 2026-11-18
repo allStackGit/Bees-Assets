@@ -404,7 +404,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          curriculum_plan: Path | None = None,
                          library_save_root: Path | None = None,
                          library_game_id: str | None = None,
-                         library_game_title: str | None = None) -> None:
+                         library_game_title: str | None = None,
+                         monitor_evaluation_run_configs: tuple[Path, ...] = ()) -> None:
     """Hand freshly verified artifacts to the one existing native trainer.
 
     The session has its own immutable recipe, model lineage, round receipts
@@ -462,6 +463,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         command.extend(["--evaluation-run-config", str(evaluation_run_config.resolve(strict=True)),
                         "--evaluation-side", str(evaluation_side),
                         "--evaluation-policy-seed", str(evaluation_policy_seed)])
+    for source in monitor_evaluation_run_configs:
+        command.extend(["--monitor-evaluation-run-config", str(source.resolve(strict=True))])
     if evaluation_every != 1:
         command.extend(["--evaluation-every", str(evaluation_every)])
     if early_stop_patience is not None:
@@ -600,6 +603,8 @@ def main() -> None:
                         help="episodes per native holdout arena (default: 1)")
     parser.add_argument("--evaluation-run-config", type=Path,
                         help="existing holdout native Levels evaluated after each finished learner update")
+    parser.add_argument("--monitor-evaluation-run-config", type=Path, action="append", default=[],
+                        help="extra independent native holdout suites (repeatable, requires primary holdout)")
     parser.add_argument("--evaluation-side", type=int, choices=(1, 2),
                         help="source side to measure during holdout evaluation")
     parser.add_argument("--evaluation-policy-seed", type=int, default=0,
@@ -737,6 +742,12 @@ def main() -> None:
         parser.error("--holdout-seed and --holdout-episodes require --holdout-worlds")
     if args.holdout_worlds is not None and args.evaluation_run_config is not None:
         parser.error("choose generated --holdout-worlds or an existing --evaluation-run-config")
+    if args.monitor_evaluation_run_config and (
+            args.train_rounds is None or
+            args.holdout_worlds is None and args.evaluation_run_config is None):
+        parser.error("extra monitoring suites require training and a primary holdout")
+    if len(args.monitor_evaluation_run_config) > 16:
+        parser.error("no more than 16 independent native monitoring suites")
     if (args.holdout_worlds is None and args.evaluation_run_config is None) != (
         args.evaluation_side is None
     ):
@@ -754,6 +765,7 @@ def main() -> None:
         args.hub_dispatch_plan is not None,
         args.hub_auto_worlds is not None,
         args.holdout_worlds is not None, args.evaluation_run_config is not None,
+        bool(args.monitor_evaluation_run_config),
         args.evaluation_side is not None,
         args.evaluation_policy_seed != 0, args.collector_timeout_seconds != 0,
     )):
@@ -870,6 +882,7 @@ def main() -> None:
                 library_save_root=args.library_save_root,
                 library_game_id=args.library_game_id,
                 library_game_title=args.library_game_title,
+                monitor_evaluation_run_configs=tuple(args.monitor_evaluation_run_config),
             )
 
 
