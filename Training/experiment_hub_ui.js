@@ -4888,6 +4888,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ' · service '+service.service_state+
                                 ' · scheduler '+service.scheduler_state+
                                 ' · last poll '+service.last_result+
+                                (service.evaluator_cpus!=null&&
+                                 service.evaluator_ram_mb!=null
+                                    ?' · evaluator ceiling '+service.evaluator_cpus+
+                                        ' CPU / '+service.evaluator_ram_mb+' MiB RAM':'')+
                                 (service.last_finished_at
                                     ?' at '+service.last_finished_at:'')+
                                 (service.last_exit_code!==null

@@ -23,6 +23,21 @@ function instant(value) {
     const at=Date.parse(value||'');
     return Number.isFinite(at)?new Date(at).toISOString():null;
 }
+function cpuQuota(value) {
+    if(typeof value!=='string'||value==='infinity')return null;
+    const parsed=/^([0-9]+(?:\.[0-9]+)?)(us|ms|s|min)$/.exec(value);
+    const seconds=parsed?Number(parsed[1])*({
+        us:0.000001,ms:0.001,s:1,min:60,
+    })[parsed[2]]:/^[0-9]+$/.test(value)?Number(value)/1000000:null;
+    return Number.isSafeInteger(seconds)&&seconds>=1&&seconds<=64
+        ?seconds:null;
+}
+function memoryQuota(value) {
+    if(typeof value!=='string'||!/^[0-9]+$/.test(value))return null;
+    const memory=Number(value)/1048576;
+    return Number.isSafeInteger(memory)&&memory>=512&&memory<=1048576
+        ?memory:null;
+}
 function linuxHealth(machine) {
     // Query the systemd user manager; unit files need not be running to
     // appear. Do not read user unit files or execute their commands.
@@ -40,7 +55,7 @@ function linuxHealth(machine) {
     const units=files.flatMap(timer=>[timer,timer.slice(0,-6)+'.service']);
     const shown=command('systemctl',[
         '--user','show','--no-pager',
-        '--property=Id,ActiveState,Result,ExecMainStatus,ExecMainExitTimestamp',
+        '--property=Id,ActiveState,Result,ExecMainStatus,ExecMainExitTimestamp,CPUQuotaPerSecUSec,MemoryMax',
         ...units,
     ]);
     const details=new Map();
@@ -88,6 +103,8 @@ function linuxHealth(machine) {
             last_result:failed?'failed':finished?'completed':'unknown',
             last_exit_code:Number.isSafeInteger(exit)&&exit>=0&&exit<=255?exit:null,
             last_finished_at:finished,
+            evaluator_cpus:cpuQuota(service.CPUQuotaPerSecUSec),
+            evaluator_ram_mb:memoryQuota(service.MemoryMax),
             diagnostic:diagnostic?diagnostic.replace(/[\x00-\x1f]/g,' ').slice(0,160):null,
         };
     });
@@ -144,6 +161,10 @@ function windowsHealth(machine,env) {
                 record.python_exit_code>=0&&record.python_exit_code<=255
                 ?record.python_exit_code:null,
             last_finished_at:completed,
+            evaluator_cpus:Number.isSafeInteger(record.cpus)&&record.cpus>=1&&record.cpus<=64
+                ?record.cpus:null,
+            evaluator_ram_mb:Number.isSafeInteger(record.ram_mb)&&
+                record.ram_mb>=512&&record.ram_mb<=1048576?record.ram_mb:null,
             diagnostic,
         });
     }
