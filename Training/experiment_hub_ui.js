@@ -2218,18 +2218,51 @@ document.addEventListener('DOMContentLoaded', () => {
         if(runs.some(run=>run.job.evaluation_history_only))
             warnings.push('Historical checkpoint audits are operator-imported, read-only observations. The Hub did not authorize or supervise their evaluation; verify the source report and frozen suite definitions. They cannot be promoted or resumed.');
         const definitions=new Map(),runtimes=new Map(),unidentifiedRuntimes=new Set();
+        const suiteManifests=new Map();
         for(const run of runs)for(const row of run.evaluation_points||[]) {
             if(!definitions.has(row.suite_id))definitions.set(row.suite_id,new Set());
             definitions.get(row.suite_id).add(row.suite_sha256);
+            // Compare immutable manifest field names only. The worker and
+            // historical importer already verified each definition's hash;
+            // never fabricate differences from guessed suite names.
+            const archived=run.job.source_suites?.find(source=>
+                source.suite_id===row.suite_id&&
+                source.suite_sha256===row.suite_sha256);
+            const canonical=row.suite_definition_canonical||archived?.definition;
+            if(typeof canonical==='string')try {
+                const manifest=JSON.parse(canonical);
+                if(manifest&&typeof manifest==='object'&&!Array.isArray(manifest)) {
+                    if(!suiteManifests.has(row.suite_id))
+                        suiteManifests.set(row.suite_id,new Map());
+                    suiteManifests.get(row.suite_id).set(row.suite_sha256,manifest);
+                }
+            }catch {}
             if(!runtimes.has(row.suite_id))runtimes.set(row.suite_id,new Set());
             if(/^[a-f0-9]{64}$/.test(row.runtime_sha256||''))
                 runtimes.get(row.suite_id).add(row.runtime_sha256);
             else unidentifiedRuntimes.add(row.suite_id);
         }
         for(const [suite,digests] of definitions) {
-            if(digests.size>1)
+            if(digests.size>1) {
+                const manifests=[...(suiteManifests.get(suite)?.values()||[])];
+                const changed=new Set();
+                if(manifests.length>1) {
+                    const fields=new Set(manifests.flatMap(Object.keys));
+                    for(const name of fields) {
+                        const baseline=JSON.stringify(manifests[0][name]);
+                        if(manifests.slice(1).some(source=>
+                            JSON.stringify(source[name])!==baseline))
+                            changed.add(name);
+                    }
+                }
                 warnings.push('Evaluation suite '+suite+
-                    ' has different frozen definitions across these runs; maps, seeds, opponents or rules may differ. Its curves are separate.');
+                    ' has different frozen definitions across these runs'+
+                    (changed.size?'; differing verified fields: '+
+                        [...changed].sort().slice(0,8).join(', ')+
+                        (changed.size>8?' and '+(changed.size-8)+' more':'')
+                        :' (not all full definitions were available for inspection)')+
+                    '. Its curves are separate; do not combine them.');
+            }
             if((runtimes.get(suite)?.size||0)>1)
                 warnings.push('Evaluation suite '+suite+
                     ' used multiple evaluator runtime fingerprints. Inspect the checkpoint tooltips before comparing scores.');
