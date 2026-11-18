@@ -567,19 +567,28 @@ def author(args) -> tuple[dict, dict, dict]:
             # extra steering/AI implementation) to send one deployed mobile
             # squad toward the real trigger; other escorts keep their
             # source combat commands and reinforcement activation clocks.
-            mobiles = {
+            mobiles = [
                 squad["item_id"] for squad in by_side_squads[owner]
                 if squad["item_id"] not in deferred_squad_ids and
                 any(ship["entity_id"] in squad["members"] and
-                    ship.get("base_speed", 0) > 0
+                    ship.get("base_speed", 0) > 0 and
+                    ship.get("drone_carrier_id") is None and
+                    not (isinstance(ship.get("special"), dict) and
+                         ship["special"].get("kind") == "striker")
                     for ship in by_side[owner])
-            }
-            route = next((queue for queue in queues
-                          if queue["squad_item_id"] in mobiles), None)
-            if route is None:
+            ]
+            if not mobiles:
                 raise ValueError("scripted extraction has no initial mobile command owner")
-            route["orders"] = [{"kind": "move_to_point", "destination": center}]
-            route["repeat"] = False
+            # Keep combat escorts whenever possible, but send several
+            # independently spawned squads if available. Otherwise one
+            # unlucky early casualty would make an AI-only extraction
+            # unwinnable despite surviving mobile hulls.
+            escaping = set(mobiles[:max(1, (len(mobiles) + 2) // 3)])
+            for queue in queues:
+                if queue["squad_item_id"] not in escaping:
+                    continue
+                queue["orders"] = [{"kind": "move_to_point", "destination": center}]
+                queue["repeat"] = False
     library = {
         "library_schema": 1,
         "games": [{
