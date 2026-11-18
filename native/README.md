@@ -161,9 +161,22 @@ Unity gameplay parity.
 ### Train a fleet assembled inside the native game
 
 The native game's **Fleet Skirmish** builder saves a
-`replay-source-run.json` beside its recorded battle. To train against that
-exact authored fleet, terrain and command layout (rather than reauthoring
-a separate RL-only game), use the existing converter and learner:
+`replay-source-run.json` beside its recorded battle. In the game library,
+choose **Train Saved Fleet** to select an elimination skirmish, optimizer
+rounds, concurrent arenas, physics CPU workers, and CPU or PyTorch GPU
+optimizer. The native game starts the existing trainer outside the window
+and returns to the library immediately. **Fleet Training Progress** shows
+completed rounds, measured training SPS, and the path to each job's logs;
+newly published models appear in the same game library. Each job has its
+own `<save-root>/training/fleet-skirmish/training-NNNNNN/` directory.
+This local menu uses the existing trainer and is not a replacement for Hub
+multi-machine resource allocation. The Python MA-POCA environment and
+native Rust tooling must be installed. Set `BEES_NATIVE_PYTHON` to the
+interpreter path and, for packaged installations without nearby sources,
+`BEES_NATIVE_TOOLS` to the existing `native/tools` directory.
+
+For explicit Hub distribution, resource flags, or automated scheduling,
+run the same underlying converter and learner from a terminal:
 
 ```sh
 python3 native/tools/prepare_fleet_training.py \
