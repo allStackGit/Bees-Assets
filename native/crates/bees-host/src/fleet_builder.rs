@@ -20,7 +20,7 @@ use super::RunConfig;
 const SOURCE_SCENE: &str = include_str!("../../../examples/native-two-player.scene.json");
 const SOURCE_RUN: &str = include_str!("../../../examples/native-two-player.run.json");
 const SOURCE_ARCHETYPES: &str = include_str!("../../../examples/native-skirmish.scene.json");
-const FLEET_SIZES: [usize; 7] = [1, 2, 4, 8, 16, 32, 64];
+const FLEET_SIZES: [usize; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
 pub(super) const GAME_ID: &str = "fleet-skirmish";
 
 #[derive(Clone, Copy)]
@@ -269,13 +269,19 @@ fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
 /// Reuse the existing source collider prefab, not an approximate visual
 /// barrier. Both live game and training share its authentic collision and
 /// navigation behavior through NativeLevelLayout.
-/// Keep the original authored hull at (0,0), then admit newly cloned
-/// ships in deterministic near-first grid order. Eight columns and nine
-/// rows fit up to 64 independent physical squads per faction without
-/// crossing map center or the authored +/-100 vertical map bounds.
+/// Keep 1..64 fleets on their original fixed near-first layout, so
+/// pre-existing saved battles and performance measurements retain the same
+/// physical spawn geometry. Large fleets use a denser, still disjoint
+/// source-centered 10x15 grid. On the native 320x200 arena that occupies
+/// x -147..-39 (Bees) and 39..147 (Humans), y -84..84, keeping
+/// hulls away from borders and the central authored cover lane.
 fn fleet_offsets(side: usize, count: usize) -> Vec<[f32; 2]> {
-    let columns = if side == 0 { -4_i32..=3 } else { -3_i32..=4 };
-    let mut positions = (-4_i32..=4).flat_map(|row|
+    let large = count > 64;
+    let columns = if large {
+        if side == 0 { -6_i32..=3 } else { -3_i32..=6 }
+    } else if side == 0 { -4_i32..=3 } else { -3_i32..=4 };
+    let rows = if large { -7_i32..=7 } else { -4_i32..=4 };
+    let mut positions = rows.flat_map(|row|
         columns.clone().filter_map(move |column|
             (row != 0 || column != 0).then_some((column, row))
         )
@@ -283,9 +289,10 @@ fn fleet_offsets(side: usize, count: usize) -> Vec<[f32; 2]> {
     positions.sort_unstable_by_key(|&(column, row)|
         (column * column + row * row, row.abs(), column.abs(), row, column)
     );
+    let spacing_y = if large { 12.0 } else { 18.0 };
     let mut offsets = vec![[0.0, 0.0]];
     offsets.extend(positions.into_iter().take(count.saturating_sub(1))
-        .map(|(x, y)| [x as f32 * 12.0, y as f32 * 18.0]));
+        .map(|(x, y)| [x as f32 * 12.0, y as f32 * spacing_y]));
     offsets
 }
 
@@ -551,7 +558,7 @@ pub(super) fn archive(
     let cover = match selected.terrain {
         Terrain::Open | Terrain::Original => &[][..],
         // Keep all cover in the map's central no-spawn lane. Native
-        // 64-ship fleets occupy x<=-39 and x>=39 respectively; prefab
+        // 64- and 128-ship fleets occupy x<=-39 and x>=39; prefab
         // half-width is 25 and never overlaps a fresh ship by design.
         Terrain::Cover => &[[0.0, 52.0], [0.0, -52.0]][..],
         Terrain::DenseCover => &[
