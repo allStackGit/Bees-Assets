@@ -8,6 +8,8 @@ const crypto=require('node:crypto');
 const {evaluationEvidence}=require('./experiment_hub_evaluation');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
+const MAX_MACHINE_BYTES=16*1024*1024;
+const MAX_MACHINE_UI_EVENTS=20;
 const MAX_BYTES=64*1024*1024;
 const MAX_UI_POINTS=1024;
 const SHA256=/^[a-f0-9]{64}$/;
@@ -99,6 +101,7 @@ class EvaluationHistory {
     constructor(root) {
         this.directory=path.join(root,'hub-evaluations-v1');
         this.loaded=new Map();
+        this.machineLoaded=new Map();
         this.issues=new Map();
     }
     get error() {
@@ -213,6 +216,137 @@ class EvaluationHistory {
                 String(error.message||error).slice(0,160));
             return false;
         }
+    }
+    // Evaluator OS/service reports are diagnostic observations. Keep them
+    // separate from successful checkpoint receipts and native registry state,
+    // while retaining them in the same independent evaluation archive.
+    machineFile(machineId) {
+        if(!PROJECT.test(String(machineId)))throw Error('Invalid evaluator machine ID.');
+        return path.join(this.directory,'machine-'+machineId+'.jsonl');
+    }
+    machineHistory(machineId) {
+        if(this.machineLoaded.has(machineId))return this.machineLoaded.get(machineId);
+        this.directoryReady();
+        const file=this.machineFile(machineId),rows=[];
+        let stat=null;
+        if(fs.existsSync(file)) {
+            stat=fs.lstatSync(file);
+            if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||
+                stat.size>MAX_MACHINE_BYTES||
+                (typeof process.getuid==='function'&&
+                 (stat.uid!==process.getuid()||(stat.mode&0o077)!==0)))
+                throw Error('Evaluator health archive is unsafe or too large.');
+            const raw=fs.readFileSync(file,'utf8');
+            if(raw&&!raw.endsWith('\n'))
+                throw Error('Evaluator health archive ends with an incomplete record.');
+            for(const line of raw.split('\n')) {
+                if(!line)continue;
+                if(Buffer.byteLength(line)>8192)
+                    throw Error('Evaluator health archive event exceeds its size limit.');
+                const row=JSON.parse(line);
+                if(row.schema_version!==1||
+                    row.kind!=='evaluator_service_observation'||
+                    row.machine_id!==machineId||
+                    typeof row.observed_at!=='string'||
+                    !Number.isFinite(Date.parse(row.observed_at))||
+                    new Date(row.observed_at).toISOString()!==row.observed_at||
+                    typeof row.checked_at!=='string'||
+                    !Number.isFinite(Date.parse(row.checked_at))||
+                    new Date(row.checked_at).toISOString()!==row.checked_at||
+                    !Array.isArray(row.services)||row.services.length>16||
+                    (row.issue!==null&&
+                     (typeof row.issue!=='string'||row.issue.length>160)))
+                    throw Error('Evaluator health archive contains invalid observations.');
+                rows.push(row);
+            }
+        }
+        const data={rows,size:stat?.size||0,dev:stat?.dev??null,
+            ino:stat?.ino??null,
+            last_signature:rows.length?JSON.stringify({
+                services:rows[rows.length-1].services,
+                issue:rows[rows.length-1].issue,
+            }):null};
+        this.machineLoaded.set(machineId,data);
+        return data;
+    }
+    recordMachineHealth(machineId,report) {
+        if(!report?.evaluator_service_checked_at)return false;
+        try {
+            if(!PROJECT.test(String(machineId))||
+                typeof report.evaluator_service_checked_at!=='string'||
+                !Array.isArray(report.evaluator_services)||
+                report.evaluator_services.length>16)
+                throw Error('Invalid evaluator health observation.');
+            const data=this.machineHistory(machineId);
+            // A fresh heartbeat is not a new failure. Record only changed
+            // service states or a different completed poll identity, and
+            // persist that boundary across Hub restarts.
+            const observation={services:report.evaluator_services,
+                issue:report.evaluator_service_issue??null};
+            const signature=JSON.stringify(observation);
+            if(data.last_signature===signature)return false;
+            const row={schema_version:1,kind:'evaluator_service_observation',
+                machine_id:machineId,observed_at:new Date().toISOString(),
+                checked_at:report.evaluator_service_checked_at,...observation};
+            const body=Buffer.from(JSON.stringify(row)+'\n');
+            if(body.length>8192||data.size+body.length>MAX_MACHINE_BYTES)
+                throw Error('Evaluator health history has reached its size limit.');
+            const file=this.machineFile(machineId);
+            const fd=fs.openSync(file,fs.constants.O_CREAT|fs.constants.O_RDWR|
+                fs.constants.O_APPEND|(fs.constants.O_NOFOLLOW||0),0o600);
+            try {
+                const st=fs.fstatSync(fd),current=fs.lstatSync(file);
+                if(!st.isFile()||st.nlink!==1||!current.isFile()||
+                    current.isSymbolicLink()||st.ino!==current.ino||
+                    st.dev!==current.dev||st.size!==data.size||
+                    (data.ino!==null&&(st.ino!==data.ino||st.dev!==data.dev))||
+                    (typeof process.getuid==='function'&&
+                     (st.uid!==process.getuid()||(st.mode&0o077)!==0)))
+                    throw Error('Evaluator health history was replaced or changed.');
+                try {
+                    for(let offset=0;offset<body.length;) {
+                        const written=fs.writeSync(fd,body,offset,body.length-offset);
+                        if(!Number.isSafeInteger(written)||written<=0)
+                            throw Error('Incomplete evaluator health archive append.');
+                        offset+=written;
+                    }
+                    fs.fsyncSync(fd);
+                }catch(error) {
+                    fs.ftruncateSync(fd,st.size);
+                    throw error;
+                }
+                data.size+=body.length;data.ino=st.ino;data.dev=st.dev;
+            }finally{fs.closeSync(fd);}
+            data.rows.push(row);data.last_signature=signature;
+            this.issues.delete('machine:'+machineId);
+            return true;
+        }catch(error) {
+            this.issues.set('machine:'+machineId,
+                'Evaluator health archive unavailable for '+machineId+': '+
+                String(error.message||error).slice(0,130));
+            return false;
+        }
+    }
+    machineObservations(machineIds,projectId) {
+        const samples=[];
+        for(const machineId of new Set(machineIds)) {
+            try {
+                const rows=this.machineHistory(machineId).rows;
+                // Include loss of a service (empty list) and probe failures.
+                // A project has relevant machine evidence only if it has
+                // appeared in a prior observation.
+                if(!rows.some(row=>row.services.some(s=>s.project===projectId)))
+                    continue;
+                samples.push({machine_id:machineId,
+                    events:rows.slice(-MAX_MACHINE_UI_EVENTS)});
+                this.issues.delete('machine:'+machineId);
+            }catch(error) {
+                this.issues.set('machine:'+machineId,
+                    'Evaluator health history unavailable for '+machineId+': '+
+                    String(error.message||error).slice(0,130));
+            }
+        }
+        return samples;
     }
     // Offline checkpoint audits are kept in the existing independent
     // evaluation archive, but never added to the native job registry.
