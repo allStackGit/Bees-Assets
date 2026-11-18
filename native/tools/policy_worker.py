@@ -645,6 +645,7 @@ def main() -> None:
         }, sort_keys=True), file=sys.stderr, flush=True)
 
     report_model_residency()
+    reported_first_gpu_forward = False
     # A holdout benchmark can pin the action-sampling RNG without changing
     # ordinary gameplay/training or the versioned inference wire protocol.
     # Seed after loading model weights: constructor initialization may
@@ -751,8 +752,14 @@ def main() -> None:
             policy_map, slots, observation, fire, special, allowed, measurements,
             output_buffers, capture_behavior,
         )
-        if measurements["batches"] % 2048 == 0:
+        if ((measurements["gpu_forward_rows"] > 0 and not reported_first_gpu_forward)
+                or measurements["batches"] % 2048 == 0):
+            # Rust owns child teardown and may terminate this resident
+            # process before EOF. Emit evidence at the first successful
+            # accelerator action even for very short native episodes.
             report_model_residency()
+            if measurements["gpu_forward_rows"] > 0:
+                reported_first_gpu_forward = True
         writer.write(HEADER.pack(b"BTRN" if behavior is not None else b"BOUT", VERSION, request_id, rows))
         writer.write(continuous.tobytes(order="C"))
         writer.write(discrete.tobytes(order="C"))
