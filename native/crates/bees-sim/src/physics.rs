@@ -1390,7 +1390,8 @@ impl KinematicPhysics {
             return false;
         }
         if self.ship_hulls_dirty {
-            for ship in &mut self.ships {
+            for &index in &self.active_ship_indices {
+                let ship = &mut self.ships[index];
                 if ship.active { ship.update_hull(); }
             }
             self.ship_hulls_dirty = false;
