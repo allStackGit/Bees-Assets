@@ -12,6 +12,7 @@ const {evaluationPolicy,monitoringPolicy,activeEvaluation,
        evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
+const {EvaluationHistory}=require('./experiment_hub_evaluation_history');
 const {validateCatalog,supportsDesign}=require('./experiment_hub_design_fields');
 const {ObservationArchive}=require('./experiment_hub_observations');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
@@ -1157,6 +1158,7 @@ class ExperimentHub {
         // Native process usage observations are ephemeral, not registry history.
         this.executionTelemetry = new Map();
         this.progressHistory = new ProgressHistory(path.join(root,'hub-chart-v1.json'));
+        this.evaluationHistory = new EvaluationHistory(root);
         this.observations = new ObservationArchive(root);
         this.executionOrderCursor = new Map();
         // Coordinated learner Starts are one-use durable approvals bound
@@ -2025,7 +2027,10 @@ class ExperimentHub {
     }
     progressComparison(projectId) {
         this.project(projectId);
-        return this.progressHistory.snapshot(projectId,this.state.jobs);
+        const chart=this.progressHistory.snapshot(projectId,this.state.jobs);
+        const evaluations=this.evaluationHistory.snapshot(projectId,this.state.jobs);
+        return {...chart,evaluations:evaluations.samples,
+            evaluation_storage_warning:evaluations.storage_warning};
     }
     // These are conservative coordinator-side claims, NOT operating system
     // isolation or an authorization to execute a workload.
@@ -3967,6 +3972,29 @@ class ExperimentHub {
             }
         }
         if (changed) this.commit(next);
+        // Archive only validated independent receipts retained by the
+        // committed registry. This diagnostic history never authorizes Stop,
+        // promotion or a native process transition.
+        for(const report of reports) {
+            const job=this.state.jobs.find(j=>j.id===report.job_id);
+            const policy=activeEvaluation(job);
+            if(!job||!policy||job.dispatch_id!==report.dispatch_id)continue;
+            const raw=Array.isArray(report.evaluations)?report.evaluations:
+                report.evaluation?[report.evaluation]:[];
+            for(const value of raw) {
+                try {
+                    const rule=evaluationRules(policy)
+                        .find(rule=>rule.suite_id===value?.suite_id);
+                    if(!rule)continue;
+                    const receipt=evaluationEvidence(value,rule,job.dispatch_id);
+                    const stored=(job.evaluation_candidates||[])
+                        .find(c=>c.checkpoint_sha256===receipt.checkpoint_sha256)
+                        ?.receipts?.[receipt.suite_id];
+                    if(stored&&JSON.stringify(stored)===JSON.stringify(receipt))
+                        this.evaluationHistory.record(job,receipt);
+                }catch { /* Reject unaccepted or unrelated receipt observations. */ }
+            }
+        }
         // Do not mark receipt or liveness until the durable acknowledgement
         // succeeds. A disk failure leaves the previous lease available.
         // Check the previous heartbeat before replacing it. A reconnect
