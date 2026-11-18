@@ -48,7 +48,7 @@ pub(crate) struct ReinforcementWave {
     /// Actual model-controlled ships, whether or not MA-POCA is enabled.
     policy_agents: usize,
     /// Only training groups register separate source reward identities.
-    group_agents: Vec<(i32, u64)>,
+    group_agents: Vec<(i64, i32, u64)>,
 }
 
 /// Cache only the earliest timed wakeup and which source event classes
@@ -384,7 +384,9 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                             if !deferred_group_ids.insert(participant) {
                                 return Err("Reinforcement MA-POCA participant identities must be unique");
                             }
-                            waves[wave_idx].group_agents.push(participant);
+                            waves[wave_idx].group_agents.push((
+                                ship.entity_id, participant.0, participant.1,
+                            ));
                         }
                     }
                 }
@@ -567,9 +569,15 @@ impl NativePolicyOnlyMetadata {
             if !wave.group_agents.is_empty() {
                 let group = events.group_delivery_mut().ok_or_else(||
                     invalid("Missing MA-POCA group for policy reinforcements".into()))?;
-                for (side, group_id) in wave.group_agents {
-                    group.register_agent(side, group_id)
+                for (ship_id, side, group_id) in wave.group_agents {
+                    events.group_delivery_mut().expect("preflighted group")
+                        .register_agent(side, group_id)
                         .map_err(|error| invalid(format!("Policy reinforcement group: {error:?}")))?;
+                    let binding_revision = world.policy_binding_revision(ship_id)
+                        .ok_or_else(|| invalid("Missing live deferred policy binding".into()))?;
+                    events.record_policy_controller_admitted(
+                        tick, ship_id, binding_revision, side, group_id,
+                    ).map_err(|error| invalid(format!("Policy reinforcement admission: {error:?}")))?;
                 }
             }
             events.record_reinforcements(tick, ships, squads, policy_agents)?;
