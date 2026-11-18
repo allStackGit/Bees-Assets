@@ -51,7 +51,11 @@ archetypes, or orphaned Carrier children. `--control both` creates
 two independently controllable sides for the existing authenticated native
 multiplayer host; `--host-side 1|2` chooses the host window's faction.
 `--control none` runs both factions under the same authored native
-scripted-order director. `--fog`, `--empty-map`, `--minutes`,
+scripted-order director. Its `aggressive_nearest` order selects the
+nearest live enemy squad at command start, then retargets after that
+exact enemy squad retires. This replaces quadratic authored enemy-ID
+lists in large battles; physical targeting and movement remain in the
+ordinary native Aggressive command. `--fog`, `--empty-map`, `--minutes`,
 and `--spacing` are supported. `--source-scene` and
 `--source-run` allow a larger native-authored arena or other verified
 archetypes without Unity. The default catalogue uses the existing
