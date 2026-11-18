@@ -66,6 +66,7 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
     const slots = new Set();
     let learnerMatches = 0;
     let requiresGpuInference = false;
+    let supportsGpuInference = false;
     for (const model of document.models) {
         if (!model || !Number.isSafeInteger(model.slot) || model.slot < 0 ||
             model.slot > 0xffffffff || slots.has(model.slot) ||
@@ -79,7 +80,11 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
             if (!Array.isArray(providers) || !providers.length ||
                 providers.some(provider => typeof provider !== 'string' || !provider))
                 throw Error('Invalid native Bees ONNX inference providers.');
-            requiresGpuInference ||= providers.some(provider => provider !== 'CPUExecutionProvider');
+            // ONNX uses its highest-priority available provider. A CPU
+            // primary with an optional GPU fallback is not a GPU allocation.
+            const gpuProvider = providers[0] !== 'CPUExecutionProvider';
+            requiresGpuInference ||= gpuProvider;
+            supportsGpuInference ||= gpuProvider;
         } else {
             // The Hub leases at most one GPU to the Bees optimizer. A
             // second CUDA ordinal cannot be reached through that lease.
@@ -87,6 +92,7 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
             if (!['cpu', 'cuda', 'cuda:0'].includes(device))
                 throw Error('Native Bees inference device exceeds the supported single-GPU lease.');
             requiresGpuInference ||= device !== 'cpu';
+            supportsGpuInference = true; // PyTorch can move the pinned weights to a leased GPU.
         }
         const artifact = path.resolve(path.dirname(manifest), model.path);
         let digest = checked.get(artifact);
@@ -105,7 +111,7 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
     }
     if (learnerMatches !== (learnerSlot === undefined ? document.models.length : 1))
         throw Error('Native Bees learner slot does not reference the pinned ML-Agents checkpoint.');
-    return requiresGpuInference;
+    return {requiresGpuInference, supportsGpuInference};
 }
 
 function learnerMeasurements(metrics) {
@@ -383,7 +389,7 @@ function createNativeBeesAdapter({
         ...[runner, contractScript, ...(binary ? [binary] : []), ...gallerySources]
             .map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
-    const initialGpuInference = verifyModelDependencies(
+    const initialGpuSupport = verifyModelDependencies(
         manifest, new Map([[input, pins.get(input)]]), input, learnerSlot,
     );
     // Config identity is independent of machine-local absolute paths and
@@ -471,7 +477,7 @@ function createNativeBeesAdapter({
         // A manifest may retain opponent artifacts outside the round output.
         // The complete runnable model set, not just checkpoint.pt, is the
         // unit of continuation readiness.
-        const requiresGpuInference = verifyModelDependencies(
+        const gpuSupport = verifyModelDependencies(
             manifest, new Map([[checkpoint, receipt.next_checkpoint_sha256]]),
             checkpoint, learnerSlot,
         );
@@ -484,13 +490,13 @@ function createNativeBeesAdapter({
                 throw Error('Native Bees promoted opponent does not reference its committed checkpoint.');
         }
         return {checkpoint, manifest, checkpointDigest: receipt.next_checkpoint_sha256,
-            manifestDigest: receipt.next_manifest_sha256, requiresGpuInference};
+            manifestDigest: receipt.next_manifest_sha256, ...gpuSupport};
     }
 
     function roundInputs(context) {
         if (!context.continuation_of_job_id)
             return {checkpoint: input, manifest, checkpointDigest: pins.get(input),
-                manifestDigest: pins.get(manifest), requiresGpuInference: initialGpuInference};
+                manifestDigest: pins.get(manifest), ...initialGpuSupport};
         if (collectOnly) throw Error('Native Bees collection requires an independent job.');
         if (!UUID.test(context.continuation_of_job_id) || context.continuation_of_job_id === context.job_id)
             throw Error('Invalid native Bees predecessor.');
@@ -641,14 +647,19 @@ function createNativeBeesAdapter({
             // Collect-only jobs run no optimizer. A GPU lease cannot help a
             // manifest whose every inference model is CPU-bound, so refuse
             // that placement rather than silently wasting the assigned GPU.
-            if (collectOnly && gpu && !inputs.requiresGpuInference)
-                throw Error('Native Bees GPU collection requires a GPU-pinned inference model.');
+            if (collectOnly && gpu && !inputs.supportsGpuInference)
+                throw Error('Native Bees GPU collection needs an accelerator-capable model backend.');
             if (context.continuation_of_job_id &&
                 context.expected_parent_model_sha256 !== inputs.checkpointDigest)
                 throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
             return ['-B', runner, run, inputs.checkpoint, trainer, output,
                 '--model-manifest', inputs.manifest, ...(binary ? ['--rollout-binary', binary] : []),
                 '--stage-diagnostics',
+                // Supervisor-owned exclusive GPU selection is already verified.
+                // The round supplies cuda:0 to every resident PyTorch/MA-POCA
+                // worker, without changing the immutable checkpoint manifest.
+                ...(gpu && !inboxLearner && !bundleRound
+                    ? ['--leased-gpu-inference'] : []),
                 ...(collectOnly ? ['--collect-only'] : []),
                 ...(collectOnly && inbox ? ['--bundle-inbox', inbox] : []),
                 ...(collection_id === undefined ? [] : [
