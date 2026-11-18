@@ -1073,7 +1073,10 @@ def main():
             capture_read_cpu_seconds += time.process_time() - capture_cpu_started
             ingest_started = time.perf_counter()
             ingest_cpu_started = time.process_time()
-            key, _, ticks, _, _, _, learning_agents = rollout
+            # Dynamic Queen/reinforcement cohorts carry an additional
+            # per-agent start clock, but both paths have the same first
+            # seven required episode fields.
+            key, _, ticks, _, _, _, learning_agents = rollout[:7]
             if key in episode_keys:
                 parser.error("the same completed episode was supplied more than once")
             episode_keys.add(key)
