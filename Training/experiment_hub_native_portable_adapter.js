@@ -1,6 +1,6 @@
 'use strict';
 
-// Machine-installed CPU collector for an issued *portable* native MA-POCA
+// Machine-installed CPU/GPU collector for an issued *portable* native MA-POCA
 // work order. Experiment Hub remains the sole scheduler, lease owner and
 // process supervisor. This adapter only selects a trusted local executable,
 // checks the frozen lease against the collector's allocation and exposes
