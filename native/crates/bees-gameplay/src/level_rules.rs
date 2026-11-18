@@ -237,6 +237,9 @@ pub struct NativeScriptedQueueMeasurements {
     pub healing_available_commands_started: u64,
     /// Live special-weapon commands issued to a real enemy lifetime.
     pub bombing_nearest_commands_started: u64,
+    /// New source Queen squads enrolled in ordinary scripted combat.
+    /// Human, HiveMind and policy-controlled minions are excluded.
+    pub queen_minion_scripted_queues_created: u64,
     pub charge_nearest_commands_started: u64,
     /// Source Circle/Swipe/InAndOut maneuvers against a real living squad.
     pub circle_nearest_commands_started: u64,
@@ -271,6 +274,7 @@ impl NativeScriptedQueueMeasurements {
         self.mining_nearest_commands_started += other.mining_nearest_commands_started;
         self.healing_available_commands_started += other.healing_available_commands_started;
         self.bombing_nearest_commands_started += other.bombing_nearest_commands_started;
+        self.queen_minion_scripted_queues_created += other.queen_minion_scripted_queues_created;
         self.charge_nearest_commands_started += other.charge_nearest_commands_started;
         self.circle_nearest_commands_started += other.circle_nearest_commands_started;
         self.swipe_nearest_commands_started += other.swipe_nearest_commands_started;
