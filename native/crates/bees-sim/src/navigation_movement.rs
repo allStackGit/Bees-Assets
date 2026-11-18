@@ -139,6 +139,13 @@ impl GameShipSteering {
         motion.stop_moving();
     }
 
+    /// Unity MapBorder.OnTriggerEnter2D checks HasTargetDirection, not
+    /// HasTargetCoordinates. A normal path/point order therefore survives
+    /// border contact; only the source's explicit directional motion stops.
+    pub fn has_direction_order(&self) -> bool {
+        self.target_direction.is_some()
+    }
+
     /// Used when the game's controller hands ownership back to the neural
     /// policy. Clear only orders issued through this gameplay route
     /// controller, not arbitrary RL movement/target state.
