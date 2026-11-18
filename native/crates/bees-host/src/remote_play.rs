@@ -205,6 +205,9 @@ pub struct RemotePlayMeasurements {
     /// A real ship death displaced one cosmetic projectile cue when a
     /// busy battle had already filled its fixed outbound event budget.
     pub ship_deaths_prioritized: u64,
+    /// Presentation-only physical hits admitted and discarded by LAN cue budget.
+    pub combat_impacts_queued: u64,
+    pub combat_impacts_dropped: u64,
 }
 
 pub struct NativeRemotePlay {
@@ -812,15 +815,17 @@ fn collect_remote_audio(
                 continue;
             }
         }
-        // A 128-ship battle can fill 32 audio slots with weapon launches
-        // before a single ship dies. Preserve the actual death notification
-        // for corpse/explosion rendering by evicting one low-priority
-        // projectile sound, never a prior ship death. Retain the same fixed
-        // event limit and record each displaced/dropped cosmetic cue.
-        let displaced = if pending.len() == MAX_PENDING_AUDIO_EVENTS &&
-            matches!(event, CombatEvent::ShipDied { .. }) {
-            pending.iter().position(|cue| cue["effect"] == "impact" ||
-                cue["effect"] == "projectile")
+        // Impact flashes are lower priority than original sound cues; an
+        // active large battle must not lose a death or launch sound simply
+        // because thirty-two physical hits filled the cosmetic buffer.
+        let displaced = if pending.len() == MAX_PENDING_AUDIO_EVENTS {
+            if matches!(event, CombatEvent::ShipDied { .. }) {
+                pending.iter().position(|cue| cue["effect"] == "impact")
+                    .or_else(|| pending.iter().position(|cue|
+                        cue["effect"] == "projectile"))
+            } else if effect != "impact" {
+                pending.iter().position(|cue| cue["effect"] == "impact")
+            } else { None }
         } else { None };
         if pending.len() < MAX_PENDING_AUDIO_EVENTS || displaced.is_some() {
             let mut cue = json!({
@@ -865,13 +870,22 @@ fn collect_remote_audio(
                 }
             }
             if let Some(index) = displaced {
-                pending.remove(index);
+                let removed = pending.remove(index);
                 measurements.audio_events_dropped += 1;
-                measurements.ship_deaths_prioritized += 1;
+                if removed["effect"] == "impact" {
+                    measurements.combat_impacts_dropped += 1;
+                }
+                if matches!(event, CombatEvent::ShipDied { .. }) {
+                    measurements.ship_deaths_prioritized += 1;
+                }
             }
             pending.push(cue);
             measurements.audio_events_queued += 1;
-        } else { measurements.audio_events_dropped += 1; }
+            if impact.is_some() { measurements.combat_impacts_queued += 1; }
+        } else {
+            measurements.audio_events_dropped += 1;
+            if impact.is_some() { measurements.combat_impacts_dropped += 1; }
+        }
     }
 }
 
