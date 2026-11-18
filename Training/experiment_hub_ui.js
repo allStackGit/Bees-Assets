@@ -2897,7 +2897,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if(showRolling) {
                 let samples=[],sum=0,part=[],lastStep=null,lastAxis=null;
                 const flush=()=>{
-                    if(part.length>1)
+                    if(discreteEvaluation&&part.length) {
+                        // Evaluation rolling values exist only at measured
+                        // checkpoints. Show each mean as a ring rather than
+                        // drawing a line through unevaluated checkpoints.
+                        // Batch rings into one path to keep SVG work bounded.
+                        const d=part.map(sample=>{
+                            const cx=x(sample.axis),cy=y(sample.mean);
+                            return 'M'+(cx-5.5).toFixed(1)+' '+cy.toFixed(1)+
+                                ' a5.5 5.5 0 1 0 11 0 a5.5 5.5 0 1 0 -11 0';
+                        }).join(' ');
+                        overlays.push({tag:'path',attrs:{d,fill:'none',
+                            stroke:run.color,'stroke-width':2.5,
+                            class:'plot-evaluation-rolling-points'}});
+                    }else if(part.length>1)
                         overlays.push({tag:'path',attrs:{
                             d:part.map((sample,i)=>
                                 (i?'L':'M')+x(sample.axis).toFixed(1)+' '+
@@ -2993,7 +3006,8 @@ document.addEventListener('DOMContentLoaded', () => {
             flush();
         }
         for(const overlay of overlays) {
-            if(overlay.tag!=='circle')
+            if(overlay.tag!=='circle'&&
+                overlay.attrs.class!=='plot-evaluation-rolling-points')
                 node(overlay.tag,{...overlay.attrs,
                     stroke:'white',class:overlay.attrs.class+'-halo'});
             node(overlay.tag,overlay.attrs);
