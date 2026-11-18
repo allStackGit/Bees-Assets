@@ -85,10 +85,11 @@ In standalone AI battles, each newly spawned, non-player Queen YellowJacket
 squad now receives the existing native `bombing_nearest` command queue,
 following its physical spawn and source formation registration. This uses the
 same BombingRun, damage and squad retirement as gameplay rather than a
-special minion combat simulator. When a Queen belongs to a player, a live
-HiveMind Stage, or a policy-controlled scene, those controllers retain
-command authority instead. The scripted queue's measurements count these
-automatic minion enrollments.
+special minion combat simulator. Player squads, live HiveMind stages and
+Queen waves whose exact child Bomb observation is enrolled by a same-side
+policy retain their corresponding authority. An unrelated enemy model can
+never take over the Queen's minions. Queen control measurements count
+policy, group-free playable policy and ordinary-AI minion admissions.
 These roles also carry into the matching headless MA-POCA scenario: ships
 with source-supported policy actors use policy input, while the remaining
 non-policy squads retain the same authored native script ownership. `--fog`, `--empty-map`, `--minutes`,
@@ -218,7 +219,22 @@ python3 native/tools/bootstrap_policy.py native-new-model \
 The new policy scene uses the **same physical hulls and CombatWorld** as
 the playable `battle.run.json`. Only ship classes with checked-in native
 policy observations are assigned a controller; ordinary AI-controlled
-support squads retain the original scripted-command owner.
+support squads retain the original scripted-command owner. The default
+policy archetype also includes the verified Queen/YellowJacket pair. For
+example, a trainable Queen fleet is authored without a second combat engine:
+
+```sh
+python3 native/tools/author-battle.py native-queen-training \
+  --bees 21:4 --humans 13:4,17:1 --trainable --seed 42
+```
+
+The child's physical Bomb, spawning geometry, timers and optional side
+population cap stay identical in the generated playable and policy scenes;
+only the source-authenticated YellowJacket observation metadata is added.
+If a custom Queen's child hull or Bomb differs from the chosen archetype,
+authoring rejects it rather than inventing policy weapon data. A trained
+opponent can also spawn live policy minions without opening an MA-POCA
+reward group.
 
 To train source-authored reinforcement waves as policy agents instead of
 scripted AI, add `--policy-reinforcements` alongside `--trainable`:
