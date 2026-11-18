@@ -21,7 +21,12 @@ def checkpoint_update(file):
     # during restart. The evaluator only inspects its update number;
     # evaluation itself still uses a separate immutable private copy.
     import torch
-    state = torch.load(file, map_location="cpu", weights_only=False)
+    try:
+        state = torch.load(file, map_location="cpu", weights_only=False)
+    except Exception as error:
+        # Training may be replacing the file at the scheduled poll instant.
+        # Retry after the next checkpoint without changing the trainer.
+        raise ValueError("TinyBrains checkpoint update is not readable yet.") from error
     update = state.get("update") if isinstance(state, dict) else None
     if type(update) is not int or not 1 <= update <= 2**53 - 1:
         raise ValueError("TinyBrains checkpoint has no valid PPO update identity.")
@@ -67,7 +72,10 @@ def latest_numbered_checkpoint(artifact_root, job):
 
 def poll(args, suites):
     def verify_frozen(file, checkpoint):
-        if len(checkpoint) == 3 and checkpoint_update(file) != checkpoint[0]:
+        # Terminal snapshots already have a final-model SHA-256 pin.
+        # Running snapshots also need to prove that their update coordinate
+        # still matches the independently copied model bytes.
+        if len(checkpoint) == 3 and checkpoint[0] != 10**16 and checkpoint_update(file) != checkpoint[0]:
             raise ValueError("TinyBrains checkpoint advanced during private copy; retry a stable snapshot.")
 
     def evaluated(job, file, digest, work, suite):
@@ -75,7 +83,11 @@ def poll(args, suites):
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:
-            return final_checkpoint(args.artifact_root, job, "self-play/latest.pt")
+            final = final_checkpoint(args.artifact_root, job, "self-play/latest.pt")
+            observed = latest_numbered_checkpoint(args.artifact_root, job)
+            if not observed or len(observed) != 3 or observed[1] != final[1]:
+                raise ValueError("Verified TinyBrains final checkpoint update is unavailable.")
+            return final[0], final[1], observed[2]
         return latest_numbered_checkpoint(args.artifact_root, job)
     pairs = [(suite, {**suite, "trials":
                       2 * len(suite["maps"]) * len(suite["seeds"])}) for suite in suites]
