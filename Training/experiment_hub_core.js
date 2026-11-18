@@ -636,6 +636,29 @@ function retainFinalEvaluations(job,report) {
     job.evaluation_suite_definitions=definitions;
     return retainEvaluationCohorts(job,receipts);
 }
+// Candidate ranking accepts either monitored suites or success-gated suites.
+// Its evidence remains the verified final checkpoint cohort, never chart or
+// archived observational history. Preserve stopping thresholds when matching
+// candidate policies, even when monitoring supplied the evaluation suites.
+function candidateEvaluationPolicy(job) {
+    const monitor=monitoringPolicy(job.evaluation_monitor);
+    const stop=evaluationPolicy(job.evaluation_stop);
+    compatibleMonitoringStop(monitor,stop);
+    const policy=monitor||stop;
+    if(!policy)
+        throw Error('Candidate lacks frozen independent evaluation suites.');
+    if(monitor?.include_final===false&&!stop)
+        throw Error('Candidate selection requires final-checkpoint evaluations.');
+    const stopRules=new Map(evaluationRules(stop).map(rule=>
+        [rule.suite_id,rule.min_success_rate]));
+    const signature=JSON.stringify({
+        stopping:Boolean(stop),
+        suites:evaluationRules(policy).map(rule=>[
+            rule.suite_id,rule.min_trials,stopRules.get(rule.suite_id)??null,
+        ]).sort(([a],[b])=>a.localeCompare(b)),
+    });
+    return {policy,signature};
+}
 // Only compare policies that have actually been evaluated and remain the
 // exact bytes used for native checkpoint continuation. Training charts and
 // a checkpoint-ready flag alone cannot select a winning model.
@@ -646,8 +669,7 @@ function comparableCandidate(job) {
         !independentSequenceComplete(job)||
         !SHA256.test(String(job.checkpoint_model_sha256||'')))
         throw Error('Candidate needs a verified, completed native checkpoint and model fingerprint.');
-    const policy=evaluationPolicy(job.evaluation_stop);
-    if(!policy)throw Error('Candidate lacks a frozen independent evaluation policy.');
+    const {policy,signature}=candidateEvaluationPolicy(job);
     const rules=evaluationRules(policy);
     const sha=job.checkpoint_model_sha256;
     let receipts;
@@ -676,20 +698,23 @@ function comparableCandidate(job) {
             job.evaluation_suite_definitions?.[rule.suite_id]&&
                 job.evaluation_suite_definitions[rule.suite_id]!==receipt.suite_sha256)
             throw Error('Candidate evaluation differs from its resumable checkpoint or frozen suite.');
+        // New monitoring-only selection must prove a stable evaluator runtime.
+        // Legacy success-gated candidates retain their existing receipt rules.
+        if(!job.evaluation_stop&&!SHA256.test(String(receipt.runtime_sha256||'')))
+            throw Error('Monitored candidate lacks a verified evaluator runtime fingerprint.');
         return receipt;
     });
     const suites=evidence.map(r=>({
         suite_id:r.suite_id,suite_sha256:r.suite_sha256,
         successes:r.successes,trials:r.trials,
+        ...(r.runtime_sha256?{runtime_sha256:r.runtime_sha256}:{}),
     }));
     const score=evidence.reduce((n,r)=>n+r.successes/r.trials,0)/evidence.length;
     return {job_id:job.id,project_id:job.project_id,
         checkpoint_sha256:sha,suites,score,
-        policy_signature:JSON.stringify(rules.map(rule=>[
-            rule.suite_id,rule.min_trials,rule.min_success_rate,
-        ]).sort(([a],[b])=>a.localeCompare(b))),
+        policy_signature:signature,
         comparison_signature:JSON.stringify(suites.map(r=>[
-            r.suite_id,r.suite_sha256,r.trials,
+            r.suite_id,r.suite_sha256,r.trials,r.runtime_sha256||null,
         ]).sort(([a],[b])=>a.localeCompare(b))),
     };
 }
@@ -4970,7 +4995,7 @@ class ExperimentHub {
         if(compared.some(c=>c.project_id!==first.project_id||
             c.policy_signature!==first.policy_signature||
             c.comparison_signature!==first.comparison_signature))
-            throw Error('Candidate benchmarks must have identical suites, fingerprints, thresholds and trial counts.');
+            throw Error('Candidate benchmarks must match their monitoring/stopping mode, suites, runtime fingerprints, thresholds and trial counts.');
         const ranked=compared.sort((a,b)=>b.score-a.score||
             a.job_id.localeCompare(b.job_id)).map(({policy_signature,comparison_signature,...item})=>item);
         return {project_id:first.project_id,
@@ -5046,20 +5071,18 @@ class ExperimentHub {
         const jobs=ids.map(id=>this.state.jobs.find(j=>j.id===id));
         if(jobs.some(j=>!j)||!['courier','tinybrains'].includes(jobs[0].project_id)||
             jobs.some(j=>j.project_id!==jobs[0].project_id||
-                !j.evaluation_stop||
+                !activeEvaluation(j)||
                 !['waiting_adapter','waiting_predecessor','start_requested',
                     'launch_requested','running','stop_requested','finished','stopped'].includes(j.status)))
             throw Error('Candidate jobs must belong to one supported project and have independent evaluations.');
         const roots=jobs.map(j=>j.artifact_lineage_root_id||j.id);
-        const thresholds=j=>JSON.stringify(evaluationRules(
-            evaluationPolicy(j.evaluation_stop)).map(rule=>[
-                rule.suite_id,rule.min_trials,rule.min_success_rate,
-            ]).sort(([a],[b])=>a.localeCompare(b)));
+        const policies=jobs.map(candidateEvaluationPolicy);
         if(new Set(roots).size!==roots.length||
-            new Set(jobs.map(thresholds)).size!==1)
-            throw Error('Candidate models need independent lineages and identical evaluation thresholds.');
+            new Set(policies.map(item=>item.signature)).size!==1)
+            throw Error('Candidate models need independent lineages and matching frozen evaluation policies.');
         const suiteDigests=new Map();
-        for(const job of jobs)for(const rule of evaluationRules(job.evaluation_stop)) {
+        for(const [index,job] of jobs.entries())
+            for(const rule of evaluationRules(policies[index].policy)) {
             const digest=rule.suite_sha256||job.evaluation_suite_definitions?.[rule.suite_id];
             if(!digest)continue;
             const previous=suiteDigests.get(rule.suite_id);
