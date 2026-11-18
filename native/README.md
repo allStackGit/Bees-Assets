@@ -167,10 +167,13 @@ fixed-roster survival battle, choose which faction learns, optimizer rounds,
 parallel arenas, CPU physics workers, and
 CPU or PyTorch GPU optimization. Survival training uses the identical
 fixed-step survival deadline and protected physical ship as gameplay, while
-extraction uses the real side-owned extraction trigger. Survival battles with
-deferred reinforcement waves remain gameplay-only: the native reinforcement
-controller currently reserves non-policy squads, not newly arriving policy
-agents. To reduce process and model reload costs,
+extraction uses the real side-owned extraction trigger. Authored survival
+reinforcements retain their real physical deployment clock and original
+scripted squad commands: deferred ships do not receive policy controllers
+until a future source-backed controller lifecycle supports them. The
+initially deployed fleet remains the learning side, and deferred hulls still
+count toward their faction's frozen physical fleet value. To reduce process
+and model reload costs,
 choose 1–16 episodes per persistent native arena. Long experiments can
 evaluate the same fixed-seed holdout every 1, 2, 5 or 10 optimizer rounds,
 rather than paying evaluation overhead after every round. Local optimizers
