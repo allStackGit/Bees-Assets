@@ -330,6 +330,17 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
             raise ValueError(f"model artifact content changed: slot {slot}")
         if backend not in ("torchscript", "onnx", "mlagents"):
             raise ValueError(f"unsupported native model backend: {backend}")
+        # The immutable artifact and ABI are independent of the physical
+        # inference device. A supervised native collector may isolate its
+        # whole process to one GPU, then route PyTorch and MA-POCA actors
+        # to that process's sole visible cuda:0 device (also on ROCm).
+        # Include the effective device in the resident-model cache identity.
+        runtime_device = os.environ.get("BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE")
+        if runtime_device is not None:
+            if runtime_device != "cuda:0":
+                raise ValueError("unsupported native inference device override")
+            if backend in ("torchscript", "mlagents"):
+                config = {**config, "device": runtime_device}
         settings = {
             key: value for key, value in config.items()
             if key not in ("slot", "path", "sha256")
