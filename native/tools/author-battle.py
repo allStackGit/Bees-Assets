@@ -227,6 +227,11 @@ def author(args) -> tuple[dict, dict, dict]:
         scene["activate_mining"] = False
     if args.arena_size is not None:
         resize_empty_arena(scene, args.arena_size)
+    if args.lethal_borders:
+        # Both playable and MA-POCA runs receive the identical physical
+        # rule. Source RL MapBorder damage uses the ship's own health,
+        # independent of projectile MakeShotsHarmless.
+        scene["lethal_map_borders"] = True
     # Stage collision layers and asteroid prefab lists are immutable authored
     # assets, but the skirmish run template uses a smaller arena than the
     # Queen fleet source. A new battle must derive BOTH native fragment
@@ -1040,6 +1045,8 @@ def main() -> None:
                         help="omit source mining resources, static boxes and map objects")
     parser.add_argument("--arena-size", type=float,
                         help="with --empty-map: square physical arena in 4-unit steps (64..4000), including source-sized trigger borders")
+    parser.add_argument("--lethal-borders", action="store_true",
+                        help="with --arena-size: make physical border contact immediately damage/kill ships in both gameplay and training")
     parser.add_argument("--trainable", action="store_true",
                         help="also author a matching native MA-POCA policy scene and run")
     parser.add_argument("--policy-reinforcements", action="store_true",
@@ -1058,6 +1065,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.policy_reinforcements and not args.trainable:
         parser.error("--policy-reinforcements requires --trainable")
+    if args.lethal_borders and args.arena_size is None:
+        parser.error("--lethal-borders requires --arena-size")
     if args.objective != "survival" and (
             args.protect_type is not None or args.survive_seconds is not None):
         parser.error("--protect-type and --survive-seconds require --objective survival")
@@ -1118,6 +1127,7 @@ def main() -> None:
         "ai_tactics": args.ai_tactics,
         "arena_size": args.arena_size,
         "physical_map_borders": 4 if args.arena_size is not None else 0,
+        "lethal_map_borders": args.lethal_borders,
         "reinforcement_waves": len(run["levels"][0].get("reinforcements", [])),
         "reinforcement_ships": (
             sum(wave[3] for wave in args.reinforcements) +
