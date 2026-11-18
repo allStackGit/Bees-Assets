@@ -311,6 +311,33 @@ function rolloutReinforcementWakeupMeasurements(rollout) {
     return result;
 }
 
+// Only exact native episode-complete physical border counts are comparable.
+// Missing fields in historical rollouts stay absent rather than fabricated.
+function rolloutBorderMeasurements(rollout) {
+    const border = rollout?.map_border_ships;
+    if (border == null) return {};
+    const fields = [
+        'entries', 'movement_stops', 'override_skips',
+        'lethal_hits', 'lethal_kills',
+        'confinement_position_corrections', 'confinement_velocity_clamps',
+        'confinement_unfittable_hulls', 'confinement_missing_profiles',
+        'completed_episodes',
+    ];
+    const metrics = {};
+    for (const field of fields) {
+        const value = border[field];
+        if (!Number.isSafeInteger(value) || value < 0)
+            throw Error('Invalid native Bees physical MapBorder metrics.');
+        metrics['rollout_map_border_' + field] = {value, unit: 'count'};
+    }
+    if (border.lethal_kills > border.lethal_hits ||
+        ['movement_stops', 'override_skips', 'lethal_hits', 'lethal_kills']
+            .some(field => border[field] > border.entries) ||
+        border.completed_episodes !== rollout.episodes)
+        throw Error('Native Bees MapBorder metrics do not match the completed rollout.');
+    return metrics;
+}
+
 function rolloutPolicyBoundaryMeasurements(rollout) {
     const capture = rollout?.policy_boundary_capture;
     if (capture == null) return {};
@@ -879,6 +906,7 @@ function createNativeBeesAdapter({
                         ...rolloutReinforcementMeasurements(rollout),
                         ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
+                        ...rolloutBorderMeasurements(rollout),
                         ...rolloutPolicyBoundaryMeasurements(rollout),
                         ...(rollout.sampled_model_timing ? {
                             rollout_sampled_model_calls: {
@@ -929,6 +957,7 @@ function createNativeBeesAdapter({
                         ...rolloutReinforcementMeasurements(rollout),
                         ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
+                        ...rolloutBorderMeasurements(rollout),
                         ...rolloutPolicyBoundaryMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
