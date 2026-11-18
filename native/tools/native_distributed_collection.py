@@ -459,6 +459,17 @@ def verify_bundle(path, job, orders):
     per_process = receipt.get("physics_workers_per_process", 1)
     if type(per_process) is not int or not 1 <= per_process <= 128:
         raise ValueError(f"distributed collector has invalid physics allocation: {path}")
+    if receipt.get("gpu_allocation") is not None or receipt.get("leased_gpu_inference"):
+        proof = metrics.get("gpu_inference")
+        if (not isinstance(proof, dict) or
+                type(proof.get("verified_workers")) is not int or
+                proof["verified_workers"] != receipt["rollout_processes"] or
+                type(proof.get("model_forwards")) is not int or
+                proof["model_forwards"] < proof["verified_workers"] or
+                type(proof.get("agent_rows")) is not int or
+                proof["agent_rows"] < proof["model_forwards"] or
+                proof["agent_rows"] > metrics["successful_policy_rows"]):
+            raise ValueError(f"GPU collector has no verified model forward evidence: {path}")
     requested = metrics.get("requested_physics_worker_slots")
     capacity = receipt["rollout_processes"] * per_process
     # Historical bundles did not record model-step CPU limits. Their
