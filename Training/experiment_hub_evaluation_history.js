@@ -22,6 +22,15 @@ const MAX_IMPORT_BYTES=65536;
 const receiptConflict=issue=>typeof issue==='string'&&
     (issue.includes('Conflicting independent result for checkpoint ')||
      issue.startsWith('Conflicting independent evaluation receipt at checkpoint '));
+// A new accepted receipt closes a suite's receipt-availability episode.
+// Keep conflict diagnostics permanently disqualifying, and keep older
+// diagnostic rows intact. Replayed heartbeats cannot re-arm an episode.
+function rearmRecoveredIssues(issueKeys,dispatchId,suiteId) {
+    const prefix=JSON.stringify([dispatchId,suiteId]).slice(0,-1)+',';
+    for(const key of issueKeys)
+        if(key.startsWith(prefix)&&!receiptConflict(JSON.parse(key)[2]))
+            issueKeys.delete(key);
+}
 
 // Read-only regression signals are recomputed from the complete immutable
 // receipt archive. They never enter Stop evidence, candidate cohorts, or
@@ -242,6 +251,7 @@ class EvaluationHistory {
                 const key=row.dispatch_id+':'+row.suite_id+':'+row.checkpoint_sha256;
                 if(seen.has(key))throw Error('Duplicate evaluation history record.');
                 seen.set(key,JSON.stringify(row));
+                rearmRecoveredIssues(issueKeys,row.dispatch_id,row.suite_id);
                 records.push(row);
                 lastEntry=row;
             }
@@ -375,6 +385,7 @@ class EvaluationHistory {
             this.appendRow(id,data,row);
             data.records.push(row);
             data.seen.set(key,JSON.stringify(row));
+            rearmRecoveredIssues(data.issueKeys,row.dispatch_id,row.suite_id);
             this.issues.delete(id);
             return true;
         }catch(error) {
