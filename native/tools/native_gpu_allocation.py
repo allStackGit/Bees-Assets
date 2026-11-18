@@ -138,6 +138,7 @@ def rollout_worker_environment(
     mask: str | None,
     index: int,
     leased_gpu_inference: bool = False,
+    leased_gpu_count: int = 1,
 ) -> dict[str, str] | None:
     env = os.environ.copy()
     # Never inherit an unrecorded developer override into a measured
@@ -147,6 +148,16 @@ def rollout_worker_environment(
         return env
     if gpu_ids is not None:
         env[mask] = str(gpu_ids[index % len(gpu_ids)])
+    elif leased_gpu_count == 2:
+        # The Hub supervisor has already verified the EXACT two PCI-bound
+        # render devices through HIP and restricted the service to those
+        # nodes. Select different devices for successive resident actors,
+        # without changing the pinned model manifest or allocating another
+        # GPU. ROCm reindexes each child's sole visible GPU to cuda:0.
+        for key in GPU_MASK_ENVIRONMENTS:
+            env.pop(key, None)
+        env.pop("GPU_DEVICE_ORDINAL", None)
+        env["ROCR_VISIBLE_DEVICES"] = str(index % leased_gpu_count)
     # ROCm PyTorch intentionally uses the CUDA device API as well.
     # The OS supervisor, or the explicit numeric mask, isolates one GPU.
     # No physical GPU ordinal is guessed from a Hub PCI/UUID lease.
