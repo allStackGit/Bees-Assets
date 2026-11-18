@@ -334,6 +334,11 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                     if update <= previous or (previous > 0 and
                                               update - previous < cadence):
                         continue
+                    # Establish a durable cursor without evaluating the first
+                    # available checkpoint when the baseline is disabled.
+                    if previous == 0 and job.get("include_baseline", True) is False:
+                        cursor[dispatch] = update
+                        continue
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 print(f"{project} evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
                 continue
@@ -516,6 +521,9 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     previous = cursor[dispatch]
                     if update <= previous or (previous > 0 and
                                               update - previous < cadence):
+                        continue
+                    if previous == 0 and jobs[0].get("include_baseline", True) is False:
+                        cursor[dispatch] = update
                         continue
                 if not file.is_file():
                     continue
