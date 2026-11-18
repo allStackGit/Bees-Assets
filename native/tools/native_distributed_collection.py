@@ -723,6 +723,14 @@ def aggregate_collection_metrics(bundles):
             key: sum(row["ship_slot_work"][key] for row in rows)
             for key in slot_keys
         }
+        obstacle_keys = ("inactive_obstacle_slots_skipped",
+                         "inactive_obstacle_grid_slots_skipped")
+        if all(all(key in row["ship_slot_work"] for key in obstacle_keys)
+               for row in rows):
+            result["ship_slot_work"].update({
+                key: sum(row["ship_slot_work"][key] for row in rows)
+                for key in obstacle_keys
+            })
     if sampled:
         result["sampled_model_timing"] = {
             key: sum(sample[key] for sample in sampled)
