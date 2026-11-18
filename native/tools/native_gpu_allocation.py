@@ -102,16 +102,49 @@ def validate_gpu_allocation(
     return mask
 
 
+def validate_leased_gpu_inference(manifest_path: Path) -> None:
+    """Check a supervisor-isolated single-GPU collector before any rollout.
+
+    GPU lease ownership and device isolation belong to the OS supervisor.
+    A standalone script cannot manufacture that proof. The worker still
+    loads all pinned artifacts and refuses an unavailable CUDA/ROCm device.
+    """
+    if not any(os.environ.get(name) for name in GPU_MASK_ENVIRONMENTS):
+        raise ValueError("leased GPU inference requires a nonempty supervisor GPU selector")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    models = manifest.get("models") if isinstance(manifest, dict) else None
+    if not isinstance(models, list) or not models:
+        raise ValueError("leased GPU inference requires native model slots")
+    usable = False
+    for model in models:
+        if not isinstance(model, dict):
+            raise ValueError("invalid native model slot for leased GPU inference")
+        if model.get("backend") in ("mlagents", "torchscript"):
+            usable = True
+        elif model.get("backend") == "onnx":
+            providers = model.get("providers", ["CPUExecutionProvider"])
+            if isinstance(providers, list) and providers and providers[0] in (
+                "CUDAExecutionProvider", "ROCMExecutionProvider",
+                "MIGraphXExecutionProvider",
+            ):
+                usable = True
+    if not usable:
+        raise ValueError("GPU lease cannot accelerate a CPU-only ONNX model manifest")
+
+
 def rollout_worker_environment(
     gpu_ids: tuple[int, ...] | None,
     mask: str | None,
     index: int,
+    leased_gpu_inference: bool = False,
 ) -> dict[str, str] | None:
-    if gpu_ids is None:
+    if gpu_ids is None and not leased_gpu_inference:
         return None  # Preserve historical process inheritance exactly.
     env = os.environ.copy()
-    env[mask] = str(gpu_ids[index % len(gpu_ids)])
+    if gpu_ids is not None:
+        env[mask] = str(gpu_ids[index % len(gpu_ids)])
     # ROCm PyTorch intentionally uses the CUDA device API as well.
-    # After the process mask, its sole visible GPU is always cuda:0.
+    # The OS supervisor, or the explicit numeric mask, isolates one GPU.
+    # No physical GPU ordinal is guessed from a Hub PCI/UUID lease.
     env["BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE"] = "cuda:0"
     return env
