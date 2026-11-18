@@ -573,6 +573,18 @@ def verify_native_package(directory: Path) -> dict:
         "files": len(expected), "bytes": total_bytes,
         "battles": count_runs, "portable_models": len(policies),
         "training_runtime": training_runtime,
+        "compiled_training_executables": (
+            {
+                "policy_manifest": (
+                    "policy_manifest.exe" if (directory / "bees.exe").is_file()
+                    else "policy_manifest"
+                ) in expected,
+                "policy_rollout": (
+                    "policy_rollout.exe" if (directory / "bees.exe").is_file()
+                    else "policy_rollout"
+                ) in expected,
+            } if training_runtime else None
+        ),
     }
 
 
