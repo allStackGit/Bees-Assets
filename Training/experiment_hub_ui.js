@@ -61,8 +61,26 @@ function hubFinalEvaluationCohort(job) {
         cohort.checkpoint_sha256===job.checkpoint_model_sha256)?.receipts:null;
 }
 function hubComparisonPoints(run) {
-    return run.points.length?run.points:
+    const training=run.points.length?run.points:
         [run.job.live_execution?.progress||run.job.final_progress].filter(Boolean);
+    const evaluated=(run.evaluation_points||[]).filter(row=>
+        Number.isSafeInteger(row.steps_completed)&&row.steps_completed>=0&&
+        typeof row.suite_id==='string'&&
+        /^[a-f0-9]{64}$/.test(row.suite_sha256||'')&&
+        Number.isSafeInteger(row.successes)&&Number.isSafeInteger(row.trials)&&
+        row.trials>0&&row.successes>=0&&row.successes<=row.trials)
+        .map(row=>({
+            steps_completed:row.steps_completed,
+            segment_id:'independent-evaluation',
+            source_modified_at:row.evaluated_at||row.observed_at,
+            observed_at:row.observed_at,break_before:false,
+            metrics:{['eval_'+row.suite_id+'_'+row.suite_sha256.slice(0,8)]:{
+                value:row.successes/row.trials,unit:'ratio',
+            }},
+        }));
+    // Independent evaluations never synthesize trainer timing metrics.
+    return evaluated.length?[...training,...evaluated].sort((a,b)=>
+        (a.steps_completed??0)-(b.steps_completed??0)):training;
 }
 function hubJobLabel(job) {
     const configuration=job?.configuration_name||job?.configuration_id||'Unnamed run';
@@ -356,6 +374,8 @@ const HUB_GPU_METRIC_SUFFIXES=Object.freeze({
     power_w: "Current physical GPU power draw. Indicates load, not energy attributable to this particular job.",
 });
 function hubMetricDescription(name,units=[]) {
+    if(/^eval_[a-z][a-z0-9_-]{0,47}_[a-f0-9]{8}$/.test(name))
+        return 'Independent fixed-suite evaluation success rate at a verified checkpoint. The suffix distinguishes frozen suite definitions; compare only matching definitions.';
     if(Object.hasOwn(HUB_METRIC_DESCRIPTIONS,name))return HUB_METRIC_DESCRIPTIONS[name];
     const gpu=/^host_gpu_(\d+)_(busy_pct|used_vram_mb|temperature_c|hotspot_temperature_c|power_w)$/.exec(name);
     if(gpu)return 'Physical GPU '+gpu[1]+': '+HUB_GPU_METRIC_SUFFIXES[gpu[2]];
@@ -1732,9 +1752,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const jobs=project==='bees'?(state.bees?.runs||[]):
             state.jobs.filter(j=>j.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
+        const evalSamples=comparisonProject===project&&comparisonData?.evaluations||[];
         $('hub-compare-selection-panel').hidden=project==='bees';
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
-        const hasSamples=j=>j.live_execution?.progress||j.final_progress||history.get(j.id)?.length;
+        const evalHistory=new Map(evalSamples.map(s=>[s.job_id,s.points||[]]));
+        const hasSamples=j=>j.live_execution?.progress||j.final_progress||
+            history.get(j.id)?.length||evalHistory.get(j.id)?.length;
         const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonEvaluation(j)||
             hubComparisonTerminal(j)||['waiting_adapter','waiting_predecessor',
                 'start_requested','launch_requested','running','stop_requested']
@@ -1822,7 +1845,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(j=>j.id===id);
             return job?{job,color:compareColor(i),slot:String(i+1),
-                points:history.get(id)||[]}:null;
+                points:history.get(id)||[],evaluation_points:evalHistory.get(id)||[]}:null;
         }).filter(Boolean);
         const metricSelect=$('hub-compare-metric');
         const oldMetrics=metricSelect.dataset.metricProject===project
@@ -1839,7 +1862,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const key=m.key.slice(7);
             option.dataset.description=hubMetricDescription(key,m.units);
             option.title=option.dataset.description;
-            option.dataset.category=knownLearningMetrics.includes(key)
+            option.dataset.category=key.startsWith('eval_')||knownLearningMetrics.includes(key)
                 ?'Learning outcomes':knownPerformanceMetrics.includes(key)
                     ?'Performance and resources':'Other recorded metrics';
             return option;
@@ -1850,14 +1873,17 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(key=>metricOptions.some(m=>m.key===key));
         // On a new project view, show actual learning outcomes before the
         // alphabetically first resource counter. Explicit user choices win.
-        const learningDefaults=['selection_candidate_survival_score',
+        const evaluationDefaults=metricOptions.filter(option=>
+            option.key.startsWith('metric:eval_')).map(option=>option.key);
+        const learningDefaults=[...evaluationDefaults,
+            ...['selection_candidate_survival_score',
             'selection_incumbent_survival_score','training_win_rate','training_score_rate',
             'training_mean_score','loss','entropy',
             'colony_window_deliveries','colony_window_feedings',
             'colony_window_births','colony_window_combat_deaths',
             'colony_mean_population',
             'ant_decisions_per_second'].map(name=>'metric:'+name)
-            .filter(key=>metricOptions.some(option=>option.key===key));
+            .filter(key=>metricOptions.some(option=>option.key===key))];
         const override=comparisonMetricOverrides.get(project);
         const matchingOverride=override?.filter(key=>
             metricOptions.some(metric=>metric.key===key));
@@ -1901,7 +1927,7 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-compare-notice',
             (state?.hub_observation_archive_issue
                 ?state.hub_observation_archive_issue+' '
-                :'')+note);
+                :'')+(comparisonData?.evaluation_storage_warning||'')+' '+note);
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
@@ -3815,7 +3841,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'Previously recorded by this saved configuration revision.'
                 :'Supported for this configuration; an individual run may not emit it.');
             option.selected=requested.has(key);
-            option.dataset.category=knownLearningMetrics.includes(key)
+            option.dataset.category=key.startsWith('eval_')||knownLearningMetrics.includes(key)
                 ?'Learning outcomes':knownPerformanceMetrics.includes(key)
                     ?'Performance and resources':'Other supported metrics';
             return option;
