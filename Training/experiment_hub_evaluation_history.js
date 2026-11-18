@@ -171,7 +171,29 @@ class EvaluationHistory {
                 throw Error('Invalid independent evaluation identity.');
             const data=this.load(id,job.project_id);
             const key=receipt.dispatch_id+':'+receipt.suite_id+':'+receipt.checkpoint_sha256;
-            if(data.seen.has(key))return false;
+            if(data.seen.has(key)) {
+                // An idempotent retry is harmless; a second contradictory
+                // report for the same immutable checkpoint is not. Retain
+                // the first durable observation and surface the conflict
+                // without granting any training or promotion authority.
+                const previous=JSON.parse(data.seen.get(key));
+                const fields=['schema_version','suite_id','dispatch_id',
+                    'checkpoint_sha256','suite_sha256','runtime_sha256',
+                    'steps_completed','evaluated_at','trials','successes','metrics'];
+                const canonical=value=>JSON.stringify(value===undefined?null:
+                    value&&typeof value==='object'&&!Array.isArray(value)
+                        ?Object.fromEntries(Object.entries(value).sort(([a],[b])=>
+                            a.localeCompare(b)).map(([k,v])=>
+                            [k,v&&typeof v==='object'&&!Array.isArray(v)
+                                ?Object.fromEntries(Object.entries(v).sort(([a],[b])=>
+                                    a.localeCompare(b))):v]))
+                        :value);
+                if(fields.some(field=>canonical(previous[field])!==canonical(receipt[field])))
+                    this.issues.set('conflict:'+id,
+                        'Conflicting evaluation receipt for an already archived checkpoint on job '+
+                        id+'; original independent evidence retained.');
+                return false;
+            }
             const row={...receipt,schema_version:1,job_id:id,
                 project_id:job.project_id,observed_at:new Date().toISOString()};
             const body=Buffer.from(JSON.stringify(row)+'\n');
