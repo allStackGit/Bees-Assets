@@ -1203,7 +1203,7 @@ label.hub-toggle-row > input[type="checkbox"] {
   <h3>Independent evaluation receipts</h3>
   <details id="hub-historical-import" class="hub-standalone" hidden>
     <summary>Import an independently evaluated historical TinyBrains checkpoint audit</summary>
-    <p class="muted">Run experiment_hub_tinybrains_historical.py with --checkpoint-dir /absolute/path and repeated --update values (for example, 73, 100, 200, 350, 440, 558), or supply individual --checkpoint paths. Select the same pinned Nano/Micro suite definitions, private scratch directory and a new JSON output file. This evaluates existing checkpoint bytes without starting a training job. Import the JSON here as read-only Compare observations; it cannot authorize model promotion.</p>
+    <p class="muted">Run experiment_hub_tinybrains_historical.py with --checkpoint-dir /absolute/path and repeated --update values (for example, 73, 100, 200, 350, 440, 558), or supply individual --checkpoint paths. Select the same pinned Nano/Micro suite definitions, private scratch directory and a new JSON output file. This evaluates existing checkpoint bytes without starting a training job. Add --import-to-hub to publish the completed JSON directly to the locally running Hub (default port 7148), or import the file here. Both paths produce read-only Compare observations and cannot authorize model promotion.</p>
     <div class="hub-controls">
       <label>Completed historical audit (.json)
         <input id="hub-historical-audit-file" type="file" accept=".json,application/json">
