@@ -174,6 +174,10 @@ def main():
             "worlds": job["world_count"],
         }), flush=True)
     if args.archive_output is not None or args.upload_url:
+        # A recovered shared-inbox receipt has no old scratch parent, while
+        # a recovered portable receipt already has its original parent.
+        if recovered is not None and previous_parent is None and args.archive_output is None:
+            parent.mkdir()
         # Direct upload keeps its own immutable archive in the collector's
         # already unique scratch attempt; no shared filesystem is required.
         archive_path = args.archive_output or (parent / (job["bundle_directory"] + ".tar"))
