@@ -8,7 +8,7 @@ const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacemen
     startHeadroom,observedLoadPreference} = require('./experiment_hub_resources');
 const {validateProgress,selectChartMetrics}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
-const {evaluationPolicy,monitoringPolicy,activeEvaluation,
+const {evaluationPolicy,monitoringPolicy,compatibleMonitoringStop,activeEvaluation,
        evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
@@ -4294,8 +4294,7 @@ class ExperimentHub {
             Object.hasOwn(value,'evaluation_stop');
         const monitor=monitoringPolicy(explicitEvaluation||value.id
             ?value.evaluation_monitor:project.default_evaluation_monitor);
-        if(stop&&monitor)
-            throw Error('Choose monitoring or evaluation-based stopping, not both.');
+        compatibleMonitoringStop(monitor,stop);
         if((stop||monitor)&&project.adapter==='bees')
             throw Error('Bees evaluation targets use the existing Bees experiment configuration.');
         const time = now();
@@ -4321,8 +4320,7 @@ class ExperimentHub {
         else if(Object.hasOwn(value,'evaluation_stop'))delete item.evaluation_stop;
         if(monitor)item.evaluation_monitor=monitor;
         else if(Object.hasOwn(value,'evaluation_monitor'))delete item.evaluation_monitor;
-        if(item.evaluation_monitor&&item.evaluation_stop)
-            throw Error('A configuration cannot mix monitoring and evaluation-based stopping.');
+        compatibleMonitoringStop(item.evaluation_monitor,item.evaluation_stop);
         this.commit(next);
         return copy(item);
     }

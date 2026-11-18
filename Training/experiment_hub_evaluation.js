@@ -96,6 +96,24 @@ function monitoringPolicy(value) {
         ...(value.every_n_checkpoints!=null
             ?{every_n_checkpoints:value.every_n_checkpoints}:{})};
 }
+// A monitoring cadence may also have a success gate, but both policies
+// must describe precisely the same frozen suite set and trial requirements.
+// This preserves checkpoint-coherent Stop authorization without introducing
+// a second evaluator or accepting results from unrelated benchmark suites.
+function compatibleMonitoringStop(monitor,stop) {
+    if(!monitor||!stop)return;
+    const watched=evaluationRules(monitor);
+    const gated=evaluationRules(stop);
+    const byId=new Map(watched.map(rule=>[rule.suite_id,rule]));
+    if(Boolean(monitor.all_of)!==Boolean(stop.all_of)||
+        byId.size!==gated.length||gated.some(rule=>{
+            const candidate=byId.get(rule.suite_id);
+            return !candidate||candidate.min_trials!==rule.min_trials||
+                (candidate.suite_sha256||null)!==(rule.suite_sha256||null);
+        }))
+        throw Error('Monitoring and stopping must use identical suite IDs, fingerprints and minimum trial counts.');
+}
+
 function activeEvaluation(job) {
     return job?.evaluation_monitor||job?.evaluation_stop||null;
 }
@@ -237,6 +255,6 @@ function evaluationReader(projectId,evaluationRoot,evaluationSuites,protectedRoo
     };
 }
 
-module.exports={evaluationPolicy,monitoringPolicy,activeEvaluation,
+module.exports={evaluationPolicy,monitoringPolicy,compatibleMonitoringStop,activeEvaluation,
     evaluationEvidence,evaluationRules,evaluationComplete,
     suiteIds,supportsEvaluation,evaluationReader,modelFileSha256};
