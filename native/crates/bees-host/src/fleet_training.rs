@@ -143,7 +143,9 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     // bootstrap and learner, not guessed from operating-system strings.
     let converter = converter_script()?;
     let python = env::var_os("BEES_NATIVE_PYTHON")
-        .unwrap_or_else(|| if cfg!(windows) { "python" } else { "python3" }.into());
+        .unwrap_or_else(|| std::ffi::OsString::from(
+            if cfg!(windows) { "python" } else { "python3" }
+        ));
     let saves = save_root.canonicalize()?;
     let source = battles[index].0.canonicalize()?;
     let run: Value = serde_json::from_slice(&fs::read(&source)?)?;
@@ -234,7 +236,8 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
             .map_or(String::new(), |value| format!("  |  {value:.0} measured SPS"));
         labels.push(format!(
             "{}  |  {rounds}{speed}",
-            job.file_name().unwrap_or_default().to_string_lossy()
+            job.file_name().map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "training".to_string())
         ));
         statuses.push(if job.join("model").join("session")
             .join("latest-playable.json").is_file() {
