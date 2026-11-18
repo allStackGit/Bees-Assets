@@ -879,7 +879,8 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
             automated_child = (
                 ship.get("drone_carrier_id") is not None or
                 isinstance(special, dict) and
-                special.get("kind") in ("striker", "yellow_jacket")
+                special.get("kind") == "striker" and
+                special.get("carrier_id") is not None
             )
             if (ship.get("base_speed", 0) > 0 and
                     (ship.get("turrets") or ship.get("special_weapon")) and
@@ -971,7 +972,10 @@ def main() -> None:
             from prepare_fleet_training import (
                 deferred_reinforcement_ships, verify_same_battle,
             )
-            reserved = deferred_reinforcement_ships(scene, run)
+            reserved = deferred_reinforcement_ships(
+                scene, run,
+                require_scripted_fallback=not args.policy_reinforcements,
+            )
             args.deferred_reinforcement_ship_ids = reserved
             args.scripted_reinforcement_ship_ids = (
                 set() if args.policy_reinforcements else reserved
