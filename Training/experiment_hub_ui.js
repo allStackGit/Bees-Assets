@@ -1852,11 +1852,16 @@ document.addEventListener('DOMContentLoaded', () => {
             ?selectedComparisonMetrics():[];
         // Compare only what the selected runs actually published. Other
         // runs' metrics, saved requests and speculative capabilities are not data.
-        const metricOptions=hubGenericMetricCatalog(runs).map(metric=>({
-            key:'metric:'+metric.key,
-            label:metric.key+' ('+metric.units.join('/')+')',
-            units:metric.units,
-        }));
+        const metricOptions=hubGenericMetricCatalog(runs).map(metric=>{
+            const details=runs.flatMap(run=>run.evaluation_points||[]).find(row=>
+                'eval_'+String(row.suite_id||'').replace(/-/g,'_')+'_'+
+                String(row.suite_sha256||'').slice(0,8)===metric.key);
+            return {key:'metric:'+metric.key,
+                label:details?'Evaluation '+details.suite_id+' ('+
+                    details.suite_sha256.slice(0,8)+')':
+                    metric.key+' ('+metric.units.join('/')+')',
+                units:metric.units};
+        });
         metricSelect.replaceChildren(...metricOptions.map(m=>{
             const option=new Option(m.label,m.key);
             const key=m.key.slice(7);
@@ -1931,6 +1936,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
+        const definitions=new Map();
+        for(const run of runs)for(const row of run.evaluation_points||[]) {
+            if(!definitions.has(row.suite_id))definitions.set(row.suite_id,new Set());
+            definitions.get(row.suite_id).add(row.suite_sha256);
+        }
+        for(const [suite,digests] of definitions)if(digests.size>1)
+            warnings.push('Evaluation suite '+suite+
+                ' has different frozen definitions across these runs; its curves are separate.');
         if(knownRoots.size<runs.length)
             warnings.push('Some selected jobs share checkpoint/artifact lineage, so they are not independent replicates.');
         if(runs.length>1) {
