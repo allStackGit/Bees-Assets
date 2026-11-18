@@ -541,9 +541,15 @@ def verified_gpu_forwards(log_path):
             if calls > 0 and processed > 0 and (
                     evidence is None or processed >= evidence["agent_rows"]
             ):
+                pci = row.get("gpu_pci_address")
+                if pci is not None and (
+                        not isinstance(pci, str) or
+                        not re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", pci)):
+                    continue
                 evidence = {
                     "model_forwards": calls,
                     "agent_rows": processed,
+                    **({"gpu_pci_address": pci} if pci else {}),
                 }
     if evidence is None:
         raise ValueError(
@@ -621,10 +627,20 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
             if gpu_requested:
                 # Every allocated process must have actually forwarded at
                 # least one action batch on a GPU, not merely loaded weights.
+                addresses = {proof["gpu_pci_address"] for proof in gpu_proofs.values()
+                             if "gpu_pci_address" in proof}
+                if leased_gpu_count == 2 and leased_gpu_inference and (
+                        len(addresses) != 2 or any(
+                            "gpu_pci_address" not in proof for proof in gpu_proofs.values()
+                        )):
+                    raise ValueError(
+                        "dual-GPU lease did not execute real model forwards on two distinct HIP PCI devices"
+                    )
                 result["gpu_inference"] = {
                     "verified_workers": len(gpu_proofs),
                     "model_forwards": sum(p["model_forwards"] for p in gpu_proofs.values()),
                     "agent_rows": sum(p["agent_rows"] for p in gpu_proofs.values()),
+                    **({"gpu_pci_addresses": sorted(addresses)} if addresses else {}),
                 }
             return result
         except BaseException:
