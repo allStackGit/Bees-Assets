@@ -308,8 +308,8 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     if use_hub {
         hub_arguments(&mut command, &job, &recipe)?;
     } else {
-        command.arg("--rollout-worlds").arg(worlds.expect("local arenas selected"))
-            .arg("--physics-workers").arg(workers.expect("local workers selected"));
+        command.arg("--rollout-worlds").arg(worlds.expect("local arenas selected").to_string())
+            .arg("--physics-workers").arg(workers.expect("local workers selected").to_string());
     }
     let process = command
         .arg("--optimizer-device").arg(if device == 0 { "cpu" } else { "cuda" })
@@ -524,8 +524,8 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     if use_hub {
         hub_arguments(&mut command, job, &recipe)?;
     } else {
-        command.arg("--rollout-worlds").arg(worlds.expect("local arenas"))
-            .arg("--physics-workers").arg(workers.expect("local workers"));
+        command.arg("--rollout-worlds").arg(worlds.expect("local arenas").to_string())
+            .arg("--physics-workers").arg(workers.expect("local workers").to_string());
     }
     command.arg("--optimizer-device").arg(device)
         .arg("--holdout-worlds").arg("8")
