@@ -219,7 +219,8 @@ progress packets to one every 750 ms after the preceding TCP send while
 always forwarding the first sample and phase changes. It never suppresses
 PPO update outcomes or checkpoint data. The ordinary Hub metric stream
 now carries actual seen/sent/skipped progress counts, serialized network
-bytes, send-blocking wall and sustained critical-path evidence only when
+bytes, separate pickle-encoding CPU wall and blocking TCP send wall, plus
+sustained critical-path evidence only when
 the last completed remote lineage is responsible. This is not a measurement
 of link utilization or a real SPS qualification.
 
