@@ -879,48 +879,94 @@ impl NativeSoftwareRenderer {
     /// No physics, RNG, allocation or enemy discovery is performed here.
     /// The ordinary post-render fog stencil masks every visual sample.
     /// A paused simulation keeps its remains indefinitely until time runs.
+    /// Source ShipRemains.Place uses the final physical ship pose and
+    /// animates its real sprite slices before Kill at five world seconds.
+    /// The original 20-slice clips stop on their last sprite; no timer,
+    /// corpse collider or new actor is added to physics or training.
     pub(super) fn draw_ship_death_visuals(
         &mut self, tick: u64, fixed_dt: f32,
-    ) -> (usize, usize) {
-        if !fixed_dt.is_finite() || fixed_dt <= 0.0 { return (0, 0); }
+    ) -> (usize, usize, usize) {
+        if !fixed_dt.is_finite() || fixed_dt <= 0.0 {
+            return (0, 0, 0);
+        }
         self.death_effects.retain(|fx|
             tick >= fx.born_tick &&
             (tick - fx.born_tick) as f32 * fixed_dt < 5.0);
         let mut remains_drawn = 0;
         let mut flashes_drawn = 0;
+        let mut source_frames_drawn = 0;
+        let authored_remains = source_ship_remains_art();
         for index in 0..self.death_effects.len() {
             let fx = self.death_effects[index];
             let seconds = (tick - fx.born_tick) as f32 * fixed_dt;
-            let alpha = 0.6 * (1.0 - seconds / 5.0).clamp(0.0, 1.0);
-            let art = source_ship_art()
-                .and_then(|atlas| atlas.sprites.get(usize::from(fx.ship_type)))
-                .and_then(Option::as_ref);
-            let tinted = art.and_then(|art| art.recolor_mask.as_ref()
-                .and_then(|_| fx.color_rgb.map(|rgb| (art, rgb))))
-                .map(|(art, rgb)| {
-                    let key = (fx.ship_type, rgb);
-                    if !self.custom_ship_art.contains_key(&key) {
-                        if self.custom_ship_art.len() >= 96 {
-                            self.custom_ship_art.clear();
-                        }
-                        self.custom_ship_art.insert(key, Arc::new(art.recolored(rgb)));
-                    }
-                    Arc::clone(self.custom_ship_art.get(&key)
-                        .expect("installed native ship remains color"))
+            // Beacon, Fire Barge and HumanTarget have no source remains.
+            // The Fire Barge's real physical explosion continues independently.
+            let has_corpse = !matches!(fx.ship_type, 1 | 10 | 23);
+            if has_corpse {
+                let clip = authored_remains
+                    .and_then(|atlas| atlas.clips.get(usize::from(fx.ship_type)))
+                    .and_then(Option::as_ref);
+                let original = clip.map(|clip| {
+                    let frame = ((seconds * clip.frames_per_second).floor() as usize)
+                        .min(clip.frames.len() - 1);
+                    (frame, &clip.frames[frame])
                 });
-            let sprite_drawn = art.is_some_and(|art| {
-                let sprite = tinted.as_deref().unwrap_or(&art.sprite);
-                self.draw_sprite(sprite, fx.position,
-                    fx.rotation_degrees.to_radians(),
-                    self.camera.pixels_per_unit / art.pixels_per_unit,
-                    alpha)
-            });
-            if !sprite_drawn {
-                // Source art is optional on both platforms. Preserve the
-                // real death position when the artwork is not installed.
-                self.cross(fx.position, fx.radius.min(4.0), 0x66717d);
+                let art = original.map(|(_, art)| art)
+                    .or_else(|| source_ship_art()
+                        .and_then(|atlas| atlas.sprites.get(usize::from(fx.ship_type)))
+                        .and_then(Option::as_ref));
+                let tinted = art.and_then(|art| art.recolor_mask.as_ref()
+                    .and_then(|_| fx.color_rgb.map(|rgb| (art, rgb))))
+                    .map(|(art, rgb)| {
+                        if let Some((frame, _)) = original {
+                            let key = (fx.ship_type, frame, rgb);
+                            if !self.colored_ship_remains.contains_key(&key) {
+                                // One-time color cache; never allow an old
+                                // 128-ship multiplayer match to accumulate
+                                // unbounded colored corpse images.
+                                if self.colored_ship_remains.len() >= 256 {
+                                    self.colored_ship_remains.clear();
+                                }
+                                self.colored_ship_remains.insert(
+                                    key, Arc::new(art.recolored(rgb)),
+                                );
+                            }
+                            Arc::clone(self.colored_ship_remains.get(&key)
+                                .expect("installed source wreck recolor"))
+                        } else {
+                            let key = (fx.ship_type, rgb);
+                            if !self.custom_ship_art.contains_key(&key) {
+                                if self.custom_ship_art.len() >= 96 {
+                                    self.custom_ship_art.clear();
+                                }
+                                self.custom_ship_art.insert(
+                                    key, Arc::new(art.recolored(rgb)),
+                                );
+                            }
+                            Arc::clone(self.custom_ship_art.get(&key)
+                                .expect("installed fallback ship recolor"))
+                        }
+                    });
+                let sprite_drawn = art.is_some_and(|art| {
+                    let sprite = tinted.as_deref().unwrap_or(&art.sprite);
+                    self.draw_sprite(sprite, fx.position,
+                        fx.rotation_degrees.to_radians(),
+                        self.camera.pixels_per_unit / art.pixels_per_unit,
+                        // Source sprite animation is opaque until its
+                        // real 5s removal; only fallback stills fade.
+                        if original.is_some() { 1.0 }
+                        else { 0.6 * (1.0 - seconds / 5.0).clamp(0.0, 1.0) })
+                });
+                if sprite_drawn && original.is_some() {
+                    source_frames_drawn += 1;
+                }
+                if !sprite_drawn {
+                    // Missing optional atlas should never erase the
+                    // authoritative destruction marker.
+                    self.cross(fx.position, fx.radius.min(4.0), 0x66717d);
+                }
+                remains_drawn += 1;
             }
-            remains_drawn += 1;
             if seconds < 0.4 {
                 let progress = seconds / 0.4;
                 let radius = fx.radius * (0.75 + 1.5 * progress);
@@ -931,7 +977,7 @@ impl NativeSoftwareRenderer {
                 flashes_drawn += 1;
             }
         }
-        (remains_drawn, flashes_drawn)
+        (remains_drawn, flashes_drawn, source_frames_drawn)
     }
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
@@ -1862,10 +1908,14 @@ impl NativeSoftwareRenderer {
         // view; retained battles with millions of shots cannot accumulate
         // stale animation state over time.
         self.projectile_art_ticks.retain(|_, &mut (_, seen)| seen == view.tick);
-        let (remains, explosions) =
+        let (remains, explosions, source_frames) =
             self.draw_ship_death_visuals(view.tick, view.fixed_step_seconds);
         counts.ship_remains_draws = remains;
         counts.ship_explosion_visual_draws = explosions;
+        counts.ship_remains_source_frame_draws = source_frames;
+        counts.ship_remains_art_classes_loaded =
+            source_ship_remains_art().map_or(0, |atlas| atlas.loaded);
+        counts.ship_remains_color_cache_variants = self.colored_ship_remains.len();
         counts.combat_impact_visual_draws =
             self.draw_combat_impact_visuals(view.tick, view.fixed_step_seconds);
         counts.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels;
