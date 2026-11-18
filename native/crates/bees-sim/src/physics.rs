@@ -1075,7 +1075,18 @@ impl SpatialGrid {
         ))
     }
 
-    fn rebuild_with(&mut self, item_count: usize, mut item_bounds: impl FnMut(usize) -> Option<Aabb>) {
+    fn rebuild_with(&mut self, item_count: usize, item_bounds: impl FnMut(usize) -> Option<Aabb>) {
+        self.rebuild_with_indices(item_count, 0..item_count, item_bounds);
+    }
+
+    /// Spatial keys remain original dense body-slot indices, but a heavily
+    /// churned fleet need not inspect thousands of retired ship slots on
+    /// each new shot, proximity query or fixed physics integration.
+    fn rebuild_with_indices(
+        &mut self, item_count: usize,
+        indices: impl IntoIterator<Item = usize>,
+        mut item_bounds: impl FnMut(usize) -> Option<Aabb>,
+    ) {
         for bucket in self.buckets.iter_mut().take(self.active_buckets) {
             bucket.clear();
         }
@@ -1084,7 +1095,7 @@ impl SpatialGrid {
         self.sorted_cells_dirty = true;
         self.overflow.clear();
         self.seen.resize(item_count, 0);
-        for ship_index in 0..item_count {
+        for ship_index in indices {
             let Some(bounds) = item_bounds(ship_index) else { continue };
             // If a hull protrudes beyond the grid, it must remain queryable
             // even by a projectile entirely outside the grid.
