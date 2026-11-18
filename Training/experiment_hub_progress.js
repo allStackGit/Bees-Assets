@@ -227,6 +227,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_policy_saved_bytes',
             'training_policy_compressed_workers',
             'training_policy_delta_workers',
+            'training_policy_delta_bases_ready',
             'training_policy_delta_encode_seconds',
             'training_policy_delta_ram_denied',
             'training_policy_ram_denied',
