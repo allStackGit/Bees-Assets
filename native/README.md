@@ -158,6 +158,46 @@ compatible MA-POCA Python environment remain required for training;
 a generated configuration alone is not evidence of policy quality or
 Unity gameplay parity.
 
+### Train a fleet assembled inside the native game
+
+The native game's **Fleet Skirmish** builder saves a
+`replay-source-run.json` beside its recorded battle. To train against that
+exact authored fleet, terrain and command layout (rather than reauthoring
+a separate RL-only game), use the existing converter and learner:
+
+```sh
+python3 native/tools/prepare_fleet_training.py \
+  /path/to/replay-source-run.json my-fleet-source \
+  --bootstrap-output my-fleet-source/model \
+  --bootstrap-args --seed 42 --train-rounds 3 --learner-slot 0 \
+  --rollout-worlds 16 --physics-workers 6 \
+  --holdout-worlds 8 --evaluation-side 1 \
+  --library-save-root /path/to/native-saves \
+  --library-game-id my-fleet --library-game-title "My Trained Fleet"
+```
+
+The player save directory must already exist; open the native game library
+using that same save root to see the published model. The prepared directory
+contains both the original playable battle and the fixed-roster MA-POCA
+version. Training and evaluation use the same native `CombatWorld` and
+physical assets, with policy-only authority changed as required. The bridge
+materializes the game's clone offsets into explicit identities because native
+MA-POCA does not permit changing squad membership through run-time layout.
+Only ordinary fixed-roster elimination skirmishes are accepted; survival,
+extraction, benchmark runs and deferred reinforcement waves must not become
+training episodes silently. Trainer, CPU/GPU, Hub distributed collector and
+evaluation options after `--bootstrap-args` go unchanged to
+`bootstrap_policy.py`. Omit `--bootstrap-output` to prepare inputs only,
+or omit `--train-rounds` to initialize a policy without optimizing it.
+
+The converter atomically publishes the complete source scene/run pair and
+source identities. Model bootstrap and round continuation retain their
+existing distinct pinned receipts. To continue interrupted optimizer rounds,
+use `bootstrap_policy.py --resume` against the existing
+`my-fleet-source/model` with the same custom scene/run paths, seed, slots
+and training settings. An existing prepared source is deliberately never
+overwritten.
+
 ### Play against the actual trained native policy
 
 Training's verified `best-evaluated.json` and `latest-playable.json`
