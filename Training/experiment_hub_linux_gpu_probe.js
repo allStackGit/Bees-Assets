@@ -26,6 +26,30 @@ function probe(kfd,allowed,...denied) {
         throw Error('Device-policy probe did not establish allowed/blocked access.');
     return result;
 }
+// Multi-GPU native rollouts use one OS service with two exclusively leased
+// render devices. Prove that BOTH selected nodes are accessible, and that
+// every excluded GPU is blocked. A fully allocated two-GPU host legitimately
+// has no excluded device; the separately attested HIP PCI set must then
+// equal the complete discovered AMD render inventory.
+function probeMany(kfd,allowed,denied) {
+    if(kfd!=='/dev/kfd'||!Array.isArray(allowed)||!Array.isArray(denied)||
+        ![1,2].includes(allowed.length)||denied.length>31||
+        !allowed.every(node=>RENDER.test(node))||
+        !denied.every(node=>RENDER.test(node))||
+        new Set([...allowed,...denied]).size!==allowed.length+denied.length||
+        (allowed.length===1&&denied.length===0))
+        throw Error('Invalid trusted multi-GPU device probe inventory.');
+    const result={
+        kfd,allowed,denied,
+        kfd_access:canOpen(kfd),
+        allowed_access:allowed.map(canOpen),
+        denied_access:denied.map(canOpen),
+    };
+    if(!result.kfd_access||result.allowed_access.some(access=>!access)||
+        result.denied_access.some(Boolean))
+        throw Error('Multi-GPU device-policy probe did not establish allowed/blocked access.');
+    return result;
+}
 if(require.main===module) {
     try{
         process.stdout.write(JSON.stringify(probe(...process.argv.slice(2)))+'\n');
@@ -35,4 +59,4 @@ if(require.main===module) {
         process.exitCode=1;
     }
 }
-module.exports={probe};
+module.exports={probe,probeMany};
