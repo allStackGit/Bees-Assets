@@ -1293,7 +1293,7 @@ impl NativeSoftwareRenderer {
                 let clip = atlas.clips.get(usize::from(ship.ship_type) * 2 + variant)
                     .and_then(Option::as_ref)?;
                 let index = if let Some(opening) = elapsed.filter(|_| variant == 0) {
-                    (opening * clip.frames_per_second).floor() as usize
+                    ((opening * clip.frames_per_second).floor() as usize)
                         .min(clip.frames.len() - 1)
                 } else {
                     ((view.tick as f32 * view.fixed_step_seconds
