@@ -123,6 +123,82 @@ class SelectedObservationRows:
         return bool(self.pending)
 
 
+class IndependentEvaluationRows(SelectedObservationRows):
+    """Stream the complete, checkpoint-bound independent archive into a CSV.
+
+    Failed and unavailable attempts retain their identity and diagnostic but
+    never receive a fabricated success rate or project outcome measurement.
+    The original receipt JSONL is exported independently and unchanged.
+    """
+
+    def __init__(self, job_id: str, project: str, writer) -> None:
+        super().__init__(job_id, project, None, writer)
+
+    def _line(self, raw: bytes) -> None:
+        if len(raw) > 65536:
+            raise ValueError("Independent evaluation record exceeds 64 KiB")
+        if not raw:
+            return
+        row = json.loads(raw)
+        if (row.get("schema_version") != 1 or
+                row.get("job_id") != self.job_id or
+                row.get("project_id") != self.project):
+            raise ValueError("Independent evaluation archive lineage does not match the selected job")
+        status = row.get("evaluation_status", "complete")
+        if status not in ("complete", "failed", "unavailable"):
+            raise ValueError("Invalid independent evaluation archive status")
+        shared = (
+            self.job_id, self.project, row.get("observed_at"),
+            row.get("evaluated_at"), row.get("attempted_at"),
+            row.get("steps_completed"), row.get("suite_id"),
+            row.get("suite_sha256"), row.get("runtime_sha256"),
+            row.get("checkpoint_sha256"), row.get("dispatch_id"), status,
+        )
+        provenance = (
+            row.get("source_kind"), row.get("source_report_sha256"),
+            row.get("source_checkpoint_name"),
+        )
+        def write(metric="", value="", unit="", reason="") -> None:
+            # Evaluator diagnostics can be supplied by a third-party runtime.
+            # Quote them as literal spreadsheet text rather than formulas.
+            safe_reason = ("'" + reason if isinstance(reason, str) and
+                           reason.lstrip().startswith(("=", "+", "-", "@"))
+                           else reason)
+            self.writer.writerow(
+                (*shared, row.get("trials"), row.get("successes"),
+                 metric, value, unit, *provenance, safe_reason)
+            )
+            self.rows += 1
+
+        if status != "complete":
+            if "successes" in row or "trials" in row or "metrics" in row:
+                raise ValueError("Non-scoring evaluator diagnostic contains an outcome")
+            write(reason=row.get("reason") or row.get("issue") or "")
+            return
+        trials, successes = row.get("trials"), row.get("successes")
+        if (type(trials) is not int or type(successes) is not int or
+                not 1 <= trials <= 1000000 or not 0 <= successes <= trials or
+                type(row.get("steps_completed")) is not int or
+                row["steps_completed"] < 0 or
+                not re.fullmatch(r"[0-9a-f]{64}", str(row.get("suite_sha256", ""))) or
+                not re.fullmatch(r"[0-9a-f]{64}", str(row.get("checkpoint_sha256", "")))):
+            raise ValueError("Incomplete independent checkpoint evaluation identity")
+        write("success_rate", successes / trials, "ratio")
+        metrics = row.get("metrics") or {}
+        if not isinstance(metrics, dict):
+            raise ValueError("Invalid independent evaluation measurements")
+        for name, measurement in sorted(metrics.items()):
+            if (not isinstance(name, str) or
+                    not re.fullmatch(r"[a-z][a-z0-9_]{0,23}", name) or
+                    not isinstance(measurement, dict) or
+                    set(measurement) != {"value", "unit"} or
+                    type(measurement["value"]) not in (int, float) or
+                    not isinstance(measurement["unit"], str) or
+                    measurement["unit"] not in ("count", "ratio", "scalar", "seconds")):
+                raise ValueError("Invalid project evaluation outcome measurement")
+            write(name, measurement["value"], measurement["unit"])
+
+
 def export(spec: dict, output: Path) -> dict:
     project = spec["project_id"]
     jobs = spec["jobs"]
@@ -404,6 +480,27 @@ def export(spec: dict, output: Path) -> dict:
         observation_rows = 0
         observation_sources = 0
         partial_observation_files = 0
+        evaluation_rows = 0
+        evaluation_sources = 0
+        partial_evaluation_files = 0
+        evaluation_path = None
+        evaluation_stream = None
+        evaluation_writer = None
+        if any(source["label"] == "hub-evaluations" for source in additional):
+            evaluation_stream = tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="", dir=output.parent,
+                prefix="hub-independent-evaluations-", suffix=".csv", delete=False,
+            )
+            evaluation_path = Path(evaluation_stream.name)
+            evaluation_writer = csv.writer(evaluation_stream)
+            evaluation_writer.writerow((
+                "job_id", "project_id", "observed_at", "evaluated_at",
+                "attempted_at", "steps_completed", "suite_id", "suite_sha256",
+                "runtime_sha256", "checkpoint_sha256", "dispatch_id",
+                "evaluation_status", "trials", "successes", "metric", "value",
+                "unit", "source_kind", "source_report_sha256",
+                "source_checkpoint_name", "diagnostic",
+            ))
         selected_observation_path = None
         selected_observation_stream = None
         selected_observation_writer = None
@@ -508,15 +605,23 @@ def export(spec: dict, output: Path) -> dict:
                 is_observation = entry["label"] in (
                     "hub-observations", "hub-host-observations"
                 ) or child_id is not None
-                observer = (SelectedObservationRows(
-                    child_id or job_id,
-                    "tinybrains_rollout" if child_id else project,
-                    None if all_recorded_metrics else set(metrics),
-                    selected_observation_writer)
+                observer = (IndependentEvaluationRows(
+                    job_id, project, evaluation_writer)
+                    if entry["label"] == "hub-evaluations" and
+                    evaluation_writer is not None else
+                    SelectedObservationRows(
+                        child_id or job_id,
+                        "tinybrains_rollout" if child_id else project,
+                        None if all_recorded_metrics else set(metrics),
+                        selected_observation_writer)
                     if is_observation and (metrics or all_recorded_metrics)
                     else None)
                 add_file(source, prefix + "/" + source.name, observer)
-                if observer is not None:
+                if isinstance(observer, IndependentEvaluationRows):
+                    evaluation_sources += 1
+                    evaluation_rows += observer.rows
+                    partial_evaluation_files += int(observer.finish())
+                elif observer is not None:
                     observation_sources += 1
                     observation_rows += observer.rows
                     partial_observation_files += int(observer.finish())
@@ -538,6 +643,17 @@ def export(spec: dict, output: Path) -> dict:
             selected_observation_stream.close()
             selected_observation_stream = None
             add_file(selected_observation_path, "hub-selected-observation-metrics.csv")
+        if evaluation_stream is not None:
+            evaluation_stream.close()
+            evaluation_stream = None
+            add_file(evaluation_path, "hub-independent-evaluation-history.csv")
+        manifest["independent_evaluation_csv_rows"] = evaluation_rows
+        manifest["independent_evaluation_source_files"] = evaluation_sources
+        manifest["incomplete_evaluation_lines"] = partial_evaluation_files
+        manifest["independent_evaluation_csv_scope"] = (
+            "complete archived checkpoint receipts and non-scoring diagnostic events; "
+            "one row per validated outcome, including a measured success rate"
+        )
         manifest["selected_observation_metric_rows"] = observation_rows
         manifest["selected_observation_source_files"] = observation_sources
         manifest["incomplete_observation_lines"] = partial_observation_files
@@ -571,6 +687,10 @@ def export(spec: dict, output: Path) -> dict:
             selected_observation_stream.close()
         if 'selected_observation_path' in locals() and selected_observation_path is not None:
             selected_observation_path.unlink(missing_ok=True)
+        if 'evaluation_stream' in locals() and evaluation_stream is not None:
+            evaluation_stream.close()
+        if 'evaluation_path' in locals() and evaluation_path is not None:
+            evaluation_path.unlink(missing_ok=True)
 
 
 def main() -> None:
