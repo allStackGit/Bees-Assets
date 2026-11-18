@@ -26,7 +26,7 @@ import time
 from urllib.parse import urlsplit
 
 from native_training_artifacts import file_sha256, sync_directory
-from transfer_policy_bundle import import_bundle_archive, BUNDLE_NAME
+from transfer_policy_bundle import import_bundle_archive, completed_uploaded_bundle, BUNDLE_NAME
 
 CHUNK = 1024 * 1024
 MAX_ARCHIVE_BYTES = 8 * 1024 ** 3
@@ -84,6 +84,37 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
     sha256 = archive_sha256 or file_sha256(archive)
     if not DIGEST_RE.fullmatch(sha256):
         raise ValueError("invalid collector archive checksum")
+    def published_receipt():
+        # A completed import is recoverable even when its original response
+        # was lost. Query first so a retry never sends an entire archive again.
+        query = connection_class(parts.hostname, parts.port, timeout=60)
+        try:
+            query.request("GET", endpoint, headers={"Authorization": "Bearer " + auth})
+            answer = query.getresponse()
+            body = answer.read(64 * 1024)
+            if answer.status == 404:
+                return None
+            try:
+                payload = json.loads(body)
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise ValueError("invalid collector acknowledgement response") from exc
+            if answer.status != 200:
+                raise ValueError(f"collector acknowledgement rejected: HTTP {answer.status}: {payload.get('error')}")
+            if (not isinstance(payload, dict) or
+                    payload.get("collector_id") != collector_id or
+                    payload.get("archive_sha256") != sha256 or
+                    payload.get("archive_bytes") != size):
+                raise ValueError("receiver already published a different collector archive")
+            return payload
+        finally:
+            query.close()
+
+    prior = published_receipt()
+    if prior is not None:
+        return {**prior, "already_received": True,
+                "upload_wall_seconds": time.perf_counter() - started,
+                "receiver": base_url}
+
     connection = connection_class(parts.hostname, parts.port, timeout=60)
     try:
         connection.putrequest("POST", endpoint)
@@ -114,6 +145,18 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
             **payload, "upload_wall_seconds": time.perf_counter() - started,
             "receiver": base_url,
         }
+    except (OSError, ValueError, http.client.HTTPException):
+        # Upload may already have committed when the response connection
+        # died. Check its durable receipt once, never publish twice.
+        try:
+            prior = published_receipt()
+        except (OSError, ValueError, http.client.HTTPException):
+            prior = None
+        if prior is not None:
+            return {**prior, "already_received": True,
+                    "upload_wall_seconds": time.perf_counter() - started,
+                    "receiver": base_url}
+        raise
     finally:
         connection.close()
 
@@ -296,6 +339,16 @@ class BundleReceiver:
                 raise LookupError("collector inputs have not been exported")
             return published
 
+    def completed_upload(self, collector_id):
+        with self.lock:
+            orders = self.active_orders
+            jobs = [] if orders is None else [
+                job for job in orders["jobs"] if job["id"] == collector_id
+            ]
+            if len(jobs) != 1:
+                raise LookupError("collector has no active issued work order")
+            return completed_uploaded_bundle(self.inbox, jobs[0], orders)
+
     def claim(self, collector_id):
         with self.lock:
             orders = self.active_orders
@@ -341,6 +394,22 @@ def _receiver_handler(owner):
             if not hmac.compare_digest(
                     self.headers.get("Authorization", ""), "Bearer " + owner.token):
                 self.respond(401, {"error": "unauthorized"})
+                return
+            upload_prefix = "/v1/bundles/"
+            if self.path.startswith(upload_prefix):
+                collector_id = self.path[len(upload_prefix):]
+                if not BUNDLE_NAME.fullmatch(collector_id):
+                    self.respond(404, {"error": "unknown collector upload endpoint"})
+                    return
+                try:
+                    receipt = owner.completed_upload(collector_id)
+                except LookupError as error:
+                    self.respond(404, {"error": str(error)})
+                    return
+                except (ValueError, OSError, KeyError, TypeError) as error:
+                    self.respond(409, {"error": str(error)})
+                    return
+                self.respond(200, receipt)
                 return
             prefix = "/v1/inputs/"
             collector_id = self.path[len(prefix):] if self.path.startswith(prefix) else ""
@@ -435,13 +504,10 @@ def _receiver_handler(owner):
                     os.fsync(stream.fileno())
                 if hasher.hexdigest() != digest:
                     raise ValueError("collector archive checksum mismatch")
-                imported = import_bundle_archive(temporary, job, orders, owner.inbox)
+                import_bundle_archive(temporary, job, orders, owner.inbox,
+                                      archive_sha256=digest, archive_bytes=count)
                 result = {
-                    "kind": "native_bundle_received",
-                    "collector_id": collector_id,
-                    "archive_sha256": digest,
-                    "archive_bytes": count,
-                    "receipt": imported["bundle"],
+                    **completed_uploaded_bundle(owner.inbox, job, orders),
                     "receive_and_verify_wall_seconds": time.perf_counter() - started,
                 }
                 owner.record_transfer(upload_bytes=count,
