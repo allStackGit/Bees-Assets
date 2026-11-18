@@ -789,8 +789,13 @@ exclusive-create and not automatically enabled. For separately scheduled
 monitoring-only suites, generate one single-suite evaluator per frequency and
 provide a unique `--evaluator-id nano` / `--evaluator-id micro` (or other
 explicit identifier). This preserves the legacy timer name for existing
-evaluators and avoids collisions. Same-checkpoint success-gated batches
-must continue using one coordinated multi-suite evaluator. systemd prevents overlapping
+evaluators and avoids collisions. Newly generated evaluator units include
+the suite IDs in their systemd description so that machine-agent health
+can identify which benchmark suites have a scheduler. Older units have
+unknown suite coverage until reviewed and replaced; a matching service
+name or a running timer is not proof of a completed frozen-suite evaluation.
+Same-checkpoint success-gated batches must continue using one coordinated
+multi-suite evaluator. systemd prevents overlapping
 runs of the same one-shot service and enforces the specified CPU and RAM caps.
 The evaluator still needs its approved project dependencies and access to
 the model/receipt directories. On a coordinator-local machine the generator
@@ -955,7 +960,22 @@ reports that Windows evaluator service status is unavailable rather than
 assuming a timer or service is running. Linux agents inspect only the
 machine's local systemd user evaluator timers and services. These
 observations and failures are read-only diagnostics, not proof that a
-specific frozen suite ran or produced a valid checkpoint receipt.
+specific frozen suite ran or produced a valid checkpoint receipt. Newly
+started Windows evaluator controllers include their suite IDs in the
+already-existing atomic evaluator-status file; older status files report
+unknown coverage until the service is explicitly restarted.
+
+The coordinator records authenticated evaluator-service state transitions
+and new poll results in a separate append-only per-machine stream within
+the existing `hub-evaluations-v1` observation archive. These events survive
+coordinator restarts, do not enter training or checkpoint-promotion policy,
+and are visible in Monitor under **Evaluation receipts and next eligibility**.
+In Compare, select one or more assigned jobs and use **Export evaluator
+service history (JSON)** to retrieve the complete bounded machine history.
+The read-only local API `GET /api/hub/evaluation/service-history?machine_id=WORKER&offset=0&limit=40`
+also supports paginated retrieval. The current service snapshot and
+historical OS observations are not substitutes for independent checkpoint
+receipts.
 
 Before installation, the compiled launcher's `--run-once` command with an evaluator service configuration performs exactly
 one constrained poll without registering a service.
