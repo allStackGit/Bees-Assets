@@ -162,7 +162,8 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
     let mut fleet_sizes = [1_usize, 1_usize];
     for (index, title) in ["Bees fleet", "Humans fleet"].into_iter().enumerate() {
         let descriptions = FLEET_SIZES.iter().map(|&size|
-            format!("{size} ships  |  {title}")
+            format!("{size} ships  |  {title}{}",
+                if size > 64 { "  |  Fighters only" } else { "" })
         ).collect::<Vec<_>>();
         let rows = descriptions.iter().map(|description| BattleMenuRow {
             title: description, status: "  [Physical ships]", unlocked: true,
@@ -182,7 +183,11 @@ fn choose_mix(fleet_sizes: [usize; 2])
     let mut choices = [FleetMix::Fighters; 2];
     for side in 0..2 {
         let total = fleet_sizes[side];
-        if total == 1 { continue; }
+        // The dense 10x15 large-fleet layout is sourced from 6x6 Wasp
+        // and Gunship sprites. Its 12-unit grid cannot fit the source
+        // Beehive's 34-unit sprite or a 19-unit Fire Barge without
+        // physical overlap. Keep that benchmark honest and deterministic.
+        if total == 1 || total > 64 { continue; }
         let support_name = if side == 0 { "Beehives" } else { "Carriers" };
         let options = [
             (FleetMix::Fighters, format!("{total} fighters  |  No support")),
@@ -271,7 +276,7 @@ fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
 /// navigation behavior through NativeLevelLayout.
 /// Keep 1..64 fleets on their original fixed near-first layout, so
 /// pre-existing saved battles and performance measurements retain the same
-/// physical spawn geometry. Large fleets use a denser, still disjoint
+/// physical spawn geometry. Fighter-only large fleets use a denser, disjoint
 /// source-centered 10x15 grid. On the native 320x200 arena that occupies
 /// x -147..-39 (Bees) and 39..147 (Humans), y -84..84, keeping
 /// hulls away from borders and the central authored cover lane.
