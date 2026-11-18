@@ -979,9 +979,10 @@ pub(super) fn archive(
     ));
     if let Some(size) = selected.arena_size {
         apply_native_arena(&mut scene, &mut run, &mut cloned, size)?;
-        if selected.lethal_borders {
-            scene["lethal_map_borders"] = json!(true);
-        }
+        // Both modes are physical Level rules; saved fleet training
+        // materializes exactly these game scene bytes before PPO ownership.
+        scene["lethal_map_borders"] = json!(selected.lethal_borders);
+        scene["constrain_map_borders"] = json!(!selected.lethal_borders);
         let name = scene["level_name"].as_str().unwrap_or("Fleet Skirmish");
         scene["level_name"] = json!(format!("{name}  |  Arena: {size} x {size}{}",
             if selected.lethal_borders { " (lethal borders)" } else { "" }));
