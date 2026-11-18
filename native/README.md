@@ -757,17 +757,26 @@ python3 native/tools/import-ship-sprites.py
 
 The converter reads the tracked source PNGs, Unity texture metadata and
 `ConfigData.ChangeableShipColors` palettes and writes `native/assets/ship-sprites.rgba`,
-`native/assets/projectile-sprites.rgba` and
-`native/assets/asteroid-sprites.rgba`. These compact, per-type native
-atlases retain the source pixels-per-world-unit scale; available projectile
+`native/assets/projectile-sprites.rgba`,
+`native/assets/asteroid-sprites.rgba` and
+`native/assets/ship-animations.rgba`. The animation atlas includes the
+original 12 FPS Carpenter mining, 10 FPS Factory mining, 8 FPS WarpGate
+opening and 10 FPS WarpGate ready-loop sprites, including their original
+recolorable-pixel masks. The renderer uses actual Mining command collider
+enrollment and the CombatWorld-owned WarpGate activation/readiness clock,
+so opening the gate visually cannot accelerate a real warp. The native LAN
+multiplayer host supplies the same authenticated animation phase only for
+already visible ships; remote players do not simulate independent timers.
+These compact, per-type native atlases retain the source pixels-per-world-unit scale; available projectile
 animation slices advance from each projectile's first visible tick without
 changing combat physics or training clocks. Rocket and Fire Barge explosion
 atlases are included; their 1024-pixel source frames are reduced with
 corresponding pixels-per-unit scaling to preserve visual world size without
 excessive memory use on older computers.
-For a manual deployment, copy all three atlases into an `assets/`
+For a manual deployment, copy all four atlases into an `assets/`
 directory beside `bees` or `bees.exe`, or point `BEES_NATIVE_ASSETS`
-at their directory.
+at their directory. Older deployments without `ship-animations.rgba`
+still render static ship art and authoritative physical hulls.
 The native renderer recolors only the same source-matched ship pixels for
 squads with authored custom colors, preserving original alpha and unaffected
 details. Source-numbered collision asteroids, spawned shards and fading
