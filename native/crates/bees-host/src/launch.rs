@@ -4877,6 +4877,10 @@ fn run_battle(
             "inactive_ship_slots_skipped": status.simulation.inactive_ship_slots_skipped,
             "inactive_ship_grid_slots_skipped":
                 status.simulation.inactive_ship_grid_slots_skipped,
+            "inactive_obstacle_slots_skipped":
+                status.simulation.inactive_obstacle_slots_skipped,
+            "inactive_obstacle_grid_slots_skipped":
+                status.simulation.inactive_obstacle_grid_slots_skipped,
         },
         "navigation_current_episodes": status.navigation_workers,
         "navigation_raster_work_current_episodes": status.navigation_rasters,
