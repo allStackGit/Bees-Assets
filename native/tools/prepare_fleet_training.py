@@ -84,7 +84,8 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     layout = level.pop("native_layout", {})
     if not isinstance(layout, dict):
         raise ValueError("native layout must be an object")
-    supported = {"clone_squads", "remove_static_ids", "add_static_boxes"}
+    supported = {"clone_squads", "remove_static_ids", "add_static_boxes",
+                 "add_map_borders"}
     if any(key not in supported and value not in ([], None)
            for key, value in layout.items()):
         raise ValueError("unsupported fleet layout operation; refusing a changed physical battle")
@@ -109,6 +110,7 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         *ships, *scene.get("mining_asteroids", []),
         *scene.get("map_objects", []),
         *scene_layout.get("add_static_boxes", []),
+        *scene_layout.get("add_map_borders", []),
         *scene_layout.get("add_static_polygons", []),
     ]
     max_source_entity = max(entity["entity_id"] for entity in source_entities)
@@ -187,6 +189,28 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         existing_ids.add(box["entity_id"])
         active.append(box)
     scene_layout["add_static_boxes"] = active
+    # Source MapBorders are real physical trigger colliders, never ordinary
+    # static obstacles, destructible cover or discovery-reward baselines.
+    # Carry their exact game layout into the policy scene unchanged.
+    borders = layout.get("add_map_borders", [])
+    current_borders = scene_layout.get("add_map_borders", [])
+    if not isinstance(borders, list) or not isinstance(current_borders, list):
+        raise ValueError("native map-border placements must be lists")
+    reserved_ids = {
+        *ship_by_id.keys(),
+        *(obj["entity_id"] for key in ("mining_asteroids", "map_objects")
+          for obj in scene.get(key, [])),
+        *(box["entity_id"] for box in active),
+        *(polygon["entity_id"] for polygon in scene_layout.get("add_static_polygons", [])),
+        *(border["entity_id"] for border in current_borders),
+    }
+    for border in borders:
+        if not isinstance(border, dict) or type(border.get("entity_id")) is not int or (
+                border["entity_id"] <= max_source_entity or
+                border["entity_id"] in reserved_ids):
+            raise ValueError("native map-border identity collides with an authored physical entity")
+        reserved_ids.add(border["entity_id"])
+    scene_layout["add_map_borders"] = [*current_borders, *borders]
     return scene, run, len(clones)
 
 
