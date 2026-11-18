@@ -114,6 +114,10 @@ pub enum NativePlayerSupportAction {
     /// Source Hold button: stop an active Aggressive chase, not a new order.
     Hold,
     Attack { target: SquadLifetime },
+    Circle { target: SquadLifetime },
+    RightSwipe { target: SquadLifetime },
+    LeftSwipe { target: SquadLifetime },
+    InAndOut { target: SquadLifetime },
     Guard { target: SquadLifetime },
     Patrol { top_left: Vec2, bottom_right: Vec2 },
     Mining { asteroid_id: i64 },
@@ -127,6 +131,10 @@ impl NativePlayerSupportAction {
         match self {
             Self::Hold => Action::Hold,
             Self::Attack { target } => Action::TargetEnemy { target: *target },
+            Self::Circle { target } => Action::CircleAt { target: *target },
+            Self::RightSwipe { target } => Action::RightSwipeAt { target: *target },
+            Self::LeftSwipe { target } => Action::LeftSwipeAt { target: *target },
+            Self::InAndOut { target } => Action::InAndOutAt { target: *target },
             Self::Guard { target } => Action::Guard { target: *target },
             Self::Patrol { top_left, bottom_right } => Action::Patrol {
                 top_left: *top_left, bottom_right: *bottom_right },
@@ -960,7 +968,9 @@ impl<'a> NativePlayerSupportCommandPlan<'a> {
     ) -> Result<Self, NativePlayerInputError> {
         use crate::commands::NativeLocalCommandAction as Action;
         match input.action {
-            Action::TargetEnemy { .. } => (),
+            Action::TargetEnemy { .. } | Action::CircleAt { .. } |
+            Action::RightSwipeAt { .. } | Action::LeftSwipeAt { .. } |
+            Action::InAndOutAt { .. } => (),
             Action::Guard { .. } | Action::Mining { .. } | Action::Heal { .. } |
             Action::FullRetreat { .. } => (),
             Action::Patrol { top_left, bottom_right } if top_left.is_finite() &&
@@ -972,7 +982,14 @@ impl<'a> NativePlayerSupportCommandPlan<'a> {
             input.episode_revision, input.selected_ship)?;
         let mut action = input.action;
         let mut bombing = None;
-        let enemy = if let Action::TargetEnemy { target } = input.action {
+        let target_enemy = match input.action {
+            Action::TargetEnemy { target } |
+            Action::CircleAt { target } | Action::RightSwipeAt { target } |
+            Action::LeftSwipeAt { target } | Action::InAndOutAt { target } =>
+                Some(target),
+            _ => None,
+        };
+        let enemy = if let Some(target) = target_enemy {
             let roster = world.state.events.roster();
             let own = roster.get(authority.owner).ok_or(NativePlayerInputError::MissingSquad)?;
             let target_squad = roster.get(target).ok_or(NativePlayerInputError::InvalidAction)?;
@@ -985,16 +1002,24 @@ impl<'a> NativePlayerSupportCommandPlan<'a> {
                 roster, authority.owner, Some(target)).map_err(NativePlayerInputError::Source)?;
             let enemy = details.enemy.filter(|enemy| enemy.owner == target && enemy.is_alive)
                 .ok_or(NativePlayerInputError::InvalidAction)?;
-            if composition.only_barges || composition.only_bombers {
-                action = if composition.only_barges { Action::Charge } else { Action::BombingRun };
-                let mut weapons = Vec::new(); let mut enemies = Vec::new();
-                let carrier = world.state.metadata.collect_bomb_activation(&world.state.combat, roster,
-                    authority.owner, target, &mut weapons, &mut enemies).map_err(NativePlayerInputError::Source)?;
-                bombing = Some((carrier, weapons, enemies));
-            } else {
-                world.state.metadata.aggressive_command_snapshot(&mut world.state.combat, roster,
-                    authority.owner, target, false).map_err(NativePlayerInputError::Source)?;
+            if matches!(input.action, Action::TargetEnemy { .. }) {
+                // Ordinary Attack retains its source specialization:
+                // Barge and bomber squads execute their actual weapons.
+                if composition.only_barges || composition.only_bombers {
+                    action = if composition.only_barges { Action::Charge } else { Action::BombingRun };
+                    let mut weapons = Vec::new(); let mut enemies = Vec::new();
+                    let carrier = world.state.metadata.collect_bomb_activation(&world.state.combat, roster,
+                        authority.owner, target, &mut weapons, &mut enemies).map_err(NativePlayerInputError::Source)?;
+                    bombing = Some((carrier, weapons, enemies));
+                } else {
+                    world.state.metadata.aggressive_command_snapshot(&mut world.state.combat, roster,
+                        authority.owner, target, false).map_err(NativePlayerInputError::Source)?;
+                }
             }
+            // Explicit Circle/Swipe/InAndOut commands do not silently
+            // become an Aggressive, BombingRun or Charge. Their authored
+            // movement/weapon eligibility is checked by the canonical
+            // command director and their target is authenticated above.
             Some(enemy)
         } else { None };
         let source = world.state.metadata.player_command_inputs(authority.owner)

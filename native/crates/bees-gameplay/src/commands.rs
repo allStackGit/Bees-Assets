@@ -1046,7 +1046,15 @@ impl NativeSquadCommandDirector {
         if selection.local_command != action.kind() {
             return Err(GameCommandError::InvalidCommandOrigin);
         }
-        if let NativeLocalCommandAction::TargetEnemy { target } = action {
+        let explicit_enemy = match action {
+            NativeLocalCommandAction::TargetEnemy { target } |
+            NativeLocalCommandAction::CircleAt { target } |
+            NativeLocalCommandAction::RightSwipeAt { target } |
+            NativeLocalCommandAction::LeftSwipeAt { target } |
+            NativeLocalCommandAction::InAndOutAt { target } => Some(target),
+            _ => None,
+        };
+        if let Some(target) = explicit_enemy {
             if squad.enemy.map(|enemy| enemy.owner) != Some(target) {
                 return Err(GameCommandError::InvalidEnemy);
             }
