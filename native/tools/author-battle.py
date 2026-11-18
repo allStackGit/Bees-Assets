@@ -531,6 +531,13 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
     scene = copy.deepcopy(scene)
     run = copy.deepcopy(run)
     active = {1: 0, 2: 0}
+    # Deferred native reinforcements have no live policy controller before
+    # physical deployment. A fleet converter may leave these ships under
+    # their exact authored command queues; the ordinary manual authoring
+    # path makes no such override.
+    scripted_reinforcement_ships = set(
+        getattr(args, "scripted_reinforcement_ship_ids", ())
+    )
     for ship in scene["ships"]:
         ship["user_controlled"] = False
         # Native episode starting TSV uses actual ShipVitals, not nominal
@@ -539,7 +546,8 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         if (ship.get("health") != ship.get("max_health") or
                 ship.get("mined_cargo", 0)):
             raise ValueError("custom native policy starting ships must be at full health with no cargo")
-        source_ship = policies.get((ship["side"], ship["ship_type"]))
+        source_ship = (None if ship["entity_id"] in scripted_reinforcement_ships
+                       else policies.get((ship["side"], ship["ship_type"])))
         if source_ship is None:
             ship.pop("policy", None)
             continue
