@@ -563,10 +563,16 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         // obsolete per-ship inference route before admitting new children.
         for old_id in self.retired_dynamic_pending.drain(..) {
             if !self.dynamic_policy_ships.remove(&old_id) ||
-                self.agents.remove(&old_id).is_none()
+                self.agents.remove(&old_id).is_none() ||
+                self.authored_ships.remove(&old_id).is_none() ||
+                self.effective_vision.remove(&old_id).is_none() ||
+                self.player.ships.remove(&old_id).is_none()
             {
                 return Err(CombatPerceptionError::InvalidAuthoredMetadata);
             }
+            // The persistent FleetShip/MA-POCA group records still own
+            // accrued combat and group reward history. Only dead,
+            // observation-only ship state is recycled here.
             self.queen_controller_measurements.retired_policy_routes_reclaimed += 1;
         }
         // A policy on the OTHER faction must never claim this Queen's
