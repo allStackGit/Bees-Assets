@@ -808,6 +808,33 @@ fn collect_remote_audio(
                 cue["projectile_id"] = json!(id);
                 cue["projectile_type"] = json!(kind);
             }
+            // The host already buffers these side-filtered audio cues
+            // across its five-tick state cadence. Attach an optional
+            // authenticated visual death receipt to that same bounded
+            // event, rather than sampling only the latest frame (which
+            // misses four out of five short-lived combat death events).
+            if let CombatEvent::ShipDied { victim_id, .. } = event {
+                if let (Some(ship), Some(body)) = (
+                    view.combat.ship(*victim_id),
+                    view.combat.ship_body(*victim_id),
+                ) {
+                    let radius = body.primary_bounds()
+                        .map(|bounds| (bounds.max.x - bounds.min.x)
+                            .max(bounds.max.y - bounds.min.y) * 0.5)
+                        .unwrap_or(3.0);
+                    cue["ship_death"] = json!({
+                        "id": victim_id,
+                        "type": ship.ship_type, "side": ship.side,
+                        "x": body.motion.position.x,
+                        "y": body.motion.position.y,
+                        "rotation": body.motion.rotation_degrees,
+                        "radius": radius,
+                        "color_rgb": view.roster.owning_squad(*victim_id)
+                            .and_then(|owner|
+                                view.player_authority.player_squad_color_rgb(owner)),
+                    });
+                }
+            }
             pending.push(cue);
             measurements.audio_events_queued += 1;
         } else { measurements.audio_events_dropped += 1; }

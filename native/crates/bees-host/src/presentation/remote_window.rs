@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use bees_gameplay::campaign_dialogue::CampaignCue;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
+use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use serde_json::{json, Value};
 
@@ -56,6 +57,9 @@ struct WireCounts {
     sprite_opaque_pixels: u64,
     sprite_blended_pixels: u64,
     recolor_cache_peak: usize,
+    ship_deaths_received: u64,
+    ship_remains_draws: u64,
+    ship_explosion_visual_draws: u64,
     obstacle_hull_draws: u64,
 }
 
@@ -165,6 +169,37 @@ impl RemoteArtwork {
                 stats.ship_sprite_draws += 1;
             }
         }
+        self.raster.begin_death_scene(WorldId(episode.0), episode.1);
+        for cue in state["audio_events"].as_array().into_iter().flatten() {
+            let death = &cue["ship_death"];
+            let (Some(id), Some(kind), Some(side), Some(x), Some(y),
+                 Some(rotation), Some(radius), Some(born_tick)) = (
+                death["id"].as_i64(),
+                death["type"].as_u64().and_then(|v| u8::try_from(v).ok()),
+                death["side"].as_i64().and_then(|v| i32::try_from(v).ok()),
+                death["x"].as_f64().map(|v| v as f32),
+                death["y"].as_f64().map(|v| v as f32),
+                death["rotation"].as_f64().map(|v| v as f32),
+                death["radius"].as_f64().map(|v| v as f32),
+                cue["tick"].as_u64(),
+            ) else { continue };
+            let color = death["color_rgb"].as_array()
+                .filter(|rgb| rgb.len() == 3)
+                .and_then(|rgb| Some([
+                    u8::try_from(rgb[0].as_u64()?).ok()?,
+                    u8::try_from(rgb[1].as_u64()?).ok()?,
+                    u8::try_from(rgb[2].as_u64()?).ok()?,
+                ]));
+            let (admitted, _) = self.raster.record_ship_death(
+                id, born_tick, kind, side, Vec2::new(x, y),
+                rotation, radius, color,
+            );
+            stats.ship_deaths_received += u64::from(admitted);
+        }
+        let (remains, flashes) =
+            self.raster.draw_ship_death_visuals(tick, dt);
+        stats.ship_remains_draws += remains as u64;
+        stats.ship_explosion_visual_draws += flashes as u64;
         let (candidates, opaque, blended) = self.raster.remote_raster_counts();
         stats.sprite_candidate_pixels += candidates;
         stats.sprite_opaque_pixels += opaque;
