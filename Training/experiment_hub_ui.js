@@ -5364,9 +5364,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 for(const rule of requiredSuites) {
                     const receipt=known.get(rule.suite_id);
                     const line=document.createElement('p');
+                    const pinned=rule.suite_sha256||
+                        j.evaluation_suite_definitions?.[rule.suite_id]||null;
+                    const observed=fromArchive.filter(row=>
+                        row.suite_id===rule.suite_id);
+                    const mismatched=observed.filter(row=>
+                        pinned&&row.suite_sha256!==pinned);
+                    const comparable=observed.filter(row=>
+                        !pinned||row.suite_sha256===pinned);
+                    const runtimes=new Set(comparable.map(row=>
+                        row.runtime_sha256||'unverified'));
                     if(!receipt) {
                         line.textContent=rule.suite_id+
-                            ': no accepted evaluation receipt yet'+
+                            ': no accepted evaluation receipt for the configured suite'+
                             (currentValid?' (trainer update '+currentUpdate.toLocaleString()+')':'')+
                             '. '+
                             (monitoring&&j.evaluation_monitor.include_baseline===false
@@ -5405,8 +5415,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             eligible+
                             ' · checkpoint '+(receipt.checkpoint_sha256||'unreported')+
                             ' · suite SHA-256 '+(receipt.suite_sha256||'unreported')+
+                            ' · runtime SHA-256 '+(receipt.runtime_sha256||'unverified')+
                             (receipt.evaluated_at?' · evaluated '+receipt.evaluated_at:'');
                     }
+                    if(mismatched.length)
+                        line.textContent+=' WARNING: '+mismatched.length+
+                            ' sampled archived receipt(s) use a different suite SHA-256 than the configured pin '+
+                            pinned+'. Do not compare those outcomes.';
+                    if(runtimes.size>1)
+                        line.textContent+=' WARNING: sampled receipts use '+
+                            runtimes.size+' evaluator runtime identities; compare only within one runtime.';
                     details.append(line);
                 }
                 if(j.live_execution?.evaluation_issue) {
