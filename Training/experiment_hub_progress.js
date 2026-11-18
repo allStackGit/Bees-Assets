@@ -187,6 +187,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_remote_encode_max_seconds',
             'training_remote_decode_max_seconds',
             'training_remote_artifact_max_seconds',
+            'training_remote_progress_seen',
+            'training_remote_progress_sent',
+            'training_remote_progress_skipped',
+            'training_remote_progress_bytes',
+            'training_remote_progress_max_seconds',
             'training_remote_critical_gap_ratio',
             'training_remote_prev_encode_max_seconds',
             'training_remote_prev_send_max_seconds',
@@ -221,6 +226,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
             'training_remote_gap_pressure','training_remote_codec_pressure',
+            'training_remote_progress_pressure',
             'training_gpu_guard_wait_pressure',
             'training_gpu_policy_copy_pressure',
             'training_gpu_policy_reuse_fraction',
@@ -709,6 +715,21 @@ class BottleneckEvidence {
             ].some(([stage,field])=>
                 metrics['training_remote_'+stage+'_owner']?.value===critical&&
                 seconds(field)!==null&&seconds(field)/remoteWall>=0.25);
+            // Progress is observational, but each forwarded frame blocks
+            // the remote service on TCP send. Attribute a measured stall
+            // only when that service finishes the entire round last.
+            // Socket blocking may be OS backpressure, not link saturation.
+            const progressSend=seconds('training_remote_progress_max_seconds');
+            const progressOwner=metrics.training_remote_progress_owner?.value;
+            const progressShare=(remoteImportant&&progressSend!==null&&
+                progressOwner===critical&&progressSend<=remoteWall)
+                ?progressSend/remoteWall:null;
+            if(progressShare!==null)
+                add('training_remote_progress_work_share',progressShare);
+            const progressHint=progressShare!==null&&progressShare>=0.20&&
+                progressSend>=0.25&&
+                metrics.training_last_reply_worker?.value===critical&&
+                (queueShare===null||queueShare<=0.10);
             // Only the actual slowest PPO lineage can identify whether
             // measured host blocking at the fused KL/finite GPU decision
             // contributes to the experiment's critical path. This wait
@@ -863,6 +884,7 @@ class BottleneckEvidence {
                         (queueShare===null||queueShare<=0.10),
                     courierRemoteGap:remoteGapHint,
                     courierRemoteCodec:remoteCodecHint,
+                    courierRemoteProgress:progressHint,
                     courierGpuGuard:guardHint,
                     courierGpuSnapshot:snapshotHint,
                     courierGpuCopy:gpuCopyHint});
@@ -889,6 +911,8 @@ class BottleneckEvidence {
                     add('training_remote_gap_pressure',1,'count');
                 if(sustained(x=>x.courierRemoteCodec))
                     add('training_remote_codec_pressure',1,'count');
+                if(sustained(x=>x.courierRemoteProgress))
+                    add('training_remote_progress_pressure',1,'count');
                 if(sustained(x=>x.courierGpuGuard))
                     add('training_gpu_guard_wait_pressure',1,'count');
                 if(sustained(x=>x.courierGpuSnapshot))
