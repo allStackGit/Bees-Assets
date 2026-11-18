@@ -1650,18 +1650,26 @@ impl NativeLevelBatchDriver {
                         },
                     ));
                     // Newly admitted Queen or deferred reinforcement
-                    // policies need their *real* groupmate observations
-                    // before they have ever requested a neural decision.
-                    // Inspect only this tick's notification suffix.
-                    let joined = world.state.events.pending_notifications().iter()
+                    // policies need real observations before their first
+                    // inference. A birth-only snapshot records those
+                    // controllers, not the entire large battle cohort.
+                    let mut admitted: Vec<i64> = world.state.events.pending_notifications().iter()
                         .rev().take_while(|event| event.tick == world.tick())
-                        .any(|event| matches!(&event.kind,
-                            NativeLevelNotificationKind::PolicyControllerAdmitted { .. }));
-                    if !retired && !joined {
+                        .filter_map(|event| match &event.kind {
+                            NativeLevelNotificationKind::PolicyControllerAdmitted {
+                                ship_id, ..
+                            } => Some(*ship_id),
+                            _ => None,
+                        }).collect();
+                    if !retired && admitted.is_empty() {
                         continue;
                     }
-                    let rows = self.policy_boundary_observations(index, world)
-                        .map_err(|error| NativeLevelWindowError::RetirementObservation { round, error })?;
+                    let rows = if retired {
+                        self.policy_boundary_observations(index, world)
+                    } else {
+                        admitted.sort_unstable();
+                        self.policy_admission_observations(index, world, &admitted)
+                    }.map_err(|error| NativeLevelWindowError::RetirementObservation { round, error })?;
                     sink.accept_policy_boundary(world.id, world.episode_revision(), world.tick(), &rows)
                         .map_err(|error| NativeLevelWindowError::PolicyDelivery { round, error })?;
                 }
