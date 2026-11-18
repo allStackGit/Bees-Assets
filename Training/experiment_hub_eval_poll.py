@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import hashlib
 import http.client
 import json
+import math
 import os
 import re
 import shutil
@@ -168,6 +169,35 @@ def final_checkpoint(artifact_root, job, filename):
     return 10**16, file  # Greater than any supported running checkpoint ordinal.
 
 
+def evaluation_outcome(result, trials: int) -> tuple[int, dict]:
+    """Normalize legacy integer results and optional domain measurements."""
+    if type(result) is int:
+        successes, metrics = result, {}
+    elif isinstance(result, dict) and set(result) == {"successes", "metrics"}:
+        successes, metrics = result["successes"], result["metrics"]
+    else:
+        raise ValueError("Evaluation must return successes or successes plus measurements.")
+    if type(successes) is not int or not 0 <= successes <= trials:
+        raise ValueError("Invalid independent evaluation success count.")
+    if not isinstance(metrics, dict) or len(metrics) > 24:
+        raise ValueError("Invalid independent evaluation measurements.")
+    normalized = {}
+    for key, sample in metrics.items():
+        if (not isinstance(key, str) or
+            not re.fullmatch(r"[a-z][a-z0-9_]{0,47}", key) or
+            not isinstance(sample, dict) or set(sample) != {"value", "unit"} or
+            sample["unit"] not in ("count", "ratio", "scalar", "seconds") or
+            type(sample["value"]) not in (int, float) or
+            not math.isfinite(sample["value"]) or
+            abs(sample["value"]) > 1e12 or
+            (sample["unit"] == "ratio" and not 0 <= sample["value"] <= 1) or
+            (sample["unit"] == "count" and
+             (type(sample["value"]) is not int or not 0 <= sample["value"] < 2**53))):
+            raise ValueError("Invalid independent evaluation measurement.")
+        normalized[key] = {"value": sample["value"], "unit": sample["unit"]}
+    return successes, normalized
+
+
 def receipt_provenance(job: dict, ordinal: int, suite: dict) -> dict:
     """Record the tested checkpoint's training coordinate when available."""
     step = (job.get("final_steps_completed")
@@ -320,9 +350,8 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                         checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
                     if job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest:
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
-                    successes = evaluate_checkpoint(job, frozen, checkpoint_digest, work)
-                if type(successes) is not int or not 0 <= successes <= receipt_suite["trials"]:
-                    raise ValueError("Invalid evaluation success count.")
+                    result = evaluate_checkpoint(job, frozen, checkpoint_digest, work)
+                successes, measurements = evaluation_outcome(result, receipt_suite["trials"])
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
                 # Keep this checkpoint eligible, but rotate a failing dispatch
                 # behind other workers so it cannot starve their evaluations.
@@ -334,6 +363,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             pending = {"target": job, "receipt": {
                 "schema_version": 1, "suite_id": suite_id, "suite_sha256": digest, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
+                **({"metrics": measurements} if measurements else {}),
                 **receipt_provenance(job, update, suite),
             }}
             save_cursor(state, {**saved, "pending_receipt": pending})
@@ -514,11 +544,9 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                         with tempfile.TemporaryDirectory(
                             prefix=f"{sid}-", dir=temp
                         ) as work:
-                            successes = evaluate_checkpoint(
+                            result = evaluate_checkpoint(
                                 job, frozen, checkpoint_digest, Path(work), suite)
-                        if (type(successes) is not int or
-                            not 0 <= successes <= receipt_suite["trials"]):
-                            raise ValueError("Invalid batch evaluation success count.")
+                        successes, measurements = evaluation_outcome(result, receipt_suite["trials"])
                         pending.append({"target": job, "receipt": {
                             "schema_version": 1, "suite_id": sid,
                             "suite_sha256": definitions[sid],
@@ -526,6 +554,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                             "checkpoint_sha256": checkpoint_digest,
                             "trials": receipt_suite["trials"],
                             "successes": successes,
+                            **({"metrics": measurements} if measurements else {}),
                             **receipt_provenance(job, update, suite),
                         }})
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
