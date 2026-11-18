@@ -4665,7 +4665,69 @@ document.addEventListener('DOMContentLoaded', () => {
                                     !advertised.includes(rule.suite_id))
                                     .map(rule=>rule.suite_id).join(', ')+')'
                             :' · Evaluator: suite reader advertised; timer/service health not yet reported';
-            cell(tr,learningSummary(j)+evaluation+availability);
+            const learningCell=cell(tr,learningSummary(j)+evaluation+availability);
+            if(policy) {
+                const details=document.createElement('details');
+                const summary=document.createElement('summary');
+                summary.textContent='Evaluation receipts and next eligibility';
+                details.append(summary);
+                const fromArchive=comparisonProject===project
+                    ?comparisonData?.evaluations?.find(sample=>sample.job_id===j.id)
+                        ?.points||[]:[];
+                // The full append-only archive backs Compare. Before it is
+                // loaded, the bounded registry cohort still supplies a
+                // useful last receipt without claiming complete history.
+                const fromCandidates=(j.evaluation_candidates||[]).slice().reverse()
+                    .flatMap(item=>Object.values(item.receipts||{}));
+                const known=new Map();
+                for(const receipt of (fromArchive.length?fromArchive:fromCandidates))
+                    if(receipt?.suite_id)known.set(receipt.suite_id,receipt);
+                if(j.last_evaluation&&!known.has(j.last_evaluation.suite_id))
+                    known.set(j.last_evaluation.suite_id,j.last_evaluation);
+                const description=document.createElement('p');
+                description.textContent='Evaluator machine: '+
+                    (machine?.name||j.assigned_machine_id||'unassigned')+
+                    ' · '+(monitoring?'Periodic monitoring':'Stop-gated evaluation')+
+                    (monitoring&&j.evaluation_stop?' with optional success Stop':'')+
+                    (monitoring&&j.evaluation_monitor.include_final===false
+                        ?' · final checkpoint evaluation disabled':'');
+                details.append(description);
+                for(const rule of requiredSuites) {
+                    const receipt=known.get(rule.suite_id);
+                    const line=document.createElement('p');
+                    if(!receipt) {
+                        line.textContent=rule.suite_id+
+                            ': no accepted evaluation receipt yet. '+
+                            (monitoring&&j.evaluation_monitor.include_baseline===false
+                                ?'First available checkpoint establishes the schedule cursor.'
+                                :'Awaiting a checkpoint and compatible evaluator.');
+                    }else {
+                        const update=receipt.steps_completed;
+                        const cadence=j.evaluation_monitor?.every_n_checkpoints||1;
+                        const eligible=monitoring
+                            ?Number.isSafeInteger(update)
+                                ?' · next checkpoint eligible at update ≥ '+
+                                    (update+cadence).toLocaleString()
+                                :' · next after '+cadence+' newer checkpoint update(s)'
+                            :'';
+                        line.textContent=rule.suite_id+': last completed '+
+                            receipt.successes+'/'+receipt.trials+
+                            ' ('+(100*receipt.successes/receipt.trials).toFixed(1)+'%)'+
+                            (Number.isSafeInteger(update)?' · update '+update.toLocaleString():'')+
+                            eligible+
+                            ' · checkpoint '+(receipt.checkpoint_sha256||'unreported')+
+                            ' · suite SHA-256 '+(receipt.suite_sha256||'unreported')+
+                            (receipt.evaluated_at?' · evaluated '+receipt.evaluated_at:'');
+                    }
+                    details.append(line);
+                }
+                if(j.live_execution?.evaluation_issue) {
+                    const issue=document.createElement('p');
+                    issue.textContent='Evaluator issue: '+j.live_execution.evaluation_issue;
+                    details.append(issue);
+                }
+                learningCell.append(details);
+            }
             const actions=cell(tr,'');
             actions.append(button('Rename run',async()=>{
                 const entered=prompt('Run name (optional; blank restores the configuration name):',
