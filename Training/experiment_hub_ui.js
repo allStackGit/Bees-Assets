@@ -3561,6 +3561,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const monitor=$('hub-evaluation-mode').value==='monitor';
         $('hub-evaluation-rate-label').hidden=monitor;
         $('hub-evaluation-rate').disabled=monitor;
+        $('hub-evaluation-frequency-label').hidden=!monitor;
+        $('hub-evaluation-frequency').disabled=!monitor;
     }
     function setEvaluationEditor(policy=null,monitor=policy==null) {
         const multi=policy?.all_of||null;
@@ -3569,6 +3571,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-digest').value=multi?'':policy?.suite_sha256??'';
         $('hub-evaluation-trials').value=multi?'':policy?.min_trials??'';
         $('hub-evaluation-rate').value=multi?'':policy?.min_success_rate??'';
+        $('hub-evaluation-frequency').value=String(policy?.every_n_checkpoints??10);
         $('hub-evaluation-all-of').value=multi?JSON.stringify(multi,null,2):'';
         refreshEvaluationEditor();
     }
@@ -3579,6 +3582,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const digest=$('hub-evaluation-digest').value.trim();
         const trials=$('hub-evaluation-trials').value;
         const rate=monitor?'':$('hub-evaluation-rate').value;
+        const cadence=monitor?Number($('hub-evaluation-frequency').value):null;
+        if(monitor&&(!Number.isSafeInteger(cadence)||cadence<1||cadence>1000000))
+            throw Error('Evaluation update interval must be an integer from 1 to 1,000,000.');
         const allOf=$('hub-evaluation-all-of').value.trim();
         let policy=null;
         if(allOf) {
@@ -3595,6 +3601,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...(digest?{suite_sha256:digest}:{}),
                 ...(!monitor?{min_success_rate:Number(rate)}:{})};
         }
+        if(monitor&&policy)policy.every_n_checkpoints=cadence;
         return {evaluation_monitor:monitor?policy:null,
             evaluation_stop:monitor?null:policy};
     }
