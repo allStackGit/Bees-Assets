@@ -21,6 +21,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_total_useful_steps','training_rejected_workers',
     'training_ingestion_shards',
     'training_shared_last_reply_worker','training_shared_last_copy_worker',
+    'training_shared_gpu_collectors','training_shared_gpu_policy_retained',
+    'training_shared_gpu_policy_reused',
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version','training_sim_early_dispatches',
     'training_sim_prestaged_actions','training_sim_queue_peak_shards',
@@ -121,7 +123,7 @@ function courierMetrics(source) {
         /^training_gpu_rollout_input_(?:packs|seconds|owner)$/.test(name)||
         /^training_remote_progress_(?:seen|sent|skipped|bytes|max_seconds|encode_seconds|owner)$/.test(name)||
         /^training_ingestion_(?:logical_bytes|shards|final_shard_seconds|exposed_seconds|max_seconds)$/.test(name)||
-        /^training_shared_(?:last_reply_worker|last_copy_worker|reply_gap_seconds)$/.test(name)||
+        /^training_shared_(?:last_reply_worker|last_copy_worker|reply_gap_seconds|gpu_collectors|gpu_policy_retained|gpu_policy_reused|gpu_snapshot_bytes|gpu_snapshot_seconds)$/.test(name)||
         /^training_(?:local_gpu_rollout_lineages|gpu_rollout_(?:next_lineages|trial))$/.test(name)||
         /^training_gpu_snapshot_(?:max_seconds|stream_max_seconds|reused_lineages|owner|work_share)$/.test(name);
     const entries=Object.entries(stats).sort(
