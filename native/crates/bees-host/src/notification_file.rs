@@ -419,6 +419,7 @@ impl DurableDiagnosticNotifications {
             NativeLevelNotificationKind::AbortedCommand { .. } => "aborted_command",
             NativeLevelNotificationKind::Reward(_) => "reward",
             NativeLevelNotificationKind::GroupReward(_) => "group_reward",
+            NativeLevelNotificationKind::PolicyControllerAdmitted { .. } => "policy_controller_admitted",
             NativeLevelNotificationKind::PolicyControllerRetired { .. } => "policy_controller_retired",
             NativeLevelNotificationKind::EpisodeFinal(_) => "episode_final",
             NativeLevelNotificationKind::EpisodeAborted => "episode_aborted",
@@ -456,6 +457,12 @@ impl DurableDiagnosticNotifications {
                 ship_id, side, preserved_tsv,
             }) => Some(json!({"event": "ship_extracted", "ship_id": ship_id,
                 "side": side, "preserved_tsv": preserved_tsv})),
+            NativeLevelNotificationKind::PolicyControllerAdmitted {
+                ship_id, binding_revision, side, group_agent,
+            } => Some(json!({
+                "ship_id": ship_id, "binding_revision": binding_revision,
+                "side": side, "group_agent": group_agent,
+            })),
             NativeLevelNotificationKind::PolicyControllerRetired { ship_id, binding_revision } =>
                 Some(json!({"ship_id": ship_id, "binding_revision": binding_revision})),
             NativeLevelNotificationKind::TargetingSelected { owner, choice } => Some(json!({
@@ -602,7 +609,8 @@ impl DurableDiagnosticNotifications {
                 NativeLevelNotificationKind::UnattributedDamage { .. } |
                 NativeLevelNotificationKind::FinishedCommand(_) |
                 NativeLevelNotificationKind::AbortedCommand { .. } |
-                NativeLevelNotificationKind::CommandOutcomesReady(_) => None,
+                NativeLevelNotificationKind::CommandOutcomesReady(_) |
+                NativeLevelNotificationKind::PolicyControllerAdmitted { .. } => None,
                 _ => Some(format!("{:?}", notification.kind)),
             },
         });
