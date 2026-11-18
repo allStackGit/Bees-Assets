@@ -392,6 +392,32 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                         len({tick % terminals[key]["evaluation_context"]["decision_period"]
                              for tick in ticks}),
                     )
+                    stats["dynamic_policy_decision_rows"] = (
+                        stats.get("dynamic_policy_decision_rows", 0) +
+                        sum(agent in enrolled for frame in ticks.values() for agent in frame)
+                    )
+                    learner_agents = rollout[6]
+                    stats["dynamic_policy_learner_decision_rows"] = (
+                        stats.get("dynamic_policy_learner_decision_rows", 0) +
+                        sum(agent in learner_agents and agent in enrolled
+                            for frame in ticks.values() for agent in frame)
+                    )
+                    # Physical participation is [binding, retirement);
+                    # count simultaneous controllers, not total historical
+                    # wave births or reserved future reinforcement IDs.
+                    intervals = sorted(
+                        [(start, 1) for agent, start in rollout[7].items()
+                         if rollout[3][agent] > start] +
+                        [(end, -1) for agent, end in rollout[3].items()
+                         if end > rollout[7][agent]]
+                    )
+                    living = peak = 0
+                    for _, delta in intervals:
+                        living += delta
+                        peak = max(peak, living)
+                    stats["dynamic_policy_peak_live_agents"] = max(
+                        stats.get("dynamic_policy_peak_live_agents", 0), peak,
+                    )
                 accumulate_training_outcome(
                     stats, terminals[key], rollout[5], learner_slots,
                     combat_by_episode.get(key, {}),
@@ -1235,6 +1261,11 @@ def main():
             capture_stats.get("dynamic_policy_admissions_without_decisions", 0),
         "dynamic_policy_decision_phases_max":
             capture_stats.get("dynamic_policy_decision_phases_max", 0),
+        "dynamic_policy_decision_rows": capture_stats.get("dynamic_policy_decision_rows", 0),
+        "dynamic_policy_learner_decision_rows":
+            capture_stats.get("dynamic_policy_learner_decision_rows", 0),
+        "dynamic_policy_peak_live_agents":
+            capture_stats.get("dynamic_policy_peak_live_agents", 0),
         "reward_journal_events": capture_stats.get("reward_journal_events", 0),
         "reward_journal_payload_bytes": capture_stats.get("reward_journal_payload_bytes", 0),
         "training_outcomes": {
