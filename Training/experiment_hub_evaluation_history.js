@@ -16,6 +16,12 @@ const SUITE=/^[a-z][a-z0-9_-]{0,47}$/;
 const HISTORICAL_SUFFIX='.historical.json';
 const MAX_IMPORT_RECORDS=128;
 const MAX_IMPORT_BYTES=65536;
+// Receipt contradictions are already reported by the native lifecycle as
+// non-scoring archive diagnostics. They must remain disqualifying after a
+// Hub restart, not merely until the in-memory warning map is cleared.
+const receiptConflict=issue=>typeof issue==='string'&&
+    (issue.includes('Conflicting independent result for checkpoint ')||
+     issue.startsWith('Conflicting independent evaluation receipt at checkpoint '));
 
 // Read-only regression signals are recomputed from the complete immutable
 // receipt archive. They never enter Stop evidence, candidate cohorts, or
@@ -125,7 +131,7 @@ class EvaluationHistory {
         const file=this.file(jobId);
         const records=[],diagnostics=[],seen=new Map(),issueKeys=new Set(),
             failureAttempts=new Map();
-        let lastEntry=null,stat=null;
+        let lastEntry=null,conflicted=false,stat=null;
         if(fs.existsSync(file)) {
             stat=fs.lstatSync(file);
             if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||
@@ -183,6 +189,7 @@ class EvaluationHistory {
                         throw Error('Invalid independent evaluation diagnostic.');
                     diagnostics.push(row);
                     issueKeys.add(JSON.stringify([row.dispatch_id,row.suite_id,row.issue]));
+                    if(receiptConflict(row.issue))conflicted=true;
                     lastEntry=row;
                     continue;
                 }
@@ -202,7 +209,7 @@ class EvaluationHistory {
             }
         }
         const loaded={project_id:projectId,records,diagnostics,seen,issueKeys,
-            failureAttempts,lastEntry,
+            failureAttempts,conflicted,lastEntry,
             size:stat?.size||0,dev:stat?.dev??null,ino:stat?.ino??null};
         this.loaded.set(jobId,loaded);
         return loaded;
@@ -271,10 +278,15 @@ class EvaluationHistory {
                                 ?Object.fromEntries(Object.entries(v).sort(([a],[b])=>
                                     a.localeCompare(b))):v]))
                         :value);
-                if(fields.some(field=>canonical(previous[field])!==canonical(receipt[field])))
+                if(fields.some(field=>canonical(previous[field])!==canonical(receipt[field]))) {
+                    this.recordIssue(job,
+                        'Conflicting independent evaluation receipt at checkpoint '+
+                        receipt.checkpoint_sha256+'; original evidence retained.',
+                        receipt.suite_id);
                     this.issues.set('conflict:'+id,
                         'Conflicting evaluation receipt for an already archived checkpoint on job '+
                         id+'; original independent evidence retained.');
+                }
                 return false;
             }
             const row={...receipt,schema_version:1,evaluation_status:'complete',
@@ -315,6 +327,7 @@ class EvaluationHistory {
             this.appendRow(id,data,row);
             data.issueKeys.add(issueKey);
             data.diagnostics.push(row);
+            if(receiptConflict(issue))data.conflicted=true;
             this.issues.delete('diagnostic:'+id);
             return true;
         }catch(error) {
@@ -365,6 +378,15 @@ class EvaluationHistory {
                 String(error.message||error).slice(0,160));
             return false;
         }
+    }
+    hasReceiptConflict(job) {
+        const id=job?.id;
+        if(!UUID.test(String(id))||!PROJECT.test(String(job?.project_id)))
+            throw Error('Invalid independent evaluation candidate identity.');
+        // A malformed or unavailable archive fails closed rather than
+        // reviving promotion authority from the bounded candidate cache.
+        return this.issues.has('conflict:'+id)||
+            this.load(id,job.project_id).conflicted===true;
     }
     // Offline checkpoint audits are kept in the existing independent
     // evaluation archive, but never added to the native job registry.
@@ -602,7 +624,7 @@ class EvaluationHistory {
             !Number.isSafeInteger(receipt.steps_completed))
             return null;
         try {
-            if(this.issues.has('conflict:'+job.id))return null;
+            if(this.hasReceiptConflict(job))return null;
             const data=this.load(job.id,job.project_id);
             const records=data.records;
             const cacheKey=receipt.checkpoint_sha256+':'+records.length;
