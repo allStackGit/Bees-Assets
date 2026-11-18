@@ -1090,6 +1090,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
        bees campaign <catalog.json> --output-dir <battle-runs> --all
+       bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id> --serve
        bees build <catalog.json> --output-dir <battle-runs> --side <n> --ship-type <n> --squad <saved-id>
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
@@ -1443,9 +1444,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
         if selector != "--mission" { return Err(invalid(USAGE).into()); }
         let mission_id = args.next().ok_or_else(|| invalid(USAGE))?;
+        let serve = match args.next() {
+            None => false,
+            Some(flag) if flag == "--serve" => true,
+            _ => return Err(invalid(USAGE).into()),
+        };
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_campaign_mission(&catalog_path, &output,
-            &mission_id.to_string_lossy());
+            &mission_id.to_string_lossy(), serve);
     }
     if first == "connect" {
         #[cfg(feature = "client")]
@@ -1636,7 +1642,7 @@ fn launch_catalog_battle(
             Err(error) => return Err(error.into()),
         }
     };
-    if interactive {
+    if interactive || env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
         if let Some(mission) = mission {
             let setup = CampaignReplaySetup::capture(&config, mission)?;
             let path = output.parent().expect("created campaign battle directory")
@@ -2204,7 +2210,7 @@ fn print_campaign_batch_progress(
 }
 
 fn run_campaign_mission(
-    catalog_path: &Path, output_root: &Path, mission_id: &str,
+    catalog_path: &Path, output_root: &Path, mission_id: &str, serve: bool,
 ) -> Result<(), Box<dyn Error>> {
     let catalog_path = catalog_path.canonicalize()?;
     let catalog: battle_catalog::BattleCatalog =
@@ -2223,6 +2229,26 @@ fn run_campaign_mission(
         .all(|id| progress.completed(id))
     {
         return Err(invalid("campaign mission is still locked").into());
+    }
+    if serve {
+        if env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_none() {
+            return Err(invalid(
+                "campaign --serve requires BEES_NATIVE_REMOTE_LISTEN and authentication tokens",
+            ).into());
+        }
+        // The same campaign ledger and CombatWorld as graphical play.
+        // Refuse non-replayable command clocks or scene changes before
+        // reserving a new campaign battle output.
+        let run_path = resolve(root, entry.config_for(&progress));
+        let config: RunConfig = serde_json::from_slice(&fs::read(run_path)?)?;
+        if config.levels.len() != 1 || config.episodes_per_world != 1 ||
+            config.hivemind.is_some() || !config.model_updates.is_empty() ||
+            config.navigation_workers.is_some()
+        {
+            return Err(invalid(
+                "campaign --serve requires one offline Level/episode without HiveMind, model updates, or background navigation",
+            ).into());
+        }
     }
     let mut number = 0_u64;
     launch_catalog_battle(&catalog, entry, root,
@@ -3686,8 +3712,8 @@ fn run_battle(
     // scheduling. Never claim a deterministic replayable player-input
     // trace for a run where asynchronous navigation can change route
     // installation ticks.
-    let trace_output = output.filter(|_| play && replay_inputs.is_none() &&
-        navigation_workers.is_none() &&
+    let trace_output = output.filter(|_| (play || remote_step_interval.is_some()) &&
+        replay_inputs.is_none() && navigation_workers.is_none() &&
         config.hivemind.is_none() && config.model_updates.is_empty());
 
     let mut model = RolloutModel::default();
