@@ -4751,6 +4751,18 @@ fn run_battle(
         "vision_completed_step_totals": status.simulation.vision,
         "navigation_current_episodes": status.navigation_workers,
         "navigation_raster_work_current_episodes": status.navigation_rasters,
+        "scripted_command_work_current_episodes": status.scripted_queues,
+        "scripted_command_plan": {
+            "worlds_with_orders": config.levels.iter()
+                .filter(|level| !level.scripted_queues.is_empty()).count(),
+            "configured_queues": config.levels.iter()
+                .map(|level| level.scripted_queues.len()).sum::<usize>(),
+            "configured_orders": config.levels.iter()
+                .flat_map(|level| level.scripted_queues.iter())
+                .map(|queue| queue.orders.len()).sum::<usize>(),
+            "min_queues_per_world": config.levels.iter()
+                .map(|level| level.scripted_queues.len()).min().unwrap_or(0),
+        },
         "beehive_healing_cascade_kills_current_episodes":
             status.game_healing_cascade_kills,
         "beehive_healing_reserved_ships": status.game_healing_reserved_ships,
