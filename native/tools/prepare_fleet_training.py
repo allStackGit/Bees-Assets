@@ -75,7 +75,23 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     squad_by_id = {squad["item_id"]: squad for squad in squads}
     if len(ship_by_id) != len(ships) or len(squad_by_id) != len(squads):
         raise ValueError("duplicate source ship or squad identity")
-    max_source_ship = max(ship_by_id)
+    # NativeLevelLayout clones can reference ONLY original squads/ships,
+    # never another clone created earlier in the same request.
+    source_ships = dict(ship_by_id)
+    source_squads = dict(squad_by_id)
+    scene_layout = scene.setdefault("layout", {})
+    if not isinstance(scene_layout, dict):
+        raise ValueError("native scene layout must be an object")
+    if any(scene_layout.get(key) for key in
+           ("clone_squads", "translate_squads", "remove_squads", "remove_static_ids")):
+        raise ValueError("source scene already changes its native squad roster or removes terrain")
+    source_entities = [
+        *ships, *scene.get("mining_asteroids", []),
+        *scene.get("map_objects", []),
+        *scene_layout.get("add_static_boxes", []),
+        *scene_layout.get("add_static_polygons", []),
+    ]
+    max_source_entity = max(entity["entity_id"] for entity in source_entities)
     max_source_squad = max(squad_by_id)
     bounds = scene["bounds"]
     clones = layout.get("clone_squads", [])
@@ -92,7 +108,7 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
                 len(by) != 2 or not all(type(v) in (int, float) and math.isfinite(v)
                                         for v in by)):
             raise ValueError("invalid cloned squad identity or offset")
-        source_squad = squad_by_id.get(source_id)
+        source_squad = source_squads.get(source_id)
         if source_squad is None or len(source_squad["members"]) != len(new_ids):
             raise ValueError("cloned squad has no exact physical source membership")
         new_squad = copy.deepcopy(source_squad)
@@ -102,8 +118,8 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         new_squad.pop("hotkey_number", None)
         new_squad.pop("original_squad_count", None)
         for original_id, new_id in zip(source_squad["members"], new_ids):
-            source_ship = ship_by_id.get(original_id)
-            if (type(new_id) is not int or new_id <= max_source_ship or
+            source_ship = source_ships.get(original_id)
+            if (type(new_id) is not int or new_id <= max_source_entity or
                     new_id in ship_by_id or
                     source_ship is None or
                     any(source_ship.get(key) is not None for key in
@@ -128,9 +144,6 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         squads.append(new_squad)
         squad_by_id[new_squad_id] = new_squad
 
-    scene_layout = scene.setdefault("layout", {})
-    if not isinstance(scene_layout, dict):
-        raise ValueError("native scene layout must be an object")
     removed = layout.get("remove_static_ids", [])
     added = layout.get("add_static_boxes", [])
     if not isinstance(removed, list) or not isinstance(added, list):
