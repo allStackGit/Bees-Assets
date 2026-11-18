@@ -8,7 +8,7 @@ central multi-round MA-POCA session, without sharing absolute file paths.
 import argparse
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 import uuid
@@ -17,8 +17,35 @@ from native_training_artifacts import (
     check_learner, file_sha256, native_source_contract_sha256,
 )
 from native_distributed_collection import verify_bundle
-from transfer_policy_bundle import export_bundle_archive
+from transfer_policy_bundle import export_bundle_archive, artifact_paths, checked_order
 from native_bundle_receiver import upload_bundle_archive
+
+
+
+def reusable_collection(receipt_path, job, orders):
+    """Accept completed local work only with its original pinned capture files.
+
+    A previous transport failure must never turn a partial simulation or a
+    different collector's outputs into a successful learner input.
+    """
+    receipt_path = Path(receipt_path)
+    root = receipt_path.parent
+    if (root.is_symlink() or not root.is_dir() or
+            receipt_path.is_symlink() or not receipt_path.is_file()):
+        return None
+    try:
+        receipt = verify_bundle(receipt_path, job, orders)
+        captures = artifact_paths(json.loads(receipt_path.read_text(encoding="utf-8")))
+        canonical = root.resolve(strict=True)
+        for name, digest in captures.items():
+            file = root.joinpath(*PurePosixPath(name).parts)
+            if (file.is_symlink() or not file.is_file() or
+                    not file.resolve(strict=True).is_relative_to(canonical) or
+                    file_sha256(file) != digest):
+                return None
+        return receipt
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def main():
@@ -50,15 +77,7 @@ def main():
         parser.error("supply a bundle inbox, --archive-output or --upload-url")
 
     orders_path = args.orders.resolve(strict=True)
-    orders = json.loads(orders_path.read_text(encoding="utf-8"))
-    if (orders.get("kind") != "native_distributed_collection_orders" or
-            orders.get("schema_version") != 1 or
-            not isinstance(orders.get("jobs"), list)):
-        parser.error("expected a native distributed collection work order")
-    matches = [job for job in orders["jobs"] if job.get("id") == args.collector_id]
-    if len(matches) != 1:
-        parser.error("collector id is not uniquely allocated in the work order")
-    job = matches[0]
+    orders, job = checked_order(orders_path, args.collector_id)
     if "source_run_contract_sha256" in orders:
         version = orders.get("source_run_contract_version", 1)
         if version not in (1, 2):
@@ -91,46 +110,86 @@ def main():
     if not scratch.is_dir() or (inbox is not None and not inbox.is_dir()):
         parser.error("scratch directory and optional bundle inbox must already exist")
 
-    # Retain every interrupted local attempt for diagnosis. Only a
-    # successfully collected, atomically delivered receipt is consumed
-    # by the learner; retries never overwrite a committed bundle.
-    parent = scratch / f"native-collector-{job['collection_id'][:12]}-{uuid.uuid4().hex}"
-    parent.mkdir()
-    output = parent / job["bundle_directory"]
+    # Retries of the *same immutable order* reuse finished experience. Failed
+    # simulations are left untouched; only a complete receipt whose captured
+    # bytes still match every digest can bypass the expensive rollout.
     delivered_name = args.hub_artifact_job_id or job["bundle_directory"]
-    command = [
-        sys.executable, str(Path(__file__).with_name("train_policy_round.py")),
-        str(args.run_config.resolve()), str(args.checkpoint.resolve()),
-        str(trainer), str(output),
-        "--model-manifest", str(args.model_manifest.resolve()),
-        "--rollout-binary", str(binary),
-        *([] if inbox is None else ["--bundle-inbox", str(inbox)]),
-        *job["collector_options"],
-        *([] if args.hub_artifact_job_id is None else [
-            "--bundle-delivery-name", delivered_name,
-        ]),
-    ]
-    if orders["learner_slot"] is not None:
-        command.extend(["--learner-slot", str(orders["learner_slot"])])
-    if args.stage_diagnostics:
-        command.append("--stage-diagnostics")
-    print(json.dumps({
-        "kind": "native_distributed_collector_started",
-        "collector": job["id"], "round": orders["round"],
-        "output": str(output), "worlds": job["world_count"],
-        "rollout_workers": job["rollout_workers"],
-    }), flush=True)
-    subprocess.run(command, check=True)
-    receipt_path = (
-        output / "rollout-bundle.json" if inbox is None
-        else inbox / delivered_name / "rollout-bundle.json"
-    )
-    receipt = verify_bundle(receipt_path, job, orders)
+    recovered = None
+    previous_parent = None
+    if inbox is not None:
+        candidate = inbox / delivered_name / "rollout-bundle.json"
+        if reusable_collection(candidate, job, orders) is not None:
+            recovered = candidate
+    else:
+        prefix = f"native-collector-{job['collection_id'][:12]}-"
+        for previous in sorted(scratch.glob(prefix + "*"), reverse=True):
+            if previous.is_symlink() or not previous.is_dir():
+                continue
+            candidate = previous / job["bundle_directory"] / "rollout-bundle.json"
+            if reusable_collection(candidate, job, orders) is not None:
+                recovered = candidate
+                previous_parent = previous
+                break
+
+    parent = (previous_parent if previous_parent is not None else
+              scratch / f"native-collector-{job['collection_id'][:12]}-{uuid.uuid4().hex}")
+    output = parent / job["bundle_directory"]
+    if recovered is None:
+        parent.mkdir()
+        command = [
+            sys.executable, str(Path(__file__).with_name("train_policy_round.py")),
+            str(args.run_config.resolve()), str(args.checkpoint.resolve()),
+            str(trainer), str(output),
+            "--model-manifest", str(args.model_manifest.resolve()),
+            "--rollout-binary", str(binary),
+            *([] if inbox is None else ["--bundle-inbox", str(inbox)]),
+            *job["collector_options"],
+            *([] if args.hub_artifact_job_id is None else [
+                "--bundle-delivery-name", delivered_name,
+            ]),
+        ]
+        if orders["learner_slot"] is not None:
+            command.extend(["--learner-slot", str(orders["learner_slot"])])
+        if args.stage_diagnostics:
+            command.append("--stage-diagnostics")
+        print(json.dumps({
+            "kind": "native_distributed_collector_started",
+            "collector": job["id"], "round": orders["round"],
+            "output": str(output), "worlds": job["world_count"],
+            "rollout_workers": job["rollout_workers"],
+        }), flush=True)
+        subprocess.run(command, check=True)
+        receipt_path = (
+            output / "rollout-bundle.json" if inbox is None
+            else inbox / delivered_name / "rollout-bundle.json"
+        )
+        receipt = verify_bundle(receipt_path, job, orders)
+    else:
+        receipt_path = recovered
+        receipt = verify_bundle(receipt_path, job, orders)
+        print(json.dumps({
+            "kind": "native_distributed_collector_recovered",
+            "collector": job["id"], "round": orders["round"],
+            "bundle": str(receipt_path),
+            "worlds": job["world_count"],
+        }), flush=True)
     if args.archive_output is not None or args.upload_url:
         # Direct upload keeps its own immutable archive in the collector's
         # already unique scratch attempt; no shared filesystem is required.
         archive_path = args.archive_output or (parent / (job["bundle_directory"] + ".tar"))
-        archive = export_bundle_archive(receipt_path, job, orders, archive_path)
+        if (recovered is not None and args.upload_url and
+                archive_path.is_file() and not archive_path.is_symlink()):
+            # This exact archive may have reached the learner before the
+            # connection broke. The receiver still validates its bytes
+            # against the issued work order before acknowledging it.
+            archive = {
+                "archive": str(archive_path),
+                "archive_sha256": file_sha256(archive_path),
+                "archive_bytes": archive_path.stat().st_size,
+                "recovered_archive": True,
+            }
+        else:
+            archive = export_bundle_archive(receipt_path, job, orders, archive_path)
         print(json.dumps({
             "kind": "native_distributed_collector_archive_ready",
             "collector": job["id"], **archive,
