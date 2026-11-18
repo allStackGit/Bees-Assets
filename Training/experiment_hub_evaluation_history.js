@@ -122,7 +122,7 @@ class EvaluationHistory {
         if(existing)return existing;
         this.directoryReady();
         const file=this.file(jobId);
-        const records=[],diagnostics=[],seen=new Map();
+        const records=[],diagnostics=[],seen=new Map(),issueKeys=new Set();
         let lastEntry=null,stat=null;
         if(fs.existsSync(file)) {
             stat=fs.lstatSync(file);
@@ -154,6 +154,7 @@ class EvaluationHistory {
                             .some(key=>Object.hasOwn(row,key)))
                         throw Error('Invalid independent evaluation diagnostic.');
                     diagnostics.push(row);
+                    issueKeys.add(JSON.stringify([row.dispatch_id,row.suite_id,row.issue]));
                     lastEntry=row;
                     continue;
                 }
@@ -172,7 +173,7 @@ class EvaluationHistory {
                 lastEntry=row;
             }
         }
-        const loaded={project_id:projectId,records,diagnostics,seen,lastEntry,
+        const loaded={project_id:projectId,records,diagnostics,seen,issueKeys,lastEntry,
             size:stat?.size||0,dev:stat?.dev??null,ino:stat?.ino??null};
         this.loaded.set(jobId,loaded);
         return loaded;
@@ -274,14 +275,16 @@ class EvaluationHistory {
                 (suiteId!==null&&!SUITE.test(String(suiteId))))
                 throw Error('Invalid independent evaluation diagnostic identity.');
             const data=this.load(id,job.project_id);
-            if(data.lastEntry?.evaluation_status==='unavailable'&&
-                data.lastEntry.dispatch_id===job.dispatch_id&&
-                data.lastEntry.suite_id===suiteId&&
-                data.lastEntry.issue===issue)return false;
+            // Native heartbeat reports have no distinct failed-attempt ID.
+            // Store one durable event per distinct dispatch/suite/reason,
+            // not a fabricated new failure on every heartbeat or after restart.
+            const issueKey=JSON.stringify([job.dispatch_id,suiteId,issue]);
+            if(data.issueKeys.has(issueKey))return false;
             const row={schema_version:1,evaluation_status:'unavailable',
                 job_id:id,project_id:job.project_id,dispatch_id:job.dispatch_id,
                 suite_id:suiteId,issue,observed_at:new Date().toISOString()};
             this.appendRow(id,data,row);
+            data.issueKeys.add(issueKey);
             data.diagnostics.push(row);
             this.issues.delete('diagnostic:'+id);
             return true;
