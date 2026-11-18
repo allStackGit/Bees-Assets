@@ -36,11 +36,23 @@ def latest_numbered_checkpoint(artifact_root, job):
 
 def poll(args, suites):
     def evaluated(job, file, digest, work, suite):
-        wins, observed = evaluate(file, digest, suite, work)
+        counts = {"win": 0, "loss": 0, "draw": 0}
+        def record(result):
+            outcome = result.get("outcome")
+            if outcome not in counts:
+                raise ValueError("Invalid TinyBrains evaluation outcome.")
+            counts[outcome] += 1
+
+        wins, observed = evaluate(file, digest, suite, work, on_result=record)
         trials = 2 * len(suite["maps"]) * len(suite["seeds"])
-        if observed != trials:
-            raise ValueError("Unexpected TinyBrains evaluation trial count.")
-        return wins
+        if observed != trials or counts["win"] != wins or sum(counts.values()) != trials:
+            raise ValueError("Unexpected TinyBrains evaluation trial counts.")
+        return {"successes": wins, "metrics": {
+            "win_count": {"value": counts["win"], "unit": "count"},
+            "loss_count": {"value": counts["loss"], "unit": "count"},
+            "draw_count": {"value": counts["draw"], "unit": "count"},
+            "score_rate": {"value": (wins + counts["draw"] / 2) / trials, "unit": "ratio"},
+        }}
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:
