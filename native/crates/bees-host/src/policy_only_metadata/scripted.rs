@@ -499,6 +499,10 @@ impl NativePolicyOnlyMetadata {
         if self.scripted_queues.is_empty() { return Ok(0); }
         let mut started = 0;
         let mut index = 0;
+        // No physical step occurs while source orders are activated. Cache
+        // real sprite-AABB centers once only if a nearest-enemy command is
+        // due, then reuse them across all squads in this fixed-tick pulse.
+        let mut centers_ready = false;
         while index < self.scripted_queues.len() {
             let owner = self.scripted_queues[index].owner;
             if !self.scripted_queues[index].event_armed {
@@ -587,19 +591,30 @@ impl NativePolicyOnlyMetadata {
                 let own_side = roster.get(owner)
                     .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?
                     .side;
-                let own_center = self.command_center(world, roster, owner)
-                    .map_err(NativeLevelEventError::Commands)?;
+                if !centers_ready {
+                    self.scripted_centers.clear();
+                    for &candidate in roster.source_order() {
+                        let Some(target) = roster.get(candidate) else { continue };
+                        if target.members.is_empty() { continue; }
+                        let center = self.command_center(world, roster, candidate)
+                            .map_err(NativeLevelEventError::Commands)?;
+                        self.scripted_centers.push((candidate, target.side, center));
+                    }
+                    self.scripted_counts.nearest_enemy_centers_sampled +=
+                        self.scripted_centers.len() as u64;
+                    centers_ready = true;
+                }
+                let own_center = self.scripted_centers.iter()
+                    .find(|(candidate, _, _)| *candidate == owner)
+                    .map(|(_, _, center)| *center)
+                    .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
                 let mut nearest: Option<(f32, SquadLifetime)> = None;
                 let mut inspected = 0_u64;
-                for &candidate in roster.source_order() {
-                    if candidate.level_id != owner.level_id { continue; }
-                    let Some(target) = roster.get(candidate) else { continue };
-                    if target.side == own_side || target.members.is_empty() {
-                        continue;
-                    }
+                for &(candidate, enemy_side, enemy_center) in &self.scripted_centers {
+                    if candidate.level_id != owner.level_id ||
+                        enemy_side == own_side
+                    { continue; }
                     inspected += 1;
-                    let enemy_center = self.command_center(world, roster, candidate)
-                        .map_err(NativeLevelEventError::Commands)?;
                     let distance = (enemy_center - own_center).length_squared();
                     if !distance.is_finite() {
                         return Err(NativeLevelEventError::Commands(
