@@ -980,6 +980,19 @@ receipts.
 Before installation, the compiled launcher's `--run-once` command with an evaluator service configuration performs exactly
 one constrained poll without registering a service.
 
+Design can optionally freeze **Required independent evaluator CPU quota**
+and **Required independent evaluator RAM limit** for each monitoring
+experiment. These are separate from its training resources. The installed
+Linux timer should use at least the corresponding `--cpus` and `--ram-mb`
+limits, or the Windows service at least `-Cpus` and `-RamMb`. Newly
+generated Linux evaluator units pass their systemd-enforced quotas to the
+poller; the Windows evaluator inherits its natively verified Job Object
+budgets. If an evaluator cannot prove the requested configured budget, it
+skips that checkpoint with an actionable diagnostic. Existing training
+keeps running; no lease is resized and no old service is restarted. The
+machine capacity planner subtracts observed active evaluator quotas from
+**future** training admission, not from existing native ownership.
+
 The Windows Job Object applies CPU and committed-memory caps to the Node
 controller and its complete evaluator subtree. The controller verifies native
 job membership and limits before invoking the installed project poller.
