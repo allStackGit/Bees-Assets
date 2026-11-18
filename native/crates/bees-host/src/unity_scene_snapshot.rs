@@ -711,6 +711,12 @@ pub struct NativeSquadClone {
     /// One new world entity ID for each source member, in original order.
     pub ship_ids: Vec<i64>,
     pub by: [f32; 2],
+    /// A real, newly authored combat fleet unit (as opposed to a temporary
+    /// clone/minion) contributes its own FleetShip value for damage, career
+    /// and MA-POCA reward attribution. Never inherit a source SavedSquad.
+    /// Legacy layout clones retain their original zero-fleet-value behavior.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub count_as_fleet_value: bool,
 }
 
 /// Source MapData.Location is cosmetic soundtrack metadata. It never
@@ -1888,6 +1894,11 @@ impl NativePhysicalScene {
                 {
                     return Err(invalid("native squad clones require stationary ordinary game ships, not policy, special or carrier children"));
                 }
+                if clone.count_as_fleet_value && !self.fleet.get(source_id)
+                    .is_some_and(|value| value.has_persistent_fleet_value)
+                {
+                    return Err(invalid("valued native fleet clone requires an authentic original FleetShip"));
+                }
                 let position = source.motion.position + delta;
                 if !position.is_finite() ||
                     position.x < self.bounds.min.x || position.x > self.bounds.max.x ||
@@ -1898,7 +1909,8 @@ impl NativePhysicalScene {
                 let mut new_ship = source.clone();
                 new_ship.entity_id = new_id;
                 new_ship.motion.position = position;
-                new_ship.fleet_ship_id = None;
+                new_ship.fleet_ship_id =
+                    clone.count_as_fleet_value.then_some(new_id);
                 // Fresh Ship.Setup clears the source combat/kill history.
                 // The clone has never latched a valid target-bounds entry at
                 // its new map location or recorded a target victim.
@@ -1936,7 +1948,7 @@ impl NativePhysicalScene {
             // of masquerading as an old numbered player squad.
             squad.hotkey_number = None;
             squad.original_squad_count = None;
-            cloned_squads.push((squad, ships));
+            cloned_squads.push((squad, ships, clone.count_as_fleet_value));
         }
 
         // Whole-squad removal is a setup-time operation. Never leave a
@@ -2044,12 +2056,12 @@ impl NativePhysicalScene {
                 self.fleet.omit_initial_ship(id);
             }
         }
-        for (squad, ships) in cloned_squads {
+        for (squad, ships, count_as_fleet_value) in cloned_squads {
             for (ship, perception, vision, formation) in ships {
                 let id = ship.entity_id;
                 self.fleet.register_spawned_ship(NativeFleetShipValue {
                     ship_id: id,
-                    has_persistent_fleet_value: false,
+                    has_persistent_fleet_value: count_as_fleet_value,
                     minerals_mined_this_level: 0,
                 }).expect("native clone IDs and fresh fleet values prevalidated");
                 self.authored_ship_perceptions.insert(id, perception);
