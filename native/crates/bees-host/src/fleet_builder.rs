@@ -405,6 +405,24 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         !summary["failed_window"].is_null() {
         return Err(invalid("native benchmark has no complete valid measurement").into());
     }
+    // The most recent simulator bug duplicated worlds before their AI
+    // queues existed. Refuse to present an apparently high SPS number
+    // for an arena with no intended combat orders.
+    let command_plan = &summary["scripted_command_plan"];
+    let worlds_with_orders = command_plan["worlds_with_orders"].as_u64()
+        .ok_or_else(|| invalid("native benchmark omitted AI World coverage"))?;
+    let queue_count = command_plan["configured_queues"].as_u64()
+        .ok_or_else(|| invalid("native benchmark omitted AI squad commands"))?;
+    let order_count = command_plan["configured_orders"].as_u64()
+        .ok_or_else(|| invalid("native benchmark omitted authored command work"))?;
+    let minimum_queues = command_plan["min_queues_per_world"].as_u64()
+        .ok_or_else(|| invalid("native benchmark omitted per-arena AI coverage"))?;
+    if worlds_with_orders != arenas as u64 || minimum_queues == 0 ||
+        order_count < queue_count {
+        return Err(invalid("native benchmark contains an arena without authentic AI commands").into());
+    }
+    let started_commands = summary["scripted_command_work_current_episodes"]
+        ["commands_started"].as_u64().unwrap_or(0);
     println!("{}", json!({
         "kind": "native_fleet_benchmark_complete",
         "world_steps": steps,
@@ -412,13 +430,19 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         "execution_wall_seconds": wall,
         "arenas": arenas,
         "cpu_physics_workers": workers,
+        "scripted_ai_queues": queue_count,
+        "scripted_ai_orders": order_count,
+        "scripted_worlds": worlds_with_orders,
+        "scripted_commands_started_current_episodes": started_commands,
         "summary": file,
     }));
     let labels = [
         format!("Measured simulation: {sps:.1} world steps/s"),
         format!("Arenas: {arenas}  |  CPU physics workers: {workers}"),
+        format!("AI combat: {queue_count} squads / {order_count} source orders in {worlds_with_orders} arenas"),
+        format!("Current episodes: {started_commands} real scripted commands activated"),
         format!("Completed: {steps} world steps in {wall:.2}s"),
-        "Full timing and physics statistics: rollout-summary.json".to_owned(),
+        "Full timing, physics and scripted-command measurements: rollout-summary.json".to_owned(),
     ];
     let rows = labels.iter().map(|title| BattleMenuRow {
         title, status: "  [Native benchmark]", unlocked: true,
