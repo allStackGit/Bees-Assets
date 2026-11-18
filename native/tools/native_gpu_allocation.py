@@ -80,10 +80,19 @@ def validate_gpu_allocation(
             enabled = True
         elif backend == "onnx":
             providers = model.get("providers", ["CPUExecutionProvider"])
-            if isinstance(providers, list) and any(provider in (
-                "CUDAExecutionProvider", "ROCMExecutionProvider",
-                "MIGraphXExecutionProvider",
-            ) for provider in providers):
+            primary = providers[0] if isinstance(providers, list) and providers else None
+            if primary in ("ROCMExecutionProvider", "MIGraphXExecutionProvider"):
+                if mask == "CUDA_VISIBLE_DEVICES":
+                    raise ValueError(
+                        "ROCm ONNX inference requires --rollout-gpu-mask "
+                        "ROCR_VISIBLE_DEVICES or HIP_VISIBLE_DEVICES"
+                    )
+                enabled = True
+            elif primary == "CUDAExecutionProvider":
+                if mask != "CUDA_VISIBLE_DEVICES":
+                    raise ValueError(
+                        "CUDA ONNX inference requires --rollout-gpu-mask CUDA_VISIBLE_DEVICES"
+                    )
                 enabled = True
     if not enabled:
         raise ValueError(
