@@ -160,6 +160,8 @@ function remaining(machine,reservations) {
         evaluator_reserved_cpus:reservedEvaluatorCpus,
         evaluator_reserved_ram_mb:reservedEvaluatorRam,
         evaluator_budget_unknown:evaluatorUnknown,
+        evaluator_admission_cpu_budget:cpuBudget,
+        evaluator_admission_ram_budget:ramBudget,
         gpus:capacity.filter(g=>!g.exclusive&&g.available_vram_mb>0&&
             g.available_compute_pct>0).map(g=>g.id),
         gpu_capacity:capacity};
