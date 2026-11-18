@@ -2026,6 +2026,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         (machine.evaluator_service_issue
                             ?': '+machine.evaluator_service_issue:'')+
                         '; independent evaluation availability is unverified.');
+                const active=services.filter(item=>
+                    item.scheduler_state==='active'||item.service_state==='running');
+                if(active.length) {
+                    const missing=(job.evaluation_monitor?.all_of||
+                        (job.evaluation_monitor?[job.evaluation_monitor]:
+                         job.evaluation_stop?.all_of||[job.evaluation_stop].filter(Boolean)))
+                        .filter(rule=>!active.some(item=>
+                            item.suite_ids?.includes(rule.suite_id)));
+                    if(missing.length&&active.every(item=>item.suite_ids))
+                        warnings.push('Run '+run.slot+' lacks an observed active evaluator service for configured suite(s) '+
+                            missing.map(rule=>rule.suite_id).join(', ')+
+                            '; no benchmark measurement can be inferred.');
+                    else if(missing.length)
+                        warnings.push('Run '+run.slot+' has evaluator services with unknown suite coverage; check the installed unit definition before trusting schedule availability.');
+                }
             }
             if(!run.evaluation_points?.length)
                 warnings.push('Run '+run.slot+' has no archived independent evaluation results. Training measurements are not substitutes for missing benchmark evidence.');
@@ -4022,7 +4037,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(service=>service.project===project&&
                     (service.scheduler_state==='active'||
                      service.service_state==='running'))
-                .map(service=>(machine.name||machine.id)+': '+service.unit))||[];
+                .map(service=>(machine.name||machine.id)+': '+service.unit+
+                    ' · suites '+(service.suite_ids?.join(', ')||'unreported')+
+                    (service.evaluator_cpus!=null&&service.evaluator_ram_mb!=null
+                        ?' · '+service.evaluator_cpus+' CPU / '+
+                            service.evaluator_ram_mb+' MiB RAM':''))
+                )||[];
         $('hub-evaluation-available-suites').textContent=available.size
             ?available.size+' suite IDs advertised by connected '+project+
                 ' workers. '+(running.length
