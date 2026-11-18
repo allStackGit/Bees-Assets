@@ -392,6 +392,17 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                         checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
                     if job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest:
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
+                    # A new checkpoint filename is not proof of new policy
+                    # bytes. Avoid repeated expensive deterministic matches
+                    # against the same immutable model in monitoring mode.
+                    if job.get("monitor_only") and passed_receipt(
+                        receipt, dispatch, receipt_suite, job, digest
+                    ) and json.loads(read_bounded(receipt, 4096)).get(
+                        "checkpoint_sha256") == checkpoint_digest:
+                        cursor.pop(dispatch)
+                        cursor[dispatch] = update
+                        save_cursor(state, saved)
+                        return
                     result = evaluate_checkpoint(job, frozen, checkpoint_digest, work)
                 successes, measurements = evaluation_outcome(result, receipt_suite["trials"])
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
@@ -599,6 +610,19 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     if any(job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest
                            for job in jobs):
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
+                    if jobs[0].get("monitor_only") and all(
+                        passed_receipt(
+                            args.receipt_root / f"{dispatch}.{sid}.json",
+                            dispatch, receipt_suite, job, definitions[sid]
+                        ) and json.loads(read_bounded(
+                            args.receipt_root / f"{dispatch}.{sid}.json", 4096)
+                        ).get("checkpoint_sha256") == checkpoint_digest
+                        for (sid, (_, receipt_suite)), job in zip(ordered, jobs)
+                    ):
+                        cursor.pop(dispatch)
+                        cursor[dispatch] = update
+                        save_cursor(state, saved)
+                        return
                     pending = []
                     for (sid, (suite, receipt_suite)), job in zip(ordered, jobs):
                         # Dispose of large models and replays after each
