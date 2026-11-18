@@ -1,4 +1,4 @@
-//! Deferred deployment of authored, non-policy squads into a live Level.
+//! Deferred deployment of authored squads and physical policy agents into a live Level.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -45,6 +45,8 @@ pub(crate) struct ReinforcementWave {
     entry: Option<Vec2>,
     squads: Vec<NativeAuthoredSquad>,
     ships: Vec<NativeAuthoredShip>,
+    /// Authored group IDs remain dormant until these exact ships exist.
+    group_agents: Vec<(i32, u64)>,
 }
 
 impl ReinforcementWave {
@@ -263,6 +265,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             let entry = plan.entry.filter(|point| !point.unity_equal(Vec2::ZERO));
             waves.push(ReinforcementWave {
                 due, entry, squads: Vec::new(), ships: Vec::new(),
+                group_agents: Vec::new(),
             });
         }
         // Validate deferred membership and physical ownership BEFORE taking
@@ -309,9 +312,6 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             if ship.side != expected_side || source_ships.insert(ship.entity_id, ship).is_some() {
                 return Err("Reinforcement physical ship identities or sides conflict with squads");
             }
-            if ship.policy.is_some() || ship.motion.is_policy_controlled {
-                return Err("Reinforcements cannot reserve a live policy controller");
-            }
             if waves[wave_idx].entry.is_some() &&
                 (self.metadata.stored_formation_offset(ship.entity_id)
                     .is_none_or(|offset| !offset.is_finite()) ||
@@ -322,6 +322,34 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         }
         if source_ships.len() != expected_ships.len() {
             return Err("Reinforcement squads need one physical ship per member");
+        }
+        // A policy reinforcement is a *dormant* authored agent, not a
+        // controller enrolled at scene creation. Preflight every binding
+        // and group participant before extracting any physical scene data.
+        // Respect squad/member source order for reproducible registration.
+        let mut deferred_group_ids = HashSet::new();
+        for (wave_idx, ids) in planned_squad_order.iter().enumerate() {
+            for squad_id in ids {
+                for ship_id in &source_squads[squad_id].members {
+                    if let Some(participant) = self.metadata.deferred_policy_participant(
+                        source_ships[ship_id],
+                    )? {
+                        if !deferred_group_ids.insert(participant) {
+                            return Err("Reinforcement MA-POCA participant identities must be unique");
+                        }
+                        waves[wave_idx].group_agents.push(participant);
+                    }
+                }
+            }
+        }
+        if !deferred_group_ids.is_empty() {
+            let groups = self.groups.as_ref()
+                .ok_or("Policy reinforcements require existing authored MA-POCA groups")?;
+            let actual: HashSet<_> = groups.participants.iter().copied().collect();
+            if actual.len() != groups.participants.len() ||
+                !deferred_group_ids.is_subset(&actual) {
+                return Err("Policy reinforcement participant is absent from the authored group");
+            }
         }
         // One wave represents exactly one source constructor invocation.
         // Validate Carrier descendants EVEN when the wave's physical
@@ -400,6 +428,13 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         }
         self.squads = initial_squads;
         self.entities = initial_entities;
+        // Only physically present agents belong to the initial episode
+        // group. The deferred participants are installed when their wave
+        // spawns, before the next policy inference or group reward pass.
+        if let Some(groups) = self.groups.as_mut() {
+            groups.participants.retain(|participant|
+                !deferred_group_ids.contains(participant));
+        }
         // Membership, source links, entry eligibility and two-pass
         // placement have all been validated against the unmodified scene.
         // This phase only preserves canonical physical creation order.
@@ -465,7 +500,19 @@ impl NativePolicyOnlyMetadata {
                 }
                 squad.register(world, events.roster_mut()).map_err(|error| invalid(format!("{error:?}")))?;
             }
-            events.record_reinforcements(tick, ships, squads)?;
+            // Registration happens strictly after live combat bodies and
+            // roster membership exist. Next-tick decision synchronization
+            // discovers their CombatWorld policy bindings normally.
+            let policy_agents = wave.group_agents.len();
+            if policy_agents > 0 {
+                let group = events.group_delivery_mut().ok_or_else(||
+                    invalid("Missing MA-POCA group for policy reinforcements".into()))?;
+                for (side, group_id) in wave.group_agents {
+                    group.register_agent(side, group_id)
+                        .map_err(|error| invalid(format!("Policy reinforcement group: {error:?}")))?;
+                }
+            }
+            events.record_reinforcements(tick, ships, squads, policy_agents)?;
         }
         Ok(())
     }
