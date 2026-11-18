@@ -162,9 +162,15 @@ Unity gameplay parity.
 
 The native game's **Fleet Skirmish** builder saves a
 `replay-source-run.json` beside its recorded battle. In the game library,
-choose **Train Saved Fleet** to select an elimination skirmish, which
-faction learns, optimizer rounds, parallel arenas, CPU physics workers, and
-CPU or PyTorch GPU optimization. To reduce process and model reload costs,
+choose **Train Saved Fleet** to select an elimination, extraction or
+fixed-roster survival battle, choose which faction learns, optimizer rounds,
+parallel arenas, CPU physics workers, and
+CPU or PyTorch GPU optimization. Survival training uses the identical
+fixed-step survival deadline and protected physical ship as gameplay, while
+extraction uses the real side-owned extraction trigger. Survival battles with
+deferred reinforcement waves remain gameplay-only: the native reinforcement
+controller currently reserves non-policy squads, not newly arriving policy
+agents. To reduce process and model reload costs,
 choose 1–16 episodes per persistent native arena. Long experiments can
 evaluate the same fixed-seed holdout every 1, 2, 5 or 10 optimizer rounds,
 rather than paying evaluation overhead after every round. Local optimizers
