@@ -497,6 +497,9 @@ impl NativePolicyOnlyMetadata {
         // before planning, but deferred waves can arrive after the combat step
         // has moved or destroyed collision asteroids. Refresh once per
         // arrival tick, only when a due wave has an obstacle-aware entry move.
+        if self.reinforcements.is_empty() {
+            return Ok(());
+        }
         if !self.reinforcement_wakeup.may_be_due(tick, world, events) {
             self.reinforcement_idle_ticks_skipped += 1;
             return Ok(());
