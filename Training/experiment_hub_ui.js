@@ -3083,6 +3083,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const evalByJob=new Map((comparisonProject===project&&
             comparisonData?.evaluations||[]).map(sample=>
             [sample.job_id,sample.points||[]]));
+        const issuesByJob=new Map((comparisonProject===project&&
+            comparisonData?.evaluation_diagnostics||[]).map(sample=>
+            [sample.job_id,sample.events||[]]));
         const runs=compareSlots.map(slot=>{
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(item=>item.id===id);
@@ -3122,6 +3125,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
                 evaluation_history:evalByJob.get(id)||[],
+                evaluation_diagnostics:issuesByJob.get(id)||[],
                 historical_evaluation_only:job.evaluation_history_only===true,
                 historical_source_report_sha256:job.source_report_sha256||null,
                 historical_suite_definitions:job.source_suites||null,
@@ -3136,16 +3140,17 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }).filter(Boolean);
         if(!runs.some(run=>run.points.length||(format==='json'&&
-            (hubComparisonTerminal(run)||hubComparisonEvaluation(run)))))
+            (run.evaluation_diagnostics.length||hubComparisonTerminal(run)||
+                hubComparisonEvaluation(run)))))
             throw Error(format==='csv'?'No recorded samples for the selected runs.':
-                'Select a job with recorded samples, an evaluation receipt or a terminal outcome.');
+                'Select a job with recorded samples, evaluation receipts, evaluator diagnostics or a terminal outcome.');
         const exported={
             schema_version:1,project_id:project,
             exported_at:new Date().toISOString(),
             x_axis:$('hub-compare-x-axis').value,
             metric:selectedComparisonMetrics()[0]||null,metrics,
             source:'Experiment Hub validated project metrics',
-            interpretation:'Training curves and independent evaluation records are observational. Their horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Evaluation curves are checkpoint-bound and only directly comparable across matching frozen suite definitions.',
+            interpretation:'Training curves and independent evaluation records are observational. Their horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Evaluation curves are checkpoint-bound and only directly comparable across matching frozen suite definitions. Evaluator receipt-availability diagnostics have no implied checkpoint, trial or performance result.',
             runs,
             candidate_selection_plans:(state.candidate_selections||[]).filter(p=>
                 p.candidate_job_ids?.some(id=>runs.some(r=>r.job_id===id))),
