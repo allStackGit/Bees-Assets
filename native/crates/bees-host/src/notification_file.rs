@@ -723,9 +723,17 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
             // the file has synchronized. This matches the exact durable
             // prefix acknowledged by the Level event outbox.
             for event in &notifications[committed..committed + buffered] {
-                let scene = self.evaluation_contexts.get(&world.0)
-                    .filter(|(revision, _)| *revision == episode_revision)
-                    .map(|(_, context)| context.scene_sha256.as_str());
+                // The scene index changes only on real EpisodeFinal.
+                // Millions of durable combat/reward notifications must
+                // not pay for another per-event world-context BTreeMap
+                // search merely to report per-scene terminal statistics.
+                let scene = if matches!(event.kind, NativeLevelNotificationKind::EpisodeFinal(_)) {
+                    self.evaluation_contexts.get(&world.0)
+                        .filter(|(revision, _)| *revision == episode_revision)
+                        .map(|(_, context)| context.scene_sha256.as_str())
+                } else {
+                    None
+                };
                 self.measurements.record(event, scene);
             }
             self.prepared.extend(self.pending_prepared.drain(..));
