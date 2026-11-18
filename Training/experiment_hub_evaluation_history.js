@@ -122,8 +122,8 @@ class EvaluationHistory {
         if(existing)return existing;
         this.directoryReady();
         const file=this.file(jobId);
-        const records=[],seen=new Map();
-        let stat=null;
+        const records=[],diagnostics=[],seen=new Map();
+        let lastEntry=null,stat=null;
         if(fs.existsSync(file)) {
             stat=fs.lstatSync(file);
             if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||
@@ -139,11 +139,28 @@ class EvaluationHistory {
                 const row=JSON.parse(line);
                 if(row.schema_version!==1||row.job_id!==jobId||
                     row.project_id!==projectId||
-                    !UUID.test(String(row.dispatch_id))||
-                    typeof row.suite_id!=='string'||
-                    !/^[a-z][a-z0-9_-]{0,47}$/.test(row.suite_id)||
+                    !UUID.test(String(row.dispatch_id)))
+                    throw Error('Invalid independent evaluation archive identity.');
+                if(row.evaluation_status==='unavailable') {
+                    // A native evaluator reported an unavailable or invalid
+                    // receipt. No checkpoint or measured score is asserted.
+                    if(row.suite_id!==null&&!SUITE.test(String(row.suite_id))||
+                        typeof row.issue!=='string'||!row.issue||
+                        row.issue.length>160||
+                        typeof row.observed_at!=='string'||
+                        !Number.isFinite(Date.parse(row.observed_at))||
+                        new Date(row.observed_at).toISOString()!==row.observed_at||
+                        ['checkpoint_sha256','trials','successes','metrics']
+                            .some(key=>Object.hasOwn(row,key)))
+                        throw Error('Invalid independent evaluation diagnostic.');
+                    diagnostics.push(row);
+                    lastEntry=row;
+                    continue;
+                }
+                if(row.evaluation_status!=null&&row.evaluation_status!=='complete'||
+                    typeof row.suite_id!=='string'||!SUITE.test(row.suite_id)||
                     typeof row.checkpoint_sha256!=='string'||
-                    !/^[a-f0-9]{64}$/.test(row.checkpoint_sha256)||
+                    !SHA256.test(row.checkpoint_sha256)||
                     !Number.isSafeInteger(row.trials)||row.trials<1||
                     !Number.isSafeInteger(row.successes)||row.successes<0||
                     row.successes>row.trials)
@@ -152,12 +169,48 @@ class EvaluationHistory {
                 if(seen.has(key))throw Error('Duplicate evaluation history record.');
                 seen.set(key,JSON.stringify(row));
                 records.push(row);
+                lastEntry=row;
             }
         }
-        const loaded={project_id:projectId,records,seen,
+        const loaded={project_id:projectId,records,diagnostics,seen,lastEntry,
             size:stat?.size||0,dev:stat?.dev??null,ino:stat?.ino??null};
         this.loaded.set(jobId,loaded);
         return loaded;
+    }
+    // Both completed receipts and non-authoritative diagnostic events use
+    // one protected, fsynced append path. Never overwrite prior evidence.
+    appendRow(jobId,data,row) {
+        const body=Buffer.from(JSON.stringify(row)+'\n');
+        if(body.length>8192||data.size+body.length>MAX_BYTES)
+            throw Error('Independent evaluation history exceeds its size limit.');
+        const file=this.file(jobId);
+        const fd=fs.openSync(file,fs.constants.O_CREAT|fs.constants.O_RDWR|
+            fs.constants.O_APPEND|(fs.constants.O_NOFOLLOW||0),0o600);
+        try {
+            const st=fs.fstatSync(fd),current=fs.lstatSync(file);
+            if(!st.isFile()||st.nlink!==1||!current.isFile()||
+                current.isSymbolicLink()||st.ino!==current.ino||
+                st.dev!==current.dev||st.size!==data.size||
+                (data.ino!==null&&(data.ino!==st.ino||data.dev!==st.dev))||
+                (typeof process.getuid==='function'&&
+                 (st.uid!==process.getuid()||(st.mode&0o077)!==0)))
+                throw Error('Independent evaluation archive was replaced or modified.');
+            try {
+                for(let offset=0;offset<body.length;) {
+                    const n=fs.writeSync(fd,body,offset,body.length-offset);
+                    if(!Number.isSafeInteger(n)||n<=0)
+                        throw Error('Incomplete independent evaluation archive append.');
+                    offset+=n;
+                }
+                fs.fsyncSync(fd);
+            }catch(error) {
+                fs.ftruncateSync(fd,st.size);
+                throw error;
+            }
+            data.size+=body.length;
+            data.dev=st.dev;data.ino=st.ino;
+            data.lastEntry=row;
+        }finally{fs.closeSync(fd);}
     }
     record(job,receipt) {
         const id=job?.id;
@@ -194,44 +247,47 @@ class EvaluationHistory {
                         id+'; original independent evidence retained.');
                 return false;
             }
-            const row={...receipt,schema_version:1,job_id:id,
-                project_id:job.project_id,observed_at:new Date().toISOString()};
-            const body=Buffer.from(JSON.stringify(row)+'\n');
-            if(body.length>8192||data.size+body.length>MAX_BYTES)
-                throw Error('Independent evaluation history exceeds its size limit.');
-            const file=this.file(id);
-            const fd=fs.openSync(file,fs.constants.O_CREAT|fs.constants.O_RDWR|
-                fs.constants.O_APPEND|(fs.constants.O_NOFOLLOW||0),0o600);
-            try {
-                const st=fs.fstatSync(fd),current=fs.lstatSync(file);
-                if(!st.isFile()||st.nlink!==1||!current.isFile()||
-                    current.isSymbolicLink()||st.ino!==current.ino||
-                    st.dev!==current.dev||st.size!==data.size||
-                    (data.ino!==null&&(data.ino!==st.ino||data.dev!==st.dev))||
-                    (typeof process.getuid==='function'&&
-                     (st.uid!==process.getuid()||(st.mode&0o077)!==0)))
-                    throw Error('Independent evaluation archive was replaced or modified.');
-                try {
-                    for(let offset=0;offset<body.length;) {
-                        const n=fs.writeSync(fd,body,offset,body.length-offset);
-                        if(!Number.isSafeInteger(n)||n<=0)
-                            throw Error('Incomplete independent evaluation archive append.');
-                        offset+=n;
-                    }
-                    fs.fsyncSync(fd);
-                }catch(error) {
-                    fs.ftruncateSync(fd,st.size);
-                    throw error;
-                }
-                data.size+=body.length;
-                data.dev=st.dev;data.ino=st.ino;
-            }finally{fs.closeSync(fd);}
+            const row={...receipt,schema_version:1,evaluation_status:'complete',
+                job_id:id,project_id:job.project_id,
+                observed_at:new Date().toISOString()};
+            this.appendRow(id,data,row);
             data.records.push(row);
             data.seen.set(key,JSON.stringify(row));
             this.issues.delete(id);
             return true;
         }catch(error) {
             this.issues.set(id,'Independent evaluation history unavailable: '+
+                String(error.message||error).slice(0,160));
+            return false;
+        }
+    }
+    // A verified native owner can report an unreadable or invalid receipt.
+    // Preserve its availability diagnostic without inventing a checkpoint,
+    // trial, success count or failed game outcome. Repeated heartbeats with
+    // the same ongoing issue do not fill the archive.
+    recordIssue(job,issue,suiteId=null) {
+        const id=job?.id;
+        try {
+            if(!UUID.test(String(id))||!PROJECT.test(String(job?.project_id))||
+                !UUID.test(String(job?.dispatch_id))||
+                typeof issue!=='string'||issue.length<1||issue.length>160||
+                (suiteId!==null&&!SUITE.test(String(suiteId))))
+                throw Error('Invalid independent evaluation diagnostic identity.');
+            const data=this.load(id,job.project_id);
+            if(data.lastEntry?.evaluation_status==='unavailable'&&
+                data.lastEntry.dispatch_id===job.dispatch_id&&
+                data.lastEntry.suite_id===suiteId&&
+                data.lastEntry.issue===issue)return false;
+            const row={schema_version:1,evaluation_status:'unavailable',
+                job_id:id,project_id:job.project_id,dispatch_id:job.dispatch_id,
+                suite_id:suiteId,issue,observed_at:new Date().toISOString()};
+            this.appendRow(id,data,row);
+            data.diagnostics.push(row);
+            this.issues.delete('diagnostic:'+id);
+            return true;
+        }catch(error) {
+            this.issues.set('diagnostic:'+id,
+                'Independent evaluation diagnostic archive unavailable: '+
                 String(error.message||error).slice(0,160));
             return false;
         }
@@ -453,11 +509,15 @@ class EvaluationHistory {
         return {job_id:id,imported:true,recovered,record_count:rows.length};
     }
     snapshot(projectId,jobs) {
-        const samples=[],regressions=[];
+        const samples=[],regressions=[],diagnostics=[];
         for(const job of jobs) {
             if(job.project_id!==projectId)continue;
             try {
-                const records=this.load(job.id,job.project_id).records;
+                const stored=this.load(job.id,job.project_id);
+                const records=stored.records;
+                if(stored.diagnostics.length)diagnostics.push({
+                    job_id:job.id,events:stored.diagnostics.slice(-32),
+                });
                 regressions.push(...regressionSignals(job,records));
                 if(!records.length)continue;
                 // Keep first and latest checkpoints and evenly sample the
@@ -478,7 +538,7 @@ class EvaluationHistory {
                     String(error.message||error).slice(0,160));
             }
         }
-        return {samples,regressions,storage_warning:this.error};
+        return {samples,regressions,diagnostics,storage_warning:this.error};
     }
 }
 module.exports={EvaluationHistory,regressionSignals};
