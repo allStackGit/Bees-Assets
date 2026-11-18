@@ -855,7 +855,8 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         if let Some(&enabled) = self.player.cease_fire.get(&mother) {
             self.player.cease_fire.insert(child, enabled);
         }
-        self.player_queen_minion_added(world, child, queen_id, minion_id, minion_index)
+        self.player_queen_minion_added(world, child, queen_id, minion_id, minion_index)?;
+        self.enqueue_game_queen_minion(child)
     }
 
     fn player_queen_minion_added(
