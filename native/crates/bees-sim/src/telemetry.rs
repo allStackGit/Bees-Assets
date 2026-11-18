@@ -29,6 +29,9 @@ pub struct StepCounts {
     /// Physics already computes these counts during each fixed step.
     /// Export them without extra collision queries or clock reads.
     pub integrated_bodies: u64,
+    /// Actual historical ship slots skipped on each successful step.
+    pub inactive_ship_slots_skipped: u64,
+    pub inactive_ship_grid_slots_skipped: u64,
     pub broadphase_candidates: u64,
     pub ship_grid_overflow_bodies: u64,
     pub obstacle_grid_overflow_bodies: u64,
@@ -83,6 +86,9 @@ pub struct Measurements {
     pub policy_roots_contacted: u64,
     pub policy_roots_near_missed: u64,
     pub integrated_bodies: u64,
+    /// Actual historical ship slots skipped on each successful step.
+    pub inactive_ship_slots_skipped: u64,
+    pub inactive_ship_grid_slots_skipped: u64,
     pub broadphase_candidates: u64,
     pub ship_grid_overflow_bodies: u64,
     pub obstacle_grid_overflow_bodies: u64,
@@ -153,6 +159,8 @@ impl Default for Measurements {
             policy_roots_contacted: 0,
             policy_roots_near_missed: 0,
             integrated_bodies: 0,
+            inactive_ship_slots_skipped: 0,
+            inactive_ship_grid_slots_skipped: 0,
             broadphase_candidates: 0,
             ship_grid_overflow_bodies: 0,
             obstacle_grid_overflow_bodies: 0,
@@ -212,6 +220,8 @@ impl Measurements {
         self.policy_roots_contacted += counts.policy_roots_contacted;
         self.policy_roots_near_missed += counts.policy_roots_near_missed;
         self.integrated_bodies += counts.integrated_bodies;
+        self.inactive_ship_slots_skipped += counts.inactive_ship_slots_skipped;
+        self.inactive_ship_grid_slots_skipped += counts.inactive_ship_grid_slots_skipped;
         self.broadphase_candidates += counts.broadphase_candidates;
         self.ship_grid_overflow_bodies += counts.ship_grid_overflow_bodies;
         self.obstacle_grid_overflow_bodies += counts.obstacle_grid_overflow_bodies;
@@ -285,6 +295,8 @@ impl Measurements {
         self.policy_roots_contacted += other.policy_roots_contacted;
         self.policy_roots_near_missed += other.policy_roots_near_missed;
         self.integrated_bodies += other.integrated_bodies;
+        self.inactive_ship_slots_skipped += other.inactive_ship_slots_skipped;
+        self.inactive_ship_grid_slots_skipped += other.inactive_ship_grid_slots_skipped;
         self.broadphase_candidates += other.broadphase_candidates;
         self.ship_grid_overflow_bodies += other.ship_grid_overflow_bodies;
         self.obstacle_grid_overflow_bodies += other.obstacle_grid_overflow_bodies;
