@@ -531,6 +531,25 @@ def author(args) -> tuple[dict, dict, dict]:
             "half_extents": [5.0, 5.0],
             "activation_radius": args.extraction_radius, "layer": 19,
         }
+        if owner not in controlled:
+            # A headless AI extraction must actually attempt the authored
+            # objective. Use the original native command director (not an
+            # extra steering/AI implementation) to send one deployed mobile
+            # squad toward the real trigger; other escorts keep their
+            # source combat commands and reinforcement activation clocks.
+            mobiles = {
+                squad["item_id"] for squad in by_side_squads[owner]
+                if squad["item_id"] not in deferred_squad_ids and
+                any(ship["entity_id"] in squad["members"] and
+                    ship.get("base_speed", 0) > 0
+                    for ship in by_side[owner])
+            }
+            route = next((queue for queue in queues
+                          if queue["squad_item_id"] in mobiles), None)
+            if route is None:
+                raise ValueError("scripted extraction has no initial mobile command owner")
+            route["orders"] = [{"kind": "move_to_point", "destination": center}]
+            route["repeat"] = False
     library = {
         "library_schema": 1,
         "games": [{
