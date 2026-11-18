@@ -70,7 +70,7 @@ impl NativePolicyOnlyMetadata {
             eligible_barges, retarget_weapons, retarget_enemies })
     }
 
-    fn command_center(&self, world: &CombatWorld, roster: &NativeSquadRoster,
+    pub(super) fn command_center(&self, world: &CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime,
     ) -> Result<Vec2, GameCommandError> {
         let squad = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
