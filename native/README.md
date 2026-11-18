@@ -1215,12 +1215,17 @@ asset import and shared CombatWorld as training. At
 least one armed fighter remains per side. Single-player commanders
 can choose elimination, a 90-second protected
 command-ship defense with genuinely reserved enemy waves at 25 and 55
-seconds, or extraction at the far end of the map. These are the actual
-native Level survival, reinforcement and extraction rules; the same
-objectives run unchanged in headless simulation. Two local commanders
-and remote multiplayer hosts can also choose survival or extraction, with
-an independently selected defending/extracting faction. Headless benchmark
-matches retain ordinary elimination. In **Two local commanders** mode,
+seconds, or extraction at the far end of the map. Elimination and extraction
+also offer independent Bee, Human or two-sided reinforcement plans: timed
+waves at 25/55 seconds, or immediate reserves triggered by destruction of
+that faction's original command ship. The first squad of each faction
+always enters at tick zero. These are the actual native Level survival,
+reinforcement and extraction rules; the same objectives run unchanged in
+headless simulation. Two local commanders and remote multiplayer hosts can
+also choose survival or extraction, with an independently selected
+defending/extracting faction. CPU-only headless benchmarks use the same
+elimination and optional wave modes, and report actual source admissions,
+work avoided by the fixed-tick wave scheduler, and measured world SPS. In **Two local commanders** mode,
 press **F9** to switch between the two real player factions in one
 window. The source-owned fog, selectable squads and command permissions
 switch together; selections and partial pointer gestures are cleared.
