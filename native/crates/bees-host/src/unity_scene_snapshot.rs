@@ -753,6 +753,9 @@ pub struct NativePhysicalScene {
     /// stays unchanged, but the window can schedule more ticks per second.
     pub time_scale: f32,
     pub shots_harmless: bool,
+    /// Explicit physical border hazard, not inferred from map geometry.
+    /// Historical Unity exports lack this option and retain nonlethal walls.
+    pub lethal_map_borders: bool,
     pub activate_collision_asteroids: bool,
     /// Optional only for legacy schema26 exports predating request bans.
     pub activate_mining: Option<bool>,
@@ -2465,6 +2468,7 @@ impl NativePhysicalScene {
             broadphase_cell_size: setup.broadphase_cell_size,
             decision_period: setup.decision_period,
             shots_harmless: self.shots_harmless,
+            lethal_map_borders: self.lethal_map_borders,
             entities: self.entities,
             squads,
             initial_full_asteroids: setup.initial_full_asteroids,
@@ -3647,6 +3651,7 @@ impl NativePhysicalScene {
             fixed_dt_seconds: raw.fixed_dt_seconds,
             time_scale,
             shots_harmless: raw.shots_harmless,
+            lethal_map_borders: false,
             activate_collision_asteroids: raw.activate_collision_asteroids,
             activate_mining: raw.activate_mining,
             activate_fog_of_war: raw.activate_fog_of_war,
