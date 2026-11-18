@@ -3665,12 +3665,18 @@ impl CombatWorld {
         if !self.constrain_map_borders { return Ok(()); }
         let bounds = self.level_geometry
             .ok_or(CombatWorldError::MissingLevelGeometry)?.map_bounds;
-        for index in 0..self.ships.len() {
+        // Steering entries are retired with their ship. Iterate live
+        // authored geometry instead of all historical ship slots: Queen
+        // waves can generate thousands of dead minions in a long arena,
+        // but never require repeated bounds checks on those old bodies.
+        self.map_border_measurements.confinement_missing_profiles +=
+            self.live_ship_total.saturating_sub(self.game_ship_steering.len()) as u64;
+        for (&id, steering) in &self.game_ship_steering {
+            let Some(&index) = self.ship_by_id.get(&id) else { continue };
             if self.ships[index].vitals.is_dead() ||
                 !self.physics.ships()[index].active {
                 continue;
             }
-            let id = self.ships[index].entity_id;
             if self.game_barge_charges.get(&id)
                 .is_some_and(|charge| charge.can_override_bounds) ||
                 self.game_barge_player_config.get(&id)
@@ -3679,13 +3685,7 @@ impl CombatWorld {
                     .is_some_and(|order| order.can_override_bounds) {
                 continue;
             }
-            let Some(profile) = self.game_ship_steering.get(&id)
-                .map(|steering| steering.profile) else {
-                // A just-admitted dynamic ship might not have its authored
-                // sprite profile until the Level finishes enrollment.
-                self.map_border_measurements.confinement_missing_profiles += 1;
-                continue;
-            };
+            let profile = steering.profile;
             let extent = profile.half_width.max(profile.half_height);
             let min_x = bounds.min.x + extent;
             let max_x = bounds.max.x - extent;
