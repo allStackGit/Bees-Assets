@@ -144,7 +144,8 @@ def main():
             if previous.is_symlink() or not previous.is_dir():
                 continue
             candidate = previous / job["bundle_directory"] / "rollout-bundle.json"
-            if reusable_collection(candidate, job, orders, args.leased_gpu_inference) is not None:
+            if reusable_collection(candidate, job, orders, args.leased_gpu_inference,
+                                   args.leased_gpu_count) is not None:
                 recovered = candidate
                 previous_parent = previous
                 break
