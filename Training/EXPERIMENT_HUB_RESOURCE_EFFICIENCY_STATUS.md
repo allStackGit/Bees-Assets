@@ -207,6 +207,22 @@ CUDA/ROCm benchmarking and recovery qualification remain outstanding.
   reports learner dispatch queue depth and names an owner when a sustained
   queue tail outlasts the other collectors and measured PPO overlap.
 
+- **2026-11-17 Codex-lineage Courier CPU/network improvement:** `allStackGit/Basic-Training:feat/courier-remote-progress-coalesce-20261117` starts from pushed Codex `feat/courier-remote-gpu-ppo-20261114`.
+A Hub-managed policy with at most one initial CPU share may now keep **two**
+complete seeded logical map shards (only if the existing shard ceiling
+permits), allowing the already implemented 90-second useful-PPO-SPS tuner
+to try a second physical process without a pool restart. The migration
+still requires measured improvement, full state preservation and fixed
+RAM admission; low-CPU overhead is not yet qualified. Across approved
+remote machines, the worker now suppresses redundant same-phase UI
+progress packets to one every 750 ms after the preceding TCP send while
+always forwarding the first sample and phase changes. It never suppresses
+PPO update outcomes or checkpoint data. The ordinary Hub metric stream
+now carries actual seen/sent/skipped progress counts, serialized network
+bytes, send-blocking wall and sustained critical-path evidence only when
+the last completed remote lineage is responsible. This is not a measurement
+of link utilization or a real SPS qualification.
+
 ## Significant remaining development
 
 1. **Exercise the exact executable native-engine path:** qualify early dispatched pooled engine steps, episode/seat identity, replay attribution, graceful retirement and checkpoint continuation using actual TinyBrains binaries and training environments. Synthetic scheduling checks preserve action indices and show potential latency savings, not measured real SPS. On the next native profiling run, nonzero `collector_N_sim_prefetch_engine_steps` plus reduced `collector_N_sim_exposed_wait_share` with improved useful decisions/s would support the expected benefit; absent early dispatch or unchanged exposed wait would falsify it. Full removal of the slowest-child barrier would also require explicit in-flight transition ownership, terminal reward completion, and deterministic policy sampling across out-of-order engine returns; that change has **not** been implemented.
