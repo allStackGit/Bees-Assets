@@ -932,10 +932,9 @@ class EvaluationHistory {
                     const latest=newest.get(comparableKey(row));
                     const superseded=latest&&
                         latest.steps_completed>row.steps_completed;
-                    const compact=definitionsLast.get(definitionKey(row))===index
-                        ?row:(({
-                            suite_definition_canonical,...receipt
-                        })=>receipt)(row);
+                    const compact={...row};
+                    if(definitionsLast.get(definitionKey(row))!==index)
+                        delete compact.suite_definition_canonical;
                     return {...compact,comparison_status:superseded
                         ?'superseded':'complete',
                         ...(superseded?{
