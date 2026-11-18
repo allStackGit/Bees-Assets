@@ -805,7 +805,18 @@ pieces draw the corresponding Asteroid 1..28 art through the same physical
 bodies. Mining rocks and other obstacles still use their real hull outlines.
 Recolored sprites are cached per ship type/color and measured in
 `presentation_final`; no recoloring or art loading happens in headless
-training. Existing BSS1 atlases remain readable without color overrides.
+training. The visible native game also projects genuine `ShipDied`
+combat events into short explosion flashes and five-second fading
+ship remains; these are renderer-owned images at the actual last ship
+pose, not physical colliders or extra training actors. The same
+effect renderer is used for LAN play: the host attaches visible
+ship-death identities to its already-buffered, side-filtered audio/event
+cues, preserving deaths between five-tick network snapshots without
+revealing enemies hidden by fog. Effects have a fixed 512-record limit
+and expire on simulation time; counts of captured, drawn and evicted
+effects appear in presentation measurements. The current remains image
+is a fading native ship sprite/geometry approximation rather than the
+unported source corpse animation. Existing BSS1 atlases remain readable without color overrides.
 Neither Python nor Pillow is needed to run the compiled game; headless
 simulation/inference never loads art. Absent or invalid optional artwork
 falls back to the real physical hulls. The Queen animation and unsupported
