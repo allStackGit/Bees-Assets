@@ -22,7 +22,8 @@ from native_bundle_receiver import upload_bundle_archive
 
 
 
-def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False):
+def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False,
+                        leased_gpu_count=1):
     """Accept completed local work only with its original pinned capture files.
 
     A previous transport failure must never turn a partial simulation or a
@@ -37,6 +38,8 @@ def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False):
         receipt = verify_bundle(receipt_path, job, orders)
         document = json.loads(receipt_path.read_text(encoding="utf-8"))
         if bool(document.get("leased_gpu_inference", False)) != leased_gpu_inference:
+            return None
+        if leased_gpu_inference and document.get("leased_gpu_count", 1) != leased_gpu_count:
             return None
         captures = artifact_paths(document)
         canonical = root.resolve(strict=True)
@@ -66,6 +69,8 @@ def main():
     parser.add_argument("--stage-diagnostics", action="store_true")
     parser.add_argument("--leased-gpu-inference", action="store_true",
                         help="Hub-verified exclusive GPU inference placement")
+    parser.add_argument("--leased-gpu-count", type=int, default=1,
+                        help="exact Hub-attested count of one or two ROCm devices")
     parser.add_argument("--archive-output", type=Path,
                         help="publish a portable verified tar for transfer to a different machine")
     parser.add_argument("--upload-url",
@@ -75,6 +80,9 @@ def main():
     args = parser.parse_args()
     if args.leased_gpu_inference and args.hub_artifact_job_id is None:
         parser.error("--leased-gpu-inference requires the approved Hub artifact job")
+    if args.leased_gpu_count not in (1, 2) or (
+            args.leased_gpu_count != 1 and not args.leased_gpu_inference):
+        parser.error("dual-GPU collector needs authorized Hub GPU placement")
     if args.hub_artifact_job_id is not None and (
             args.bundle_inbox is None or
             re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
@@ -125,7 +133,10 @@ def main():
     previous_parent = None
     if inbox is not None:
         candidate = inbox / delivered_name / "rollout-bundle.json"
-        if reusable_collection(candidate, job, orders, args.leased_gpu_inference) is not None:
+        if reusable_collection(
+                candidate, job, orders, args.leased_gpu_inference,
+                args.leased_gpu_count,
+            ) is not None:
             recovered = candidate
     else:
         prefix = f"native-collector-{job['collection_id'][:12]}-"
@@ -151,7 +162,10 @@ def main():
             "--rollout-binary", str(binary),
             *([] if inbox is None else ["--bundle-inbox", str(inbox)]),
             *job["collector_options"],
-            *([] if not args.leased_gpu_inference else ["--leased-gpu-inference"]),
+            *([] if not args.leased_gpu_inference else [
+                "--leased-gpu-inference", "--leased-gpu-count",
+                str(args.leased_gpu_count),
+            ]),
             *([] if args.hub_artifact_job_id is None else [
                 "--bundle-delivery-name", delivered_name,
             ]),
