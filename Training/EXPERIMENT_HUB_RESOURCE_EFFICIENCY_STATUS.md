@@ -250,6 +250,27 @@ shared-collector, single-optimizer and genuinely exposed ingestion
 pressure, with source intervals never summed as exclusive work. Actual
 cross-machine useful SPS gains and failure recovery remain unqualified.
 
+- **2026-11-18 shared Courier GPU resident inference and remote snapshots:**
+On the Codex shared-policy collector path, a fully completed CUDA/ROCm
+rollout can leave the frozen inference model on that worker's exclusive
+assigned GPU. Subsequent CPU policy snapshots update the same tensor
+storage without a full-device return and re-upload; policy identity is
+hashed from the strictly loaded CPU snapshot, not a second device
+readback. CPU-only collectors and durable optimizer checkpoints retain
+the original path. Actual per-worker GPU policy reuse, host refresh
+seconds and logical frozen parameter bytes are reported through
+`hub-metrics-v1`, with a sustained remote-critical-path inference
+refresh diagnostic separate from GPU utilization. Shared-policy
+checkpoints also overlap two trusted remote collector snapshots only
+with substantial measured spare RAM under the unchanged fixed lease;
+otherwise collection remains serial. The learner writes the ZIP in
+canonical slot order, releases the completed payload before launching
+its successor and retains the original publish-after-complete boundary.
+The existing Hub metrics record snapshot concurrency, logical bytes,
+longest individual request wall and serial archive write wall. These
+are execution changes awaiting real multi-machine SPS and recovery
+qualification, not proof of hardware saturation.
+
 ## Significant remaining development
 
 1. **Exercise the exact executable native-engine path:** qualify early dispatched pooled engine steps, episode/seat identity, replay attribution, graceful retirement and checkpoint continuation using actual TinyBrains binaries and training environments. Synthetic scheduling checks preserve action indices and show potential latency savings, not measured real SPS. On the next native profiling run, nonzero `collector_N_sim_prefetch_engine_steps` plus reduced `collector_N_sim_exposed_wait_share` with improved useful decisions/s would support the expected benefit; absent early dispatch or unchanged exposed wait would falsify it. Full removal of the slowest-child barrier would also require explicit in-flight transition ownership, terminal reward completion, and deterministic policy sampling across out-of-order engine returns; that change has **not** been implemented.
