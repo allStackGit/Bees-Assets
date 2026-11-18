@@ -931,10 +931,15 @@ custom battle saves its starting scene and replay configuration alongside
 its input trace; completed games appear under **Watch Recorded Battles**.
 **Benchmark Fleet Simulation** uses the identical saved scene with real
 scripted opponents on both sides, runs it without a graphical window,
-and displays actual world steps per execution second. The complete
-sampled CPU/physics, navigation, and throughput counters remain in the
-numbered `battles/fleet-benchmark/battle-NNNNNN/run/rollout-summary.json`
-file for comparison across machine allocations and fleet sizes.
+and displays actual world steps per execution second. Choose 1–32
+concurrent, independent physical arenas and 1–32 persistent CPU physics
+workers (bounded by arena count), with separate deterministic RNG seeds.
+The shared native host automatically remaps squad identities across
+arenas; no additional game or training engine is created. The complete
+sampled CPU/physics, navigation, and aggregate throughput counters
+remain in the numbered
+`battles/fleet-benchmark/battle-NNNNNN/run/rollout-summary.json`
+file for comparing machine allocations and fleet sizes.
 No Unity, editor, authoring script or separate simulation is involved.
 With `--library` the packager copies that authored library's
 campaign configs, mission runs and native scene dependencies into the

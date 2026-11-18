@@ -32,6 +32,8 @@ pub(super) struct FleetChoice {
     fleet_sizes: [usize; 2],
     terrain: Terrain,
     ai_both: bool,
+    benchmark_worlds: usize,
+    benchmark_workers: usize,
 }
 
 fn invalid(message: &'static str) -> io::Error {
@@ -55,6 +57,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     Ok(choose_terrain()?.map(|terrain| FleetChoice {
         player_side: match mode { 0 => Some(1), 1 => Some(2), _ => None },
         fleet_sizes, terrain, ai_both: false,
+        benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
 
@@ -64,6 +67,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     Ok(choose_terrain()?.map(|terrain| FleetChoice {
         player_side: None, fleet_sizes, terrain, ai_both: false,
+        benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
 
@@ -71,9 +75,27 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
 /// exactly the same collision, command and ship code used in windowed play.
 pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
-    Ok(choose_terrain()?.map(|terrain| FleetChoice {
+    let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(worlds) = choose_resource("Concurrent physical arenas",
+        &[1, 2, 4, 8, 16, 32])? else { return Ok(None); };
+    let workers = [1, 2, 4, 8, 16, 32].into_iter()
+        .filter(|&count| count <= worlds).collect::<Vec<_>>();
+    let Some(threads) = choose_resource("CPU physics workers", &workers)?
+        else { return Ok(None); };
+    Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, terrain, ai_both: true,
+        benchmark_worlds: worlds, benchmark_workers: threads,
     }))
+}
+
+fn choose_resource(label: &str, options: &[usize]) -> Result<Option<usize>, Box<dyn Error>> {
+    let titles = options.iter().map(|count| format!("{count}  |  {label}"))
+        .collect::<Vec<_>>();
+    let rows = titles.iter().map(|title| BattleMenuRow {
+        title, status: "  [Measured allocation]", unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = 0_usize;
+    Ok(select_library(&rows, &mut selected, false)?.map(|index| options[index]))
 }
 
 fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
@@ -158,6 +180,11 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         .ok_or_else(|| invalid("native benchmark omitted executed steps"))?;
     let wall = metrics["execution_wall_seconds"].as_f64()
         .ok_or_else(|| invalid("native benchmark omitted execution time"))?;
+    let workers = metrics["requested_physics_workers"].as_u64()
+        .ok_or_else(|| invalid("native benchmark omitted CPU worker allocation"))?;
+    let arenas = summary["native_layouts"].as_array()
+        .ok_or_else(|| invalid("native benchmark omitted physical Level count"))?
+        .len();
     if !sps.is_finite() || !wall.is_finite() || wall <= 0.0 ||
         !summary["failed_window"].is_null() {
         return Err(invalid("native benchmark has no complete valid measurement").into());
@@ -167,12 +194,15 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         "world_steps": steps,
         "world_steps_per_execution_second": sps,
         "execution_wall_seconds": wall,
+        "arenas": arenas,
+        "cpu_physics_workers": workers,
         "summary": file,
     }));
     let labels = [
-        format!("Measured simulation: {sps:.1} steps/s"),
+        format!("Measured simulation: {sps:.1} world steps/s"),
+        format!("Arenas: {arenas}  |  CPU physics workers: {workers}"),
         format!("Completed: {steps} world steps in {wall:.2}s"),
-        "Detailed timing and physics counters saved as rollout-summary.json".to_owned(),
+        "Full timing and physics statistics: rollout-summary.json".to_owned(),
     ];
     let rows = labels.iter().map(|title| BattleMenuRow {
         title, status: "  [Native benchmark]", unlocked: true,
@@ -288,6 +318,20 @@ pub(super) fn archive(
         run["rounds_per_window"] = json!(128);
         run["timing_sample_period"] = json!(32);
         run["status_every_rounds"] = json!(2_000);
+        run["physics_workers"] = json!(selected.benchmark_workers);
+        // The source physical scene and scripted actions are identical
+        // in every independent arena; only world identity and RNG seed
+        // differ. Native Simulation already owns persistent work-stealing
+        // CPU workers and correct Stage squad-ID remapping.
+        let original = run["levels"][0].clone();
+        run["levels"] = Value::Array((0..selected.benchmark_worlds)
+            .map(|index| {
+                let mut level = original.clone();
+                level["world_id"] = json!(index as u64 + 1);
+                level["level_id"] = json!(index as i64 + 1);
+                level["seed"] = json!(347_u64 + (index as u64) * 1_009);
+                level
+            }).collect());
     }
     // AI squads use the ordinary source command director and target real
     // opposing SquadLifetimes, not an approximate trainer-only opponent.
@@ -321,7 +365,12 @@ pub(super) fn archive(
     let scene_path = parent.join("replay-source-scene.json");
     let run_path = parent.join("replay-source-run.json");
     write_json_new(&scene_path, &scene)?;
-    run["levels"][0]["scene"] = json!(scene_path.canonicalize()?);
+    let frozen_scene = scene_path.canonicalize()?;
+    for level in run["levels"].as_array_mut().ok_or_else(||
+        invalid("native fleet build has no physical Levels"))?
+    {
+        level["scene"] = json!(frozen_scene);
+    }
     // Validate the exact RunConfig accepted by the ordinary gameplay
     // runner before publishing a discoverable replay-source-run file.
     let _: RunConfig = serde_json::from_value(run.clone())?;
