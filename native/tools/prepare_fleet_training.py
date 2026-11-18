@@ -25,7 +25,7 @@ from native_training_artifacts import atomic_json, file_sha256, sync_directory
 
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
-POLICY_ARCHETYPES = EXAMPLES / "native-skirmish.policy.scene.json"
+POLICY_ARCHETYPES = EXAMPLES / "native-queen.policy.scene.json"
 
 
 def read_json(path: Path) -> dict:
@@ -270,6 +270,16 @@ def physical_scene_identity(scene: dict) -> str:
         ship.pop("policy", None)
         if isinstance(ship.get("special_weapon"), dict):
             ship["special_weapon"].pop("observation", None)
+        special = ship.get("special")
+        if isinstance(special, dict) and special.get("kind") == "queen":
+            # Dynamic YellowJackets use the same physical spawn, actual
+            # weapon and side population cap in training and gameplay.
+            # Only their policy observation vocabulary is different.
+            minion = special.get("spawn", {}).get("minion", {})
+            if isinstance(minion, dict):
+                minion.pop("observed_weapon_type", None)
+                if isinstance(minion.get("special_weapon"), dict):
+                    minion["special_weapon"].pop("observation", None)
     for squad in physical["squads"]:
         for field in ("user_controlled", "can_accept_input",
                       "hotkey_number", "original_squad_count"):
