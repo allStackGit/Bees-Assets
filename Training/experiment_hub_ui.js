@@ -3922,9 +3922,18 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-suite-options').replaceChildren(
             ...[...available].sort(([a],[b])=>a.localeCompare(b)).map(
                 ([id,machines])=>new Option(machines.join(', '),id)));
+        const running=state?.machines.filter(machine=>machine.status==='connected')
+            .flatMap(machine=>(machine.evaluator_services||[])
+                .filter(service=>service.project===project&&
+                    (service.scheduler_state==='active'||
+                     service.service_state==='running'))
+                .map(service=>(machine.name||machine.id)+': '+service.unit))||[];
         $('hub-evaluation-available-suites').textContent=available.size
             ?available.size+' suite IDs advertised by connected '+project+
-                ' workers. Suggestions do not verify evaluator timer health.'
+                ' workers. '+(running.length
+                    ?'Observed evaluator services: '+running.slice(0,4).join('; ')+'.'
+                    :'No active evaluator scheduler confirmed for this project.')+
+                ' Service observation does not prove frozen-suite compatibility or successful evaluations.'
             :'No connected machine currently advertises '+project+
                 ' evaluation suites. Existing approved suite IDs remain editable.';
         const defaults=state?.projects.find(p=>p.id===project)
@@ -4803,6 +4812,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'';
             const requiredSuites=multi||[policy].filter(Boolean);
             const advertised=machine?.evaluation_suites?.[j.project_id]||[];
+            const evaluatorServices=(machine?.evaluator_services||[])
+                .filter(service=>service.project===j.project_id);
+            const schedulerIssue=machine?.evaluator_service_issue||null;
+            const serviceFailures=evaluatorServices.filter(service=>
+                service.last_result==='failed'||service.service_state==='failed'||
+                service.scheduler_state==='inactive');
+            const serviceHealth=serviceFailures.length
+                ?' · Evaluator service attention: '+serviceFailures.map(service=>
+                    service.unit+' ('+service.service_state+', scheduler '+
+                    service.scheduler_state+', last result '+service.last_result+')')
+                    .join('; ')
+                :evaluatorServices.some(service=>service.scheduler_state==='active'||
+                    service.service_state==='running')
+                    ?' · Evaluator scheduler observed (not proof of completed evaluations)'
+                    :evaluatorServices.length
+                        ?' · Evaluator services observed; none confirmed scheduled'
+                        :schedulerIssue
+                            ?' · Evaluator scheduler status unavailable: '+schedulerIssue
+                            :' · No matching evaluator scheduler observed';
             const availability=!policy?'':!j.assigned_machine_id
                 ?' · Evaluator: awaiting assigned machine'
                 :machine?.status!=='connected'
@@ -4814,7 +4842,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 requiredSuites.filter(rule=>
                                     !advertised.includes(rule.suite_id))
                                     .map(rule=>rule.suite_id).join(', ')+')'
-                            :' · Evaluator: suite reader advertised; timer/service health not yet reported';
+                            :' · Evaluator: suite reader advertised'+serviceHealth;
             const regressionSignals=comparisonProject===project
                 ?comparisonData?.evaluation_regressions?.filter(row=>row.job_id===j.id)||[]
                 :[];
@@ -4851,6 +4879,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     (monitoring&&j.evaluation_monitor.include_final===false
                         ?' · final checkpoint evaluation disabled':'');
                 details.append(description);
+                const statusLine=document.createElement('p');
+                statusLine.textContent=machine?.status!=='connected'
+                    ?'Evaluator service status: machine agent offline or not enrolled.'
+                    :evaluatorServices.length
+                        ?'Evaluator services (OS observations, not evaluation receipts): '+
+                            evaluatorServices.map(service=>service.unit+
+                                ' · service '+service.service_state+
+                                ' · scheduler '+service.scheduler_state+
+                                ' · last poll '+service.last_result+
+                                (service.last_finished_at
+                                    ?' at '+service.last_finished_at:'')+
+                                (service.last_exit_code!==null
+                                    ?' · exit '+service.last_exit_code:'')+
+                                (service.diagnostic?' · '+service.diagnostic:'')).join(' | ')
+                        :schedulerIssue
+                            ?'Evaluator scheduler probe unavailable: '+schedulerIssue
+                            :'No OS scheduler was observed for this project. A suite reader alone does not verify evaluation execution.';
+                details.append(statusLine);
                 if(monitoring&&j.evaluation_monitor.regression_alert) {
                     const info=document.createElement('p');
                     info.textContent=regressionSignals.length
