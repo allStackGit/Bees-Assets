@@ -86,6 +86,7 @@ function createNativeBeesPortableCollectorAdapter({
         'transfer_policy_bundle.py',
         'native_bundle_receiver.py',
         'native_distributed_collection.py',
+        'native_gpu_allocation.py',
         'native_training_artifacts.py',
         'policy_worker.py',
     ];
@@ -149,6 +150,18 @@ function createNativeBeesPortableCollectorAdapter({
             typeof metrics.wall_seconds!=='number'||!Number.isFinite(metrics.wall_seconds)||
             metrics.wall_seconds<=0)
             throw Error('Native portable collector receipt is invalid or incomplete.');
+        const gpu=metrics.gpu_inference;
+        if((receipt.leased_gpu_inference===true&&!gpu)||
+            (gpu!=null&&(
+                !Number.isSafeInteger(gpu.verified_workers)||
+                gpu.verified_workers!==receipt.rollout_processes||
+                !Number.isSafeInteger(gpu.model_forwards)||
+                gpu.model_forwards<gpu.verified_workers||
+                !Number.isSafeInteger(gpu.agent_rows)||
+                gpu.agent_rows<gpu.model_forwards||
+                gpu.agent_rows>metrics.successful_policy_rows
+            )))
+            throw Error('Native collector GPU work lacks completed model-forward evidence.');
         capturePaths(receipt);
         return {receipt,stat};
     }
