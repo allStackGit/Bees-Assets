@@ -258,18 +258,27 @@ class EvaluationHistory {
         const segment=data.segment+(rotate?1:0);
         const file=this.file(jobId,segment);
         if(rotate) {
-            // Before opening the next segment, recheck ownership of the
-            // existing last segment. Rotation must never mask tampering or
-            // truncate any previously accepted evaluation.
-            const preceding=fs.lstatSync(this.file(jobId,data.segment));
-            if(!preceding.isFile()||preceding.isSymbolicLink()||
-                preceding.nlink!==1||preceding.size!==data.size||
-                preceding.ino!==data.ino||preceding.dev!==data.dev||
-                (typeof process.getuid==='function'&&
-                 (preceding.uid!==process.getuid()||
-                  (preceding.mode&0o077)!==0)))
-                throw Error('Independent evaluation archive changed before rotation.');
+            // Recheck the opened predecessor and its directory entry before
+            // rolling over. Neither a symlink replacement nor an inode swap
+            // may turn a tampered archive into an apparently new segment.
+            const previous=this.file(jobId,data.segment);
+            const previousFd=fs.openSync(previous,fs.constants.O_RDONLY|
+                (fs.constants.O_NOFOLLOW||0));
+            try {
+                const preceding=fs.fstatSync(previousFd);
+                const named=fs.lstatSync(previous);
+                if(!preceding.isFile()||!named.isFile()||
+                    named.isSymbolicLink()||preceding.nlink!==1||
+                    preceding.size!==data.size||
+                    preceding.ino!==data.ino||preceding.dev!==data.dev||
+                    named.ino!==preceding.ino||named.dev!==preceding.dev||
+                    (typeof process.getuid==='function'&&
+                     (preceding.uid!==process.getuid()||
+                      (preceding.mode&0o077)!==0)))
+                    throw Error('Independent evaluation archive changed before rotation.');
+            }finally {fs.closeSync(previousFd);}
         }
+        const newFile=!fs.existsSync(file);
         const fd=fs.openSync(file,fs.constants.O_CREAT|fs.constants.O_RDWR|
             fs.constants.O_APPEND|(fs.constants.O_NOFOLLOW||0),0o600);
         try {
@@ -291,10 +300,10 @@ class EvaluationHistory {
                     offset+=n;
                 }
                 fs.fsyncSync(fd);
-                // On POSIX, ensure a newly created segment's directory
-                // entry is durable as well as the receipt bytes. Windows
-                // retains the existing file-level fsync semantics.
-                if(rotate&&process.platform!=='win32') {
+                // On POSIX, ensure a newly created file's directory
+                // entry is durable along with its fsynced contents, including
+                // the original first segment. Windows retains file fsync.
+                if(newFile&&process.platform!=='win32') {
                     const directoryFd=fs.openSync(this.directory,'r');
                     try {fs.fsyncSync(directoryFd);}
                     finally {fs.closeSync(directoryFd);}
