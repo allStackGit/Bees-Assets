@@ -894,7 +894,7 @@ label.hub-toggle-row > input[type="checkbox"] {
           <div class="hub-controls wide">
             <button id="hub-evaluation-add-suite" type="button">Add another evaluation suite</button>
           </div>
-          <small class="muted wide">Monitoring can require both new checkpoint updates and a minimum wall-clock interval. The clock interval does not create checkpoints or postpone an eligible final checkpoint. Additional suites can override the shared update interval when monitoring without stopping; different intervals require independently scheduled one-suite evaluator services. Success-based stopping retains one checkpoint-coherent batch.</small>
+          <small class="muted wide">Monitoring can require both new checkpoint updates and a minimum wall-clock interval. The clock interval does not create checkpoints or postpone an eligible final checkpoint. Additional suites can override either the shared update interval or the minimum minutes between evaluations when monitoring without stopping. Differing update or time intervals use independently scheduled one-suite evaluator services. Success-based stopping retains one checkpoint-coherent batch and does not allow per-suite schedule overrides.</small>
           <fieldset class="wide" id="hub-evaluation-measurements-panel">
             <legend>Independent evaluation chart priorities</legend>
             <div id="hub-evaluation-measurements" class="hub-controls"></div>
