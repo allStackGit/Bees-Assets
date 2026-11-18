@@ -633,6 +633,16 @@ pub struct GameBombMeasurements {
     pub yellow_jacket_detonations: u64,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct GameMapBorderMeasurements {
+    /// Authoritative physics ship/MapBorder ENTER contacts, never frame scans.
+    pub ship_entries: u64,
+    /// Source HasTargetDirection orders stopped by ordinary MapBorder.
+    pub movement_stops: u64,
+    /// Deliberate authored override for active Barge movement/charges.
+    pub override_skips: u64,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GameBargeMeasurements {
     pub starts: u64,
@@ -801,6 +811,7 @@ pub struct CombatWorld {
     pending_player_scout_beacons: Vec<i64>,
     navigation_requests: NavigationRequests,
     game_ship_steering: HashMap<i64, GameShipSteering>,
+    map_border_measurements: GameMapBorderMeasurements,
     /// The Level-owned policy controller stores actual ongoing action
     /// state for each bound ship; no secondary training-only movement world.
     // Stable ship-ID iteration is necessary for reproducible shot IDs.
@@ -1000,6 +1011,7 @@ impl CombatWorld {
             pending_player_scout_beacons: Vec::new(),
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
+            map_border_measurements: GameMapBorderMeasurements::default(),
             policy_ship_runtime: BTreeMap::new(),
             ship_weapons: BTreeMap::new(),
             automatic_weapon_measurements: AutomaticWeaponMeasurements::default(),
@@ -1322,6 +1334,10 @@ impl CombatWorld {
 
     pub fn game_barge_measurements(&self) -> GameBargeMeasurements {
         self.game_barge_measurements
+    }
+
+    pub fn map_border_measurements(&self) -> GameMapBorderMeasurements {
+        self.map_border_measurements
     }
 
     pub fn tracked_order_measurements(&self) -> TrackedOrderMeasurements {
@@ -3547,6 +3563,47 @@ impl CombatWorld {
         }
     }
 
+    /// Source MapBorder.OnTriggerEnter2D checks HasTargetDirection after
+    /// the Barge Charge special has had first refusal. Do not stop point,
+    /// path or neural-policy movement, and never stop an authored scripted
+    /// Barge exit with CanOverrideBounds. A real ship entry is the trigger:
+    /// contact persistence does not repeatedly reset the controller.
+    fn process_map_border_ship_entries(&mut self) -> Result<(), CombatWorldError> {
+        for index in 0..self.physics.ship_obstacle_entries().len() {
+            let contact = self.physics.ship_obstacle_entries()[index];
+            let Some(&obstacle_index) = self.obstacle_by_id.get(&contact.obstacle_id)
+            else { continue };
+            if self.obstacles[obstacle_index].kind != ObstacleKind::MapBorder {
+                continue;
+            }
+            let Some(&ship_index) = self.ship_by_id.get(&contact.ship_id)
+            else { continue };
+            if !self.physics.ships()[ship_index].active ||
+                self.ships[ship_index].vitals.is_dead() {
+                continue;
+            }
+            self.map_border_measurements.ship_entries += 1;
+            // The source's movement boundary applies to game direction
+            // commands; policies have their own episode-confinement rules.
+            if self.physics.ships()[ship_index].motion.is_policy_controlled &&
+                !self.physics.ships()[ship_index].motion.user_controlled {
+                continue;
+            }
+            if !self.game_ship_steering.get(&contact.ship_id)
+                .is_some_and(|steering| steering.has_direction_order()) {
+                continue;
+            }
+            if self.game_barge_charges.get(&contact.ship_id)
+                .is_some_and(|charge| charge.can_override_bounds) {
+                self.map_border_measurements.override_skips += 1;
+                continue;
+            }
+            self.stop_ship_game_movement(contact.ship_id)?;
+            self.map_border_measurements.movement_stops += 1;
+        }
+        Ok(())
+    }
+
     fn process_map_border_contacts(&mut self) {
         for index in 0..self.physics.obstacle_pair_entries().len() {
             let pair = self.physics.obstacle_pair_entries()[index];
@@ -4244,6 +4301,7 @@ impl CombatWorld {
         // immediately. Reuse the physics ship/obstacle entry stream before
         // accepting any later enemy-hull contacts in this fixed step.
         self.resolve_game_barge_border_contacts()?;
+        self.process_map_border_ship_entries()?;
         self.resolve_policy_barge_contacts(collision_matrix)?;
         self.resolve_game_barge_contacts(collision_matrix)?;
         // Striker.CheckCarrierReload runs on the same Level timer clock.
