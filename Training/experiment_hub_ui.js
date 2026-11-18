@@ -4599,22 +4599,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const gateSummary=multi?multi.map((rule,index)=>{
                 const receipt=j.evaluation_stop_evidence?.all_of?.[index]||
                     cohort?.receipts?.[rule.suite_id];
-                const met=receipt&&receipt.trials>=rule.min_trials&&
-                    receipt.successes/receipt.trials>=rule.min_success_rate;
+                const stopRule=(j.evaluation_stop?.all_of||
+                    [j.evaluation_stop].filter(Boolean))
+                    .find(candidate=>candidate.suite_id===rule.suite_id);
+                const met=Boolean(receipt&&stopRule&&
+                    receipt.trials>=stopRule.min_trials&&
+                    receipt.successes/receipt.trials>=stopRule.min_success_rate);
                 return rule.suite_id+': '+(receipt
                     ?receipt.successes+'/'+receipt.trials+
-                        (monitoring?' recorded':met?' passed':' below target')
+                        (monitoring?(j.evaluation_stop
+                            ?met?' stop target met':' below stop target'
+                            :' recorded'):met?' passed':' below target')
                     :'pending');
             }).join(' · '):null;
             const evaluation=policy
                 ?multi
-                    ?' · '+(monitoring?'Monitoring suites':'Benchmark gates')+
+                    ?' · '+(monitoring?(j.evaluation_stop?'Monitoring suites with optional Stop':'Monitoring suites'):'Benchmark gates')+
                         ' ('+multi.length+' suites, same checkpoint): '+
                         gateSummary+(j.evaluation_stop_evidence?' · Stop authorized':'')+
                         (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
                     :' · Evaluation '+policy.suite_id+': '+(evidence
                         ?evidence.successes+'/'+evidence.trials+' successes'+
-                            (monitoring?' · monitoring only':
+                            (monitoring?(j.evaluation_stop?' · monitoring with success-based Stop':' · monitoring only'):
                                 j.evaluation_stop_evidence?' · stop target met':' · target not met')
                         :'awaiting evidence')+
                         (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
