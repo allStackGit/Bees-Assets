@@ -1966,6 +1966,9 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-compare-export-csv').disabled=!hasExportData||!selectedMetrics.length;
         $('hub-compare-export-json').disabled=!hasExportData&&!runs.some(run=>
             hubComparisonTerminal(run.job)||hubComparisonEvaluation(run.job));
+        $('hub-compare-export-evaluator-events').disabled=project==='bees'||
+            !runs.some(run=>run.job.assigned_machine_id&&
+                !run.job.evaluation_history_only);
         const note=comparisonError&&comparisonProject===project
             ?'Unable to load comparison history: '+comparisonError
             :comparisonProject!==project
@@ -3129,6 +3132,70 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-compare-export-message','Exported '+runs.length+
             ' selected runs as '+format.toUpperCase()+
             '. This is observational progress, not independent evaluation.');
+    }
+    async function exportEvaluatorServiceHistory() {
+        if(!state||project==='bees')
+            throw Error('Select a native Experiment Hub project.');
+        const selected=new Set(compareSlots.map(slot=>$('hub-compare-'+slot).value)
+            .filter(Boolean));
+        const machines=[...new Set(state.jobs.filter(job=>
+            selected.has(job.id)&&job.project_id===project&&
+            job.assigned_machine_id).map(job=>job.assigned_machine_id))];
+        if(!machines.length)
+            throw Error('Select a run with an assigned evaluator machine.');
+        const button=$('hub-compare-export-evaluator-events');
+        button.disabled=true;
+        try {
+            const exported={
+                schema_version:1,project_id:project,
+                exported_at:new Date().toISOString(),
+                source:'Experiment Hub authenticated evaluator OS observations',
+                interpretation:'Scheduler and process health are not proof of independent checkpoint evaluation, benchmark success, Stop eligibility or promotion.',
+                machines:[],
+            };
+            for(const machineId of machines) {
+                const records=[];
+                let offset=0,total=null;
+                for(let page=0;page<4000;page++) {
+                    const response=await fetch('/api/hub/evaluation/service-history?machine_id='+
+                        encodeURIComponent(machineId)+'&offset='+offset+'&limit=40',
+                        {cache:'no-store'});
+                    const data=await response.json();
+                    if(!response.ok)throw Error(data.error||
+                        'Evaluator service archive unavailable for '+machineId);
+                    if(data.machine_id!==machineId||data.offset!==offset||
+                        !Number.isSafeInteger(data.total)||data.total<0||
+                        !Array.isArray(data.events)||data.events.length>40)
+                        throw Error('Evaluator service archive pagination changed unexpectedly.');
+                    if(total===null)total=data.total;
+                    if(data.total<total||
+                        data.events.some(event=>event.machine_id!==machineId))
+                        throw Error('Evaluator service history identity changed while exporting.');
+                    records.push(...data.events.slice(0,Math.max(0,total-offset)));
+                    offset+=data.events.length;
+                    if(offset>=total)break;
+                    if(!data.events.length||page===3999)
+                        throw Error('Evaluator service archive pagination could not finish.');
+                }
+                exported.machines.push({machine_id:machineId,
+                    total_events:total,events:records});
+            }
+            const blob=new Blob([JSON.stringify(exported,null,2)+'\n'],
+                {type:'application/json;charset=utf-8'});
+            const url=URL.createObjectURL(blob);
+            const link=document.createElement('a');
+            link.href=url;
+            link.download='experiment-hub-'+project+'-evaluator-service-history-'+
+                exported.exported_at.replace(/[-:.]/g,'').replace('Z','z')+'.json';
+            document.body.append(link);
+            try{link.click();}finally{
+                link.remove();
+                setTimeout(()=>URL.revokeObjectURL(url),1000);
+            }
+            feedback('hub-compare-export-message',
+                'Exported complete append-only evaluator service observations for '+
+                machines.length+' assigned machine(s). These are diagnostics, not benchmark receipts.');
+        }finally{button.disabled=false;}
     }
     // The coordinator invokes only an installed trusted exporter. No browser
     // request can choose a filesystem path, executable or checkpoint filename.
@@ -5810,6 +5877,12 @@ document.addEventListener('DOMContentLoaded', () => {
         document.createTextNode(' Export every recorded metric, including those not retained in charts'));
     $('hub-compare-export-full').insertAdjacentElement(
         'beforebegin',exportAllMetricsLabel);
+    $('hub-compare-export-evaluator-events').addEventListener('click',async()=>{
+        try{await exportEvaluatorServiceHistory();}
+        catch(error){
+            feedback('hub-compare-export-message',String(error.message||error));
+        }
+    });
     $('hub-compare-export-full').addEventListener('click',async()=>{
         try{await exportCompleteComparison();}
         catch(error){
