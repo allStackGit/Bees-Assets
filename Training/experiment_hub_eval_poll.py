@@ -323,6 +323,19 @@ def awaits_archive_ack(path: Path, job: dict, suite_id: str,
         receipt.get(field) != archived.get(field) for field in fields)
 
 
+def archive_matches_checkpoint(job: dict, checkpoint: str,
+                               suite_digest_value: str) -> bool:
+    """A durable Hub observation can de-duplicate work after scratch loss."""
+    receipt = job.get("archived_evaluation")
+    return (isinstance(receipt, dict) and
+            receipt.get("checkpoint_sha256") == checkpoint and
+            receipt.get("suite_sha256") == suite_digest_value and
+            type(receipt.get("trials")) is int and
+            receipt["trials"] >= job["min_trials"] and
+            type(receipt.get("successes")) is int and
+            0 <= receipt["successes"] <= receipt["trials"])
+
+
 def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> None:
     receipt = pending["receipt"]
     dispatch = receipt["dispatch_id"]
@@ -457,10 +470,12 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                     # A new checkpoint filename is not proof of new policy
                     # bytes. Avoid repeated expensive deterministic matches
                     # against the same immutable model in monitoring mode.
-                    if job.get("monitor_only") and passed_receipt(
-                        receipt, dispatch, receipt_suite, job, digest
-                    ) and json.loads(read_bounded(receipt, 4096)).get(
-                        "checkpoint_sha256") == checkpoint_digest:
+                    if job.get("monitor_only") and (
+                        archive_matches_checkpoint(job, checkpoint_digest, digest) or
+                        (passed_receipt(receipt, dispatch, receipt_suite, job, digest) and
+                         json.loads(read_bounded(receipt, 4096)).get(
+                             "checkpoint_sha256") == checkpoint_digest)
+                    ):
                         cursor.pop(dispatch)
                         cursor[dispatch] = update
                         save_cursor(state, saved)
@@ -691,12 +706,16 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
                     verified_checkpoint = checkpoint_digest
                     if jobs[0].get("monitor_only") and all(
-                        passed_receipt(
-                            args.receipt_root / f"{dispatch}.{sid}.json",
-                            dispatch, receipt_suite, job, definitions[sid]
-                        ) and json.loads(read_bounded(
-                            args.receipt_root / f"{dispatch}.{sid}.json", 4096)
-                        ).get("checkpoint_sha256") == checkpoint_digest
+                        archive_matches_checkpoint(
+                            job, checkpoint_digest, definitions[sid]
+                        ) or (
+                            passed_receipt(
+                                args.receipt_root / f"{dispatch}.{sid}.json",
+                                dispatch, receipt_suite, job, definitions[sid]
+                            ) and json.loads(read_bounded(
+                                args.receipt_root / f"{dispatch}.{sid}.json", 4096)
+                            ).get("checkpoint_sha256") == checkpoint_digest
+                        )
                         for (sid, (_, receipt_suite)), job in zip(ordered, jobs)
                     ):
                         cursor.pop(dispatch)
