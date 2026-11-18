@@ -120,9 +120,31 @@ class EvaluationHistory {
              (dir.uid!==process.getuid()||(dir.mode&0o077)!==0)))
             throw Error('Independent evaluation archive directory is unsafe.');
     }
-    file(jobId) {
-        if(!UUID.test(String(jobId)))throw Error('Invalid evaluation job ID.');
-        return path.join(this.directory,jobId+'.jsonl');
+    // Archive segmentation is internal to this existing history: the original
+    // job.jsonl is segment zero and remains readable unchanged. Subsequent
+    // immutable byte prefixes are job.000001.jsonl, job.000002.jsonl, etc.
+    // A missing segment fails closed rather than silently shortening evidence.
+    file(jobId,segment=0) {
+        if(!UUID.test(String(jobId))||
+            !Number.isSafeInteger(segment)||segment<0||segment>999999)
+            throw Error('Invalid evaluation archive segment identity.');
+        return path.join(this.directory,jobId+
+            (segment?'.'+String(segment).padStart(6,'0'):'')+'.jsonl');
+    }
+    segmentFiles(jobId) {
+        const primary=this.file(jobId);
+        this.directoryReady();
+        const prefix=jobId+'.';
+        const segments=fs.readdirSync(this.directory)
+            .filter(name=>name.startsWith(prefix)&&
+                /^[0-9]{6}\.jsonl$/.test(name.slice(prefix.length)))
+            .map(name=>Number(name.slice(prefix.length,-6)))
+            .sort((a,b)=>a-b);
+        if(segments.some((number,index)=>number!==index+1)||
+            (segments.length&&!fs.existsSync(primary)))
+            throw Error('Independent evaluation archive segment sequence is incomplete.');
+        return fs.existsSync(primary)
+            ?[primary,...segments.map(number=>this.file(jobId,number))]:[];
     }
     load(jobId,projectId) {
         const existing=this.loaded.get(jobId);
@@ -131,12 +153,11 @@ class EvaluationHistory {
                 throw Error('Independent evaluation job ID belongs to another project.');
             return existing;
         }
-        this.directoryReady();
-        const file=this.file(jobId);
+        const files=this.segmentFiles(jobId);
         const records=[],diagnostics=[],seen=new Map(),issueKeys=new Set(),
             failureAttempts=new Map();
         let lastEntry=null,conflicted=false,stat=null;
-        if(fs.existsSync(file)) {
+        for(const file of files) {
             stat=fs.lstatSync(file);
             if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||
                 stat.size>MAX_BYTES||
@@ -222,6 +243,7 @@ class EvaluationHistory {
         }
         const loaded={project_id:projectId,records,diagnostics,seen,issueKeys,
             failureAttempts,conflicted,lastEntry,
+            segment:Math.max(0,files.length-1),
             size:stat?.size||0,dev:stat?.dev??null,ino:stat?.ino??null};
         this.loaded.set(jobId,loaded);
         return loaded;
@@ -230,17 +252,34 @@ class EvaluationHistory {
     // one protected, fsynced append path. Never overwrite prior evidence.
     appendRow(jobId,data,row) {
         const body=Buffer.from(JSON.stringify(row)+'\n');
-        if(body.length>8192||data.size+body.length>MAX_BYTES)
-            throw Error('Independent evaluation history exceeds its size limit.');
-        const file=this.file(jobId);
+        if(body.length>8192)
+            throw Error('Independent evaluation history record exceeds 8 KiB.');
+        const rotate=data.size+body.length>MAX_BYTES;
+        const segment=data.segment+(rotate?1:0);
+        const file=this.file(jobId,segment);
+        if(rotate) {
+            // Before opening the next segment, recheck ownership of the
+            // existing last segment. Rotation must never mask tampering or
+            // truncate any previously accepted evaluation.
+            const preceding=fs.lstatSync(this.file(jobId,data.segment));
+            if(!preceding.isFile()||preceding.isSymbolicLink()||
+                preceding.nlink!==1||preceding.size!==data.size||
+                preceding.ino!==data.ino||preceding.dev!==data.dev||
+                (typeof process.getuid==='function'&&
+                 (preceding.uid!==process.getuid()||
+                  (preceding.mode&0o077)!==0)))
+                throw Error('Independent evaluation archive changed before rotation.');
+        }
         const fd=fs.openSync(file,fs.constants.O_CREAT|fs.constants.O_RDWR|
             fs.constants.O_APPEND|(fs.constants.O_NOFOLLOW||0),0o600);
         try {
             const st=fs.fstatSync(fd),current=fs.lstatSync(file);
+            const expectedSize=rotate?0:data.size;
             if(!st.isFile()||st.nlink!==1||!current.isFile()||
                 current.isSymbolicLink()||st.ino!==current.ino||
-                st.dev!==current.dev||st.size!==data.size||
-                (data.ino!==null&&(data.ino!==st.ino||data.dev!==st.dev))||
+                st.dev!==current.dev||st.size!==expectedSize||
+                (!rotate&&data.ino!==null&&
+                 (data.ino!==st.ino||data.dev!==st.dev))||
                 (typeof process.getuid==='function'&&
                  (st.uid!==process.getuid()||(st.mode&0o077)!==0)))
                 throw Error('Independent evaluation archive was replaced or modified.');
@@ -252,10 +291,15 @@ class EvaluationHistory {
                     offset+=n;
                 }
                 fs.fsyncSync(fd);
+                // On POSIX, ensure a newly created segment's directory
+                // entry is durable as well as the receipt bytes. Windows
+                // retains the existing file-level fsync semantics.
+                if(rotate&&process.platform!=='win32') {
+                    const directoryFd=fs.openSync(this.directory,'r');
+                    try {fs.fsyncSync(directoryFd);}
+                    finally {fs.closeSync(directoryFd);}
+                }
             }catch(error) {
-                // A partial write must not become an apparent historical
-                // receipt after a crash. Roll back to the last confirmed
-                // boundary and make that truncation durable before retrying.
                 try {
                     fs.ftruncateSync(fd,st.size);
                     fs.fsyncSync(fd);
@@ -265,7 +309,8 @@ class EvaluationHistory {
                 }
                 throw error;
             }
-            data.size+=body.length;
+            data.segment=segment;
+            data.size=st.size+body.length;
             data.dev=st.dev;data.ino=st.ino;
             data.lastEntry=row;
         }finally{fs.closeSync(fd);}
