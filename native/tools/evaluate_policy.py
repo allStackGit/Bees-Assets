@@ -194,6 +194,10 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     # generations. The environment seed plans remain fixed in the source
     # Level config; a distinct inference RNG controls policy sampling.
     env = dict(os.environ)
+    # Fixed-reference comparisons must not inherit a shell's unrelated
+    # model-placement override. Only the recorded --inference-device
+    # may relocate PyTorch weights at evaluation time.
+    env.pop("BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE", None)
     env["BEES_NATIVE_EVALUATION_SEED"] = str(policy_seed)
     # Device placement does not change the signed model manifest or its
     # checkpoint hash. It is explicit in the evaluation receipt because
