@@ -227,6 +227,34 @@ function evaluationEvidence(value,policy,dispatchId) {
         ...(value.evaluated_at?{evaluated_at:value.evaluated_at}:{}),
         ...(value.metrics!==undefined?{metrics:evaluationMeasurements(value.metrics)}:{})};
 }
+// A failed evaluator attempt is an observation, never an evaluation score.
+function evaluationFailure(value,context) {
+    const keys=['schema_version','evaluation_status','project_id','job_id',
+        'dispatch_id','suite_id','suite_sha256','checkpoint_sha256',
+        'runtime_sha256','steps_completed','attempted_at','reason'];
+    if(!record(value)||!record(context)||
+        Object.keys(value).some(key=>!keys.includes(key))||
+        value.schema_version!==1||value.evaluation_status!=='failed'||
+        value.project_id!==context.project_id||
+        value.job_id!==context.job_id||
+        value.dispatch_id!==context.dispatch_id||
+        value.suite_id!==context.suite_id||
+        !SHA256.test(String(value.suite_sha256||''))||
+        !SHA256.test(String(value.checkpoint_sha256||''))||
+        (context.suite_sha256&&value.suite_sha256!==context.suite_sha256)||
+        (value.runtime_sha256!==undefined&&
+            !SHA256.test(String(value.runtime_sha256)))||
+        (value.steps_completed!==undefined&&
+            (!Number.isSafeInteger(value.steps_completed)||value.steps_completed<0))||
+        typeof value.attempted_at!=='string'||
+        !Number.isFinite(Date.parse(value.attempted_at))||
+        new Date(value.attempted_at).toISOString()!==value.attempted_at||
+        typeof value.reason!=='string'||!value.reason||
+        value.reason.length>160||value.reason.split(/\s+/).join(' ')!==value.reason)
+        throw Error('Invalid independent evaluation failed-attempt identity.');
+    return {...value};
+}
+
 function evaluationRules(policy) {
     return policy?.all_of|| (policy?[policy]:[]);
 }
@@ -282,13 +310,11 @@ function evaluationReader(projectId,evaluationRoot,evaluationSuites,protectedRoo
         isWithin(dir,root)||isWithin(root,dir)))
         throw Error('Evaluation receipts must be separate from source and training artifacts.');
     const suites=Object.freeze(suiteIds(evaluationSuites));
-    return {
-        evaluation_suites:suites,
-        readEvaluation(context) {
-            if(context?.project_id!==projectId||!UUID.test(String(context.job_id||''))||
-                !UUID.test(String(context.dispatch_id||''))||!suites.includes(context.suite_id))
-                throw Error('Invalid independent evaluation identity.');
-            const file=path.join(root,context.dispatch_id+'.'+context.suite_id+'.json');
+    function readRaw(context,suffix) {
+        if(context?.project_id!==projectId||!UUID.test(String(context.job_id||''))||
+            !UUID.test(String(context.dispatch_id||''))||!suites.includes(context.suite_id))
+            throw Error('Invalid independent evaluation identity.');
+        const file=path.join(root,context.dispatch_id+'.'+context.suite_id+suffix);
             if(fs.realpathSync(root)!==root)
                 throw Error('Evaluation directory identity changed.');
             let fd;
@@ -300,18 +326,28 @@ function evaluationReader(projectId,evaluationRoot,evaluationSuites,protectedRoo
                 const bytes=fs.readSync(fd,buffer,0,buffer.length,0);
                 if(bytes<1||bytes>4096)
                     throw Error('Invalid evaluation receipt size.');
-                return evaluationEvidence(JSON.parse(buffer.toString('utf8',0,bytes)),
-                    {suite_id:context.suite_id},context.dispatch_id);
+                return JSON.parse(buffer.toString('utf8',0,bytes));
             }catch(error) {
                 if(error.code==='ENOENT'&&fd===undefined)return null;
                 throw error;
             }finally {
                 if(fd!==undefined)fs.closeSync(fd);
             }
+    }
+    return {
+        evaluation_suites:suites,
+        readEvaluation(context) {
+            const receipt=readRaw(context,'.json');
+            return receipt===null?null:evaluationEvidence(receipt,
+                {suite_id:context.suite_id},context.dispatch_id);
+        },
+        readEvaluationFailure(context) {
+            const failure=readRaw(context,'.failed.json');
+            return failure===null?null:evaluationFailure(failure,context);
         },
     };
 }
 
 module.exports={evaluationPolicy,monitoringPolicy,compatibleMonitoringStop,activeEvaluation,
-    evaluationEvidence,evaluationRules,evaluationComplete,
+    evaluationEvidence,evaluationFailure,evaluationRules,evaluationComplete,
     suiteIds,supportsEvaluation,evaluationReader,modelFileSha256};
