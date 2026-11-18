@@ -113,10 +113,13 @@ class LocalExecution {
                     throw Error('GPU access probe frozen configuration fingerprint mismatch.');
                 const count=job.resources?.gpu_count;
                 const dual=count===2&&
-                    dockerCapable(this.supervisor)&&
-                    localAdapter?.gpu_dual_execution==='split-ppo'&&
-                    job.frozen_parameters?.device==='dual'&&
-                    job.resources?.gpu_mode==='exclusive';
+                    job.resources?.gpu_mode==='exclusive'&&(
+                        (dockerCapable(this.supervisor)&&
+                            localAdapter?.gpu_dual_execution==='split-ppo'&&
+                            job.frozen_parameters?.device==='dual')||
+                        (['bees_native','bees_native_collect'].includes(job.project_id)&&
+                            localAdapter?.gpu_dual_execution==='native-rollouts')
+                    );
                 const single=count===1;
                 if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
                     !this.supervisor.qualifiedAt||
