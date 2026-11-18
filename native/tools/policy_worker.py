@@ -365,6 +365,14 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
         # slot, signature and manifest update has been accepted. A rejected
         # candidate can never displace the active cache.
         model._verified_identity = identity
+        model._gpu_execution = (
+            model.device.type == "cuda"
+            if isinstance(model, (TorchScriptPolicy, MlagentsPolicy))
+            else model.session.get_providers()[0] in (
+                "CUDAExecutionProvider", "ROCMExecutionProvider",
+                "MIGraphXExecutionProvider",
+            )
+        )
         # Libraries reopen model paths during deserialization. Detect an
         # artifact replaced between the first verified read and actual
         # model load, rather than attributing different weights to the
@@ -540,6 +548,12 @@ def collect_predictions(
         prediction = (model.predict(sub_obs, sub_mask, capture_behavior)
                       if isinstance(model, MlagentsPolicy)
                       else model.predict(sub_obs, sub_mask))
+        if measurements is not None and model._gpu_execution:
+            # Count completed genuine forwards, not allocated devices or
+            # loaded-but-never-used policy slots. Shared-model batches count
+            # exactly once, regardless of how many slots routed to them.
+            measurements["gpu_forward_calls"] += 1
+            measurements["gpu_forward_rows"] += count
         if not isinstance(prediction, (tuple, list)) or len(prediction) not in (2, 3):
             raise ValueError("policy backend must return two actions and optional behavior statistics")
         sampled = capture_behavior and isinstance(model, MlagentsPolicy)
@@ -597,6 +611,7 @@ def main() -> None:
         "batches": 0, "agent_rows": 0,
         "slot_forwards_without_sharing": 0, "actual_model_forwards": 0,
         "model_updates": 0,
+        "gpu_forward_calls": 0, "gpu_forward_rows": 0,
         "action_only_batches": 0, "action_only_rows": 0,
         "behavior_bytes_avoided": 0,
     }
