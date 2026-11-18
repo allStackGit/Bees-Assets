@@ -638,7 +638,7 @@ fn recent_job_logs(job: &Path) -> io::Result<(PathBuf, PathBuf, Option<String>)>
         let Some(number) = filename.strip_prefix("trainer-resume-")
             .and_then(|name| name.strip_suffix(".stderr.log")) else { continue };
         if number.len() == 6 && number.bytes().all(|ch| ch.is_ascii_digit()) &&
-            last.as_ref().is_none_or(|(old, _): &(String, PathBuf)| number > old)
+            last.as_ref().is_none_or(|(old, _): &(String, PathBuf)| number > old.as_str())
         {
             last = Some((number.to_string(), entry.path()));
         }
@@ -655,7 +655,7 @@ fn recent_job_logs(job: &Path) -> io::Result<(PathBuf, PathBuf, Option<String>)>
         let size = file.metadata()?.len();
         file.seek(SeekFrom::Start(size.saturating_sub(16 * 1024)))?;
         let mut tail = Vec::with_capacity((size.min(16 * 1024)) as usize);
-        file.read_to_end(&mut tail)?;
+        file.take(16 * 1024).read_to_end(&mut tail)?;
         String::from_utf8_lossy(&tail).lines()
             .rev().map(str::trim).find(|line| !line.is_empty())
             .map(|line| line.chars().take(180).collect::<String>())
