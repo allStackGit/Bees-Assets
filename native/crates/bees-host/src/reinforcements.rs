@@ -45,7 +45,9 @@ pub(crate) struct ReinforcementWave {
     entry: Option<Vec2>,
     squads: Vec<NativeAuthoredSquad>,
     ships: Vec<NativeAuthoredShip>,
-    /// Authored group IDs remain dormant until these exact ships exist.
+    /// Actual model-controlled ships, whether or not MA-POCA is enabled.
+    policy_agents: usize,
+    /// Only training groups register separate source reward identities.
     group_agents: Vec<(i32, u64)>,
 }
 
@@ -302,7 +304,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             let entry = plan.entry.filter(|point| !point.unity_equal(Vec2::ZERO));
             waves.push(ReinforcementWave {
                 due, entry, squads: Vec::new(), ships: Vec::new(),
-                group_agents: Vec::new(),
+                policy_agents: 0, group_agents: Vec::new(),
             });
         }
         // Validate deferred membership and physical ownership BEFORE taking
@@ -371,13 +373,19 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     let ship = source_ships[ship_id];
                     let group_team = self.groups.as_ref()
                         .and_then(|groups| groups.delivery.team_id(ship.side));
-                    if let Some(participant) = self.metadata.deferred_policy_participant(
+                    if let Some((side, group_id)) = self.metadata.deferred_policy_participant(
                         ship, group_team,
                     )? {
-                        if !deferred_group_ids.insert(participant) {
-                            return Err("Reinforcement MA-POCA participant identities must be unique");
+                        waves[wave_idx].policy_agents += 1;
+                        if self.groups.is_some() {
+                            let participant = (side, group_id.ok_or(
+                                "MA-POCA policy reinforcement needs its source group identity",
+                            )?);
+                            if !deferred_group_ids.insert(participant) {
+                                return Err("Reinforcement MA-POCA participant identities must be unique");
+                            }
+                            waves[wave_idx].group_agents.push(participant);
                         }
-                        waves[wave_idx].group_agents.push(participant);
                     }
                 }
             }
@@ -555,8 +563,8 @@ impl NativePolicyOnlyMetadata {
             // Registration happens strictly after live combat bodies and
             // roster membership exist. Next-tick decision synchronization
             // discovers their CombatWorld policy bindings normally.
-            let policy_agents = wave.group_agents.len();
-            if policy_agents > 0 {
+            let policy_agents = wave.policy_agents;
+            if !wave.group_agents.is_empty() {
                 let group = events.group_delivery_mut().ok_or_else(||
                     invalid("Missing MA-POCA group for policy reinforcements".into()))?;
                 for (side, group_id) in wave.group_agents {
