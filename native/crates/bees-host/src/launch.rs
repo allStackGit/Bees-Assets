@@ -2484,9 +2484,15 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             status: "  [Custom native fleets]", unlocked: true,
         });
         let fleet_train_index = rows.len();
+        let training_available = fleet_training::training_available();
         rows.push(BattleMenuRow {
             title: "Train Saved Fleet",
-            status: "  [MA-POCA native training]", unlocked: true,
+            status: if training_available {
+                "  [MA-POCA native training]"
+            } else {
+                "  [Install native training runtime]"
+            },
+            unlocked: training_available,
         });
         let fleet_training_jobs_index = rows.len();
         rows.push(BattleMenuRow {
