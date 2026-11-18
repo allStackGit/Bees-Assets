@@ -170,6 +170,15 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_last_copy_worker',
             'training_shared_reply_gap_work_share',
             'training_shared_reply_skew_pressure',
+            'training_shared_gpu_collectors',
+            'training_shared_gpu_policy_retained',
+            'training_shared_gpu_policy_reused',
+            'training_shared_gpu_snapshot_bytes',
+            'training_shared_gpu_snapshot_seconds',
+            'training_shared_gpu_policy_reuse_fraction',
+            'training_shared_gpu_policy_retention_gap',
+            'training_shared_gpu_snapshot_work_share',
+            'training_shared_gpu_snapshot_pressure',
             'training_shared_ingestion_exposed_share',
             'training_shared_ingestion_pressure',
             'training_shared_collection_pressure',
@@ -708,6 +717,34 @@ class BottleneckEvidence {
             const ingestion=seconds('training_ingestion_max_seconds');
             const exposed=seconds('training_ingestion_exposed_seconds');
             const replyGap=seconds('training_shared_reply_gap_seconds');
+            const gpuCollectors=metrics.training_shared_gpu_collectors?.value;
+            const reused=metrics.training_shared_gpu_policy_reused?.value;
+            const gpuCountsValid=metrics.training_shared_gpu_collectors?.unit==='count'&&
+                Number.isSafeInteger(gpuCollectors)&&gpuCollectors>0&&
+                gpuCollectors<=count&&
+                metrics.training_shared_gpu_policy_reused?.unit==='count'&&
+                Number.isSafeInteger(reused)&&reused>=0&&reused<=gpuCollectors;
+            if(gpuCountsValid) {
+                add('training_shared_gpu_policy_reuse_fraction',
+                    reused/gpuCollectors);
+                add('training_shared_gpu_policy_retention_gap',
+                    (gpuCollectors-reused)/gpuCollectors);
+            }
+            // Host snapshot/strict-load time is not GPU kernel occupancy.
+            // Only the actual last-arriving collector can establish
+            // whether policy refresh is on this round's critical path.
+            const lastRemote=metrics.training_shared_last_reply_worker?.value;
+            const lastWorkerWall=(Number.isSafeInteger(lastRemote)&&
+                lastRemote>=0&&lastRemote<count)
+                ?seconds('worker_'+lastRemote+'_remote_roundtrip_seconds'):null;
+            const lastGpuRefresh=(Number.isSafeInteger(lastRemote)&&
+                lastRemote>=0&&lastRemote<count)
+                ?seconds('worker_'+lastRemote+'_gpu_policy_snapshot_seconds'):null;
+            const gpuRefreshShare=lastWorkerWall>0&&lastGpuRefresh!==null&&
+                lastGpuRefresh<=lastWorkerWall
+                ?lastGpuRefresh/lastWorkerWall:null;
+            if(gpuRefreshShare!==null)
+                add('training_shared_gpu_snapshot_work_share',gpuRefreshShare);
             const share=value=>value!==null&&value<=wall
                 ?value/wall:null;
             const collectShare=share(collect);
@@ -737,6 +774,9 @@ class BottleneckEvidence {
                     sharedReplySkew:count>1&&replyGapShare!==null&&
                         replyGapShare>=0.25&&replyGap>=0.20&&
                         collectShare!==null&&collectShare>=0.30,
+                    sharedGpuRefresh:gpuRefreshShare!==null&&
+                        gpuRefreshShare>=0.25&&lastGpuRefresh>=0.20&&
+                        collectShare!==null&&collectShare>=0.30,
                     sharedOptimizer:optimizeShare!==null&&optimizeShare>=0.65&&
                         optimize>=0.50});
                 if(prior.samples.length>8)prior.samples.shift();
@@ -753,6 +793,8 @@ class BottleneckEvidence {
                     add('training_shared_collection_pressure',1,'count');
                 if(sustained(x=>x.sharedReplySkew))
                     add('training_shared_reply_skew_pressure',1,'count');
+                if(sustained(x=>x.sharedGpuRefresh))
+                    add('training_shared_gpu_snapshot_pressure',1,'count');
                 if(sustained(x=>x.sharedOptimizer))
                     add('training_shared_optimizer_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.cpuBusy))
