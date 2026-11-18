@@ -3840,6 +3840,11 @@ fn run_battle(
     let mut segment_generation = host.model_mut().model_generation();
     let mut segment_manifest_sha256 = host.model_mut().model_manifest_sha256();
     let mut completed_episodes = vec![0_u32; config.levels.len()];
+    // Keep exactly one cumulative receipt over recycled training arenas.
+    // The event processor owns per-episode admissions and resets with its
+    // world; collect completed episode totals only at the reset boundary.
+    let mut past_reinforcement_arrivals =
+        bees_gameplay::level_events::NativeReinforcementArrivals::default();
     let mut next_status_round = status_every_rounds;
     #[cfg(feature = "client")]
     let mut user_closed = false;
@@ -4347,6 +4352,10 @@ fn run_battle(
                     replacement.metadata.enable_navigation_workers(workers)
                         .map_err(|error| contextual("episode navigation worker startup", error))?;
                 }
+                let prior = host.simulation().world(index)
+                    .ok_or_else(|| invalid("recycled world disappeared"))?
+                    .state.events.reinforcement_arrivals();
+                past_reinforcement_arrivals.merge(prior);
                 host.reset_world(index, seed, replacement)
                     .map_err(|error| contextual("guarded Level reset", error))?;
                 bind_evaluation_episode(
@@ -4731,8 +4740,18 @@ fn run_battle(
             Some(0)
         }
     } else { None };
+    // Include all current episode admissions as well as those from
+    // previously recycled worlds. This covers independent multi-episode
+    // training and fixed-seed evaluation without requiring hot-path logs.
+    let mut reinforcement_arrivals = past_reinforcement_arrivals;
+    for index in 0..host.simulation().world_count() {
+        if let Some(world) = host.simulation().world(index) {
+            reinforcement_arrivals.merge(world.state.events.reinforcement_arrivals());
+        }
+    }
     let mut final_summary = json!({
         "kind": "run_final",
+        "reinforcement_arrivals": reinforcement_arrivals,
         "remote_play": remote.as_ref().map(|server| server.measurements()),
         "run_id": config.run_id,
         "rounds": rounds,
