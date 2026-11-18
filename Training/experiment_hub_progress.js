@@ -122,7 +122,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'collector_dispatch_queue_peak','collector_dispatch_queue_max_seconds',
             'collector_dispatch_tail_seconds','collector_dispatch_tail_owner',
             'pipeline_collector_dispatch_pressure','pipeline_collector_dispatch_owner',
-            'pipeline_local_gpu_lease_index'])
+            'pipeline_local_gpu_lease_index',
+            'collector_0_sim_draining'])
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
@@ -179,6 +180,14 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_topology_max_migration_seconds',
             'training_topology_max_pred_gain_ratio','training_topology_migration_owner',
             'training_topology_sps_change_pct','training_topology_result_owner',
+            'training_rollout_raw_bytes',
+            'training_rollout_wire_bytes',
+            'training_rollout_saved_bytes',
+            'training_rollout_saved_share',
+            'training_rollout_compressed_collectors',
+            'training_rollout_decompress_seconds',
+            'training_prev_rollout_compress_seconds',
+            'training_prev_rollout_send_seconds',
             'training_ingestion_exposed_seconds',
             'training_ingestion_copy_wall_seconds',
             'training_ingestion_claim_wait_seconds',
@@ -957,6 +966,14 @@ class BottleneckEvidence {
             // overlap other copies and remote simulation; only the tail
             // after the last complete reply is exposed ingestion latency.
             const wall=seconds('training_batch_wall_seconds');
+            const raw=metrics.training_rollout_raw_bytes;
+            const wire=metrics.training_rollout_wire_bytes;
+            if(raw?.unit==='bytes'&&wire?.unit==='bytes'&&
+                Number.isSafeInteger(raw.value)&&raw.value>0&&
+                Number.isSafeInteger(wire.value)&&
+                wire.value>=0&&wire.value<=raw.value)
+                add('training_rollout_saved_share',
+                    (raw.value-wire.value)/raw.value);
             const collection=seconds('training_collect_max_seconds');
             const optimization=seconds('training_optimize_max_seconds');
             const exposed=seconds('training_ingestion_exposed_seconds');
