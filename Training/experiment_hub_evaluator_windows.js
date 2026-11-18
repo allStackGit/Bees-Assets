@@ -121,6 +121,7 @@ function saveStatus(file,value) {
 }
 async function poll(config) {
     return await new Promise((resolve,reject)=>{
+        let stderrTail='';
         const child=spawn(config.python,config.args,
             {cwd:__dirname,windowsHide:true,stdio:['ignore','pipe','pipe']});
         const timeout=setTimeout(()=>{
@@ -129,9 +130,20 @@ async function poll(config) {
             reject(Error('Evaluation exceeded '+config.timeout+' seconds; stopping its native process tree.'));
         },config.timeout*1000);
         child.stdout.on('data',data=>console.log(data.toString('utf8').trimEnd()));
-        child.stderr.on('data',data=>console.error(data.toString('utf8').trimEnd()));
+        child.stderr.on('data',data=>{
+            const line=data.toString('utf8');
+            stderrTail=(stderrTail+line).slice(-4096);
+            console.error(line.trimEnd());
+        });
         child.once('error',error=>{clearTimeout(timeout);reject(error);});
-        child.once('exit',(code,signal)=>{clearTimeout(timeout);resolve({code,signal});});
+        child.once('exit',(code,signal)=>{
+            clearTimeout(timeout);
+            const details=stderrTail.split(/\r?\n/).reverse().find(line=>
+                /^Scheduled (TinyBrains|Courier) evaluation failed:/.test(line));
+            resolve({code,signal,diagnostic:code===0?null:
+                (details||'Evaluator process exited unsuccessfully; inspect local service output.')
+                    .replace(/[\x00-\x1f]/g,' ').slice(0,160)});
+        });
     });
 }
 async function main(argv=process.argv.slice(2),env=process.env) {
@@ -165,6 +177,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
                 started_at:startedAt,finished_at:new Date().toISOString(),
                 elapsed_ms:Math.round(performance.now()-start),python_exit_code:result.code,
                 signal:result.signal,
+                ...(result.diagnostic?{diagnostic:result.diagnostic}:{}),
                 service_job_cpu_time_ns:Number.isSafeInteger(after.cpu_time_ns)&&
                     Number.isSafeInteger(before.cpu_time_ns)&&after.cpu_time_ns>=before.cpu_time_ns
                     ?after.cpu_time_ns-before.cpu_time_ns:null,

@@ -59,6 +59,21 @@ function linuxHealth(machine) {
         const exit=Number(service.ExecMainStatus);
         const finished=instant(service.ExecMainExitTimestamp);
         const failed=Boolean(service.Result&&service.Result!=='success');
+        let diagnostic=failed?('systemd evaluator result: '+service.Result):null;
+        if(failed) {
+            // The dedicated evaluator writes bounded human-readable failures
+            // to its own unit's journal; no training log or protected
+            // repository path is read. Treat it as a diagnostic only.
+            try {
+                const lines=command('journalctl',[
+                    '--user','-u',serviceName,'-n','24',
+                    '--no-pager','-o','cat',
+                ]).split(/\r?\n/);
+                const failure=lines.reverse().find(line=>
+                    /^Scheduled (TinyBrains|Courier) evaluation failed:/.test(line));
+                if(failure)diagnostic=failure;
+            }catch { /* The systemd result remains useful without journal access. */ }
+        }
         return {
             project:regex.exec(timer)[1],
             unit:serviceName,
@@ -73,7 +88,7 @@ function linuxHealth(machine) {
             last_result:failed?'failed':finished?'completed':'unknown',
             last_exit_code:Number.isSafeInteger(exit)&&exit>=0&&exit<=255?exit:null,
             last_finished_at:finished,
-            diagnostic:failed?('systemd evaluator result: '+service.Result).slice(0,160):null,
+            diagnostic:diagnostic?diagnostic.replace(/[\x00-\x1f]/g,' ').slice(0,160):null,
         };
     });
 }
