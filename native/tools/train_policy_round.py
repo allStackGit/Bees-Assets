@@ -636,11 +636,32 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     raise ValueError(
                         "dual-GPU lease did not execute real model forwards on two distinct HIP PCI devices"
                     )
+                # Per-device useful work is counted from each completed
+                # immutable simulation shard, not inferred from GPU %
+                # utilization. Multiple actors sharing a device aggregate
+                # only their authentic world/policy samples.
+                by_device = {}
+                for index, proof in gpu_proofs.items():
+                    pci = proof.get("gpu_pci_address")
+                    if pci is None:
+                        continue  # CUDA/Windows has no HIP PCI attestation.
+                    work = by_device.setdefault(pci, {
+                        "gpu_pci_address": pci, "rollout_processes": 0,
+                        "model_forwards": 0, "gpu_agent_rows": 0,
+                        "successful_world_steps": 0, "successful_policy_rows": 0,
+                    })
+                    work["rollout_processes"] += 1
+                    work["model_forwards"] += proof["model_forwards"]
+                    work["gpu_agent_rows"] += proof["agent_rows"]
+                    work["successful_world_steps"] += metrics[index]["successful_world_steps"]
+                    work["successful_policy_rows"] += metrics[index]["successful_policy_rows"]
                 result["gpu_inference"] = {
                     "verified_workers": len(gpu_proofs),
                     "model_forwards": sum(p["model_forwards"] for p in gpu_proofs.values()),
                     "agent_rows": sum(p["agent_rows"] for p in gpu_proofs.values()),
                     **({"gpu_pci_addresses": sorted(addresses)} if addresses else {}),
+                    **({"per_device": [by_device[pci] for pci in sorted(by_device)]}
+                       if by_device else {}),
                 }
             return result
         except BaseException:
