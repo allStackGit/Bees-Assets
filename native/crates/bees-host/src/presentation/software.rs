@@ -2020,6 +2020,17 @@ impl NativeSoftwareRenderer {
                 );
                 text::draw_centered(&mut self.pixels, self.width, y,
                     &label, 1, [239, 196, 129]);
+            } else if view.reinforcement_waves_pending > 0 {
+                // Event-gated waves have no invented countdown. The
+                // original ship-death/campaign trigger alone controls
+                // their physical arrival, including during a pause.
+                let label = format!(
+                    "Reinforcements: {} wave{}  |  Awaiting mission event",
+                    view.reinforcement_waves_pending,
+                    if view.reinforcement_waves_pending == 1 { "" } else { "s" },
+                );
+                text::draw_centered(&mut self.pixels, self.width, y,
+                    &label, 1, [239, 196, 129]);
             }
         }
         if self.show_minimap {
