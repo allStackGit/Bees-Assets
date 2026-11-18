@@ -468,12 +468,18 @@ impl NativePolicyOnlyMetadata {
     /// registered the new squad and its real formation/command source has
     /// been installed. A subsequent QueenMinionAdded never adds a duplicate.
     pub(super) fn enqueue_game_queen_minion(
-        &mut self, child: SquadLifetime,
+        &mut self, world: &CombatWorld, child: SquadLifetime,
+        queen_id: i64, minion_id: i64,
     ) -> Result<(), GameCommandError> {
         let player = self.player.squads.get(&child)
             .ok_or(GameCommandError::InvalidSquad)?;
+        let side = world.ship(minion_id)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?.side;
+        // The other faction's learner does not own this minion. Mirror the
+        // side-specific policy admission gate exactly, so neither the
+        // scripted director nor policy inference competes for the ship.
         if player.user_controlled || self.hivemind_active == Some(true) ||
-            !self.agents.is_empty()
+            self.queen_policy_controller(queen_id, side).is_some()
         {
             return Ok(());
         }
