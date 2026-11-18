@@ -1011,12 +1011,12 @@ class BottleneckEvidence {
                     (raw.value-wire.value)/raw.value);
             const collection=seconds('training_collect_max_seconds');
             const optimization=seconds('training_optimize_max_seconds');
-            const wireOwner=metrics.training_shared_last_wire_worker?.value;
+            const gpuForwardOwner=metrics.training_shared_last_wire_worker?.value;
             const replyOwner=metrics.training_shared_last_reply_worker?.value;
-            if(Number.isSafeInteger(wireOwner)&&wireOwner===replyOwner&&
-                wireOwner>=0&&wireOwner<metrics.training_collector_workers.value) {
-                const workerCollection=seconds('worker_'+wireOwner+'_collection_seconds');
-                const stream=seconds('worker_'+wireOwner+'_gpu_fwd_stream_seconds');
+            if(Number.isSafeInteger(gpuForwardOwner)&&gpuForwardOwner===replyOwner&&
+                gpuForwardOwner>=0&&gpuForwardOwner<metrics.training_collector_workers.value) {
+                const workerCollection=seconds('worker_'+gpuForwardOwner+'_collection_seconds');
+                const stream=seconds('worker_'+gpuForwardOwner+'_gpu_fwd_stream_seconds');
                 if(workerCollection>0&&stream!==null&&stream<=workerCollection)
                     add('training_shared_gpu_forward_share',stream/workerCollection);
             }
