@@ -4214,13 +4214,15 @@ fn run_battle(
                     if completed_episodes[index] >= config.episodes_per_world {
                         return Err(invalid("world exceeded its configured episode budget"));
                     }
+                    // Copy while the immutable World borrow is live.
+                    // Host terminal capture below needs a mutable sink.
+                    let borders = world.state.combat.map_border_measurements();
                     if policy_capture.is_some() {
                         let (id, tick) = (world.id, world.tick());
                         let observations = host.terminal_observations(index)
                             .map_err(|error| contextual("terminal policy observations", error))?;
                         host.sink_mut().capture_terminal_policy(id, revision, tick, &observations)?;
                     }
-                    let borders = world.state.combat.map_border_measurements();
                     map_border_entries += borders.ship_entries;
                     map_border_movement_stops += borders.movement_stops;
                     map_border_override_skips += borders.override_skips;
