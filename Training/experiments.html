@@ -1196,6 +1196,17 @@ label.hub-toggle-row > input[type="checkbox"] {
   </table></div>
   <p class="muted">CSV/JSON contain bounded Hub chart observations. Complete job diagnostics export the locally available project-owned histories and reports without model checkpoints; offline remote-worker artifacts must be exported from their original host.</p>
   <h3>Independent evaluation receipts</h3>
+  <details id="hub-historical-import" class="hub-standalone" hidden>
+    <summary>Import an independently evaluated historical TinyBrains checkpoint audit</summary>
+    <p class="muted">Run the bundled experiment_hub_tinybrains_historical.py with existing update-000073.pt-style checkpoints and the same pinned Nano/Micro suite definitions. It evaluates without a training job. Import the resulting JSON here; observations become read-only Compare runs and never authorize model promotion.</p>
+    <div class="hub-controls">
+      <label>Completed historical audit (.json)
+        <input id="hub-historical-audit-file" type="file" accept=".json,application/json">
+      </label>
+      <button type="button" id="hub-historical-import-submit">Import audit into Compare</button>
+    </div>
+    <p id="hub-historical-import-status" class="muted" role="status"></p>
+  </details>
   <p id="hub-compare-evaluation-note" class="muted"></p>
   <div class="tablewrap hub-table"><table>
     <thead><tr><th>Run</th><th>Suite</th><th>Suite SHA-256</th><th>Successes / trials</th><th>Success rate</th><th>Checkpoint SHA-256</th><th>Outcome</th></tr></thead>
