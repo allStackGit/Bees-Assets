@@ -152,6 +152,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'rollout_opponent_readback_models','rollout_opponent_readbacks_saved',
+        'rollout_opponent_grouped_calls','rollout_opponent_grouped_models',
+        'rollout_opponent_grouped_states','rollout_opponent_grouped_padding',
+        'rollout_opponent_grouped_fallbacks','rollout_opponent_grouped_weight_reuses',
         'rollout_opponent_pixel_samples',
         'rollout_opponent_max_group_pixels',
         'rollout_opponent_batch_budget_pixels',
@@ -384,6 +387,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_readback_models,'count');
         add('collector_'+i+'_opp_readbacks_saved',
             worker.rollout_opponent_readbacks_saved,'count');
+        // Separate coalesced model kernels from useful frozen-opponent
+        // decisions and padded lanes on the responsible GPU collector.
+        for(const [suffix,name] of [
+            ['group_calls','rollout_opponent_grouped_calls'],
+            ['group_models','rollout_opponent_grouped_models'],
+            ['group_states','rollout_opponent_grouped_states'],
+            ['group_padding','rollout_opponent_grouped_padding'],
+            ['group_fallbacks','rollout_opponent_grouped_fallbacks']])
+            add('collector_'+i+'_opp_'+suffix,worker[name],'count');
         add('collector_'+i+'_opp_gpu_stream_seconds',
             worker.rollout_opponent_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_opp_budget_pixels',
