@@ -83,7 +83,7 @@ impl CombatWorld {
         if let Some(vitals) = obstacle.vitals.as_mut() {
             vitals.is_dead = true;
         }
-        self.physics.obstacles_mut()[index].active = false;
+        self.physics.retire_obstacle(index);
         self.discovery.retire(DiscoveryKind::Obstacle, obstacle_id);
         self.obstacle_by_id.remove(&obstacle_id);
         if let Ok(at) = self.mining_obstacle_ids.binary_search(&obstacle_id) {
