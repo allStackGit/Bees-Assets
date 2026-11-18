@@ -291,6 +291,32 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
     return receipt
 
 
+def verify_prepared_source(source_dir: Path) -> dict:
+    """Read a published fleet/game/policy pair as one pinned input contract."""
+    source_dir = source_dir.resolve(strict=True)
+    receipt = read_json(source_dir / "training-source.json")
+    names = ("battle.scene.json", "battle.run.json",
+             "battle.policy.scene.json", "battle.policy.run.json")
+    if (receipt.get("kind") != "native_fleet_skirmish_training_source" or
+            receipt.get("schema_version") != 1 or
+            not isinstance(receipt.get("outputs_sha256"), dict) or
+            set(receipt["outputs_sha256"]) != set(names)):
+        raise ValueError("native fleet training source has no complete published receipt")
+    for name in names:
+        if file_sha256(source_dir / name) != receipt["outputs_sha256"][name]:
+            raise ValueError(f"native fleet training source changed after publication: {name}")
+    scene = read_json(source_dir / names[0])
+    run = read_json(source_dir / names[1])
+    policy_scene = read_json(source_dir / names[2])
+    policy_run = read_json(source_dir / names[3])
+    if (run["levels"][0]["scene"] != names[0] or
+            policy_run["levels"][0]["scene"] != names[2] or
+            verify_same_battle(scene, run, policy_scene, policy_run) !=
+            receipt.get("physical_scene_sha256")):
+        raise ValueError("native game and training physical sources differ from the published receipt")
+    return receipt
+
+
 def bootstrap_training(source_dir: Path, output: Path, options: list[str]) -> None:
     """Delegate all model/round/Hub authority to the existing native bootstrap."""
     options = list(options)
@@ -302,6 +328,8 @@ def bootstrap_training(source_dir: Path, output: Path, options: list[str]) -> No
     reserved = {"--scenario", "--source-scene", "--source-run", "--resume"}
     if any(option.split("=", 1)[0] in reserved for option in options):
         raise ValueError("fleet bootstrap source and scenario are fixed; resume with bootstrap_policy.py directly")
+    source_dir = source_dir.resolve(strict=True)
+    verify_prepared_source(source_dir)
     output = output.resolve()
     if output.exists():
         raise FileExistsError(f"native policy bootstrap destination exists: {output}")
