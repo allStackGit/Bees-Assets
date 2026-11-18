@@ -211,6 +211,29 @@ def receipt_provenance(job: dict, ordinal: int, suite: dict) -> dict:
     return fields
 
 
+def publish_failure(args, project: str, job: dict, suite: dict,
+                    checkpoint_digest: str, update: int, error: Exception) -> None:
+    """Publish a non-scoring, checkpoint-bound failed attempt.
+
+    This sidecar is observational: it cannot satisfy a success gate or
+    replace the verified success receipt. The Hub validates it again under
+    the native lease and persists accepted evidence separately.
+    """
+    provenance = receipt_provenance(job, update, suite)
+    reason = " ".join(str(error).split())[:160] or type(error).__name__
+    failure = {
+        "schema_version": 1, "evaluation_status": "failed",
+        "project_id": project, "job_id": job["job_id"],
+        "dispatch_id": job["dispatch_id"],
+        "suite_id": suite["suite_id"], "suite_sha256": suite_digest(suite),
+        "checkpoint_sha256": checkpoint_digest,
+        "attempted_at": provenance.pop("evaluated_at"),
+        "reason": reason,
+        **provenance,
+    }
+    print(publish(args.receipt_root, failure, suffix=".failed.json"))
+
+
 def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_digest: str) -> bool:
     try:
         receipt = json.loads(read_bounded(path, 4096))
@@ -382,6 +405,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             # Do not consume a checkpoint before its evaluation has
             # produced a durable pending receipt. An interrupted evaluator
             # must be able to retry the same immutable checkpoint.
+            verified_checkpoint = None
             try:
                 with evaluation_workspace(state) as work:
                     # Training may prune or replace its checkpoint after
@@ -392,6 +416,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                         checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
                     if job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest:
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
+                    verified_checkpoint = checkpoint_digest
                     # A new checkpoint filename is not proof of new policy
                     # bytes. Avoid repeated expensive deterministic matches
                     # against the same immutable model in monitoring mode.
@@ -405,7 +430,14 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                         return
                     result = evaluate_checkpoint(job, frozen, checkpoint_digest, work)
                 successes, measurements = evaluation_outcome(result, receipt_suite["trials"])
-            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
+                if verified_checkpoint is not None:
+                    try:
+                        publish_failure(args, project, job, suite,
+                                        verified_checkpoint, update, exc)
+                    except (OSError, RuntimeError, ValueError, TypeError, KeyError) as archive_error:
+                        print(f"{project} failed-attempt observation unavailable: {archive_error}",
+                              file=sys.stderr)
                 # Keep this checkpoint eligible, but rotate a failing dispatch
                 # behind other workers so it cannot starve their evaluations.
                 cursor[dispatch] = cursor.pop(dispatch)
@@ -599,6 +631,8 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
 
             # One durable snapshot is shared by every suite. The trainer
             # may prune its source at any moment; copy and verify it first.
+            verified_checkpoint = None
+            attempted_suite = None
             try:
                 with evaluation_workspace(state) as temp:
                     # Evaluators may create checkpoint.pt or policy.zip
@@ -610,6 +644,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     if any(job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest
                            for job in jobs):
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
+                    verified_checkpoint = checkpoint_digest
                     if jobs[0].get("monitor_only") and all(
                         passed_receipt(
                             args.receipt_root / f"{dispatch}.{sid}.json",
@@ -625,6 +660,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                         return
                     pending = []
                     for (sid, (suite, receipt_suite)), job in zip(ordered, jobs):
+                        attempted_suite = (job, suite)
                         # Dispose of large models and replays after each
                         # suite; only the shared immutable input survives.
                         with tempfile.TemporaryDirectory(
@@ -643,7 +679,15 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                             **({"metrics": measurements} if measurements else {}),
                             **receipt_provenance(job, update, suite),
                         }})
-            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
+                if verified_checkpoint is not None and attempted_suite is not None:
+                    failed_job, failed_suite = attempted_suite
+                    try:
+                        publish_failure(args, project, failed_job, failed_suite,
+                                        verified_checkpoint, update, exc)
+                    except (OSError, RuntimeError, ValueError, TypeError, KeyError) as archive_error:
+                        print(f"{project} failed-attempt observation unavailable: {archive_error}",
+                              file=sys.stderr)
                 # A bad snapshot cannot consume the cursor or starve other
                 # eligible dispatches on subsequent scheduled invocations.
                 cursor[dispatch] = cursor.pop(dispatch)
