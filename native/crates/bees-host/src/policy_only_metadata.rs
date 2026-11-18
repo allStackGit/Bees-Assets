@@ -111,9 +111,6 @@ pub struct AuthoredPolicyAgent {
     pub own_weapons: [Option<SelfWeapon>; 5],
 }
 
-/// The authentic 16x16 team sight memory starts fresh for each native
-/// episode, then advances on the same canonical fixed-step clock as combat.
-/// Observer-local 21x21 navigation remains in the perception assembler.
 /// Source-controlled Queen minion binding outcomes, sampled once per real
 /// spawn. No gameplay, model, or group work is repeated for measurements.
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
@@ -131,6 +128,9 @@ impl NativeQueenControllerMeasurements {
     }
 }
 
+/// The authentic 16x16 team sight memory starts fresh for each native
+/// episode, then advances on the same canonical fixed-step clock as combat.
+/// Observer-local 21x21 navigation remains in the perception assembler.
 pub struct AuthoredPolicySide {
     pub side: i32,
     pub exploration: TeamExplorationGrid,
