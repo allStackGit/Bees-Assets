@@ -1137,12 +1137,23 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     let rounds = recipe["rounds"].as_u64()
         .filter(|n| (1..=99_999).contains(n))
         .ok_or_else(|| invalid("invalid native training round count"))?;
-    if !source.is_file() || !saves.is_dir() ||
-        !job.starts_with(saves.join("training").join("fleet-skirmish")) {
-        return Err(invalid("native training job source or ownership changed").into());
-    }
     let model = job.join("model");
     let prepared = job.join("prepared");
+    if !saves.is_dir() ||
+        !job.starts_with(saves.join("training").join("fleet-skirmish")) {
+        return Err(invalid("native training job ownership changed").into());
+    }
+    // Published prepared and model are frozen, hash-verified inputs.
+    // A replay archive may legitimately be relocated or deleted after the
+    // model is initialized; continuation must depend on the immutable
+    // training lineage, not on a second mutable copy of the original battle.
+    if prepared.is_dir() {
+        if !prepared.join("training-source.json").is_file() {
+            return Err(invalid("native prepared fleet source has no complete receipt").into());
+        }
+    } else if !source.is_file() {
+        return Err(invalid("native original fleet battle is missing and no prepared training source exists").into());
+    }
     let progress = model.join("session").join("session-progress.json");
     if progress.is_file() {
         let snapshot: Value = serde_json::from_slice(&fs::read(&progress)?)?;
