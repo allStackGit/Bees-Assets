@@ -9,7 +9,7 @@ const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacemen
 const {validateProgress,selectChartMetrics}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
 const {evaluationPolicy,monitoringPolicy,compatibleMonitoringStop,activeEvaluation,
-       evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
+       evaluationEvidence,evaluationFailure,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
 const {EvaluationHistory}=require('./experiment_hub_evaluation_history');
@@ -3531,7 +3531,7 @@ class ExperimentHub {
             // telemetry and comparison samples. A delayed older report
             // must not make a terminal job appear to be running again.
             let evaluation=null,evaluations=[],evaluationDefinitions=null,
-                evaluationIssue=null,evaluationIssues=[];
+                evaluationIssue=null,evaluationIssues=[],evaluationFailures=[];
             if(state==='running'&&job.project_id!=='ants'&&activeEvaluation(job)&&
                 supportsEvaluation(evaluationSuites,job)) {
                 evaluationIssue=report.evaluation_issue||null;
@@ -3605,6 +3605,34 @@ class ExperimentHub {
                     }
                 }
             }
+            // Independently validate failed-attempt observations. They are
+            // inert for Stop, continuation and candidate ranking and cannot
+            // replace any successful checkpoint receipt.
+            if(state==='running'&&activeEvaluation(job)&&
+                supportsEvaluation(evaluationSuites,job)&&
+                report.evaluation_failures!=null)try {
+                const rules=evaluationRules(activeEvaluation(job));
+                if(!Array.isArray(report.evaluation_failures)||
+                    report.evaluation_failures.length>rules.length)
+                    throw Error('Invalid failed evaluation attempt count.');
+                const ids=new Set();
+                for(const value of report.evaluation_failures) {
+                    const rule=rules.find(rule=>rule.suite_id===value?.suite_id);
+                    if(!rule||ids.has(rule.suite_id))
+                        throw Error('Unknown or duplicate failed evaluation suite.');
+                    ids.add(rule.suite_id);
+                    evaluationFailures.push(evaluationFailure(value,{
+                        project_id:job.project_id,job_id:job.id,
+                        dispatch_id:job.dispatch_id,suite_id:rule.suite_id,
+                        suite_sha256:job.evaluation_suite_definitions?.[rule.suite_id]||
+                            rule.suite_sha256||undefined,
+                    }));
+                }
+            }catch(error) {
+                evaluationFailures=[];
+                evaluationIssues.push(('Invalid independent evaluator failed-attempt observation: '+
+                    String(error.message||error)).slice(0,160));
+            }
             // Reject contradictory same-checkpoint receipts before either
             // monitoring cache retention or any success-based Stop decision.
             // An evaluator error never invalidates the native heartbeat.
@@ -3634,7 +3662,7 @@ class ExperimentHub {
             if(evaluationIssue&&!evaluationIssues.includes(evaluationIssue))
                 evaluationIssues.push(evaluationIssue);
             accepted.set(report.job_id,{progress,evaluation,evaluationIssue,
-                evaluationIssues,resources});
+                evaluationIssues,evaluationFailures,resources});
             if(job.status!==state||
                 (job.execution_diagnostic||null)!==(report.diagnostic||null)) {
                 job.status=state;
@@ -4147,6 +4175,8 @@ class ExperimentHub {
                     issue.startsWith(rule.suite_id+': '));
                 this.evaluationHistory.recordIssue(job,issue,rule?.suite_id||null);
             }
+            for(const failure of acceptedReports.get(job.id)?.evaluationFailures||[])
+                this.evaluationHistory.recordFailure(job,failure);
             const raw=Array.isArray(report.evaluations)?report.evaluations:
                 report.evaluation?[report.evaluation]:[];
             for(const value of raw) {
