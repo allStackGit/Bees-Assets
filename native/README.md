@@ -168,7 +168,12 @@ optimizer. The native game starts the existing trainer outside the window
 and returns to the library immediately. **Fleet Training Progress** shows
 completed rounds, measured training SPS, and the path to each job's logs;
 newly published models appear in the same game library. Each job has its
-own `<save-root>/training/fleet-skirmish/training-NNNNNN/` directory.
+own `<save-root>/training/fleet-skirmish/training-NNNNNN/` directory
+with the original immutable invocation and separate process logs. Selecting
+a job in **Fleet Training Progress** also offers **Resume Training Job**:
+the original bootstrap receipt, checkpoint, scene and optimizer receipts
+are reverified by the existing learner before continuing. Completed jobs
+are not restarted, and a partially initialized model is never overwritten.
 This local menu uses the existing trainer and is not a replacement for Hub
 multi-machine resource allocation. The Python MA-POCA environment and
 native Rust tooling must be installed. Set `BEES_NATIVE_PYTHON` to the
