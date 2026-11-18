@@ -148,11 +148,30 @@ def per_scene_results(score, learner_side, episodes):
 
 
 def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
-             physics_workers=None):
+             physics_workers=None, inference_device=None):
     manifest = manifest.resolve(strict=True)
     source_path = source_path.resolve(strict=True)
     manifest_sha = file_sha256(manifest)
     source_sha = file_sha256(source_path)
+    if inference_device is not None:
+        if inference_device not in ("cpu", "cuda:0"):
+            raise ValueError("native evaluation inference device must be cpu or cuda:0")
+        # An ONNX execution-provider manifest cannot be relocated through
+        # PyTorch's device selector. Never report a CPU evaluation while an
+        # ONNX opponent still requires a CUDA/ROCm execution provider.
+        entries = json.loads(manifest.read_text(encoding="utf-8")).get("models", [])
+        if not isinstance(entries, list) or not entries:
+            raise ValueError("native evaluation manifest has no model slots")
+        for entry in entries:
+            if (not isinstance(entry, dict) or entry.get("backend") not in
+                    ("torchscript", "mlagents", "onnx")):
+                raise ValueError("invalid model backend in native evaluation manifest")
+            if entry["backend"] == "onnx":
+                providers = entry.get("providers", ["CPUExecutionProvider"])
+                if (not isinstance(providers, list) or not providers or
+                        (inference_device == "cpu" and
+                         providers[0] != "CPUExecutionProvider")):
+                    raise ValueError("native ONNX provider cannot satisfy requested CPU evaluation")
     config, expected = setup_config(source_path, manifest, output, physics_workers)
     output.mkdir(parents=True, exist_ok=False)
     generated = output / "run.json"
@@ -176,6 +195,11 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     # Level config; a distinct inference RNG controls policy sampling.
     env = dict(os.environ)
     env["BEES_NATIVE_EVALUATION_SEED"] = str(policy_seed)
+    # Device placement does not change the signed model manifest or its
+    # checkpoint hash. It is explicit in the evaluation receipt because
+    # CPU and GPU floating-point sampling may not be bit-identical.
+    if inference_device is not None:
+        env["BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE"] = inference_device
     with (output / "evaluation.log").open("x", encoding="utf-8") as log:
         subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT, env=env)
     summary_path = output / "rollout-summary.json"
@@ -217,6 +241,7 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         "source_run_config": str(source_path), "source_run_config_sha256": source_sha,
         "model_manifest": str(manifest), "model_manifest_sha256": manifest_sha,
         "learner_side": learner_side, "policy_sampling_seed": policy_seed,
+        **({"inference_device_override": inference_device} if inference_device else {}),
         "run_id": config["run_id"],
         "episodes": expected, "worlds": len(config["levels"]),
         "side_victories": wins, "draws": draws,
@@ -248,6 +273,8 @@ def main():
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--physics-workers", type=int,
                         help="persistent native CPU physics workers for this holdout (1..128)")
+    parser.add_argument("--inference-device", choices=("cpu", "cuda:0"),
+                        help="override PyTorch model placement without changing checkpoint or manifest")
     args = parser.parse_args()
     if args.learner_side not in (1, 2):
         parser.error("--learner-side must identify the source side 1 or 2")
@@ -257,7 +284,8 @@ def main():
         parser.error("--physics-workers must be between 1 and 128")
     result = evaluate(args.run_config, args.model_manifest,
                       args.output_dir.resolve(), args.learner_side,
-                      args.rollout_binary, args.policy_seed, args.physics_workers)
+                      args.rollout_binary, args.policy_seed, args.physics_workers,
+                      args.inference_device)
     print(json.dumps(result), flush=True)
 
 
