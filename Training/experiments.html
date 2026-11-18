@@ -484,6 +484,18 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     margin: 0;
     padding: 0;
 }
+.hub-compare-chart-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+    margin: 10px 0 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+}
+.hub-compare-chart-controls-title { font-weight: 800; font-size: 13px; }
+.hub-compare-chart-controls .hub-plot-rolling-size-label { font-size: 12px; font-weight: 700; }
 .hub-progress-plot {
     position: relative;
     min-width: 0;
@@ -1107,6 +1119,12 @@ label.hub-toggle-row > input[type="checkbox"] {
   <p class="muted">Complete diagnostics include original project logs and selected chart metrics. Native jobs also include every locally received Hub observation and a selected-metric CSV at that higher resolution. The Hub cannot reconstruct updates it never received; all large archives are split into individual ZIP parts.</p>
   <p id="hub-compare-export-message" class="muted" role="status"></p>
   <h3>Selected training metric charts</h3>
+  <div id="hub-compare-chart-controls" class="hub-compare-chart-controls" role="group" aria-label="Settings for all metric charts">
+    <span class="hub-compare-chart-controls-title">All charts</span>
+    <label class="hub-plot-average-toggle" title="Show the arithmetic mean of retained samples on every chart."><input id="hub-compare-all-mean" type="checkbox"> Show sample mean</label>
+    <label class="hub-plot-average-toggle" title="Show a rolling average on every chart."><input id="hub-compare-all-rolling" type="checkbox"> Rolling mean</label>
+    <label class="hub-plot-rolling-size-label" title="Set the rolling window on every chart. Use 2–256 recorded samples.">Samples <input id="hub-compare-all-samples" type="number" min="2" max="256" step="1" value="50" aria-label="Rolling mean sample count for all charts"></label>
+  </div>
   <div id="hub-compare-plots" aria-label="Selected training metric charts"></div>
   <p id="hub-compare-chart-note" class="muted">Bounded comparison curves are saved separately from training records. Comparisons are observational, not independent evaluations.</p>
   <h3>Observed resource scaling</h3>

@@ -1377,6 +1377,70 @@ document.addEventListener('DOMContentLoaded', () => {
     const comparisonChartRolling=new Map();
     const comparisonChartRollingSizes=new Map();
     const comparisonChartRunVisibility=new Map();
+    const comparisonChartGlobalSettings=new Map();
+    const globalChartMean=$('hub-compare-all-mean');
+    const globalChartRolling=$('hub-compare-all-rolling');
+    const globalChartSamples=$('hub-compare-all-samples');
+    function globalChartSettings() {
+        if(!comparisonChartGlobalSettings.has(project))
+            comparisonChartGlobalSettings.set(project,{
+                mean:false,rolling:false,samples:50,
+            });
+        return comparisonChartGlobalSettings.get(project);
+    }
+    function syncGlobalChartControls() {
+        const settings=globalChartSettings();
+        const charts=[...$('hub-compare-plots').children]
+            .filter(element=>element.dataset.project===project)
+            .map(element=>element._hubChart).filter(Boolean);
+        globalChartMean.checked=settings.mean;
+        globalChartMean.indeterminate=charts.some(chart=>
+            chart.average.checked!==settings.mean);
+        globalChartRolling.checked=settings.rolling;
+        globalChartRolling.indeterminate=charts.some(chart=>
+            chart.rolling.checked!==settings.rolling);
+        const mixedSamples=charts.some(chart=>
+            Number(chart.rollingSize.value)!==settings.samples);
+        // Do not interrupt someone entering a window size during a refresh.
+        if(document.activeElement!==globalChartSamples) {
+            globalChartSamples.value=mixedSamples?'':String(settings.samples);
+            globalChartSamples.placeholder=mixedSamples?'Mixed':'';
+        }
+    }
+    function setGlobalChartSetting(setting,value) {
+        const settings=globalChartSettings();
+        settings[setting]=value;
+        // A global choice resets older per-chart overrides, including
+        // temporarily hidden charts, so newly selected plots inherit it.
+        const overrides=setting==='mean'?comparisonChartAverages:
+            setting==='rolling'?comparisonChartRolling:comparisonChartRollingSizes;
+        for(const key of overrides.keys())
+            if(key.startsWith(project+'|'))overrides.delete(key);
+        for(const section of $('hub-compare-plots').children) {
+            if(section.dataset.project!==project||!section._hubChart)continue;
+            const chart=section._hubChart;
+            if(setting==='mean')chart.average.checked=value;
+            else if(setting==='rolling')chart.rolling.checked=value;
+            else chart.rollingSize.value=String(value);
+            chart.signature=null;
+        }
+        if(lastComparisonChart)
+            drawComparisonCharts(lastComparisonChart.runs,
+                lastComparisonChart.keys,lastComparisonChart.xKey);
+        else syncGlobalChartControls();
+    }
+    globalChartMean.addEventListener('change',()=>
+        setGlobalChartSetting('mean',globalChartMean.checked));
+    globalChartRolling.addEventListener('change',()=>
+        setGlobalChartSetting('rolling',globalChartRolling.checked));
+    globalChartSamples.addEventListener('change',()=>{
+        const requested=Number(globalChartSamples.value);
+        const count=globalChartSamples.value.trim()&&Number.isFinite(requested)
+            ?Math.min(256,Math.max(2,Math.trunc(requested)))
+            :globalChartSettings().samples;
+        globalChartSamples.value=String(count);
+        setGlobalChartSetting('samples',count);
+    });
     let lastComparisonChart=null,lastComparisonChartWidth=0;
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
@@ -2200,6 +2264,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?'No chart metrics are selected. Check one or more metrics above to display a graph.'
                     :'No recorded chart metrics are available for this project yet.';
             container.replaceChildren(notice);
+            syncGlobalChartControls();
             return;
         }
         const existing=new Map([...container.children].filter(element=>
@@ -2225,7 +2290,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const average=document.createElement('input');
             average.type='checkbox';
             const averageId=project+'|'+key;
-            average.checked=comparisonChartAverages.get(averageId)===true;
+            average.checked=comparisonChartAverages.get(averageId)??
+                globalChartSettings().mean;
             averageLabel.append(average,document.createTextNode(' Show sample mean'));
             const rollingLabel=document.createElement('label');
             rollingLabel.className='hub-plot-average-toggle';
@@ -2233,7 +2299,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const rolling=document.createElement('input');
             rolling.type='checkbox';
             const rollingId=project+'|'+key;
-            rolling.checked=comparisonChartRolling.get(rollingId)===true;
+            rolling.checked=comparisonChartRolling.get(rollingId)??
+                globalChartSettings().rolling;
             rollingLabel.append(rolling,document.createTextNode(' Rolling mean'));
             const rollingSizeLabel=document.createElement('label');
             rollingSizeLabel.className='hub-plot-rolling-size-label';
@@ -2244,7 +2311,8 @@ document.addEventListener('DOMContentLoaded', () => {
             rollingSize.min='2';
             rollingSize.max='256';
             rollingSize.step='1';
-            rollingSize.value=String(comparisonChartRollingSizes.get(rollingId)||50);
+            rollingSize.value=String(comparisonChartRollingSizes.get(rollingId)??
+                globalChartSettings().samples);
             rollingSize.setAttribute('aria-label',
                 'Rolling mean sample count for '+key.slice(7));
             rollingSize.title='Use the latest 2–256 consecutive retained samples. Early windows use fewer samples; older history may cover more updates because it is downsampled.';
@@ -2280,10 +2348,12 @@ document.addEventListener('DOMContentLoaded', () => {
             average.addEventListener('change',()=>{
                 comparisonChartAverages.set(averageId,average.checked);
                 redraw();
+                syncGlobalChartControls();
             });
             rolling.addEventListener('change',()=>{
                 comparisonChartRolling.set(rollingId,rolling.checked);
                 redraw();
+                syncGlobalChartControls();
             });
             rollingSize.addEventListener('change',()=>{
                 const requested=Number(rollingSize.value);
@@ -2292,6 +2362,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 rollingSize.value=String(count);
                 comparisonChartRollingSizes.set(rollingId,count);
                 redraw();
+                syncGlobalChartControls();
             });
             return section;
         });
@@ -2326,6 +2397,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 Number(chart.rollingSize.value));
             chart.signature=signature;chart.width=width;
         }
+        syncGlobalChartControls();
     }
     function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage,showRolling,rollingSamples=50) {
         rollingSamples=Number.isSafeInteger(rollingSamples)
