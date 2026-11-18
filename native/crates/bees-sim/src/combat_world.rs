@@ -3644,7 +3644,9 @@ impl CombatWorld {
                 continue;
             }
             if self.game_barge_charges.get(&contact.ship_id)
-                .is_some_and(|charge| charge.can_override_bounds) {
+                .is_some_and(|charge| charge.can_override_bounds) ||
+                self.game_barge_player_config.get(&contact.ship_id)
+                    .is_some_and(|&(_, can_override)| can_override) {
                 self.map_border_measurements.override_skips += 1;
                 continue;
             }
@@ -3671,6 +3673,8 @@ impl CombatWorld {
             let id = self.ships[index].entity_id;
             if self.game_barge_charges.get(&id)
                 .is_some_and(|charge| charge.can_override_bounds) ||
+                self.game_barge_player_config.get(&id)
+                    .is_some_and(|&(_, can_override)| can_override) ||
                 self.latest_game_point_orders.get(&id)
                     .is_some_and(|order| order.can_override_bounds) {
                 continue;
