@@ -196,6 +196,7 @@ pub(super) struct FleetChoice {
     terrain: Terrain,
     /// None preserves the original authored 320x200 map.
     arena_size: Option<u32>,
+    lethal_borders: bool,
     ai_both: bool,
     ai_tactics: AiTactics,
     objective: Objective,
@@ -227,7 +228,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some(arena_size) = choose_arena_size()? else { return Ok(None); };
+    let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let ai_tactics = if mode == 2 { AiTactics::Aggressive } else {
         let Some(value) = choose_ai_tactics()? else { return Ok(None); };
         value
@@ -252,7 +253,8 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, mix, terrain, arena_size, ai_both: false, ai_tactics, objective,
+        player_side, fleet_sizes, mix, terrain, arena_size, lethal_borders,
+        ai_both: false, ai_tactics, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -263,7 +265,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some(arena_size) = choose_arena_size()? else { return Ok(None); };
+    let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let objective_side = match objective {
         Objective::Elimination => None,
@@ -281,7 +283,8 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, mix, terrain, arena_size, ai_both: false,
+        player_side: None, fleet_sizes, mix, terrain, arena_size, lethal_borders,
+        ai_both: false,
         ai_tactics: AiTactics::Aggressive,
         objective, reinforcements, objective_side,
         benchmark_worlds: 1, benchmark_workers: 1,
@@ -294,7 +297,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some(arena_size) = choose_arena_size()? else { return Ok(None); };
+    let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
     // The same published real-wave scenario can be profiled across many
     // arenas, so dynamic admission costs are measurable rather than guessed.
@@ -308,7 +311,8 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, mix, terrain, arena_size, ai_both: true,
+        player_side: None, fleet_sizes, mix, terrain, arena_size, lethal_borders,
+        ai_both: true,
         ai_tactics, objective: Objective::Elimination, objective_side: None,
         reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
     }))
@@ -419,12 +423,14 @@ fn choose_objective_side() -> Result<Option<i32>, Box<dyn Error>> {
 /// The source 320x200 map remains the default for existing games and
 /// benchmarks. Larger arenas use the exact source MapBorder dimensions,
 /// not cosmetic sprite scaling or different training-only collision rules.
-fn choose_arena_size() -> Result<Option<Option<u32>>, Box<dyn Error>> {
+fn choose_arena_size() -> Result<Option<(Option<u32>, bool)>, Box<dyn Error>> {
     let choices = [
         ("Classic map", "  [Original 320 x 200]"),
         ("Medium arena", "  [512 x 512]"),
         ("Large arena", "  [1024 x 1024]"),
         ("Very large arena", "  [2048 x 2048]"),
+        ("Hazard arena", "  [512 x 512, lethal border contacts]"),
+        ("Large hazard arena", "  [1024 x 1024, lethal border contacts]"),
     ];
     let rows = choices.iter().map(|(title, status)| BattleMenuRow {
         title, status, unlocked: true,
@@ -432,10 +438,12 @@ fn choose_arena_size() -> Result<Option<Option<u32>>, Box<dyn Error>> {
     let mut selected = 0;
     Ok(select_library(&rows, &mut selected, false)?.map(|index| {
         match index {
-            0 => None,
-            1 => Some(512),
-            2 => Some(1024),
-            _ => Some(2048),
+            0 => (None, false),
+            1 => (Some(512), false),
+            2 => (Some(1024), false),
+            3 => (Some(2048), false),
+            4 => (Some(512), true),
+            _ => (Some(1024), true),
         }
     }))
 }
@@ -971,8 +979,12 @@ pub(super) fn archive(
     ));
     if let Some(size) = selected.arena_size {
         apply_native_arena(&mut scene, &mut run, &mut cloned, size)?;
+        if selected.lethal_borders {
+            scene["lethal_map_borders"] = json!(true);
+        }
         let name = scene["level_name"].as_str().unwrap_or("Fleet Skirmish");
-        scene["level_name"] = json!(format!("{name}  |  Arena: {size} x {size}"));
+        scene["level_name"] = json!(format!("{name}  |  Arena: {size} x {size}{}",
+            if selected.lethal_borders { " (lethal borders)" } else { "" }));
     }
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
     let mut deferred_squads = Vec::new();
