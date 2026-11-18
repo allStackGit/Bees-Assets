@@ -652,6 +652,12 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
             index = bisect_left(members, agent)
             if index < len(members) and members[index] == agent:
                 members.pop(index)
+            # All actions from this controller were emitted before its
+            # retirement tick. Do not retain their 7,743-float feature rows
+            # for the remainder of a many-wave episode.
+            latest.pop(agent, None)
+            decision_ticks.pop(agent, None)
+            decision_rows.pop(agent, None)
             left += 1
         latest.update(frame)
         # Multiple same-phase agents share the identical teammate state.
