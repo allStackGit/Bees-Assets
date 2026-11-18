@@ -167,7 +167,10 @@ rounds, concurrent arenas, physics CPU workers, and CPU or PyTorch GPU
 optimizer. The native game starts the existing trainer outside the window
 and returns to the library immediately. The menu can optionally
 enable MA-POCA self-play, promoting the learner's verified checkpoint to
-the opposing policy every 1, 3 or 5 completed rounds.
+the opposing policy every 1, 3 or 5 completed rounds. Longer experiments
+can opt into the trainer's existing fixed-seed holdout plateau stopping;
+early-stopped runs retain their best verified playable checkpoint rather
+than being automatically restarted.
 **Fleet Training Progress** shows
 completed rounds, measured training SPS, and the path to each job's logs;
 newly published models appear in the same game library. Each job has its
