@@ -209,6 +209,9 @@ pub struct NativeAuthoredLevel<M, A> {
     /// Source Stage.MakeShotsHarmless is part of the actual combat rules,
     /// not a training-only damage model; do not assume false.
     pub shots_harmless: bool,
+    /// Real source-style lethal MapBorder hazard, when expressly authored.
+    /// It is shared by gameplay and policy rather than patched into RL.
+    pub lethal_map_borders: bool,
     pub entities: Vec<NativeAuthoredEntity>,
     pub squads: Vec<NativeAuthoredSquad>,
     /// Exact scenario count, not a population estimate.
@@ -339,6 +342,7 @@ impl NativeSceneAssets {
         )
             .map_err(NativeSceneBuildError::Combat)?;
         combat.shots_harmless = authored.shots_harmless;
+        combat.configure_lethal_map_borders(authored.lethal_map_borders);
         if let Some(zone) = authored.extraction {
             combat.configure_extraction(zone).map_err(NativeSceneBuildError::Combat)?;
         }
