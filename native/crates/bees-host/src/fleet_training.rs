@@ -268,6 +268,16 @@ fn append_training_arguments(
     let device = recipe["optimizer_device"].as_str()
         .filter(|s| *s == "cpu" || *s == "cuda")
         .ok_or_else(|| invalid("invalid native optimizer device"))?;
+    let inference = recipe["inference_device"].as_str().unwrap_or("cpu");
+    if !["cpu", "cuda"].contains(&inference) ||
+        (inference == "cuda" &&
+         (recipe["hub_plan"].is_string() || device != "cuda"))
+    {
+        return Err(invalid(
+            "GPU policy inference requires a locally allocated CUDA/ROCm optimizer"
+        ).into());
+    }
+    command.arg("--inference-device").arg(inference);
     let saves = PathBuf::from(recipe["save_root"].as_str()
         .ok_or_else(|| invalid("missing native save directory"))?);
     let game_id = recipe["game_id"].as_str()
@@ -547,6 +557,27 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let mut device_selection = 0;
     let Some(device) = select_library(&device_rows, &mut device_selection, false)?
         else { return Ok(()); };
+    let inference_device = if device == 1 && !use_hub {
+        let rows = [
+            BattleMenuRow {
+                title: "CPU policy inference",
+                status: "  [Keep neural action sampling on CPU]", unlocked: true,
+            },
+            BattleMenuRow {
+                title: "CUDA / ROCm GPU policy inference",
+                status: "  [Batch neural actions on the local GPU]", unlocked: true,
+            },
+        ];
+        let mut choice = 0;
+        let Some(selected) = select_library(&rows, &mut choice, false)? else {
+            return Ok(());
+        };
+        if selected == 1 { "cuda" } else { "cpu" }
+    } else {
+        // Hub's remote collectors can be CPU-only machines, and local CPU
+        // optimizers do not imply an available GPU model worker.
+        "cpu"
+    };
 
     // Resolve and validate before allocating a permanent job name. GPU
     // availability and the Python environment are validated by the existing
@@ -591,6 +622,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "hub_port": if use_hub { hub.as_ref().map(|h| h.2) } else { None },
         "hub_plan_sha256": if use_hub { hub.as_ref().map(|h| h.3.clone()) } else { None },
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
+        "inference_device": inference_device,
         "holdout_worlds": 8,
         "evaluation_side": learner_side,
         "game_id": game_id,
@@ -629,6 +661,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "hub_worlds": hub_worlds,
         "allocation": if use_hub { "experiment_hub" } else { "local" },
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
+        "inference_device": inference_device,
         "rounds": rounds,
         "episodes_per_world": episodes_per_world,
         "learner_side": learner_side,
