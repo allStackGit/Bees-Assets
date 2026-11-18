@@ -198,10 +198,11 @@ def evaluation_outcome(result, trials: int) -> tuple[int, dict]:
     return successes, normalized
 
 
-def receipt_provenance(job: dict, ordinal: int, suite: dict) -> dict:
+def receipt_provenance(job: dict, ordinal: int, suite: dict, coordinate=None) -> dict:
     """Record the tested checkpoint's training coordinate when available."""
     step = (job.get("final_steps_completed")
-            if "final_checkpoint_sha256" in job else ordinal)
+            if "final_checkpoint_sha256" in job else
+            coordinate if coordinate is not None else ordinal)
     fields = {"evaluated_at": datetime.now(timezone.utc)
               .isoformat(timespec="milliseconds").replace("+00:00", "Z")}
     if type(step) is int and 0 <= step <= 2**53 - 1:
@@ -382,7 +383,8 @@ def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> Non
         print(publish(args.receipt_root, receipt))
 
 
-def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evaluate_checkpoint):
+def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
+                    evaluate_checkpoint, verify_checkpoint=None):
     suite_id = suite["suite_id"]
     state = args.scratch / f"{project}-evaluation-{args.machine}.{suite_id}.json"
     digest = suite_digest(suite)
@@ -438,7 +440,8 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 checkpoint = find_checkpoint(job)
                 if not checkpoint:
                     continue
-                update, file = checkpoint
+                update, file = checkpoint[:2]
+                coordinate = checkpoint[2] if len(checkpoint) > 2 else update
                 if "final_checkpoint_sha256" not in job:
                     cadence = job.get("every_n_checkpoints", 1)
                     if type(cadence) is not int or not 1 <= cadence <= 1000000:
@@ -474,6 +477,8 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                     if job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest:
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
                     verified_checkpoint = checkpoint_digest
+                    if verify_checkpoint is not None:
+                        verify_checkpoint(frozen, checkpoint)
                     # A new checkpoint filename is not proof of new policy
                     # bytes. Avoid repeated expensive deterministic matches
                     # against the same immutable model in monitoring mode.
@@ -493,7 +498,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 if verified_checkpoint is not None:
                     try:
                         publish_failure(args, project, job, suite,
-                                        verified_checkpoint, update, exc)
+                                        verified_checkpoint, coordinate, exc)
                     except (OSError, RuntimeError, ValueError, TypeError, KeyError) as archive_error:
                         print(f"{project} failed-attempt observation unavailable: {archive_error}",
                               file=sys.stderr)
@@ -508,7 +513,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 "schema_version": 1, "suite_id": suite_id, "suite_sha256": digest, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
                 **({"metrics": measurements} if measurements else {}),
-                **receipt_provenance(job, update, suite),
+                **receipt_provenance(job, update, suite, coordinate),
             }}
             save_cursor(state, {**saved, "pending_receipt": pending})
             flush_receipt(args, receipt_suite, pending, digest)
@@ -518,7 +523,8 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             save_cursor(state, saved)
 
 
-def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
+def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
+               verify_checkpoint=None):
     """Evaluate every required suite on one immutable checkpoint snapshot.
 
     suites: sequence of (frozen suite, receipt suite with trial count).
@@ -659,7 +665,8 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                 checkpoint = find_checkpoint(jobs[0])
                 if not checkpoint:
                     continue
-                update, file = checkpoint
+                update, file = checkpoint[:2]
+                coordinate = checkpoint[2] if len(checkpoint) > 2 else update
                 if "final_checkpoint_sha256" not in jobs[0]:
                     cadence = jobs[0].get("every_n_checkpoints", 1)
                     if (type(cadence) is not int or not 1 <= cadence <= 1000000 or
@@ -712,6 +719,8 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                            for job in jobs):
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
                     verified_checkpoint = checkpoint_digest
+                    if verify_checkpoint is not None:
+                        verify_checkpoint(frozen, checkpoint)
                     if jobs[0].get("monitor_only") and all(
                         archive_matches_checkpoint(
                             job, checkpoint_digest, definitions[sid]
@@ -748,14 +757,14 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                             "trials": receipt_suite["trials"],
                             "successes": successes,
                             **({"metrics": measurements} if measurements else {}),
-                            **receipt_provenance(job, update, suite),
+                            **receipt_provenance(job, update, suite, coordinate),
                         }})
             except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
                 if verified_checkpoint is not None and attempted_suite is not None:
                     failed_job, failed_suite = attempted_suite
                     try:
                         publish_failure(args, project, failed_job, failed_suite,
-                                        verified_checkpoint, update, exc)
+                                        verified_checkpoint, coordinate, exc)
                     except (OSError, RuntimeError, ValueError, TypeError, KeyError) as archive_error:
                         print(f"{project} failed-attempt observation unavailable: {archive_error}",
                               file=sys.stderr)
