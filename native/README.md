@@ -623,6 +623,27 @@ and `--bundle-inbox`, or an existing evaluation run with
 `--evaluation-run-config` and `--evaluation-side` instead of generated
 `--holdout-worlds`.
 
+For local multi-GPU collection, select physical GPU ordinals and enough
+independent processes to use them. The same gameplay/MA-POCA world runs on
+each process; Python inference workers receive one isolated GPU apiece,
+while the optimizer retains its separately selected device. For example,
+append `--rollout-binary /path/to/policy_rollout --rollout-worlds 16
+--rollout-workers 2 --physics-workers 8 --rollout-gpus 0,1
+--rollout-gpu-mask ROCR_VISIBLE_DEVICES` to the bootstrap/session command
+on ROCm Linux (use `CUDA_VISIBLE_DEVICES` on CUDA/Windows). The worker
+reports completed GPU model forwards and agent rows, and the native round
+rejects an allocated process if no GPU actions were actually executed.
+These counts confirm device use, not a measured SPS improvement. An
+Experiment Hub GPU lease uses the supervisor's verified PCI/UUID binding
+instead of local numeric GPU flags; CPU-configured PyTorch checkpoints
+can run on that leased GPU without changing signed model bytes.
+
+Fixed holdouts can independently use `--evaluation-inference-device cpu`
+(or `cuda:0`). The selected device is pinned in resumable session
+configuration and evaluation receipts. This allows a GPU-trained PyTorch
+model to be compared on a CPU-only host without rewriting its manifest;
+an ONNX model requiring a GPU provider cannot be relocated that way.
+
 To train against a progressing opponent rather than a permanently frozen
 initial policy, start a **new** session with
 `--self-play-opponent-slot 1 --self-play-refresh-every 3`. Every third
