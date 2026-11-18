@@ -290,6 +290,15 @@ def rollout_metrics(summary_path, config, manifest_sha):
         metrics["map_border_ships"] = {
             key: borders[key] for key in keys
         }
+    ship_slots = summary.get("ship_slot_work")
+    if ship_slots is not None:
+        keys = ("integrated_bodies", "inactive_ship_slots_skipped",
+                "inactive_ship_grid_slots_skipped")
+        if (not isinstance(ship_slots, dict) or
+                any(type(ship_slots.get(key)) is not int or ship_slots[key] < 0
+                    for key in keys)):
+            raise ValueError("native rollout contains inconsistent active ship slot work")
+        metrics["ship_slot_work"] = {key: ship_slots[key] for key in keys}
     # Preserve actual model-step CPU utilization reported by the native
     # simulator, not just the requested per-process thread limit. These
     # counters distinguish real parallel rounds from Stage-order fallbacks.
@@ -412,6 +421,13 @@ def combined_rollout_metrics(shards, wall_seconds):
         metrics["map_border_ships"] = {
             key: sum(shard["map_border_ships"][key] for shard in shards)
             for key in border_keys
+        }
+    slot_keys = ("integrated_bodies", "inactive_ship_slots_skipped",
+                 "inactive_ship_grid_slots_skipped")
+    if all("ship_slot_work" in shard for shard in shards):
+        metrics["ship_slot_work"] = {
+            key: sum(shard["ship_slot_work"][key] for shard in shards)
+            for key in slot_keys
         }
     # Mixed historical collector binaries may report only the older
     # parallel-physics totals. Preserve unknown dispatch provenance as
