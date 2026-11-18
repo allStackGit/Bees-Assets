@@ -4064,7 +4064,7 @@ impl CombatWorld {
         if let Some(vitals) = &mut obstacle.vitals {
             vitals.is_dead = true;
         }
-        self.physics.obstacles_mut()[index].active = false;
+        self.physics.retire_obstacle(index);
         self.discovery.retire(DiscoveryKind::Obstacle, entity_id);
         self.obstacle_by_id.remove(&entity_id);
         self.asteroid_border_states.remove(&entity_id);
