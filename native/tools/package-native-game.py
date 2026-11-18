@@ -674,6 +674,10 @@ def main() -> None:
             shutil.copy2(ROOT / "native/tools" / name, clients / name)
         write_launchers(staging, binary.name)
         create_manifest(staging, include_training=args.include_training)
+        # A release is only discoverable once all playable scenes, model
+        # assets and optional learner/source dependencies have passed the
+        # same complete inventory verifier used by a receiving computer.
+        receipt = verify_native_package(staging)
         # Publish only a complete, freshly validated package and preserve
         # the old release when another process already owns output.
         if output.exists():
@@ -684,7 +688,9 @@ def main() -> None:
             shutil.rmtree(staging)
     print(f"Packaged {len(audio)} original audio tracks, native game artwork"
           f" and {'trained-policy assets' if policy_used else 'game-only assets'}"
-          f" at {output}")
+          f"{', native MA-POCA training runtime' if args.include_training else ''}"
+          f" at {output}: {receipt['files']} verified files, "
+          f"{receipt['bytes']} bytes")
 
 
 if __name__ == "__main__":
