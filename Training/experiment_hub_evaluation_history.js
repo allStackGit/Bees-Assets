@@ -335,7 +335,8 @@ class EvaluationHistory {
                 // Include loss of a service (empty list) and probe failures.
                 // A project has relevant machine evidence only if it has
                 // appeared in a prior observation.
-                if(!rows.some(row=>row.services.some(s=>s.project===projectId)))
+                if(!rows.some(row=>row.issue||
+                    row.services.some(s=>s.project===projectId)))
                     continue;
                 samples.push({machine_id:machineId,
                     events:rows.slice(-MAX_MACHINE_UI_EVENTS)});
