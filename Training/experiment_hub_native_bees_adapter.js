@@ -123,7 +123,9 @@ function learnerMeasurements(metrics) {
     add('total_cpu_seconds', 'seconds');
     for (const name of ['capture_peak_inflight_decisions', 'capture_peak_inflight_episodes',
         'capture_compact_opponent_decisions', 'capture_compact_opponent_boundaries',
-        'reward_journal_events',
+        'dynamic_policy_episodes', 'dynamic_policy_admissions',
+        'dynamic_policy_admissions_without_decisions',
+        'dynamic_policy_decision_phases_max', 'reward_journal_events',
         'optimizer_torch_intraop_threads', 'optimizer_torch_interop_threads'])
         add(name, 'count');
     add('reward_journal_payload_bytes', 'bytes');
@@ -226,6 +228,15 @@ function rolloutQueenControllerMeasurements(rollout) {
     }
     if (counts.ungrouped_policy_minions_bound > counts.policy_minions_bound)
         throw Error('Native ungrouped Queen minions exceed all neural minion bindings.');
+    if (counts.retired_policy_routes_reclaimed != null) {
+        if (!Number.isSafeInteger(counts.retired_policy_routes_reclaimed) ||
+            counts.retired_policy_routes_reclaimed < 0 ||
+            counts.retired_policy_routes_reclaimed > counts.policy_minions_bound)
+            throw Error('Invalid native reclaimed Queen policy routes.');
+        result.rollout_queen_retired_policy_routes_reclaimed = {
+            value: counts.retired_policy_routes_reclaimed, unit: 'count',
+        };
+    }
     return result;
 }
 
