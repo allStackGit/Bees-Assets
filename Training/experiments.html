@@ -866,6 +866,7 @@ label.hub-toggle-row > input[type="checkbox"] {
               <option value="stop">Stop when the evaluation target is met</option>
             </select>
           </label>
+          <label id="hub-evaluation-optional-stop-label"><input id="hub-evaluation-optional-stop" type="checkbox"> Also stop training if all monitored suite success targets pass on one verified checkpoint</label>
           <label id="hub-evaluation-frequency-label">Evaluate every N training updates / rounds
             <input id="hub-evaluation-frequency" type="number" min="1" max="1000000" step="1" value="10">
           </label>
@@ -884,7 +885,7 @@ label.hub-toggle-row > input[type="checkbox"] {
             <p class="muted">Clear the individual suite fields above when using JSON. The editor uses the same validated suite definitions.</p>
             <textarea id="hub-evaluation-all-of" rows="5" placeholder='[{"suite_id":"short","min_trials":100,"min_success_rate":0.8},{"suite_id":"long","min_trials":100,"min_success_rate":0.7}]'></textarea>
           </details>
-          <p class="muted wide">Monitoring-only evaluations collect checkpoint results without requesting a Stop. Stop mode requires a success threshold for every suite; all suites must pass on one verified checkpoint. Supply 2–8 distinct suites in the JSON field, with optional per-suite hashes. Leave out min_success_rate in monitoring mode.</p>
+          <p class="muted wide">Monitoring records results throughout training, with an optional success-based Stop using the same frozen suites and cadence. Stop targets require a success threshold for every suite; all must pass on one verified checkpoint. Use 2–8 distinct suites for a batch. In advanced JSON, include min_success_rate only when stopping is enabled.</p>
           <div class="hub-controls wide">
             <button type="button" id="hub-evaluation-save-project-defaults">Save monitoring setup as project default</button>
             <button type="button" id="hub-evaluation-clear-project-defaults">Clear project evaluation default</button>

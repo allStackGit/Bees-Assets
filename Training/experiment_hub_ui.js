@@ -3594,14 +3594,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function refreshEvaluationEditor() {
         const monitor=$('hub-evaluation-mode').value==='monitor';
-        $('hub-evaluation-rate-label').hidden=monitor;
-        $('hub-evaluation-rate').disabled=monitor;
+        const optionalStop=$('hub-evaluation-optional-stop');
+        const hasStop=!monitor||optionalStop.checked;
+        $('hub-evaluation-optional-stop-label').hidden=!monitor;
+        optionalStop.disabled=!monitor;
+        $('hub-evaluation-rate-label').hidden=!hasStop;
+        $('hub-evaluation-rate').disabled=!hasStop;
         $('hub-evaluation-frequency-label').hidden=!monitor;
         $('hub-evaluation-frequency').disabled=!monitor;
         for(const row of $('hub-evaluation-more-suites').children) {
             const label=row.querySelector('.hub-evaluation-extra-rate-label');
-            label.hidden=monitor;
-            label.querySelector('input').disabled=monitor;
+            label.hidden=!hasStop;
+            label.querySelector('input').disabled=!hasStop;
         }
     }
     function appendEvaluationSuite(rule={}) {
@@ -3653,45 +3657,52 @@ document.addEventListener('DOMContentLoaded', () => {
         try {appendEvaluationSuite();}
         catch(error){feedback('hub-config-message',error.message);}
     });
-    function setEvaluationEditor(policy=null,monitor=policy==null) {
+    function setEvaluationEditor(policy=null,monitor=policy==null,stopPolicy=null) {
         const multi=Array.isArray(policy?.all_of)?policy.all_of:null;
         const first=multi?.[0]||policy;
+        const stopped=stopPolicy?.all_of||(stopPolicy?[stopPolicy]:[]);
+        const stopBySuite=new Map(stopped.map(rule=>[rule.suite_id,rule]));
         $('hub-evaluation-mode').value=monitor?'monitor':'stop';
+        $('hub-evaluation-optional-stop').checked=Boolean(monitor&&stopPolicy);
         $('hub-evaluation-suite').value=first?.suite_id??'';
         $('hub-evaluation-digest').value=first?.suite_sha256??'';
         $('hub-evaluation-trials').value=first?.min_trials??'';
-        $('hub-evaluation-rate').value=first?.min_success_rate??'';
+        $('hub-evaluation-rate').value=stopBySuite.get(first?.suite_id)
+            ?.min_success_rate??first?.min_success_rate??'';
         $('hub-evaluation-frequency').value=String(policy?.every_n_checkpoints??10);
         $('hub-evaluation-all-of').value='';
         $('hub-evaluation-more-suites').replaceChildren();
-        for(const rule of multi?.slice(1)||[])appendEvaluationSuite(rule);
+        for(const rule of multi?.slice(1)||[])
+            appendEvaluationSuite({...rule,min_success_rate:
+                stopBySuite.get(rule.suite_id)?.min_success_rate??rule.min_success_rate});
         refreshEvaluationEditor();
     }
     $('hub-evaluation-mode').addEventListener('change',refreshEvaluationEditor);
+    $('hub-evaluation-optional-stop').addEventListener('change',refreshEvaluationEditor);
     function evaluationFromEditor() {
         const monitor=$('hub-evaluation-mode').value==='monitor';
+        const stop=!monitor||$('hub-evaluation-optional-stop').checked;
         const cadence=monitor?Number($('hub-evaluation-frequency').value):null;
         if(monitor&&(!Number.isSafeInteger(cadence)||cadence<1||cadence>1000000))
             throw Error('Evaluation update interval must be an integer from 1 to 1,000,000.');
         const rawRule=(suite,digest,trials,rate)=>{
             if(!suite&&!digest&&!trials&&!rate)return null;
-            if(!suite||!trials||(!monitor&&(!rate||Number(rate)<=0)))
-                throw Error('Each suite requires an ID and trial count. Stop mode also requires a success rate.');
+            if(!suite||!trials||(stop&&(!rate||Number(rate)<=0)))
+                throw Error('Each suite needs an ID and trial count; an optional Stop also needs a success rate.');
             return {suite_id:suite,min_trials:Number(trials),
                 ...(digest?{suite_sha256:digest}:{}),
-                ...(!monitor?{min_success_rate:Number(rate)}:{})};
+                ...(stop?{min_success_rate:Number(rate)}:{})};
         };
         const suite=$('hub-evaluation-suite').value.trim();
         const digest=$('hub-evaluation-digest').value.trim();
         const trials=$('hub-evaluation-trials').value;
-        const rate=monitor?'':$('hub-evaluation-rate').value;
+        const rate=stop?$('hub-evaluation-rate').value:'';
         const extras=[...$('hub-evaluation-more-suites').children].map(row=>{
             const value=selector=>row.querySelector(selector).value.trim();
-            const rule=rawRule(
-                value('.hub-evaluation-extra-suite-id'),
+            const rule=rawRule(value('.hub-evaluation-extra-suite-id'),
                 value('.hub-evaluation-extra-digest'),
                 value('.hub-evaluation-extra-trials'),
-                monitor?'':value('.hub-evaluation-extra-rate'));
+                stop?value('.hub-evaluation-extra-rate'):'');
             if(!rule)throw Error('Complete or remove every additional evaluation suite.');
             return rule;
         });
@@ -3701,18 +3712,29 @@ document.addEventListener('DOMContentLoaded', () => {
             if(suite||digest||trials||rate||extras.length)
                 throw Error('Use either the individual suite fields or advanced JSON, not both.');
             policy={all_of:JSON.parse(allOf)};
-            if(monitor&&(!Array.isArray(policy.all_of)||
+            if(monitor&&!stop&&(!Array.isArray(policy.all_of)||
                 policy.all_of.some(rule=>Object.hasOwn(rule,'min_success_rate'))))
                 throw Error('Monitoring-only suites do not use success thresholds.');
+            if(stop&&(!Array.isArray(policy.all_of)||
+                policy.all_of.some(rule=>!Number.isFinite(rule.min_success_rate)||
+                    rule.min_success_rate<=0||rule.min_success_rate>1)))
+                throw Error('Every stopping suite needs a success-rate threshold between 0 and 1.');
         }else {
             const first=rawRule(suite,digest,trials,rate);
             if(!first&&extras.length)
                 throw Error('Configure the first evaluation suite before adding others.');
             if(first)policy=extras.length?{all_of:[first,...extras]}:first;
         }
-        if(monitor&&policy)policy.every_n_checkpoints=cadence;
-        return {evaluation_monitor:monitor?policy:null,
-            evaluation_stop:monitor?null:policy};
+        if(!monitor)return {evaluation_monitor:null,evaluation_stop:policy};
+        if(!policy)return {evaluation_monitor:null,evaluation_stop:null};
+        const withoutThreshold=rule=>{
+            const {min_success_rate,...monitorRule}=rule;
+            return monitorRule;
+        };
+        const watched=policy.all_of
+            ?{all_of:policy.all_of.map(withoutThreshold),every_n_checkpoints:cadence}
+            :{...withoutThreshold(policy),every_n_checkpoints:cadence};
+        return {evaluation_monitor:watched,evaluation_stop:stop?policy:null};
     }
     // Worker-advertised suite names are suggestions, not execution authority.
     // A disconnected worker must not erase a saved suite ID or its fingerprint.
@@ -3745,7 +3767,10 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             if(!clear&&$('hub-evaluation-mode').value!=='monitor')
                 throw Error('Project defaults support monitoring only; switch evaluation mode to Monitor.');
-            const policy=clear?null:evaluationFromEditor().evaluation_monitor;
+            const configured=clear?null:evaluationFromEditor();
+            if(configured?.evaluation_stop)
+                throw Error('Project defaults save monitoring without a Stop target. Uncheck optional stopping.');
+            const policy=configured?.evaluation_monitor||null;
             if(!clear&&!policy)
                 throw Error('Choose at least one evaluation suite before saving project defaults.');
             if(!confirm(clear
@@ -4134,7 +4159,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tinyBrainsThreads.value=c.parameters.threads??'';
                 tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
                     ?c.parameters.device:'';
-                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor));
+                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor),c.evaluation_monitor?c.evaluation_stop:null);
                 syncTinyBrainsEditor(c.parameters);
                 renderDesignEditor(true);
                 $('hub-config-save').textContent='Save revision';
@@ -4147,7 +4172,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tinyBrainsThreads.value=c.parameters.threads??'';
                 tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
                     ?c.parameters.device:'';
-                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor));
+                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor),c.evaluation_monitor?c.evaluation_stop:null);
                 syncTinyBrainsEditor(c.parameters);
                 renderDesignEditor(true);
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
