@@ -276,6 +276,22 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
         "physical_scene_sha256": physical_identity,
         "physical_ship_count": len(scene["ships"]),
         "policy_ship_count": sum("policy" in ship for ship in policy_scene["ships"]),
+        "episode_fleet_value_by_side": {
+            str(side): {
+                "valued_ships": sum(
+                    ship["side"] == side and ship.get("persistent_fleet", False)
+                    for ship in scene["ships"]
+                ),
+                "initial_tsv": sum(
+                    ship["max_tsv"] for ship in scene["ships"]
+                    if ship["side"] == side and ship.get("persistent_fleet", False)
+                ),
+                "policy_ships": sum(
+                    ship["side"] == side and "policy" in ship
+                    for ship in policy_scene["ships"]
+                ),
+            } for side in (1, 2)
+        },
     }
     # Publish all four files and their joint receipt as one immutable
     # directory. An interrupted authoring attempt must not leave a
