@@ -689,16 +689,60 @@ class EvaluationHistory {
                 });
                 regressions.push(...regressionSignals(job,records));
                 if(!records.length)continue;
-                // Keep first and latest checkpoints and evenly sample the
-                // middle for interactive charting. All rows stay on disk.
+                // Bound only interactive chart payloads. Sampling the
+                // combined append order at a fixed stride can erase an
+                // entire suite when multiple suites alternate checkpoints.
+                // Allocate observations fairly by exact suite AND runtime
+                // identity; preserve each cohort's first and latest point.
+                // Every original receipt remains unchanged in the archive.
                 let points=records;
                 if(records.length>MAX_UI_POINTS) {
-                    const middle=[];
-                    const stride=Math.ceil((records.length-2)/(MAX_UI_POINTS-2));
-                    for(let i=1;i<records.length-1;i+=stride)
-                        middle.push(records[i]);
-                    points=[records[0],...middle.slice(0,MAX_UI_POINTS-2),
-                        records[records.length-1]];
+                    const groups=new Map();
+                    for(const [index,row] of records.entries()) {
+                        const key=JSON.stringify([row.suite_id,
+                            row.suite_sha256||null,row.runtime_sha256||null]);
+                        if(!groups.has(key))groups.set(key,[]);
+                        groups.get(key).push(index);
+                    }
+                    const cohorts=[...groups.values()].sort((a,b)=>
+                        b[b.length-1]-a[a.length-1]);
+                    const allocation=new Map();
+                    let budget=MAX_UI_POINTS,remaining=cohorts;
+                    while(budget>0&&remaining.length) {
+                        if(remaining.length>budget) {
+                            // Pathological histories with more identities
+                            // than points retain the most recent cohorts.
+                            for(const cohort of remaining.slice(0,budget))
+                                allocation.set(cohort,1);
+                            break;
+                        }
+                        const share=Math.max(1,Math.floor(budget/remaining.length));
+                        const complete=remaining.filter(cohort=>cohort.length<=share);
+                        if(!complete.length) {
+                            const extra=budget%remaining.length;
+                            remaining.forEach((cohort,i)=>
+                                allocation.set(cohort,share+(i<extra?1:0)));
+                            break;
+                        }
+                        for(const cohort of complete) {
+                            allocation.set(cohort,cohort.length);
+                            budget-=cohort.length;
+                        }
+                        remaining=remaining.filter(cohort=>cohort.length>share);
+                    }
+                    const indices=[];
+                    for(const cohort of cohorts) {
+                        const count=allocation.get(cohort)||0;
+                        if(count===1) {
+                            indices.push(cohort[cohort.length-1]);
+                        }else if(count>1) {
+                            for(let i=0;i<count;i++)
+                                indices.push(cohort[Math.round(
+                                    i*(cohort.length-1)/(count-1))]);
+                        }
+                    }
+                    indices.sort((a,b)=>a-b);
+                    points=indices.map(index=>records[index]);
                 }
                 // Supersession is a comparison annotation, never a rewrite
                 // of the immutable receipt. Only a strictly later training
@@ -729,7 +773,8 @@ class EvaluationHistory {
                             superseded_by_steps_completed:latest.steps_completed,
                         }:{})};
                 });
-                samples.push({job_id:job.id,points});
+                samples.push({job_id:job.id,points,
+                    total_records:records.length});
                 this.issues.delete(job.id);
             }catch(error) {
                 this.issues.set(job.id,'Independent evaluation history unavailable: '+
