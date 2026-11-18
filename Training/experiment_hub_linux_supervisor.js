@@ -68,7 +68,7 @@ function gpuRuntimeProof(adapter,parameters,context) {
     if(!adapter||typeof adapter.executable!=='string'||
         !path.isAbsolute(adapter.executable)||
         !SAFE_ARG.test(adapter.executable)||
-        !(dual&&adapter.gpu_dual_execution==='split-ppo'||
+        !(dual&&['split-ppo','native-rollouts'].includes(adapter.gpu_dual_execution)||
             !context?.gpu_pci_addresses&&pci.test(String(context?.gpu_pci_address||''))))
         throw Error('Invalid local ROCm runtime or leased PCI identity.');
     const rocrUuid=dual?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
@@ -91,6 +91,17 @@ function gpuRuntimeProof(adapter,parameters,context) {
         verifyArgs:checkedAdapterArgs(adapter,adapter.gpu_verify_args,
             parameters,verifierContext),
         rocrUuid};
+}
+// Freeze exactly the PCI/VRAM bindings and ordered local device identity
+// into the same pre-start attestation used for single- and dual-GPU jobs.
+function gpuAttestationArgs(bindings,plan,proof) {
+    if(!Array.isArray(bindings)||![1,2].includes(bindings.length))
+        throw Error('Native GPU launch needs one or two frozen physical device bindings.');
+    return [
+        ...(bindings.length===2?['--dual']:[]),
+        ...bindings.flatMap(bound=>[bound.id,bound.pci_address,String(bound.vram_mb)]),
+        deviceIdentity(plan),proof.executable,...proof.verifyArgs,
+    ];
 }
 function gpuSelectorArgs(rocrUuid) {
     if(rocrUuid!=null&&
@@ -146,17 +157,20 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         r.gpu_compute_pct<=100;
     const single=r.gpu_count===1&&lr.gpu_count===1&&
         (r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'||sharedGpu);
+    const dualProject=job.project_id==='tinybrains'
+        ?job.frozen_parameters?.device==='dual'&&
+            adapter.gpu_dual_execution==='split-ppo'
+        :['bees_native','bees_native_collect'].includes(job.project_id)&&
+            adapter.gpu_dual_execution==='native-rollouts';
     const dual=r.gpu_count===2&&lr.gpu_count===2&&
-        r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&
-        job.project_id==='tinybrains'&&job.frozen_parameters?.device==='dual'&&
-        adapter.gpu_dual_execution==='split-ppo';
+        r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&dualProject;
     if(!cpuOnly&&(!gpuEnabled||typeof adapter.gpu_verify_args!=='function'||
         !(single||dual)||bindings.length!==r.gpu_count||
         lr.gpus?.length!==r.gpu_count||
         bindings.some((bound,index)=>bound.id!==lr.gpus[index])||
         new Set(bindings.map(bound=>bound.pci_address)).size!==bindings.length||
         (r.gpus?.length&&r.gpus.some((id,index)=>id!==lr.gpus[index]))))
-        throw Error('Native GPU launch needs one approved PCI binding or two exclusive split-PPO bindings.');
+        throw Error('Native GPU launch needs one approved PCI binding or two exclusive project-supported bindings.');
     const stopPolicy=adapter.stop_policy||'terminate-group';
     if(!['terminate-group','interrupt-main'].includes(stopPolicy))
         throw Error('Unknown locally installed native stop policy.');
@@ -246,16 +260,19 @@ function launchArguments(record,invocation,gpuPlan) {
             ?['--property=SuccessExitStatus=130']:[]),
         '--property=CPUAccounting=yes','--property=MemoryAccounting=yes'];
     if(gpuPlan) {
-        const {binding,verifyArgs,rocrUuid}=invocation.gpu;
+        const {bindings,verifyArgs,rocrUuid}=invocation.gpu;
         const check=path.join(__dirname,'experiment_hub_linux_gpu_launch_check.js');
         if(!SAFE_ARG.test(process.execPath)||!SAFE_ARG.test(check))
             throw Error('GPU pre-start verifier requires unambiguous local executable paths.');
         args.push(...gpuPlan.device_properties.map(p=>'--property='+p),
             '--property=TimeoutStartSec=25s',
             ...gpuSelectorArgs(rocrUuid),
-            '--property=ExecStartPre='+[process.execPath,check,binding.id,
-                binding.pci_address,binding.vram_mb,deviceIdentity(gpuPlan),
-                invocation.executable,...verifyArgs].join(' '));
+            '--property=ExecStartPre='+[
+                process.execPath,check,
+                ...gpuAttestationArgs(bindings,gpuPlan,{
+                    executable:invocation.executable,verifyArgs,
+                }),
+            ].join(' '));
     }else {
         // CPU adapter masks preserve existing selector behavior.
         args.push('--setenv=CUDA_VISIBLE_DEVICES=','--setenv=HIP_VISIBLE_DEVICES=',
