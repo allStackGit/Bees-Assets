@@ -1764,11 +1764,7 @@ class ExperimentHub {
                     machine.gpu_projects?.includes(job.project_id)&&
                     (machine.agent_platform==='linux'
                         ?(job.resources.gpu_count===2
-                            ?job.project_id==='tinybrains'&&
-                                job.frozen_parameters?.device==='dual'&&
-                                job.resources.gpu_mode==='exclusive'&&
-                                machine.tinybrains_dual_gpu_profiles
-                                    ?.includes(job.frozen_parameters.profile)
+                            ?dualGpuApproved(job,machine)
                             :job.resources.gpu_count===1&&
                                 (job.resources.gpu_mode==='exclusive'||
                                     job.resources.gpu_mode==='shared'&&
@@ -1849,8 +1845,8 @@ class ExperimentHub {
                     session.claim_exclusive_gpu&&(
                         r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode)||
                         r.gpu_count===2&&r.gpu_mode==='exclusive'&&
-                            job.project_id==='tinybrains'&&
-                            job.frozen_parameters?.device==='dual'));
+                            ['tinybrains','bees_native','bees_native_collect']
+                                .includes(job.project_id)));
             };
             for(const [index,job] of pendingClaims.entries()) {
                 if(!claimable(job))continue;
@@ -4214,11 +4210,7 @@ class ExperimentHub {
                      (job.resources.gpu_mode==='shared'&&
                          !machine.gpu_shared_projects?.includes(job.project_id))||
                      (job.resources.gpu_count===2&&
-                         (job.project_id!=='tinybrains'||
-                          job.frozen_parameters?.device!=='dual'||
-                          machine.agent_platform!=='linux'|| 
-                          !machine.tinybrains_dual_gpu_profiles
-                              ?.includes(job.frozen_parameters.profile)))||
+                         !dualGpuApproved(job,machine))||
                      job.resources.gpu_count>2)))
                 throw Error('Bundle member '+(index+1)+' is not eligible for its requested native CPU/GPU mode.');
             // Use the actual lease allocator, not a separate capacity
