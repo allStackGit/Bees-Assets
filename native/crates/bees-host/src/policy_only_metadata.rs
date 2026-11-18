@@ -118,6 +118,7 @@ pub struct NativeQueenControllerMeasurements {
     pub policy_minions_bound: u64,
     pub ungrouped_policy_minions_bound: u64,
     pub ordinary_minions_preserved: u64,
+    pub retired_policy_routes_reclaimed: u64,
 }
 
 impl NativeQueenControllerMeasurements {
@@ -125,6 +126,7 @@ impl NativeQueenControllerMeasurements {
         self.policy_minions_bound += other.policy_minions_bound;
         self.ungrouped_policy_minions_bound += other.ungrouped_policy_minions_bound;
         self.ordinary_minions_preserved += other.ordinary_minions_preserved;
+        self.retired_policy_routes_reclaimed += other.retired_policy_routes_reclaimed;
     }
 }
 
@@ -195,6 +197,12 @@ pub struct NativePolicyOnlyMetadata {
     /// Stable original route by source faction. Newborn controllers inherit
     /// from this route without scanning every past wave's agent metadata.
     policy_side_representative: HashMap<i32, i64>,
+    /// Original physical agents retain their authenticated source routes.
+    /// Only transient Queen children have a separately reclaimable owner.
+    dynamic_policy_ships: HashSet<i64>,
+    /// Reclaim one fixed step after retirement, after the mandatory
+    /// boundary observation has been journaled by the training sink.
+    retired_dynamic_pending: Vec<i64>,
     /// Separate from physical ship IDs. The source ML-Agents runtime
     /// allocates fresh participant identities for newborn ship agents.
     next_dynamic_group_agent_id: u64,
@@ -407,6 +415,8 @@ impl NativePolicyOnlyMetadata {
             source_static_discovery_values,
             explorers: Vec::new(),
             agents: agent_map, policy_side_representative,
+            dynamic_policy_ships: HashSet::new(),
+            retired_dynamic_pending: Vec::new(),
             next_dynamic_group_agent_id,
             sides: side_map, beacon_templates,
             queen_templates: HashMap::new(),
@@ -546,6 +556,19 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         events: &mut bees_gameplay::level_events::NativeLevelEventProcessor,
         completed_tick: u64,
     ) -> Result<(), CombatPerceptionError> {
+        // Retired policy actors must remain addressable through the
+        // *previous* completed step's terminal/retirement observation.
+        // The sink has now consumed that boundary. Keep its historical
+        // MA-POCA group membership and fleet stats, but release the
+        // obsolete per-ship inference route before admitting new children.
+        for old_id in self.retired_dynamic_pending.drain(..) {
+            if !self.dynamic_policy_ships.remove(&old_id) ||
+                self.agents.remove(&old_id).is_none()
+            {
+                return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+            }
+            self.queen_controller_measurements.retired_policy_routes_reclaimed += 1;
+        }
         // A policy on the OTHER faction must never claim this Queen's
         // children. Game-only Levels remain valid, and mixed scripted vs
         // policy matches need an independent command owner per side.
@@ -657,6 +680,19 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
                 source_group_agent_id: group_id,
                 parent_carrier_id: None, own_weapons,
             });
+            self.dynamic_policy_ships.insert(minion_id);
+        }
+        // A policy death is journaled with its original binding revision
+        // later in this completed step. The controller metadata is needed
+        // until the host has delivered that boundary to MA-POCA.
+        for event in world.events() {
+            if let CombatEvent::ShipDied {
+                victim_id, policy_binding_revision: Some(_), ..
+            } = event {
+                if self.dynamic_policy_ships.contains(victim_id) {
+                    self.retired_dynamic_pending.push(*victim_id);
+                }
+            }
         }
         Ok(())
     }
