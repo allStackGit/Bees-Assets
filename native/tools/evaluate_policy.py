@@ -162,6 +162,7 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         entries = json.loads(manifest.read_text(encoding="utf-8")).get("models", [])
         if not isinstance(entries, list) or not entries:
             raise ValueError("native evaluation manifest has no model slots")
+        gpu_capable = False
         for entry in entries:
             if (not isinstance(entry, dict) or entry.get("backend") not in
                     ("torchscript", "mlagents", "onnx")):
@@ -172,6 +173,11 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
                         (inference_device == "cpu" and
                          providers[0] != "CPUExecutionProvider")):
                     raise ValueError("native ONNX provider cannot satisfy requested CPU evaluation")
+                gpu_capable |= providers[0] != "CPUExecutionProvider"
+            else:
+                gpu_capable = True
+        if inference_device == "cuda:0" and not gpu_capable:
+            raise ValueError("GPU evaluation cannot accelerate CPU-only ONNX models")
     config, expected = setup_config(source_path, manifest, output, physics_workers)
     output.mkdir(parents=True, exist_ok=False)
     generated = output / "run.json"
