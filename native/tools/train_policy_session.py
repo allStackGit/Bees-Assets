@@ -597,6 +597,18 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
                           for _, record in completed)
     optimizer_seconds = sum(record["learner_metrics"]["total_wall_seconds"]
                             for _, record in completed)
+    # These are the simulator's real sampled model-forward calls, not
+    # estimated GPU utilization or complete inference wall time. Worker
+    # samples can overlap in parallel collections: retain a sum-of-calls
+    # scope instead of dividing by entire-fleet wall time.
+    inference_samples = [
+        record["rollout_metrics"]["sampled_model_timing"]
+        for _, record in completed
+        if "sampled_model_timing" in record["rollout_metrics"]
+    ]
+    sampled_calls = sum(sample["calls"] for sample in inference_samples)
+    sampled_rows = sum(sample["rows"] for sample in inference_samples)
+    sampled_seconds = sum(sample["wall_seconds"] for sample in inference_samples)
     latest = completed[-1][1]["learner_metrics"].get("training_outcomes", {}) if completed else {}
     rollout_scope = (
         "sum_of_independent_collector_wall_seconds"
@@ -689,6 +701,22 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         **({"curriculum": stage_report} if stage_report is not None else {}),
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
+        **({"sampled_model_inference": {
+            "scope": "sum_of_sampled_model_forward_call_wall_seconds",
+            "rounds_with_samples": len(inference_samples),
+            "sampled_calls": sampled_calls,
+            "sampled_rows": sampled_rows,
+            "sampled_forward_wall_seconds": sampled_seconds,
+            "microseconds_per_sampled_policy_row": (
+                sampled_seconds * 1_000_000 / sampled_rows
+                if sampled_rows > 0 else None
+            ),
+            "milliseconds_per_sampled_call": (
+                sampled_seconds * 1_000 / sampled_calls
+                if sampled_calls > 0 else None
+            ),
+            "not_a_fleet_wall_time_or_gpu_utilization": True,
+        }} if inference_samples else {}),
         "total_optimizer_input_steps": optimizer_steps,
         "self_play_opponent_promotions": sum(
             record["learner_metrics"].get("refreshed_opponent_slot") is not None
