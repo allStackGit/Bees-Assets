@@ -135,6 +135,7 @@ function courierMetrics(source) {
     // optional per-lineage details. The append-only Courier event still
     // contains every original measurement for full native history.
     const primary=name=>name.startsWith('training_gpu_placement_')||
+        name==='training_total_useful_steps'||name==='training_tracked_active_seconds'||
         name.startsWith('training_collector_probe_')||
         name==='training_collector_resume_restored'||
         /^training_(?:gpu_forward_stream_|shared_gpu_forward_|gpu_input_slots_reused$|gpu_state_slots_reused$|gpu_policy_moves_skipped$|shared_gpu_input_reused$|shared_gpu_state_reused$)/.test(name)||

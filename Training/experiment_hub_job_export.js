@@ -15,7 +15,7 @@ const KEEP_MS=2*60*60*1000;
 const JOB_FIELDS=[
     'id','project_id','configuration_name','configuration_sha256',
     'frozen_parameters','metric_selection','resources','resource_bundle',
-    'trial_batch','distributed_rollout_managed','status',
+    'trial_batch','distributed_rollout_managed','learner_placement','status',
     'assigned_machine_id','continuation_of_job_id','artifact_lineage_root_id',
     'checkpoint_model_sha256','checkpoint_ready_verified',
     'checkpoint_stop_verified','created_at','capacity_released_at',

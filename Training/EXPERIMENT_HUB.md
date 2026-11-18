@@ -2578,6 +2578,12 @@ from the Hub heartbeat or interchanged with elapsed training time.
 A duration unit alone cannot distinguish other cumulative clocks from
 individual stage durations, so the panel does not add overlapping
 stages or infer a causal bottleneck.
+The Hub retains one timing sample per 30-second interval for sustained
+diagnoses. When the same remote collector repeatedly delays PPO,
+TinyBrains and Courier shared-policy runs can pair that delay with fresh
+CPU, RAM and GPU observations from the collector's authenticated dispatch.
+GPU activity is measured on the worker host. Co-occurrence helps narrow
+the investigation, while similar completion times leave ownership unresolved.
 
 ## Courier Ants (Basic Training)
 
@@ -2860,6 +2866,20 @@ service to the public Internet.
    without individual `machine_id` fields. The Hub checks current lease
    capacity and keeps the learner's approved endpoint order, including
    any fixed rollout weights or Courier lineage slots.
+   For a fresh TinyBrains or Courier shared-policy group, **Choose the
+   learner automatically from these machine allocations** keeps every budget
+   on its selected host. The Hub prefers an available GPU learner and checks
+   that the other selected hosts are approved collectors for it. It freezes
+   the chosen learner and ordered endpoints when reserving the group.
+   Placement can override its capacity preference when two recent completed
+   runs per choice used the same workload, machine budgets and physical GPU
+   bindings, and the faster choice leads by at least 15% across both samples.
+   Each sample requires at least three stable intervals over three minutes
+   of completed training. The Hub uses cumulative trainer counters from
+   its observation archive and records the selected evidence in job exports.
+   This option requires
+   automatic collector shares and threads for TinyBrains. Checkpoint
+   continuations keep their original learner host.
 4. Allow each host's authenticated agent to acknowledge its offered claim,
    and qualify the learner's GPU access before launch. In **Train**, use
    **Start collectors only** to authorize all remote native Starts atomically

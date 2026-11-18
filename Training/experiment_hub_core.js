@@ -1097,6 +1097,58 @@ function selectDistributedBudgets(snapshot,learner,selections,approved,capabilit
         snapshot,ordered.map(item=>hosts.get(item.machine_id)),selections,lookup)};
 }
 
+function distributedLeaseIdentity(lease,job) {
+    if(!lease||lease.job_id!==job.id||lease.project_id!==job.project_id||
+        lease.machine_id!==job.assigned_machine_id||lease.issued_by!=='experiment-hub'||
+        nativeResourceBlock(job,lease)||!Array.isArray(lease.gpu_bindings))return null;
+    const budget=resourceRequest(lease.resources);
+    if(lease.gpu_bindings.length!==budget.gpu_count||
+        lease.gpu_bindings.some((gpu,i)=>!gpu||gpu.id!==budget.gpus[i]||
+            !PCI.test(String(gpu.pci_address))))return null;
+    return [job.assigned_machine_id,job.project_id,budget,
+        lease.gpu_bindings.map(gpu=>[gpu.id,gpu.pci_address,gpu.cuda_uuid??null,gpu.vram_mb]),
+        job.frozen_parameters?.threads??null,job.frozen_parameters?.slot??null,
+        job.rollout_endpoint??null];
+}
+
+function learnerThroughputEvidence(snapshot,trial,workerField,priorJobs,observations) {
+    const {learner,leases}=trial;
+    const workers=trial[workerField];
+    const identity=[learner,...workers].map((job,index)=>distributedLeaseIdentity(leases[index],job));
+    if(identity.some(value=>!value))return null;
+    const layout=JSON.stringify(identity),samples=[];
+    const historicalLeases=new Map(snapshot.reservations.map(lease=>[lease.id,lease]));
+    const childProject=workers[0].project_id;
+    const workMetric=learner.project_id==='tinybrains'?'total_ant_decisions':'training_total_useful_steps';
+    let reads=0;
+    for(const job of priorJobs) {
+        if(job.assigned_machine_id!==learner.assigned_machine_id||
+            job.configuration_sha256!==learner.configuration_sha256)continue;
+        const children=snapshot.jobs.filter(child=>child.project_id===childProject&&
+            child.frozen_parameters?.learner_job_id===job.id);
+        if(children.length!==workers.length)continue;
+        const ordered=[job,...workers.map(worker=>children.find(child=>
+            child.assigned_machine_id===worker.assigned_machine_id))];
+        const previous=ordered.map(member=>{
+            if(!member||!member.capacity_released_at||
+                !['finished','stopped'].includes(member.status)||
+                !UUID.test(String(member.dispatch_id)))return null;
+            const lease=historicalLeases.get(member.lease_id);
+            return lease?.status==='released'&&lease.released_at?
+                distributedLeaseIdentity(lease,member):null;
+        });
+        if(JSON.stringify(previous)!==layout)continue;
+        reads++;
+        const rate=observations.sustainedThroughput(job,workMetric);
+        if(rate>0)samples.push({job_id:job.id,rate});
+        if(samples.length===2||reads===4)break;
+    }
+    return samples.length===2?{
+        low:Math.min(...samples.map(sample=>sample.rate)),
+        high:Math.max(...samples.map(sample=>sample.rate)),samples,
+    }:null;
+}
+
 function distributedRolloutHost(snapshot,job,machine) {
     if(job.project_id!=='tinybrains_rollout')return true;
     const parent=snapshot.jobs.find(j=>j.id===job.frozen_parameters?.learner_job_id);
@@ -2276,6 +2328,51 @@ class ExperimentHub {
     progressComparison(projectId) {
         this.project(projectId);
         return this.progressHistory.snapshot(projectId,this.state.jobs);
+    }
+    remoteResourceSample(learner,progress,received) {
+        if(!progress)return null;
+        const metrics=progress.metrics||{};
+        const tiny=learner.project_id==='tinybrains'&&learner.distributed_rollout_managed===true;
+        const courier=learner.project_id==='courier'&&learner.distributed_courier_managed===true&&
+            learner.frozen_parameters?.shared_policy===true;
+        if(!tiny&&!courier)return null;
+        const owner=tiny?metrics.remote_collector_exposed_wait_owner:
+            metrics.training_shared_last_wire_worker;
+        const slot=owner?.value;
+        if(owner?.unit!=='count'||!Number.isSafeInteger(slot)||
+            (tiny?(slot<1||slot>8):(slot<0||slot>=16||
+                slot!==metrics.training_shared_last_reply_worker?.value)))return null;
+        const plan=courier?learner.frozen_parameters.remote_lineage_plan?.[slot]:null;
+        const endpoint=tiny?learner.frozen_parameters?.rollout_endpoints?.[slot-1]:plan?.endpoint;
+        if(!endpoint)return null;
+        const workers=this.state.jobs.filter(job=>job.project_id===(tiny?'tinybrains_rollout':'courier_lineage')&&
+            job.frozen_parameters?.learner_job_id===learner.id&&
+            (tiny?job.rollout_endpoint===endpoint:job.frozen_parameters.slot===slot));
+        if(workers.length!==1)return null;
+        const worker=workers[0];
+        if(worker.assigned_machine_id===learner.assigned_machine_id||
+            !['running','stop_requested'].includes(worker.status)||!UUID.test(String(worker.dispatch_id)))return null;
+        const agent=this.agentReports.get(worker.assigned_machine_id);
+        const parentAgent=this.agentReports.get(learner.assigned_machine_id);
+        const fresh=at=>Number.isFinite(at)&&received>=at&&received-at<=30000;
+        if(!agent||!fresh(agent.received_ms)||!UUID.test(String(agent.instance_id))||
+            !(tiny?agent.tinybrains_rollout_endpoint===endpoint&&
+                SHA256.test(String(agent.tinybrains_rollout_key_fingerprint))&&
+                agent.tinybrains_rollout_key_fingerprint===parentAgent?.tinybrains_remote_key_fingerprint
+            :agent.courier_lineage_endpoint===endpoint&&agent.courier_lineage_max_shards===plan.maxShards&&
+                SHA256.test(String(agent.courier_lineage_key_fingerprint))&&
+                agent.courier_lineage_key_fingerprint===parentAgent?.courier_remote_key_fingerprint))return null;
+        const sample=this.executionTelemetry.get(worker.id);
+        if(!sample?.resource_metrics||!fresh(Date.parse(sample.at))||
+            sample.dispatch_id!==worker.dispatch_id||sample.agent_instance_id!==agent.instance_id||
+            !['running','stop_requested'].includes(sample.state))return null;
+        const lease=this.state.reservations.find(item=>item.id===worker.lease_id&&
+            item.job_id===worker.id&&item.project_id===worker.project_id&&
+            item.machine_id===worker.assigned_machine_id&&item.issued_by==='experiment-hub'&&
+            item.status==='acknowledged');
+        if(!lease||!fresh(this.leaseReceipts.get(lease.id))||nativeResourceBlock(worker,lease))return null;
+        return {slot,identity:[worker.id,worker.dispatch_id,agent.instance_id,lease.id].join(':'),
+            at:sample.at,metrics:sample.resource_metrics};
     }
     // These are conservative coordinator-side claims, NOT operating system
     // isolation or an authorization to execute a workload.
@@ -4643,9 +4740,9 @@ class ExperimentHub {
             // Diagnoses are observational only: neither native ownership nor
             // checkpoint, stop, admission or promotion decisions use them.
             let chartProgress=null;
+            const observed={};
             {
                 const liveOwner=['running','stop_requested'].includes(item.state);
-                const observed={};
                 const add=(key,value,unit)=>{
                     if(Number.isFinite(value)&&value>=0&&value<=1e12)
                         observed[key]={value,unit};
@@ -4704,7 +4801,8 @@ class ExperimentHub {
                 // per-job lease observations only after the host sample has
                 // been constructed. Missing/host-wide device data never
                 // becomes invented trainer-level GPU utilization.
-                chartProgress=this.bottleneckEvidence.enrich(job,progress,observed);
+                chartProgress=this.bottleneckEvidence.enrich(job,progress,observed,
+                    liveOwner?this.remoteResourceSample(job,progress,received):null);
                 // Archive validated source and host measurements before the
                 // bounded chart selector/coalescer discards sampling detail.
                 // This archive is observational and cannot gate training.
@@ -4744,6 +4842,7 @@ class ExperimentHub {
                 cpu_quota_periods:item.cpu_quota_periods??null,
                 cpu_cores_used:cpuCores,
                 resource_usage:resources,
+                resource_metrics:observed,
                 process_tasks:item.process_tasks??null,
                 progress:progressAccepted?chartProgress:previousProgress,
                 progress_issue:item.progress_issue||null,
@@ -5224,11 +5323,117 @@ class ExperimentHub {
                 capacity_released:Boolean(j.capacity_released_at)})),
             note:'Stops are durable native requests. No active or uncertain service capacity is released without a native terminal receipt.'};
     }
+    reserveDistributedGroup(value,workerField,build) {
+        const snapshot=this.snapshot();
+        const {auto_learner,...request}=object(value)?value:{};
+        if(auto_learner!==undefined&&typeof auto_learner!=='boolean')
+            throw Error('Automatic learner placement must be true or false.');
+        let reservation;
+        if(!auto_learner)reservation=build.call(this,snapshot,object(value)?request:value);
+        else {
+            const learner=request.learner,workers=request[workerField];
+            const limit=workerField==='collectors'?8:16;
+            if(!object(learner)||learner.continuation_of_job_id!=null||
+                request.worker_machine_ids!==undefined||
+                !Array.isArray(workers)||!workers.length||workers.length>limit||
+                workers.some(worker=>!object(worker)||Object.keys(worker).some(key=>
+                    !['machine_id','resources'].includes(key))))
+                throw Error('Automatic learner placement requires a fresh group with fixed machine budgets and automatic worker threads.');
+            const allocations=[{machine_id:learner.machine_id,resources:learner.resources},...workers];
+            const ids=allocations.map(item=>item.machine_id);
+            if(ids.some(id=>typeof id!=='string'||!ID.test(id))||new Set(ids).size!==ids.length)
+                throw Error('Enter one allocation per distinct machine for automatic learner placement.');
+            const selected=snapshot.configurations.find(config=>config.id===learner.configuration_id&&
+                config.revision===learner.expected_revision);
+            if(!selected||workerField==='lineages'&&selected.parameters?.shared_policy!==true||
+                selected.parameters?.rollout_action_weights!==undefined)
+                throw Error('Automatic learner placement needs a current TinyBrains profile with automatic shares or a Courier shared-policy profile.');
+            const placements=allocations.map(allocation=>{
+                const budget=resourceRequest(allocation.resources);
+                const host=snapshot.machines.find(machine=>machine.id===allocation.machine_id);
+                const placement=host&&resourcePlacements([host],snapshot.reservations,budget)[0];
+                if(!placement?.online||!placement.capacity_fits)
+                    throw Error('Requested capacity is unavailable on '+allocation.machine_id+'.');
+                // PPO needs usable memory on one device, even when the
+                // lease has other GPUs available for collection.
+                const learnerVram=Math.max(0,...placement.observed_gpu_devices.map(device=>
+                    Math.min(device.hub_available_vram_mb,
+                        device.physical_free_vram_mb??Infinity,
+                        budget.gpu_mode==='shared'?budget.gpu_vram_mb:Infinity)));
+                return {allocation,budget,placement,host,learnerVram};
+            });
+            const candidates=placements.filter(({host,budget})=>
+                readySidecar(host,selected.project_id,budget)&&
+                (!budget.gpu_count||budget.gpu_mode!=='shared'||
+                    host.gpu_shared_projects?.includes(selected.project_id)));
+            // Favor currently usable GPU leases, then use verified
+            // headroom and the fixed budgets as deterministic preferences.
+            // Device memory and load are placement hints, not measured SPS.
+            candidates.sort((a,b)=>
+                Number(Boolean(a.placement.observed_headroom_block))-
+                    Number(Boolean(b.placement.observed_headroom_block))||
+                Number(b.budget.gpu_count>0)-Number(a.budget.gpu_count>0)||
+                b.learnerVram-a.learnerVram||
+                (a.budget.gpu_count===b.budget.gpu_count?
+                    observedLoadPreference(a.placement,b.placement,a.budget):0)||
+                b.budget.cpus-a.budget.cpus||b.budget.ram_mb-a.budget.ram_mb||
+                a.host.id.localeCompare(b.host.id));
+            let failure;
+            const observedAt=Date.now(),recent=observedAt-14*24*60*60*1000;
+            const priorJobs=this.observations?snapshot.jobs.filter(job=>{
+                const released=Date.parse(job.capacity_released_at);
+                return job.project_id===selected.project_id&&job.status==='finished'&&
+                    job.checkpoint_ready_verified===true&&!job.continuation_of_job_id&&
+                    released>=recent&&released<=observedAt;
+            }).sort((a,b)=>Date.parse(b.capacity_released_at)-Date.parse(a.capacity_released_at)):[];
+            let baseline=null,best=null;
+            for(const {allocation,host,placement} of candidates) {
+                if(baseline&&!baseline.blocked&&placement.observed_headroom_block)continue;
+                let trial;
+                try {
+                    trial=build.call(this,snapshot,{
+                        ...request,learner:{...learner,...allocation},
+                        [workerField]:allocations.filter(item=>item!==allocation),
+                    });
+                    if(!supportsEvaluation(host.evaluation_suites,trial.result.learner))
+                        throw Error('Learner does not support the configured evaluation suites.');
+                }catch(error) {
+                    failure??=error;
+                    continue;
+                }
+                const evidence=priorJobs.length?learnerThroughputEvidence(
+                    snapshot,trial.result,workerField,priorJobs,this.observations):null;
+                if(!reservation) {
+                    reservation=trial;
+                    baseline={machine_id:host.id,evidence,blocked:Boolean(placement.observed_headroom_block)};
+                    if(!evidence)break;
+                }else if(evidence&&evidence.low>=baseline.evidence.high*1.15&&
+                    (!best||evidence.low>best.low)) {
+                    reservation=trial;
+                    best=evidence;
+                }
+            }
+            if(!reservation)throw Error('No selected machine can host an approved learner with these fixed allocations.'+
+                (failure?' '+failure.message:''));
+            const decision=best?{
+                basis:'sustained_throughput',capacity_preference_machine_id:baseline.machine_id,
+                capacity_preference_samples:baseline.evidence.samples,selected_samples:best.samples,
+            }:{basis:'available_capacity'};
+            reservation.result.learner.learner_placement=decision;
+            reservation.next.jobs.find(job=>job.id===reservation.result.learner.id)
+                .learner_placement=decision;
+        }
+        this.commit(reservation.next);
+        return reservation.result;
+    }
     // Queue and reserve an entire TinyBrains rollout group as one durable
     // transaction. The operator supplies resource budgets; physical worker
     // endpoints and identities come only from authenticated machine agents.
     // An incomplete set never leaves behind a stranded learner or sidecar.
     queueDistributedTinyBrains(value) {
+        return this.reserveDistributedGroup(value,'collectors',this.buildDistributedTinyBrains);
+    }
+    buildDistributedTinyBrains(snapshot,value) {
         if(!object(value)||value.confirm_queue!==true||
             Object.keys(value).some(key=>!['confirm_queue','learner','collectors','worker_machine_ids'].includes(key))||
             !object(value.learner)||
@@ -5238,7 +5443,6 @@ class ExperimentHub {
             !ID.test(String(value.learner.machine_id||''))||
             !Array.isArray(value.collectors))
             throw Error('Confirm the saved learner, its machine, and one resource budget for each approved remote collector.');
-        const snapshot=this.snapshot();
         const learnerMachine=snapshot.machines.find(m=>m.id===value.learner.machine_id);
         const config=snapshot.configurations.find(c=>c.id===value.learner.configuration_id&&
             c.revision===value.learner.expected_revision&&c.project_id==='tinybrains');
@@ -5323,17 +5527,19 @@ class ExperimentHub {
             const lease=this.claimJobIn(next,worker,host.id,host);
             workers.push(worker);leases.push(lease);
         }
-        this.commit(next);
-        return {learner:copy(learner),collectors:workers.map(copy),
+        return {next,result:{learner:copy(learner),collectors:workers.map(copy),
             leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
             starts_authorized:0,
-            note:'The entire distributed group has advisory machine claims. Each worker must acknowledge its lease and acquire separate native Start authorization before the learner can start.'};
+            note:'The entire distributed group has advisory machine claims. Each worker must acknowledge its lease and acquire separate native Start authorization before the learner can start.'}};
     }
     // Atomically claim a Courier learner and its independent remote PPO
     // lineages. The operator selects fixed machine resource budgets; the
     // endpoints, shared key fingerprint and slot order come only from native
     // agent advertisements. No Starts are issued by this transaction.
     queueDistributedCourier(value) {
+        return this.reserveDistributedGroup(value,'lineages',this.buildDistributedCourier);
+    }
+    buildDistributedCourier(snapshot,value) {
         if(!object(value)||value.confirm_queue!==true||
             Object.keys(value).some(key=>!['confirm_queue','learner','lineages','worker_machine_ids'].includes(key))||
             !object(value.learner)||
@@ -5343,7 +5549,6 @@ class ExperimentHub {
             !ID.test(String(value.learner.machine_id||''))||
             !Array.isArray(value.lineages))
             throw Error('Confirm the Courier learner, machine and per-lineage CPU/RAM/GPU allocations.');
-        const snapshot=this.snapshot();
         const machine=snapshot.machines.find(item=>item.id===value.learner.machine_id);
         const config=snapshot.configurations.find(item=>
             item.id===value.learner.configuration_id&&
@@ -5432,11 +5637,10 @@ class ExperimentHub {
             const lease=this.claimJobIn(next,worker,host.id,host);
             workers.push(worker);leases.push(lease);
         }
-        this.commit(next);
-        return {learner:copy(learner),lineages:workers.map(copy),
+        return {next,result:{learner:copy(learner),lineages:workers.map(copy),
             leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
             starts_authorized:0,
-            note:'All Hub machine leases are reserved. Start permission still requires fresh native ownership and explicit group authorization.'};
+            note:'All Hub machine leases are reserved. Start permission still requires fresh native ownership and explicit group authorization.'}};
     }
 
     // Authorize all separately leased Courier remote services in one durable

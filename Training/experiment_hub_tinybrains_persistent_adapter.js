@@ -58,6 +58,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         metrics[name]={value,unit};
     }
     add('total_ppo_updates',row.update,'count');
+    add('total_ant_decisions',row.total_ant_decisions,'count');
+    add('training_tracked_active_seconds',row.elapsed_seconds,'seconds');
     add('engine_steps',row.engine_steps,'count');
     add('simulation_match_steps',row.simulation_match_steps,'count');
     if(updateWall!==null&&updateWall>0) {
@@ -81,11 +83,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'optimization_seconds','checkpoint_seconds',
         'collector_wait_seconds','collector_critical_path_seconds',
         'collector_dispatch_queue_max_seconds','collector_dispatch_tail_seconds',
-        'gpu_role_startup_seconds',
+        'gpu_role_startup_seconds','gpu_role_remote_basis_seconds',
         'remote_collector_join_wait_seconds','remote_collector_exposed_wait_seconds',
         'remote_transport_connect_max_seconds',
         'remote_connect_exposed_seconds',
-        'collection_merge_seconds',
+        'collection_merge_seconds','collection_lease_accounting_seconds',
         'overlap_seconds','local_gpu_join_wait_seconds',
         'local_gpu_wait_after_local_max_seconds',
         'remote_policy_snapshot_seconds',
@@ -95,7 +97,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
         'ppo_ordering_seconds','ppo_zero_grad_seconds',
-        'ppo_grouping_seconds','ppo_data_preparation_seconds',
+        'ppo_grouping_seconds','ppo_data_preparation_seconds','ppo_behavior_pack_seconds',
+        'ppo_board_staging_seconds',
         'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
         'ppo_finite_gradient_check_seconds',
         'ppo_backward_seconds','ppo_metric_readback_seconds',
@@ -138,7 +141,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_gpu_batch_changed_next','rollout_gpu_batch_proven_target',
         'rollout_gpu_batch_vram_capped',
         'rollout_inference_pixel_samples',
-        'ppo_prestaged_board_states','ppo_reused_board_states',
+        'ppo_prestaged_board_states','ppo_reused_board_states','ppo_packed_remote_behavior_states',
         'ppo_board_cache_full_chunks','ppo_board_cache_mixed_chunks',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
@@ -163,6 +166,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'local_gpu_collectors_ready_at_local_end',
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
+        'collector_capacity_matches','collector_capacity_bootstrapped',
         'collector_balance_changed_next_update',
         'collector_balance_changed_submission',
         'collector_balance_layout_rollbacks',
@@ -220,6 +224,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('ppo_board_baseline_h2d_bytes',row.ppo_board_baseline_h2d_bytes,'bytes');
     add('ppo_board_iterative_h2d_bytes',row.ppo_board_iterative_h2d_bytes,'bytes');
     add('ppo_board_saved_h2d_bytes',row.ppo_board_saved_h2d_bytes,'bytes');
+    add('ppo_direct_board_staging_bytes',row.ppo_direct_board_staging_bytes,'bytes');
     add('ppo_prep_board_bytes',row.ppo_prep_board_bytes,'bytes');
     add('ppo_prep_async_h2d_bytes',row.ppo_prep_async_h2d_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
@@ -397,6 +402,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.learner_wait_after_local_seconds,'seconds');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
+        add('collector_'+i+'_request_prepare_seconds',
+            worker.collector_request_prepare_seconds,'seconds');
         add('collector_'+i+'_connect_seconds',
             worker.collector_client_connect_seconds,'seconds');
         add('collector_'+i+'_connection_reused',
@@ -605,7 +612,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'sim_learner_mb','sim_charged_mb','sim_ram_headroom_mb',
                 // Retain full remote codec breakdown unless the complete
                 // source envelope still cannot hold a valid update.
-                'serialize_seconds','compress_seconds',
+                'serialize_seconds','compress_seconds','request_prepare_seconds',
                 'send_seconds','receive_seconds','decode_seconds',
                 'connection_reused','connect_seconds',
                 'ingestion_seconds','worker_receive_seconds',

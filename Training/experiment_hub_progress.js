@@ -88,6 +88,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         for(const [name,value] of Object.entries(observed))retain(name,value);
         retain('total_ppo_updates',reported.total_ppo_updates);
         retain('ant_decisions_per_second',reported.ant_decisions_per_second);
+        for(const name of ['pipeline_remote_resource_owner','pipeline_remote_cpu_lease_pressure',
+            'pipeline_remote_cpu_throttle_pressure','pipeline_remote_cpu_underuse_evidence',
+            'pipeline_remote_ram_lease_pressure','pipeline_remote_gpu_host_busy_pressure'])
+            retain(name,reported[name]);
         retain('simulation_match_steps_per_second',
             reported.simulation_match_steps_per_second);
         for(const name of ['ppo_gpu_batch_target_pixels',
@@ -293,7 +297,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
             'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
             'pipeline_remote_wait_dominant',
-            'pipeline_remote_wait_owner','pipeline_remote_wait_competing_collectors',
+            'pipeline_remote_wait_owner','pipeline_remote_wait_competing',
             'pipeline_remote_exposed_work_share',
             'remote_collectors_pending_after_local',
             'remote_collector_co_limiting_count',
@@ -359,9 +363,30 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
 // Existing hub-metrics-v1 fields remain the sole public telemetry path.
 // Shares compare measured stage work; they are *not* hardware utilization or
 // independent capacity benchmarks. Unreported timing cannot be guessed.
+function collectTimingEvidence(prior,at,sample) {
+    if(Number.isFinite(at)&&at>prior.lastAt) {
+        if(at-prior.lastAt>300000) {
+            prior.samples.length=0;
+            prior.bucketAt=undefined;
+        }
+        const point={...sample,at};
+        // Heartbeats can land every 15 seconds. Retaining only the last
+        // six raw reports would never meet the two-minute evidence gate.
+        if(prior.bucketAt!==undefined&&at-prior.bucketAt<30000)
+            prior.samples[prior.samples.length-1]=point;
+        else {
+            prior.samples.push(point);
+            prior.bucketAt=at;
+            if(prior.samples.length>6)prior.samples.shift();
+        }
+        prior.lastAt=at;
+    }
+    return prior.samples;
+}
+
 class BottleneckEvidence {
     constructor() { this.byJob=new Map(); }
-    enrich(job,progress,observed={}) {
+    enrich(job,progress,observed={},remoteResource=null) {
         if(!progress||!job?.id)return progress;
         const metrics=progress.metrics||{};
         const derived={};
@@ -456,6 +481,31 @@ class BottleneckEvidence {
             gpuIdle:allGpuKnown&&gpuBusy.every(x=>x<=30),
             gpuMixed:allGpuKnown&&gpuBusy.length>1&&
                 gpuBusy.some(x=>x>=90)&&gpuBusy.some(x=>x<=30)
+        };
+        const matchedRemote=owner=>remoteResource?.slot===owner?remoteResource:null;
+        const addSustainedRemote=recent=>{
+            const remote=recent.at(-1).remoteResource;
+            if(!remote)return;
+            const comparable=recent.map(x=>x.remoteResource).filter(x=>
+                x?.identity===remote.identity&&x.slot===remote.slot);
+            const sustained=(name,predicate)=>{
+                const receipts=new Set(comparable.filter(x=>{
+                    const metric=x.metrics[name];
+                    return metric?.unit==='scalar'&&Number.isFinite(metric.value)&&
+                        predicate(metric.value);
+                }).map(x=>x.at));
+                return receipts.size>=5;
+            };
+            const evidence=[
+                ['cpu_lease_pressure','job_cpu_lease_utilization_pct',value=>value>=90],
+                ['cpu_throttle_pressure','job_cpu_quota_throttled_periods_pct',value=>value>=10],
+                ['cpu_underuse_evidence','job_cpu_lease_utilization_pct',value=>value<=40],
+                ['ram_lease_pressure','job_memory_lease_utilization_pct',value=>value>=90],
+                ['gpu_host_busy_pressure','host_gpu_busy_pct',value=>value>=90],
+            ];
+            const supported=evidence.filter(([,name,predicate])=>sustained(name,predicate));
+            if(supported.length)add('pipeline_remote_resource_owner',remote.slot,'count');
+            for(const [name] of supported)add('pipeline_remote_'+name,1,'count');
         };
         const collection=seconds('collection_seconds');
         const optimize=seconds('optimization_seconds');
@@ -696,16 +746,13 @@ class BottleneckEvidence {
                 if(maximum/total>=0.65)
                     stageHints[i]=stage;
             }
-            if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,fraction,waitShare,mergeShare,
+            const recent=collectTimingEvidence(prior,at,{fraction,waitShare,mergeShare,
                     prepShare,
                     localGpuShare,localGpuOwner,localGpuLease,remoteOwner,remoteCompeting,
                     remoteConnectCritical,remotePrepCritical,dispatchOwner,
-                    stageHints,simHints,resourceHints});
-                if(prior.samples.length>8)prior.samples.shift();
-                prior.lastAt=at;
-            }
-            const recent=prior.samples.slice(-6);
+                    stageHints,simHints,resourceHints,
+                    remoteResource:!remoteCompeting&&fraction>=0.5&&waitShare>=0.5
+                        ?matchedRemote(remoteOwner):null});
             add('pipeline_timing_sample_count',recent.length,'count');
             if(recent.length>=5&&
                 recent.at(-1).at-recent[0].at>=120000) {
@@ -733,7 +780,7 @@ class BottleneckEvidence {
                         add('pipeline_remote_wait_owner',owner,'count');
                     if(recent.filter(x=>x.remoteCompeting&&x.waitShare!==null&&
                         x.waitShare>=0.5).length>=5)
-                        add('pipeline_remote_wait_competing_collectors',1,'count');
+                        add('pipeline_remote_wait_competing',1,'count');
                 }
                 if(recent.filter(x=>x.localGpuShare!==null&&
                     x.localGpuShare>=0.5).length>=5) {
@@ -767,6 +814,7 @@ class BottleneckEvidence {
                 }
                 if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
                     add('pipeline_merge_dominant',1,'count');
+                addSustainedRemote(recent);
                 // Cross-stage capacity evidence requires *sustained* host
                 // data. Observations are independent and can overlap:
                 // saturation, throttling and inefficient software may coexist.
@@ -1010,8 +1058,7 @@ class BottleneckEvidence {
                 };
             }
             const {at,prior}=history();
-            if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,stageHints,resourceHints,
+            const recent=collectTimingEvidence(prior,at,{stageHints,resourceHints,
                     courierQueue:queueShare!==null&&queueShare>=0.20,
                     courierSimQueue:simQueueCritical,
                     courierSimImbalance:simImbalanceCritical,
@@ -1025,10 +1072,6 @@ class BottleneckEvidence {
                     courierGpuGuard:guardHint,
                     courierGpuSnapshot:snapshotHint,
                     courierGpuCopy:gpuCopyHint});
-                if(prior.samples.length>8)prior.samples.shift();
-                prior.lastAt=at;
-            }
-            const recent=prior.samples.slice(-6);
             add('training_timing_sample_count',recent.length,'count');
             if(recent.length>=5&&
                 recent.at(-1).at-recent[0].at>=120000) {
@@ -1161,18 +1204,14 @@ class BottleneckEvidence {
             const optimizationDominant=measured&&optimization>=0.70*wall&&
                 collection<=0.30*wall;
             const {at,prior}=history();
-            if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,resourceHints,
+            const recent=collectTimingEvidence(prior,at,{resourceHints,
                     sharedIngestion:ingestionDelay,
                     sharedReply:slowReply,
                     sharedPostwire:postwirePressure,
                     sharedImbalance:imbalance,
                     sharedCollection:collectionDominant,
-                    sharedOptimization:optimizationDominant});
-                if(prior.samples.length>8)prior.samples.shift();
-                prior.lastAt=at;
-            }
-            const recent=prior.samples.slice(-6);
+                    sharedOptimization:optimizationDominant,
+                    remoteResource:slowReply&&collectionDominant?matchedRemote(wireOwner):null});
             add('training_timing_sample_count',recent.length,'count');
             if(recent.length>=5&&
                 recent.at(-1).at-recent[0].at>=120000) {
@@ -1189,6 +1228,7 @@ class BottleneckEvidence {
                     add('training_shared_collection_dominant',1,'count');
                 if(sustained(x=>x.sharedOptimization))
                     add('training_shared_optimization_dominant',1,'count');
+                addSustainedRemote(recent);
                 if(sustained(x=>x.resourceHints?.cpuBusy))
                     add('pipeline_cpu_lease_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.throttled))
@@ -1233,6 +1273,7 @@ class BottleneckEvidence {
             (name==='pipeline_local_gpu_wait_owner'||
              name==='pipeline_local_gpu_lease_index'||
              name==='pipeline_remote_connect_owner'||
+             name==='pipeline_remote_resource_owner'||
              name==='pipeline_collector_dispatch_owner'||
              name==='pipeline_remote_wait_owner')?0:
             name.startsWith('pipeline_')&&(

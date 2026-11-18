@@ -282,6 +282,7 @@ function hubMeasuredSeconds(run) {
             // This explicitly cumulative run clock is already an X-axis
             // choice; ranking its median among phases hides useful timings.
             if(key==='elapsed_training_seconds'||key==='active_training_time'||
+                key==='training_tracked_active_seconds'||
                 key==='job_cpu_throttled_seconds')continue;
             const scale=item?.unit==='seconds'?1:
                 item?.unit==='milliseconds'?0.001:null;
@@ -1619,7 +1620,7 @@ document.addEventListener('DOMContentLoaded', () => {
             secondsMetricsDetails.append(table);
         }
         const note=document.createElement('p');
-        note.textContent='Read-only medians from up to 64 observations in each run’s latest contiguous chart segment, with at least five samples per metric. Second- and millisecond-valued measurements are normalized to seconds. Known cumulative elapsed_training_seconds and active_training_time clocks are omitted from this ranking but remain chartable and exportable. Other duration metrics may be cumulative; overlapping stages cannot be added. These chart samples are not full-resolution profiling evidence. Export the histories for definitive bottleneck analysis.';
+        note.textContent='Medians from up to 64 observations in each run’s latest chart segment, with at least five samples per metric. Millisecond measurements are displayed in seconds. Cumulative training clocks remain available in charts and exports. Use exported histories to investigate overlapping stages in more detail.';
         secondsMetricsDetails.append(note);
     }
     function renderRolloutRecommendations(runs) {
@@ -2233,7 +2234,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 remoteWaitOwner>=1&&remoteWaitOwner<=16
                 ?' (Collector '+remoteWaitOwner+
                     (remoteWaitHost?' on '+remoteWaitHost:'')+')'
-                :measured.pipeline_remote_wait_competing_collectors?.value===1
+                :measured.pipeline_remote_wait_competing?.value===1
                     ?' (multiple similar collector completion times)'
                     :' (no stable collector owner)';
             const delay=measured.pipeline_remote_wait_dominant?.value===1
@@ -2328,6 +2329,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     (resourceFlags.length>2?' (+'+(resourceFlags.length-2)+' more)':'')+
                     ' (not proof of a causal hardware bottleneck)'
                 :'';
+            const resourceOwner=measured.pipeline_remote_resource_owner?.value;
+            const remoteFlags=[
+                ['cpu_lease_pressure','high CPU usage within its lease'],
+                ['cpu_throttle_pressure','CPU quota throttling'],
+                ['cpu_underuse_evidence','low CPU usage within its lease'],
+                ['ram_lease_pressure','RAM usage close to its lease'],
+                ['gpu_host_busy_pressure','high GPU activity on the worker host'],
+            ].filter(([metric])=>measured['pipeline_remote_'+metric]?.value===1)
+                .map(([,label])=>label);
+            const resourceWorker=Number.isSafeInteger(resourceOwner)&&remoteFlags.length
+                ?(state.jobs||[]).filter(worker=>worker.frozen_parameters?.learner_job_id===job.id&&
+                    (job.project_id==='tinybrains'
+                        ?worker.project_id==='tinybrains_rollout'&&Boolean(worker.rollout_endpoint)&&
+                            worker.rollout_endpoint===job.frozen_parameters?.rollout_endpoints?.[resourceOwner-1]
+                        :worker.project_id==='courier_lineage'&&worker.frozen_parameters.slot===resourceOwner))
+                :[];
+            const resourceHost=resourceWorker.length===1?resourceWorker[0].assigned_machine_id:null;
+            const remoteResourceSignal=Number.isSafeInteger(resourceOwner)&&remoteFlags.length
+                ?' · Collector '+resourceOwner+(resourceHost?' on '+resourceHost:'')+
+                    ' during sustained waits: '+remoteFlags.join(', ')
+                :'';
             const preferred=['total_ppo_updates','update_wall_time',
                 'ant_decisions_per_second','collection_seconds','optimization_seconds'];
             const priority=preferred.filter(key=>Object.hasOwn(p.metrics,key));
@@ -2343,7 +2365,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
                 enginePressureSignal+connectSignal+remotePrepSignal+dispatchSignal+
-                courierQueueSignal+courierImbalanceSignal+resourceSignal+
+                courierQueueSignal+courierImbalanceSignal+resourceSignal+remoteResourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2393,12 +2415,15 @@ document.addEventListener('DOMContentLoaded', () => {
         'value_loss','baseline_loss','entropy','local_elo','mean_reward'];
     const knownPerformanceMetrics=[
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
-        'active_training_time',
+        'active_training_time','training_tracked_active_seconds','total_ant_decisions',
         'pipeline_collection_work_share','pipeline_optimization_work_share',
         'pipeline_collection_dominant','pipeline_optimization_dominant',
         'pipeline_remote_wait_work_share','pipeline_merge_work_share',
         'pipeline_remote_exposed_work_share','pipeline_remote_wait_owner',
-        'pipeline_remote_wait_competing_collectors',
+        'pipeline_remote_wait_competing',
+        'pipeline_remote_resource_owner','pipeline_remote_cpu_lease_pressure',
+        'pipeline_remote_cpu_throttle_pressure','pipeline_remote_cpu_underuse_evidence',
+        'pipeline_remote_ram_lease_pressure','pipeline_remote_gpu_host_busy_pressure',
         'remote_collector_exposed_wait_seconds','remote_collectors_pending_after_local',
         'remote_collector_co_limiting_count',
         'remote_collector_exposed_wait_owner',
@@ -4524,6 +4549,25 @@ document.addEventListener('DOMContentLoaded', () => {
         label.append(input,' Match budgets across the selected machines');
         return {input,label};
     }
+    function automaticLearnerControl(machineLabel,matching) {
+        const input=document.createElement('input');
+        input.type='checkbox';
+        const label=document.createElement('label');
+        label.append(input,' Choose the learner automatically from these machine allocations');
+        const update=()=>{
+            machineLabel.firstChild.textContent=input.checked&&!label.hidden
+                ?'Machine for the main resource budget ':'Learner machine ';
+        };
+        input.addEventListener('change',()=>{
+            if(input.checked)matching.input.checked=false;
+            update();
+        });
+        matching.input.addEventListener('change',()=>{
+            if(matching.input.checked)input.checked=false;
+            update();
+        });
+        return {input,label,update};
+    }
     function distributedBudgetRequest(budgets,matching,field) {
         const ids=budgets.map(item=>item.machine_id);
         if(matching&&ids.some(id=>typeof id!=='string'||!id))
@@ -4552,6 +4596,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const distributedFeedback=document.createElement('div');
     const distributedMachineLabel=document.createElement('label');
     distributedMachineLabel.append('Learner machine ',distributedMachine);
+    const distributedAuto=automaticLearnerControl(distributedMachineLabel,distributedMatch);
     const distributedBudgetsLabel=document.createElement('label');
     distributedBudgetsLabel.append('Remote worker budgets (JSON array) ',distributedBudgets);
     const distributedQueue=button('Queue and reserve entire group',async()=>{
@@ -4584,6 +4629,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const metricSelection=hubDistributedMetricSelection(
                 selectedJobMetrics(),budgets.length);
             const matching=distributedMatch.input.checked&&!distributedMatch.label.hidden;
+            const automatic=distributedAuto.input.checked&&!distributedAuto.label.hidden;
+            if(automatic&&matching)
+                throw Error('Automatic learner placement requires each budget to stay on its selected machine.');
             const budgetRequest=distributedBudgetRequest(budgets.map(item=>{
                 if(!item||typeof item!=='object'||Array.isArray(item))
                     throw Error('Each collector budget must be a JSON object.');
@@ -4591,12 +4639,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return {resources,machine_id,...(threads===undefined?{}:{threads})};
             }),matching,'collectors');
             if(!confirm('Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
-                ' on '+distributedMachine.value+
+                (automatic?' with automatic learner placement':' on '+distributedMachine.value)+
                 ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
                 ' reservations will be created together, but no process will start.'+
                 (matching?' Budgets may be assigned to a different selected machine than the one on their row.':'')))return;
             const result=await action('hub/distributed/tinybrains',{
                 confirm_queue:true,
+                ...(automatic?{auto_learner:true}:{}),
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:distributedMachine.value,resources,
                     metric_selection:metricSelection,
@@ -4604,14 +4653,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...budgetRequest,
             });
             distributedFeedback.textContent='Queued learner '+result.learner.id+
+                ' on '+result.learner.assigned_machine_id+
                 ' and '+result.collectors.length+' separate collector jobs. All '+
                 result.leases.length+' claims await native receipts and explicit Starts.'+
+                (result.learner.learner_placement?.basis==='sustained_throughput'
+                    ?' Prior runs with the same allocations favored this learner.':'')+
                 (matching?matchedWorkerSummary(result.leases):'');
             await reload();
         }catch(error){distributedFeedback.textContent=String(error.message||error);}
     });
     distributedPanel.append(distributedLegend,distributedMachineLabel,
-        distributedBudgetsLabel,distributedMatch.label,distributedDetails,distributedQueue,distributedFeedback);
+        distributedBudgetsLabel,distributedMatch.label,distributedAuto.label,
+        distributedDetails,distributedQueue,distributedFeedback);
     $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
     // Courier reuses the same native group claims, but unlike TinyBrains
     // each remote process trains its own immutable recurrent PPO lineage.
@@ -4627,6 +4680,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const courierFeedback=document.createElement('div');
     const courierMachineLabel=document.createElement('label');
     courierMachineLabel.append('Learner machine ',courierMachine);
+    const courierAuto=automaticLearnerControl(courierMachineLabel,courierMatch);
     const courierBudgetsLabel=document.createElement('label');
     courierBudgetsLabel.append('Remote worker budgets (JSON array) ',courierBudgets);
     const courierQueue=button('Queue and reserve Courier group',async()=>{
@@ -4645,6 +4699,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw Error('Provide one CPU/RAM/GPU budget for each selected Courier worker.');
             const resources=JSON.parse($('hub-job-resources').value);
             const matching=courierMatch.input.checked&&!courierMatch.label.hidden;
+            const automatic=courierAuto.input.checked&&!courierAuto.label.hidden;
+            if(automatic&&matching)
+                throw Error('Automatic learner placement requires each budget to stay on its selected machine.');
             const budgetRequest=distributedBudgetRequest(
                 budgets.map(({machine_id,...resources})=>({resources,machine_id})),
                 matching,'lineages');
@@ -4662,9 +4719,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!confirm('Reserve a Courier learner with '+budgets.length+role+
                 '? All machine CPU/RAM/GPU claims are atomic; '+
                 'no process will Start without a separate native approval.'+
+                (automatic?' The learner will be selected from the chosen machines.':'')+
                 (matching?' Budgets may be assigned to a different selected machine than the one on their row.':'')))return;
             const result=await action('hub/distributed/courier',{
                 confirm_queue:true,
+                ...(automatic?{auto_learner:true}:{}),
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:courierMachine.value,resources,
                     metric_selection:selectedJobMetrics(),
@@ -4673,13 +4732,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             courierFeedback.textContent='Reserved '+result.lineages.length+
                 ' remote PPO lineages and learner '+result.learner.id+
+                ' on '+result.learner.assigned_machine_id+
                 '. All '+result.leases.length+' independent native leases await receipts.'+
+                (result.learner.learner_placement?.basis==='sustained_throughput'
+                    ?' Prior runs with the same allocations favored this learner.':'')+
                 (matching?matchedWorkerSummary(result.leases):'');
             await reload();
         }catch(error){courierFeedback.textContent=String(error.message||error);}
     });
     courierPanel.append(courierLegend,courierMachineLabel,
-        courierBudgetsLabel,courierMatch.label,courierDetails,courierQueue,courierFeedback);
+        courierBudgetsLabel,courierMatch.label,courierAuto.label,courierDetails,courierQueue,courierFeedback);
     distributedPanel.insertAdjacentElement('afterend',courierPanel);
     let courierBudgetHost=null;
     function renderCourierDistributedGroup() {
@@ -4714,18 +4776,21 @@ document.addEventListener('DOMContentLoaded', () => {
             host.installed_projects?.includes('courier_lineage')));
         const subset=machine?.courier_lineage_subset===true;
         courierMatch.label.hidden=!subset;
+        courierAuto.label.hidden=!shared||!subset||Boolean($('hub-job-predecessor').value);
         const available=match.filter(hosts=>hosts.length===1).map(hosts=>hosts[0]);
         const budgetHost=machine?machine.id+':'+subset+':'+shared:null;
         const population=selected.parameters.workers;
         const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
         if(courierBudgetHost!==budgetHost) {
             courierMatch.input.checked=false;
+            courierAuto.input.checked=false;
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
                 (subset?available.slice(0,capacity):match).map(worker=>
                     ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),
                 null,2);
         }
+        courierAuto.update();
         const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
             capacity>0&&available.length>0&&
             (subset||capacity>=endpoints.length&&available.length===endpoints.length)&&
@@ -4769,15 +4834,19 @@ document.addEventListener('DOMContentLoaded', () => {
             m.installed_projects?.includes('tinybrains_rollout')));
         const subset=machine?.tinybrains_rollout_subset===true;
         distributedMatch.label.hidden=!subset;
+        distributedAuto.label.hidden=!subset||Boolean($('hub-job-predecessor').value)||
+            selected.parameters.rollout_action_weights!==undefined;
         const available=workers.filter(items=>items.length===1).map(items=>items[0]);
         const budgetHost=machine?machine.id+':'+subset:null;
         if(distributedBudgetHost!==budgetHost) {
             distributedMatch.input.checked=false;
+            distributedAuto.input.checked=false;
             distributedBudgetHost=budgetHost;
             distributedBudgets.value=JSON.stringify((subset?available:workers).map(worker=>
                 ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),null,2);
             if(subset&&!available.length)distributedBudgetHost=null;
         }
+        distributedAuto.update();
         const ready=Boolean(machine&&
             state.projects.some(p=>p.id==='tinybrains_rollout')&&
             available.length>0&&new Set(available.map(m=>m.id)).size===available.length&&
@@ -4790,6 +4859,7 @@ document.addEventListener('DOMContentLoaded', () => {
             :'Register the TinyBrains rollout project and connect the approved workers.';
     }
     $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
+    $('hub-job-predecessor').addEventListener('change',renderDistributedGroup);
     distributedMachine.addEventListener('change',renderDistributedGroup);
     $('hub-job-queue').addEventListener('click',async()=>{
         const selected=state?.configurations.find(c=>

@@ -7,7 +7,43 @@ const fs=require('node:fs');
 const path=require('node:path');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const MAX_RECORD_BYTES=65536;
+const THROUGHPUT_TAIL_BYTES=16*MAX_RECORD_BYTES;
 const dirName='hub-observations-v1';
+
+function stableThroughput(lines,job,workMetric) {
+    let previous=null, seconds=0, work=0;
+    const rates=[];
+    for(let i=lines.length-1;i>=0&&rates.length<6;i--) {
+        const row=JSON.parse(lines[i]);
+        const count=row.metrics?.[workMetric],elapsed=row.metrics?.training_tracked_active_seconds;
+        if(row.schema_version!==1||row.job_id!==job.id||row.project_id!==job.project_id||
+            row.dispatch_id!==job.dispatch_id||row.experiment_id!==job.id||
+            typeof row.segment_id!=='string'||!Number.isSafeInteger(row.steps_completed)||
+            count?.unit!=='count'||!Number.isSafeInteger(count.value)||count.value<0||
+            elapsed?.unit!=='seconds'||!Number.isFinite(elapsed.value)||elapsed.value<0)break;
+        const point={work:count.value,seconds:elapsed.value,
+            segment:row.segment_id,step:row.steps_completed};
+        if(!previous) {
+            previous=point;
+            continue;
+        }
+        const duration=previous.seconds-point.seconds, completed=previous.work-point.work;
+        if(point.segment!==previous.segment||point.step>previous.step||
+            duration<0||completed<0)break;
+        if(point.step===previous.step) {
+            if(completed!==0)break;
+            continue; // The same completed update may appear in a save receipt.
+        }
+        if(duration<45)continue;
+        work+=completed;
+        seconds+=duration;
+        rates.push(completed/duration);
+        previous=point;
+    }
+    const rate=work/seconds;
+    return rates.length>=3&&seconds>=180&&rate>0&&
+        rates.every(sample=>Math.abs(sample-rate)<=rate*.25)?rate:null;
+}
 
 class ObservationArchive {
     constructor(root) {
@@ -24,6 +60,39 @@ class ObservationArchive {
         // Only a trainer-stream failure prevents the normal host-only
         // fallback. A host-stream failure must be allowed to retry.
         return this.issues.has(job.id);
+    }
+    // Read only the exact dispatch's recent cumulative trainer receipts.
+    // Missing, incompatible or unreadable evidence is an ordinary fallback.
+    sustainedThroughput(job,workMetric) {
+        if(!UUID.test(String(job?.id))||!UUID.test(String(job?.dispatch_id)))return null;
+        let fd;
+        try {
+            const directory=fs.lstatSync(this.directory);
+            if(!directory.isDirectory()||directory.isSymbolicLink()||
+                (typeof process.getuid==='function'&&
+                    (directory.uid!==process.getuid()||(directory.mode&0o077)!==0)))return null;
+            const file=path.join(this.directory,job.id+'.jsonl');
+            fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0)|
+                (fs.constants.O_NONBLOCK||0));
+            const stat=fs.fstatSync(fd),current=fs.lstatSync(file);
+            if(!stat.isFile()||stat.nlink!==1||!current.isFile()||current.isSymbolicLink()||
+                stat.dev!==current.dev||stat.ino!==current.ino||
+                (typeof process.getuid==='function'&&
+                    (stat.uid!==process.getuid()||(stat.mode&0o077)!==0)))return null;
+            const length=Math.min(stat.size,THROUGHPUT_TAIL_BYTES);
+            if(!length)return null;
+            const buffer=Buffer.alloc(length);
+            if(fs.readSync(fd,buffer,0,length,stat.size-length)!==length||
+                buffer[length-1]!==10)return null;
+            const lines=buffer.toString('utf8').split('\n');
+            lines.pop();
+            if(length<stat.size)lines.shift();
+            return stableThroughput(lines,job,workMetric);
+        }catch {
+            return null;
+        }finally {
+            if(fd!==undefined)fs.closeSync(fd);
+        }
     }
     record(job,progress,resourceMetrics,receivedMs) {
         if(!progress)return false;
@@ -100,6 +169,7 @@ class ObservationArchive {
                 }
                 const observation={
                     schema_version:1,job_id:job.id,project_id:job.project_id,
+                    ...(UUID.test(String(job.dispatch_id))?{dispatch_id:job.dispatch_id}:{}),
                     observed_at:new Date(receivedMs).toISOString(),
                     source_modified_at:hostOnly?null:progress.source_modified_at,
                     experiment_id:hostOnly?null:progress.experiment_id,
