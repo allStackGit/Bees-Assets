@@ -80,6 +80,69 @@ def setup_config(source_path, manifest, output):
     return source, len(levels) * episodes
 
 
+def per_scene_results(score, learner_side, episodes):
+    """Verify real source-scene terminal counts before publishing comparisons.
+
+    These counters come from durable EpisodeFinal notifications after disk
+    acknowledgement. They never inspect PPO observations or infer outcomes
+    from a mutable gameplay state or model reward.
+    """
+    scenes = score.get("by_scene_sha256")
+    if not isinstance(scenes, dict) or not scenes:
+        raise ValueError("native evaluation has no authoritative scene breakdown")
+    totals = {"episodes": 0, "draws": 0, "timed_out": 0}
+    outcome_totals = {}
+    results = {}
+    for digest, row in scenes.items():
+        if (not isinstance(digest, str) or len(digest) != 64 or
+                any(c not in "0123456789abcdef" for c in digest) or
+                not isinstance(row, dict)):
+            raise ValueError("invalid native evaluation scene identity")
+        n = row.get("episodes_finished")
+        d = row.get("draws")
+        t = row.get("episodes_timed_out")
+        seconds = row.get("total_episode_seconds")
+        victories = row.get("victories_by_side")
+        if (any(type(x) is not int for x in (n, d, t)) or
+                n <= 0 or d < 0 or t < 0 or d > n or t > n or
+                type(seconds) not in (int, float) or
+                not math.isfinite(seconds) or seconds < 0 or
+                not isinstance(victories, dict)):
+            raise ValueError("invalid native evaluation scene terminal totals")
+        side_wins = 0
+        for side, wins in victories.items():
+            if (not isinstance(side, str) or not side.isdecimal() or
+                    type(wins) is not int or not 0 <= wins <= n):
+                raise ValueError("invalid native scene winner attribution")
+            outcome_totals[side] = outcome_totals.get(side, 0) + wins
+            side_wins += wins
+        if side_wins + d != n:
+            raise ValueError("native scene has missing or repeated episode outcomes")
+        totals["episodes"] += n
+        totals["draws"] += d
+        totals["timed_out"] += t
+        wins = victories.get(str(learner_side), 0)
+        results[digest] = {
+            "episodes": n,
+            "side_victories": wins,
+            "draws": d,
+            "timed_out": t,
+            "side_win_rate": wins / n,
+            "draw_rate": d / n,
+            "timeout_rate": t / n,
+            "mean_episode_seconds": seconds / n,
+        }
+    global_wins = score.get("victories_by_side")
+    if (totals["episodes"] != episodes or
+            totals["draws"] != score.get("draws") or
+            totals["timed_out"] != score.get("episodes_timed_out") or
+            not isinstance(global_wins, dict) or
+            any(outcome_totals.get(side, 0) != wins for side, wins in global_wins.items()) or
+            any(global_wins.get(side, 0) != wins for side, wins in outcome_totals.items())):
+        raise ValueError("native scene outcomes disagree with durable global evaluation")
+    return results
+
+
 def evaluate(source_path, manifest, output, learner_side, binary, policy_seed):
     manifest = manifest.resolve(strict=True)
     source_path = source_path.resolve(strict=True)
@@ -135,6 +198,7 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed):
     if (type(wins) is not int or not 0 <= wins <= expected or
             type(draws) is not int or not 0 <= draws <= expected or wins + draws > expected):
         raise ValueError("native evaluation side outcomes are invalid")
+    scenes = per_scene_results(score, learner_side, expected)
     if file_sha256(manifest) != manifest_sha or file_sha256(source_path) != source_sha:
         raise ValueError("evaluation input changed during the native run")
     receipt = {
@@ -152,6 +216,7 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed):
         "wall_seconds": throughput["wall_seconds"],
         "world_steps_per_wall_second": throughput["world_steps_per_wall_second"],
         "evaluation": score,
+        "by_scene_sha256": scenes,
         "rollout_summary_sha256": file_sha256(summary_path),
     }
     atomic_json(output / "evaluation-result.json", receipt)
