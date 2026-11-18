@@ -77,6 +77,9 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     ended_teams = defaultdict(dict)
     retirements = defaultdict(dict)
     admissions = defaultdict(dict)
+    # Separate O(1) binding-identity index; a long Queen wave must not
+    # rescan every prior newborn for each new real admission.
+    admitted_bindings = defaultdict(set)
     # Source combat hits are logged once per physical hit. Retain
     # aggregates, not individual hit events, until their episode closes.
     combat_by_episode = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
@@ -137,10 +140,9 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 if (any(type(value) is not int or value <= 0
                         for value in (agent, ship, revision, side)) or
                         tick == 0 or agent in admissions[key] or
-                        any(entry[:2] == (ship, revision)
-                            for entry in admissions[key].values())):
-                    raise ValueError("repeated or invalid native policy enrollment")
+                        (ship, revision) in admitted_bindings[key]):                    raise ValueError("repeated or invalid native policy enrollment")
                 admissions[key][agent] = (ship, revision, side, tick)
+                admitted_bindings[key].add((ship, revision))
             elif row["kind"] == "policy_controller_retired":
                 payload = row["payload"]
                 controller = payload["ship_id"], payload["binding_revision"]
@@ -400,6 +402,10 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             combat_by_episode.pop(key, None)
             ended_teams.pop(key, None)
             retirements.pop(key, None)
+            # All future identity checks for this episode have already
+            # completed; release the per-episode admission index too.
+            admitted_bindings.pop(key, None)
+            admissions.pop(key, None)
             for team in set(rollout[1].values()):
                 rewards.pop((key, team), None)
             yield rollout
