@@ -132,13 +132,12 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
                        bounds["min"][n] <= value <= bounds["max"][n]
                        for n, value in enumerate(ship["position"])):
                 raise ValueError("cloned physical ship would leave native map bounds")
-            # The game clone has no *original* saved FleetShip. An authored
-            # training scene instead gives each real persistent hull its own
-            # distinct fleet identity for exact episode TSV accounting.
-            if ship.get("persistent_fleet"):
-                ship["fleet_ship_id"] = new_id
-            else:
-                ship.pop("fleet_ship_id", None)
+            # NativeLevelLayout registers every cloned ship as a temporary
+            # fleet value, even if its source hull was persistent. Keep the
+            # training inventory and episode reward denominators identical
+            # to the playable game, not a newly invented permanent fleet.
+            ship["persistent_fleet"] = False
+            ship.pop("fleet_ship_id", None)
             ships.append(ship)
             ship_by_id[new_id] = ship
         squads.append(new_squad)
