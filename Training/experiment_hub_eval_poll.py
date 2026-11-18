@@ -214,6 +214,22 @@ def receipt_provenance(job: dict, ordinal: int, suite: dict, coordinate=None) ->
     return fields
 
 
+def receipt_with_suite_definition(receipt: dict, suite: dict) -> dict:
+    """Attach the exact frozen suite only when it fits the native receipt cap.
+
+    Suite identity comes from the same pinned definition used for the
+    evaluation, never a recomputed description or an untrusted report.
+    This is inspection evidence, not additional Stop or ranking authority.
+    """
+    canonical = json.dumps(suite, sort_keys=True)
+    if len(canonical.encode("utf-8")) > 2048:
+        return receipt
+    enriched = {**receipt, "suite_definition_canonical": canonical}
+    if len(json.dumps(enriched, separators=(",", ":")).encode("utf-8")) > 4096:
+        return receipt
+    return enriched
+
+
 def publish_failure(args, project: str, job: dict, suite: dict,
                     checkpoint_digest: str, update: int, error: Exception) -> None:
     """Publish a non-scoring, checkpoint-bound failed attempt.
@@ -513,12 +529,12 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
                 raise
             cursor.pop(dispatch)
             cursor[dispatch] = update
-            pending = {"target": job, "receipt": {
+            pending = {"target": job, "receipt": receipt_with_suite_definition({
                 "schema_version": 1, "suite_id": suite_id, "suite_sha256": digest, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
                 **({"metrics": measurements} if measurements else {}),
                 **receipt_provenance(job, update, suite, coordinate),
-            }}
+            }, suite)}
             save_cursor(state, {**saved, "pending_receipt": pending})
             flush_receipt(args, receipt_suite, pending, digest)
             save_cursor(state, saved)
@@ -755,7 +771,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
                             result = evaluate_checkpoint(
                                 job, frozen, checkpoint_digest, Path(work), suite)
                         successes, measurements = evaluation_outcome(result, receipt_suite["trials"])
-                        pending.append({"target": job, "receipt": {
+                        pending.append({"target": job, "receipt": receipt_with_suite_definition({
                             "schema_version": 1, "suite_id": sid,
                             "suite_sha256": definitions[sid],
                             "dispatch_id": dispatch,
@@ -764,7 +780,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
                             "successes": successes,
                             **({"metrics": measurements} if measurements else {}),
                             **receipt_provenance(job, update, suite, coordinate),
-                        }})
+                        }, suite)})
             except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
                 if verified_checkpoint is not None and attempted_suite is not None:
                     failed_job, failed_suite = attempted_suite
