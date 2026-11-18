@@ -1,6 +1,16 @@
 # Resource-efficient training workstream
 
-Updated 2026-11-18. Branch: `feat/hub-opponent-fused-readback-20261118` (continuing `feat/hub-heterogeneous-bootstrap-20261118`).
+Updated 2026-11-18. Branch: `feat/hub-shared-gpu-residency-20261118` (continuing `feat/hub-opponent-fused-readback-20261118`).
+Courier shared-policy learners can retain accepted policy and Adam on their
+assigned optimizer GPU between PPO rounds; frozen behavior snapshots are
+still transferred to CPU and authenticated before collector fanout. A bounded
+pinned snapshot mirror amortizes CPU allocations and joins one GPU stream
+before serialization. Normal CPU checkpoint flushing, rollback, and
+cross-platform device verification are preserved. Hub charts and exports
+carry residency, transfer-stage timing, logical avoided copies and current
+allocator reservation versus the fixed GPU memory fraction. Hardware GPU
+compute saturation is not inferred from allocator occupancy; multi-GPU
+shared-policy optimizer work and cross-machine useful-SPS qualification remain.
 TinyBrains coalesces greedy action-index readbacks across separate frozen Torch opponents on a GPU, while preserving each policy's weights and opponent-seat memory. Courier's GPU PPO copy-stream path reuses a bounded two-slot pinned CPU staging ring, with event-safe source ownership and no change to the optimizer or PPO batch. Both mechanisms publish reuse/synchronization evidence through the existing project-neutral metrics pipeline; real useful-SPS gains are not inferred.
 Scope: TinyBrains, Courier, future native projects; Bees remains with the unified native rewrite.
 The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimize useful training throughput inside those leases. Benchmarks below are not implied: these are source-level changes awaiting real workload qualification.
