@@ -2015,7 +2015,10 @@ class ExperimentHub {
                     ?{final_steps_completed:job.final_progress.steps_completed}:{}),
                 min_trials:rule.min_trials,
                 min_success_rate:job.evaluation_monitor?0:rule.min_success_rate,
-                ...(job.evaluation_monitor?{monitor_only:true}:{}),
+                ...(job.evaluation_monitor?{
+                    monitor_only:true,
+                    every_n_checkpoints:job.evaluation_monitor.every_n_checkpoints||1,
+                }:{}),
                 required_suite_ids:evaluationRules(policy)
                     .map(candidate=>candidate.suite_id)};
         });
