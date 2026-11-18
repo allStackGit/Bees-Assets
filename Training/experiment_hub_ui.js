@@ -2313,6 +2313,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Sustained shard receipt tail skew at PPO lineage '+
                     idleTailOwner+' (may reflect shard imbalance or receipt overhead, not measured CPU idle%)'
                 :'';
+            const gpuFwdOwner=measured.training_gpu_forward_owner?.value;
+            const sharedGpuFwdOwner=measured.training_shared_gpu_fwd_owner?.value;
+            const courierGpuFwdSignal=job.project_id==='courier'&&
+                measured.training_gpu_forward_pressure?.value===1&&
+                Number.isSafeInteger(gpuFwdOwner)&&gpuFwdOwner>=0&&gpuFwdOwner<64
+                ?' · Sustained exposed GPU forward stream work at PPO lineage '+
+                    gpuFwdOwner+' (not proof of GPU hardware saturation)'
+                :job.project_id==='courier'&&
+                    measured.training_shared_gpu_fwd_pressure?.value===1&&
+                    Number.isSafeInteger(sharedGpuFwdOwner)&&
+                    sharedGpuFwdOwner>=0&&sharedGpuFwdOwner<16
+                    ?' · Sustained exposed GPU forward stream work at shared-policy collector '+
+                        sharedGpuFwdOwner+' (not proof of GPU hardware saturation)'
+                    :'';
             const resourceFlags=[
                 ['pipeline_cpu_lease_pressure','CPU lease nearly occupied'],
                 ['pipeline_cpu_throttle_pressure','CPU quota throttling'],
@@ -2343,7 +2357,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
                 enginePressureSignal+connectSignal+remotePrepSignal+dispatchSignal+
-                courierQueueSignal+courierImbalanceSignal+resourceSignal+
+                courierQueueSignal+courierImbalanceSignal+courierGpuFwdSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
