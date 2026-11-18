@@ -1474,9 +1474,11 @@ impl NativePhysicalScene {
         // *final* authored layout. Validate after optional removals and
         // additions, before any world or policy agent has started.
         let static_ids = scene.entities.iter().filter_map(|entity| match entity {
-            NativeAuthoredEntity::BoxObstacle { entity_id, .. } |
-            NativeAuthoredEntity::PolygonObstacle { entity_id, .. } =>
+            NativeAuthoredEntity::BoxObstacle { entity_id, prefab_name, .. }
+                if boxes.by_name(prefab_name).is_some_and(|asset|
+                    asset.kind == bees_sim::obstacle::ObstacleKind::StaticObstacle) =>
                 Some(*entity_id),
+            NativeAuthoredEntity::PolygonObstacle { entity_id, .. } => Some(*entity_id),
             _ => None,
         }).collect::<HashSet<_>>();
         if scene.entities.iter().any(|entity| match entity {
