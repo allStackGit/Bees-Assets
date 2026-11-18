@@ -125,7 +125,9 @@ function learnerMeasurements(metrics) {
         'capture_compact_opponent_decisions', 'capture_compact_opponent_boundaries',
         'dynamic_policy_episodes', 'dynamic_policy_admissions',
         'dynamic_policy_admissions_without_decisions',
-        'dynamic_policy_decision_phases_max', 'reward_journal_events',
+        'dynamic_policy_decision_phases_max',
+        'dynamic_policy_decision_rows', 'dynamic_policy_learner_decision_rows',
+        'dynamic_policy_peak_live_agents', 'reward_journal_events',
         'optimizer_torch_intraop_threads', 'optimizer_torch_interop_threads'])
         add(name, 'count');
     add('reward_journal_payload_bytes', 'bytes');
