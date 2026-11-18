@@ -85,7 +85,6 @@ function checkPlan(plan,orders) {
                 plan.confirm_gpu_start!==true||
                 job.rollout_workers<allocation.gpu_count||
                 job.world_count<allocation.gpu_count)))
-            )
             throw Error('Issued collector must fit the explicit Hub CPU/RAM/GPU lease and one actor per GPU.');
     }
     return jobs;
