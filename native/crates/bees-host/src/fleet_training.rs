@@ -358,7 +358,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "hub_plan_sha256": if use_hub { hub.as_ref().map(|h| h.3.clone()) } else { None },
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
         "holdout_worlds": 8,
-        "evaluation_side": 1,
+        "evaluation_side": learner_side,
         "game_id": game_id,
         "title": format!("Trained: {title}"),
         "save_root": saves,
