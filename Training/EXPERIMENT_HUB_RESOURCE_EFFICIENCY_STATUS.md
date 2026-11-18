@@ -2,6 +2,62 @@
 
 Updated 2026-11-18. Integrated locally on `feat/hub-partial-ppo-staging-20261118` from `feat/hub-codec-overlap-20261118` and `feat/hub-resource-efficiency-20261112`. Courier continues from `feat/courier-overlap-policy-codec-20261118`. TinyBrains integrates `feat/tinybrains-admission-ramp-20261118` with the existing packed rollout and bounded PPO staging implementation.
 Scope: TinyBrains, Courier, future native projects; Bees remains with the unified native rewrite.
+Courier continuation map reallocation now verifies saved capacity identities
+against the current authenticated worker CPU/RAM/GPU leases and runtime.
+Identity checks reuse the collector's startup connection. Changed or legacy
+identities retain the saved map split until fresh evidence is available.
+The existing Hub reports `training_resume_capacity_verified`.
+Colocated basic and competitive Courier shards share vectorized transition execution
+and one dispatch per physical process. World RNGs, episodes, statistics and
+checkpoint identities remain individually owned. A short local 64-map
+dispatch comparison measured 1,517 vector steps/s with per-shard replies
+and rebuilt batch storage, versus 2,308 with bulk replies and reuse. Four
+logical shards measured 5,517 before and 5,911 after. Finer partitions still
+cost more; the existing logical shard ceiling remains.
+PPO and process migration parity checks cover the new path. Competitive
+contention, delivery and terminal respawns retain each map owner's RNG.
+An eight-shard local competitive dispatch check measured 1,217 vector
+steps/s before batching and 2,466 after batching. The paired PPO update
+preserved exact parameters, Adam moments, rollout data and RNG.
+All colony modes now reuse the colony transition kernel across colocated
+worlds, batching movement, age/energy/reward arrays and common observations.
+Source worlds retain RNGs, interactions, food, mutation, resets, statistics
+and checkpoint ownership. Speed substeps retain their per-world timing,
+including batches mixing ordinary and multi-tile moves. Communication/speed
+channels keep their existing construction. Group observation timing covers
+terminal and final observations. Checks covered all colony variants,
+uniform/patch food, births, combat, extinction, RNG, telemetry and checkpoint
+continuation, plus live process migration. Paired standard and speed PPO
+updates preserved exact data, parameters, Adam state and Torch RNG.
+A short four-map dispatch check measured 1,290 vector steps/s before and
+1,967 after batching. Efficient expansion of logical shards, shared GPU
+inference across independent policies, and sustained whole-training scaling
+remain substantive work.
+Simulation batches now send one completion through their leader pipe and
+reuse one bounded batch/unchanged array views per process. Controls,
+snapshots, resets and changed dispatch membership/order invalidate storage.
+All existing shard pipes and map/checkpoint identities remain independent.
+Exact checks covered resets, replaced arrays, reordered shards, forced
+competitive events, checkpoint state/RNG, live migration, PPO parameters
+and Adam state. Group failures close all members without orphan replies
+or shared-memory leaks. Existing Hub metrics expose completed simulation
+reply counts and storage reuses; packing latency covers serial group work.
+Local and shared collector process-tuning identities include the execution
+version, invalidating old performance proofs while preserving world state.
+Courier GPU rollouts can now replay a graph of the deterministic recurrent
+policy body. Sampling stays outside capture; recurrent snapshots remain
+independent. Capture must match exact initial/continuation outputs and lower
+measured latency by 20%, with setup repaid within the remaining rollout.
+Failed/unprofitable probes stay disabled for the same device/shape/precision.
+Device moves, failed collection and checkpoints release graph memory.
+Existing Hub metrics expose graph attempts, rejections, runtime/parity
+failures, replays and setup costs, with per-worker attribution. GPU inference
+wall timing now includes calibration and the complete forward/value work
+equally for local and remote collectors, without duplicating nested timers.
+CPU emulation of both the graph protocol and actual rollout hook preserved
+exact PPO parameters, Adam, recurrent buffers, actions and RNG across all
+Courier policy variants, including safe save/load. Physical GPU validation
+and independent-policy inference aggregation remain open.
 The integration retains automatic fixed-budget learner selection, observed throughput placement evidence, authenticated remote resource correlation, and the 30-second sustained diagnostic windows. It also retains overlapped Courier policy codecs alongside checkpoint-boundary map reassignment and per-machine process tuning. TinyBrains keeps its bounded minibatch CPU lookahead and direct decoded-board staging while adding grouped frozen-opponent inference and faster native engine admission.
 Next substantive implementation: adaptive distribution of a fixed shared-policy rollout quota across heterogeneous collectors without losing episode state; efficient batched GPU inference for independent Courier lineages; and policy-correct multi-device learner optimization. GPU/CPU scaling and restart safety need actual machine qualification before completion.
 The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimize useful training throughput inside those leases. Benchmarks below are not implied: these are source-level changes awaiting real workload qualification.

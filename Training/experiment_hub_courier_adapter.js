@@ -20,7 +20,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_collector_probe_layout_changed',
     'training_collector_resume_restored',
     'training_resume_map_moves','training_resume_proof_ready',
-    'training_resume_proof_rounds',
+    'training_resume_proof_rounds','training_resume_capacity_verified',
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
     'training_rollout_compressed_collectors',
     'training_policy_compressed_workers','training_policy_early_dispatch_count',
@@ -37,6 +37,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_environment_version','training_sim_early_dispatches',
     'training_sim_prestaged_actions','training_sim_queue_peak_shards',
     'training_sim_multiplexed_shards','training_sim_child_os_threads',
+    'training_sim_vector_groups_total','training_sim_vector_shards_total',
+    'training_sim_receipts_total','training_sim_batch_reuses_total',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
     'training_sim_migration_workers','training_collector_sim_trial_workers',
     'training_collector_sim_eligible_workers',
@@ -56,6 +58,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_placement_moved_lineage',
     'training_gpu_metric_readbacks','training_gpu_metric_rows',
     'training_gpu_guard_readbacks',
+    'training_gpu_graph_attempts','training_gpu_graph_rejections',
+    'training_gpu_graph_replays','training_gpu_graph_failures',
     'training_gpu_snapshot_reused_lineages','training_gpu_snapshot_owner',
     'training_remote_progress_seen','training_remote_progress_sent',
     'training_remote_progress_skipped','training_remote_progress_owner',
@@ -184,6 +188,7 @@ function courierMetrics(source) {
         name.startsWith('training_shared_gpu_lease_')||
         name.startsWith('training_shared_gpu_reserved_')||
         name.startsWith('training_collector_gpu_')||
+        name.startsWith('training_gpu_graph_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
         /^training_gpu_rollout_input_(?:packs|seconds|owner)$/.test(name)||
@@ -198,6 +203,9 @@ function courierMetrics(source) {
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
+            /^worker_[0-9]{1,2}_sim_(?:step_receipts|batch_reuses)$/.test(name)||
+            /^worker_[0-9]{1,2}_gpu_graph_(?:attempts|rejections|failures|replays)$/.test(name)||
+            /^worker_[0-9]{1,2}_sim_vector_(?:groups|shards)$/.test(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
             /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_pin_reused_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|policy_compressed|policy_delta|policy_delta_base_ready|is_remote)$/.test(name)||
             /^worker_[0-9]{1,2}_(?:probe|resume)_maps_(?:before|after)$/.test(name)||
