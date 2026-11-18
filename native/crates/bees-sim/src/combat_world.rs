@@ -1568,16 +1568,12 @@ impl CombatWorld {
     pub fn dynamic_navigation_asteroids(
         &self,
     ) -> impl Iterator<Item = (i64, &ObstacleBody)> + '_ {
-        self.obstacles.iter().zip(self.physics.obstacles()).filter_map(
-            |(obstacle, body)| {
-                if body.active && obstacle.kind == ObstacleKind::CollisionAsteroid &&
-                    obstacle.live() {
-                    Some((obstacle.entity_id, body))
-                } else {
-                    None
-                }
-            },
-        )
+        self.physics.active_obstacle_indices().iter().filter_map(|&index| {
+            let obstacle = &self.obstacles[index];
+            let body = &self.physics.obstacles()[index];
+            (body.active && obstacle.kind == ObstacleKind::CollisionAsteroid &&
+                obstacle.live()).then_some((obstacle.entity_id, body))
+        })
     }
 
     /// Revisions track actual admission and retirement of static colliders
@@ -1606,15 +1602,12 @@ impl CombatWorld {
     pub fn static_navigation_obstacles(
         &self,
     ) -> impl Iterator<Item = (i64, &ObstacleBody)> + '_ {
-        self.obstacles.iter().zip(self.physics.obstacles()).filter_map(
-            |(obstacle, body)| {
-                if body.active && obstacle.kind == ObstacleKind::StaticObstacle {
-                    Some((obstacle.entity_id, body))
-                } else {
-                    None
-                }
-            },
-        )
+        self.physics.active_obstacle_indices().iter().filter_map(|&index| {
+            let obstacle = &self.obstacles[index];
+            let body = &self.physics.obstacles()[index];
+            (body.active && obstacle.kind == ObstacleKind::StaticObstacle)
+                .then_some((obstacle.entity_id, body))
+        })
     }
 
     /// A game stage enables authored breakup behavior once, before its
