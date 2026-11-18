@@ -3827,6 +3827,11 @@ fn run_battle(
     let status_every_rounds = config.status_every_rounds.unwrap_or(u64::from(window.get()));
     let mut successful_world_steps = 0_u64;
     let mut successful_policy_rows = 0_u64;
+    let mut admission_snapshot_rows = 0_u64;
+    let mut admission_snapshot_frames = 0_u64;
+    let mut retirement_snapshot_rows = 0_u64;
+    let mut retirement_snapshot_frames = 0_u64;
+    let mut policy_boundary_capture_nanos = 0_u128;
     let mut parallel_physics_rounds = 0_u64;
     let mut parallel_physics_direct_rounds = 0_u64;
     let mut stage_id_serialized_rounds = 0_u64;
@@ -4168,6 +4173,11 @@ fn run_battle(
         }
         successful_world_steps += counts.world_steps as u64;
         successful_policy_rows += counts.policy_rows as u64;
+        admission_snapshot_rows += counts.admission_snapshot_rows as u64;
+        admission_snapshot_frames += counts.admission_snapshot_frames as u64;
+        retirement_snapshot_rows += counts.retirement_snapshot_rows as u64;
+        retirement_snapshot_frames += counts.retirement_snapshot_frames as u64;
+        policy_boundary_capture_nanos += counts.policy_boundary_capture_nanos;
         parallel_physics_rounds += u64::from(counts.parallel_physics_rounds);
         parallel_physics_direct_rounds +=
             u64::from(counts.parallel_physics_direct_rounds);
@@ -4777,6 +4787,13 @@ fn run_battle(
             "wakeup_scans": reinforcement_wakeup_scans,
         },
         "queen_minion_controllers": queen_controllers,
+        "policy_boundary_capture": {
+            "admission_rows": admission_snapshot_rows,
+            "admission_frames": admission_snapshot_frames,
+            "retirement_rows": retirement_snapshot_rows,
+            "retirement_frames": retirement_snapshot_frames,
+            "observation_build_wall_seconds": policy_boundary_capture_nanos as f64 / 1e9,
+        },
         "remote_play": remote.as_ref().map(|server| server.measurements()),
         "run_id": config.run_id,
         "rounds": rounds,
