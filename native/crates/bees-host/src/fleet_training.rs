@@ -224,6 +224,19 @@ fn append_training_arguments(
         command.arg("--rollout-worlds").arg(worlds.to_string())
             .arg("--physics-workers").arg(physics.to_string());
     }
+    if !recipe["trainer_config"].is_null() {
+        let config = PathBuf::from(recipe["trainer_config"].as_str()
+            .ok_or_else(|| invalid("invalid pinned trainer configuration path"))?);
+        let expected = recipe["trainer_config_sha256"].as_str()
+            .ok_or_else(|| invalid("missing pinned PPO configuration identity"))?;
+        if !config.starts_with(job) || !config.is_file() ||
+            format!("{:x}", Sha256::digest(fs::read(&config)?)) != expected {
+            return Err(invalid("native PPO configuration changed since experiment creation").into());
+        }
+        command.arg("--trainer-config").arg(config);
+    } else if !recipe["trainer_config_sha256"].is_null() {
+        return Err(invalid("orphan native trainer configuration digest").into());
+    }
     let device = recipe["optimizer_device"].as_str()
         .filter(|s| *s == "cpu" || *s == "cuda")
         .ok_or_else(|| invalid("invalid native optimizer device"))?;
@@ -243,6 +256,63 @@ fn append_training_arguments(
         .arg("--library-game-id").arg(game_id)
         .arg("--library-game-title").arg(title);
     Ok(())
+}
+
+
+fn choose_trainer_config(save_root: &Path) -> Result<Option<Option<PathBuf>>, Box<dyn Error>> {
+    // User-authored PPO configs belong to the player's saved experiments,
+    // not the source game or the compiled Rust binary.
+    let directory = save_root.join("training").join("configurations");
+    let mut configs = Vec::new();
+    if directory.is_dir() {
+        for entry in fs::read_dir(&directory)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            let path = entry.path();
+            if !file_type.is_file() ||
+                !matches!(path.extension().and_then(|s| s.to_str()), Some("yaml" | "yml"))
+            {
+                continue;
+            }
+            if entry.metadata()?.len() > 1_048_576 {
+                return Err(invalid("native PPO configuration cannot exceed 1 MiB").into());
+            }
+            configs.push(path.canonicalize()?);
+        }
+    }
+    configs.sort_unstable();
+    let mut titles = vec!["Project default PPO configuration".to_string()];
+    titles.extend(configs.iter().map(|path|
+        path.file_name().map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "PPO configuration".to_string())
+    ));
+    let rows = titles.iter().map(|title| BattleMenuRow {
+        title, status: "  [Pinned for training]", unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = 0;
+    Ok(select_library(&rows, &mut selected, false)?.map(|index|
+        if index == 0 { None } else { Some(configs[index - 1].clone()) }
+    ))
+}
+
+fn pin_trainer_config(
+    job: &Path, source: Option<&Path>,
+) -> Result<(Option<PathBuf>, Option<String>), Box<dyn Error>> {
+    let Some(source) = source else { return Ok((None, None)); };
+    let contents = fs::read(source)?;
+    if contents.is_empty() || contents.len() > 1_048_576 {
+        return Err(invalid("native PPO configuration must contain 1 byte..1 MiB").into());
+    }
+    let sha = format!("{:x}", Sha256::digest(&contents));
+    let destination = job.join("trainer-config.yaml");
+    let mut file = OpenOptions::new().write(true).create_new(true).open(&destination)?;
+    use std::io::Write;
+    file.write_all(&contents)?;
+    file.sync_all()?;
+    if format!("{:x}", Sha256::digest(fs::read(source)?)) != sha {
+        return Err(invalid("PPO configuration changed during native experiment selection").into());
+    }
+    Ok((Some(destination), Some(sha)))
 }
 
 fn new_training_job(save_root: &Path) -> io::Result<(PathBuf, String)> {
@@ -278,6 +348,9 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     };
     let Some(rounds) = choose_count("MA-POCA optimizer rounds", &[1, 3, 10, 25, 100])?
         else { return Ok(()); };
+    let Some(trainer_source) = choose_trainer_config(save_root)? else {
+        return Ok(());
+    };
     let sides = [
         BattleMenuRow {
             title: "Train Bees faction",
@@ -403,6 +476,8 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let run: Value = serde_json::from_slice(&fs::read(&source)?)?;
     let title = run["run_id"].as_str().unwrap_or("Native Fleet").to_string();
     let (job, game_id) = new_training_job(&saves)?;
+    let (trainer_config, trainer_config_sha256) =
+        pin_trainer_config(&job, trainer_source.as_deref())?;
     let prepared = job.join("prepared");
     let model = job.join("model");
     // The game does not own learning state, but it needs the original
@@ -416,6 +491,8 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "learner_side": learner_side,
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
+        "trainer_config": trainer_config,
+        "trainer_config_sha256": trainer_config_sha256,
         "worlds": worlds,
         "physics_workers": workers,
         "hub_worlds": hub_worlds,
