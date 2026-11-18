@@ -5081,14 +5081,15 @@ class ExperimentHub {
             new Set(policies.map(item=>item.signature)).size!==1)
             throw Error('Candidate models need independent lineages and matching frozen evaluation policies.');
         const suiteDigests=new Map();
-        for(const [index,job] of jobs.entries())
+        for(const [index,job] of jobs.entries()) {
             for(const rule of evaluationRules(policies[index].policy)) {
-            const digest=rule.suite_sha256||job.evaluation_suite_definitions?.[rule.suite_id];
-            if(!digest)continue;
-            const previous=suiteDigests.get(rule.suite_id);
-            if(previous&&previous!==digest)
-                throw Error('Candidate jobs have different suite definitions for '+rule.suite_id+'.');
-            suiteDigests.set(rule.suite_id,digest);
+                const digest=rule.suite_sha256||job.evaluation_suite_definitions?.[rule.suite_id];
+                if(!digest)continue;
+                const previous=suiteDigests.get(rule.suite_id);
+                if(previous&&previous!==digest)
+                    throw Error('Candidate jobs have different suite definitions for '+rule.suite_id+'.');
+                suiteDigests.set(rule.suite_id,digest);
+            }
         }
         if(jobs.some(j=>this.state.jobs.some(child=>child.status!=='cancelled'&&
             (child.continuation_of_job_id===j.id||child.after_job_id===j.id))))
