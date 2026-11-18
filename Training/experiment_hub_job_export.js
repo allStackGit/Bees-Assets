@@ -339,6 +339,18 @@ class JobExporter {
             progress,
             additional_sources:legacy?this.legacyBees.sources(jobs):
                 [...jobs.flatMap(job=>{
+                    const evidence={job_id:job.id,label:'hub-evaluations',
+                        path:path.join(this.dataRoot,'hub-evaluations-v1',
+                            job.id+'.jsonl')};
+                    if(job.evaluation_history_only)
+                        // Offline audits have no native heartbeat, agent or
+                        // trainer artifacts. Export only their authenticated
+                        // comparison evidence and frozen source definition.
+                        return [evidence,{
+                            job_id:job.id,label:'hub-historical-source',
+                            path:path.join(this.dataRoot,'hub-evaluations-v1',
+                                job.id+'.historical.json'),
+                        }];
                     const base=path.join(this.dataRoot,'hub-observations-v1');
                     const hostFile=path.join(base,job.id+'-resources.jsonl');
                     return [{
@@ -347,17 +359,8 @@ class JobExporter {
                     },{
                         job_id:job.id,label:'hub-host-observations',
                         path:hostFile,
-                    },...(job.evaluation_history_only||
-                        job.evaluation_monitor||job.evaluation_stop?[{
-                        job_id:job.id,label:'hub-evaluations',
-                        path:path.join(this.dataRoot,'hub-evaluations-v1',
-                            job.id+'.jsonl'),
-                    }]:[]),
-                    ...(job.evaluation_history_only?[{
-                        job_id:job.id,label:'hub-historical-source',
-                        path:path.join(this.dataRoot,'hub-evaluations-v1',
-                            job.id+'.historical.json'),
-                    }]:[])];
+                    },...(job.evaluation_monitor||job.evaluation_stop
+                        ?[evidence]:[])];
                 }),...linkedCollectorSources,...mounted,...mirrored],
         }),{flag:'wx',mode:0o600});
         const session={id,dir,project,status:'preparing',parts:[],error:null};
