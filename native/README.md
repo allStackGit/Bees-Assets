@@ -959,6 +959,26 @@ long random token and bind to loopback unless a secure private network or
 SSH tunnel is available. This protocol uses **unencrypted TCP**: do not
 publish the port on the public Internet.
 
+For a dedicated server without a graphical window, build the ordinary
+headless `bees` executable and run `bees serve <run.json> --output-dir
+<new-directory>` with the same `BEES_NATIVE_REMOTE_LISTEN` and token
+environment variables documented below. The server uses the identical
+fixed-step CombatWorld, player authorization and side-filtered snapshots.
+It requires one offline Level/episode, no asynchronous navigation or
+mid-battle model reload, and a new output directory. It records authenticated
+player inputs and periodic/final physical and gameplay fingerprints to
+`player-inputs.jsonl`. With a trained opponent, the trace also records the
+model's real applied actions in `policy-actions.bin`. The server sends the
+same multiplayer feedback and battle-state snapshots as the local host,
+without initializing a renderer or audio output.
+
+To deterministically replay the match later, stop/unset the remote-listening
+environment and run `bees run <same-run.json> --output-dir <new-replay-dir>
+--replay-inputs <server-output>/player-inputs.jsonl`. Keep the exact
+original run/scene and policy artifacts; playback verifies their identities,
+the recorded action sequence and world fingerprints, rather than
+reconstructing opponent decisions from live network input.
+
 With a built native `bees` executable and a real player-controlled Level,
 set these environment variables on the **host** (shown in POSIX shell;
 PowerShell can set the same names with `$env:`):
