@@ -188,8 +188,13 @@ are not independently deferred. Source-authored waves do not invent
 obstacle navigation at an off-map spawn: delayed hulls use their
 distinct original authored slots. Trainable elimination, survival,
 extraction and reinforcement battles use the same physical Level.
-Deferred squads remain scripted and acquire no policy agents before
-their real deployment; the initial policy-controlled fleet learns.
+Native source-authored training Levels can now defer *real* policy
+squads as reinforcement waves. Their already authenticated model routes,
+physical capabilities and MA-POCA identities remain dormant until the
+specified Level trigger deploys their ships. Enrollment and inference begin
+on subsequent fixed steps using the same CombatWorld, group rewards and
+trajectory capture as the initial fleet. Authored scripted reinforcements
+remain available independently.
 A trainable survival deadline must fit the episode safety timeout;
 without `--survive-seconds` the author chooses the latest achievable
 fixed-step deadline automatically.
@@ -233,10 +238,11 @@ CPU or PyTorch GPU optimization. Survival training uses the identical
 fixed-step survival deadline and protected physical ship as gameplay, while
 extraction uses the real side-owned extraction trigger. Authored survival
 reinforcements retain their real physical deployment clock and original
-scripted squad commands: deferred ships do not receive policy controllers
-until a future source-backed controller lifecycle supports them. The
-initially deployed fleet remains the learning side, and deferred hulls still
-count toward their faction's frozen physical fleet value. To reduce process
+scripted squad commands. The saved-fleet training converter still leaves
+these deferred support hulls scripted and trains its initially deployed
+fleet. Separately authored policy-enabled reinforcements use the same native
+trainer and physically enroll their model/group identities on arrival.
+Deferred hulls still count toward their faction's frozen physical fleet value. To reduce process
 and model reload costs,
 choose 1–16 episodes per persistent native arena. Long experiments can
 evaluate the same fixed-seed holdout every 1, 2, 5 or 10 optimizer rounds,
