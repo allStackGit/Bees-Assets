@@ -243,6 +243,8 @@ pub struct NativeReinforcementArrivals {
     pub waves: u64,
     pub squads: u64,
     pub ships: u64,
+    /// Policy participants admitted with these real physical ships.
+    pub policy_agents: u64,
 }
 
 impl NativeReinforcementArrivals {
@@ -250,6 +252,7 @@ impl NativeReinforcementArrivals {
         self.waves += other.waves;
         self.squads += other.squads;
         self.ships += other.ships;
+        self.policy_agents += other.policy_agents;
     }
 }
 
@@ -888,7 +891,9 @@ impl NativeLevelEventProcessor {
         Ok(())
     }
 
-    pub fn record_reinforcements(&mut self, tick: u64, ships: usize, squads: usize)
+    pub fn record_reinforcements(
+        &mut self, tick: u64, ships: usize, squads: usize, policy_agents: usize,
+    )
         -> Result<(), NativeLevelEventError>
     {
         Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
@@ -900,6 +905,7 @@ impl NativeLevelEventProcessor {
         self.reinforcement_arrivals.waves += 1;
         self.reinforcement_arrivals.squads += squads as u64;
         self.reinforcement_arrivals.ships += ships as u64;
+        self.reinforcement_arrivals.policy_agents += policy_agents as u64;
         self.last_reinforcement_tick = Some(tick);
         Ok(())
     }
