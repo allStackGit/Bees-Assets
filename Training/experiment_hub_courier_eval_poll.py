@@ -38,7 +38,8 @@ def poll(args, suites):
         config = args.artifact_root / job["job_id"] / "hub-environment.json"
         if config.resolve(strict=True) != config or not config.is_file():
             raise ValueError("Courier environment file is redirected or unavailable.")
-        return evaluate(args.project_root, file, digest, config, suite, work)
+        return evaluate(args.project_root, file, digest, config, suite, work,
+                        with_metrics=True)
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:
