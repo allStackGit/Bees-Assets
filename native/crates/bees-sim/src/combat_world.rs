@@ -2387,6 +2387,9 @@ impl CombatWorld {
         }
         let completion = self.navigation_requests.complete(job, path, position)?;
         if let NavigationCompletion::Accepted { path, .. } = &completion {
+            // Query immutable source bounds before borrowing movement and
+            // physics mutably for completion installation.
+            let override_bounds = self.ship_bounds_overrides.contains(&job.ship_id);
             if let Some(steering) = self.game_ship_steering.get_mut(&job.ship_id) {
                 let motion = &mut self.physics.ships_mut()[index].motion;
                 if !(motion.is_policy_controlled && !motion.user_controlled) &&
@@ -2397,7 +2400,8 @@ impl CombatWorld {
                     // context to safely re-enter MoveToPoint.
                     let may_retry = self.latest_game_point_orders.get(&job.ship_id)
                         .is_some_and(|&order|
-                            self.ship_bounded_destination(job.ship_id, order) == job.destination);
+                            (if override_bounds { order.destination }
+                             else { order.bounded_destination() }) == job.destination);
                     if may_retry {
                         steering.failed_path(motion);
                     } else {
