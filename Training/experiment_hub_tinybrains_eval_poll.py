@@ -3,15 +3,29 @@
 
 import argparse
 import http.client
+import json
 import re
 import sys
 from pathlib import Path
 
+from experiment_hub_eval_io import read_bounded
 from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
 from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate_with_metrics, read_suite
 from experiment_hub_tinybrains_runtime import configure_engine
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
+
+
+def checkpoint_update(file):
+    # The trusted persistent trainer reads this same checkpoint format
+    # during restart. The evaluator only inspects its update number;
+    # evaluation itself still uses a separate immutable private copy.
+    import torch
+    state = torch.load(file, map_location="cpu", weights_only=False)
+    update = state.get("update") if isinstance(state, dict) else None
+    if type(update) is not int or not 1 <= update <= 2**53 - 1:
+        raise ValueError("TinyBrains checkpoint has no valid PPO update identity.")
+    return update
 
 
 def latest_numbered_checkpoint(artifact_root, job):
@@ -24,6 +38,23 @@ def latest_numbered_checkpoint(artifact_root, job):
         raise ValueError("TinyBrains artifact directory is redirected.")
     if not directory.is_dir():
         return None
+    # The installed persistent TinyBrains trainer owns self-play/latest.pt,
+    # not job/latest.pt or job/update-N.pt. Its checkpoint includes an
+    # absolute PPO update; normalize to the Hub job's relative update axis.
+    active = directory / "self-play" / "latest.pt"
+    if active.exists():
+        start_file = directory / "hub-start-update.json"
+        if (active.resolve(strict=True) != active or not active.is_file() or
+            start_file.resolve(strict=True) != start_file or
+            not start_file.is_file()):
+            raise ValueError("TinyBrains persistent checkpoint identity is redirected.")
+        start = json.loads(read_bounded(start_file, 4096))["update"]
+        if type(start) is not int or not 1 <= start <= 2**53 - 1:
+            raise ValueError("TinyBrains imported starting update is invalid.")
+        update = checkpoint_update(active)
+        if update < start:
+            raise ValueError("TinyBrains checkpoint predates the verified starting update.")
+        return update, active, update - start
     latest = None
     for file in directory.iterdir():
         match = CHECKPOINT.fullmatch(file.name)
@@ -35,21 +66,27 @@ def latest_numbered_checkpoint(artifact_root, job):
 
 
 def poll(args, suites):
+    def verify_frozen(file, checkpoint):
+        if len(checkpoint) == 3 and checkpoint_update(file) != checkpoint[0]:
+            raise ValueError("TinyBrains checkpoint advanced during private copy; retry a stable snapshot.")
+
     def evaluated(job, file, digest, work, suite):
         return evaluate_with_metrics(file, digest, suite, work)
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:
-            return final_checkpoint(args.artifact_root, job, "latest.pt")
+            return final_checkpoint(args.artifact_root, job, "self-play/latest.pt")
         return latest_numbered_checkpoint(args.artifact_root, job)
     pairs = [(suite, {**suite, "trials":
                       2 * len(suite["maps"]) * len(suite["seeds"])}) for suite in suites]
     if len(pairs) == 1:
         poll_checkpoint(args, "tinybrains", *pairs[0], find_checkpoint,
                         lambda job, file, digest, work:
-                            evaluated(job, file, digest, work, suites[0]))
+                            evaluated(job, file, digest, work, suites[0]),
+                        verify_checkpoint=verify_frozen)
     else:
-        poll_batch(args, "tinybrains", pairs, find_checkpoint, evaluated)
+        poll_batch(args, "tinybrains", pairs, find_checkpoint, evaluated,
+                   verify_checkpoint=verify_frozen)
 
 
 def main():
