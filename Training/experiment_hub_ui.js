@@ -69,15 +69,23 @@ function hubComparisonPoints(run) {
         /^[a-f0-9]{64}$/.test(row.suite_sha256||'')&&
         Number.isSafeInteger(row.successes)&&Number.isSafeInteger(row.trials)&&
         row.trials>0&&row.successes>=0&&row.successes<=row.trials)
-        .map(row=>({
-            steps_completed:row.steps_completed,
-            segment_id:'independent-evaluation',
-            source_modified_at:row.evaluated_at||row.observed_at,
-            observed_at:row.observed_at,break_before:false,
-            metrics:{['eval_'+row.suite_id.replace(/-/g,'_')+'_'+row.suite_sha256.slice(0,8)]:{
-                value:row.successes/row.trials,unit:'ratio',
-            }},
-        }));
+        .map(row=>{
+            const prefix='eval_'+row.suite_id.replace(/-/g,'_')+'_'+
+                row.suite_sha256.slice(0,8);
+            const details=Object.entries(row.metrics||{})
+                .filter(([name,item])=>/^[a-z][a-z0-9_]{0,47}$/.test(name)&&
+                    item&&Number.isFinite(item.value)&&
+                    ['count','ratio','scalar','seconds'].includes(item.unit))
+                .map(([name,item])=>[prefix+'_'+name,item]);
+            return {
+                steps_completed:row.steps_completed,
+                segment_id:'independent-evaluation',
+                source_modified_at:row.evaluated_at||row.observed_at,
+                observed_at:row.observed_at,break_before:false,
+                metrics:{[prefix]:{value:row.successes/row.trials,unit:'ratio'},
+                    ...Object.fromEntries(details)},
+            };
+        });
     // Independent evaluations never synthesize trainer timing metrics.
     return evaluated.length?[...training,...evaluated].sort((a,b)=>
         (a.steps_completed??0)-(b.steps_completed??0)):training;
@@ -375,7 +383,18 @@ const HUB_GPU_METRIC_SUFFIXES=Object.freeze({
 });
 function hubMetricDescription(name,units=[]) {
     if(/^eval_[a-z][a-z0-9_]{0,47}_[a-f0-9]{8}$/.test(name))
-        return 'Independent fixed-suite evaluation success rate at a verified checkpoint. The suffix distinguishes frozen suite definitions; compare only matching definitions.';
+        return 'Independent fixed-suite evaluation win or success rate at a verified checkpoint. The fingerprint identifies the frozen suite definition.';
+    if(name.startsWith('eval_')) {
+        const meanings={
+            win_count:'Number of controlled evaluation games won by the candidate.',
+            loss_count:'Number of controlled evaluation games lost by the candidate.',
+            draw_count:'Number of controlled evaluation games ending in a draw.',
+            score_rate:'Draw-adjusted controlled evaluation score: (wins + 0.5 × draws) divided by all evaluated games.',
+        };
+        for(const [suffix,description] of Object.entries(meanings))
+            if(name.endsWith('_'+suffix))return description;
+        return 'Project-reported independent evaluation measurement at a verified checkpoint. Compare only matching frozen suites and units.';
+    }
     if(Object.hasOwn(HUB_METRIC_DESCRIPTIONS,name))return HUB_METRIC_DESCRIPTIONS[name];
     const gpu=/^host_gpu_(\d+)_(busy_pct|used_vram_mb|temperature_c|hotspot_temperature_c|power_w)$/.exec(name);
     if(gpu)return 'Physical GPU '+gpu[1]+': '+HUB_GPU_METRIC_SUFFIXES[gpu[2]];
@@ -1853,12 +1872,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // Compare only what the selected runs actually published. Other
         // runs' metrics, saved requests and speculative capabilities are not data.
         const metricOptions=hubGenericMetricCatalog(runs).map(metric=>{
-            const details=runs.flatMap(run=>run.evaluation_points||[]).find(row=>
-                'eval_'+String(row.suite_id||'').replace(/-/g,'_')+'_'+
-                String(row.suite_sha256||'').slice(0,8)===metric.key);
+            const details=runs.flatMap(run=>run.evaluation_points||[]).find(row=>{
+                const prefix='eval_'+String(row.suite_id||'').replace(/-/g,'_')+'_'+
+                    String(row.suite_sha256||'').slice(0,8);
+                return metric.key===prefix||metric.key.startsWith(prefix+'_');
+            });
+            const prefix=details?'eval_'+details.suite_id.replace(/-/g,'_')+'_'+
+                details.suite_sha256.slice(0,8):null;
+            const measurement=details?(metric.key===prefix
+                ?'success rate':metric.key.slice(prefix.length+1).replace(/_/g,' ')):null;
             return {key:'metric:'+metric.key,
-                label:details?'Evaluation '+details.suite_id+' ('+
-                    details.suite_sha256.slice(0,8)+')':
+                label:details?'Evaluation '+details.suite_id+' · '+measurement+
+                    ' ('+details.suite_sha256.slice(0,8)+')':
                     metric.key+' ('+metric.units.join('/')+')',
                 units:metric.units};
         });
