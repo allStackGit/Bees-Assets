@@ -220,6 +220,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_collector_resume_restored',
             'training_collector_span_ratio',
             'training_collector_imbalance_pressure',
+            'training_collector_gpu_reserved_share',
+            'training_collector_gpu_reserved_owner',
             'training_rollout_raw_bytes',
             'training_rollout_wire_bytes',
             'training_rollout_saved_bytes',
