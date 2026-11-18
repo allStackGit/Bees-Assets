@@ -254,12 +254,15 @@ parallel arenas, CPU physics workers, and
 CPU or PyTorch GPU optimization. Survival training uses the identical
 fixed-step survival deadline and protected physical ship as gameplay, while
 extraction uses the real side-owned extraction trigger. Authored survival
-reinforcements retain their real physical deployment clock and original
-scripted squad commands. The saved-fleet training converter still leaves
-these deferred support hulls scripted and trains its initially deployed
-fleet. Separately authored policy-enabled reinforcements use the same native
-trainer and physically enroll their model/group identities on arrival.
-Deferred hulls still count toward their faction's frozen physical fleet value. To reduce process
+reinforcements retain their real physical deployment clock. The game
+offers **Scripted reinforcement AI** (the historical default), or **Train
+reinforcement policies on arrival** for ships with verified native policy
+archetypes. In the latter mode, the genuine MA-POCA model and group
+identities are activated only when their reinforcement wave deploys. Other
+ships remain scripted; the initial fleet still supplies live learner
+participants on both sides. Deferred hulls count toward their faction's
+frozen physical fleet value in either mode. The choice is recorded in the
+immutable training invocation and preserved when a job is resumed. To reduce process
 and model reload costs,
 choose 1–16 episodes per persistent native arena. Long experiments can
 evaluate the same fixed-seed holdout every 1, 2, 5 or 10 optimizer rounds,
@@ -339,6 +342,7 @@ run the same underlying converter and learner from a terminal:
 python3 native/tools/prepare_fleet_training.py \
   /path/to/replay-source-run.json my-fleet-source \
   --bootstrap-output my-fleet-source/model \
+  --policy-reinforcements \
   --bootstrap-args --seed 42 --train-rounds 3 --learner-slot 0 \
   --rollout-worlds 16 --physics-workers 6 \
   --holdout-worlds 8 --evaluation-side 1 \
