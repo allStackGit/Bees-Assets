@@ -2057,6 +2057,7 @@ class ExperimentHub {
         const comparisonJobs=[...this.state.jobs,...this.historicalEvaluations()];
         const evaluations=this.evaluationHistory.snapshot(projectId,comparisonJobs);
         return {...chart,evaluations:evaluations.samples,
+            evaluation_regressions:evaluations.regressions,
             evaluation_storage_warning:evaluations.storage_warning};
     }
     // These are conservative coordinator-side claims, NOT operating system
