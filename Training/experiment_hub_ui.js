@@ -1975,14 +1975,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
-        const definitions=new Map();
+        const definitions=new Map(),runtimes=new Map(),unidentifiedRuntimes=new Set();
         for(const run of runs)for(const row of run.evaluation_points||[]) {
             if(!definitions.has(row.suite_id))definitions.set(row.suite_id,new Set());
             definitions.get(row.suite_id).add(row.suite_sha256);
+            if(!runtimes.has(row.suite_id))runtimes.set(row.suite_id,new Set());
+            if(/^[a-f0-9]{64}$/.test(row.runtime_sha256||''))
+                runtimes.get(row.suite_id).add(row.runtime_sha256);
+            else unidentifiedRuntimes.add(row.suite_id);
         }
-        for(const [suite,digests] of definitions)if(digests.size>1)
-            warnings.push('Evaluation suite '+suite+
-                ' has different frozen definitions across these runs; its curves are separate.');
+        for(const [suite,digests] of definitions) {
+            if(digests.size>1)
+                warnings.push('Evaluation suite '+suite+
+                    ' has different frozen definitions across these runs; maps, seeds, opponents or rules may differ. Its curves are separate.');
+            if((runtimes.get(suite)?.size||0)>1)
+                warnings.push('Evaluation suite '+suite+
+                    ' used multiple evaluator runtime fingerprints. Inspect the checkpoint tooltips before comparing scores.');
+            if(runs.length>1&&unidentifiedRuntimes.has(suite))
+                warnings.push('Evaluation suite '+suite+
+                    ' has results without a verified evaluator runtime identity; cross-run runtime comparability is unproven.');
+        }
         if(knownRoots.size<runs.length)
             warnings.push('Some selected jobs share checkpoint/artifact lineage, so they are not independent replicates.');
         if(runs.length>1) {
