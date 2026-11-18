@@ -60,6 +60,33 @@ function hubFinalEvaluationCohort(job) {
     return job.checkpoint_model_sha256?job.evaluation_candidates?.find(cohort=>
         cohort.checkpoint_sha256===job.checkpoint_model_sha256)?.receipts:null;
 }
+// Observational lookup only. Use the highest *evaluated checkpoint update*
+// for each exact configured suite, not the last heartbeat or append order.
+// A cached candidate can supply a temporary fallback, but never an
+// authorization to stop, rank or continue a model.
+function hubLatestEvaluatedReceipt(job,rule,rows) {
+    if(!rule)return null;
+    const pinned=rule.suite_sha256||
+        job.evaluation_suite_definitions?.[rule.suite_id];
+    let latest=null;
+    for(const row of rows||[]) {
+        if(!row||row.suite_id!==rule.suite_id||
+            pinned&&row.suite_sha256!==pinned||
+            !Number.isSafeInteger(row.trials)||row.trials<1||
+            !Number.isSafeInteger(row.successes)||row.successes<0||
+            row.successes>row.trials)continue;
+        const update=Number.isSafeInteger(row.steps_completed)
+            ?row.steps_completed:-1;
+        const previous=Number.isSafeInteger(latest?.steps_completed)
+            ?latest.steps_completed:-1;
+        if(!latest||update>previous||
+            (update===previous&&
+             String(row.evaluated_at||row.observed_at||'')>
+             String(latest.evaluated_at||latest.observed_at||'')))
+            latest=row;
+    }
+    return latest;
+}
 // Both suite and runtime fingerprints are part of one independently
 // comparable measurement. Do not combine a changed evaluation engine with
 // an older result merely because the suite ID remained the same. Reserve
@@ -2559,12 +2586,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const matches=receipt=>Boolean(receipt&&rule&&
                     receipt.suite_id===rule.suite_id&&
                     (!pinned||receipt.suite_sha256===pinned));
-                const latestArchived=rule?evaluation_points.filter(matches)
-                    .reduce((best,receipt)=>!best||
-                        receipt.steps_completed>best.steps_completed||
-                        (receipt.steps_completed===best.steps_completed&&
-                         String(receipt.observed_at||'')>String(best.observed_at||''))
-                            ?receipt:best,null):null;
+                const latestArchived=hubLatestEvaluatedReceipt(
+                    job,rule,evaluation_points);
                 const finalReceipt=rule&&finalCohort?.[rule.suite_id];
                 const evidence=rule
                     ?[finalReceipt,latestArchived,passed?.[index],
@@ -5199,10 +5222,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const fromCandidates=(j.evaluation_candidates||[]).slice().reverse()
                     .flatMap(item=>Object.values(item.receipts||{}));
                 const known=new Map();
-                for(const receipt of (fromArchive.length?fromArchive:fromCandidates))
-                    if(receipt?.suite_id)known.set(receipt.suite_id,receipt);
-                if(j.last_evaluation&&!known.has(j.last_evaluation.suite_id))
-                    known.set(j.last_evaluation.suite_id,j.last_evaluation);
+                for(const rule of requiredSuites) {
+                    const archived=hubLatestEvaluatedReceipt(j,rule,fromArchive);
+                    const cached=hubLatestEvaluatedReceipt(j,rule,
+                        [...fromCandidates,j.last_evaluation]);
+                    if(archived||cached)
+                        known.set(rule.suite_id,archived||cached);
+                }
                 const description=document.createElement('p');
                 description.textContent='Evaluator machine: '+
                     (machine?.name||j.assigned_machine_id||'unassigned')+
