@@ -1733,6 +1733,7 @@ impl KinematicPhysics {
     pub fn trigger_entries(&self) -> &[TriggerEnter] { &self.entries }
     pub fn obstacle_trigger_entries(&self) -> &[ObstacleTriggerEnter] { &self.obstacle_entries }
     pub fn obstacles(&self) -> &[ObstacleBody] { &self.obstacles }
+    pub fn active_obstacle_indices(&self) -> &[usize] { &self.active_obstacle_indices }
     /// Current shared-grid occupancy and retained bucket count. The latter
     /// is a per-world high-water memory gauge, not an arena-size estimate.
     /// Both numbers are read without scanning the physics population.
