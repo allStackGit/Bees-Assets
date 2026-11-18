@@ -72,6 +72,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_engine_step_seconds','rollout_observation_prepare_seconds',
         'rollout_learner_inference_seconds','rollout_learner_gpu_stream_seconds',
         'rollout_opponent_processing_seconds',
+        'rollout_opponent_gpu_stream_seconds',
         'rollout_result_processing_seconds','rollout_bootstrap_seconds',
         'rollout_returns_seconds',
         'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
@@ -140,6 +141,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_opponent_pixel_samples',
+        'rollout_opponent_max_group_pixels',
+        'rollout_opponent_batch_budget_pixels',
+        'rollout_opponent_wide_forward_chunks',
+        'rollout_opponent_oom_backoffs',
         'rollout_board_uploads_saved',
         'remote_collectors_pending_after_local',
         'remote_collector_co_limiting_count',
@@ -358,6 +364,18 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_shape_groups,'count');
         add('collector_'+i+'_opponent_readbacks',
             worker.rollout_opponent_readbacks,'count');
+        add('collector_'+i+'_opp_gpu_stream_seconds',
+            worker.rollout_opponent_gpu_stream_seconds,'seconds');
+        add('collector_'+i+'_opp_budget_pixels',
+            worker.rollout_opponent_batch_budget_pixels,'count');
+        add('collector_'+i+'_opp_pixel_samples',
+            worker.rollout_opponent_pixel_samples,'count');
+        add('collector_'+i+'_opp_max_group_pixels',
+            worker.rollout_opponent_max_group_pixels,'count');
+        add('collector_'+i+'_opp_wide_chunks',
+            worker.rollout_opponent_wide_forward_chunks,'count');
+        add('collector_'+i+'_opp_oom_backoffs',
+            worker.rollout_opponent_oom_backoffs,'count');
         add('collector_'+i+'_action_target',worker.action_target,'count');
         // Only a verified HIP ordinal/physical PCI mapping may identify
         // the operator's leased GPU in host observations and comparisons.
@@ -566,6 +584,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'supports_weight_blob','weight_blob_used',
                 'gpu_ordinal','gpu_batch_used_pixels',
                 'gpu_batch_vram_capped','model_prepare_seconds',
+                'opp_pixel_samples','opp_max_group_pixels',
+                'opp_oom_backoffs','opp_budget_pixels',
                 'model_copy_gpu_stream_seconds','policy_apply_groups',
                 // Preserve the physical lease index, live simulation count,
                 // effective throughput, critical stage and join wait ahead
