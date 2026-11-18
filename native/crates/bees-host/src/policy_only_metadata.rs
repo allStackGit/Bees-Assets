@@ -248,7 +248,7 @@ impl NativePolicyOnlyMetadata {
     pub(crate) fn deferred_policy_participant(
         &self, ship: &crate::scene_builder::NativeAuthoredShip,
         receiving_team: Option<u8>,
-    ) -> Result<Option<(i32, u64)>, &'static str> {
+    ) -> Result<Option<(i32, Option<u64>)>, &'static str> {
         let Some(policy) = ship.policy else {
             if ship.motion.is_policy_controlled || self.agents.contains_key(&ship.entity_id) {
                 return Err("Deferred ordinary ship has an inconsistent policy binding");
@@ -260,13 +260,17 @@ impl NativePolicyOnlyMetadata {
         if agent.ship_id != ship.entity_id || agent.side != ship.side ||
             agent.frame != policy.frame ||
             agent.controller.movement_disabled_for_team != policy.movement_disabled ||
-            Some(agent.route.team_id) != receiving_team
+            receiving_team.is_some_and(|team| agent.route.team_id != team)
         {
             return Err("Deferred policy controller does not match its physical ship");
         }
-        let source_group_id = agent.source_group_agent_id
-            .ok_or("Deferred policy agent needs an authored MA-POCA participant ID")?;
-        Ok(Some((agent.side, source_group_id)))
+        // A game can load the same real model without an active reward
+        // group. Its ship still binds at deployment; only a training group
+        // needs the separately authenticated source participant identity.
+        if receiving_team.is_some() && agent.source_group_agent_id.is_none() {
+            return Err("Deferred MA-POCA policy lacks a source participant identity");
+        }
+        Ok(Some((agent.side, agent.source_group_agent_id)))
     }
 
     /// Initial controller routes for the current episode, independent of reward groups.
