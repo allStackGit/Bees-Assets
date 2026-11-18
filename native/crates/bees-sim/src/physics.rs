@@ -1681,7 +1681,8 @@ impl KinematicPhysics {
         if !start.is_finite() || !end.is_finite() { return Err(PhysicsError::InvalidCollider); }
         let bounds = Aabb { min: Vec2::new(start.x.min(end.x), start.y.min(end.y)),
             max: Vec2::new(start.x.max(end.x), start.y.max(end.y)) };
-        Ok(self.obstacles.iter().any(|body| {
+        Ok(self.active_obstacle_indices.iter().any(|&index| {
+            let body = &self.obstacles[index];
             if !body.active || body.layer >= 32 || layer_mask & (1u32 << body.layer) == 0 { return false; }
             if body.collider.cached_pose == Some(body.pose) &&
                 body.collider.bounds.is_some_and(|hull| !hull.overlaps(bounds)) { return false; }
@@ -1707,9 +1708,11 @@ impl KinematicPhysics {
         -> Result<impl Iterator<Item = i64> + '_, PhysicsError>
     {
         let query = Self::box_query(bounds)?;
-        Ok(self.obstacles.iter().filter_map(move |body|
+        Ok(self.active_obstacle_indices.iter().filter_map(move |&index| {
+            let body = &self.obstacles[index];
             (body.active && body.collider.overlaps_at_pose(&query, body.pose))
-                .then_some(body.id)))
+                .then_some(body.id)
+        }))
     }
 
     fn box_query(bounds: Aabb) -> Result<WorldCollider, PhysicsError> {
@@ -1795,7 +1798,8 @@ impl KinematicPhysics {
             ),
         };
         let mut closest: Option<MovementObstacleHit> = None;
-        for obstacle in &self.obstacles {
+        for &index in &self.active_obstacle_indices {
+            let obstacle = &self.obstacles[index];
             if !obstacle.active || obstacle.layer != 19 ||
                 !should_avoid(obstacle) { continue; }
             let collider = &obstacle.collider;
