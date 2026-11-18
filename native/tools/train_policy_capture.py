@@ -242,6 +242,15 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 admissions.get(key, {}),
             )
             if stats is not None:
+                if not ticks:
+                    stats["episodes_without_policy_decisions"] = (
+                        stats.get("episodes_without_policy_decisions", 0) + 1
+                    )
+                elif not any(agent in rollout[6] for frame in ticks.values()
+                             for agent in frame):
+                    stats["episodes_without_learner_decisions"] = (
+                        stats.get("episodes_without_learner_decisions", 0) + 1
+                    )
                 if key in admissions:
                     enrolled = admissions[key]
                     decided = {agent for frame in ticks.values() for agent in frame}
@@ -1347,6 +1356,10 @@ def main():
             capture_stats.get("empty_policy_terminal_boundaries", 0),
         "capture_compact_opponent_decisions": capture_stats.get("compact_opponent_decisions", 0),
         "capture_compact_opponent_boundaries": capture_stats.get("compact_opponent_boundaries", 0),
+        "episodes_without_policy_decisions":
+            capture_stats.get("episodes_without_policy_decisions", 0),
+        "episodes_without_learner_decisions":
+            capture_stats.get("episodes_without_learner_decisions", 0),
         "dynamic_policy_episodes": capture_stats.get("dynamic_policy_episodes", 0),
         "dynamic_policy_admissions": capture_stats.get("dynamic_policy_admissions", 0),
         "dynamic_policy_admissions_without_decisions":
