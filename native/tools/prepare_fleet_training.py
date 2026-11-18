@@ -47,11 +47,13 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
     if not isinstance(level, dict):
         raise ValueError("native fleet training requires one physical Level")
     waves = level.get("reinforcements", [])
-    if not isinstance(waves, list) or waves:
-        raise ValueError(
-            "native training requires a fixed starting roster; "
-            "scheduled reinforcement waves are not yet supported"
-        )
+    if not isinstance(waves, list) or any(
+        not isinstance(wave, dict) or
+        not isinstance(wave.get("squad_item_ids"), list) or
+        not wave["squad_item_ids"]
+        for wave in waves
+    ):
+        raise ValueError("native training reinforcement waves need real source squad IDs")
     if "survival" in level:
         objective = level["survival"]
         if ("extraction" in level or not isinstance(objective, dict) or
@@ -188,6 +190,40 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     return scene, run, len(clones)
 
 
+def deferred_reinforcement_ships(scene: dict, run: dict) -> set[int]:
+    """Identify physically reserved future ships before policy binding.
+
+    Reinforcements are spawned only when the shared native Level activates a
+    real wave. It rejects live policy controllers in that reserved roster.
+    Keep each deferred squad's original command queue and return its ship IDs
+    to the existing policy author, rather than creating phantom agents at
+    the start of an episode.
+    """
+    squads = {squad["item_id"]: squad for squad in scene["squads"]}
+    deferred = set()
+    ship_ids = set()
+    for wave in run["levels"][0].get("reinforcements", []):
+        for squad_id in wave["squad_item_ids"]:
+            squad = squads.get(squad_id)
+            if squad is None or squad_id in deferred:
+                raise ValueError("native reinforcement refers to an unknown or repeated physical squad")
+            deferred.add(squad_id)
+            for ship_id in squad["members"]:
+                if ship_id in ship_ids:
+                    raise ValueError("native reinforcement shares a physical ship")
+                ship_ids.add(ship_id)
+    for queue in run["levels"][0].get("scripted_queues", []):
+        if queue["squad_item_id"] in deferred and (
+            queue.get("activation") != {"kind": "on_deployment"}
+        ):
+            raise ValueError(
+                "native reinforced squad commands must activate on deployment"
+            )
+    if not ship_ids.issubset({ship["entity_id"] for ship in scene["ships"]}):
+        raise ValueError("native reinforcement has a missing authored hull")
+    return ship_ids
+
+
 def policy_author():
     """Reuse the single existing native policy-authoring implementation."""
     path = Path(__file__).with_name("author-battle.py")
@@ -274,7 +310,11 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
                    ship["side"] == survival["defending_side"]
                    for ship in scene["ships"]):
             raise ValueError("survival protected ship must be an authentic same-side source hull")
-    args = SimpleNamespace(policy_archetypes=archetypes, minutes=seconds / 60)
+    reserved_ships = deferred_reinforcement_ships(scene, run)
+    args = SimpleNamespace(
+        policy_archetypes=archetypes, minutes=seconds / 60,
+        scripted_reinforcement_ship_ids=reserved_ships,
+    )
     policy_scene, policy_run = policy_author()(scene, run, args)
     run["levels"][0]["scene"] = "battle.scene.json"
     policy_run["levels"][0]["scene"] = "battle.policy.scene.json"
@@ -303,6 +343,7 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
         "source_scene_sha256": scene_sha,
         "policy_archetypes_sha256": archetypes_sha,
         "source_squad_clones": clone_count,
+        "scripted_reinforcement_ships": len(reserved_ships),
         "physical_scene_sha256": physical_identity,
         "physical_objective": (
             "survival" if "survival" in run["levels"][0]
