@@ -184,7 +184,7 @@ def evaluation_outcome(result, trials: int) -> tuple[int, dict]:
     normalized = {}
     for key, sample in metrics.items():
         if (not isinstance(key, str) or
-            not re.fullmatch(r"[a-z][a-z0-9_]{0,47}", key) or
+            not re.fullmatch(r"[a-z][a-z0-9_]{0,23}", key) or
             not isinstance(sample, dict) or set(sample) != {"value", "unit"} or
             sample["unit"] not in ("count", "ratio", "scalar", "seconds") or
             type(sample["value"]) not in (int, float) or
