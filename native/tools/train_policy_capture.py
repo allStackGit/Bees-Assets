@@ -174,7 +174,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         for agent, (ship, revision, side, joined) in entrants.items():
             team = context["group_team_by_side"].get(str(side))
             if (team is None or str(team) not in groups or
-                    agent in original or joined >= final["tick"] or
+                    agent in original or joined > final["tick"] or
                     (ship, revision) in retirements[episode_key] and
                     retirements[episode_key][ship, revision] < joined):
                 raise ValueError("native policy admission violates episode group or physical time")
@@ -461,6 +461,106 @@ def _validate_completed_episode(
     return (journal_id, *key), expected, ticks, closing, episode_boundaries, {
         team: rewards[key, team] for team in set(expected.values())
     }, learning_agents
+
+
+def _validate_dynamic_episode(
+    key, episode_ticks, episode_boundaries, terminals, ended_teams,
+    retirements, rewards, learning_agents, journal_id, admissions,
+):
+    """Validate the *real* variable cohort and each controller's own clock.
+
+    Queen children and reinforcement policies join after tick zero. Their
+    DecisionRequester clocks start at physical binding, not at the world's
+    first inference tick. The journal, not the finished group size, proves
+    those admission times and source controller identities.
+    """
+    final = terminals[key]
+    context = final["evaluation_context"]
+    terminal_tick = final["tick"]
+    period = context["decision_period"]
+    teams = {
+        int(agent): int(team)
+        for team, members in context["group_agents_by_team"].items()
+        for agent in members
+    }
+    if period <= 0 or not episode_ticks or not teams:
+        raise ValueError("dynamic MA-POCA episode has no decision interval")
+    if len(teams) != sum(len(members) for members in
+                        context["group_agents_by_team"].values()):
+        raise ValueError("duplicate native policy group identity")
+    starts = {agent: (admissions[agent][3] if agent in admissions else 0)
+              for agent in teams}
+    ticks = list(episode_ticks.items())
+    if any(a >= b for (a, _), (b, _) in zip(ticks, ticks[1:])):
+        raise ValueError("non-monotonic dynamic policy decision ticks")
+
+    by_agent = defaultdict(list)
+    identities = {}
+    for tick, frame in ticks:
+        if tick < 0 or tick >= terminal_tick:
+            raise ValueError("dynamic decision outside completed episode")
+        for agent, row in frame.items():
+            if agent not in teams or tick < starts[agent]:
+                raise ValueError("decision by a not-yet-admitted native controller")
+            identity = int(row["ship"]), int(row["binding_revision"])
+            if agent in admissions and identity != admissions[agent][:2]:
+                raise ValueError("dynamic policy binding differs from admission receipt")
+            if agent in identities and identities[agent] != identity:
+                raise ValueError("reused policy group identity changed physical binding")
+            if int(row["team"]) != teams[agent]:
+                raise ValueError("dynamic policy decision changed team")
+            identities[agent] = identity
+            by_agent[agent].append(tick)
+
+    # A controller can be born and die before requesting its first action.
+    # It still participates in the group but contributes no PPO trajectory.
+    closing = {}
+    for agent in teams:
+        if agent in admissions:
+            identities.setdefault(agent, admissions[agent][:2])
+        end = retirements[key].get(identities[agent], terminal_tick) if agent in identities else terminal_tick
+        start = starts[agent]
+        if not start <= end <= terminal_tick:
+            raise ValueError("policy controller retired before joining its group")
+        closing[agent] = end
+        decisions = by_agent.get(agent, ())
+        first_due = start + period - 1
+        if not decisions:
+            if end > first_due:
+                raise ValueError("active group agent omitted its due policy decision")
+            continue
+        if decisions[0] != first_due or decisions[-1] >= end or (
+            any(b - a != period for a, b in zip(decisions, decisions[1:]))
+        ) or not 0 < end - decisions[-1] <= period:
+            raise ValueError("dynamic policy decision schedule differs from binding clock")
+
+    # A terminal boundary and one full-cohort snapshot at each retirement
+    # are emitted by the shared Level, even when controllers have independent
+    # inference phases. Never invent inactive observations in Python.
+    closing_ticks = {end for end in closing.values() if end < terminal_tick}
+    required_ticks = closing_ticks | {terminal_tick}
+    if episode_boundaries.keys() != required_ticks:
+        raise ValueError("dynamic policy boundary misses a retirement or terminal")
+    for tick, frame in episode_boundaries.items():
+        active = {agent for agent in teams if starts[agent] <= tick <= closing[agent]}
+        if frame.keys() != active:
+            raise ValueError("dynamic policy boundary disagrees with physical cohort")
+        for agent, row in frame.items():
+            identity = int(row["ship"]), int(row["binding_revision"])
+            if agent in identities and identity != identities[agent]:
+                raise ValueError("dynamic policy terminal changed physical controller")
+            identities.setdefault(agent, identity)
+
+    expected_teams = set(teams.values())
+    if ended_teams[key] != dict.fromkeys(expected_teams, terminal_tick):
+        raise ValueError("native dynamic group did not end both physical teams")
+    if not any(agent in learning_agents for agent in by_agent):
+        raise ValueError("native dynamic episode contains no learner decision")
+    return (
+        (journal_id, *key), teams, ticks, closing, episode_boundaries,
+        {team: rewards[key, team] for team in expected_teams},
+        learning_agents, starts,
+    )
 
 
 def trajectories(rollouts, horizon, behavior_id):
