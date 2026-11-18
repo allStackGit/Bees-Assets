@@ -44,12 +44,22 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
             run.get("episodes_per_world") != 1):
         raise ValueError("requires one archived native fleet-builder skirmish, not a benchmark")
     level = levels[0]
-    if (not isinstance(level, dict) or
-            any(key in level for key in ("survival", "reinforcements"))):
+    if not isinstance(level, dict):
+        raise ValueError("native fleet training requires one physical Level")
+    waves = level.get("reinforcements", [])
+    if not isinstance(waves, list) or waves:
         raise ValueError(
-            "native MA-POCA fleet training supports fixed-roster elimination "
-            "or extraction; survival/reinforcement terminal contracts differ"
+            "native training requires a fixed starting roster; "
+            "scheduled reinforcement waves are not yet supported"
         )
+    if "survival" in level:
+        objective = level["survival"]
+        if ("extraction" in level or not isinstance(objective, dict) or
+                objective.get("defending_side") not in (1, 2) or
+                not isinstance(objective.get("protected_ship_id"), int) or
+                type(objective.get("seconds")) not in (int, float) or
+                not math.isfinite(objective["seconds"]) or objective["seconds"] <= 0):
+            raise ValueError("native survival training needs a single valid physical defender and target")
     if "extraction" in level:
         objective = level["extraction"]
         if not isinstance(objective, dict) or objective.get("player_side") not in (1, 2):
@@ -251,6 +261,19 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
     seconds = run["max_rounds"] * scene["fixed_dt_seconds"]
     if not math.isfinite(seconds) or seconds <= 0:
         raise ValueError("invalid native fixed-step episode duration")
+    # Both gameplay and learning use the same armed survival deadline.
+    # The RL safety timeout is ten physical ticks short of the global run
+    # budget; it must not end the episode before the authored survival goal.
+    survival = run["levels"][0].get("survival")
+    if survival is not None:
+        deadline_ticks = math.ceil(survival["seconds"] / scene["fixed_dt_seconds"])
+        policy_timeout = round(seconds - 10 * scene["fixed_dt_seconds"], 4)
+        if deadline_ticks * scene["fixed_dt_seconds"] > policy_timeout:
+            raise ValueError("native survival deadline exceeds the policy episode budget")
+        if not any(ship["entity_id"] == survival["protected_ship_id"] and
+                   ship["side"] == survival["defending_side"]
+                   for ship in scene["ships"]):
+            raise ValueError("survival protected ship must be an authentic same-side source hull")
     args = SimpleNamespace(policy_archetypes=archetypes, minutes=seconds / 60)
     policy_scene, policy_run = policy_author()(scene, run, args)
     run["levels"][0]["scene"] = "battle.scene.json"
@@ -282,7 +305,9 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
         "source_squad_clones": clone_count,
         "physical_scene_sha256": physical_identity,
         "physical_objective": (
-            "extraction" if "extraction" in run["levels"][0] else "elimination"
+            "survival" if "survival" in run["levels"][0]
+            else "extraction" if "extraction" in run["levels"][0]
+            else "elimination"
         ),
         "physical_ship_count": len(scene["ships"]),
         "policy_ship_count": sum("policy" in ship for ship in policy_scene["ships"]),
