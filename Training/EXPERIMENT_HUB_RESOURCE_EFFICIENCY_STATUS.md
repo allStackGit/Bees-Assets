@@ -1,6 +1,7 @@
 # Resource-efficient training workstream
 
-Updated 2026-11-18. Branch: `feat/hub-shared-gpu-residency-20261118` (continuing `feat/hub-opponent-fused-readback-20261118`).
+Updated 2026-11-18. Branch: `feat/hub-policy-broadcast-codec-20261118` (continuing `feat/hub-shared-gpu-residency-20261118`).
+Courier's shared-policy learner now negotiates one compressed frozen-policy frame per round across upgraded authenticated collectors. The codec uses bounded size and learner RAM-lease admission, requires at least 25% payload reduction, and backs off 24 rounds after incompressible attempts. Older collectors continue receiving original pickle frames; exact digest, policy version, PPO completeness and checkpoint serialization checks are unchanged. The existing Hub metrics and comparison system report actual raw/wire model-broadcast bytes, saved share, compression/decompression times and RAM denials. No throughput or link-saturation gain is inferred.
 Courier shared-policy learners can retain accepted policy and Adam on their
 assigned optimizer GPU between PPO rounds; frozen behavior snapshots are
 still transferred to CPU and authenticated before collector fanout. A bounded
