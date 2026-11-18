@@ -175,7 +175,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_gpu_policy_reused',
             'training_shared_gpu_snapshot_bytes',
             'training_shared_gpu_snapshot_seconds',
-            'training_shared_gpu_policy_reuse_fraction',
+            'training_shared_gpu_reuse_fraction',
             'training_shared_gpu_policy_retention_gap',
             'training_shared_gpu_snapshot_work_share',
             'training_shared_gpu_snapshot_pressure',
@@ -725,7 +725,7 @@ class BottleneckEvidence {
                 metrics.training_shared_gpu_policy_reused?.unit==='count'&&
                 Number.isSafeInteger(reused)&&reused>=0&&reused<=gpuCollectors;
             if(gpuCountsValid) {
-                add('training_shared_gpu_policy_reuse_fraction',
+                add('training_shared_gpu_reuse_fraction',
                     reused/gpuCollectors);
                 add('training_shared_gpu_policy_retention_gap',
                     (gpuCollectors-reused)/gpuCollectors);
