@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import importlib.util
 import json
 import math
@@ -173,6 +174,54 @@ def policy_author():
     return module.author_policy_scene
 
 
+def physical_scene_identity(scene: dict) -> str:
+    """Hash only authoritative physics and battle configuration.
+
+    A player's input authority, policy bindings and policy reward bookkeeping
+    differ by design. Ship archetypes, positions, weapons, collisions, maps,
+    teams, squads and level commands must not change when training is enabled.
+    """
+    physical = copy.deepcopy(scene)
+    physical.pop("policy_episode", None)
+    physical.pop("local_player_side", None)
+    for ship in physical["ships"]:
+        ship.pop("user_controlled", None)
+        ship.pop("policy", None)
+        if isinstance(ship.get("special_weapon"), dict):
+            ship["special_weapon"].pop("observation", None)
+    for squad in physical["squads"]:
+        for field in ("user_controlled", "can_accept_input",
+                      "hotkey_number", "original_squad_count"):
+            squad.pop(field, None)
+    return hashlib.sha256(json.dumps(
+        physical, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+
+
+def verify_same_battle(scene: dict, run: dict,
+                       policy_scene: dict, policy_run: dict) -> str:
+    """Guard the gameplay/training boundary before handing bytes to PPO."""
+    source_id = physical_scene_identity(scene)
+    if source_id != physical_scene_identity(policy_scene):
+        raise ValueError("native policy author changed physical combat, world or squad configuration")
+    expected = copy.deepcopy(run)
+    trained = copy.deepcopy(policy_run)
+    for value in (expected, trained):
+        value.pop("run_id", None)
+        value["levels"][0].pop("scene", None)
+    policy_ships = {ship["entity_id"] for ship in policy_scene["ships"]
+                    if isinstance(ship.get("policy"), dict)}
+    owned = {squad["item_id"] for squad in policy_scene["squads"]
+             if any(ship in policy_ships for ship in squad["members"])}
+    expected["levels"][0]["scripted_queues"] = [
+        entry for entry in expected["levels"][0].get("scripted_queues", [])
+        if entry["squad_item_id"] not in owned
+    ]
+    if expected != trained:
+        raise ValueError("native policy author changed the simulation run beyond policy-owned commands")
+    return source_id
+
+
 def convert(source: Path, destination: Path, archetypes: Path) -> dict:
     source = source.resolve(strict=True)
     archetypes = archetypes.resolve(strict=True)
@@ -191,6 +240,7 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
     policy_scene, policy_run = policy_author()(scene, run, args)
     run["levels"][0]["scene"] = "battle.scene.json"
     policy_run["levels"][0]["scene"] = "battle.policy.scene.json"
+    physical_identity = verify_same_battle(scene, run, policy_scene, policy_run)
     if (file_sha256(source) != source_sha or
             file_sha256(scene_path) != scene_sha or
             file_sha256(archetypes) != archetypes_sha):
@@ -215,6 +265,7 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
         "source_scene_sha256": scene_sha,
         "policy_archetypes_sha256": archetypes_sha,
         "source_squad_clones": clone_count,
+        "physical_scene_sha256": physical_identity,
         "physical_ship_count": len(scene["ships"]),
         "policy_ship_count": sum("policy" in ship for ship in policy_scene["ships"]),
     }
