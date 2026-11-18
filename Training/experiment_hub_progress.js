@@ -246,6 +246,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_policy_early_dispatch_count',
             'training_policy_codec_prep_seconds',
             'training_policy_codec_overlap_seconds',
+            'training_policy_overlap_reserved_mb',
             'training_policy_unpack_max_seconds',
             'training_policy_saved_share',
             'training_rollout_raw_bytes',
