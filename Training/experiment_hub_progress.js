@@ -227,6 +227,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_policy_saved_bytes',
             'training_policy_compressed_workers',
             'training_policy_ram_denied',
+            'training_policy_digest_reused',
+            'training_policy_digest_guard_seconds',
             'training_policy_compress_seconds',
             'training_policy_unpack_max_seconds',
             'training_policy_saved_share',
