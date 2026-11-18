@@ -1541,9 +1541,11 @@ impl CombatWorld {
     pub fn render_obstacles(&self)
         -> impl Iterator<Item = (&CombatObstacle, &ObstacleBody)> + '_
     {
-        self.obstacles.iter().zip(self.physics.obstacles()).filter(
-            |(_, body)| body.active,
-        )
+        self.physics.active_obstacle_indices().iter().filter_map(|&index| {
+            let obstacle = &self.obstacles[index];
+            let body = &self.physics.obstacles()[index];
+            body.active.then_some((obstacle, body))
+        })
     }
 
     pub fn render_asteroid_pieces(&self)
