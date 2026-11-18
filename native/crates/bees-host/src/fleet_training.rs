@@ -504,8 +504,13 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let Some(trainer_source) = choose_trainer_config(save_root)? else {
         return Ok(());
     };
-    let Some(curriculum_plan) = choose_curriculum_plan(save_root)? else {
-        return Ok(());
+    let curriculum_plan = if rounds > 1 {
+        let Some(plan) = choose_curriculum_plan(save_root)? else {
+            return Ok(());
+        };
+        plan
+    } else {
+        None
     };
     let curriculum_plan_sha256 = curriculum_plan.as_ref()
         .map(|path| sha256_file(path)).transpose()?;
