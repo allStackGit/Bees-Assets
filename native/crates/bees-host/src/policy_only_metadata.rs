@@ -201,6 +201,8 @@ pub struct NativePolicyOnlyMetadata {
     pub queen_controller_measurements: NativeQueenControllerMeasurements,
     player: NativeSourcePlayerInputs,
     pub(crate) reinforcements: std::collections::VecDeque<crate::reinforcements::ReinforcementWave>,
+    /// Cached wakeup predicate for the same queue; no second mission clock.
+    pub(crate) reinforcement_wakeup: crate::reinforcements::ReinforcementWakeup,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_members: Vec<bees_sim::squad_movement::SquadFormationMember>,
     scripted_friendlies: Vec<bees_gameplay::commands::NativeFriendlySquad>,
@@ -395,6 +397,7 @@ impl NativePolicyOnlyMetadata {
             queen_controller_measurements: NativeQueenControllerMeasurements::default(),
             player,
             reinforcements: std::collections::VecDeque::new(),
+            reinforcement_wakeup: crate::reinforcements::ReinforcementWakeup::default(),
             scripted_queues: Vec::new(),
             scripted_members: Vec::new(),
             scripted_friendlies: Vec::new(),
@@ -780,7 +783,7 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     }
 
     fn next_reinforcement_tick(&self) -> Option<u64> {
-        self.reinforcements.iter().filter_map(|wave| wave.scheduled_tick()).min()
+        self.reinforcement_wakeup.next_tick
     }
 
     fn pending_reinforcement_waves(&self) -> usize {
