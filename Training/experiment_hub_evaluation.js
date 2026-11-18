@@ -79,13 +79,24 @@ function regressionAlertPolicy(value) {
         minimum_drop:value.minimum_drop};
 }
 
+function evaluatorResources(value) {
+    if(!record(value)||Object.keys(value).length!==2||
+        !Object.hasOwn(value,'cpus')||!Object.hasOwn(value,'ram_mb')||
+        !Number.isSafeInteger(value.cpus)||value.cpus<1||value.cpus>64||
+        !Number.isSafeInteger(value.ram_mb)||value.ram_mb<512||
+        value.ram_mb>1048576)
+        throw Error('Evaluator resource requirements need 1–64 CPUs and 512–1,048,576 MiB RAM.');
+    return {cpus:value.cpus,ram_mb:value.ram_mb};
+}
+
 // Monitoring suites share the immutable receipt contract, but have no
 // success threshold and cannot authorize a native Stop.
 function monitoringPolicy(value) {
     if(value==null)return null;
     if(record(value)&&Object.hasOwn(value,'all_of')) {
         if(Object.keys(value).some(key=>!['all_of','every_n_checkpoints','include_baseline','include_final',
-            'regression_alert','min_minutes_between_evaluations'].includes(key))||
+            'regression_alert','min_minutes_between_evaluations',
+            'evaluator_resources'].includes(key))||
             (value.min_minutes_between_evaluations!==undefined&&
              (!Number.isSafeInteger(value.min_minutes_between_evaluations)||
               value.min_minutes_between_evaluations<1||
@@ -100,8 +111,9 @@ function monitoringPolicy(value) {
             throw Error('Monitoring requires 2–8 distinct independent suites and a valid cadence.');
         const rules=value.all_of.map(rule=>{
             if(record(rule)&&(Object.hasOwn(rule,'regression_alert')||
-                Object.hasOwn(rule,'min_minutes_between_evaluations')))
-                throw Error('Regression and time-spacing parameters belong to the policy, not individual suite rules.');
+                Object.hasOwn(rule,'min_minutes_between_evaluations')||
+                Object.hasOwn(rule,'evaluator_resources')))
+                throw Error('Regression, resources and time-spacing parameters belong to the monitoring policy, not individual suite rules.');
             return monitoringPolicy(rule);
         });
         if(rules.some(rule=>!rule||rule.all_of||
@@ -112,6 +124,8 @@ function monitoringPolicy(value) {
             ?{every_n_checkpoints:value.every_n_checkpoints}:{}),
             ...(value.regression_alert!==undefined
                 ?{regression_alert:regressionAlertPolicy(value.regression_alert)}:{}),
+            ...(value.evaluator_resources!==undefined
+                ?{evaluator_resources:evaluatorResources(value.evaluator_resources)}:{}),
             ...(value.min_minutes_between_evaluations!==undefined
                 ?{min_minutes_between_evaluations:value.min_minutes_between_evaluations}:{}),
             ...(value.include_baseline!==undefined?{include_baseline:value.include_baseline}:{}),
@@ -120,7 +134,7 @@ function monitoringPolicy(value) {
     if(!record(value)||Object.keys(value).some(key=>
         !['suite_id','suite_sha256','min_trials','every_n_checkpoints',
           'include_baseline','include_final','regression_alert',
-          'min_minutes_between_evaluations'].includes(key))||
+          'min_minutes_between_evaluations','evaluator_resources'].includes(key))||
         (value.min_minutes_between_evaluations!==undefined&&
          (!Number.isSafeInteger(value.min_minutes_between_evaluations)||
           value.min_minutes_between_evaluations<1||
@@ -143,6 +157,8 @@ function monitoringPolicy(value) {
         ...(value.include_final!==undefined?{include_final:value.include_final}:{}),
         ...(value.regression_alert!==undefined
             ?{regression_alert:regressionAlertPolicy(value.regression_alert)}:{}),
+        ...(value.evaluator_resources!==undefined
+            ?{evaluator_resources:evaluatorResources(value.evaluator_resources)}:{}),
         ...(value.min_minutes_between_evaluations!==undefined
             ?{min_minutes_between_evaluations:value.min_minutes_between_evaluations}:{})};
 }
