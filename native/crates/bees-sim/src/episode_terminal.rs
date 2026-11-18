@@ -271,13 +271,9 @@ impl NativeEpisodeTerminal {
     /// elapsed / length, clamped to [0,1]. This native controller is
     /// constructed when the timeout is armed, starting at elapsed=0.
     pub fn normalized_episode_progress(&self) -> f32 {
-        // A survival battle ends at its own physical deadline, not at the
-        // later MA-POCA safety timeout. Policy progress/reward shaping must
-        // track that same battle clock used to decide survival victory.
-        if let Some(survival) = &self.survival {
-            return (self.elapsed_seconds / survival.objective.seconds)
-                .clamp(0.0, 1.0);
-        }
+        // Source RL observation progress always uses the configured policy
+        // episode timeout, even if a separate survival objective decides
+        // the physical result sooner. Game-only Levels have no RL timer.
         self.timeout_seconds.map_or(0.0, |timeout|
             (self.elapsed_seconds / timeout).clamp(0.0, 1.0)
         )
