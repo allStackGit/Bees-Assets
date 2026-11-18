@@ -5514,6 +5514,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         line.textContent+=' WARNING: sampled receipts use '+
                             runtimes.size+' evaluator runtime identities; compare only within one runtime.';
                     details.append(line);
+                    if(typeof receipt?.suite_definition_canonical==='string') {
+                        // The native receipt was fingerprint-checked before
+                        // reaching this archive; these are actual frozen
+                        // evaluation inputs, not guesses from the suite ID.
+                        const definitionDetails=document.createElement('details');
+                        const summary=document.createElement('summary');
+                        summary.textContent=rule.suite_id+
+                            ' · inspect exact frozen suite definition';
+                        const definition=document.createElement('pre');
+                        try {
+                            definition.textContent=JSON.stringify(
+                                JSON.parse(receipt.suite_definition_canonical),null,2);
+                        }catch {
+                            definition.textContent=receipt.suite_definition_canonical;
+                        }
+                        definition.style.whiteSpace='pre-wrap';
+                        definition.style.wordBreak='break-word';
+                        definition.style.maxHeight='240px';
+                        definition.style.overflow='auto';
+                        definitionDetails.append(summary,definition);
+                        details.append(definitionDetails);
+                    }
                 }
                 if(j.live_execution?.evaluation_issue) {
                     const issue=document.createElement('p');
