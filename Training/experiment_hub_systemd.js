@@ -139,10 +139,23 @@ function evaluatorDefinition({
     if((targetPort===7148)===Boolean(environmentFile))
         throw Error('Restricted evaluator ports need a private machine --env-file; dashboard port 7148 is local-only.');
     const localEnv=environmentFile?privateEnvironmentFile(environmentFile):null;
+    const suiteFiles=suites.map(file=>localPath(file,'Benchmark suite'));
+    const suiteIds=suiteFiles.map(file=>{
+        const size=fs.statSync(file).size;
+        if(size<2||size>65536)
+            throw Error('Independent evaluation suite definition exceeds its safe size.');
+        const definition=JSON.parse(fs.readFileSync(file,'utf8'));
+        if(!definition||typeof definition!=='object'||
+            !/^[a-z][a-z0-9_-]{0,47}$/.test(String(definition.suite_id||'')))
+            throw Error('Each frozen evaluator suite needs a valid suite_id.');
+        return definition.suite_id;
+    });
+    if(new Set(suiteIds).size!==suiteIds.length)
+        throw Error('Evaluator suites require distinct immutable suite IDs.');
     const args=['-B',script,'--machine',machine,'--port',
         String(targetPort)];
-    for(const suite of suites)
-        args.push('--suite',localPath(suite,'Benchmark suite'));
+    for(const suite of suiteFiles)
+        args.push('--suite',suite);
     if(project==='courier') {
         args.push('--project-root',localPath(projectRoot,'Courier project'));
         args.push('--snapshot-root',localPath(snapshotRoot,'Courier snapshots'));
@@ -162,7 +175,8 @@ function evaluatorDefinition({
     const name='bees-experiment-hub-'+project+'-'+machine+'-evaluator'+
         (unitId?'-'+unitId:'');
     const service=[
-        '[Unit]','Description=Independent '+project+' evaluation for '+machine,
+        '[Unit]','Description=Independent '+project+' evaluation for '+machine+
+            ' [suites:'+suiteIds.join(',')+']',
         'After=network.target','',
         '[Service]','Type=oneshot','WorkingDirectory='+directory,
         ...(localEnv?['EnvironmentFile='+localEnv]:[]),

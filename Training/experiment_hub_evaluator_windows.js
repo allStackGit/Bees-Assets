@@ -52,6 +52,18 @@ function readConfiguration(file) {
     const suites=value.suites.map(file=>local(file,'Evaluation suite'));
     if(new Set(suites.map(file=>file.toLowerCase())).size!==suites.length)
         throw Error('Evaluation suites must be distinct.');
+    const suiteIds=suites.map(file=>{
+        const size=fs.statSync(file).size;
+        if(size<2||size>65536)
+            throw Error('Evaluator suite definition exceeds the size limit.');
+        const definition=JSON.parse(fs.readFileSync(file,'utf8'));
+        if(!definition||typeof definition!=='object'||
+            !ID.test(String(definition.suite_id||'')))
+            throw Error('Evaluator suite is missing its frozen suite_id.');
+        return definition.suite_id;
+    });
+    if(new Set(suiteIds).size!==suiteIds.length)
+        throw Error('Evaluator needs distinct frozen suite IDs.');
     const python=local(value.python,'Python executable');
     const args=['-B',local(path.join(__dirname,
         'experiment_hub_'+value.project+'_eval_poll.py'),'Evaluator entrypoint'),
@@ -77,7 +89,7 @@ function readConfiguration(file) {
     if(value.project==='courier'&&value.engine_path||
         value.project==='tinybrains'&&(value.project_root||value.snapshot_root))
         throw Error('Configuration contains paths for a different evaluator project.');
-    return {project:value.project,machine:value.machine,python,args,
+    return {project:value.project,machine:value.machine,python,args,suite_ids:suiteIds,
         port:integer(value.port??7148,1,65535,'Port'),
         interval:integer(value.interval_seconds??180,60,86400,'Interval seconds'),
         timeout:integer(value.timeout_seconds??7200,60,86400,'Timeout seconds'),
@@ -160,6 +172,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
     const root=local(env.EXPERIMENT_HUB_SERVICE_LOG_ROOT,'Service state directory',true);
     const status=path.join(root,env.EXPERIMENT_HUB_SERVICE_NAME+'.evaluation.json');
     const context={project:config.project,machine:config.machine,configuration_sha256:config.sha256,
+        suite_ids:config.suite_ids,
         cpus:initial.cpus,ram_mb:initial.ram_mb};
     console.log('Independent '+config.project+' evaluation active with verified CPU/RAM limits.');
     do {
