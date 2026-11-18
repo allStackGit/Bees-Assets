@@ -872,6 +872,14 @@ label.hub-toggle-row > input[type="checkbox"] {
           </label>
           <label id="hub-evaluation-baseline-label"><input id="hub-evaluation-baseline" type="checkbox" checked> Evaluate first available checkpoint (baseline)</label>
           <label id="hub-evaluation-final-label"><input id="hub-evaluation-final" type="checkbox" checked> Evaluate verified final checkpoint (if available)</label>
+          <label id="hub-evaluation-regression-enable-label"><input id="hub-evaluation-regression-enable" type="checkbox"> Flag sustained regression in independent success rate (observation only)</label>
+          <label id="hub-evaluation-regression-window-label">Compare first and latest N independently evaluated checkpoints per suite
+            <input id="hub-evaluation-regression-window" type="number" min="2" max="20" step="1" value="3">
+          </label>
+          <label id="hub-evaluation-regression-drop-label">Minimum absolute success-rate decline (0–1)
+            <input id="hub-evaluation-regression-drop" type="number" min="0.001" max="1" step="any" value="0.15">
+          </label>
+          <small class="muted wide">Regression alerts use complete archived receipts with identical suite and evaluator fingerprints. A conservative uncertainty check reduces noise; alerts do not stop training, change curricula, or authorize promotion.</small>
           <label>Approved suite ID <input id="hub-evaluation-suite" maxlength="48" list="hub-evaluation-suite-options" placeholder="heldout"></label>
           <datalist id="hub-evaluation-suite-options"></datalist>
           <small class="muted wide" id="hub-evaluation-available-suites">Connected evaluator suites are listed as suggestions. Enter a known approved suite ID when its worker is offline.</small>

@@ -1982,6 +1982,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
+        const regressionSignals=comparisonProject===project
+            ?comparisonData?.evaluation_regressions||[]:[];
+        for(const observation of regressionSignals) {
+            const run=runs.find(run=>run.job.id===observation.job_id);
+            if(!run)continue;
+            if(observation.status==='regressed')
+                warnings.push('Independent evaluation regression: Run '+run.slot+
+                    ' suite '+observation.suite_id+' declined '+(100*observation.drop).toFixed(1)+
+                    ' percentage points across '+observation.window_checkpoints+
+                    '-checkpoint windows (early '+(100*observation.baseline.rate).toFixed(1)+
+                    '%, latest '+(100*observation.latest.rate).toFixed(1)+
+                    '%). This is an observational warning, not a Stop decision.');
+            else if(observation.status==='inconclusive'||
+                observation.status==='incompatible')
+                warnings.push('Run '+run.slot+' suite '+observation.suite_id+
+                    ' regression analysis '+observation.status+': '+observation.reason);
+        }
         if(runs.some(run=>run.job.evaluation_history_only))
             warnings.push('Historical checkpoint audits are operator-imported, read-only observations. The Hub did not authorize or supervise their evaluation; verify the source report and frozen suite definitions. They cannot be promoted or resumed.');
         const definitions=new Map(),runtimes=new Map(),unidentifiedRuntimes=new Set();
@@ -3698,6 +3715,15 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-frequency').disabled=!monitor;
         $('hub-evaluation-baseline-label').hidden=!monitor;
         $('hub-evaluation-final-label').hidden=!monitor;
+        const regression=$('hub-evaluation-regression-enable');
+        regression.disabled=!monitor;
+        $('hub-evaluation-regression-enable-label').hidden=!monitor;
+        const regressionActive=monitor&&regression.checked;
+        for(const field of ['window','drop']) {
+            const label=$('hub-evaluation-regression-'+field+'-label');
+            label.hidden=!regressionActive;
+            $('hub-evaluation-regression-'+field).disabled=!regressionActive;
+        }
         for(const row of $('hub-evaluation-more-suites').children) {
             const label=row.querySelector('.hub-evaluation-extra-rate-label');
             label.hidden=!hasStop;
@@ -3775,6 +3801,11 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-frequency').value=String(policy?.every_n_checkpoints??10);
         $('hub-evaluation-baseline').checked=policy?.include_baseline!==false;
         $('hub-evaluation-final').checked=policy?.include_final!==false;
+        $('hub-evaluation-regression-enable').checked=Boolean(monitor&&policy?.regression_alert);
+        $('hub-evaluation-regression-window').value=String(
+            policy?.regression_alert?.window_checkpoints??3);
+        $('hub-evaluation-regression-drop').value=String(
+            policy?.regression_alert?.minimum_drop??0.15);
         $('hub-evaluation-all-of').value='';
         $('hub-evaluation-more-suites').replaceChildren();
         for(const rule of multi?.slice(1)||[])
@@ -3784,6 +3815,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     $('hub-evaluation-mode').addEventListener('change',refreshEvaluationEditor);
     $('hub-evaluation-optional-stop').addEventListener('change',refreshEvaluationEditor);
+    $('hub-evaluation-regression-enable').addEventListener('change',refreshEvaluationEditor);
     function evaluationFromEditor() {
         const monitor=$('hub-evaluation-mode').value==='monitor';
         const stop=!monitor||$('hub-evaluation-optional-stop').checked;
@@ -3846,7 +3878,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const {min_success_rate,...monitorRule}=rule;
             return monitorRule;
         };
+        const alertEnabled=$('hub-evaluation-regression-enable').checked;
+        const regression=alertEnabled?{
+            window_checkpoints:Number($('hub-evaluation-regression-window').value),
+            minimum_drop:Number($('hub-evaluation-regression-drop').value),
+        }:null;
+        if(regression&&(!Number.isSafeInteger(regression.window_checkpoints)||
+            regression.window_checkpoints<2||regression.window_checkpoints>20||
+            !Number.isFinite(regression.minimum_drop)||
+            regression.minimum_drop<=0||regression.minimum_drop>1))
+            throw Error('Regression detection needs 2–20 checkpoints in each window and a drop threshold in (0, 1].');
         const options={
+            ...(regression?{regression_alert:regression}:{}),
             ...(!$('hub-evaluation-baseline').checked?{include_baseline:false}:{}),
             ...(!$('hub-evaluation-final').checked?{include_final:false}:{}),
         };
@@ -4762,7 +4805,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                     !advertised.includes(rule.suite_id))
                                     .map(rule=>rule.suite_id).join(', ')+')'
                             :' · Evaluator: suite reader advertised; timer/service health not yet reported';
-            const learningCell=cell(tr,learningSummary(j)+evaluation+availability);
+            const regressionSignals=comparisonProject===project
+                ?comparisonData?.evaluation_regressions?.filter(row=>row.job_id===j.id)||[]
+                :[];
+            const regressionText=regressionSignals.some(row=>row.status==='regressed')
+                ?' · Independent evaluation regression detected (inspect details)'
+                :'';
+            const learningCell=cell(tr,learningSummary(j)+evaluation+availability+regressionText);
             if(policy) {
                 const details=document.createElement('details');
                 const summary=document.createElement('summary');
@@ -4789,6 +4838,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     (monitoring&&j.evaluation_monitor.include_final===false
                         ?' · final checkpoint evaluation disabled':'');
                 details.append(description);
+                if(monitoring&&j.evaluation_monitor.regression_alert) {
+                    const info=document.createElement('p');
+                    info.textContent=regressionSignals.length
+                        ?'Regression monitoring: '+regressionSignals.map(row=>
+                            row.suite_id+' '+row.status+
+                            (Number.isFinite(row.drop)
+                                ?' (change '+(100*row.drop).toFixed(1)+' percentage points)':'')+
+                            '; '+row.reason).join(' | ')
+                        :'Regression monitoring configured. Historical analysis requires loaded independent evaluation history.';
+                    details.append(info);
+                }
                 const currentUpdate=j.live_execution?.progress?.steps_completed??
                     j.final_progress?.steps_completed;
                 const currentValid=Number.isSafeInteger(currentUpdate)&&currentUpdate>=0;
