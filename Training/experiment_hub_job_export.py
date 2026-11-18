@@ -515,7 +515,9 @@ def export(spec: dict, output: Path) -> dict:
                     observation_rows += observer.rows
                     partial_observation_files += int(observer.finish())
                 found_by_job[job_id] += 1
-                if not is_observation:
+                # Hub evaluation histories are independently measured
+                # evidence, not trainer-owned artifact availability.
+                if not is_observation and entry["label"] != "hub-evaluations":
                     trainer_files_by_job[job_id] += 1
                 reason = None
             else:
