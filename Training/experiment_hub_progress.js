@@ -231,6 +231,21 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_topology_max_pred_gain_ratio','training_topology_migration_owner',
             'training_topology_sps_change_pct','training_topology_result_owner',
             'training_collector_probe_count',
+            'training_collector_probe_moved_maps',
+            'training_collector_start_parallel',
+            'training_collector_start_wall_seconds',
+            'training_resume_map_moves',
+            'training_resume_gain_ratio',
+            'training_resume_proof_ready',
+            'training_resume_proof_rounds',
+            'training_resume_proof_seconds',
+            'training_collector_sim_trial_workers',
+            'training_collector_sim_eligible_workers',
+            'training_sim_migration_workers',
+            'training_sim_process_migrations',
+            'training_sim_process_migration_denials',
+            'training_sim_process_migration_seconds',
+            'training_sim_migration_work_seconds',
             'training_collector_probe_layout_changed',
             'training_collector_probe_gain_ratio',
             'training_collector_probe_wall_seconds',
@@ -276,6 +291,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_reply_gap_work_share',
             'training_shared_ingestion_pressure',
             'training_shared_collector_wait_pressure',
+            'training_shared_wait_owner',
+            'training_shared_sim_headroom_candidate',
+            'training_shared_sim_headroom_owner',
             'training_shared_collection_dominant',
             'training_shared_optimization_dominant',
             'training_checkpoint_snapshot_seconds',
@@ -1255,6 +1273,24 @@ class BottleneckEvidence {
             const slowReply=wireShare!==null&&wireShare>=0.25&&
                 wireGap>=0.25&&wireOwner===decodedOwner&&
                 (exposedShare===null||exposedShare<=0.10);
+            // A persistent last-wire owner is an observed limiting worker,
+            // not proof of CPU/GPU saturation. Headroom is only a candidate
+            // for another already-leased, episode-safe process-count trial.
+            const validOwner=Number.isSafeInteger(wireOwner)&&wireOwner>=0&&
+                wireOwner<metrics.training_collector_workers.value;
+            const ownerTrial=validOwner
+                ?metrics['worker_'+wireOwner+'_sim_trial']?.value:null;
+            const sharedWaitOwner=slowReply&&validOwner&&ownerTrial!==1
+                ?wireOwner:null;
+            const processCount=validOwner
+                ?metrics['worker_'+wireOwner+'_sim_physical_processes']:null;
+            const processCeiling=validOwner
+                ?metrics['worker_'+wireOwner+'_sim_process_ceiling']:null;
+            const headroomCandidate=sharedWaitOwner!==null&&
+                processCount?.unit==='count'&&processCeiling?.unit==='count'&&
+                Number.isSafeInteger(processCount.value)&&
+                Number.isSafeInteger(processCeiling.value)&&
+                processCount.value>=1&&processCeiling.value>processCount.value;
             const postwirePressure=postwireShare!==null&&
                 postwireShare>=0.20&&postwire>=0.25;
             const span=metrics.training_collector_span_ratio;
@@ -1273,6 +1309,8 @@ class BottleneckEvidence {
             const recent=collectTimingEvidence(prior,at,{resourceHints,
                     sharedIngestion:ingestionDelay,
                     sharedReply:slowReply,
+                    sharedWaitOwner,
+                    sharedHeadroom:headroomCandidate?sharedWaitOwner:null,
                     sharedPostwire:postwirePressure,
                     sharedImbalance:imbalance,
                     sharedCollection:collectionDominant,
@@ -1287,6 +1325,18 @@ class BottleneckEvidence {
                     add('training_shared_ingestion_pressure',1,'count');
                 if(sustained(x=>x.sharedReply))
                     add('training_shared_collector_wait_pressure',1,'count');
+                // Five of six reports must name the *same* delaying
+                // collector. Mixed tails remain reported as uncertain.
+                const owner=recent.at(-1).sharedWaitOwner;
+                if(owner!==null&&recent.filter(x=>
+                    x.sharedWaitOwner===owner).length>=5) {
+                    add('training_shared_wait_owner',owner,'count');
+                    if(recent.filter(x=>
+                        x.sharedHeadroom===owner).length>=5) {
+                        add('training_shared_sim_headroom_candidate',1,'count');
+                        add('training_shared_sim_headroom_owner',owner,'count');
+                    }
+                }
                 if(sustained(x=>x.sharedPostwire))
                     add('training_shared_postwire_pressure',1,'count');
                 const forwardOwner=recent.at(-1).sharedGpuForward;
@@ -1347,6 +1397,8 @@ class BottleneckEvidence {
              name==='training_gpu_forward_owner'||
              name==='training_shared_gpu_fwd_pressure'||
              name==='training_shared_gpu_fwd_owner'||
+             name==='training_shared_wait_owner'||
+             name==='training_shared_sim_headroom_owner'||
              name==='pipeline_local_gpu_fwd_owner'||
              name==='pipeline_remote_gpu_fwd_owner'||
              name==='pipeline_local_gpu_wait_owner'||
