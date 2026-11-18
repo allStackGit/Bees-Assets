@@ -339,7 +339,8 @@ class JobExporter {
             artifact_root:root,local_artifact_root_missing:missingLocalRoot,
             mounted_artifact_job_ids:[...mounted.map(item=>item.job_id),
                 ...mirrorFallbackIds],
-            resource_provenance:legacy?null:resourceProvenance(snapshot,jobs),
+            resource_provenance:legacy||onlyHistorical?null:
+                resourceProvenance(snapshot,jobs),
             progress,
             additional_sources:legacy?this.legacyBees.sources(jobs):
                 [...jobs.flatMap(job=>{
