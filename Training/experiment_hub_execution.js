@@ -69,7 +69,17 @@ class LocalExecution {
                 this.supervisor.gpuEnabled===true&&
                 this.supervisor.adapters?.[project]?.gpu_execution==='cuda'&&
                 this.supervisor.adapters?.[project]?.gpu_sharing==='cooperative-pytorch'&&
-                (this.supervisor.gpuExecution==='cuda'||dockerCapable(this.supervisor)))};
+                (this.supervisor.gpuExecution==='cuda'||dockerCapable(this.supervisor))),
+            gpu_dual_native_projects:this.projects.filter(project=>
+                ['bees_native','bees_native_collect'].includes(project)&&
+                this.supervisor.gpuEnabled===true&&
+                (!this.supervisor.gpuProjects||
+                    this.supervisor.gpuProjects.includes(project))&&
+                (this.supervisor instanceof LinuxSupervisor&&
+                    this.supervisor.gpuEnabled===true||
+                 this.supervisor?.native instanceof LinuxSupervisor&&
+                    this.supervisor.native.gpuEnabled===true)&&
+                this.supervisor.adapters?.[project]?.gpu_dual_execution==='native-rollouts')};
     }
     async handle(order) {
         if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
