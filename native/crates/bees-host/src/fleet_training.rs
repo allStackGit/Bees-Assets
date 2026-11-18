@@ -46,8 +46,22 @@ fn archived_battles(save_root: &Path) -> Result<Vec<(PathBuf, String)>, Box<dyn 
             continue;
         }
         let run_path = entry.path().join("replay-source-run.json");
-        if !run_path.is_file() { continue; }
-        let run: Value = serde_json::from_slice(&fs::read(&run_path)?)?;
+        // One interrupted or damaged historical save must not prevent
+        // training from every other archived battle. Read only the same
+        // bounded regular run files that the native replay gallery accepts.
+        if !fs::symlink_metadata(&run_path).is_ok_and(|meta|
+            meta.file_type().is_file() && meta.len() <= 1024 * 1024
+        ) {
+            continue;
+        }
+        let run: Value = match fs::read(&run_path)
+            .ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()) {
+            Some(run) => run,
+            None => {
+                eprintln!("Skipping damaged saved native fleet battle: {}", run_path.display());
+                continue;
+            }
+        };
         let Some(levels) = run["levels"].as_array() else { continue };
         if run["episodes_per_world"].as_u64() != Some(1) ||
             !run["run_id"].as_str().is_some_and(|id| id.starts_with("native-fleet-")) ||
@@ -56,6 +70,17 @@ fn archived_battles(save_root: &Path) -> Result<Vec<(PathBuf, String)>, Box<dyn 
              !levels[0]["reinforcements"].is_array()) ||
             (!levels[0]["survival"].is_null() && !levels[0]["extraction"].is_null())
         {
+            continue;
+        }
+        let Some(scene_ref) = levels[0]["scene"].as_str() else { continue };
+        let scene_path = if Path::new(scene_ref).is_absolute() {
+            PathBuf::from(scene_ref)
+        } else {
+            entry.path().join(scene_ref)
+        };
+        if !fs::symlink_metadata(&scene_path).is_ok_and(|meta|
+            meta.file_type().is_file() && meta.len() <= 4 * 1024 * 1024
+        ) {
             continue;
         }
         let title = format!(
