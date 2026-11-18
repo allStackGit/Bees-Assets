@@ -311,6 +311,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         for(const [suffix,name] of [
             ['sim_matches','simulation_active_matches'],
             ['sim_target','simulation_target_matches'],
+            ['sim_draining','simulation_draining_matches'],
             ['sim_max','simulation_max_matches'],
             ['sim_changes','simulation_concurrency_adjustments'],
             ['sim_global_samples','simulation_global_cadence_samples'],
@@ -588,6 +589,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'learner_gpu_stream_seconds','engine_steps_per_second',
                 'simulation_match_steps','match_steps_per_second','engine_steps',
                 'sim_global_rejections','sim_max','sim_target',
+                'sim_draining',
                 'dispatch_queue_seconds',
                 'sim_workload_reprobes','sim_inconclusive_trials',
             ];
