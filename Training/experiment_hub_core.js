@@ -538,6 +538,15 @@ function finishCheckpointReinspection(job,report,observedAt) {
     job.checkpoint_reinspection_requested_at=null;
     return true;
 }
+// A second receipt for the same immutable model and suite must not change
+// its accepted result. Contradictions are diagnostics, never new Stop or
+// candidate-promotion evidence.
+function conflictingEvaluationReceipt(job,receipt) {
+    const prior=(job.evaluation_candidates||[]).find(cohort=>
+        cohort.checkpoint_sha256===receipt.checkpoint_sha256)
+        ?.receipts?.[receipt.suite_id];
+    return Boolean(prior&&JSON.stringify(prior)!==JSON.stringify(receipt));
+}
 // Preserve a bounded set of independent evaluation receipts by exact model
 // identity for both single-suite and multi-suite gates. A final resumable
 // checkpoint may differ from the last observed intermediate checkpoint.
@@ -549,8 +558,7 @@ function retainEvaluationCohorts(job,receipts) {
             c.checkpoint_sha256===receipt.checkpoint_sha256);
         const cohort=index>=0?cohorts[index]:{
             checkpoint_sha256:receipt.checkpoint_sha256,receipts:{}};
-        if(JSON.stringify(cohort.receipts[receipt.suite_id])===
-            JSON.stringify(receipt))continue;
+        if(cohort.receipts[receipt.suite_id])continue;
         cohort.receipts[receipt.suite_id]=receipt;
         if(index>=0)cohorts.splice(index,1);
         cohorts.unshift(cohort);
@@ -627,7 +635,8 @@ function retainFinalEvaluations(job,report) {
             const receipt=evaluationEvidence(matching[0],rule,job.dispatch_id);
             if(receipt.checkpoint_sha256!==job.checkpoint_model_sha256||!receipt.suite_sha256||
                 receipt.trials<rule.min_trials||
-                (definitions[rule.suite_id]&&definitions[rule.suite_id]!==receipt.suite_sha256))continue;
+                (definitions[rule.suite_id]&&definitions[rule.suite_id]!==receipt.suite_sha256)||
+                conflictingEvaluationReceipt(job,receipt))continue;
             definitions[rule.suite_id]=receipt.suite_sha256;
             receipts.push(receipt);
         }catch { /* Keep other valid suites eligible for comparison. */ }
@@ -3596,6 +3605,23 @@ class ExperimentHub {
                     }
                 }
             }
+            // Reject contradictory same-checkpoint receipts before either
+            // monitoring cache retention or any success-based Stop decision.
+            // An evaluator error never invalidates the native heartbeat.
+            const conflictIssue=receipt=>(receipt.suite_id+': '+
+                'Conflicting independent result for checkpoint '+
+                receipt.checkpoint_sha256.slice(0,12)+
+                '; first accepted receipt retained.').slice(0,160);
+            evaluations=evaluations.filter(receipt=>{
+                if(!conflictingEvaluationReceipt(job,receipt))return true;
+                evaluationIssues.push(conflictIssue(receipt));
+                return false;
+            });
+            if(evaluation&&conflictingEvaluationReceipt(job,evaluation)) {
+                evaluationIssues.push(conflictIssue(evaluation));
+                evaluation=null;
+            }
+            if(evaluationIssues.length)evaluationIssue=evaluationIssues.at(-1);
             if(state==='failed'&&report.prelaunch_absence_verified===true&&
                 job.prelaunch_absence_verified!==true) {
                 job.prelaunch_absence_verified=true;
