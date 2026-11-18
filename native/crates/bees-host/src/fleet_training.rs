@@ -178,6 +178,73 @@ fn hub_arguments(
     Ok(())
 }
 
+fn append_training_arguments(
+    command: &mut Command, job: &Path, recipe: &Value,
+) -> Result<(), Box<dyn Error>> {
+    // First launch and resume must execute the same immutable training recipe.
+    let rounds = recipe["rounds"].as_u64()
+        .filter(|n| (1..=99_999).contains(n))
+        .ok_or_else(|| invalid("invalid training round count"))?;
+    let side = recipe["learner_side"].as_u64().unwrap_or(1);
+    if ![1, 2].contains(&side) || recipe["evaluation_side"].as_u64() != Some(side) ||
+        recipe["holdout_worlds"].as_u64() != Some(8) {
+        return Err(invalid("training learner and holdout sides do not match").into());
+    }
+    let slot = side - 1;
+    command.arg("--train-rounds").arg(rounds.to_string())
+        .arg("--learner-slot").arg(slot.to_string());
+    if !recipe["self_play_refresh_every"].is_null() {
+        let every = recipe["self_play_refresh_every"].as_u64()
+            .filter(|n| rounds > 1 && (1..=99_999).contains(n))
+            .ok_or_else(|| invalid("invalid self-play refresh interval"))?;
+        command.arg("--self-play-opponent-slot").arg((1-slot).to_string())
+            .arg("--self-play-refresh-every").arg(every.to_string());
+    }
+    if !recipe["early_stop_patience"].is_null() {
+        let patience = recipe["early_stop_patience"].as_u64()
+            .filter(|n| rounds >= 10 && (1..=99_999).contains(n))
+            .ok_or_else(|| invalid("invalid fixed-holdout early stopping policy"))?;
+        command.arg("--early-stop-patience").arg(patience.to_string());
+    }
+    if recipe["hub_plan"].is_string() {
+        if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() {
+            return Err(invalid("Hub allocation cannot also claim local CPU workers").into());
+        }
+        hub_arguments(command, job, recipe)?;
+    } else {
+        if !recipe["hub_worlds"].is_null() {
+            return Err(invalid("local allocation cannot claim distributed Worlds").into());
+        }
+        let worlds = recipe["worlds"].as_u64()
+            .filter(|n| (1..=1024).contains(n))
+            .ok_or_else(|| invalid("invalid native local World count"))?;
+        let physics = recipe["physics_workers"].as_u64()
+            .filter(|n| (1..=128).contains(n))
+            .ok_or_else(|| invalid("invalid native physics worker count"))?;
+        command.arg("--rollout-worlds").arg(worlds.to_string())
+            .arg("--physics-workers").arg(physics.to_string());
+    }
+    let device = recipe["optimizer_device"].as_str()
+        .filter(|s| *s == "cpu" || *s == "cuda")
+        .ok_or_else(|| invalid("invalid native optimizer device"))?;
+    let saves = PathBuf::from(recipe["save_root"].as_str()
+        .ok_or_else(|| invalid("missing native save directory"))?);
+    let game_id = recipe["game_id"].as_str()
+        .ok_or_else(|| invalid("missing native trained game ID"))?;
+    let title = recipe["title"].as_str()
+        .ok_or_else(|| invalid("missing native trained game title"))?;
+    if !saves.is_dir() || !job.starts_with(saves.join("training").join("fleet-skirmish")) {
+        return Err(invalid("training job is not owned by the saved native game").into());
+    }
+    command.arg("--optimizer-device").arg(device)
+        .arg("--holdout-worlds").arg("8")
+        .arg("--evaluation-side").arg(side.to_string())
+        .arg("--library-save-root").arg(saves)
+        .arg("--library-game-id").arg(game_id)
+        .arg("--library-game-title").arg(title);
+    Ok(())
+}
+
 fn new_training_job(save_root: &Path) -> io::Result<(PathBuf, String)> {
     let root = save_root.join("training").join("fleet-skirmish");
     fs::create_dir_all(&root)?;
@@ -376,29 +443,9 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let mut command = Command::new(python);
     command.arg(&converter).arg(&source).arg(&prepared)
         .arg("--bootstrap-output").arg(&model)
-        .arg("--bootstrap-args")
-        .arg("--train-rounds").arg(rounds.to_string())
-        .arg("--learner-slot").arg(learner_slot.to_string());
-    if let Some(every) = refresh_every {
-        command.arg("--self-play-opponent-slot").arg(opponent_slot.to_string())
-            .arg("--self-play-refresh-every").arg(every.to_string());
-    }
-    if let Some(patience) = early_stop_patience {
-        command.arg("--early-stop-patience").arg(patience.to_string());
-    }
-    if use_hub {
-        hub_arguments(&mut command, &job, &recipe)?;
-    } else {
-        command.arg("--rollout-worlds").arg(worlds.expect("local arenas selected").to_string())
-            .arg("--physics-workers").arg(workers.expect("local workers selected").to_string());
-    }
+        .arg("--bootstrap-args");
+    append_training_arguments(&mut command, &job, &recipe)?;
     let process = command
-        .arg("--optimizer-device").arg(if device == 0 { "cpu" } else { "cuda" })
-        .arg("--holdout-worlds").arg("8")
-        .arg("--evaluation-side").arg(learner_side.to_string())
-        .arg("--library-save-root").arg(&saves)
-        .arg("--library-game-id").arg(&game_id)
-        .arg("--library-game-title").arg(format!("Trained: {title}"))
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))
@@ -620,52 +667,11 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     let title = recipe["title"].as_str()
         .ok_or_else(|| invalid("native training game title is missing"))?;
     let rounds = recipe["rounds"].as_u64()
-        .filter(|value| (1..=99_999).contains(value))
-        .ok_or_else(|| invalid("native training rounds are invalid"))?;
-    // Invocation files predating faction selection trained the Bees side.
-    let learner_side = recipe["learner_side"].as_u64().unwrap_or(1);
-    if ![1, 2].contains(&learner_side) {
-        return Err(invalid("native training learner faction is invalid").into());
-    }
-    let learner_slot = learner_side - 1;
-    let opponent_slot = 1 - learner_slot;
-    let refresh_every = if recipe["self_play_refresh_every"].is_null() {
-        None
-    } else {
-        Some(recipe["self_play_refresh_every"].as_u64()
-            .filter(|value| (1..=99_999).contains(value) && rounds > 1)
-            .ok_or_else(|| invalid("native self-play generation interval is invalid"))?)
-    };
-    let early_stop_patience = if recipe["early_stop_patience"].is_null() {
-        None
-    } else {
-        Some(recipe["early_stop_patience"].as_u64()
-            .filter(|value| (1..=99_999).contains(value) && rounds >= 10)
-            .ok_or_else(|| invalid("native early stopping policy is invalid"))?)
-    };
-    let use_hub = recipe["hub_plan"].is_string();
-    let (worlds, workers) = if use_hub {
-        if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() {
-            return Err(invalid("Hub training resources cannot also claim local workers").into());
-        }
-        (None, None)
-    } else {
-        (Some(recipe["worlds"].as_u64()
-            .filter(|value| (1..=1_024).contains(value))
-            .ok_or_else(|| invalid("native training worlds are invalid"))?),
-         Some(recipe["physics_workers"].as_u64()
-            .filter(|value| (1..=128).contains(value))
-            .ok_or_else(|| invalid("native training worker allocation is invalid"))?))
-    };
-    let device = recipe["optimizer_device"].as_str()
-        .filter(|value| *value == "cpu" || *value == "cuda")
-        .ok_or_else(|| invalid("native training optimizer device is invalid"))?;
+        .filter(|n| (1..=99_999).contains(n))
+        .ok_or_else(|| invalid("invalid native training round count"))?;
     if !source.is_file() || !saves.is_dir() ||
-        !job.starts_with(saves.join("training").join("fleet-skirmish")) ||
-        recipe["holdout_worlds"].as_u64() != Some(8) ||
-        recipe["evaluation_side"].as_u64() != Some(learner_side)
-    {
-        return Err(invalid("native training source, holdout or private job root changed").into());
+        !job.starts_with(saves.join("training").join("fleet-skirmish")) {
+        return Err(invalid("native training job source or ownership changed").into());
     }
     let model = job.join("model");
     let prepared = job.join("prepared");
@@ -709,27 +715,7 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
             .arg("--bootstrap-output").arg(&model)
             .arg("--bootstrap-args");
     }
-    command.arg("--train-rounds").arg(rounds.to_string())
-        .arg("--learner-slot").arg(learner_slot.to_string());
-    if let Some(every) = refresh_every {
-        command.arg("--self-play-opponent-slot").arg(opponent_slot.to_string())
-            .arg("--self-play-refresh-every").arg(every.to_string());
-    }
-    if let Some(patience) = early_stop_patience {
-        command.arg("--early-stop-patience").arg(patience.to_string());
-    }
-    if use_hub {
-        hub_arguments(&mut command, job, &recipe)?;
-    } else {
-        command.arg("--rollout-worlds").arg(worlds.expect("local arenas").to_string())
-            .arg("--physics-workers").arg(workers.expect("local workers").to_string());
-    }
-    command.arg("--optimizer-device").arg(device)
-        .arg("--holdout-worlds").arg("8")
-        .arg("--evaluation-side").arg(learner_side.to_string())
-        .arg("--library-save-root").arg(&saves)
-        .arg("--library-game-id").arg(game_id)
-        .arg("--library-game-title").arg(title);
+    append_training_arguments(&mut command, job, &recipe)?;
     let mut pair = None;
     for index in 1..u32::MAX {
         let stdout_path = job.join(format!("trainer-resume-{index:06}.stdout.log"));
