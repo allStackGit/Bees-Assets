@@ -35,6 +35,10 @@ pub enum NativeScriptedOrder {
     MoveToRandom { range: f32 },
     /// Prepared source EnemySquad identity. Never guess an opponent.
     Aggressive { enemy_squad_item_id: i64 },
+    /// Native fleet-AI order: select the nearest alive source enemy when
+    /// issuing the ordinary Aggressive command, then select again after
+    /// its exact target lifetime ends. No extra movement or weapon logic.
+    AggressiveNearest,
     TargetEnemy { enemy_squad_item_id: i64 },
     Retreat { enemy_squad_item_id: i64 },
     CircleSquad { enemy_squad_item_id: i64 },
@@ -62,7 +66,8 @@ impl NativeScriptedOrder {
                 NativeLocalCommandAction::MoveToPoint { destination },
             Self::MoveToRandom { range } =>
                 NativeLocalCommandAction::MoveToRandom { range },
-            Self::Aggressive { .. } => NativeLocalCommandAction::Aggressive,
+            Self::Aggressive { .. } | Self::AggressiveNearest =>
+                NativeLocalCommandAction::Aggressive,
             Self::TargetEnemy { .. } => NativeLocalCommandAction::TargetEnemy {
                 target: target.expect("authenticated current enemy squad"),
             },
@@ -106,7 +111,7 @@ impl NativeScriptedOrder {
             Self::Guard { friendly_squad_item_id } => friendly_squad_item_id > 0,
             Self::Patrol { top_left, bottom_right } =>
                 top_left.is_finite() && bottom_right.is_finite(),
-            Self::Hold | Self::ClosestFriendly => true,
+            Self::Hold | Self::ClosestFriendly | Self::AggressiveNearest => true,
             Self::Scouting { max_sight, human_side } =>
                 max_sight.is_finite() && max_sight >= 0.0 && human_side > 0,
             Self::Mining { asteroid_id } => asteroid_id > 0,
@@ -487,7 +492,43 @@ impl NativePolicyOnlyMetadata {
             // Every prepared target is re-resolved against the current
             // roster lifetime. A destroyed squad cannot be replaced by an
             // unrelated new squad with the same hotkey or source item ID.
-            let linked_target = if let Some((item_id, enemy_side)) = order.target_squad() {
+            let linked_target = if matches!(&order, NativeScriptedOrder::AggressiveNearest) {
+                let roster = events.roster();
+                let own_side = roster.get(owner)
+                    .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?
+                    .side;
+                let own_center = self.command_center(world, roster, owner)
+                    .map_err(NativeLevelEventError::Commands)?;
+                let mut nearest: Option<(f32, SquadLifetime)> = None;
+                for &candidate in roster.source_order() {
+                    if candidate.level_id != owner.level_id { continue; }
+                    let Some(target) = roster.get(candidate) else { continue };
+                    if target.side == own_side || target.members.is_empty() {
+                        continue;
+                    }
+                    let enemy_center = self.command_center(world, roster, candidate)
+                        .map_err(NativeLevelEventError::Commands)?;
+                    let distance = (enemy_center - own_center).length_squared();
+                    if !distance.is_finite() {
+                        return Err(NativeLevelEventError::Commands(
+                            GameCommandError::InvalidEnemy,
+                        ));
+                    }
+                    if nearest.is_none_or(|(best_distance, best_owner)|
+                        distance < best_distance ||
+                        (distance == best_distance && candidate.squad_id < best_owner.squad_id))
+                    {
+                        nearest = Some((distance, candidate));
+                    }
+                }
+                let Some((_, target)) = nearest else {
+                    self.scripted_queues[index].cursor += 1;
+                    self.scripted_counts.orders_skipped_target_gone += 1;
+                    index += 1;
+                    continue;
+                };
+                Some(target)
+            } else if let Some((item_id, enemy_side)) = order.target_squad() {
                 let own_side = events.roster().get(owner)
                     .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?
                     .side;
@@ -510,6 +551,7 @@ impl NativePolicyOnlyMetadata {
             } else { None };
             let enemy = if matches!(&order,
                 NativeScriptedOrder::Aggressive { .. } |
+                NativeScriptedOrder::AggressiveNearest |
                 NativeScriptedOrder::TargetEnemy { .. } |
                 NativeScriptedOrder::Retreat { .. } |
                 NativeScriptedOrder::CircleSquad { .. } |
@@ -524,6 +566,7 @@ impl NativePolicyOnlyMetadata {
                     .map_err(NativeLevelEventError::Commands)?;
                 if matches!(&order,
                     NativeScriptedOrder::Aggressive { .. } |
+                    NativeScriptedOrder::AggressiveNearest |
                     NativeScriptedOrder::TargetEnemy { .. }
                 ) {
                     // Ordinary attack and specialized bombers have
