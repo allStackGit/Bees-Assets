@@ -62,6 +62,34 @@ function evaluationPolicy(value) {
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
 }
 
+// Monitoring suites share the immutable receipt contract, but have no
+// success threshold and cannot authorize a native Stop.
+function monitoringPolicy(value) {
+    if(value==null)return null;
+    if(record(value)&&Object.hasOwn(value,'all_of')) {
+        if(Object.keys(value).length!==1||!Array.isArray(value.all_of)||
+            value.all_of.length<2||value.all_of.length>8)
+            throw Error('Monitoring requires 2–8 distinct independent suites.');
+        const rules=value.all_of.map(monitoringPolicy);
+        if(rules.some(rule=>!rule||rule.all_of)||
+            new Set(rules.map(rule=>rule.suite_id)).size!==rules.length)
+            throw Error('Monitoring requires distinct nonnested suite IDs.');
+        return {all_of:rules};
+    }
+    if(!record(value)||Object.keys(value).some(key=>
+        !['suite_id','suite_sha256','min_trials'].includes(key))||
+        typeof value.suite_id!=='string'||!SUITE.test(value.suite_id)||
+        (Object.hasOwn(value,'suite_sha256')&&
+            (typeof value.suite_sha256!=='string'||!SHA256.test(value.suite_sha256)))||
+        !trials(value.min_trials))
+        throw Error('Evaluation monitoring requires a suite ID and minimum trial count.');
+    return {suite_id:value.suite_id,min_trials:value.min_trials,
+        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
+}
+function activeEvaluation(job) {
+    return job?.evaluation_monitor||job?.evaluation_stop||null;
+}
+
 function evaluationEvidence(value,policy,dispatchId) {
     if(!record(value)||value.schema_version!==1||
         value.suite_id!==policy.suite_id||value.dispatch_id!==dispatchId||
@@ -112,9 +140,10 @@ function suiteIds(value) {
     return value.slice();
 }
 function supportsEvaluation(suites,job) {
-    return !job.evaluation_stop||
+    const policy=activeEvaluation(job);
+    return !policy||
         (suites&&Object.hasOwn(suites,job.project_id)&&
-         evaluationRules(job.evaluation_stop).every(rule=>
+         evaluationRules(policy).every(rule=>
              suites[job.project_id].includes(rule.suite_id)));
 }
 function isWithin(parent,child) {
@@ -161,5 +190,6 @@ function evaluationReader(projectId,evaluationRoot,evaluationSuites,protectedRoo
     };
 }
 
-module.exports={evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,
+module.exports={evaluationPolicy,monitoringPolicy,activeEvaluation,
+    evaluationEvidence,evaluationRules,evaluationComplete,
     suiteIds,supportsEvaluation,evaluationReader,modelFileSha256};
