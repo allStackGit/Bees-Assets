@@ -372,6 +372,24 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 admissions.get(key, {}),
             )
             if stats is not None:
+                if key in admissions:
+                    enrolled = admissions[key]
+                    decided = {agent for frame in ticks.values() for agent in frame}
+                    stats["dynamic_policy_episodes"] = (
+                        stats.get("dynamic_policy_episodes", 0) + 1
+                    )
+                    stats["dynamic_policy_admissions"] = (
+                        stats.get("dynamic_policy_admissions", 0) + len(enrolled)
+                    )
+                    stats["dynamic_policy_admissions_without_decisions"] = (
+                        stats.get("dynamic_policy_admissions_without_decisions", 0) +
+                        len(enrolled.keys() - decided)
+                    )
+                    stats["dynamic_policy_decision_phases_max"] = max(
+                        stats.get("dynamic_policy_decision_phases_max", 0),
+                        len({tick % terminals[key]["evaluation_context"]["decision_period"]
+                             for tick in ticks}),
+                    )
                 accumulate_training_outcome(
                     stats, terminals[key], rollout[5], learner_slots,
                     combat_by_episode.get(key, {}),
@@ -1157,6 +1175,12 @@ def main():
         "capture_peak_inflight_episodes": capture_stats.get("peak_inflight_episodes", 0),
         "capture_compact_opponent_decisions": capture_stats.get("compact_opponent_decisions", 0),
         "capture_compact_opponent_boundaries": capture_stats.get("compact_opponent_boundaries", 0),
+        "dynamic_policy_episodes": capture_stats.get("dynamic_policy_episodes", 0),
+        "dynamic_policy_admissions": capture_stats.get("dynamic_policy_admissions", 0),
+        "dynamic_policy_admissions_without_decisions":
+            capture_stats.get("dynamic_policy_admissions_without_decisions", 0),
+        "dynamic_policy_decision_phases_max":
+            capture_stats.get("dynamic_policy_decision_phases_max", 0),
         "reward_journal_events": capture_stats.get("reward_journal_events", 0),
         "reward_journal_payload_bytes": capture_stats.get("reward_journal_payload_bytes", 0),
         "training_outcomes": {
