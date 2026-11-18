@@ -4261,6 +4261,28 @@ class ExperimentHub {
         this.commit(next);
         return copy(updated);
     }
+    // Project-wide monitoring defaults are only copied into new draft
+    // configurations. Existing drafts, jobs and native lifecycles stay frozen.
+    setProjectEvaluationDefaults(value) {
+        if(!object(value)||typeof value.project_id!=='string'||
+            !Number.isSafeInteger(value.expected_revision)||value.expected_revision<0||
+            !Object.hasOwn(value,'evaluation_monitor'))
+            throw Error('Select a project and its current evaluation-default revision.');
+        const project=this.project(value.project_id);
+        if(project.adapter!=='unconfigured'||project.id==='ants')
+            throw Error('Only native Hub projects have evaluation defaults.');
+        if((project.evaluation_defaults_revision||0)!==value.expected_revision)
+            throw Error('Project evaluation defaults changed; reload before saving.');
+        const monitor=monitoringPolicy(value.evaluation_monitor);
+        const next=copy(this.state);
+        const updated=next.projects.find(p=>p.id===project.id);
+        if(monitor)updated.default_evaluation_monitor=monitor;
+        else delete updated.default_evaluation_monitor;
+        updated.evaluation_defaults_revision=(project.evaluation_defaults_revision||0)+1;
+        updated.evaluation_defaults_updated_at=now();
+        this.commit(next);
+        return copy(updated);
+    }
     saveConfiguration(value) {
         if (!object(value)) throw Error('Missing configuration.');
         const project = this.project(value.project_id);
@@ -4268,7 +4290,10 @@ class ExperimentHub {
         const params = config(value.parameters);
         requireCourierTrainingPin(project.id,params);
         const stop=evaluationPolicy(value.evaluation_stop);
-        const monitor=monitoringPolicy(value.evaluation_monitor);
+        const explicitEvaluation=Object.hasOwn(value,'evaluation_monitor')||
+            Object.hasOwn(value,'evaluation_stop');
+        const monitor=monitoringPolicy(explicitEvaluation||value.id
+            ?value.evaluation_monitor:project.default_evaluation_monitor);
         if(stop&&monitor)
             throw Error('Choose monitoring or evaluation-based stopping, not both.');
         if((stop||monitor)&&project.adapter==='bees')
@@ -4296,6 +4321,8 @@ class ExperimentHub {
         else if(Object.hasOwn(value,'evaluation_stop'))delete item.evaluation_stop;
         if(monitor)item.evaluation_monitor=monitor;
         else if(Object.hasOwn(value,'evaluation_monitor'))delete item.evaluation_monitor;
+        if(item.evaluation_monitor&&item.evaluation_stop)
+            throw Error('A configuration cannot mix monitoring and evaluation-based stopping.');
         this.commit(next);
         return copy(item);
     }
