@@ -100,7 +100,13 @@ rendered map. The same exact collider geometry and bounds are authored into
 the playable and optional `--trainable` policy scenes; native navigation,
 projectiles, asteroid contacts, and reinforcement spawns use that Level.
 Map sizes use four-unit steps from 64 to 4000; resizing a populated source
-map is refused rather than guessing where its authored resources should go. `--source-scene` and
+map is refused rather than guessing where its authored resources should go.
+Nonlethal resized arenas use the source's rotation-safe whole-hull clamp
+and outward-velocity guard. Use `--lethal-borders` with `--arena-size`
+to replace confinement with authentic contact-triggered health damage,
+in both normal gameplay and the corresponding trainable episode.
+Native final run metrics report border entries, stops, lethal deaths and
+actual confinement corrections across completed episodes. `--source-scene` and
 `--source-run` allow a larger native-authored arena or other verified
 archetypes without Unity. The default catalogue uses the existing
 native Queen example and skirmish stage: types are available only on
@@ -1275,7 +1281,10 @@ terrain. A separate arena choice preserves the original 320×200 geometry
 or offers 512×512, 1024×1024, and 2048×2048 physical battlefields.
 The larger maps include the original MapBorder trigger collision profile,
 not an independent graphical-only edge, and carry unchanged into recorded
-battles, saved-fleet MA-POCA training and native CPU benchmarks. The one-player skirmish and CPU-only native benchmark creators
+battles, saved-fleet MA-POCA training and native CPU benchmarks.
+The 512×512 and 1024×1024 arenas also offer explicitly lethal-border
+variants. Ordinary game borders stop source directional orders; lethal
+variants instead use the shared physical death and reward-event pipeline. The one-player skirmish and CPU-only native benchmark creators
 also offer a tactical-doctrine selector: aggressive, circling, left or
 right swipe, strike-and-withdraw, or mixed source maneuvers. Every
 selection uses the same native Squad command director as headless
