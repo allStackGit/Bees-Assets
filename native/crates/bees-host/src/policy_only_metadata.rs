@@ -203,6 +203,8 @@ pub struct NativePolicyOnlyMetadata {
     pub(crate) reinforcements: std::collections::VecDeque<crate::reinforcements::ReinforcementWave>,
     /// Cached wakeup predicate for the same queue; no second mission clock.
     pub(crate) reinforcement_wakeup: crate::reinforcements::ReinforcementWakeup,
+    pub(crate) reinforcement_idle_ticks_skipped: u64,
+    pub(crate) reinforcement_wakeup_scans: u64,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_members: Vec<bees_sim::squad_movement::SquadFormationMember>,
     scripted_friendlies: Vec<bees_gameplay::commands::NativeFriendlySquad>,
@@ -398,6 +400,8 @@ impl NativePolicyOnlyMetadata {
             player,
             reinforcements: std::collections::VecDeque::new(),
             reinforcement_wakeup: crate::reinforcements::ReinforcementWakeup::default(),
+            reinforcement_idle_ticks_skipped: 0,
+            reinforcement_wakeup_scans: 0,
             scripted_queues: Vec::new(),
             scripted_members: Vec::new(),
             scripted_friendlies: Vec::new(),
@@ -805,6 +809,8 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
                 .filter(|wave| wave.is_ship_death_triggered()).count(),
             timed_waves: self.reinforcements.iter()
                 .filter(|wave| wave.scheduled_tick().is_some()).count(),
+            idle_ticks_skipped: self.reinforcement_idle_ticks_skipped,
+            wakeup_scans: self.reinforcement_wakeup_scans,
         }
     }
 
