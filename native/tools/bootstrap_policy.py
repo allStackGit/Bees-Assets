@@ -409,7 +409,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          checkpoint_selection: str = "primary",
                          evaluation_physics_workers: int | None = None,
                          rollout_gpus: str | None = None,
-                         rollout_gpu_mask: str | None = None) -> None:
+                         rollout_gpu_mask: str | None = None,
+                         evaluation_inference_device: str | None = None) -> None:
     """Hand freshly verified artifacts to the one existing native trainer.
 
     The session has its own immutable recipe, model lineage, round receipts
@@ -445,6 +446,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         command.extend(["--rollout-gpus", rollout_gpus])
     if rollout_gpu_mask is not None:
         command.extend(["--rollout-gpu-mask", rollout_gpu_mask])
+    if evaluation_inference_device is not None:
+        command.extend(["--evaluation-inference-device", evaluation_inference_device])
     if rollout_binary is not None:
         command.extend(["--rollout-binary", str(rollout_binary.resolve(strict=True))])
     if distributed_plan is not None:
@@ -630,6 +633,8 @@ def main() -> None:
                         help="fixed nonnegative int63 holdout inference sampling seed")
     parser.add_argument("--evaluation-every", type=int, default=1,
                         help="fixed native holdout cadence in completed PPO rounds (default: 1)")
+    parser.add_argument("--evaluation-inference-device", choices=("cpu", "cuda:0"),
+                        help="pin fixed holdout and monitor inference to CPU or a visible GPU")
     parser.add_argument("--evaluation-physics-workers", type=int,
                         help="CPU physics workers in each independent holdout, not training rollout workers")
     parser.add_argument("--early-stop-patience", type=int,
@@ -796,6 +801,7 @@ def main() -> None:
         bool(args.monitor_evaluation_run_config),
         args.checkpoint_selection != "primary",
         args.evaluation_physics_workers is not None,
+        args.evaluation_inference_device is not None,
         args.evaluation_side is not None,
         args.evaluation_policy_seed != 0, args.collector_timeout_seconds != 0,
     )):
@@ -924,6 +930,7 @@ def main() -> None:
                 monitor_evaluation_run_configs=tuple(args.monitor_evaluation_run_config),
                 checkpoint_selection=args.checkpoint_selection,
                 evaluation_physics_workers=args.evaluation_physics_workers,
+                evaluation_inference_device=args.evaluation_inference_device,
                 rollout_gpus=args.rollout_gpus,
                 rollout_gpu_mask=args.rollout_gpu_mask,
             )
