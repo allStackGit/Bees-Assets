@@ -574,6 +574,13 @@ pub struct NativeLevelWindowCounts {
     pub rounds: u32,
     pub world_steps: usize,
     pub policy_rows: usize,
+    /// Exact neural observation work outside ordinary inference: newborn
+    /// controller enrollment versus full death/terminal cohort snapshots.
+    pub admission_snapshot_rows: usize,
+    pub admission_snapshot_frames: usize,
+    pub retirement_snapshot_rows: usize,
+    pub retirement_snapshot_frames: usize,
+    pub policy_boundary_capture_nanos: u128,
     /// Phase measurements cover only sampled successful rounds, never
     /// all rounds or a fabricated estimate of total host wall time.
     pub sampled_rounds: u32,
@@ -1677,12 +1684,21 @@ impl NativeLevelBatchDriver {
                     if !retired && admitted.is_empty() {
                         continue;
                     }
+                    let started_capture = std::time::Instant::now();
                     let rows = if retired {
                         self.policy_boundary_observations(index, world)
                     } else {
                         admitted.sort_unstable();
                         self.policy_admission_observations(index, world, &admitted)
                     }.map_err(|error| NativeLevelWindowError::RetirementObservation { round, error })?;
+                    counts.policy_boundary_capture_nanos += started_capture.elapsed().as_nanos();
+                    if retired {
+                        counts.retirement_snapshot_frames += 1;
+                        counts.retirement_snapshot_rows += rows.len();
+                    } else {
+                        counts.admission_snapshot_frames += 1;
+                        counts.admission_snapshot_rows += rows.len();
+                    }
                     sink.accept_policy_boundary(world.id, world.episode_revision(), world.tick(), &rows)
                         .map_err(|error| NativeLevelWindowError::PolicyDelivery { round, error })?;
                 }
