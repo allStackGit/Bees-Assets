@@ -5138,6 +5138,9 @@ class ExperimentHub {
                 l.status==='released'&&l.released_at);
             if(!lease||!job.capacity_released_at)
                 throw Error('Every candidate must have released its verified native capacity.');
+            if(this.evaluationHistory.hasReceiptConflict(job))
+                throw Error('Independent evaluation receipts conflict for candidate '+
+                    job.id+'; resolve the durable archive integrity warning before selecting or promoting a model.');
             return comparableCandidate(job);
         });
         const first=compared[0];
