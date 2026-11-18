@@ -479,7 +479,7 @@ impl NativePolicyOnlyMetadata {
         // side-specific policy admission gate exactly, so neither the
         // scripted director nor policy inference competes for the ship.
         if player.user_controlled || self.hivemind_active == Some(true) ||
-            self.queen_policy_controller(queen_id, side).is_some()
+            self.queen_policy_controller(world, queen_id, side).is_some()
         {
             return Ok(());
         }
