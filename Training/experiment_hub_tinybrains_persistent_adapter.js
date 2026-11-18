@@ -155,6 +155,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_opponent_readback_slot_reused',
         'rollout_opponent_readback_slot_allocated',
         'rollout_opponent_readback_cached_indices',
+        'rollout_opponent_grouped_calls','rollout_opponent_grouped_models',
+        'rollout_opponent_grouped_states','rollout_opponent_grouped_fallbacks',
+        'rollout_opponent_grouped_weight_reuses',
         'rollout_opponent_pixel_samples',
         'rollout_opponent_max_group_pixels',
         'rollout_opponent_batch_budget_pixels',
@@ -394,6 +397,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_readback_slot_allocated,'count');
         add('collector_'+i+'_opp_cached_indices',
             worker.rollout_opponent_readback_cached_indices,'count');
+        add('collector_'+i+'_opp_group_calls',
+            worker.rollout_opponent_grouped_calls,'count');
+        add('collector_'+i+'_opp_group_models',
+            worker.rollout_opponent_grouped_models,'count');
+        add('collector_'+i+'_opp_group_states',
+            worker.rollout_opponent_grouped_states,'count');
+        add('collector_'+i+'_opp_group_fallbacks',
+            worker.rollout_opponent_grouped_fallbacks,'count');
         add('collector_'+i+'_opp_gpu_stream_seconds',
             worker.rollout_opponent_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_opp_budget_pixels',
@@ -610,6 +621,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'inference_max_group_px','bootstrap_seconds','returns_seconds',
                 'opponent_readbacks','opp_slot_reused',
                 'opp_slot_allocated','opp_cached_indices',
+                'opp_group_calls','opp_group_models',
+                'opp_group_states','opp_group_fallbacks',
                 'snapshot_cache_files','snapshot_cache_bytes',
                 'policy_upload_groups',
                 'record_packed','record_board_groups',
