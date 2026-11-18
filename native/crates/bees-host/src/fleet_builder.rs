@@ -677,6 +677,75 @@ fn write_json_new(path: &Path, value: &Value) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Resize the source Map around its true center and install the exact four
+/// Unity MapBorder trigger boxes. This edits only the authored scene/layout
+/// and the rollout's fragment bounds: windowed, LAN, policy and benchmarks
+/// all subsequently use the same ordinary CombatWorld collider records.
+fn apply_native_arena(
+    scene: &mut Value, run: &mut Value,
+    layout: &mut NativeLevelLayout, size: u32,
+) -> Result<(), Box<dyn Error>> {
+    let lower = scene["bounds"]["min"].as_array()
+        .ok_or_else(|| invalid("native arena is missing source map bounds"))?;
+    let upper = scene["bounds"]["max"].as_array()
+        .ok_or_else(|| invalid("native arena is missing source map bounds"))?;
+    if lower.len() != 2 || upper.len() != 2 {
+        return Err(invalid("native arena source bounds have the wrong dimension").into());
+    }
+    let mut middle = [0.0_f32; 2];
+    for axis in 0..2 {
+        let min = lower[axis].as_f64()
+            .ok_or_else(|| invalid("native arena source minimum is missing"))?;
+        let max = upper[axis].as_f64()
+            .ok_or_else(|| invalid("native arena source maximum is missing"))?;
+        if !min.is_finite() || !max.is_finite() || min >= max {
+            return Err(invalid("native arena source bounds are not finite").into());
+        }
+        middle[axis] = ((min + max) * 0.5) as f32;
+    }
+    // 4-unit source map steps; keep square bounds within NavigationGrid's
+    // existing one-million-cell hard cap. The UI offers bounded sizes.
+    if size < 64 || size > 4000 || size % 4 != 0 {
+        return Err(invalid("invalid source-sized native arena").into());
+    }
+    let half = size as f32 * 0.5;
+    let [x, y] = middle;
+    scene["bounds"] = json!({
+        "min": [x - half, y - half], "max": [x + half, y + half],
+    });
+    scene["starting_positions"] = json!([
+        [x - half * 0.5, y], [x + half * 0.5, y],
+    ]);
+    run["fragment_spawn"]["map_bounds"] = scene["bounds"].clone();
+    run["fragment_spawn"]["half_map_extents"] = json!([half, half]);
+
+    let center = half + 12.0;
+    let overhung = half + 24.0;
+    let border_specs = [
+        ("Top Border", [x, y + center], [overhung, 12.0]),
+        ("Bottom Border Variant", [x, y - center], [overhung, 12.0]),
+        ("Left Border Variant", [x - center, y], [12.0, overhung]),
+        ("Right Border Variant", [x + center, y], [12.0, overhung]),
+    ];
+    layout.add_map_borders.extend(
+        border_specs.into_iter().enumerate().map(|(index, (name, position, half))|
+            NativePlacedStaticBox {
+                // Distinct from source ships, cloned fighter IDs and the
+                // cover obstacles at 20_001..20_004.
+                entity_id: 20_101 + index as i64,
+                prefab_name: name.into(),
+                position,
+                rotation_degrees: 0.0,
+                local_corners: Some([
+                    [-half[0], -half[1]], [half[0], -half[1]],
+                    [half[0], half[1]], [-half[0], half[1]],
+                ]),
+            }
+        ),
+    );
+    Ok(())
+}
+
 /// Freeze a complete custom battle beside its eventual input trace. Replays
 /// load these exact authored scene/config bytes, not today's library template.
 pub(super) fn archive(
@@ -900,6 +969,11 @@ pub(super) fn archive(
     cloned.add_static_boxes.extend(cover.iter().enumerate().map(|(index, &position)|
         cover_box(20_001 + index as i64, position)
     ));
+    if let Some(size) = selected.arena_size {
+        apply_native_arena(&mut scene, &mut run, &mut cloned, size)?;
+        let name = scene["level_name"].as_str().unwrap_or("Fleet Skirmish");
+        scene["level_name"] = json!(format!("{name}  |  Arena: {size} x {size}"));
+    }
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
     let mut deferred_squads = Vec::new();
     if matches!(selected.objective, Objective::Survival) {
