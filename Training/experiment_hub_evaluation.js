@@ -98,12 +98,22 @@ function evaluationEvidence(value,policy,dispatchId) {
         (policy.suite_sha256&&value.suite_sha256!==policy.suite_sha256)||
         typeof value.checkpoint_sha256!=='string'||!SHA256.test(value.checkpoint_sha256)||
         !trials(value.trials)||!Number.isSafeInteger(value.successes)||
-        value.successes<0||value.successes>value.trials)
+        value.successes<0||value.successes>value.trials||
+        (Object.hasOwn(value,'steps_completed')&&
+            (!Number.isSafeInteger(value.steps_completed)||value.steps_completed<0))||
+        (Object.hasOwn(value,'runtime_sha256')&&
+            (typeof value.runtime_sha256!=='string'||!SHA256.test(value.runtime_sha256)))||
+        (Object.hasOwn(value,'evaluated_at')&&
+            (typeof value.evaluated_at!=='string'||!Number.isFinite(Date.parse(value.evaluated_at))||
+             new Date(value.evaluated_at).toISOString()!==value.evaluated_at)))
         throw Error('Invalid independent evaluation evidence for this suite and dispatch.');
     return {schema_version:1,suite_id:value.suite_id,dispatch_id:dispatchId,
         checkpoint_sha256:value.checkpoint_sha256,trials:value.trials,
         successes:value.successes,
-        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
+        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{}),
+        ...(value.runtime_sha256?{runtime_sha256:value.runtime_sha256}:{}),
+        ...(value.steps_completed!==undefined?{steps_completed:value.steps_completed}:{}),
+        ...(value.evaluated_at?{evaluated_at:value.evaluated_at}:{})};
 }
 function evaluationRules(policy) {
     return policy?.all_of|| (policy?[policy]:[]);
