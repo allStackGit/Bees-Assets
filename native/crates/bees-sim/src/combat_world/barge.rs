@@ -397,6 +397,11 @@ impl CombatWorld {
             if self.obstacles[obstacle_index].kind != ObstacleKind::MapBorder {
                 continue;
             }
+            if self.ship_bounds_overrides.contains(&contact.ship_id) {
+                // MapBorder returns immediately for source
+                // Ship.CanOverrideBounds, before Barge.StopCharge.
+                continue;
+            }
             if self.game_barge_charges.get(&contact.ship_id)
                 .is_some_and(|charge|
                     charge.phase == 2 && !charge.can_override_bounds
