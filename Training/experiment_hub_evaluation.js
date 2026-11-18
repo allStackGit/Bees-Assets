@@ -100,6 +100,32 @@ function activeEvaluation(job) {
     return job?.evaluation_monitor||job?.evaluation_stop||null;
 }
 
+// Optional domain measurements remain observational and cannot contribute
+// to the shared success threshold or grant checkpoint-promotion authority.
+function evaluationMeasurements(metrics) {
+    if(metrics===undefined)return undefined;
+    if(!record(metrics)||Object.keys(metrics).length>24)
+        throw Error('Independent evaluation measurements must be a bounded object.');
+    const normalized={};
+    for(const [key,measurement] of Object.entries(metrics)) {
+        if(!/^[a-z][a-z0-9_]{0,47}$/.test(key)||
+            !record(measurement)||
+            Object.keys(measurement).some(k=>!['value','unit'].includes(k))||
+            Object.keys(measurement).length!==2||
+            !['count','ratio','scalar','seconds'].includes(measurement.unit)||
+            typeof measurement.value!=='number'||
+            !Number.isFinite(measurement.value)||
+            Math.abs(measurement.value)>1e12||
+            (measurement.unit==='ratio'&&
+             (measurement.value<0||measurement.value>1))||
+            (measurement.unit==='count'&&
+             (!Number.isSafeInteger(measurement.value)||measurement.value<0)))
+            throw Error('Invalid independent evaluation measurement '+key+'.');
+        normalized[key]={value:measurement.value,unit:measurement.unit};
+    }
+    return normalized;
+}
+
 function evaluationEvidence(value,policy,dispatchId) {
     if(!record(value)||value.schema_version!==1||
         value.suite_id!==policy.suite_id||value.dispatch_id!==dispatchId||
@@ -123,7 +149,8 @@ function evaluationEvidence(value,policy,dispatchId) {
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{}),
         ...(value.runtime_sha256?{runtime_sha256:value.runtime_sha256}:{}),
         ...(value.steps_completed!==undefined?{steps_completed:value.steps_completed}:{}),
-        ...(value.evaluated_at?{evaluated_at:value.evaluated_at}:{})};
+        ...(value.evaluated_at?{evaluated_at:value.evaluated_at}:{}),
+        ...(value.metrics!==undefined?{metrics:evaluationMeasurements(value.metrics)}:{})};
 }
 function evaluationRules(policy) {
     return policy?.all_of|| (policy?[policy]:[]);
