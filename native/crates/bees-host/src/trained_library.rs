@@ -434,11 +434,17 @@ const MAX_TRAINED_GALLERY_ENTRIES: usize = 4096;
 pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>> {
     let manifest = save_root.join("trained-models.json");
     let mut registrations = if manifest.is_file() {
-        let registry: Registration = serde_json::from_slice(&fs::read(&manifest)?)?;
-        if registry.schema_version != 1 {
-            return Err(invalid("unsupported trained-model gallery registration").into());
+        match fs::read(&manifest).ok()
+            .and_then(|bytes| serde_json::from_slice::<Registration>(&bytes).ok()) {
+            Some(registry) if registry.schema_version == 1 => registry.models,
+            _ => {
+                eprintln!(
+                    "Ignoring unreadable or unsupported native manual gallery {}; independently published checkpoints remain available",
+                    manifest.display(),
+                );
+                Vec::new()
+            }
         }
-        registry.models
     } else {
         Vec::new()
     };
@@ -459,7 +465,11 @@ pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>>
                 continue; // pending atomic writes are deliberately invisible
             }
             if !entry.file_type()?.is_file() {
-                return Err(invalid("native trained-model registration is not a regular file").into());
+                eprintln!(
+                    "Ignoring non-regular native training registration {}",
+                    path.display(),
+                );
+                continue;
             }
             files.push(path);
             if registrations.len() + files.len() > MAX_TRAINED_GALLERY_ENTRIES {
