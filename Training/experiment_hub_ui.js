@@ -1801,6 +1801,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-historical-import').hidden=project!=='tinybrains';
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
         const evalHistory=new Map(evalSamples.map(s=>[s.job_id,s.points||[]]));
+        const evalTotals=new Map(evalSamples.map(s=>
+            [s.job_id,s.total_records??(s.points||[]).length]));
         const evalDiagnostics=new Map((comparisonProject===project
             ?comparisonData?.evaluation_diagnostics||[]:[])
             .map(s=>[s.job_id,s.events||[]]));
@@ -1897,6 +1899,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const job=jobs.find(j=>j.id===id);
             return job?{job,color:compareColor(i),slot:String(i+1),
                 points:history.get(id)||[],evaluation_points:evalHistory.get(id)||[],
+                evaluation_total_records:evalTotals.get(id)??0,
                 evaluation_diagnostics:evalDiagnostics.get(id)||[]}:null;
         }).filter(Boolean);
         const metricSelect=$('hub-compare-metric');
@@ -2010,6 +2013,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' regression analysis '+observation.status+': '+observation.reason);
         }
         for(const run of runs) {
+            if(run.evaluation_total_records>run.evaluation_points.length)
+                warnings.push('Run '+run.slot+' displays '+
+                    run.evaluation_points.length+' of '+
+                    run.evaluation_total_records+
+                    ' archived independent evaluation observations. The chart is sampled by frozen suite and runtime; Export complete job diagnostics to retrieve the original unsampled native-job history.');
             const recentIssue=run.evaluation_diagnostics?.at(-1);
             const resolved=recentIssue?.evaluation_status==='failed'&&
                 (run.evaluation_points||[]).some(receipt=>
@@ -3096,6 +3104,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const evalByJob=new Map((comparisonProject===project&&
             comparisonData?.evaluations||[]).map(sample=>
             [sample.job_id,sample.points||[]]));
+        const evalTotalsByJob=new Map((comparisonProject===project&&
+            comparisonData?.evaluations||[]).map(sample=>
+            [sample.job_id,sample.total_records??(sample.points||[]).length]));
         const issuesByJob=new Map((comparisonProject===project&&
             comparisonData?.evaluation_diagnostics||[]).map(sample=>
             [sample.job_id,sample.events||[]]));
@@ -3140,6 +3151,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
                 evaluation_history:evalByJob.get(id)||[],
+                evaluation_history_total_records:evalTotalsByJob.get(id)??0,
+                evaluation_history_export_is_sampled:
+                    (evalTotalsByJob.get(id)??0)>(evalByJob.get(id)||[]).length,
                 evaluation_diagnostics:issuesByJob.get(id)||[],
                 historical_evaluation_only:job.evaluation_history_only===true,
                 historical_source_report_sha256:job.source_report_sha256||null,
@@ -3165,7 +3179,7 @@ document.addEventListener('DOMContentLoaded', () => {
             x_axis:$('hub-compare-x-axis').value,
             metric:selectedComparisonMetrics()[0]||null,metrics,
             source:'Experiment Hub validated project metrics',
-            interpretation:'Training curves and independent evaluation records are observational. Their horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Evaluation curves are checkpoint-bound and only directly comparable across matching frozen suite definitions. Failed independent evaluation attempts have verified checkpoint identities but no measured score. Unavailable receipt diagnostics have neither score nor checkpoint identity. Neither diagnostic can authorize Stop or promotion.',
+            interpretation:'Training curves and independent evaluation records are observational. Their horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Evaluation curves are checkpoint-bound and only directly comparable across matching frozen suite definitions. This comparison export contains bounded chart observations, not necessarily the complete durable independent evaluation archive; see each run evaluation_history_total_records and use the complete job diagnostics export for all native-job observations. Failed attempts have verified checkpoint identities but no score; unavailable receipt diagnostics have neither score nor checkpoint identity. Neither diagnostic can authorize Stop or promotion.',
             runs,
             candidate_selection_plans:(state.candidate_selections||[]).filter(p=>
                 p.candidate_job_ids?.some(id=>runs.some(r=>r.job_id===id))),
