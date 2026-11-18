@@ -981,7 +981,11 @@ the command/fingerprint recording; its adjacent
 `battle-####/campaign-replay-setup.json` freezes the pre-battle fleet and
 tactics so later career changes do not alter the recorded encounter.
 Without `--serve`, the existing campaign command remains a fast headless
-mission run.
+mission run. A recorded campaign can be reproduced without a GUI using
+`bees replay-campaign <battle-####/campaign-replay-setup.json> --output-dir
+<new-replay-dir> --replay-inputs <battle-####/run/player-inputs.jsonl>`.
+This replays the original career roster and action stream but never
+commits another campaign outcome, purchase, or casualty.
 
 To deterministically replay a standalone match later, stop/unset the remote-listening
 environment and run `bees run <same-run.json> --output-dir <new-replay-dir>
