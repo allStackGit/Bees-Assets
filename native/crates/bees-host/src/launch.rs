@@ -3395,26 +3395,34 @@ fn run_battle(
         // reject real extraction and survival episodes before simulation.
         // Persisted campaign missions still require human control and never
         // gain policy authority implicitly.
+        let deferred_squads: HashSet<i64> = level.reinforcements.iter()
+            .flat_map(|wave| wave.squad_item_ids.iter().copied()).collect();
         let objective_has_controller = |side| source.source_squads.iter().any(|squad|
             squad.side == side && !squad.members.is_empty() &&
             (squad.player_permissions.user_controlled ||
-             (mission.is_none() && level.groups.is_some() &&
-              squad.members.iter().any(|id|
-                  source.source_policy_bindings.contains_key(id))))
+             (mission.is_none() && (
+                 (level.groups.is_some() && squad.members.iter().any(|id|
+                     source.source_policy_bindings.contains_key(id))) ||
+                 (!deferred_squads.contains(&squad.item_id) &&
+                  level.scripted_queues.iter().any(|queue|
+                     queue.squad_item_id == squad.item_id &&
+                     !queue.orders.is_empty() &&
+                     matches!(queue.activation, ScriptedActivationConfig::Immediate)))
+             )))
         );
         if let Some(zone) = &level.extraction {
             if !sides.contains(&zone.player_side) ||
                 mission.is_some_and(|mission| mission.player_side != zone.player_side) ||
                 !objective_has_controller(zone.player_side)
             {
-                return Err(invalid("Extraction requires an authenticated player or policy controller on its objective side").into());
+                return Err(invalid("Extraction requires a deployed player, policy or scripted controller on its objective side").into());
             }
         }
         if let Some(objective) = &level.survival {
             if mission.is_some_and(|mission| mission.player_side != objective.defending_side) ||
                 !objective_has_controller(objective.defending_side)
             {
-                return Err(invalid("Survival requires an authenticated player or policy controller on its defending side").into());
+                return Err(invalid("Survival requires a deployed player, policy or scripted controller on its defending side").into());
             }
             if mission.is_some() {
                 // The shared survival controller wins only after
