@@ -568,6 +568,61 @@ class EvaluationHistory {
         writeNew(metaFile,metadata);
         return {job_id:id,imported:true,recovered,record_count:rows.length};
     }
+    // Regression stopping is optional and separate from chart rendering,
+    // success-based Stop evidence and candidate-promotion authority. Decide
+    // only from the complete fsynced archive, with the newest receipt still
+    // matching the authenticated, lifecycle-accepted native observation.
+    regressionStopDecision(job,receipt) {
+        if(job?.status!=='running'||job?.stop_requested_at||
+            job?.evaluation_history_only===true||
+            job?.evaluation_monitor?.regression_alert?.stop_on_regression!==true||
+            !UUID.test(String(job.id||''))||
+            !UUID.test(String(job.dispatch_id||''))||
+            !SHA256.test(String(receipt?.suite_sha256||''))||
+            !SHA256.test(String(receipt?.runtime_sha256||''))||
+            !SHA256.test(String(receipt?.checkpoint_sha256||''))||
+            receipt.dispatch_id!==job.dispatch_id||
+            !Number.isSafeInteger(receipt.steps_completed))
+            return null;
+        try {
+            if(this.issues.has('conflict:'+job.id))return null;
+            const records=this.load(job.id,job.project_id).records;
+            const source=records.find(row=>
+                row.dispatch_id===job.dispatch_id&&
+                row.suite_id===receipt.suite_id&&
+                row.checkpoint_sha256===receipt.checkpoint_sha256&&
+                row.suite_sha256===receipt.suite_sha256&&
+                row.runtime_sha256===receipt.runtime_sha256&&
+                row.steps_completed===receipt.steps_completed&&
+                row.trials===receipt.trials&&
+                row.successes===receipt.successes&&
+                row.evaluated_at===receipt.evaluated_at);
+            if(!source)return null;
+            const signal=regressionSignals(job,records).find(row=>
+                row.suite_id===receipt.suite_id&&
+                row.status==='regressed');
+            if(!signal||signal.latest?.end_update!==receipt.steps_completed||
+                signal.suite_sha256!==receipt.suite_sha256||
+                signal.runtime_sha256!==receipt.runtime_sha256)
+                return null;
+            return {schema_version:1,dispatch_id:job.dispatch_id,
+                suite_id:receipt.suite_id,
+                suite_sha256:receipt.suite_sha256,
+                runtime_sha256:receipt.runtime_sha256,
+                checkpoint_sha256:receipt.checkpoint_sha256,
+                steps_completed:receipt.steps_completed,
+                evaluated_at:receipt.evaluated_at,
+                window_checkpoints:signal.window_checkpoints,
+                minimum_drop:signal.minimum_drop,drop:signal.drop,
+                baseline:signal.baseline,latest:signal.latest,
+                confirmed_at:new Date().toISOString()};
+        }catch(error) {
+            this.issues.set('regression:'+job.id,
+                'Independent regression Stop evidence unavailable: '+
+                String(error.message||error).slice(0,160));
+            return null;
+        }
+    }
     snapshot(projectId,jobs) {
         const samples=[],regressions=[],diagnostics=[];
         for(const job of jobs) {
