@@ -26,6 +26,7 @@ import tempfile
 
 from experiment_hub_eval_io import SHA256, suite_digest
 from experiment_hub_tinybrains_evaluate import evaluate_with_metrics, read_suite
+from experiment_hub_tinybrains_eval_poll import checkpoint_update
 from experiment_hub_tinybrains_runtime import configure_engine
 
 
@@ -86,6 +87,14 @@ def audit(args) -> dict:
                 raise ValueError(f"Checkpoint changed during private copy: {original}")
             with frozen.open("rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            # A filename is not evidence of a PPO update. This is the same
+            # trusted checkpoint field verified by the native TinyBrains
+            # poller, read once from the immutable private copy.
+            stored_update = checkpoint_update(frozen)
+            if stored_update != update:
+                raise ValueError(
+                    f"Historical checkpoint {original.name} claims update {update}, "
+                    f"but its saved PPO state records update {stored_update}.")
             for suite in suites:
                 work = temp / ("evaluation-" + suite["suite_id"])
                 work.mkdir()
