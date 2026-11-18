@@ -192,6 +192,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_remote_progress_skipped',
             'training_remote_progress_bytes',
             'training_remote_progress_max_seconds',
+            'training_remote_progress_encode_seconds',
             'training_remote_critical_gap_ratio',
             'training_remote_prev_encode_max_seconds',
             'training_remote_prev_send_max_seconds',
