@@ -62,12 +62,30 @@ function evaluationPolicy(value) {
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
 }
 
+// Regression monitoring is descriptive evidence only, never native Stop or
+// checkpoint-promotion authority. Require complete, bounded parameters.
+function regressionAlertPolicy(value) {
+    if(value===undefined)return undefined;
+    if(!record(value)||Object.keys(value).length!==2||
+        !Number.isSafeInteger(value.window_checkpoints)||
+        value.window_checkpoints<2||value.window_checkpoints>20||
+        typeof value.minimum_drop!=='number'||
+        !Number.isFinite(value.minimum_drop)||
+        !(value.minimum_drop>0&&value.minimum_drop<=1)||
+        !Object.hasOwn(value,'window_checkpoints')||
+        !Object.hasOwn(value,'minimum_drop'))
+        throw Error('Regression alerts need a 2–20 checkpoint window and an absolute success-rate drop in (0, 1].');
+    return {window_checkpoints:value.window_checkpoints,
+        minimum_drop:value.minimum_drop};
+}
+
 // Monitoring suites share the immutable receipt contract, but have no
 // success threshold and cannot authorize a native Stop.
 function monitoringPolicy(value) {
     if(value==null)return null;
     if(record(value)&&Object.hasOwn(value,'all_of')) {
-        if(Object.keys(value).some(key=>!['all_of','every_n_checkpoints','include_baseline','include_final'].includes(key))||
+        if(Object.keys(value).some(key=>!['all_of','every_n_checkpoints','include_baseline','include_final',
+            'regression_alert'].includes(key))||
             (value.include_baseline!==undefined&&typeof value.include_baseline!=='boolean')||
             (value.include_final!==undefined&&typeof value.include_final!=='boolean')||
             !Array.isArray(value.all_of)||
@@ -76,19 +94,25 @@ function monitoringPolicy(value) {
              (!Number.isSafeInteger(value.every_n_checkpoints)||
               value.every_n_checkpoints<1||value.every_n_checkpoints>1000000)))
             throw Error('Monitoring requires 2–8 distinct independent suites and a valid cadence.');
-        const rules=value.all_of.map(monitoringPolicy);
+        const rules=value.all_of.map(rule=>{
+            if(record(rule)&&Object.hasOwn(rule,'regression_alert'))
+                throw Error('Regression alert parameters belong to the monitoring policy, not individual suite rules.');
+            return monitoringPolicy(rule);
+        });
         if(rules.some(rule=>!rule||rule.all_of||
             rule.include_baseline!==undefined||rule.include_final!==undefined)||
             new Set(rules.map(rule=>rule.suite_id)).size!==rules.length)
             throw Error('Multi-suite monitoring requires distinct suite IDs; baseline and final scheduling are shared.');
         return {all_of:rules,...(value.every_n_checkpoints!=null
             ?{every_n_checkpoints:value.every_n_checkpoints}:{}),
+            ...(value.regression_alert!==undefined
+                ?{regression_alert:regressionAlertPolicy(value.regression_alert)}:{}),
             ...(value.include_baseline!==undefined?{include_baseline:value.include_baseline}:{}),
             ...(value.include_final!==undefined?{include_final:value.include_final}:{})};
     }
     if(!record(value)||Object.keys(value).some(key=>
         !['suite_id','suite_sha256','min_trials','every_n_checkpoints',
-          'include_baseline','include_final'].includes(key))||
+          'include_baseline','include_final','regression_alert'].includes(key))||
         (value.include_baseline!==undefined&&typeof value.include_baseline!=='boolean')||
         (value.include_final!==undefined&&typeof value.include_final!=='boolean')||
         typeof value.suite_id!=='string'||!SUITE.test(value.suite_id)||
@@ -104,7 +128,9 @@ function monitoringPolicy(value) {
         ...(value.every_n_checkpoints!=null
             ?{every_n_checkpoints:value.every_n_checkpoints}:{}),
         ...(value.include_baseline!==undefined?{include_baseline:value.include_baseline}:{}),
-        ...(value.include_final!==undefined?{include_final:value.include_final}:{})};
+        ...(value.include_final!==undefined?{include_final:value.include_final}:{}),
+        ...(value.regression_alert!==undefined
+            ?{regression_alert:regressionAlertPolicy(value.regression_alert)}:{})};
 }
 // A monitoring cadence may also have a success gate, but both policies
 // must describe precisely the same frozen suite set and trial requirements.
