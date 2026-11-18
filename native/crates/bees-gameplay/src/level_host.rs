@@ -395,6 +395,7 @@ pub enum NativeTargetingRequestSourceError {
 #[derive(Debug)]
 pub enum NativeLevelSourceError<E> {
     TerminalPerception(bees_sim::perception::PerceptionError),
+    MissingAdmittedPolicyController(i64),
     MissingRegisteredWorld,
     UnregisteredWorldCount,
     WorldIdentityChanged,
@@ -705,12 +706,24 @@ impl NativeLevelBatchDriver {
         let mut perception = assembly.perception.for_policy_boundary();
         let mut writer = NativePerceptionWriter::new();
         let mut rows = Vec::new();
-        for (ship_id, binding_revision) in combat.bound_policy_agent_bindings() {
-            if admitted.is_some_and(|ids| ids.binary_search(&ship_id).is_err()) {
-                continue;
-            }
+        // Query the newly admitted bindings by their actual physical IDs:
+        // O(new arrivals) rather than iterating the entire old fleet.
+        let bindings: Vec<(i64, u64)> = if let Some(ids) = admitted {
+            ids.iter().map(|&id| combat.policy_binding_revision(id)
+                .map(|revision| (id, revision))
+                .ok_or(NativeLevelSourceError::MissingAdmittedPolicyController(id)))
+                .collect::<Result<_, _>>()?
+        } else {
+            combat.bound_policy_agent_bindings().collect()
+        };
+        for (ship_id, binding_revision) in bindings {
             let Some(group_agent) = metadata.group_agent_for_ship(ship_id)
-                .map_err(NativeLevelSourceError::Source)? else { continue };
+                .map_err(NativeLevelSourceError::Source)? else {
+                    if admitted.is_some() {
+                        return Err(NativeLevelSourceError::MissingAdmittedPolicyController(ship_id));
+                    }
+                    continue;
+                };
             let inputs = metadata.inputs_for_agent(combat, ship_id)
                 .map_err(NativeLevelSourceError::Source)?;
             let snapshot = perception.assemble(
