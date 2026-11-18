@@ -194,8 +194,10 @@ pub struct NativePolicyOnlyMetadata {
     source_static_discovery_values: HashMap<i64, i32>,
     explorers: Vec<Explorer>,
     agents: HashMap<i64, AuthoredPolicyAgent>,
-    /// Stable original route by source faction. Newborn controllers inherit
-    /// from this route without scanning every past wave's agent metadata.
+    /// Fast candidate for source-faction ownership. A deferred ship can
+    /// appear in the authored metadata before its physical spawn: the
+    /// lookup must still validate the actual CombatWorld binding and fall
+    /// back to another live same-side controller when needed.
     policy_side_representative: HashMap<i32, i64>,
     /// Original physical agents retain their authenticated source routes.
     /// Only transient Queen children have a separately reclaimable owner.
@@ -466,7 +468,7 @@ impl NativePolicyOnlyMetadata {
     /// The metadata retains original routes after ship death, just as the
     /// Unity policy group retains its episode team while reusing agents.
     fn queen_policy_controller(
-        &self, queen_id: i64, side: i32,
+        &self, world: &CombatWorld, queen_id: i64, side: i32,
     ) -> Option<&AuthoredPolicyAgent> {
         // Source-authored game Queen minions are autonomous unless the
         // Queen's physical minion template also authenticates its neural
@@ -478,8 +480,13 @@ impl NativePolicyOnlyMetadata {
         self.agents.get(&queen_id)
             .filter(|agent| agent.side == side)
             .or_else(|| self.policy_side_representative.get(&side)
+                .filter(|&&id| world.policy_frame(id).is_some())
                 .and_then(|id| self.agents.get(id))
                 .filter(|agent| agent.side == side))
+            .or_else(|| self.agents.values()
+                .filter(|agent| agent.side == side &&
+                    world.policy_frame(agent.ship_id).is_some())
+                .min_by_key(|agent| agent.ship_id))
     }
 
     /// A rendered Level may change externally authored ship/controller
@@ -600,7 +607,7 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             // A non-policy faction retains its ordinary physical minions
             // and script/HiveMind/player command ownership. No model route
             // or policy-only Bomb observation is required for that faction.
-            let Some(parent_agent) = self.queen_policy_controller(queen_id, side) else {
+            let Some(parent_agent) = self.queen_policy_controller(world, queen_id, side) else {
                 self.queen_controller_measurements.ordinary_minions_preserved += 1;
                 continue;
             };
