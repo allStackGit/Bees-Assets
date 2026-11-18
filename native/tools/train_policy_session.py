@@ -313,7 +313,8 @@ def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot,
     return completed, manifest, checkpoint, next_attempt
 
 
-def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_seed):
+def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_seed,
+                      inference_device=None):
     result = read_json(directory / "evaluation-result.json")
     summary_path = directory / "rollout-summary.json"
     if (result.get("kind") != "native_policy_evaluation_complete" or
@@ -322,6 +323,7 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_
             result.get("source_run_config_sha256") != source_sha or
             result.get("learner_side") != learner_side or
             result.get("policy_sampling_seed") != policy_seed or
+            result.get("inference_device_override") != inference_device or
             result.get("rollout_summary_sha256") != file_sha256(summary_path)):
         raise ValueError(f"holdout evaluation does not match its pinned inputs: {directory}")
     summary = read_json(summary_path)
@@ -420,7 +422,8 @@ def ensure_evaluation(round_directory, manifest, recipe):
         raise ValueError(f"more than one completed evaluation for {round_directory}")
     if completed:
         return verify_evaluation(completed[0], manifest_sha, source_sha,
-                                 recipe["evaluation_side"], recipe["evaluation_policy_seed"])
+                                 recipe["evaluation_side"], recipe["evaluation_policy_seed"],
+                                 recipe.get("evaluation_inference_device"))
     attempt = max((number for number, _ in attempts), default=0) + 1
     if attempt > 999:
         raise ValueError("holdout evaluation exhausted its attempt numbers")
@@ -433,11 +436,14 @@ def ensure_evaluation(round_directory, manifest, recipe):
         command.extend(["--rollout-binary", recipe["rollout_binary"]["path"]])
     if "evaluation_physics_workers" in recipe:
         command.extend(["--physics-workers", str(recipe["evaluation_physics_workers"])])
+    if "evaluation_inference_device" in recipe:
+        command.extend(["--inference-device", recipe["evaluation_inference_device"]])
     print(json.dumps({"kind":"native_training_session_evaluation_started",
                       "round_directory":str(round_directory), "attempt":attempt}),flush=True)
     launch_round(command, round_directory / f"evaluation-attempt-{attempt:03d}.log")
     return verify_evaluation(output, manifest_sha, source_sha,
-                             recipe["evaluation_side"], recipe["evaluation_policy_seed"])
+                             recipe["evaluation_side"], recipe["evaluation_policy_seed"],
+                             recipe.get("evaluation_inference_device"))
 
 
 
@@ -921,6 +927,8 @@ def main():
                         help="run a pinned holdout every N optimizer rounds and at the final target (default: 1)")
     parser.add_argument("--evaluation-physics-workers", type=int,
                         help="independent native CPU physics workers for each holdout; does not change rollout allocation")
+    parser.add_argument("--evaluation-inference-device", choices=("cpu", "cuda:0"),
+                        help="fixed PyTorch inference placement for identical evaluation suites")
     parser.add_argument("--early-stop-patience", type=int,
                         help="stop after this many evaluated rounds without meaningful fixed-reference victories")
     parser.add_argument("--early-stop-minimum-rounds", type=int, default=3,
@@ -1145,6 +1153,10 @@ def main():
     # selection was not specified; older recipes have no such field.
     if args.physics_workers is not None:
         recipe["physics_workers"] = args.physics_workers
+    if args.evaluation_inference_device is not None:
+        if args.evaluation_run_config is None:
+            parser.error("--evaluation-inference-device requires fixed evaluation suites")
+        recipe["evaluation_inference_device"] = args.evaluation_inference_device
     if args.rollout_gpus is not None:
         recipe["rollout_gpus"] = args.rollout_gpus
         recipe["rollout_gpu_mask"] = args.rollout_gpu_mask or "CUDA_VISIBLE_DEVICES"
