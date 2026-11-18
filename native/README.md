@@ -162,9 +162,17 @@ Unity gameplay parity.
 
 The native game's **Fleet Skirmish** builder saves a
 `replay-source-run.json` beside its recorded battle. In the game library,
-choose **Train Saved Fleet** to select an elimination skirmish, optimizer
-rounds, concurrent arenas, physics CPU workers, and CPU or PyTorch GPU
-optimizer. The native game starts the existing trainer outside the window
+choose **Train Saved Fleet** to select an elimination skirmish, which
+faction learns, optimizer rounds, parallel arenas, CPU physics workers, and
+CPU or PyTorch GPU optimization. You can select a saved PPO configuration from
+`<save-root>/training/configurations/*.yaml` or `*.yml`; the chosen
+file is copied and SHA-256 pinned to that experiment before model creation.
+When a compiled `policy_rollout` executable is available, the menu also
+offers independent persistent rollout processes for faster multi-core
+collection. Set `BEES_NATIVE_ROLLOUT_BINARY` to an explicit executable if
+auto-discovery does not find the intended build; the executable is hashed and
+reverified on resume. Each process gets its own specified physics workers.
+The native game starts the existing trainer outside the window
 and returns to the library immediately. The menu can optionally
 enable MA-POCA self-play, promoting the learner's verified checkpoint to
 the opposing policy every 1, 3 or 5 completed rounds. Longer experiments
