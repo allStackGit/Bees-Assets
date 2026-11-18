@@ -2174,6 +2174,23 @@ run configurations and all referenced scenes/assets are hash-pinned. This
 supports comparing different experiments against identical independent
 suites without mixing training observations with held-out performance.
 
+Compare the independently monitored suites from two completed or ongoing
+training sessions using only the shared SHA-pinned source suites:
+
+```sh
+python3 native/tools/compare_training_sessions.py   first-session/session-progress.json second-session/session-progress.json
+```
+
+This reports each suite's baseline and per-checkpoint win/draw rates,
+the latest model difference, and whether the actual reference-opponent
+weights and runtime settings can be verified identical across sessions.
+Use `--require-fixed-opponent` when a comparison must fail unless opponent
+weights can be verified from the original pinned model manifests.
+Comparisons use aggregate finished episode results; they do not claim
+episode-by-episode statistical pairing or generalization from a single
+holdout.
+
+
 To reduce fixed-holdout overhead on high-SPS training, optionally
 add `--evaluation-every 4` alongside the pinned holdout suite. The
 session still evaluates the initial model and its final checkpoint, but

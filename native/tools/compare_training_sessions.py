@@ -1,0 +1,225 @@
+"""Compare native training checkpoints on identical independent held-out suites.
+
+Reads completed session progress receipts; never trains, replays, or changes
+model artifacts. Aggregate win-rate deltas are descriptive, not paired
+episode-level significance tests.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+
+from native_training_artifacts import file_sha256
+
+
+def read_json(path):
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return value
+
+
+def model_opponents(receipt, learner_slot):
+    """Authenticate nonlearner weights and inference settings when available.
+
+    A suite is NOT called fixed-opponent comparable when a manifest cannot
+    be read, the model's learner slot is ambiguous, or its referenced
+    weight bytes changed. Source Level fingerprints remain separately pinned.
+    """
+    if type(learner_slot) is not int:
+        return None
+    path = Path(receipt.get("model_manifest", ""))
+    if not path.is_file() or file_sha256(path) != receipt.get("model_manifest_sha256"):
+        return None
+    manifest = read_json(path)
+    models = manifest.get("models")
+    if not isinstance(models, list):
+        return None
+    opponents, seen, has_learner = {}, set(), False
+    for model in models:
+        if not isinstance(model, dict):
+            return None
+        slot = model.get("slot")
+        if type(slot) is not int or slot in seen:
+            return None
+        seen.add(slot)
+        if slot == learner_slot:
+            has_learner = True
+            continue
+        weight = model.get("path")
+        digest = model.get("sha256")
+        if not isinstance(weight, str) or not isinstance(digest, str):
+            return None
+        file_path = (path.parent / weight).resolve()
+        if not file_path.is_file() or file_sha256(file_path) != digest:
+            return None
+        opponents[str(slot)] = {key: value for key, value in model.items()
+                                if key != "path"}
+    if not opponents or not has_learner:
+        return None
+    return hashlib.sha256(json.dumps(
+        opponents, sort_keys=True, separators=(",", ":")
+    ).encode()).hexdigest()
+
+
+def validated_receipt(receipt, scene_sha, side, seed, episodes):
+    if not isinstance(receipt, dict) or (
+        receipt.get("kind") != "native_policy_evaluation_complete" or
+        receipt.get("schema_version") != 1 or
+        receipt.get("source_run_config_sha256") != scene_sha or
+        receipt.get("learner_side") != side or
+        receipt.get("policy_sampling_seed") != seed or
+        receipt.get("episodes") != episodes
+    ):
+        raise ValueError("training progress contains an incompatible holdout receipt")
+    wins, draws = receipt.get("side_victories"), receipt.get("draws")
+    if (type(wins) is not int or type(draws) is not int or
+            not 0 <= wins <= episodes or
+            not 0 <= draws <= episodes - wins or
+            receipt.get("side_win_rate") != wins / episodes or
+            receipt.get("draw_rate") != draws / episodes):
+        raise ValueError("training progress contains impossible holdout outcomes")
+    return receipt
+
+
+def suites(progress, config):
+    if progress.get("kind") != "native_training_session_progress" or (
+            progress.get("schema_version") != 1):
+        raise ValueError("not a completed native session progress snapshot")
+    results = {}
+    rounds = progress.get("rounds")
+    if not isinstance(rounds, list) or len(rounds) != progress.get("completed_rounds"):
+        raise ValueError("incomplete native training progress rounds")
+    if config.get("kind") != "native_training_session":
+        raise ValueError("session recipe is not a native training session")
+    candidates = []
+    if config.get("evaluation_config") is not None:
+        candidates.append((
+            "primary", config["evaluation_config"],
+            progress.get("baseline_holdout"),
+            [(row["round"], row["next_checkpoint_sha256"], row["holdout"])
+             for row in rounds if row.get("holdout") is not None],
+        ))
+    monitors = progress.get("monitoring_suites", [])
+    for suite in monitors:
+        candidates.append((
+            suite["suite_id"],
+            {"sha256": suite["source_run_config_sha256"]},
+            suite["baseline"],
+            [(row["round"], row["next_checkpoint_sha256"], row["monitor_holdouts"][suite["suite_id"]])
+             for row in rounds
+             if suite["suite_id"] in row.get("monitor_holdouts", {})],
+        ))
+    if not candidates:
+        raise ValueError("session has no independent evaluation suites")
+    for label, source, baseline, observations in candidates:
+        sha = source["sha256"]
+        if sha in results:
+            raise ValueError("session repeats a holdout source identity")
+        if not isinstance(baseline, dict):
+            raise ValueError("suite lacks a verified baseline receipt")
+        side = baseline.get("learner_side")
+        seed = baseline.get("policy_sampling_seed")
+        episodes = baseline.get("episodes")
+        if (type(side) is not int or type(seed) is not int or
+                type(episodes) is not int or episodes <= 0):
+            raise ValueError("invalid baseline evaluation context")
+        validated_receipt(baseline, sha, side, seed, episodes)
+        curve, opponents = [], []
+        opponents.append(model_opponents(baseline, config.get("learner_slot")))
+        last_round = 0
+        for number, checkpoint, receipt in observations:
+            if type(number) is not int or number <= last_round or (
+                    not isinstance(checkpoint, str) or len(checkpoint) != 64):
+                raise ValueError("invalid holdout round identity")
+            last_round = number
+            validated_receipt(receipt, sha, side, seed, episodes)
+            opponents.append(model_opponents(receipt, config.get("learner_slot")))
+            curve.append({
+                "round": number,
+                "checkpoint_sha256": checkpoint,
+                "model_manifest_sha256": receipt["model_manifest_sha256"],
+                "victories": receipt["side_victories"],
+                "draws": receipt["draws"],
+                "win_rate": receipt["side_win_rate"],
+                "draw_rate": receipt["draw_rate"],
+            })
+        fixed_opponent = (opponents[0] is not None and
+                          all(identity == opponents[0] for identity in opponents))
+        results[sha] = {
+            "suite": label, "source_run_config_sha256": sha,
+            "learner_side": side, "policy_sampling_seed": seed,
+            "episodes": episodes,
+            "baseline": {
+                "victories": baseline["side_victories"],
+                "draws": baseline["draws"],
+                "win_rate": baseline["side_win_rate"],
+                "draw_rate": baseline["draw_rate"],
+            },
+            "rounds": curve,
+            "fixed_opponent_identity": opponents[0] if fixed_opponent else None,
+        }
+    return results
+
+
+def describe(reference, candidate):
+    shared = sorted(reference.keys() & candidate.keys())
+    if not shared:
+        raise ValueError("sessions share no identical pinned evaluation suite source")
+    report = []
+    for sha in shared:
+        left, right = reference[sha], candidate[sha]
+        if any(left[field] != right[field] for field in
+               ("learner_side", "policy_sampling_seed", "episodes")):
+            raise ValueError(f"matched suite {sha} changed its side, sampling seed or episode count")
+        a = left["rounds"][-1] if left["rounds"] else left["baseline"]
+        b = right["rounds"][-1] if right["rounds"] else right["baseline"]
+        opponent_verified = (left["fixed_opponent_identity"] is not None and
+                             left["fixed_opponent_identity"] == right["fixed_opponent_identity"])
+        report.append({
+            "source_run_config_sha256": sha,
+            "reference_suite": left["suite"], "candidate_suite": right["suite"],
+            "learner_side": left["learner_side"],
+            "policy_sampling_seed": left["policy_sampling_seed"],
+            "episodes": left["episodes"],
+            "fixed_opponent_identity_verified": opponent_verified,
+            "reference": left, "candidate": right,
+            "reference_latest_win_rate": a["win_rate"],
+            "candidate_latest_win_rate": b["win_rate"],
+            "latest_win_rate_difference": b["win_rate"] - a["win_rate"],
+            "reference_gain_from_baseline":
+                a["win_rate"] - left["baseline"]["win_rate"],
+            "candidate_gain_from_baseline":
+                b["win_rate"] - right["baseline"]["win_rate"],
+        })
+    return {
+        "kind": "native_training_fixed_suite_comparison",
+        "scope": "aggregate_held_out_episode_outcomes_not_paired_episode_significance",
+        "shared_suite_count": len(report),
+        "unmatched_reference_suite_sha256": sorted(reference.keys() - candidate.keys()),
+        "unmatched_candidate_suite_sha256": sorted(candidate.keys() - reference.keys()),
+        "fixed_opponent_verified_for_all_shared_suites":
+            all(s["fixed_opponent_identity_verified"] for s in report),
+        "suites": report,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("reference", type=Path, help="session-progress.json")
+    parser.add_argument("candidate", type=Path, help="session-progress.json")
+    parser.add_argument("--require-fixed-opponent", action="store_true",
+                        help="reject comparison unless every shared suite has verifiably identical opponent artifacts")
+    args = parser.parse_args()
+    ref = args.reference.resolve(strict=True)
+    cand = args.candidate.resolve(strict=True)
+    reference = suites(read_json(ref), read_json(ref.parent / "session-config.json"))
+    candidate = suites(read_json(cand), read_json(cand.parent / "session-config.json"))
+    report = describe(reference, candidate)
+    if args.require_fixed_opponent and not report["fixed_opponent_verified_for_all_shared_suites"]:
+        parser.error("fixed opponent artifacts cannot be verified for every matched suite")
+    print(json.dumps(report, sort_keys=True, indent=2))
+
+
+if __name__ == "__main__":
+    main()
