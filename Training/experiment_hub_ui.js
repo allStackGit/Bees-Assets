@@ -5420,6 +5420,27 @@ document.addEventListener('DOMContentLoaded', () => {
                             ' · runtime SHA-256 '+(receipt.runtime_sha256||'unverified')+
                             (receipt.evaluated_at?' · evaluated '+receipt.evaluated_at:'');
                     }
+                    // Trainer counters alone never prove an evaluator
+                    // missed a saved checkpoint. After a sustained interval,
+                    // flag a possible monitoring stall for inspection rather
+                    // than interpreting absent benchmark scores as poor play.
+                    const spacing=rule.every_n_checkpoints||
+                        j.evaluation_monitor?.every_n_checkpoints||1;
+                    const lastUpdate=receipt?.steps_completed;
+                    const updatesSince=Number.isSafeInteger(lastUpdate)
+                        ?currentUpdate-lastUpdate:currentUpdate;
+                    const intervalMinutes=j.evaluation_monitor
+                        ?.min_minutes_between_evaluations;
+                    const lastTime=Date.parse(receipt?.evaluated_at||'');
+                    const throttled=intervalMinutes&&Number.isFinite(lastTime)&&
+                        Date.now()<lastTime+intervalMinutes*60000;
+                    if(monitoring&&j.status==='running'&&
+                        !j.capacity_released_at&&currentValid&&!throttled&&
+                        (receipt||j.evaluation_monitor.include_baseline!==false)&&
+                        updatesSince>=Math.max(20,3*spacing))
+                        line.textContent+=' REVIEW: no newer accepted suite receipt across '+
+                            updatesSince.toLocaleString()+
+                            ' trainer updates. Check saved checkpoint availability, evaluator scheduler and archived failures. This is missing evaluation evidence, not a model score.';
                     if(mismatched.length)
                         line.textContent+=' WARNING: '+mismatched.length+
                             ' sampled archived receipt(s) use a different suite SHA-256 than the configured pin '+
