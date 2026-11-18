@@ -649,7 +649,14 @@ def _validate_dynamic_episode(
     if episode_boundaries.keys() != required_ticks:
         raise ValueError("dynamic policy boundary misses an enrollment, retirement or terminal")
     for tick, frame in episode_boundaries.items():
-        active = {agent for agent in teams if starts[agent] <= tick <= closing[agent]}
+        if tick in admission_ticks and tick not in closing_ticks and tick != terminal_tick:
+            # An admission-only observation frame contains exactly the
+            # newborn policy controllers. Death and episode boundaries
+            # still contain the entire real active cohort. Avoid decoding
+            # 7,743 floats for every living teammate on every Queen birth.
+            active = {agent for agent in teams if starts[agent] == tick}
+        else:
+            active = {agent for agent in teams if starts[agent] <= tick <= closing[agent]}
         if frame.keys() != active:
             raise ValueError("dynamic policy boundary disagrees with physical cohort")
         for agent, row in frame.items():
