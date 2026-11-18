@@ -99,6 +99,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             // Report exposed CPU-prep wait, not concurrent background work
             // as a separate portion of whole-update wall.
             'ppo_prep_wait_seconds','ppo_prep_cpu_seconds',
+            'ppo_prep_background_chunks',
+            'ppo_prep_background_cpu_seconds',
+            'ppo_prep_background_wait_seconds',
             'ppo_prep_wait_work_share',
             'pipeline_ppo_prep_wait_pressure',
             'ppo_prep_async_h2d_bytes',
@@ -115,6 +118,15 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'rollout_opponent_readbacks',
             'rollout_opponent_readbacks_saved',
             'rollout_opponent_readback_models',
+            'rollout_opponent_readback_slot_reused',
+            'rollout_opponent_readback_slot_allocated',
+            'rollout_opponent_readback_cached_indices',
+            'rollout_opponent_grouped_calls',
+            'rollout_opponent_grouped_models',
+            'rollout_opponent_grouped_states',
+            'rollout_opponent_grouped_padding',
+            'rollout_opponent_grouped_fallbacks',
+            'rollout_opponent_grouped_weight_reuses',
             'rollout_opponent_batch_budget_pixels',
             'rollout_opponent_wide_forward_chunks',
             'ppo_gpu_stream_work_share',
@@ -127,6 +139,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'local_gpu_join_wait_seconds',
             'local_gpu_pending_at_local_end',
             'local_lease_native_engines_active',
+            'local_lease_admission_sample_delta',
+            'local_lease_admission_spawn_delta',
+            'local_lease_engines_admitted_delta',
+            'local_lease_admission_denials_delta',
             'local_lease_simulation_trial_active',
             'pipeline_local_gpu_wait_work_share',
             'pipeline_local_gpu_wait_dominant',
@@ -138,6 +154,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'collector_dispatch_tail_seconds','collector_dispatch_tail_owner',
             'pipeline_collector_dispatch_pressure','pipeline_collector_dispatch_owner',
             'pipeline_local_gpu_lease_index',
+            'pipeline_local_gpu_fwd_pressure',
+            'pipeline_local_gpu_fwd_owner',
+            'pipeline_remote_gpu_fwd_pressure',
+            'pipeline_remote_gpu_fwd_owner',
             'collector_0_sim_draining'])
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
@@ -150,6 +170,25 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_policy_codec_prep_seconds',
             'training_policy_codec_overlap_seconds',
             'training_policy_overlap_reserved_mb',
+            // Exposed Python simulation packing is a cross-project CPU
+            // throughput clue, not an independent hardware saturation claim.
+            'training_info_pack_max_seconds',
+            'training_collector_probe_moved_maps',
+            'training_resume_map_moves',
+            'training_resume_gain_ratio',
+            'training_resume_proof_ready',
+            'training_resume_proof_rounds',
+            'training_resume_proof_seconds',
+            'training_collector_sim_trial_workers',
+            'training_collector_sim_eligible_workers',
+            'training_sim_migration_workers',
+            'training_sim_process_migrations',
+            'training_sim_process_migration_denials',
+            'training_sim_process_migration_seconds',
+            'training_sim_migration_work_seconds',
+            'training_collector_start_parallel',
+            'training_collector_start_wall_seconds',
+            'training_sim_pack_max_ratio','training_sim_pack_ratio_owner',
             'training_concurrency_limit','training_concurrency_next_limit',
             'training_tuner_adjustments','training_tuner_accepted',
             'training_tuner_settled',
@@ -167,6 +206,13 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_forward_stream_workers',
             'training_gpu_input_slots_reused',
             'training_gpu_state_slots_reused',
+            'training_gpu_output_staged_batches',
+            'training_gpu_input_device_copy_batches',
+            'training_gpu_input_device_reused_slots',
+            'training_gpu_input_device_new_slots',
+            'training_gpu_output_slots_reused',
+            'training_gpu_output_slots_allocated',
+            'training_gpu_state_pack_reuse_batches',
             'training_gpu_policy_moves_skipped',
             'training_shared_gpu_forward_max_seconds',
             'training_shared_gpu_forward_workers',
@@ -184,8 +230,16 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_gpu_reserved_share',
             'training_shared_gpu_input_reused',
             'training_shared_gpu_state_reused',
+            'training_shared_gpu_output_staged',
+            'training_shared_gpu_output_reused',
+            'training_shared_gpu_input_device_copies',
+            'training_shared_gpu_input_device_reused',
+            'training_shared_gpu_state_pack_reused',
             'training_gpu_forward_slowest_share',
             'training_shared_gpu_forward_share',
+            'training_gpu_forward_pressure','training_gpu_forward_owner',
+            'training_shared_gpu_fwd_pressure',
+            'training_shared_gpu_fwd_owner',
             'training_gpu_rollout_next_devices',
             'training_gpu_rollout_next_lineages','training_gpu_rollout_trial',
             'training_gpu_rollout_spare_candidates',
@@ -216,6 +270,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_sim_multiplexed_shards',
             'training_sim_child_os_threads',
             'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
+            'training_info_pack_max_seconds',
+            'training_info_pack_work_seconds',
+            'training_sim_pack_max_ratio',
+            'training_sim_pack_ratio_owner',
             'training_sim_queue_max_seconds','training_sim_queue_peak_shards',
             'training_sim_idle_tail_max_ratio',
             'training_sim_idle_tail_ratio_owner',
@@ -276,6 +334,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_reply_gap_work_share',
             'training_shared_ingestion_pressure',
             'training_shared_collector_wait_pressure',
+            'training_shared_wait_owner',
+            'training_shared_sim_headroom_candidate',
+            'training_shared_sim_headroom_owner',
             'training_shared_collection_dominant',
             'training_shared_optimization_dominant',
             'training_checkpoint_snapshot_seconds',
@@ -1255,6 +1316,26 @@ class BottleneckEvidence {
             const slowReply=wireShare!==null&&wireShare>=0.25&&
                 wireGap>=0.25&&wireOwner===decodedOwner&&
                 (exposedShare===null||exposedShare<=0.10);
+            // A stable last-wire owner identifies a limiting collector,
+            // not a saturated CPU/GPU. A process ceiling above its current
+            // process count only indicates room to *test* parallelism.
+            // Do not attribute a worker while its own topology is changing.
+            const validOwner=Number.isSafeInteger(wireOwner)&&wireOwner>=0&&
+                wireOwner<metrics.training_collector_workers.value;
+            const ownerTrial=validOwner
+                ?metrics['worker_'+wireOwner+'_sim_trial']?.value:null;
+            const sharedWaitOwner=slowReply&&validOwner&&ownerTrial!==1
+                ?wireOwner:null;
+            const processCount=validOwner
+                ?metrics['worker_'+wireOwner+'_sim_physical_processes']:null;
+            const processCeiling=validOwner
+                ?metrics['worker_'+wireOwner+'_sim_process_ceiling']:null;
+            const headroomCandidate=sharedWaitOwner!==null&&
+                processCount?.unit==='count'&&
+                processCeiling?.unit==='count'&&
+                Number.isSafeInteger(processCount.value)&&
+                Number.isSafeInteger(processCeiling.value)&&
+                processCeiling.value>processCount.value;
             const postwirePressure=postwireShare!==null&&
                 postwireShare>=0.20&&postwire>=0.25;
             const span=metrics.training_collector_span_ratio;
@@ -1273,6 +1354,8 @@ class BottleneckEvidence {
             const recent=collectTimingEvidence(prior,at,{resourceHints,
                     sharedIngestion:ingestionDelay,
                     sharedReply:slowReply,
+                    sharedWaitOwner,
+                    sharedHeadroom:headroomCandidate?sharedWaitOwner:null,
                     sharedPostwire:postwirePressure,
                     sharedImbalance:imbalance,
                     sharedCollection:collectionDominant,
@@ -1287,6 +1370,23 @@ class BottleneckEvidence {
                     add('training_shared_ingestion_pressure',1,'count');
                 if(sustained(x=>x.sharedReply))
                     add('training_shared_collector_wait_pressure',1,'count');
+                // Require the SAME authenticated collector to own five
+                // of the six last complete wire arrivals. Avoid labeling
+                // transient fleet skew or a mixed group of slower hosts as
+                // one machine's hardware saturation.
+                const owners=recent.map(x=>x.sharedWaitOwner).filter(
+                    Number.isSafeInteger);
+                if(owners.length>=5) {
+                    const owner=owners.find(slot=>
+                        owners.filter(value=>value===slot).length>=5);
+                    if(owner!==undefined) {
+                        add('training_shared_wait_owner',owner,'count');
+                        if(recent.filter(x=>x.sharedHeadroom===owner).length>=5) {
+                            add('training_shared_sim_headroom_candidate',1,'count');
+                            add('training_shared_sim_headroom_owner',owner,'count');
+                        }
+                    }
+                }
                 if(sustained(x=>x.sharedPostwire))
                     add('training_shared_postwire_pressure',1,'count');
                 const forwardOwner=recent.at(-1).sharedGpuForward;
@@ -1347,6 +1447,8 @@ class BottleneckEvidence {
              name==='training_gpu_forward_owner'||
              name==='training_shared_gpu_fwd_pressure'||
              name==='training_shared_gpu_fwd_owner'||
+             name==='training_shared_wait_owner'||
+             name==='training_shared_sim_headroom_owner'||
              name==='pipeline_local_gpu_fwd_owner'||
              name==='pipeline_remote_gpu_fwd_owner'||
              name==='pipeline_local_gpu_wait_owner'||

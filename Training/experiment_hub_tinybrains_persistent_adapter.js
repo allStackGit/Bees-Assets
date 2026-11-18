@@ -114,6 +114,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         // CPU preparation may overlap GPU work; only wait is an exposed
         // learner stall. Pinned transfer enqueue is host wall, not PCIe time.
         'ppo_prep_cpu_seconds','ppo_prep_wait_seconds',
+        'ppo_prep_background_cpu_seconds',
+        'ppo_prep_background_wait_seconds',
         'ppo_prep_pin_seconds','ppo_prep_h2d_enqueue_seconds',
         'ppo_gpu_stream_sync_seconds',
         'ppo_gpu_stream_interval_seconds'])
@@ -125,6 +127,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_memory_rejected_trials','simulation_workload_reprobes',
         'simulation_inconclusive_trials',
         'simulation_global_cadence_samples','simulation_global_cadence_rejections',
+        'simulation_native_engines_admitted','simulation_admission_denied',
+        'simulation_completed_retirements','simulation_draining_matches',
+        'simulation_layout_matches','simulation_layout_changing',
+        'local_lease_ram_admission_denials',
+        'local_lease_admission_denials_delta',
+        'local_lease_native_engines_admitted',
+        'local_lease_engines_admitted_delta',
+        'local_lease_active_native_pools',
         'local_lease_cadence_comparable','local_lease_completed_cadence_update',
         'simulation_proven_target',
         'ant_decisions','group_states','births','deaths',
@@ -134,6 +144,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_prefetch_engine_steps',
         'ppo_minibatches','ppo_microbatches',
         'ppo_prep_batches','ppo_prep_async_h2d_copies',
+        'ppo_prep_background_chunks',
         'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
         'ppo_gpu_pixel_budget',
         'ppo_gpu_batch_target_pixels','ppo_gpu_batch_next_target',
@@ -152,6 +163,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'rollout_opponent_readback_models','rollout_opponent_readbacks_saved',
+        'rollout_opponent_readback_slot_reused',
+        'rollout_opponent_readback_slot_allocated',
+        'rollout_opponent_readback_cached_indices',
+        'rollout_opponent_grouped_calls','rollout_opponent_grouped_models',
+        'rollout_opponent_grouped_states','rollout_opponent_grouped_padding',
+        'rollout_opponent_grouped_fallbacks',
+        'rollout_opponent_grouped_weight_reuses',
         'rollout_opponent_pixel_samples',
         'rollout_opponent_max_group_pixels',
         'rollout_opponent_batch_budget_pixels',
@@ -218,6 +236,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // Multiple local native engine pools share ONE Python parent charge.
     // These values are measured against the same 75% RAM admission cap,
     // not raw machine RAM utilization or a physical OOM diagnosis.
+    for(const name of ['local_lease_admission_wait_seconds',
+        'local_lease_admission_wait_delta',
+        'local_lease_admission_sample_seconds',
+        'local_lease_admission_sample_delta',
+        'local_lease_admission_spawn_seconds',
+        'local_lease_admission_spawn_delta'])
+        add(name,row[name],'seconds');
     add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
     add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
     // Actual useful action target divided by completed end-to-end PPO wall.
@@ -341,7 +366,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['sim_accepted','simulation_tuner_accepted'],
             ['sim_settled','simulation_tuner_settled'],
             ['sim_restored','simulation_target_restored'],
-            ['sim_proven','simulation_proven_target']])
+            ['sim_proven','simulation_proven_target'],
+            ['sim_admitted','simulation_native_engines_admitted'],
+            ['sim_denied','simulation_admission_denied'],
+            ['sim_retired','simulation_completed_retirements']])
             add('collector_'+i+'_'+suffix,worker[name],'count');
         add('collector_'+i+'_sim_global_gain',
             worker.simulation_global_cadence_gain,'scalar');
@@ -384,6 +412,22 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_readback_models,'count');
         add('collector_'+i+'_opp_readbacks_saved',
             worker.rollout_opponent_readbacks_saved,'count');
+        add('collector_'+i+'_opp_slot_reused',
+            worker.rollout_opponent_readback_slot_reused,'count');
+        add('collector_'+i+'_opp_slot_allocated',
+            worker.rollout_opponent_readback_slot_allocated,'count');
+        add('collector_'+i+'_opp_cached_indices',
+            worker.rollout_opponent_readback_cached_indices,'count');
+        add('collector_'+i+'_opp_group_calls',
+            worker.rollout_opponent_grouped_calls,'count');
+        add('collector_'+i+'_opp_group_models',
+            worker.rollout_opponent_grouped_models,'count');
+        add('collector_'+i+'_opp_group_states',
+            worker.rollout_opponent_grouped_states,'count');
+        add('collector_'+i+'_opp_group_padding',
+            worker.rollout_opponent_grouped_padding,'count');
+        add('collector_'+i+'_opp_group_fallbacks',
+            worker.rollout_opponent_grouped_fallbacks,'count');
         add('collector_'+i+'_opp_gpu_stream_seconds',
             worker.rollout_opponent_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_opp_budget_pixels',
@@ -592,6 +636,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'gpu_batch_next_target','gpu_batch_proven_target',
                 // Keep live/target/max simulation counts and real waits.
                 'sim_changes','sim_accepted','sim_settled',
+                'sim_admitted','sim_denied','sim_retired',
                 'sim_restored','sim_proven',
                 'sim_memory_rejections','sim_trial',
                 'sim_global_samples','sim_global_gain',
@@ -600,6 +645,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'board_uploads_saved','board_packed_bytes',
                 'inference_max_group_px','bootstrap_seconds','returns_seconds',
                 'opponent_readbacks','opp_readback_models','opp_readbacks_saved',
+                'opp_slot_reused',
+                'opp_slot_allocated','opp_cached_indices',
+                'opp_group_calls','opp_group_models',
+                'opp_group_states','opp_group_padding','opp_group_fallbacks',
                 'snapshot_cache_files','snapshot_cache_bytes',
                 'policy_upload_groups',
                 'record_packed','record_board_groups',
@@ -636,6 +685,37 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'sim_workload_reprobes','sim_inconclusive_trials',
             ];
             for(const suffix of deferredDetails) {
+                for(let i=0;i<collectors;i++)
+                    delete metrics['collector_'+i+'_'+suffix];
+                if(fits())break;
+            }
+        }
+        if(!fits()) {
+            // A fully instrumented seventeen-collector update can still
+            // exceed the fixed wire envelope after ordinary optional
+            // columns are removed. Shed additional columns ACROSS EVERY
+            // collector rather than dropping the last machines altogether.
+            // Retain comparable useful throughput, learner-facing waits,
+            // the principal rollout stage walls, and physical GPU identity.
+            const essential=new Set([
+                'ant_decisions','decisions_per_second','elapsed_seconds',
+                'roundtrip_seconds','service_seconds',
+                'wait_after_local_seconds','learner_inference_seconds',
+                'rollout_engine_step_seconds','observation_prepare_seconds',
+                'opponent_processing_seconds','result_processing_seconds',
+                'is_local_gpu','gpu_lease_index'
+            ]);
+            const columns=new Set();
+            for(const name of Object.keys(metrics)) {
+                const match=/^collector_(?:[0-9]|1[0-6])_(.+)$/.exec(name);
+                if(match&&!essential.has(match[1]))
+                    columns.add(match[1]);
+            }
+            // Deterministic order, with larger optional source columns
+            // removed first. These details remain in native run history.
+            const optional=[...columns].sort((a,b)=>b.length-a.length||
+                a.localeCompare(b));
+            for(const suffix of optional) {
                 for(let i=0;i<collectors;i++)
                     delete metrics['collector_'+i+'_'+suffix];
                 if(fits())break;

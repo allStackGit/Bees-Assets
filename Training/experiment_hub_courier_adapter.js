@@ -15,9 +15,12 @@ const NVIDIA_UUID=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers','training_collector_workers',
-    'training_collector_probe_count',
+    'training_collector_probe_count','training_collector_probe_moved_maps',
+    'training_collector_start_parallel',
     'training_collector_probe_layout_changed',
     'training_collector_resume_restored',
+    'training_resume_map_moves','training_resume_proof_ready',
+    'training_resume_proof_rounds',
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
     'training_rollout_compressed_collectors',
     'training_policy_compressed_workers','training_policy_early_dispatch_count',
@@ -35,6 +38,9 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_sim_prestaged_actions','training_sim_queue_peak_shards',
     'training_sim_multiplexed_shards','training_sim_child_os_threads',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
+    'training_sim_migration_workers','training_collector_sim_trial_workers',
+    'training_collector_sim_eligible_workers',
+    'training_sim_process_migrations','training_sim_process_migration_denials',
     'training_sim_topology_rejected','training_sim_topology_unavailable',
     'training_sim_topology_unverified','training_sim_topology_migrations',
     'training_tuner_adjustments','training_tuner_accepted',
@@ -68,9 +74,19 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_forward_stream_workers',
     'training_gpu_pin_reused_batches','training_gpu_pin_allocated_slots',
     'training_gpu_input_slots_reused','training_gpu_state_slots_reused',
+    'training_gpu_output_staged_batches','training_gpu_output_slots_reused',
+    'training_gpu_input_device_copy_batches',
+    'training_gpu_input_device_reused_slots',
+    'training_gpu_input_device_new_slots',
+    'training_gpu_output_slots_allocated',
+    'training_gpu_state_pack_reuse_batches',
     'training_gpu_policy_moves_skipped',
     'training_shared_gpu_forward_workers',
     'training_shared_gpu_input_reused','training_shared_gpu_state_reused',
+    'training_shared_gpu_output_staged','training_shared_gpu_output_reused',
+    'training_shared_gpu_input_device_copies',
+    'training_shared_gpu_input_device_reused',
+    'training_shared_gpu_state_pack_reused',
     'training_shared_gpu_moves_skipped',
     'training_shared_optimizer_policy_reused',
     'training_shared_optimizer_policy_kept',
@@ -136,8 +152,28 @@ function courierMetrics(source) {
     // contains every original measurement for full native history.
     const primary=name=>name.startsWith('training_gpu_placement_')||
         name==='training_total_useful_steps'||name==='training_tracked_active_seconds'||
+        name.startsWith('training_gpu_output_')||
+        name.startsWith('training_gpu_input_device_')||
+        name.startsWith('training_shared_gpu_input_device_')||
+        name.startsWith('training_shared_gpu_output_')||
+        name==='training_gpu_state_pack_reuse_batches'||
+        name==='training_shared_gpu_state_pack_reused'||
         name.startsWith('training_collector_probe_')||
+        /^worker_[0-9]{1,2}_probe_maps_(?:before|after)$/.test(name)||
+        name.startsWith('training_collector_start_')||
+        name.startsWith('training_resume_')||
+        name.startsWith('training_sim_migration_')||
+        (name==='training_sim_process_migrations'||
+         name.startsWith('training_sim_process_migration_'))||
+        (name==='training_collector_sim_trial_workers'||
+         name==='training_collector_sim_eligible_workers')||
+        /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
+        /^worker_[0-9]{1,2}_resume_maps_(?:before|after)$/.test(name)||
         name==='training_collector_resume_restored'||
+        ['training_info_pack_max_seconds',
+            'training_info_pack_work_seconds',
+            'training_sim_pack_max_ratio',
+            'training_sim_pack_ratio_owner'].includes(name)||
         /^training_(?:gpu_forward_stream_|shared_gpu_forward_|gpu_input_slots_reused$|gpu_state_slots_reused$|gpu_policy_moves_skipped$|shared_gpu_input_reused$|shared_gpu_state_reused$)/.test(name)||
         name.startsWith('training_gpu_pin_')||
         name.startsWith('training_policy_')||
@@ -164,6 +200,9 @@ function courierMetrics(source) {
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
             /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_pin_reused_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|policy_compressed|policy_delta|policy_delta_base_ready|is_remote)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:probe|resume)_maps_(?:before|after)$/.test(name)||
+            /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             /_probe_map_steps_per_second$/.test(name)?'rate':
