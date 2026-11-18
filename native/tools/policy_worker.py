@@ -20,6 +20,8 @@ import sys
 
 import numpy as np
 
+from native_gpu_allocation import rocm_visible_gpu_pci
+
 OBS_FLOATS = 7743
 CONTINUOUS = 16
 DISCRETE = 6
@@ -616,14 +618,22 @@ def main() -> None:
         "behavior_bytes_avoided": 0,
     }
     output_buffers = InferenceOutputBuffers()
+    gpu_pci_address = None
 
     def report_model_residency():
+        nonlocal gpu_pci_address
+        if measurements["gpu_forward_calls"] and gpu_pci_address is None:
+            # HIP is already initialized by a successfully completed GPU
+            # model forward. Record the actual physical card, not merely
+            # the requested ROCr visibility mask or logical cuda ordinal.
+            gpu_pci_address = rocm_visible_gpu_pci()
         # JSON on stderr is deliberately outside the binary model protocol.
         # At fixed low frequency it reports actual model calls, avoided
         # passes and retained weights without timing the Python hot loop.
         print(json.dumps({
             "kind": "native_policy_inference_efficiency",
             **measurements,
+            **({"gpu_pci_address": gpu_pci_address} if gpu_pci_address else {}),
             "model_forwards_saved":
                 measurements["slot_forwards_without_sharing"] -
                 measurements["actual_model_forwards"],
