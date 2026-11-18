@@ -119,6 +119,7 @@ function hubComparisonPoints(run) {
                 observed_at:row.observed_at,break_before:false,
                 evaluation_identity:{
                     suite_id:row.suite_id,suite_sha256:row.suite_sha256,
+                    suite_definition_canonical:row.suite_definition_canonical||null,
                     checkpoint_sha256:row.checkpoint_sha256,
                     dispatch_id:row.dispatch_id,
                     runtime_sha256:row.runtime_sha256||null,
@@ -3213,28 +3214,29 @@ document.addEventListener('DOMContentLoaded', () => {
                         line('Source: operator-imported historical checkpoint audit (not Hub native proof)');
                         line('Source report SHA-256: '+evaluated.source_report_sha256);
                         line('Source checkpoint: '+evaluated.source_checkpoint_name);
-                        const frozen=run.job.source_suites?.find(suite=>
-                            suite.suite_id===evaluated.suite_id&&
-                            suite.suite_sha256===evaluated.suite_sha256);
-                        if(typeof frozen?.definition==='string') {
-                            // The historical archive already verified that
-                            // this complete definition hashes to the exact
-                            // reported suite fingerprint. Display that
-                            // archived source, never infer maps or rules.
-                            const inspector=document.createElement('details');
-                            const summary=document.createElement('summary');
-                            summary.textContent='Inspect exact frozen suite definition';
-                            const definition=document.createElement('pre');
-                            definition.textContent=frozen.definition;
-                            definition.style.whiteSpace='pre-wrap';
-                            definition.style.wordBreak='break-word';
-                            definition.style.maxHeight='240px';
-                            definition.style.overflow='auto';
-                            inspector.append(summary,definition);
-                            item.append(inspector);
-                        }
+                    }
+                    const historical=run.job.source_suites?.find(suite=>
+                        suite.suite_id===evaluated.suite_id&&
+                        suite.suite_sha256===evaluated.suite_sha256);
+                    const canonical=evaluated.suite_definition_canonical||
+                        historical?.definition;
+                    if(typeof canonical==='string') {
+                        // This native receipt or historical source passed
+                        // exact suite-fingerprint validation on archive load.
+                        const inspector=document.createElement('details');
+                        const summary=document.createElement('summary');
+                        summary.textContent='Inspect exact frozen suite definition';
+                        const definition=document.createElement('pre');
+                        try {definition.textContent=JSON.stringify(JSON.parse(canonical),null,2);}
+                        catch {definition.textContent=canonical;}
+                        definition.style.whiteSpace='pre-wrap';
+                        definition.style.wordBreak='break-word';
+                        definition.style.maxHeight='240px';
+                        definition.style.overflow='auto';
+                        inspector.append(summary,definition);
+                        item.append(inspector);
                     }else {
-                        line('Full frozen suite definition is not embedded in the native receipt; compare using the recorded SHA-256 and inspect its evaluator manifest.');
+                        line('Full frozen suite definition not archived in this receipt; check the evaluator manifest against its SHA-256.');
                     }
                     line('Successes / trials: '+evaluated.successes+' / '+evaluated.trials);
                     line('Archive status: '+(evaluated.comparison_status==='superseded'
