@@ -1632,7 +1632,7 @@ impl NativeLevelBatchDriver {
                     // Inspect only this tick's notification suffix.
                     let joined = world.state.events.pending_notifications().iter()
                         .rev().take_while(|event| event.tick == world.tick())
-                        .any(|event| matches!(event.kind,
+                        .any(|event| matches!(&event.kind,
                             NativeLevelNotificationKind::PolicyControllerAdmitted { .. }));
                     if !retired && !joined {
                         continue;
