@@ -581,12 +581,25 @@ class EvaluationHistory {
             !SHA256.test(String(receipt?.suite_sha256||''))||
             !SHA256.test(String(receipt?.runtime_sha256||''))||
             !SHA256.test(String(receipt?.checkpoint_sha256||''))||
+            typeof receipt.evaluated_at!=='string'||
+            !Number.isFinite(Date.parse(receipt.evaluated_at))||
+            new Date(receipt.evaluated_at).toISOString()!==receipt.evaluated_at||
             receipt.dispatch_id!==job.dispatch_id||
             !Number.isSafeInteger(receipt.steps_completed))
             return null;
         try {
             if(this.issues.has('conflict:'+job.id))return null;
-            const records=this.load(job.id,job.project_id).records;
+            const data=this.load(job.id,job.project_id);
+            const records=data.records;
+            const cacheKey=receipt.checkpoint_sha256+':'+records.length;
+            // Replayed native inspections can report the same successful
+            // receipt every few seconds. A negative result cannot change
+            // until a new immutable receipt is durably appended. Avoid
+            // re-sorting the complete archive on every heartbeat.
+            const negativeChecks=data.regressionNegativeChecks||=
+                new Map();
+            if(negativeChecks.get(receipt.suite_id)===cacheKey)
+                return null;
             const source=records.find(row=>
                 row.dispatch_id===job.dispatch_id&&
                 row.suite_id===receipt.suite_id&&
@@ -597,14 +610,19 @@ class EvaluationHistory {
                 row.trials===receipt.trials&&
                 row.successes===receipt.successes&&
                 row.evaluated_at===receipt.evaluated_at);
-            if(!source)return null;
+            if(!source) {
+                negativeChecks.set(receipt.suite_id,cacheKey);
+                return null;
+            }
             const signal=regressionSignals(job,records).find(row=>
                 row.suite_id===receipt.suite_id&&
                 row.status==='regressed');
             if(!signal||signal.latest?.end_update!==receipt.steps_completed||
                 signal.suite_sha256!==receipt.suite_sha256||
-                signal.runtime_sha256!==receipt.runtime_sha256)
+                signal.runtime_sha256!==receipt.runtime_sha256) {
+                negativeChecks.set(receipt.suite_id,cacheKey);
                 return null;
+            }
             return {schema_version:1,dispatch_id:job.dispatch_id,
                 suite_id:receipt.suite_id,
                 suite_sha256:receipt.suite_sha256,
