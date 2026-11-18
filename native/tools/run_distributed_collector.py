@@ -22,7 +22,7 @@ from native_bundle_receiver import upload_bundle_archive
 
 
 
-def reusable_collection(receipt_path, job, orders):
+def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False):
     """Accept completed local work only with its original pinned capture files.
 
     A previous transport failure must never turn a partial simulation or a
@@ -35,6 +35,8 @@ def reusable_collection(receipt_path, job, orders):
         return None
     try:
         receipt = verify_bundle(receipt_path, job, orders)
+        if bool(receipt['receipt'].get('leased_gpu_inference', False)) != leased_gpu_inference:
+            return None
         captures = artifact_paths(json.loads(receipt_path.read_text(encoding="utf-8")))
         canonical = root.resolve(strict=True)
         for name, digest in captures.items():
@@ -61,6 +63,8 @@ def main():
                         help="local/shared inbox; omit with --archive-output for direct archive delivery")
     parser.add_argument("--rollout-binary", type=Path, required=True)
     parser.add_argument("--stage-diagnostics", action="store_true")
+    parser.add_argument("--leased-gpu-inference", action="store_true",
+                        help="Hub-verified exclusive GPU inference placement")
     parser.add_argument("--archive-output", type=Path,
                         help="publish a portable verified tar for transfer to a different machine")
     parser.add_argument("--upload-url",
@@ -68,6 +72,8 @@ def main():
     parser.add_argument("--hub-artifact-job-id",
                         help="Hub's separate immutable job UUID for local verified artifact publication")
     args = parser.parse_args()
+    if args.leased_gpu_inference and args.hub_artifact_job_id is None:
+        parser.error("--leased-gpu-inference requires the approved Hub artifact job")
     if args.hub_artifact_job_id is not None and (
             args.bundle_inbox is None or
             re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
@@ -118,7 +124,7 @@ def main():
     previous_parent = None
     if inbox is not None:
         candidate = inbox / delivered_name / "rollout-bundle.json"
-        if reusable_collection(candidate, job, orders) is not None:
+        if reusable_collection(candidate, job, orders, args.leased_gpu_inference) is not None:
             recovered = candidate
     else:
         prefix = f"native-collector-{job['collection_id'][:12]}-"
@@ -126,7 +132,7 @@ def main():
             if previous.is_symlink() or not previous.is_dir():
                 continue
             candidate = previous / job["bundle_directory"] / "rollout-bundle.json"
-            if reusable_collection(candidate, job, orders) is not None:
+            if reusable_collection(candidate, job, orders, args.leased_gpu_inference) is not None:
                 recovered = candidate
                 previous_parent = previous
                 break
@@ -144,6 +150,7 @@ def main():
             "--rollout-binary", str(binary),
             *([] if inbox is None else ["--bundle-inbox", str(inbox)]),
             *job["collector_options"],
+            *([] if not args.leased_gpu_inference else ["--leased-gpu-inference"]),
             *([] if args.hub_artifact_job_id is None else [
                 "--bundle-delivery-name", delivered_name,
             ]),
