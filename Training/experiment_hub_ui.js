@@ -99,6 +99,16 @@ function hubEvaluationMetricPrefix(row) {
 function hubComparisonPoints(run) {
     const training=run.points.length?run.points:
         [run.job.live_execution?.progress||run.job.final_progress].filter(Boolean);
+    // Native chart payloads retain one verified definition per immutable
+    // suite/runtime instead of repeating it on every checkpoint. Keep the
+    // inspector available for all points in the same identity cohort.
+    const definitions=new Map();
+    for(const receipt of run.evaluation_points||[])
+        if(typeof receipt.suite_definition_canonical==='string')
+            definitions.set(JSON.stringify([
+                receipt.suite_id,receipt.suite_sha256,
+                receipt.runtime_sha256||null,
+            ]),receipt.suite_definition_canonical);
     const evaluated=(run.evaluation_points||[]).filter(row=>
         Number.isSafeInteger(row.steps_completed)&&row.steps_completed>=0&&
         typeof row.suite_id==='string'&&
@@ -119,7 +129,12 @@ function hubComparisonPoints(run) {
                 observed_at:row.observed_at,break_before:false,
                 evaluation_identity:{
                     suite_id:row.suite_id,suite_sha256:row.suite_sha256,
-                    suite_definition_canonical:row.suite_definition_canonical||null,
+                    suite_definition_canonical:
+                        row.suite_definition_canonical||
+                        definitions.get(JSON.stringify([
+                            row.suite_id,row.suite_sha256,
+                            row.runtime_sha256||null,
+                        ]))||null,
                     checkpoint_sha256:row.checkpoint_sha256,
                     dispatch_id:row.dispatch_id,
                     runtime_sha256:row.runtime_sha256||null,
