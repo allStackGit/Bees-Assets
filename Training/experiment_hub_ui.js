@@ -147,10 +147,29 @@ function hubJobLabel(job) {
     return base+(job?.frozen_parameters?.training_stage
         ?' · '+job.frozen_parameters.training_stage.replaceAll('_',' '):'');
 }
+// Chart metric names are bounded to 64 characters, while exact suite and
+// runtime fingerprints are 256 bits each. If their display abbreviations
+// collide, never combine two independently different evaluations into a
+// single synthetic metric series. Preserve both raw receipts for export.
+function hubEvaluationPrefixConflicts(runs) {
+    const seen=new Map(),conflicts=new Set();
+    for(const run of runs)for(const row of run.evaluation_points||[]) {
+        const prefix=hubEvaluationMetricPrefix(row);
+        const identity=JSON.stringify([
+            row.suite_id,row.suite_sha256,row.runtime_sha256||null,
+        ]);
+        if(seen.has(prefix)&&seen.get(prefix)!==identity)
+            conflicts.add(prefix);
+        else seen.set(prefix,identity);
+    }
+    return conflicts;
+}
 function hubGenericMetricCatalog(runs) {
-    const types=new Map();
+    const types=new Map(),conflicts=hubEvaluationPrefixConflicts(runs);
     for(const run of runs)for(const point of hubComparisonPoints(run))
         for(const [key,metric] of Object.entries(point.metrics||{})) {
+            if([...conflicts].some(prefix=>
+                key===prefix||key.startsWith(prefix+'_')))continue;
             if(!types.has(key))types.set(key,new Set());
             types.get(key).add(metric.unit);
         }
@@ -2108,6 +2127,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
+        const chartIdentityConflicts=hubEvaluationPrefixConflicts(runs);
+        if(chartIdentityConflicts.size)
+            warnings.push('Some independently different frozen suites or evaluator runtimes share an abbreviated chart key. Their combined metric series have been hidden to prevent incompatible comparisons; full authenticated receipts remain available in complete exports.');
         const regressionSignals=comparisonProject===project
             ?comparisonData?.evaluation_regressions||[]:[];
         for(const observation of regressionSignals) {
