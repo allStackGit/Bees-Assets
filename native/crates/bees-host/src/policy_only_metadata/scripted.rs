@@ -419,6 +419,17 @@ impl NativePolicyOnlyMetadata {
         counts
     }
 
+    /// Dynamic AI commands are the sole owners of their retry cadence.
+    /// Keep pending script sequences and physical command timers untouched:
+    /// a ready tick is used only after this queue has exhausted its orders.
+    fn defer_dynamic_retry(&mut self, index: usize, completed_tick: u64) {
+        let state = &mut self.scripted_queues[index];
+        if state.repeat && state.cursor == state.orders.len() {
+            state.ready_tick = completed_tick.saturating_add(self.scripted_retry_ticks);
+            self.scripted_counts.dynamic_order_retries += 1;
+        }
+    }
+
     pub(super) fn advance_source_scripted(
         &mut self, world: &mut CombatWorld,
         events: &mut NativeLevelEventProcessor, random: &mut RandomStream,
@@ -550,6 +561,9 @@ impl NativePolicyOnlyMetadata {
                 let Some((_, target)) = nearest else {
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.orders_skipped_target_gone += 1;
+                    // A faction with queued enemy reinforcements must wait,
+                    // not scan the same empty roster fifty times per second.
+                    self.defer_dynamic_retry(index, completed_tick);
                     index += 1;
                     continue;
                 };
@@ -705,19 +719,17 @@ impl NativePolicyOnlyMetadata {
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.orders_skipped_unavailable += 1;
                     if matches!(order,
+                        NativeScriptedOrder::AggressiveNearest |
                         NativeScriptedOrder::MiningNearest |
+                        NativeScriptedOrder::HealAvailable |
                         NativeScriptedOrder::BombingNearest |
                         NativeScriptedOrder::ChargeNearest
-                    ) && self.scripted_queues[index].repeat &&
-                        self.scripted_queues[index].cursor ==
-                            self.scripted_queues[index].orders.len()
-                    {
-                        // Scarce ore or unavailable special-weapon targets
-                        // cannot trigger an O(ticks * squads) retry loop.
-                        // Include the final specialist after optional Heal.
-                        self.scripted_queues[index].ready_tick =
-                            completed_tick.saturating_add(self.scripted_retry_ticks);
-                        self.scripted_counts.dynamic_order_retries += 1;
+                    ) {
+                        // Resource-starved, healthy or targetless queues
+                        // cannot spin on every fixed step. Heal in a
+                        // multi-order combat script still falls through to
+                        // the actual attack on the next fixed step.
+                        self.defer_dynamic_retry(index, completed_tick);
                     }
                 }
                 _ => return Err(NativeLevelEventError::Commands(
