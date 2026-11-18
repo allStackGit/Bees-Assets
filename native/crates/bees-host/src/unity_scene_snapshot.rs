@@ -715,7 +715,7 @@ pub struct NativeSquadClone {
     /// clone/minion) contributes its own FleetShip value for damage, career
     /// and MA-POCA reward attribution. Never inherit a source SavedSquad.
     /// Legacy layout clones retain their original zero-fleet-value behavior.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default)]
     pub count_as_fleet_value: bool,
 }
 
