@@ -11,6 +11,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -196,7 +197,12 @@ class IndependentEvaluationRows(SelectedObservationRows):
                     not isinstance(measurement["unit"], str) or
                     measurement["unit"] not in ("count", "ratio", "scalar", "seconds")):
                 raise ValueError("Invalid project evaluation outcome measurement")
-            write(name, measurement["value"], measurement["unit"])
+            value, unit = measurement["value"], measurement["unit"]
+            if (not math.isfinite(value) or abs(value) > 1e12 or
+                    unit == "count" and (type(value) is not int or value < 0) or
+                    unit == "ratio" and not 0 <= value <= 1):
+                raise ValueError("Independent evaluation measurement exceeds its unit contract")
+            write(name, value, unit)
 
 
 def export(spec: dict, output: Path) -> dict:
