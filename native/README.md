@@ -234,7 +234,10 @@ only the source-authenticated YellowJacket observation metadata is added.
 If a custom Queen's child hull or Bomb differs from the chosen archetype,
 authoring rejects it rather than inventing policy weapon data. A trained
 opponent can also spawn live policy minions without opening an MA-POCA
-reward group.
+reward group. Similarly, a delayed policy reinforcement in a normal native
+game starts receiving model actions on its physical arrival, without
+requiring a training reward group; actual training still enrolls its
+authenticated source participant when the wave arrives.
 
 To train source-authored reinforcement waves as policy agents instead of
 scripted AI, add `--policy-reinforcements` alongside `--trainable`:
