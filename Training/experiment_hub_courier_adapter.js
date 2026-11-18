@@ -21,6 +21,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
     'training_rollout_compressed_collectors',
     'training_policy_compressed_workers',
+    'training_policy_ram_denied',
     'training_shared_last_reply_worker','training_shared_last_copy_worker',
     'training_shared_last_wire_worker',
     'training_slowest_worker','training_last_reply_worker',
