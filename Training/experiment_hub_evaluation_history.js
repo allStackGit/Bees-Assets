@@ -440,11 +440,61 @@ class EvaluationHistory {
                     !Array.isArray(meta.suites)||!meta.suites.length||
                     meta.suites.length>8)
                     throw Error('Invalid historical evaluation source metadata.');
+                const suites=new Map();
+                for(const pinned of meta.suites) {
+                    if(!pinned||!SUITE.test(String(pinned.suite_id||''))||
+                        !SHA256.test(String(pinned.suite_sha256||''))||
+                        typeof pinned.definition!=='string'||
+                        Buffer.byteLength(pinned.definition,'utf8')>8192||
+                        crypto.createHash('sha256').update(pinned.definition)
+                            .digest('hex')!==pinned.suite_sha256||
+                        suites.has(pinned.suite_id))
+                        throw Error('Historical frozen suite metadata is inconsistent.');
+                    const definition=JSON.parse(pinned.definition);
+                    if(!definition||definition.suite_id!==pinned.suite_id||
+                        !SHA256.test(String(definition.runtime_sha256||'')))
+                        throw Error('Historical frozen suite runtime is unavailable.');
+                    suites.set(pinned.suite_id,{
+                        fingerprint:pinned.suite_sha256,
+                        runtime:definition.runtime_sha256,
+                    });
+                }
                 const records=this.load(id,meta.project_id).records;
+                const seen=new Set();
                 if(!records.length||records.length>MAX_IMPORT_RECORDS||
-                    records.some(row=>row.source_kind!=='historical_checkpoint_audit'||
-                        row.source_report_sha256!==meta.source_report_sha256||
-                        row.evaluation_status!=='complete'))
+                    records.some(row=>{
+                        const suite=suites.get(row.suite_id);
+                        const key=row.suite_id+':'+row.checkpoint_sha256;
+                        if(seen.has(key))return true;
+                        seen.add(key);
+                        const metrics=row.metrics;
+                        return row.source_kind!=='historical_checkpoint_audit'||
+                            row.source_report_sha256!==meta.source_report_sha256||
+                            row.evaluation_status!=='complete'||
+                            row.dispatch_id!==id||row.observed_at!==meta.created_at||
+                            !suite||row.suite_sha256!==suite.fingerprint||
+                            row.runtime_sha256!==suite.runtime||
+                            !Number.isSafeInteger(row.steps_completed)||
+                            row.steps_completed<0||
+                            !/^update-[0-9]{6,8}\.pt$/.test(
+                                String(row.source_checkpoint_name||''))||
+                            Number(row.source_checkpoint_name.slice(7,-3))!==
+                                row.steps_completed||
+                            !row.evaluated_at||
+                            !metrics||
+                            !['win_count','loss_count','draw_count','score_rate']
+                                .every(name=>Object.hasOwn(metrics,name))||
+                            metrics.win_count.unit!=='count'||
+                            metrics.loss_count.unit!=='count'||
+                            metrics.draw_count.unit!=='count'||
+                            metrics.score_rate.unit!=='ratio'||
+                            metrics.win_count.value!==row.successes||
+                            metrics.win_count.value+metrics.loss_count.value+
+                                metrics.draw_count.value!==row.trials||
+                            Math.abs(metrics.score_rate.value-
+                                (row.successes+metrics.draw_count.value/2)/
+                                row.trials)>1e-10;
+                    }))
                     throw Error('Historical evaluation evidence lineage is incomplete.');
                 jobs.push({
                     id,project_id:meta.project_id,
