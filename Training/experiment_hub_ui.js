@@ -1999,6 +1999,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 warnings.push('Run '+run.slot+' suite '+observation.suite_id+
                     ' regression analysis '+observation.status+': '+observation.reason);
         }
+        for(const run of runs) {
+            const job=run.job;
+            if(job.evaluation_history_only||!(job.evaluation_monitor||job.evaluation_stop)||
+                !['running','stop_requested','stopped','finished','failed'].includes(job.status))
+                continue;
+            const machine=state.machines.find(item=>item.id===job.assigned_machine_id);
+            if(machine?.status!=='connected')
+                warnings.push('Run '+run.slot+' has no connected evaluator agent; missing results are not zero performance.');
+            else {
+                const services=(machine.evaluator_services||[])
+                    .filter(item=>item.project===job.project_id);
+                const failed=services.filter(item=>
+                    item.last_result==='failed'||item.service_state==='failed'||
+                    item.scheduler_state==='inactive');
+                if(failed.length)
+                    warnings.push('Run '+run.slot+' evaluator service requires attention: '+
+                        failed.map(item=>item.unit+
+                            (item.diagnostic?' ('+item.diagnostic+')':'')).join('; ')+'.');
+                else if(!services.some(item=>item.scheduler_state==='active'||
+                    item.service_state==='running'))
+                    warnings.push('Run '+run.slot+' has no confirmed active evaluator scheduler'+
+                        (machine.evaluator_service_issue
+                            ?': '+machine.evaluator_service_issue:'')+
+                        '; independent evaluation availability is unverified.');
+            }
+            if(!run.evaluation_points?.length)
+                warnings.push('Run '+run.slot+' has no archived independent evaluation results. Training measurements are not substitutes for missing benchmark evidence.');
+        }
         if(runs.some(run=>run.job.evaluation_history_only))
             warnings.push('Historical checkpoint audits are operator-imported, read-only observations. The Hub did not authorize or supervise their evaluation; verify the source report and frozen suite definitions. They cannot be promoted or resumed.');
         const definitions=new Map(),runtimes=new Map(),unidentifiedRuntimes=new Set();
