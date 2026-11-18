@@ -230,6 +230,23 @@ of link utilization or a real SPS qualification.
   just qualified. The Hub supports a leased single-GPU learner and
   separately leased single-GPU collectors in the same rollout group.
 
+- **2026-11-18 shared-policy streaming PPO ingestion:** Courier's new
+shared-policy rollout route now validates and places each complete
+authenticated remote shard directly into its final, disjoint recurrent
+PPO buffer slots on the completing collector's thread. Futures carry only
+small timing records; no array of all returned shard payloads survives
+until the last collector finishes. The unchanged policy digest, version,
+return settings, active mask and complete slot-coverage barrier are all
+required before the original checked optimizer can run. Incomplete
+collections abort instead of training partial buffers; checkpoint/restart
+owns recovery. Existing Hub metrics report logical bytes, number of
+ingested shards, total nested CPU validation/copy work and the precisely
+measured post-last-reply copy tail using the learner's own monotonic clock.
+The existing BottleneckEvidence analyzer separately detects sustained
+shared-collector, single-optimizer and genuinely exposed ingestion
+pressure, with source intervals never summed as exclusive work. Actual
+cross-machine useful SPS gains and failure recovery remain unqualified.
+
 ## Significant remaining development
 
 1. **Exercise the exact executable native-engine path:** qualify early dispatched pooled engine steps, episode/seat identity, replay attribution, graceful retirement and checkpoint continuation using actual TinyBrains binaries and training environments. Synthetic scheduling checks preserve action indices and show potential latency savings, not measured real SPS. On the next native profiling run, nonzero `collector_N_sim_prefetch_engine_steps` plus reduced `collector_N_sim_exposed_wait_share` with improved useful decisions/s would support the expected benefit; absent early dispatch or unchanged exposed wait would falsify it. Full removal of the slowest-child barrier would also require explicit in-flight transition ownership, terminal reward completion, and deterministic policy sampling across out-of-order engine returns; that change has **not** been implemented.
