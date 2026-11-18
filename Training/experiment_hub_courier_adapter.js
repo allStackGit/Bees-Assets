@@ -16,6 +16,7 @@ const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12
 const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers','training_collector_workers',
     'training_collector_probe_count',
+    'training_collector_start_parallel',
     'training_collector_probe_layout_changed',
     'training_collector_resume_restored',
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
@@ -144,6 +145,7 @@ function courierMetrics(source) {
         name==='training_gpu_state_pack_reuse_batches'||
         name==='training_shared_gpu_state_pack_reused'||
         name.startsWith('training_collector_probe_')||
+        name.startsWith('training_collector_start_')||
         name==='training_collector_resume_restored'||
         ['training_info_pack_max_seconds',
             'training_info_pack_work_seconds',
