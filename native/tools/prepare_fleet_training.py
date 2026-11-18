@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import hashlib
 import importlib.util
 import json
 import math
@@ -161,6 +160,10 @@ def policy_author():
 def convert(source: Path, destination: Path, archetypes: Path) -> dict:
     source = source.resolve(strict=True)
     archetypes = archetypes.resolve(strict=True)
+    scene_path = (source.parent / read_json(source)["levels"][0]["scene"]).resolve(strict=True)
+    source_sha = file_sha256(source)
+    scene_sha = file_sha256(scene_path)
+    archetypes_sha = file_sha256(archetypes)
     scene, run = source_battle(source)
     scene, run, clone_count = materialize(scene, run)
     if not isinstance(run.get("max_rounds"), int) or run["max_rounds"] <= 10:
@@ -172,6 +175,10 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
     policy_scene, policy_run = policy_author()(scene, run, args)
     run["levels"][0]["scene"] = "battle.scene.json"
     policy_run["levels"][0]["scene"] = "battle.policy.scene.json"
+    if (file_sha256(source) != source_sha or
+            file_sha256(scene_path) != scene_sha or
+            file_sha256(archetypes) != archetypes_sha):
+        raise ValueError("native fleet source changed while deriving its training contract")
     destination = destination.resolve()
     destination.mkdir(parents=True, exist_ok=False)
     files = {
@@ -186,8 +193,10 @@ def convert(source: Path, destination: Path, archetypes: Path) -> dict:
         "schema_version": 1,
         "kind": "native_fleet_skirmish_training_source",
         "source_run": str(source),
-        "source_run_sha256": file_sha256(source),
-        "policy_archetypes_sha256": file_sha256(archetypes),
+        "source_run_sha256": source_sha,
+        "source_scene": str(scene_path),
+        "source_scene_sha256": scene_sha,
+        "policy_archetypes_sha256": archetypes_sha,
         "source_squad_clones": clone_count,
         "physical_ship_count": len(scene["ships"]),
         "policy_ship_count": sum("policy" in ship for ship in policy_scene["ships"]),
