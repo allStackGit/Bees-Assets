@@ -972,7 +972,18 @@ model's real applied actions in `policy-actions.bin`. The server sends the
 same multiplayer feedback and battle-state snapshots as the local host,
 without initializing a renderer or audio output.
 
-To deterministically replay the match later, stop/unset the remote-listening
+For a persistent campaign mission, use `bees campaign <catalog.json>
+--output-dir <campaign-save-root> --mission <mission-id> --serve` with the
+same protected remote-listening environment. This keeps the original
+campaign's unlocks, saved squads, minerals, purchased ships, casualties and
+completion receipts. The newly created `battle-####/run/` directory contains
+the command/fingerprint recording; its adjacent
+`battle-####/campaign-replay-setup.json` freezes the pre-battle fleet and
+tactics so later career changes do not alter the recorded encounter.
+Without `--serve`, the existing campaign command remains a fast headless
+mission run.
+
+To deterministically replay a standalone match later, stop/unset the remote-listening
 environment and run `bees run <same-run.json> --output-dir <new-replay-dir>
 --replay-inputs <server-output>/player-inputs.jsonl`. Keep the exact
 original run/scene and policy artifacts; playback verifies their identities,
