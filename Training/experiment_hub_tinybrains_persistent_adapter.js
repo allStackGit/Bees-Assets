@@ -58,8 +58,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         metrics[name]={value,unit};
     }
     add('total_ppo_updates',row.update,'count');
+    // The trainer emits checkpoint-lineage cumulative decisions and a
+    // cumulative active clock independent of per-update collection timing.
+    // Older histories without the cumulative count remain chartable but
+    // cannot be used as comparable learner-placement evidence.
     add('total_ant_decisions',row.total_ant_decisions,'count');
-    add('training_tracked_active_seconds',row.elapsed_seconds,'seconds');
+    add('training_tracked_active_seconds',
+        Number.isFinite(row.tracked_active_seconds)
+            ?row.tracked_active_seconds:row.elapsed_seconds,'seconds');
     add('engine_steps',row.engine_steps,'count');
     add('simulation_match_steps',row.simulation_match_steps,'count');
     if(updateWall!==null&&updateWall>0) {
