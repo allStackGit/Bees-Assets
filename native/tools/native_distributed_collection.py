@@ -49,6 +49,7 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
         raise ValueError("Hub resource plan requires 2..16 machines and 1..1024 worlds per machine")
     seen = set()
     cpus = []
+    gpu_minima = []
     for entry in entries:
         if (not isinstance(entry, dict) or
                 not isinstance(entry.get("id"), str) or
@@ -62,12 +63,25 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
         if type(cpu) is not int or not 1 <= cpu <= 32768:
             raise ValueError("Hub CPU resources must be positive finite quotas")
         cpus.append(cpu)
+        resources = entry["resources"]
+        gpu_count = resources.get("gpu_count", 0)
+        if (type(gpu_count) is not int or gpu_count not in (0, 1, 2) or
+                (gpu_count and resources.get("gpu_mode", "exclusive") != "exclusive") or
+                cpu < max(1, gpu_count)):
+            raise ValueError("native Hub collector requires CPU-only or one/two exclusive GPUs with enough CPU actors")
+        gpu_minima.append(max(1, gpu_count))
+    if (any(count > 0 for count in gpu_minima if count > 1) or
+            any(entry["resources"].get("gpu_count", 0) == 1 for entry in entries)):
+        if hub_plan.get("confirm_gpu_start") is not True:
+            raise ValueError("native Hub GPU collection requires explicit operator confirmation")
+    if sum(gpu_minima) > total_worlds:
+        raise ValueError("selected native GPU resources require at least one simulated World per GPU")
 
     # Allocate a minimum one arena per machine, then a fair capped share
     # proportional to fixed CPU budgets. No per-machine benchmark settings
     # or CPU-architecture guesses enter training/model lineage.
-    counts = [1] * len(entries)
-    for _ in range(total_worlds - len(entries)):
+    counts = gpu_minima[:]
+    for _ in range(total_worlds - sum(gpu_minima)):
         eligible = [i for i, count in enumerate(counts) if count < 1024]
         if not eligible:
             raise ValueError("Hub source plan exhausted available native World slots")
@@ -78,8 +92,9 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
 
     current = 0
     collectors = []
-    for entry, cpus_reserved, worlds in zip(entries, cpus, counts):
-        processes = min(worlds, (cpus_reserved + 127) // 128)
+    for entry, cpus_reserved, worlds, gpu_floor in zip(
+            entries, cpus, counts, gpu_minima):
+        processes = min(worlds, max(gpu_floor, (cpus_reserved + 127) // 128))
         physics = min(128, max(1, cpus_reserved // processes),
                       max(1, worlds // processes))
         collectors.append({
