@@ -190,14 +190,14 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     return scene, run, len(clones)
 
 
-def deferred_reinforcement_ships(scene: dict, run: dict) -> set[int]:
-    """Identify physically reserved future ships before policy binding.
+def deferred_reinforcement_ships(
+        scene: dict, run: dict, require_scripted_fallback: bool = True) -> set[int]:
+    """Preflight reserved physical identities and their command ownership.
 
-    Reinforcements are spawned only when the shared native Level activates a
-    real wave. It rejects live policy controllers in that reserved roster.
-    Keep each deferred squad's original command queue and return its ship IDs
-    to the existing policy author, rather than creating phantom agents at
-    the start of an episode.
+    With original scripted control, mobile deferred units must already have
+    real on-deployment orders. When policy reinforcements are requested, the
+    common policy author validates each resulting policy-or-command owner;
+    it must not reject a future learner merely for lacking a human command.
     """
     squads = {squad["item_id"]: squad for squad in scene["squads"]}
     deferred = set()
@@ -225,7 +225,7 @@ def deferred_reinforcement_ships(scene: dict, run: dict) -> set[int]:
     ships_by_id = {ship["entity_id"]: ship for ship in scene["ships"]}
     if not ship_ids.issubset(ships_by_id):
         raise ValueError("native reinforcement has a missing authored hull")
-    for squad_id in deferred - command_squads:
+    for squad_id in (deferred - command_squads if require_scripted_fallback else ()):
         for ship_id in squads[squad_id]["members"]:
             ship = ships_by_id[ship_id]
             # Authentic Carriers' children follow their parent without
@@ -341,7 +341,9 @@ def convert(source: Path, destination: Path, archetypes: Path,
                    ship["side"] == survival["defending_side"]
                    for ship in scene["ships"]):
             raise ValueError("survival protected ship must be an authentic same-side source hull")
-    reserved_ships = deferred_reinforcement_ships(scene, run)
+    reserved_ships = deferred_reinforcement_ships(
+        scene, run, require_scripted_fallback=not policy_reinforcements,
+    )
     args = SimpleNamespace(
         policy_archetypes=archetypes, minutes=seconds / 60,
         deferred_reinforcement_ship_ids=reserved_ships,
