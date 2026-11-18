@@ -8,8 +8,10 @@ pinned snapshot mirror amortizes CPU allocations and joins one GPU stream
 before serialization. Normal CPU checkpoint flushing, rollback, and
 cross-platform device verification are preserved. Hub charts and exports
 carry residency, transfer-stage timing, logical avoided copies and current
-allocator reservation versus the fixed GPU memory fraction. Hardware GPU
-compute saturation is not inferred from allocator occupancy; multi-GPU
+allocator reservation versus the fixed GPU memory fraction. Each shared-policy remote GPU collector also reports live allocator
+reservation and allocation under its approved .80 GPU fraction, with
+maximum fractional reservation attributed to a specific collector worker.
+Hardware GPU compute saturation is not inferred from allocator occupancy; multi-GPU
 shared-policy optimizer work and cross-machine useful-SPS qualification remain.
 TinyBrains coalesces greedy action-index readbacks across separate frozen Torch opponents on a GPU, while preserving each policy's weights and opponent-seat memory. Courier's GPU PPO copy-stream path reuses a bounded two-slot pinned CPU staging ring, with event-safe source ownership and no change to the optimizer or PPO batch. Both mechanisms publish reuse/synchronization evidence through the existing project-neutral metrics pipeline; real useful-SPS gains are not inferred.
 Scope: TinyBrains, Courier, future native projects; Bees remains with the unified native rewrite.
