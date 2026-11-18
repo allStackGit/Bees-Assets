@@ -1091,6 +1091,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
        bees campaign <catalog.json> --output-dir <battle-runs> --all
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id> --serve
+       bees replay-campaign <campaign-replay-setup.json> --output-dir <new-dir> --replay-inputs <player-inputs.jsonl>
        bees build <catalog.json> --output-dir <battle-runs> --side <n> --ship-type <n> --squad <saved-id>
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
@@ -1430,6 +1431,29 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .to_string_lossy().parse()?;
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_build_ship(&catalog_path, &output_root, side, ship_type, saved_squad_id);
+    }
+    if first == "replay-campaign" {
+        let setup_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--replay-inputs") {
+            return Err(invalid(USAGE).into());
+        }
+        let input_trace = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_some() || env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
+            return Err(invalid(
+                "replay-campaign requires a saved source setup, trace, and a non-listening host",
+            ).into());
+        }
+        // Preserve the original career fleet, but never post its recorded
+        // outcome back to the active campaign ledger. The same replay
+        // reader checks the original config/model identities and both
+        // physical and gameplay signatures for each recorded boundary.
+        let setup = CampaignReplaySetup::load(&setup_path)?;
+        return run_session(&setup.source_config, false, false,
+            Some(output), None, Some(input_trace), Some(setup.mission()));
     }
     if first == "campaign" {
         let catalog_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
