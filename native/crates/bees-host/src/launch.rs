@@ -4872,6 +4872,12 @@ fn run_battle(
         // records completed fixed-step work separately across all episodes.
         "vision_current_episodes": status.vision,
         "vision_completed_step_totals": status.simulation.vision,
+        "ship_slot_work": {
+            "integrated_bodies": status.simulation.integrated_bodies,
+            "inactive_ship_slots_skipped": status.simulation.inactive_ship_slots_skipped,
+            "inactive_ship_grid_slots_skipped":
+                status.simulation.inactive_ship_grid_slots_skipped,
+        },
         "navigation_current_episodes": status.navigation_workers,
         "navigation_raster_work_current_episodes": status.navigation_rasters,
         "scripted_command_work_current_episodes": status.scripted_queues,
