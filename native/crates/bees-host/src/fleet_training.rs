@@ -273,6 +273,18 @@ fn append_training_arguments(
     } else if !recipe["rollout_binary_sha256"].is_null() {
         return Err(invalid("native rollout executable digest has no binary").into());
     }
+    if !recipe["curriculum_plan"].is_null() {
+        let plan = PathBuf::from(recipe["curriculum_plan"].as_str()
+            .ok_or_else(|| invalid("invalid source-authored Stage curriculum plan"))?);
+        let expected = recipe["curriculum_plan_sha256"].as_str()
+            .ok_or_else(|| invalid("native curriculum plan has no pinned source identity"))?;
+        if !plan.is_file() || sha256_file(&plan)? != expected {
+            return Err(invalid("native curriculum plan changed after experiment selection").into());
+        }
+        command.arg("--curriculum-plan").arg(plan);
+    } else if !recipe["curriculum_plan_sha256"].is_null() {
+        return Err(invalid("native curriculum has a digest without an authored plan").into());
+    }
     if !recipe["trainer_config"].is_null() {
         let config = PathBuf::from(recipe["trainer_config"].as_str()
             .ok_or_else(|| invalid("invalid pinned trainer configuration path"))?);
@@ -391,6 +403,45 @@ fn choose_trainer_config(save_root: &Path) -> Result<Option<Option<PathBuf>>, Bo
     ))
 }
 
+
+fn choose_curriculum_plan(save_root: &Path)
+    -> Result<Option<Option<PathBuf>>, Box<dyn Error>>
+{
+    let directory = save_root.join("training").join("curricula");
+    if !directory.is_dir() {
+        return Ok(Some(None));
+    }
+    let mut plans = Vec::new();
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() ||
+            entry.path().extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        if entry.metadata()?.len() > 1_048_576 {
+            return Err(invalid("native curriculum Stage plan exceeds 1 MiB").into());
+        }
+        plans.push(entry.path().canonicalize()?);
+    }
+    if plans.is_empty() {
+        return Ok(Some(None));
+    }
+    plans.sort_unstable();
+    let mut titles = vec!["One fixed physical fleet throughout training".to_owned()];
+    titles.extend(plans.iter().map(|path|
+        path.file_name().map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Native curriculum Stage plan".to_owned())
+    ));
+    let rows = titles.iter().map(|title| BattleMenuRow {
+        title, status: "  [Existing source-authored Stage transitions]",
+        unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = 0;
+    Ok(select_library(&rows, &mut selected, false)?.map(|index|
+        if index == 0 { None } else { Some(plans[index - 1].clone()) }
+    ))
+}
+
 fn pin_trainer_config(
     job: &Path, source: Option<&Path>,
 ) -> Result<(Option<PathBuf>, Option<String>), Box<dyn Error>> {
@@ -453,6 +504,11 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let Some(trainer_source) = choose_trainer_config(save_root)? else {
         return Ok(());
     };
+    let Some(curriculum_plan) = choose_curriculum_plan(save_root)? else {
+        return Ok(());
+    };
+    let curriculum_plan_sha256 = curriculum_plan.as_ref()
+        .map(|path| sha256_file(path)).transpose()?;
     let Some(episodes_per_world) = choose_count(
         "Episodes per persistent native arena", &[1, 2, 4, 8, 16],
     )? else { return Ok(()); };
@@ -649,6 +705,8 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "evaluation_every": evaluation_every,
         "trainer_config": trainer_config,
         "trainer_config_sha256": trainer_config_sha256,
+        "curriculum_plan": curriculum_plan,
+        "curriculum_plan_sha256": curriculum_plan_sha256,
         "worlds": worlds,
         "physics_workers": workers,
         "rollout_processes": rollout_processes,
