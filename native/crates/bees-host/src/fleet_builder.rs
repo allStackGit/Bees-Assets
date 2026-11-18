@@ -485,6 +485,15 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
     let nearest_queries = scripted["nearest_enemy_resolutions"].as_u64().unwrap_or(0);
     let nearest_candidates = scripted["nearest_enemy_candidates_scanned"]
         .as_u64().unwrap_or(0);
+    // Separate configured tactical coverage from actually executed
+    // source commands. The latter are episode-local counters, not an
+    // invented measure of all lifetime combat maneuvers.
+    let configured_tactics = command_plan["configured_tactical_maneuvers"]
+        .as_u64().unwrap_or(0);
+    let circles = scripted["circle_nearest_commands_started"].as_u64().unwrap_or(0);
+    let swipes = scripted["swipe_nearest_commands_started"].as_u64().unwrap_or(0);
+    let strike_retreats = scripted["in_and_out_nearest_commands_started"]
+        .as_u64().unwrap_or(0);
     println!("{}", json!({
         "kind": "native_fleet_benchmark_complete",
         "world_steps": steps,
@@ -494,7 +503,11 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         "cpu_physics_workers": workers,
         "scripted_ai_queues": queue_count,
         "scripted_ai_orders": order_count,
+        "configured_tactical_maneuver_orders": configured_tactics,
         "scripted_worlds": worlds_with_orders,
+        "current_episodes_circle_commands_started": circles,
+        "current_episodes_swipe_commands_started": swipes,
+        "current_episodes_in_and_out_commands_started": strike_retreats,
         "scripted_commands_started_current_episodes": started_commands,
         "nearest_enemy_queries_current_episodes": nearest_queries,
         "nearest_enemy_candidates_current_episodes": nearest_candidates,
@@ -505,6 +518,7 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         format!("Arenas: {arenas}  |  CPU physics workers: {workers}"),
         format!("AI combat: {queue_count} squads / {order_count} source orders in {worlds_with_orders} arenas"),
         format!("Current episodes: {started_commands} real scripted commands activated"),
+        format!("Tactics: {configured_tactics} prepared / {circles} Circle / {swipes} Swipe / {strike_retreats} In-Out started"),
         format!("Current AI targeting: {nearest_queries} retarget checks / {nearest_candidates} live candidates"),
         format!("Completed: {steps} world steps in {wall:.2}s"),
         "Full timing, physics and scripted-command measurements: rollout-summary.json".to_owned(),

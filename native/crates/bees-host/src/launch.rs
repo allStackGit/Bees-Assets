@@ -4784,6 +4784,15 @@ fn run_battle(
             "configured_orders": config.levels.iter()
                 .flat_map(|level| level.scripted_queues.iter())
                 .map(|queue| queue.orders.len()).sum::<usize>(),
+            "configured_tactical_maneuvers": config.levels.iter()
+                .flat_map(|level| level.scripted_queues.iter())
+                .flat_map(|queue| queue.orders.iter())
+                .filter(|order| matches!(order,
+                    ScriptedOrderConfig::CircleNearest |
+                    ScriptedOrderConfig::RightSwipeNearest |
+                    ScriptedOrderConfig::LeftSwipeNearest |
+                    ScriptedOrderConfig::InAndOutNearest))
+                .count(),
             "min_queues_per_world": config.levels.iter()
                 .map(|level| level.scripted_queues.len()).min().unwrap_or(0),
         },
