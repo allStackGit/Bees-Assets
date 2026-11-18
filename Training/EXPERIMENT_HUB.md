@@ -955,8 +955,9 @@ reports that Windows evaluator service status is unavailable rather than
 assuming a timer or service is running. Linux agents inspect only the
 machine's local systemd user evaluator timers and services. These
 observations and failures are read-only diagnostics, not proof that a
-specific frozen suite ran or produced a valid checkpoint receipt. Before installation, the compiled launcher's
-`--run-once` command with an evaluator service configuration performs exactly
+specific frozen suite ran or produced a valid checkpoint receipt.
+
+Before installation, the compiled launcher's `--run-once` command with an evaluator service configuration performs exactly
 one constrained poll without registering a service.
 
 The Windows Job Object applies CPU and committed-memory caps to the Node
