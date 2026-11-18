@@ -570,8 +570,18 @@ function retainEvaluationCohorts(job,receipts) {
 }
 function missingFinalEvaluationRules(job) {
     if(job.evaluation_monitor?.include_final===false&&!job.evaluation_stop)return [];
+    // A regression Stop is not a successful training sequence and cannot
+    // authorize promotion/continuation. It can still request an evaluation
+    // of its independently verified final model during the ordinary grace
+    // window, without releasing or reopening native ownership.
+    const regressionStopped=job.status==='stopped'&&
+        job.evaluation_monitor?.regression_alert?.stop_on_regression===true&&
+        job.evaluation_regression_stop_evidence?.dispatch_id===job.dispatch_id&&
+        SHA256.test(String(job.evaluation_regression_stop_evidence?.checkpoint_sha256||''))&&
+        Boolean(job.stop_requested_at);
     if(!job.capacity_released_at||!checkpointContinuationComplete(job)||
-        !independentSequenceComplete(job)||!SHA256.test(job.checkpoint_model_sha256||''))return [];
+        !(independentSequenceComplete(job)||regressionStopped)||
+        !SHA256.test(job.checkpoint_model_sha256||''))return [];
     const cohort=job.evaluation_candidates?.find(row=>row.checkpoint_sha256===job.checkpoint_model_sha256);
     return evaluationRules(activeEvaluation(job)).filter(rule=>{
         const receipt=cohort?.receipts?.[rule.suite_id];
