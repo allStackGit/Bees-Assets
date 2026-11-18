@@ -202,6 +202,9 @@ pub struct RemotePlayMeasurements {
     pub fog_visibility_grid_queries: u64,
     pub audio_events_queued: u64,
     pub audio_events_dropped: u64,
+    /// A real ship death displaced one cosmetic projectile cue when a
+    /// busy battle had already filled its fixed outbound event budget.
+    pub ship_deaths_prioritized: u64,
 }
 
 pub struct NativeRemotePlay {
@@ -800,7 +803,16 @@ fn collect_remote_audio(
                 continue;
             }
         }
-        if pending.len() < MAX_PENDING_AUDIO_EVENTS {
+        // A 128-ship battle can fill 32 audio slots with weapon launches
+        // before a single ship dies. Preserve the actual death notification
+        // for corpse/explosion rendering by evicting one low-priority
+        // projectile sound, never a prior ship death. Retain the same fixed
+        // event limit and record each displaced/dropped cosmetic cue.
+        let displaced = if pending.len() == MAX_PENDING_AUDIO_EVENTS &&
+            matches!(event, CombatEvent::ShipDied { .. }) {
+            pending.iter().position(|cue| cue["effect"] == "projectile")
+        } else { None };
+        if pending.len() < MAX_PENDING_AUDIO_EVENTS || displaced.is_some() {
             let mut cue = json!({
                 "effect": effect, "x": point.x, "y": point.y, "tick": view.tick,
             });
@@ -834,6 +846,11 @@ fn collect_remote_audio(
                                 view.player_authority.player_squad_color_rgb(owner)),
                     });
                 }
+            }
+            if let Some(index) = displaced {
+                pending.remove(index);
+                measurements.audio_events_dropped += 1;
+                measurements.ship_deaths_prioritized += 1;
             }
             pending.push(cue);
             measurements.audio_events_queued += 1;
