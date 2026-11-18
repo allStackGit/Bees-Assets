@@ -541,6 +541,13 @@ function createNativeBeesAdapter({
             receipt.leased_gpu_count!==count||
             receipt.rollout_processes<count||
             proof?.verified_workers!==receipt.rollout_processes||
+            (count===2&&(
+                !Array.isArray(proof?.gpu_pci_addresses)||
+                proof.gpu_pci_addresses.length!==2||
+                new Set(proof.gpu_pci_addresses).size!==2||
+                proof.gpu_pci_addresses.some(pci=>
+                    !context.gpu_pci_addresses.includes(pci))
+            ))||
             !Number.isSafeInteger(proof?.model_forwards)||
             proof.model_forwards<receipt.rollout_processes
         ):(
