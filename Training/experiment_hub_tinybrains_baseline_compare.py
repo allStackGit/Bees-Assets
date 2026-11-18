@@ -7,8 +7,10 @@ This is an independent local audit, not a Hub job-evaluation receipt.
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import http.client
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 
@@ -45,6 +47,10 @@ def main():
     parser.add_argument("--scratch", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--engine-path", type=Path)
+    parser.add_argument("--publish-to-hub", action="store_true",
+                        help="Import a complete checkpoint audit into the local Hub's read-only Compare history.")
+    parser.add_argument("--hub-run-name", default=None,
+                        help="Comparison label for the historical run in the Hub.")
     args = parser.parse_args()
 
     configure_engine(args.engine_path)
@@ -73,6 +79,15 @@ def main():
     suites = [read_suite(file.expanduser().resolve(strict=True)) for file in args.suite]
     if len(set(s["suite_id"] for s in suites)) != len(suites):
         parser.error("Use distinct immutable suite IDs.")
+    if args.publish_to_hub:
+        if args.hub_run_name is not None and not 1 <= len(args.hub_run_name.strip()) <= 100:
+            parser.error("--hub-run-name must have 1–100 characters.")
+        for label, file, digest in candidates:
+            if not re.fullmatch(r"update-([0-9]{6,8})\.pt", file.name):
+                parser.error("Hub historical charts require an update-NNNNNN.pt checkpoint filename "
+                             "for a recorded training-update coordinate: " + str(file.name))
+        if any("runtime_sha256" not in suite for suite in suites):
+            parser.error("Hub imports require frozen suites with a pinned runtime_sha256.")
     report = {
         "schema_version": 1,
         "scope": "Independent local checkpoint comparison; not a Hub promotion receipt.",
@@ -90,8 +105,14 @@ def main():
                 raise RuntimeError("The fixed benchmark ended without complete match evidence.")
             draws = sum(match["outcome"] == "draw" for match in matches)
             losses = trials - wins - draws
+            if checkpoint_digest(file) != digest:
+                raise ValueError("Source checkpoint changed during the independent evaluation.")
             result = {
                 "candidate": label,
+                "evaluated_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z"),
+                "steps_completed": int(re.fullmatch(r"update-([0-9]{6,8})\.pt", file.name)[1])
+                    if re.fullmatch(r"update-([0-9]{6,8})\.pt", file.name) else None,
                 "checkpoint": str(file),
                 "checkpoint_sha256": digest,
                 "suite_id": suite["suite_id"],
@@ -128,6 +149,56 @@ def main():
     report["complete"] = True
     write_atomic(output, report)
     print(f"Complete independent baseline report: {output}")
+    if args.publish_to_hub:
+        by_suite = {suite["suite_id"]: suite for suite in suites}
+        items = []
+        for result in report["results"]:
+            suite = by_suite[result["suite_id"]]
+            items.append({
+                "checkpoint_name": Path(result["checkpoint"]).name,
+                "checkpoint_sha256": result["checkpoint_sha256"],
+                "suite_id": result["suite_id"],
+                "suite_sha256": result["suite_sha256"],
+                "suite_definition_canonical": json.dumps(suite, sort_keys=True),
+                "runtime_sha256": suite["runtime_sha256"],
+                "steps_completed": result["steps_completed"],
+                "evaluated_at": result["evaluated_at"],
+                "trials": result["trials"],
+                "successes": result["wins"],
+                "metrics": {
+                    "win_count": {"value": result["wins"], "unit": "count"},
+                    "loss_count": {"value": result["losses"], "unit": "count"},
+                    "draw_count": {"value": result["draws"], "unit": "count"},
+                    "score_rate": {"value": result["score_rate"], "unit": "ratio"},
+                },
+            })
+        request = {
+            "project_id": "tinybrains", "complete": True,
+            "run_name": (args.hub_run_name or output.stem).strip()[:100],
+            "source_report_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+            "results": items,
+        }
+        body = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        if len(body) > 65536:
+            raise ValueError("Historical import request exceeds the Hub API limit; "
+                             "split the comparison into smaller checkpoint groups.")
+        conn = http.client.HTTPConnection("127.0.0.1", 7148, timeout=20)
+        try:
+            conn.request("POST", "/api/hub/evaluation/historical", body=body,
+                         headers={"Content-Type": "application/json"})
+            with conn.getresponse() as response:
+                message = response.read(65537)
+                if len(message) > 65536:
+                    raise RuntimeError("Hub response exceeded its size limit.")
+                if response.status not in (200, 201):
+                    raise RuntimeError(f"Hub import failed (HTTP {response.status}): "
+                                       + message.decode("utf-8", errors="replace"))
+                imported = json.loads(message)
+        finally:
+            conn.close()
+        print("Historical evaluation archived for Compare under job",
+              imported["job_id"], "with", imported["record_count"], "results; "
+              "not authorized for native Stop, checkpoint selection or continuation.")
 
 
 if __name__ == "__main__":
