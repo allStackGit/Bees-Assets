@@ -683,6 +683,67 @@ class BottleneckEvidence {
                 }
             }
         } else if(seconds('training_batch_wall_seconds')>0&&
+            metrics.training_collector_workers?.unit==='count'&&
+            Number.isSafeInteger(metrics.training_collector_workers.value)&&
+            metrics.training_collector_workers.value>=1&&
+            metrics.training_collector_workers.value<=16) {
+            // Courier shared-policy mode collects *one frozen PPO batch*
+            // across separately leased remote workers. The learner can now
+            // validate/copy completed shards while other workers collect.
+            // Summed ingestion work is nested inside the collection wall;
+            // only post-last-reply ingestion is exposed to the next Adam step.
+            const wall=seconds('training_batch_wall_seconds');
+            const collect=seconds('training_collect_max_seconds');
+            const optimize=seconds('training_optimize_max_seconds');
+            const ingestion=seconds('training_ingestion_max_seconds');
+            const exposed=seconds('training_ingestion_exposed_seconds');
+            const share=value=>value!==null&&value<=wall
+                ?value/wall:null;
+            const collectShare=share(collect);
+            const optimizeShare=share(optimize);
+            const ingestionShare=share(ingestion);
+            const exposedShare=share(exposed);
+            if(collectShare!==null)
+                add('training_shared_collection_work_share',collectShare);
+            if(optimizeShare!==null)
+                add('training_shared_optimizer_work_share',optimizeShare);
+            if(ingestionShare!==null)
+                add('training_shared_ingestion_copy_share',ingestionShare);
+            if(exposedShare!==null)
+                add('training_shared_ingestion_exposed_share',exposedShare);
+            const valid=metrics.training_rejected_workers?.unit==='count'&&
+                metrics.training_rejected_workers.value===0;
+            const {at,prior}=history();
+            if(valid&&Number.isFinite(at)&&at>prior.lastAt) {
+                prior.samples.push({at,resourceHints,
+                    sharedIngestion:exposedShare!==null&&exposedShare>=0.20&&
+                        exposed>=0.20&&collectShare!==null&&collectShare>=0.25,
+                    sharedCollection:collectShare!==null&&collectShare>=0.65&&
+                        collect>=0.50,
+                    sharedOptimizer:optimizeShare!==null&&optimizeShare>=0.65&&
+                        optimize>=0.50});
+                if(prior.samples.length>8)prior.samples.shift();
+                prior.lastAt=at;
+            }
+            const recent=prior.samples.slice(-6);
+            add('training_shared_timing_sample_count',recent.length,'count');
+            if(recent.length>=5&&
+                recent.at(-1).at-recent[0].at>=120000) {
+                const sustained=fn=>recent.filter(fn).length>=5;
+                if(sustained(x=>x.sharedIngestion))
+                    add('training_shared_ingestion_pressure',1,'count');
+                if(sustained(x=>x.sharedCollection))
+                    add('training_shared_collection_pressure',1,'count');
+                if(sustained(x=>x.sharedOptimizer))
+                    add('training_shared_optimizer_pressure',1,'count');
+                if(sustained(x=>x.resourceHints?.cpuBusy))
+                    add('pipeline_cpu_lease_pressure',1,'count');
+                if(sustained(x=>x.resourceHints?.throttled))
+                    add('pipeline_cpu_throttle_pressure',1,'count');
+                if(sustained(x=>x.resourceHints?.ramNear))
+                    add('pipeline_ram_lease_pressure',1,'count');
+            }
+        } else if(seconds('training_batch_wall_seconds')>0&&
             metrics.training_lineage_workers?.unit==='count'&&
             Number.isSafeInteger(metrics.training_lineage_workers.value)&&
             metrics.training_lineage_workers.value>=1&&
