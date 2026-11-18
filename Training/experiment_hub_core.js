@@ -350,14 +350,11 @@ function gpuStartBlock(job,lease,machine) {
         machine.gpu_shared_projects?.includes(job.project_id);
     const single=r.gpu_count===1&&allocated.gpu_count===1&&
         (r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive'||sharedApproved);
-    const dual=machine.agent_platform==='linux'&&
-        job.project_id==='tinybrains'&&job.frozen_parameters?.device==='dual'&&
-        machine.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
-        r.gpu_count===2&&allocated.gpu_count===2&&
-        r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
+    const dual=dualGpuApproved(job,machine)&&allocated.gpu_count===2&&
+        allocated.gpu_mode==='exclusive';
     if(!(single||dual)||allocated.gpus?.length!==r.gpu_count||
         (r.gpus?.length&&r.gpus.some((id,i)=>id!==allocated.gpus[i])))
-        return 'Native GPU Start requires one approved GPU, or two exclusively bound TinyBrains ROCm GPUs.';
+        return 'Native GPU Start requires one GPU or two approved, exclusively bound ROCm GPUs.';
     if(!machine.gpu_projects?.includes(job.project_id))
         return 'The local adapter has not opted into native GPU execution.';
     if(machine.agent_platform==='win32') {
@@ -396,10 +393,7 @@ function gpuProbeWorkerReady(job,lease,machine) {
 }
 function gpuProbeBlock(job,lease,machine) {
     const count=job?.resources?.gpu_count;
-    const dual=count===2&&job.project_id==='tinybrains'&&
-        job.frozen_parameters?.device==='dual'&&
-        machine?.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
-        job.resources.gpu_mode==='exclusive';
+    const dual=dualGpuApproved(job,machine);
     if(!gpuProbeWorkerReady(job,lease,machine)||!lease.receipt_fresh||
         !machine.installed_projects?.includes(job.project_id)||
         !(count===1&&(job.resources.gpu_mode==='exclusive'||
@@ -918,7 +912,8 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         const exclusiveGpu=r.gpu_count===1&&r.gpu_mode==='exclusive';
         const nativeGpu=r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode);
         const dualGpu=r.gpu_count===2&&r.gpu_mode==='exclusive'&&
-            selected.project_id==='tinybrains'&&selected.frozen_parameters?.device==='dual';
+            ['tinybrains','bees_native','bees_native_collect']
+                .includes(selected.project_id);
         if(r.ram_mb<128||(!cpuOnly&&!nativeGpu&&!dualGpu))return fits;
         const ready=new Set(eligible.filter(machine=>
             machine.local_executor_enabled===true&&machine.native_preflight_passed===true&&
@@ -932,8 +927,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                     ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1&&
                         (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
                     :(r.gpu_count===2
-                        ?dualGpu&&machine.tinybrains_dual_gpu_profiles
-                            ?.includes(selected.frozen_parameters.profile)
+                        ?dualGpu&&dualGpuApproved(selected,machine)
                         :r.gpu_mode==='exclusive'||r.gpu_mode==='shared'&&
                             machine.gpu_shared_projects?.includes(selected.project_id))&&
                         machine.observed_gpus?.length>=2))
