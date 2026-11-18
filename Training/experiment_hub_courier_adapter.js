@@ -139,6 +139,8 @@ function courierMetrics(source) {
         name.startsWith('training_shared_snapshot_pinned_')||
         name.startsWith('training_shared_gpu_peak_')||
         name.startsWith('training_shared_gpu_state_')||
+        name.startsWith('training_shared_gpu_lease_')||
+        name.startsWith('training_shared_gpu_reserved_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
         /^training_gpu_rollout_input_(?:packs|seconds|owner)$/.test(name)||
