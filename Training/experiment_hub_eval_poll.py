@@ -307,6 +307,33 @@ def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> Non
         print(publish(args.receipt_root, receipt))
 
 
+def require_evaluator_budget(job: dict) -> None:
+    """Fail closed for an experiment's explicitly required CPU/RAM ceilings.
+
+    Unit creation supplies matching environment variables only alongside
+    systemd resource limits; the Windows service launcher verifies its
+    native Job Object budget before entering this poller. Manual pollers
+    without a resource-enforced service must not claim an allocation.
+    """
+    cpu = job.get("required_evaluator_cpus")
+    ram = job.get("required_evaluator_ram_mb")
+    if cpu is None and ram is None:
+        return
+    if (type(cpu) is not int or not 1 <= cpu <= 64 or
+        type(ram) is not int or not 512 <= ram <= 1048576):
+        raise ValueError("Invalid required independent evaluator CPU/RAM budget.")
+    local_cpu = os.environ.get("EXPERIMENT_HUB_EVALUATOR_CPUS", "")
+    local_ram = os.environ.get("EXPERIMENT_HUB_EVALUATOR_RAM_MB", "")
+    if (not re.fullmatch(r"[0-9]{1,2}", local_cpu) or
+        not re.fullmatch(r"[0-9]{3,7}", local_ram) or
+        int(local_cpu) < cpu or int(local_ram) < ram):
+        raise ValueError(
+            f"Frozen evaluation requires {cpu} CPU / {ram} MiB RAM; "
+            "install or select an OS-budgeted evaluator service with "
+            "matching resource limits."
+        )
+
+
 def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evaluate_checkpoint):
     suite_id = suite["suite_id"]
     state = args.scratch / f"{project}-evaluation-{args.machine}.{suite_id}.json"
@@ -343,6 +370,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                           "coordinated --suite batch for all required suites.",
                           file=sys.stderr)
                     continue
+                require_evaluator_budget(job)
                 if not UUID.fullmatch(dispatch) or receipt_suite["trials"] < job["min_trials"]:
                     continue
                 if job.get("suite_sha256", digest) != digest:
@@ -531,6 +559,8 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                 continue
             jobs = live[dispatch]
             try:
+                for job in jobs:
+                    require_evaluator_budget(job)
                 if not UUID.fullmatch(dispatch):
                     continue
                 if any(receipt_suite["trials"] < job["min_trials"]
