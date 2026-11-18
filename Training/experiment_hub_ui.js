@@ -147,10 +147,10 @@ function hubJobLabel(job) {
     return base+(job?.frozen_parameters?.training_stage
         ?' · '+job.frozen_parameters.training_stage.replaceAll('_',' '):'');
 }
-// Chart metric names are bounded to 64 characters, while exact suite and
-// runtime fingerprints are 256 bits each. If their display abbreviations
-// collide, never combine two independently different evaluations into a
-// single synthetic metric series. Preserve both raw receipts for export.
+// Chart keys abbreviate full frozen suite and runtime fingerprints.
+// Abbreviation collisions, or an unknown runtime in a multi-run view,
+// must not create a synthetic comparison between unrelated evaluators.
+// Preserve full original receipts in the archive and complete exports.
 function hubEvaluationPrefixConflicts(runs) {
     const seen=new Map(),conflicts=new Set();
     for(const run of runs)for(const row of run.evaluation_points||[]) {
@@ -158,7 +158,9 @@ function hubEvaluationPrefixConflicts(runs) {
         const identity=JSON.stringify([
             row.suite_id,row.suite_sha256,row.runtime_sha256||null,
         ]);
-        if(seen.has(prefix)&&seen.get(prefix)!==identity)
+        if(seen.has(prefix)&&seen.get(prefix)!==identity||
+            runs.length>1&&!/^[a-f0-9]{64}$/.test(
+                String(row.runtime_sha256||'')))
             conflicts.add(prefix);
         else seen.set(prefix,identity);
     }
@@ -2129,7 +2131,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const warnings=[];
         const chartIdentityConflicts=hubEvaluationPrefixConflicts(runs);
         if(chartIdentityConflicts.size)
-            warnings.push('Some independently different frozen suites or evaluator runtimes share an abbreviated chart key. Their combined metric series have been hidden to prevent incompatible comparisons; full authenticated receipts remain available in complete exports.');
+            warnings.push('Some evaluation chart series were withheld because frozen suite/runtime keys collide or the evaluator runtime is unverified in a multi-run comparison. They cannot be compared as identical controlled evaluations; original receipts remain in complete exports.');
         const regressionSignals=comparisonProject===project
             ?comparisonData?.evaluation_regressions||[]:[];
         for(const observation of regressionSignals) {
