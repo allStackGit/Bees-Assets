@@ -178,6 +178,14 @@ def main():
         print(json.dumps(imported, sort_keys=True), flush=True)
         if args.hub_job_id is not None:
             orders, job = checked_order(inputs / "orders.json", args.collector_id)
+            if "rollout_gpus" in job:
+                # Hub GPU ownership is proved by the signed exclusive lease
+                # and provider-specific GPU bindings, never by portable
+                # physical ordinals from an operator's standalone plan.
+                raise ValueError(
+                    "Hub collectors must use their verified GPU lease, not a "
+                    "standalone GPU visibility override"
+                )
             if not pinned_allocation_matches(orders, job, args):
                 raise ValueError("downloaded native collector allocation differs from the immutable Hub job")
             workers = job["rollout_workers"]
