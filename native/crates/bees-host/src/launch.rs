@@ -3851,6 +3851,8 @@ fn run_battle(
     let mut map_border_entries = 0_u64;
     let mut map_border_movement_stops = 0_u64;
     let mut map_border_override_skips = 0_u64;
+    let mut map_border_lethal_hits = 0_u64;
+    let mut map_border_lethal_kills = 0_u64;
     // Keep exactly one cumulative receipt over recycled training arenas.
     // The event processor owns per-episode admissions and resets with its
     // world; collect completed episode totals only at the reset boundary.
@@ -4226,6 +4228,8 @@ fn run_battle(
                     map_border_entries += borders.ship_entries;
                     map_border_movement_stops += borders.movement_stops;
                     map_border_override_skips += borders.override_skips;
+                    map_border_lethal_hits += borders.lethal_hits;
+                    map_border_lethal_kills += borders.lethal_kills;
                     completed_episodes[index] += 1;
                     counted_revisions[index] = Some(revision);
                 }
@@ -4803,6 +4807,8 @@ fn run_battle(
             "entries": map_border_entries,
             "movement_stops": map_border_movement_stops,
             "override_skips": map_border_override_skips,
+            "lethal_hits": map_border_lethal_hits,
+            "lethal_kills": map_border_lethal_kills,
             "completed_episodes": completed_episodes.iter()
                 .map(|&count| u64::from(count)).sum::<u64>(),
         },
