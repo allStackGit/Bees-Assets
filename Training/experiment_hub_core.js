@@ -4160,9 +4160,10 @@ class ExperimentHub {
             }
         }
         if (changed) this.commit(next);
-        // Archive only validated independent receipts retained by the
-        // committed registry. This diagnostic history never authorizes Stop,
-        // promotion or a native process transition.
+        // Keep non-authoritative history independent from the native Stop
+        // path. Only a separate, explicitly opted-in and immutable receipt
+        // regression decision may request native Stop after fsynced archive.
+        const regressionStops=new Map();
         for(const report of reports) {
             const job=this.state.jobs.find(j=>j.id===report.job_id);
             const policy=activeEvaluation(job);
@@ -4207,10 +4208,44 @@ class ExperimentHub {
                     const stored=(job.evaluation_candidates||[])
                         .find(c=>c.checkpoint_sha256===receipt.checkpoint_sha256)
                         ?.receipts?.[receipt.suite_id];
-                    if(stored&&JSON.stringify(stored)===JSON.stringify(receipt))
+                    if(stored&&JSON.stringify(stored)===JSON.stringify(receipt)) {
                         this.evaluationHistory.record(job,receipt);
+                        if(report.state==='running'&&job.status==='running'&&
+                            acceptedReports.has(job.id)&&
+                            job.evaluation_monitor?.regression_alert?.stop_on_regression===true) {
+                            const decision=this.evaluationHistory.regressionStopDecision(job,receipt);
+                            if(decision)regressionStops.set(job.id,decision);
+                        }
+                    }
                 }catch { /* Reject unaccepted or unrelated receipt observations. */ }
             }
+        }
+        // Commit an independent regression Stop as a normal durable native
+        // lifecycle transition, never as a model-selection or continuation
+        // authorization. The original authenticated owner remains responsible
+        // for stopping, verifying checkpoints and releasing resources.
+        if(regressionStops.size) {
+            const updated=copy(this.state);
+            let stopChanged=false;
+            for(const [jobId,evidence] of regressionStops) {
+                const job=updated.jobs.find(j=>j.id===jobId);
+                const lease=updated.reservations.find(l=>
+                    l.id===job?.lease_id&&l.job_id===jobId&&
+                    l.project_id===job.project_id&&
+                    l.machine_id===machine.id&&l.status==='acknowledged');
+                if(!job||job.status!=='running'||job.stop_requested_at||
+                    job.evaluation_monitor?.regression_alert?.stop_on_regression!==true||
+                    job.dispatch_id!==evidence.dispatch_id||
+                    job.assigned_machine_id!==machine.id||!lease)continue;
+                job.status='stop_requested';
+                job.stop_requested_at=now();
+                job.status_reason='Confirmed independent evaluation regression on '+
+                    evidence.suite_id+' at checkpoint update '+evidence.steps_completed+
+                    '; awaiting verified native Stop.';
+                job.evaluation_regression_stop_evidence=evidence;
+                stopChanged=true;
+            }
+            if(stopChanged)this.commit(updated);
         }
         // Do not mark receipt or liveness until the durable acknowledgement
         // succeeds. A disk failure leaves the previous lease available.
