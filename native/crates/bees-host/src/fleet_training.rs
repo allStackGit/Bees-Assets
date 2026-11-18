@@ -531,6 +531,31 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let Some(index) = select_library(&rows, &mut selected, false)? else {
         return Ok(());
     };
+    // A saved fleet uses identical physical reinforcements in gameplay
+    // and training. Only authenticated model-capable ships may switch from
+    // their scripted AI to policy inference when a wave actually arrives.
+    let selected_run: Value = serde_json::from_slice(&fs::read(&battles[index].0)?)?;
+    let policy_reinforcements = if selected_run["levels"][0]["reinforcements"]
+        .as_array().is_some_and(|waves| !waves.is_empty())
+    {
+        let options = [
+            BattleMenuRow {
+                title: "Scripted reinforcement AI",
+                status: "  [Original saved-fleet training behavior]", unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Train reinforcement policies on arrival",
+                status: "  [Only matching native policy ship classes]", unlocked: true,
+            },
+        ];
+        let mut choice = 0;
+        let Some(selection) = select_library(&options, &mut choice, false)? else {
+            return Ok(());
+        };
+        selection == 1
+    } else {
+        false
+    };
     let Some(rounds) = choose_count("MA-POCA optimizer rounds", &[1, 3, 10, 25, 100])?
         else { return Ok(()); };
     let Some(trainer_source) = choose_trainer_config(save_root)? else {
@@ -736,6 +761,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "source": source,
         "rounds": rounds,
         "episodes_per_world": episodes_per_world,
+        "policy_reinforcements": policy_reinforcements,
         "learner_side": learner_side,
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
@@ -778,8 +804,11 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let stdout = OpenOptions::new().write(true).create_new(true).open(&stdout_path)?;
     let stderr = OpenOptions::new().write(true).create_new(true).open(&stderr_path)?;
     let mut command = Command::new(python);
-    command.arg(&converter).arg(&source).arg(&prepared)
-        .arg("--bootstrap-output").arg(&model)
+    command.arg(&converter).arg(&source).arg(&prepared);
+    if policy_reinforcements {
+        command.arg("--policy-reinforcements");
+    }
+    command.arg("--bootstrap-output").arg(&model)
         .arg("--bootstrap-args");
     append_training_arguments(&mut command, &job, &recipe)?;
     let process = command
@@ -807,6 +836,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "early_stop_patience": early_stop_patience,
         "evaluation_every": evaluation_every,
         "holdout_worlds": 8,
+        "policy_reinforcements": policy_reinforcements,
         "stdout": stdout_path,
         "stderr": stderr_path,
         "model": model,
@@ -1225,8 +1255,11 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
             .arg("--source-scene").arg(prepared.join("battle.policy.scene.json"))
             .arg("--source-run").arg(prepared.join("battle.policy.run.json"));
     } else {
-        command.arg(&converter).arg(&source).arg(&prepared)
-            .arg("--bootstrap-output").arg(&model)
+        command.arg(&converter).arg(&source).arg(&prepared);
+        if recipe["policy_reinforcements"].as_bool() == Some(true) {
+            command.arg("--policy-reinforcements");
+        }
+        command.arg("--bootstrap-output").arg(&model)
             .arg("--bootstrap-args");
     }
     append_training_arguments(&mut command, job, &recipe)?;
