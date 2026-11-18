@@ -2,6 +2,7 @@
 """Project-neutral scheduled evaluation coordination and durable cursors."""
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import hashlib
 import http.client
 import json
@@ -167,6 +168,19 @@ def final_checkpoint(artifact_root, job, filename):
     return 10**16, file  # Greater than any supported running checkpoint ordinal.
 
 
+def receipt_provenance(job: dict, ordinal: int, suite: dict) -> dict:
+    """Record the tested checkpoint's training coordinate when available."""
+    step = (job.get("final_steps_completed")
+            if "final_checkpoint_sha256" in job else ordinal)
+    fields = {"evaluated_at": datetime.now(timezone.utc)
+              .isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+    if type(step) is int and 0 <= step <= 2**53 - 1:
+        fields["steps_completed"] = step
+    if isinstance(suite.get("runtime_sha256"), str):
+        fields["runtime_sha256"] = suite["runtime_sha256"]
+    return fields
+
+
 def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_digest: str) -> bool:
     try:
         receipt = json.loads(read_bounded(path, 4096))
@@ -302,6 +316,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             pending = {"target": job, "receipt": {
                 "schema_version": 1, "suite_id": suite_id, "suite_sha256": digest, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
+                **receipt_provenance(job, update, suite),
             }}
             save_cursor(state, {**saved, "pending_receipt": pending})
             flush_receipt(args, receipt_suite, pending, digest)
@@ -483,6 +498,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                             "checkpoint_sha256": checkpoint_digest,
                             "trials": receipt_suite["trials"],
                             "successes": successes,
+                            **receipt_provenance(job, update, suite),
                         }})
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
                 # A bad snapshot cannot consume the cursor or starve other
