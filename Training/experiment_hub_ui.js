@@ -2288,7 +2288,53 @@ document.addEventListener('DOMContentLoaded', () => {
         table.replaceChildren();
         const suites=new Set(),digestBySuite=new Map(),trialsBySuite=new Map();
         let missingDigest=false,differentDigests=false,differentTrialCounts=false;
-        for(const {job,slot} of runs) {
+        for(const {job,slot,evaluation_points=[]} of runs) {
+            if(job.evaluation_history_only) {
+                const latest=new Map();
+                for(const sample of evaluation_points) {
+                    const previous=latest.get(sample.suite_id);
+                    if(!previous||sample.steps_completed>previous.steps_completed)
+                        latest.set(sample.suite_id,sample);
+                }
+                for(const receipt of latest.values()) {
+                    const row=document.createElement('tr');
+                    cell(row,slot+' · '+hubJobLabel(job)+' · historical audit');
+                    cell(row,receipt.suite_id);
+                    cell(row,receipt.suite_sha256).classList.add('hub-checkpoint-digest');
+                    cell(row,receipt.successes.toLocaleString()+' / '+receipt.trials.toLocaleString());
+                    cell(row,(receipt.successes/receipt.trials).toLocaleString(
+                        undefined,{style:'percent',maximumFractionDigits:2}));
+                    cell(row,receipt.checkpoint_sha256).classList.add('hub-checkpoint-digest');
+                    const detailsCell=cell(row,'');
+                    const summary=document.createElement('details');
+                    const heading=document.createElement('summary');
+                    heading.textContent='Latest independent audit at update '+
+                        receipt.steps_completed+' · inspect frozen definition';
+                    const definition=job.source_suites?.find(item=>
+                        item.suite_id===receipt.suite_id&&
+                        item.suite_sha256===receipt.suite_sha256);
+                    const body=document.createElement('pre');
+                    body.textContent=definition?.definition||
+                        'Frozen suite definition unavailable; use the original source report.';
+                    const source=document.createElement('p');
+                    source.textContent='Source report SHA-256: '+
+                        (job.source_report_sha256||'unknown')+
+                        ' · Operator-imported observation, not Hub native execution proof.';
+                    summary.append(heading,source,body);
+                    detailsCell.append(summary);
+                    table.append(row);
+                    suites.add(receipt.suite_id);
+                    if(trialsBySuite.has(receipt.suite_id)&&
+                        trialsBySuite.get(receipt.suite_id)!==receipt.trials)
+                        differentTrialCounts=true;
+                    trialsBySuite.set(receipt.suite_id,receipt.trials);
+                    if(digestBySuite.has(receipt.suite_id)&&
+                        digestBySuite.get(receipt.suite_id)!==receipt.suite_sha256)
+                        differentDigests=true;
+                    digestBySuite.set(receipt.suite_id,receipt.suite_sha256);
+                }
+                continue;
+            }
             const policy=job.evaluation_monitor||job.evaluation_stop;
             const rules=policy?.all_of||[policy].filter(Boolean);
             const passed=job.evaluation_stop_evidence?.all_of||null;
