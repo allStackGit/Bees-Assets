@@ -2123,6 +2123,11 @@ class ExperimentHub {
                 ...(job.capacity_released_at?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
                 ...(job.capacity_released_at&&Number.isSafeInteger(job.final_progress?.steps_completed)
                     ?{final_steps_completed:job.final_progress.steps_completed}:{}),
+                // The poller can advance its receipt cursor only after
+                // the preceding observation has reached the fsynced Hub
+                // archive. A bounded candidate cache is not an ACK.
+                archived_evaluation:this.evaluationHistory.latestAccepted(
+                    job,rule.suite_id),
                 min_trials:rule.min_trials,
                 min_success_rate:job.evaluation_monitor?0:rule.min_success_rate,
                 ...(job.evaluation_monitor?{
