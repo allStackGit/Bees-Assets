@@ -230,7 +230,14 @@ impl NativeEpisodeTerminal {
         &mut self, objective: SurvivalObjective, fixed_dt_seconds: f32,
     ) -> Result<(), EpisodeTerminalError> {
         let ticks = (objective.seconds / fixed_dt_seconds).ceil();
-        if self.timeout_seconds.is_some() || self.survival.is_some() ||
+        // A policy episode also owns a safety timeout and reward progress.
+        // Survival remains the *physical* terminal authority as long as its
+        // complete fixed-step deadline fits within that policy episode.
+        // Gameplay with no policy timeout keeps the identical survival rules.
+        if self.timeout_seconds.is_some_and(|timeout|
+            (ticks as u64).saturating_mul(1) as f64 *
+                fixed_dt_seconds as f64 > timeout as f64
+        ) || self.survival.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.defending_side) ||
             objective.protected_ship_id <= 0 ||
@@ -265,6 +272,13 @@ impl NativeEpisodeTerminal {
     /// elapsed / length, clamped to [0,1]. This native controller is
     /// constructed when the timeout is armed, starting at elapsed=0.
     pub fn normalized_episode_progress(&self) -> f32 {
+        // A survival battle ends at its own physical deadline, not at the
+        // later MA-POCA safety timeout. Policy progress/reward shaping must
+        // track that same battle clock used to decide survival victory.
+        if let Some(survival) = &self.survival {
+            return (self.elapsed_seconds / survival.objective.seconds)
+                .clamp(0.0, 1.0);
+        }
         self.timeout_seconds.map_or(0.0, |timeout|
             (self.elapsed_seconds / timeout).clamp(0.0, 1.0)
         )
