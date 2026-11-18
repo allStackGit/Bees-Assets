@@ -92,6 +92,9 @@ pub struct NativeRenderCounts {
     pub ships: usize,
     /// Source PNG sprites rendered instead of the fallback hull outline.
     pub ship_sprite_draws: usize,
+    /// Frames from original Carpenter, Factory and WarpGate clips.
+    pub ship_animated_sprite_draws: usize,
+    pub ship_animation_clips_loaded: usize,
     /// Actual rendered source-color fleet sprites, not plain faction outlines.
     pub custom_ship_color_draws: usize,
     /// One-time source sprite recolor variants built this frame.
@@ -179,6 +182,8 @@ pub struct NativeSoftwareRenderer {
     /// Cache exact source-mask recolors by (ship class, SavedSquad RGB).
     /// Shared physical templates and PPO workers never allocate here.
     custom_ship_art: HashMap<(u8, [u8; 3]), Arc<NativeSprite>>,
+    /// Recolor variants of source clips, owned only by the visible UI.
+    animated_ship_art: HashMap<(u8, u8, usize, [u8; 3]), Arc<NativeSprite>>,
     sprite_raster_candidate_pixels: u64,
     sprite_raster_opaque_pixels: u64,
     sprite_raster_blended_pixels: u64,
@@ -427,6 +432,68 @@ impl SourceShipAtlas {
     }
 }
 
+/// Optional original animated ship art. The offline importer preserves
+/// source clip FPS, Unity pixels-per-unit and exact recolorable pixels.
+/// Two variants per ship type permit the physically gated WarpGate opening
+/// to switch to its original ready loop without changing game state.
+struct SourceShipAnimationArt {
+    frames_per_second: f32,
+    frames: Vec<SourceShipArt>,
+}
+
+struct SourceShipAnimationAtlas {
+    clips: [Option<SourceShipAnimationArt>; SOURCE_SHIP_TYPES * 2],
+    loaded: usize,
+}
+
+impl SourceShipAnimationAtlas {
+    fn decode(bytes: &[u8]) -> io::Result<Self> {
+        let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+            "invalid native animated ship artwork");
+        if bytes.get(..4) != Some(&b"BSA1"[..]) { return Err(invalid()); }
+        let mut at = 4usize;
+        let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+        if count > SOURCE_SHIP_TYPES * 2 { return Err(invalid()); }
+        let mut clips = std::array::from_fn(|_| None);
+        let mut pixels_total = 0usize;
+        for _ in 0..count {
+            let ty = usize::from(*bytes.get(at).ok_or_else(invalid)?);
+            at += 1;
+            let variant = usize::from(*bytes.get(at).ok_or_else(invalid)?);
+            at += 1;
+            let ppu = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            let fps = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            let frames = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            if ty >= SOURCE_SHIP_TYPES || variant > 1 || ppu == 0 ||
+                !(1..=120).contains(&fps) || !(1..=64).contains(&frames) ||
+                clips[ty * 2 + variant].is_some() {
+                return Err(invalid());
+            }
+            let mut decoded = Vec::with_capacity(frames);
+            for _ in 0..frames {
+                let width = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+                let height = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+                if !(1..=2048).contains(&width) || !(1..=2048).contains(&height) {
+                    return Err(invalid());
+                }
+                pixels_total = pixels_total.checked_add(width * height)
+                    .ok_or_else(invalid)?;
+                if pixels_total > 16_777_216 { return Err(invalid()); }
+                decoded.push(SourceShipArt {
+                    pixels_per_unit: ppu as f32,
+                    sprite: source_art_sprite(bytes, &mut at, width, height)?,
+                    recolor_mask: source_art_color_mask(bytes, &mut at, width * height)?,
+                });
+            }
+            clips[ty * 2 + variant] = Some(SourceShipAnimationArt {
+                frames_per_second: fps as f32, frames: decoded,
+            });
+        }
+        if at != bytes.len() { return Err(invalid()); }
+        Ok(Self { clips, loaded: count })
+    }
+}
+
 /// Real projectile sprites may have multiple source-authored animation
 /// slices. The global tick only determines cosmetic animation phase;
 /// projectile lifetime, hit geometry and root-shot identity stay in CombatWorld.
@@ -520,6 +587,13 @@ fn source_ship_art() -> Option<&'static SourceShipAtlas> {
     )).as_ref()
 }
 
+fn source_ship_animation_art() -> Option<&'static SourceShipAnimationAtlas> {
+    static ATLAS: OnceLock<Option<SourceShipAnimationAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "ship-animations.rgba", SourceShipAnimationAtlas::decode,
+    )).as_ref()
+}
+
 fn source_projectile_art() -> Option<&'static SourceProjectileAtlas> {
     static ATLAS: OnceLock<Option<SourceProjectileAtlas>> = OnceLock::new();
     ATLAS.get_or_init(|| load_source_art(
@@ -596,7 +670,7 @@ impl NativeSoftwareRenderer {
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
             command_target_ship_ids: HashSet::new(),
-            custom_ship_art: HashMap::new(),
+            custom_ship_art: HashMap::new(), animated_ship_art: HashMap::new(),
             sprite_raster_candidate_pixels: 0,
             sprite_raster_opaque_pixels: 0,
             sprite_raster_blended_pixels: 0,
@@ -1154,7 +1228,10 @@ impl NativeSoftwareRenderer {
         }
         self.render_obstacle_debris(view, &mut counts);
         let ship_art = source_ship_art();
+        let ship_animations = source_ship_animation_art();
         counts.ship_art_types_loaded = ship_art.map_or(0, |atlas| atlas.loaded);
+        counts.ship_animation_clips_loaded =
+            ship_animations.map_or(0, |atlas| atlas.loaded);
         self.command_target_ship_ids.clear();
         for &owner in self.selection.squads() {
             let Some(selection) = view.commands.current_selection(owner) else { continue };
@@ -1196,30 +1273,73 @@ impl NativeSoftwareRenderer {
             // Only presentation pixels change: the exact ship collider is
             // still used for collision, selection, range and fog. The
             // source PNG's own Unity PPU controls its rendered world size.
-            let art = ship_art
-                .and_then(|atlas| atlas.sprites.get(usize::from(ship.ship_type)))
-                .and_then(Option::as_ref);
-            // Each live squad retains its authentic custom color through
-            // the source-owned metadata, including dynamically created
-            // Queen/Scout children. Custom colors are never inferred from
-            // the side: a faction can contain differently colored squads.
-            let custom_rgb = view.roster.owning_squad(ship.entity_id)
+            let owner = view.roster.owning_squad(ship.entity_id);
+            // Mining sprites begin only after the source MiningRun
+            // registered this ship's true asteroid collider contact.
+            // WarpGate sprites use the source opening/readiness clock;
+            // no renderer timer can cause a ship to warp.
+            let visual_phase = match ship.ship_type {
+                4 | 9 if owner.is_some_and(|squad|
+                    view.commands.ship_is_mining(squad, ship.entity_id)) =>
+                    Some((0usize, None)),
+                20 => view.combat.game_warp_gate_animation_elapsed(ship.entity_id)
+                    .map(|elapsed| (usize::from(
+                        view.combat.game_warp_gate_ready(ship.entity_id)
+                    ), Some(elapsed))),
+                _ => None,
+            };
+            let animated = visual_phase.and_then(|(variant, elapsed)| {
+                let atlas = ship_animations?;
+                let clip = atlas.clips.get(usize::from(ship.ship_type) * 2 + variant)
+                    .and_then(Option::as_ref)?;
+                let index = if let Some(opening) = elapsed.filter(|_| variant == 0) {
+                    (opening * clip.frames_per_second).floor() as usize
+                        .min(clip.frames.len() - 1)
+                } else {
+                    ((view.tick as f32 * view.fixed_step_seconds
+                        * clip.frames_per_second).floor() as usize) % clip.frames.len()
+                };
+                Some((clip, variant, index))
+            });
+            let art = animated
+                .map(|(clip, _, frame)| &clip.frames[frame])
+                .or_else(|| ship_art
+                    .and_then(|atlas| atlas.sprites.get(usize::from(ship.ship_type)))
+                    .and_then(Option::as_ref));
+            // Each live squad retains its genuine custom color. Animated
+            // frames use the same prepared source mask as the static atlas.
+            let custom_rgb = owner
                 .and_then(|owner| view.player_authority.player_squad_color_rgb(owner));
             let tinted = art.and_then(|art| art.recolor_mask.as_ref()
                 .and_then(|_| custom_rgb.map(|rgb| (art, rgb))))
                 .map(|(art, rgb)| {
-                    let key = (ship.ship_type, rgb);
-                    if !self.custom_ship_art.contains_key(&key) {
-                        // Each variant holds full RGBA. Bound memory when
-                        // a user cycles through many different colors.
-                        if self.custom_ship_art.len() >= 96 {
-                            self.custom_ship_art.clear();
+                    if let Some((_, variant, frame)) = animated {
+                        let key = (ship.ship_type, variant as u8, frame, rgb);
+                        if !self.animated_ship_art.contains_key(&key) {
+                            if self.animated_ship_art.len() >= 512 {
+                                self.animated_ship_art.clear();
+                            }
+                            self.animated_ship_art.insert(
+                                key, Arc::new(art.recolored(rgb)),
+                            );
+                            counts.ship_color_cache_misses += 1;
                         }
-                        self.custom_ship_art.insert(key, Arc::new(art.recolored(rgb)));
-                        counts.ship_color_cache_misses += 1;
+                        Arc::clone(self.animated_ship_art.get(&key)
+                            .expect("just inserted animated source recolor"))
+                    } else {
+                        let key = (ship.ship_type, rgb);
+                        if !self.custom_ship_art.contains_key(&key) {
+                            if self.custom_ship_art.len() >= 96 {
+                                self.custom_ship_art.clear();
+                            }
+                            self.custom_ship_art.insert(
+                                key, Arc::new(art.recolored(rgb)),
+                            );
+                            counts.ship_color_cache_misses += 1;
+                        }
+                        Arc::clone(self.custom_ship_art.get(&key)
+                            .expect("just inserted static source recolor"))
                     }
-                    Arc::clone(self.custom_ship_art.get(&key)
-                        .expect("just inserted source squad recolor"))
                 });
             let drew_art = art.is_some_and(|art| {
                 let sprite = tinted.as_deref().unwrap_or(&art.sprite);
@@ -1228,6 +1348,7 @@ impl NativeSoftwareRenderer {
             });
             if drew_art {
                 counts.ship_sprite_draws += 1;
+                counts.ship_animated_sprite_draws += usize::from(animated.is_some());
                 counts.custom_ship_color_draws += usize::from(tinted.is_some());
             } else {
                 counts.ship_fallback_hulls += 1;
