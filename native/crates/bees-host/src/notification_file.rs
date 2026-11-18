@@ -727,7 +727,7 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
                 // Millions of durable combat/reward notifications must
                 // not pay for another per-event world-context BTreeMap
                 // search merely to report per-scene terminal statistics.
-                let scene = if matches!(event.kind, NativeLevelNotificationKind::EpisodeFinal(_)) {
+                let scene = if matches!(&event.kind, NativeLevelNotificationKind::EpisodeFinal(_)) {
                     self.evaluation_contexts.get(&world.0)
                         .filter(|(revision, _)| *revision == episode_revision)
                         .map(|(_, context)| context.scene_sha256.as_str())
