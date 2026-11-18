@@ -212,6 +212,9 @@ pub struct NativeAuthoredLevel<M, A> {
     /// Real source-style lethal MapBorder hazard, when expressly authored.
     /// It is shared by gameplay and policy rather than patched into RL.
     pub lethal_map_borders: bool,
+    /// Explicit nonlethal whole-hull arena guard, shared by player, AI and
+    /// neural controllers. Mutually exclusive with lethal contact.
+    pub constrain_map_borders: bool,
     pub entities: Vec<NativeAuthoredEntity>,
     pub squads: Vec<NativeAuthoredSquad>,
     /// Exact scenario count, not a population estimate.
@@ -342,7 +345,9 @@ impl NativeSceneAssets {
         )
             .map_err(NativeSceneBuildError::Combat)?;
         combat.shots_harmless = authored.shots_harmless;
-        combat.configure_lethal_map_borders(authored.lethal_map_borders);
+        combat.configure_map_border_behavior(
+            authored.lethal_map_borders, authored.constrain_map_borders,
+        ).map_err(NativeSceneBuildError::Combat)?;
         if let Some(zone) = authored.extraction {
             combat.configure_extraction(zone).map_err(NativeSceneBuildError::Combat)?;
         }
