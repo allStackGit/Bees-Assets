@@ -273,6 +273,14 @@ function boundedReport(value) {
         new Set(gpuShared).size!==gpuShared.length||
         (gpuShared.length&&!['win32','linux'].includes(value.platform)))
         throw Error('Shared GPU execution requires an opted-in native adapter.');
+    const gpuDualNative=value.gpu_dual_native_projects??[];
+    if(!Array.isArray(gpuDualNative)||gpuDualNative.length>2||
+        new Set(gpuDualNative).size!==gpuDualNative.length||
+        gpuDualNative.some(project=>
+            !['bees_native','bees_native_collect'].includes(project)||
+            !gpuProjects.includes(project))||
+        (gpuDualNative.length&&value.platform!=='linux'))
+        throw Error('Native Bees dual-GPU capability needs a locally approved Linux adapter.');
     const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
         .map(([project,ids])=>[project,suiteIds(ids)]));
     return {cpus:value.cpus,ram_mb:value.ram_mb,
@@ -301,6 +309,7 @@ function boundedReport(value) {
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
+        gpu_dual_native_projects:gpuDualNative.slice(),
         installed_projects:['linux','win32'].includes(value.platform)&&
             localExecutor?installed.slice():[]};
 }
@@ -319,6 +328,18 @@ function config(value) {
     const serialized = JSON.stringify(value);
     if (serialized.length > 65536) throw Error('Configuration exceeds 64 KiB.');
     return JSON.parse(serialized);
+}
+function dualGpuApproved(job,machine) {
+    if(!job||!machine||machine.agent_platform!=='linux'||
+        job.resources?.gpu_count!==2||
+        job.resources?.gpu_mode!=='exclusive')
+        return false;
+    if(job.project_id==='tinybrains')
+        return job.frozen_parameters?.device==='dual'&&
+            machine.tinybrains_dual_gpu_profiles
+                ?.includes(job.frozen_parameters.profile)===true;
+    return ['bees_native','bees_native_collect'].includes(job.project_id)&&
+        machine.gpu_dual_native_projects?.includes(job.project_id)===true;
 }
 function gpuStartBlock(job,lease,machine) {
     const r=job.resources,allocated=lease.resources;
@@ -1251,6 +1272,7 @@ class ExperimentHub {
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
+                machine.gpu_dual_native_projects=report.gpu_dual_native_projects.slice();
             }
             return machine;
         });
