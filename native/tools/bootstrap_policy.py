@@ -613,6 +613,18 @@ def main() -> None:
             args.hub_dispatch_plan is None or args.distributed_plan is not None or
             not 2 <= args.hub_auto_worlds <= 16384):
         parser.error("--hub-auto-worlds requires a Hub dispatch plan, no separate collector plan, and 2..16384 total Worlds")
+    # Validate the exact Hub operator approval and authenticated receiver
+    # before importing PyTorch or creating an expensive partial model. The
+    # unchanged native planner remains the sole resource-lease authority.
+    if args.hub_auto_worlds is not None:
+        from native_distributed_collection import derive_hub_resource_plan
+        plan = json.loads(args.hub_dispatch_plan.read_text(encoding="utf-8"))
+        derive_hub_resource_plan(plan, args.hub_auto_worlds)
+        if shutil.which("node") is None or not (
+                ROOT / "Training" / "experiment_hub_native_round_dispatch.js").is_file():
+            parser.error("native Hub collection requires Node.js and the existing Hub dispatch bridge")
+        from native_bundle_receiver import bundle_token
+        bundle_token()
     distributed = args.distributed_plan is not None or args.hub_auto_worlds is not None
     if distributed != (args.bundle_inbox is not None):
         parser.error("distributed sessions require a collector plan or --hub-auto-worlds and --bundle-inbox")
