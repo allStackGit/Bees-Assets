@@ -42,6 +42,8 @@ struct GameScene {
     #[serde(default)]
     shots_harmless: bool,
     #[serde(default)]
+    lethal_map_borders: bool,
+    #[serde(default)]
     activate_collision_asteroids: bool,
     #[serde(default)]
     activate_mining: bool,
@@ -1380,6 +1382,7 @@ impl NativePhysicalScene {
             fixed_dt_seconds: raw.fixed_dt_seconds,
             time_scale: raw.time_scale,
             shots_harmless: raw.shots_harmless,
+            lethal_map_borders: raw.lethal_map_borders,
             activate_collision_asteroids: raw.activate_collision_asteroids,
             activate_mining: Some(raw.activate_mining),
             activate_fog_of_war: Some(raw.activate_fog_of_war),
