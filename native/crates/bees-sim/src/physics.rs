@@ -970,6 +970,9 @@ pub struct PhysicsStepCounts {
     pub inactive_ship_slots_skipped: u64,
     /// Additional dead slots avoided across actual ship-grid rebuilds.
     pub inactive_ship_grid_slots_skipped: u64,
+    /// Historical pooled obstacle slots bypassed by integration and grids.
+    pub inactive_obstacle_slots_skipped: u64,
+    pub inactive_obstacle_grid_slots_skipped: u64,
     pub broadphase_candidates: u64,
     /// Populations temporarily kept outside cells because their true
     /// bounds cross the grid edge or span >64 cells (ship/obstacle phases).
@@ -1479,6 +1482,8 @@ impl KinematicPhysics {
                 },
             );
             self.counts.obstacle_grid_rebuilds += 1;
+            self.counts.inactive_obstacle_grid_slots_skipped +=
+                (self.obstacles.len() - self.active_obstacle_indices.len()) as u64;
             self.counts.obstacle_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::Obstacles;
         }
@@ -1512,6 +1517,8 @@ impl KinematicPhysics {
                 |index| self.obstacles[index].vision_bounds(),
             );
             self.counts.obstacle_grid_rebuilds += 1;
+            self.counts.inactive_obstacle_grid_slots_skipped +=
+                (self.obstacles.len() - self.active_obstacle_indices.len()) as u64;
             self.counts.obstacle_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::VisionObstacles;
         }
@@ -1994,6 +2001,8 @@ impl KinematicPhysics {
         self.counts = PhysicsStepCounts::default();
         self.counts.inactive_ship_slots_skipped =
             (self.ships.len() - self.active_ship_indices.len()) as u64;
+        self.counts.inactive_obstacle_slots_skipped =
+            (self.obstacles.len() - self.active_obstacle_indices.len()) as u64;
         let mut has_active_ships = false;
         for &index in &self.active_ship_indices {
             let ship = &mut self.ships[index];
@@ -2157,6 +2166,8 @@ impl KinematicPhysics {
                 },
             );
             self.counts.obstacle_grid_rebuilds += 1;
+            self.counts.inactive_obstacle_grid_slots_skipped +=
+                (self.obstacles.len() - self.active_obstacle_indices.len()) as u64;
             self.counts.obstacle_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::Obstacles;
             self.counts.obstacle_grid_overflow_bodies = self.grid.overflow.len() as u64;
