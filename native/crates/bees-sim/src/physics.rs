@@ -1238,6 +1238,9 @@ pub struct KinematicPhysics {
     active_ship_indices: Vec<usize>,
     projectiles: Vec<ProjectileBody>,
     obstacles: Vec<ObstacleBody>,
+    /// Sorted physical obstacle slots, including reused pooled asteroids.
+    /// Never holds a second copy of any collider or source entity.
+    active_obstacle_indices: Vec<usize>,
     grid: SpatialGrid,
     /// One spatial grid, rebound lazily between ship and obstacle indices.
     /// Explicit ownership prevents treating an invalidated grid as obstacles.
@@ -1282,6 +1285,7 @@ impl KinematicPhysics {
             active_ship_indices: Vec::new(),
             projectiles: Vec::new(),
             obstacles: Vec::new(),
+            active_obstacle_indices: Vec::new(),
             grid: SpatialGrid::new(area, cell_size)?,
             grid_contents: GridContents::Stale,
             ship_hulls_dirty: false,
@@ -1840,11 +1844,29 @@ impl KinematicPhysics {
         body.update_hull();
         let index = self.obstacles.len();
         self.obstacles.push(body);
+        if self.obstacles[index].active {
+            self.active_obstacle_indices.push(index);
+        }
         if matches!(self.grid_contents,
             GridContents::Obstacles | GridContents::VisionObstacles) {
             self.grid_contents = GridContents::Stale;
         }
         index
+    }
+
+    /// Centralized physical retirement for asteroid pooling and destroyed
+    /// static/MapObject/mining colliders. Preserve the historical entity
+    /// slot and overlap history; later reuse registers its new live ID.
+    pub(crate) fn retire_obstacle(&mut self, index: usize) {
+        debug_assert!(self.obstacles[index].active);
+        let position = self.active_obstacle_indices.binary_search(&index)
+            .expect("active obstacle's slot is registered");
+        self.active_obstacle_indices.remove(position);
+        self.obstacles[index].active = false;
+        if matches!(self.grid_contents,
+            GridContents::Obstacles | GridContents::VisionObstacles) {
+            self.grid_contents = GridContents::Stale;
+        }
     }
 
     pub fn add_ship(&mut self, ship: ShipBody) -> Result<usize, PhysicsError> {
@@ -1939,6 +1961,11 @@ impl KinematicPhysics {
         }
         obstacle.update_hull();
         *slot = obstacle;
+        if slot.active {
+            let insertion = self.active_obstacle_indices.binary_search(&index)
+                .expect_err("reused obstacle slot still registered active");
+            self.active_obstacle_indices.insert(insertion, index);
+        }
         if matches!(self.grid_contents,
             GridContents::Obstacles | GridContents::VisionObstacles) {
             self.grid_contents = GridContents::Stale;
