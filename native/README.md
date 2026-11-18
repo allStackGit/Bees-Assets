@@ -2200,6 +2200,17 @@ episode-by-episode statistical pairing or generalization from a single
 holdout.
 
 
+Independent fixed holdouts can use the same persistent native multi-core
+physics implementation as the playable game and headless training. Pass
+`--evaluation-physics-workers 8` to the bootstrap or training session,
+or `--physics-workers 8` to `evaluate_policy.py`. This allocation is
+pinned across every evaluated checkpoint, so measured gains cannot be
+confused with a different holdout resource configuration. The native game
+training picker reuses the selected local CPU-worker allocation, capped at
+the eight authored holdout arenas; a Hub-selected collector plan does
+not silently consume local evaluation CPU resources. Receipts expose the
+requested and observed worker counts and actual parallel physics rounds.
+
 To reduce fixed-holdout overhead on high-SPS training, optionally
 add `--evaluation-every 4` alongside the pinned holdout suite. The
 session still evaluates the initial model and its final checkpoint, but

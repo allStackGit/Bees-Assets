@@ -255,6 +255,12 @@ fn append_training_arguments(
         return Err(invalid("invalid native fixed-holdout evaluation cadence").into());
     }
     command.arg("--evaluation-every").arg(evaluation_every.to_string());
+    if !recipe["evaluation_physics_workers"].is_null() {
+        let n = recipe["evaluation_physics_workers"].as_u64()
+            .filter(|n| (1..=8).contains(n))
+            .ok_or_else(|| invalid("invalid in-game native holdout worker allocation"))?;
+        command.arg("--evaluation-physics-workers").arg(n.to_string());
+    }
     if recipe["hub_plan"].is_string() {
         if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() ||
             !recipe["rollout_processes"].is_null()
@@ -734,6 +740,10 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
         "evaluation_every": evaluation_every,
+        // The fixed holdout has eight persistent arenas. Reuse up to eight
+        // CPUs from the player's chosen local allocation; Experiment Hub
+        // collector capacity is remote, not implicitly available here.
+        "evaluation_physics_workers": workers.map(|n| n.min(8)).unwrap_or(1),
         "trainer_config": trainer_config,
         "trainer_config_sha256": trainer_config_sha256,
         "curriculum_plan": curriculum_plan,

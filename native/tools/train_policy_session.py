@@ -431,6 +431,8 @@ def ensure_evaluation(round_directory, manifest, recipe):
                "--policy-seed", str(recipe["evaluation_policy_seed"])]
     if recipe["rollout_binary"] is not None:
         command.extend(["--rollout-binary", recipe["rollout_binary"]["path"]])
+    if "evaluation_physics_workers" in recipe:
+        command.extend(["--physics-workers", str(recipe["evaluation_physics_workers"])])
     print(json.dumps({"kind":"native_training_session_evaluation_started",
                       "round_directory":str(round_directory), "attempt":attempt}),flush=True)
     launch_round(command, round_directory / f"evaluation-attempt-{attempt:03d}.log")
@@ -752,6 +754,8 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
             "scope": "sum_of_independent_verified_holdout_simulation_wall_seconds",
             "completed_holdouts_including_baseline": len(all_holdouts),
             "holdouts_with_measured_runtime": len(measured_holdouts),
+            **({"configured_physics_workers_per_holdout": recipe["evaluation_physics_workers"]}
+               if recipe and "evaluation_physics_workers" in recipe else {}),
             "useful_world_steps": holdout_steps,
             "sum_holdout_simulation_wall_seconds": holdout_wall,
             "world_steps_per_holdout_simulation_wall_second":
@@ -915,6 +919,8 @@ def main():
                         help="fixed policy action-sampling RNG seed during holdout evaluation")
     parser.add_argument("--evaluation-every", type=int, default=1,
                         help="run a pinned holdout every N optimizer rounds and at the final target (default: 1)")
+    parser.add_argument("--evaluation-physics-workers", type=int,
+                        help="independent native CPU physics workers for each holdout; does not change rollout allocation")
     parser.add_argument("--early-stop-patience", type=int,
                         help="stop after this many evaluated rounds without meaningful fixed-reference victories")
     parser.add_argument("--early-stop-minimum-rounds", type=int, default=3,
@@ -996,6 +1002,9 @@ def main():
         parser.error("no more than 16 independent monitoring suites per session")
     if args.checkpoint_selection in ("mean", "worst") and not args.monitor_evaluation_run_config:
         parser.error("mean/worst suite ranking requires additional monitoring suites")
+    if args.evaluation_physics_workers is not None and (
+            args.evaluation_run_config is None or not 1 <= args.evaluation_physics_workers <= 128):
+        parser.error("--evaluation-physics-workers requires a holdout and 1..128 CPU workers")
     if not 1 <= args.evaluation_every <= 99999 or (
             args.evaluation_every != 1 and args.evaluation_run_config is None):
         parser.error("--evaluation-every must be positive and requires a fixed holdout suite")
@@ -1151,6 +1160,8 @@ def main():
         recipe["evaluation_policy_seed"] = args.evaluation_policy_seed
         if args.evaluation_every != 1:
             recipe["evaluation_every"] = args.evaluation_every
+        if args.evaluation_physics_workers is not None:
+            recipe["evaluation_physics_workers"] = args.evaluation_physics_workers
     if args.monitor_evaluation_run_config:
         suites = [pinned(path) for path in args.monitor_evaluation_run_config]
         hashes = [recipe["evaluation_config"]["sha256"], *(suite["sha256"] for suite in suites)]

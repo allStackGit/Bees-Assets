@@ -22,7 +22,7 @@ def resolved(base, path):
     return str((base / path).resolve())
 
 
-def setup_config(source_path, manifest, output):
+def setup_config(source_path, manifest, output, physics_workers=None):
     source = json.loads(source_path.read_text(encoding="utf-8"))
     if not isinstance(source, dict) or not isinstance(source.get("run_id"), str) or not source["run_id"].strip():
         raise ValueError("evaluation run configuration requires a source run ID")
@@ -72,6 +72,10 @@ def setup_config(source_path, manifest, output):
         source["python"] = resolved(source_path.parent, python)
     source["run_id"] = f"{source['run_id']}-holdout-{uuid.uuid4().hex}"
     source["model_manifest"] = str(manifest)
+    if physics_workers is not None:
+        if type(physics_workers) is not int or not 1 <= physics_workers <= 128:
+            raise ValueError("holdout CPU physics workers must be within 1..128")
+        source["physics_workers"] = physics_workers
     source["policy_capture"] = None
     source["model_updates"] = []
     source["connection_checkpoint"] = str(output / "connection-checkpoint.json")
@@ -143,12 +147,13 @@ def per_scene_results(score, learner_side, episodes):
     return results
 
 
-def evaluate(source_path, manifest, output, learner_side, binary, policy_seed):
+def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
+             physics_workers=None):
     manifest = manifest.resolve(strict=True)
     source_path = source_path.resolve(strict=True)
     manifest_sha = file_sha256(manifest)
     source_sha = file_sha256(source_path)
-    config, expected = setup_config(source_path, manifest, output)
+    config, expected = setup_config(source_path, manifest, output, physics_workers)
     output.mkdir(parents=True, exist_ok=False)
     generated = output / "run.json"
     with generated.open("x", encoding="utf-8") as stream:
@@ -199,6 +204,12 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed):
             type(draws) is not int or not 0 <= draws <= expected or wins + draws > expected):
         raise ValueError("native evaluation side outcomes are invalid")
     scenes = per_scene_results(score, learner_side, expected)
+    selected_workers = config.get("physics_workers", 1)
+    if (throughput.get("requested_physics_workers") != selected_workers or
+            type(throughput.get("peak_parallel_physics_workers")) is not int or
+            throughput["peak_parallel_physics_workers"] < 0 or
+            throughput["peak_parallel_physics_workers"] > selected_workers):
+        raise ValueError("native evaluation physics worker accounting differs from its source")
     if file_sha256(manifest) != manifest_sha or file_sha256(source_path) != source_sha:
         raise ValueError("evaluation input changed during the native run")
     receipt = {
@@ -215,6 +226,9 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed):
         "policy_rows": throughput["successful_policy_rows"],
         "wall_seconds": throughput["wall_seconds"],
         "world_steps_per_wall_second": throughput["world_steps_per_wall_second"],
+        "requested_physics_workers": selected_workers,
+        "peak_parallel_physics_workers": throughput["peak_parallel_physics_workers"],
+        "parallel_physics_rounds": throughput.get("parallel_physics_rounds", 0),
         "evaluation": score,
         "by_scene_sha256": scenes,
         "rollout_summary_sha256": file_sha256(summary_path),
@@ -232,14 +246,18 @@ def main():
     parser.add_argument("--policy-seed", type=int, default=0,
                         help="fixed stochastic action-sampling seed across checkpoints")
     parser.add_argument("--rollout-binary", type=Path)
+    parser.add_argument("--physics-workers", type=int,
+                        help="persistent native CPU physics workers for this holdout (1..128)")
     args = parser.parse_args()
     if args.learner_side not in (1, 2):
         parser.error("--learner-side must identify the source side 1 or 2")
     if not 0 <= args.policy_seed < (1 << 63):
         parser.error("--policy-seed must be a nonnegative int63")
+    if args.physics_workers is not None and not 1 <= args.physics_workers <= 128:
+        parser.error("--physics-workers must be between 1 and 128")
     result = evaluate(args.run_config, args.model_manifest,
                       args.output_dir.resolve(), args.learner_side,
-                      args.rollout_binary, args.policy_seed)
+                      args.rollout_binary, args.policy_seed, args.physics_workers)
     print(json.dumps(result), flush=True)
 
 

@@ -406,7 +406,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          library_game_id: str | None = None,
                          library_game_title: str | None = None,
                          monitor_evaluation_run_configs: tuple[Path, ...] = (),
-                         checkpoint_selection: str = "primary") -> None:
+                         checkpoint_selection: str = "primary",
+                         evaluation_physics_workers: int | None = None) -> None:
     """Hand freshly verified artifacts to the one existing native trainer.
 
     The session has its own immutable recipe, model lineage, round receipts
@@ -470,6 +471,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
         command.extend(["--checkpoint-selection", checkpoint_selection])
     if evaluation_every != 1:
         command.extend(["--evaluation-every", str(evaluation_every)])
+    if evaluation_physics_workers is not None:
+        command.extend(["--evaluation-physics-workers", str(evaluation_physics_workers)])
     if early_stop_patience is not None:
         command.extend([
             "--early-stop-patience", str(early_stop_patience),
@@ -616,6 +619,8 @@ def main() -> None:
                         help="fixed nonnegative int63 holdout inference sampling seed")
     parser.add_argument("--evaluation-every", type=int, default=1,
                         help="fixed native holdout cadence in completed PPO rounds (default: 1)")
+    parser.add_argument("--evaluation-physics-workers", type=int,
+                        help="CPU physics workers in each independent holdout, not training rollout workers")
     parser.add_argument("--early-stop-patience", type=int,
                         help="stop when this many fixed-reference holdout rounds show no meaningful victory gain")
     parser.add_argument("--early-stop-minimum-rounds", type=int, default=3,
@@ -747,6 +752,11 @@ def main() -> None:
         parser.error("--holdout-seed and --holdout-episodes require --holdout-worlds")
     if args.holdout_worlds is not None and args.evaluation_run_config is not None:
         parser.error("choose generated --holdout-worlds or an existing --evaluation-run-config")
+    if args.evaluation_physics_workers is not None and (
+            args.train_rounds is None or
+            args.holdout_worlds is None and args.evaluation_run_config is None or
+            not 1 <= args.evaluation_physics_workers <= 128):
+        parser.error("--evaluation-physics-workers requires training, a holdout and 1..128 workers")
     if args.monitor_evaluation_run_config and (
             args.train_rounds is None or
             args.holdout_worlds is None and args.evaluation_run_config is None):
@@ -774,6 +784,7 @@ def main() -> None:
         args.holdout_worlds is not None, args.evaluation_run_config is not None,
         bool(args.monitor_evaluation_run_config),
         args.checkpoint_selection != "primary",
+        args.evaluation_physics_workers is not None,
         args.evaluation_side is not None,
         args.evaluation_policy_seed != 0, args.collector_timeout_seconds != 0,
     )):
@@ -892,6 +903,7 @@ def main() -> None:
                 library_game_title=args.library_game_title,
                 monitor_evaluation_run_configs=tuple(args.monitor_evaluation_run_config),
                 checkpoint_selection=args.checkpoint_selection,
+                evaluation_physics_workers=args.evaluation_physics_workers,
             )
 
 
