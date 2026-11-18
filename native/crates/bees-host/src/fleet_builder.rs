@@ -66,6 +66,9 @@ pub(super) struct FleetChoice {
     terrain: Terrain,
     ai_both: bool,
     objective: Objective,
+    /// Mission ownership is independent of whose input commands this host
+    /// accepts. Both local/remote players retain full command permissions.
+    objective_side: Option<i32>,
     benchmark_worlds: usize,
     benchmark_workers: usize,
 }
@@ -90,16 +93,19 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let objective = if mode == 2 {
-        Objective::Elimination
-    } else {
-        let Some(chosen) = choose_objective()? else { return Ok(None); };
-        chosen
+    let Some(objective) = choose_objective()? else { return Ok(None); };
+    let player_side = match mode { 0 => Some(1), 1 => Some(2), _ => None };
+    let objective_side = match objective {
+        Objective::Elimination => None,
+        _ if player_side.is_some() => player_side,
+        _ => {
+            let Some(side) = choose_objective_side()? else { return Ok(None); };
+            Some(side)
+        },
     };
     Ok(Some(FleetChoice {
-        player_side: match mode { 0 => Some(1), 1 => Some(2), _ => None },
-        fleet_sizes, mix, terrain, ai_both: false, objective,
-        benchmark_worlds: 1, benchmark_workers: 1,
+        player_side, fleet_sizes, mix, terrain, ai_both: false, objective,
+        objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
 
@@ -108,10 +114,18 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
 pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
-    Ok(choose_terrain()?.map(|terrain| FleetChoice {
+    let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(objective) = choose_objective()? else { return Ok(None); };
+    let objective_side = match objective {
+        Objective::Elimination => None,
+        _ => {
+            let Some(side) = choose_objective_side()? else { return Ok(None); };
+            Some(side)
+        },
+    };
+    Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, mix, terrain, ai_both: false,
-        objective: Objective::Elimination,
-        benchmark_worlds: 1, benchmark_workers: 1,
+        objective, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
 
@@ -129,7 +143,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
         else { return Ok(None); };
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, mix, terrain, ai_both: true,
-        objective: Objective::Elimination,
+        objective: Objective::Elimination, objective_side: None,
         benchmark_worlds: worlds, benchmark_workers: threads,
     }))
 }
@@ -215,6 +229,20 @@ fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
         2 => Objective::Extraction,
         _ => Objective::Elimination,
     }))
+}
+
+fn choose_objective_side() -> Result<Option<i32>, Box<dyn Error>> {
+    let choices = [
+        BattleMenuRow {
+            title: "Bees mission objective", status: "  [Faction 1]", unlocked: true,
+        },
+        BattleMenuRow {
+            title: "Humans mission objective", status: "  [Faction 2]", unlocked: true,
+        },
+    ];
+    let mut selected = 0;
+    Ok(select_library(&choices, &mut selected, false)?
+        .map(|index| index as i32 + 1))
 }
 
 fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
@@ -537,8 +565,8 @@ pub(super) fn archive(
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
     let mut deferred_squads = Vec::new();
     if matches!(selected.objective, Objective::Survival) {
-        let defender = selected.player_side.ok_or_else(||
-            invalid("survival requires one real locally controlled faction"))?;
+        let defender = selected.objective_side.ok_or_else(||
+            invalid("survival requires a real defending faction"))?;
         let enemy_index = if defender == 1 { 1 } else { 0 };
         let defenders_first_ship = if defender == 1 { 11 } else { 12 };
         run["levels"][0]["survival"] = json!({
@@ -562,8 +590,8 @@ pub(super) fn archive(
         }
         run["levels"][0]["reinforcements"] = json!(waves);
     } else if matches!(selected.objective, Objective::Extraction) {
-        let player = selected.player_side.ok_or_else(||
-            invalid("extraction requires one real locally controlled faction"))?;
+        let player = selected.objective_side.ok_or_else(||
+            invalid("extraction requires a real extracting faction"))?;
         run["levels"][0]["extraction"] = json!({
             "player_side": player,
             "center": [if player == 1 { 125.0 } else { -125.0 }, 0.0],
@@ -574,7 +602,7 @@ pub(super) fn archive(
     }
     run["next_squad_item_id"] = json!(3_000);
     run["run_id"] = json!(format!(
-        "native-fleet-{}v{}-support-{}v{}-specialist-{}v{}-{}-{}",
+        "native-fleet-{}v{}-support-{}v{}-specialist-{}v{}-{}-{}-owner{}",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
         support_count[0], support_count[1],
         specialist_count[0], specialist_count[1],
@@ -586,6 +614,7 @@ pub(super) fn archive(
             Objective::Survival => "survival",
             Objective::Extraction => "extraction",
         },
+        selected.objective_side.unwrap_or(0),
     ));
     if selected.ai_both {
         // A repeatable multi-CPU stress case: the runner does no GUI or
