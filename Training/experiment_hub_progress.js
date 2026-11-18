@@ -162,6 +162,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_optimizer_d2h_seconds',
             'training_shared_gpu_peak_allocated_mb',
             'training_shared_gpu_state_cached_mb',
+            'training_shared_gpu_lease_vram_mb',
+            'training_shared_gpu_reserved_mb',
+            'training_shared_gpu_reserved_share',
             'training_shared_gpu_input_reused',
             'training_shared_gpu_state_reused',
             'training_gpu_forward_slowest_share',
@@ -361,6 +364,15 @@ class BottleneckEvidence {
             pinReused.value+pinAllocated.value>0)
             add('training_gpu_pin_reuse_ratio',
                 pinReused.value/(pinReused.value+pinAllocated.value));
+        const sharedGpuReserved=metrics.training_shared_gpu_reserved_mb;
+        const sharedGpuLimit=metrics.training_shared_gpu_lease_vram_mb;
+        if(sharedGpuReserved?.unit==='mb'&&sharedGpuLimit?.unit==='mb'&&
+            sharedGpuReserved.value>=0&&sharedGpuLimit.value>0&&
+            sharedGpuReserved.value<=sharedGpuLimit.value)
+            // PyTorch allocator reservation / configured process fraction,
+            // not physical GPU occupancy or useful compute utilization.
+            add('training_shared_gpu_reserved_share',
+                sharedGpuReserved.value/sharedGpuLimit.value);
         const history=()=>{
             const version=metrics.training_environment_version;
             const environment=(version?.unit==='count'&&
