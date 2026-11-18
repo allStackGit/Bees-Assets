@@ -156,11 +156,6 @@ def author(args) -> tuple[dict, dict, dict]:
     if not isinstance(dt, (float, int)) or not math.isfinite(dt) or dt <= 0:
         raise ValueError("invalid authored native fixed time step")
     rounds = round(args.minutes * 60 / dt)
-    if args.trainable and args.objective != "elimination":
-        raise ValueError(
-            "native MA-POCA source episodes currently require elimination rules; "
-            "create survival and extraction as playable campaigns"
-        )
     if args.objective_side is not None and args.objective_side not in (1, 2):
         raise ValueError("objective owner must be side 1 or 2")
     if not 1 <= rounds < 1 << 32:
@@ -478,11 +473,16 @@ def author(args) -> tuple[dict, dict, dict]:
         target = (next((ship for ship in candidates
                         if ship["base_speed"] == 0), candidates[0])
                   if args.protect_type is None else candidates[0])
+        # A policy episode has a ten-tick safety margin below the authored
+        # run budget. Its genuine survival terminal must fit that margin.
+        # Set the ordinary default to the full game duration, but make a
+        # newly authored trainable mission's default exactly achievable.
+        budget = args.minutes * 60 - (10 * dt if args.trainable else 0)
         seconds = (args.survive_seconds if args.survive_seconds is not None
-                   else args.minutes * 60)
+                   else budget)
         if (not math.isfinite(seconds) or seconds <= 0 or
-                math.ceil(seconds / dt) > rounds):
-            raise ValueError("survival seconds must be positive and fit the battle's fixed ticks")
+                math.ceil(seconds / dt) * dt > budget + 1e-6):
+            raise ValueError("survival seconds must fit the native fixed-step policy/game budget")
         level["survival"] = {
             "defending_side": owner,
             "protected_ship_id": target["entity_id"],
@@ -694,11 +694,6 @@ def main() -> None:
                         default=EXAMPLES / "native-skirmish.run.json",
                         help="paired native run with the same map/physics asset matrix")
     args = parser.parse_args()
-    if args.trainable and (args.reinforcements or args.death_reinforcements):
-        parser.error(
-            "native policy episodes cannot defer source group membership "
-            "into physical reinforcement waves"
-        )
     if args.objective != "survival" and (
             args.protect_type is not None or args.survive_seconds is not None):
         parser.error("--protect-type and --survive-seconds require --objective survival")
@@ -707,7 +702,17 @@ def main() -> None:
         parser.error("--extraction-center and --extraction-radius require --objective extraction")
     try:
         scene, run, library = author(args)
-        policy = author_policy_scene(scene, run, args) if args.trainable else None
+        policy = None
+        if args.trainable:
+            # Share the fleet converter's exact deferred-roster contract,
+            # rather than enrolling a ship before its real reinforcement
+            # squad and physical body exist in the native Level.
+            from prepare_fleet_training import (
+                deferred_reinforcement_ships, verify_same_battle,
+            )
+            args.scripted_reinforcement_ship_ids = deferred_reinforcement_ships(scene, run)
+            policy = author_policy_scene(scene, run, args)
+            verify_same_battle(scene, run, policy[0], policy[1])
         output = args.output_dir.resolve()
         output.mkdir(parents=True, exist_ok=False)
         documents = [
