@@ -58,6 +58,9 @@ mod recorded_library;
 #[cfg(feature = "client")]
 #[path = "fleet_builder.rs"]
 mod fleet_builder;
+#[cfg(feature = "client")]
+#[path = "fleet_training.rs"]
+mod fleet_training;
 
 type MinionAllocator = Box<
     dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError> + Send,
@@ -2480,6 +2483,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             title: "Build Fleet Skirmish",
             status: "  [Custom native fleets]", unlocked: true,
         });
+        let fleet_train_index = rows.len();
+        rows.push(BattleMenuRow {
+            title: "Train Saved Fleet",
+            status: "  [MA-POCA native training]", unlocked: true,
+        });
         let fleet_benchmark_index = rows.len();
         rows.push(BattleMenuRow {
             title: "Benchmark Fleet Simulation",
@@ -2488,6 +2496,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
         let creating_fleet = index == fleet_builder_index;
+        let training_fleet = index == fleet_train_index;
         let benchmarking_fleet = index == fleet_benchmark_index;
         let trained_index = (index >= library.games.len() &&
             index < library.games.len() + trained.len())
@@ -2500,6 +2509,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 usize::from(join_available) + usize::from(host_available);
         let (game_id, game_kind, game_title) = if creating_fleet {
             (fleet_builder::GAME_ID, "custom_fleet", "Build Fleet Skirmish")
+        } else if training_fleet {
+            ("fleet-training", "train", "Train Saved Fleet")
         } else if benchmarking_fleet {
             ("fleet-benchmark", "benchmark", "Benchmark Fleet Simulation")
         } else if watching {
@@ -2537,6 +2548,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 }));
                 run_session(&source, true, true, Some(output), None, None, None)
             })()
+        } else if training_fleet {
+            fleet_training::choose_and_train(save_root)
         } else if benchmarking_fleet {
             (|| {
                 let Some(choice) = fleet_builder::choose_benchmark()? else {
