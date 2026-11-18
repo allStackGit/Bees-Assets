@@ -1117,7 +1117,7 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
         "kind": "native_fleet_training_resumed",
         "job": job, "pid": child.id(), "model": model,
         "stdout": stdout_path, "stderr": stderr_path,
-        "rounds": rounds, "worlds": worlds,
+        "rounds": rounds, "worlds": recipe["worlds"],
         "hub_worlds": recipe["hub_worlds"],
     }));
     reap_training_process(child, stderr_path);
