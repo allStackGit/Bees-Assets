@@ -3853,6 +3853,10 @@ fn run_battle(
     let mut map_border_override_skips = 0_u64;
     let mut map_border_lethal_hits = 0_u64;
     let mut map_border_lethal_kills = 0_u64;
+    let mut map_border_confinement_corrections = 0_u64;
+    let mut map_border_velocity_clamps = 0_u64;
+    let mut map_border_unfittable = 0_u64;
+    let mut map_border_missing_profiles = 0_u64;
     // Keep exactly one cumulative receipt over recycled training arenas.
     // The event processor owns per-episode admissions and resets with its
     // world; collect completed episode totals only at the reset boundary.
@@ -4230,6 +4234,11 @@ fn run_battle(
                     map_border_override_skips += borders.override_skips;
                     map_border_lethal_hits += borders.lethal_hits;
                     map_border_lethal_kills += borders.lethal_kills;
+                    map_border_confinement_corrections +=
+                        borders.confinement_position_corrections;
+                    map_border_velocity_clamps += borders.confinement_velocity_clamps;
+                    map_border_unfittable += borders.confinement_unfittable_hulls;
+                    map_border_missing_profiles += borders.confinement_missing_profiles;
                     completed_episodes[index] += 1;
                     counted_revisions[index] = Some(revision);
                 }
@@ -4809,6 +4818,10 @@ fn run_battle(
             "override_skips": map_border_override_skips,
             "lethal_hits": map_border_lethal_hits,
             "lethal_kills": map_border_lethal_kills,
+            "confinement_position_corrections": map_border_confinement_corrections,
+            "confinement_velocity_clamps": map_border_velocity_clamps,
+            "confinement_unfittable_hulls": map_border_unfittable,
+            "confinement_missing_profiles": map_border_missing_profiles,
             "completed_episodes": completed_episodes.iter()
                 .map(|&count| u64::from(count)).sum::<u64>(),
         },
