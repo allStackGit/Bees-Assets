@@ -218,7 +218,17 @@ class JobExporter {
             throw Error('The approved local artifact directory is unsafe or unavailable. Remote-only exports require a trusted Hub data root.');
         const progress=legacy?this.legacyBees.progress():
             this.hub.progressComparison(project);
-        progress.samples=progress.samples.filter(sample=>value.job_ids.includes(sample.job_id));
+        const selectedIds=new Set(value.job_ids);
+        progress.samples=progress.samples.filter(sample=>selectedIds.has(sample.job_id));
+        // Complete ZIP exports retain the raw per-job JSONL below, but the
+        // bounded comparison snapshot must not include unrelated selected
+        // project jobs, historical audits or their evaluator diagnostics.
+        for(const field of ['evaluations','evaluation_regressions',
+            'evaluation_diagnostics']) {
+            if(Array.isArray(progress[field]))
+                progress[field]=progress[field].filter(row=>
+                    selectedIds.has(row.job_id));
+        }
         // Each mounted root is keyed by an already assigned machine and a
         // trusted project ID. Job IDs are UUIDs from the Hub registry, never
         // arbitrary caller path components.
