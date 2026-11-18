@@ -514,6 +514,44 @@ def stop_parallel_rollout_workers(processes):
             pass
 
 
+def verified_gpu_forwards(log_path):
+    """Inspect genuine resident-model forward counters from the child log.
+
+    The Python model worker emits its counters after every 2,048 batches
+    and again when a complete native rollout shuts down. A GPU request
+    without completed GPU actions must never be reported as GPU training.
+    """
+    evidence = None
+    with log_path.open("r", encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            if '"native_policy_inference_efficiency"' not in line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("kind") != "native_policy_inference_efficiency":
+                continue
+            calls = row.get("gpu_forward_calls")
+            processed = row.get("gpu_forward_rows")
+            total = row.get("agent_rows")
+            if (type(calls) is not int or type(processed) is not int or
+                    type(total) is not int or not 0 <= calls <= processed <= total):
+                continue
+            if calls > 0 and processed > 0 and (
+                    evidence is None or processed >= evidence["agent_rows"]
+            ):
+                evidence = {
+                    "model_forwards": calls,
+                    "agent_rows": processed,
+                }
+    if evidence is None:
+        raise ValueError(
+            f"native GPU allocation produced no verified GPU model forwards: {log_path}"
+        )
+    return evidence
+
+
 def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                           gpu_ids=None, gpu_mask=None, leased_gpu_inference=False):
     """Supervise one immutable rollout subprocess per process allocation.
@@ -525,13 +563,15 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
     started = time.perf_counter()
     processes = []
     metrics = {}
+    gpu_proofs = {}
+    gpu_requested = gpu_ids is not None or leased_gpu_inference
     settled = set()
     with ExitStack() as files:
         try:
             for index, (shard, config_path) in enumerate(shards):
                 log = (files.enter_context(
                     config_path.with_name("rollout.log").open("x", encoding="utf-8")
-                ) if diagnostics else None)
+                ) if diagnostics or gpu_requested else None)
                 processes.append(subprocess.Popen(
                     [*command, str(config_path)],
                     stdout=log, stderr=subprocess.STDOUT if log is not None else None,
@@ -555,6 +595,10 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     metrics[index] = rollout_metrics(
                         Path(shard["rollout_summary"]), shard, manifest_sha,
                     )
+                    if gpu_requested:
+                        gpu_proofs[index] = verified_gpu_forwards(
+                            shards[index][1].with_name("rollout.log")
+                        )
                     # Clean each completed group immediately. A fast worker
                     # can finish long before slower environments; waiting
                     # until the last sibling completes could allow its PID
@@ -566,11 +610,21 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     time.sleep(0.1)
             if len(shards) == 1:
                 # Preserve the historical one-process metric receipt layout.
-                return metrics[0]
-            return combined_rollout_metrics(
-                [metrics[index] for index in range(len(shards))],
-                time.perf_counter() - started,
-            )
+                result = metrics[0]
+            else:
+                result = combined_rollout_metrics(
+                    [metrics[index] for index in range(len(shards))],
+                    time.perf_counter() - started,
+                )
+            if gpu_requested:
+                # Every allocated process must have actually forwarded at
+                # least one action batch on a GPU, not merely loaded weights.
+                result["gpu_inference"] = {
+                    "verified_workers": len(gpu_proofs),
+                    "model_forwards": sum(p["model_forwards"] for p in gpu_proofs.values()),
+                    "agent_rows": sum(p["agent_rows"] for p in gpu_proofs.values()),
+                }
+            return result
         except BaseException:
             # Only recently observed or still-running groups belong here.
             # Never revisit an early-completed process group: its PID may
