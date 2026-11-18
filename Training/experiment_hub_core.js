@@ -3411,6 +3411,21 @@ class ExperimentHub {
                 (report.progress_issue!=null&&
                     (typeof report.progress_issue!=='string'||
                         report.progress_issue.length>160))||
+                (report.evaluation_issue!=null&&
+                    (typeof report.evaluation_issue!=='string'||
+                        report.evaluation_issue.length<1||
+                        report.evaluation_issue.length>160))||
+                (report.evaluation_issues!=null&&
+                    (!Array.isArray(report.evaluation_issues)||
+                     report.evaluation_issues.length<1||
+                     report.evaluation_issues.length>8||
+                     report.evaluation_issues.some(issue=>
+                         typeof issue!=='string'||issue.length<1||
+                         issue.length>160)||
+                     new Set(report.evaluation_issues).size!==
+                         report.evaluation_issues.length||
+                     (report.evaluation_issue!=null&&
+                         report.evaluation_issue!==report.evaluation_issues.at(-1))))||
                 ['memory_current_mb','cpu_time_ns','peak_job_memory_bytes','process_tasks',
                  'cpu_throttle_events','cpu_quota_periods'].some(k=>
                     report[k]!=null&&
@@ -3506,11 +3521,13 @@ class ExperimentHub {
             // Only reports accepted into the lifecycle may update live
             // telemetry and comparison samples. A delayed older report
             // must not make a terminal job appear to be running again.
-            let evaluation=null,evaluations=[],evaluationDefinitions=null,evaluationIssue=null;
+            let evaluation=null,evaluations=[],evaluationDefinitions=null,
+                evaluationIssue=null,evaluationIssues=[];
             if(state==='running'&&job.project_id!=='ants'&&activeEvaluation(job)&&
                 supportsEvaluation(evaluationSuites,job)) {
-                evaluationIssue=typeof report.evaluation_issue==='string'
-                    ?report.evaluation_issue.slice(0,160):null;
+                evaluationIssue=report.evaluation_issue||null;
+                evaluationIssues=report.evaluation_issues?.slice()||
+                    (evaluationIssue?[evaluationIssue]:[]);
                 const activePolicy=activeEvaluation(job);
                 const rules=evaluationRules(activePolicy);
                 if(activePolicy.all_of) {
@@ -3554,7 +3571,7 @@ class ExperimentHub {
                             evaluationDefinitions=definitions;
                         }catch(error) {
                             evaluations=[];
-                            evaluationIssue=error.message;
+                            evaluationIssue=String(error.message).slice(0,160);
                         }
                     }
                 }else if(report.evaluation!=null) {
@@ -3575,7 +3592,7 @@ class ExperimentHub {
                                 [evaluation.suite_id]:evaluation.suite_sha256};
                     }catch(error) {
                         evaluation=null;
-                        evaluationIssue=error.message;
+                        evaluationIssue=String(error.message).slice(0,160);
                     }
                 }
             }
@@ -3588,7 +3605,10 @@ class ExperimentHub {
             const resources=summarizeResourceSample(
                 previous?.dispatch_id===job.dispatch_id?previous.resource_usage:null,
                 report,observedAt);
-            accepted.set(report.job_id,{progress,evaluation,evaluationIssue,resources});
+            if(evaluationIssue&&!evaluationIssues.includes(evaluationIssue))
+                evaluationIssues.push(evaluationIssue);
+            accepted.set(report.job_id,{progress,evaluation,evaluationIssue,
+                evaluationIssues,resources});
             if(job.status!==state||
                 (job.execution_diagnostic||null)!==(report.diagnostic||null)) {
                 job.status=state;
@@ -4096,8 +4116,7 @@ class ExperimentHub {
             // Only an authenticated, lifecycle-accepted native observation
             // may produce a diagnostic entry. Receipt-reader failures have
             // no trustworthy checkpoint coordinate or outcome count.
-            const issue=acceptedReports.get(job.id)?.evaluationIssue;
-            if(issue) {
+            for(const issue of acceptedReports.get(job.id)?.evaluationIssues||[]) {
                 const rule=evaluationRules(policy).find(rule=>
                     issue.startsWith(rule.suite_id+': '));
                 this.evaluationHistory.recordIssue(job,issue,rule?.suite_id||null);
