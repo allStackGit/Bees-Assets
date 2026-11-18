@@ -155,7 +155,7 @@ function courierMetrics(source) {
         name.startsWith('training_sim_migration_')||
         name.startsWith('training_sim_process_migration_')||
         name==='training_collector_sim_trial_workers'||
-        /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling)$/.test(name)||
+        /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
         /^worker_[0-9]{1,2}_resume_maps_(?:before|after)$/.test(name)||
         name==='training_collector_resume_restored'||
         ['training_info_pack_max_seconds',
@@ -179,7 +179,7 @@ function courierMetrics(source) {
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
             /^worker_[0-9]{1,2}_(?:probe|resume)_maps_(?:before|after)$/.test(name)||
-            /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling)$/.test(name)||
+            /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
             /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
