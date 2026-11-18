@@ -1004,6 +1004,30 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                         text::fit(&status,FIELD-32),1,[255,211,130]);
                 }
             }
+        } else if let Some(waves)=state["reinforcements"].as_object() {
+            // Use only the host's side-authorized Level wave state, not
+            // locally inferred ship counts or a client-side timer.
+            let pending=waves.get("pending").and_then(Value::as_u64).unwrap_or(0);
+            let tick=state["tick"].as_u64().unwrap_or(0);
+            let dt=state["fixed_step_seconds"].as_f64().unwrap_or(0.0);
+            let recent=waves.get("last_arrival_tick").and_then(Value::as_u64)
+                .is_some_and(|arrival|tick>=arrival &&
+                    dt.is_finite()&&dt>0.0 &&
+                    (tick-arrival) as f64*dt<3.0);
+            let status=if recent {
+                Some("Reinforcements arrived".to_owned())
+            }else if pending==0 {
+                None
+            }else if let Some(next)=waves.get("next_tick").and_then(Value::as_u64) {
+                let seconds=((next.saturating_sub(tick) as f64)*dt).max(0.0);
+                Some(format!("Reinforcements: {pending} waves  Next {:.0}s",seconds))
+            }else {
+                Some(format!("Reinforcements: {pending} waves  Awaiting mission event"))
+            };
+            if let Some(status)=status {
+                text::draw_at(pixels,WIDTH,16,23,
+                    text::fit(&status,FIELD-32),1,[255,211,130]);
+            }
         }
     } else {
         text::draw_at(pixels,WIDTH,30,30,"Waiting for authoritative battle state",2,TEXT);
