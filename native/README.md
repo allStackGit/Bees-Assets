@@ -167,9 +167,12 @@ faction learns, optimizer rounds, parallel arenas, CPU physics workers, and
 CPU or PyTorch GPU optimization. To reduce process and model reload costs,
 choose 1–16 episodes per persistent native arena. Long experiments can
 evaluate the same fixed-seed holdout every 1, 2, 5 or 10 optimizer rounds,
-rather than paying evaluation overhead after every round. With a local GPU
-optimizer, model inference may stay on CPU or use the CUDA/ROCm GPU; Hub
-collectors default to portable CPU inference. These choices are pinned for
+rather than paying evaluation overhead after every round. Local optimizers
+can target CPU or CUDA/ROCm device indices 0–3. Model inference may stay
+on CPU or share the selected accelerator; two independent jobs can use
+separate visible GPUs. PyTorch resolves the actual available device count,
+including any CUDA/HIP visibility restrictions. Hub collectors default to
+portable CPU inference. These choices are pinned for
 continuation, and the progress view distinguishes useful end-to-end SPS
 from summed collector-local simulation efficiency.
 You can select a saved PPO configuration from
