@@ -933,7 +933,8 @@ pub(super) fn archive(
         !matches!(selected.objective, Objective::Survival)
     {
         let run_id = run["run_id"].as_str()
-            .ok_or_else(|| invalid("native fleet run identity is missing"))?;
+            .ok_or_else(|| invalid("native fleet run identity is missing"))?
+            .to_owned();
         run["run_id"] = json!(format!(
             "{run_id}-{}", selected.reinforcements.label(),
         ));
