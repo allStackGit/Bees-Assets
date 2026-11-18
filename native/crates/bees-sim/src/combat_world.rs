@@ -1427,6 +1427,14 @@ impl CombatWorld {
         self.physics.ships().get(index)
     }
 
+    /// Read the canonical collider pose by stable obstacle identity. The
+    /// presentation layer need not scan the entire battlefield for every
+    /// projectile impact, and the lookup does not clone physics state.
+    pub fn obstacle_body(&self, entity_id: i64) -> Option<&ObstacleBody> {
+        let &index = self.obstacle_by_id.get(&entity_id)?;
+        self.physics.obstacles().get(index)
+    }
+
     /// Living members include temporary/minion ships, as Unity's RL
     /// training-team cap requires; dead wrappers never occupy a slot.
     pub fn living_ships_on_side(&self, side: i32) -> usize {
