@@ -50,6 +50,7 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
     seen = set()
     cpus = []
     gpu_minima = []
+    gpu_counts = []
     for entry in entries:
         if (not isinstance(entry, dict) or
                 not isinstance(entry.get("id"), str) or
@@ -64,16 +65,19 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
             raise ValueError("Hub CPU resources must be positive finite quotas")
         cpus.append(cpu)
         resources = entry["resources"]
-        gpu_count = resources.get("gpu_count", 0)
+        devices = resources.get("gpus", [])
+        if not isinstance(devices, list):
+            raise ValueError("native GPU reservation list must be an array")
+        gpu_count = resources.get("gpu_count", len(devices))
         if (type(gpu_count) is not int or gpu_count not in (0, 1, 2) or
+                (devices and len(devices) != gpu_count) or
                 (gpu_count and resources.get("gpu_mode", "exclusive") != "exclusive") or
                 cpu < max(1, gpu_count)):
             raise ValueError("native Hub collector requires CPU-only or one/two exclusive GPUs with enough CPU actors")
+        gpu_counts.append(gpu_count)
         gpu_minima.append(max(1, gpu_count))
-    if (any(count > 0 for count in gpu_minima if count > 1) or
-            any(entry["resources"].get("gpu_count", 0) == 1 for entry in entries)):
-        if hub_plan.get("confirm_gpu_start") is not True:
-            raise ValueError("native Hub GPU collection requires explicit operator confirmation")
+    if any(gpu_counts) and hub_plan.get("confirm_gpu_start") is not True:
+        raise ValueError("native Hub GPU collection requires explicit operator confirmation")
     if sum(gpu_minima) > total_worlds:
         raise ValueError("selected native GPU resources require at least one simulated World per GPU")
 
