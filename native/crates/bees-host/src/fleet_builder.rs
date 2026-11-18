@@ -694,11 +694,14 @@ pub(super) fn archive(
     let scene_path = parent.join("replay-source-scene.json");
     let run_path = parent.join("replay-source-run.json");
     write_json_new(&scene_path, &scene)?;
-    let frozen_scene = scene_path.canonicalize()?;
+    // Saved battles, recorded replays, and trainable source archives own
+    // their scene in this same directory. Resolve it relative to the run,
+    // not the developer's absolute Windows/Linux save path, so moving or
+    // copying a complete battle archive preserves its physical identity.
     for level in run["levels"].as_array_mut().ok_or_else(||
         invalid("native fleet build has no physical Levels"))?
     {
-        level["scene"] = json!(frozen_scene);
+        level["scene"] = json!("replay-source-scene.json");
     }
     // Validate the exact RunConfig accepted by the ordinary gameplay
     // runner before publishing a discoverable replay-source-run file.
