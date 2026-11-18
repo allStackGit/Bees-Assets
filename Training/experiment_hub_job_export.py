@@ -162,7 +162,7 @@ class IndependentEvaluationRows(SelectedObservationRows):
             row.get("source_kind"), row.get("source_report_sha256"),
             row.get("source_checkpoint_name"),
         )
-        def write(metric="", value="", unit="", reason="") -> None:
+        def write(metric="", value="", unit="", reason="", origin="") -> None:
             # Evaluator diagnostics can be supplied by a third-party runtime.
             # Quote them as literal spreadsheet text rather than formulas.
             safe_reason = ("'" + reason if isinstance(reason, str) and
@@ -170,14 +170,15 @@ class IndependentEvaluationRows(SelectedObservationRows):
                            else reason)
             self.writer.writerow(
                 (*shared, row.get("trials"), row.get("successes"),
-                 metric, value, unit, *provenance, safe_reason)
+                 metric, origin, value, unit, *provenance, safe_reason)
             )
             self.rows += 1
 
         if status != "complete":
             if "successes" in row or "trials" in row or "metrics" in row:
                 raise ValueError("Non-scoring evaluator diagnostic contains an outcome")
-            write(reason=row.get("reason") or row.get("issue") or "")
+            write(reason=row.get("reason") or row.get("issue") or "",
+                  origin="non_scoring_diagnostic")
             return
         trials, successes = row.get("trials"), row.get("successes")
         if (type(trials) is not int or type(successes) is not int or
@@ -190,7 +191,8 @@ class IndependentEvaluationRows(SelectedObservationRows):
             raise ValueError("Incomplete independent checkpoint evaluation identity")
         if row.get("steps_completed") is None:
             self.missing_coordinates += 1
-        write("success_rate", successes / trials, "ratio")
+        write("success_rate", successes / trials, "ratio",
+              origin="verified_success_count")
         metrics = row.get("metrics") or {}
         if not isinstance(metrics, dict):
             raise ValueError("Invalid independent evaluation measurements")
@@ -208,7 +210,7 @@ class IndependentEvaluationRows(SelectedObservationRows):
                     unit == "count" and (type(value) is not int or value < 0) or
                     unit == "ratio" and not 0 <= value <= 1):
                 raise ValueError("Independent evaluation measurement exceeds its unit contract")
-            write(name, value, unit)
+            write(name, value, unit, origin="project_measurement")
 
 
 def export(spec: dict, output: Path) -> dict:
@@ -511,8 +513,8 @@ def export(spec: dict, output: Path) -> dict:
                 "attempted_at", "steps_completed", "coordinate_status",
                 "suite_id", "suite_sha256",
                 "runtime_sha256", "checkpoint_sha256", "dispatch_id",
-                "evaluation_status", "trials", "successes", "metric", "value",
-                "unit", "source_kind", "source_report_sha256",
+                "evaluation_status", "trials", "successes", "metric",
+                "metric_origin", "value", "unit", "source_kind", "source_report_sha256",
                 "source_checkpoint_name", "diagnostic",
             ))
         selected_observation_path = None
