@@ -14,6 +14,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 
@@ -140,6 +141,7 @@ def main():
     inputs = attempt / "inputs"
     try:
         input_archive = args.input_archive
+        previous_archive = None
         if args.input_url:
             previous_archive = prior_pinned_input_archive(scratch, attempt, args)
             if previous_archive is not None:
@@ -156,8 +158,23 @@ def main():
                     token=transport_token,
                 )
                 print(json.dumps(received, sort_keys=True), flush=True)
-        imported = import_inputs(input_archive, inputs,
-                                 args.policy_worker, args.python, args.collector_id)
+        try:
+            imported = import_inputs(input_archive, inputs,
+                                     args.policy_worker, args.python, args.collector_id)
+        except (ValueError, OSError, EOFError, tarfile.TarError):
+            if previous_archive is None:
+                raise
+            # A damaged prior archive must not poison all future retries.
+            # Re-fetch once; the ordinary import still verifies every byte
+            # and the Hub's exact frozen allocation before execution.
+            input_archive = attempt / "issued-inputs.tar"
+            received = download_input_archive(
+                args.input_url, args.collector_id, input_archive,
+                token=transport_token,
+            )
+            print(json.dumps(received, sort_keys=True), flush=True)
+            imported = import_inputs(input_archive, inputs,
+                                     args.policy_worker, args.python, args.collector_id)
         print(json.dumps(imported, sort_keys=True), flush=True)
         if args.hub_job_id is not None:
             orders, job = checked_order(inputs / "orders.json", args.collector_id)
