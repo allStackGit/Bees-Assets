@@ -33,7 +33,7 @@ def rocm_visible_gpu_pci() -> str | None:
             loaded = {
                 fields[-1] for line in maps
                 if (fields := line.rstrip().split(maxsplit=5)) and len(fields) == 6
-                and re.fullmatch(r"libamdhip64\\.so(?:\\.[0-9]+)*",
+                and re.fullmatch(r"libamdhip64\.so(?:\.[0-9]+)*",
                                  os.path.basename(fields[-1]))
                 and os.path.isabs(fields[-1])
             }
@@ -47,7 +47,7 @@ def rocm_visible_gpu_pci() -> str | None:
         if get_pci(address, len(address), 0) != 0:
             return None
         value = address.value.decode("ascii").lower()
-        return value if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]", value) else None
+        return value if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", value) else None
     except (OSError, AttributeError, UnicodeDecodeError):
         return None
 
