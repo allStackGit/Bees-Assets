@@ -215,6 +215,13 @@ fn append_training_arguments(
             .ok_or_else(|| invalid("invalid fixed-holdout early stopping policy"))?;
         command.arg("--early-stop-patience").arg(patience.to_string());
     }
+    let evaluation_every = recipe["evaluation_every"].as_u64().unwrap_or(1);
+    if ![1, 2, 5, 10].contains(&evaluation_every) ||
+        evaluation_every > rounds
+    {
+        return Err(invalid("invalid native fixed-holdout evaluation cadence").into());
+    }
+    command.arg("--evaluation-every").arg(evaluation_every.to_string());
     if recipe["hub_plan"].is_string() {
         if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() ||
             !recipe["rollout_processes"].is_null() || !recipe["rollout_binary"].is_null()
@@ -479,6 +486,16 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     } else {
         None
     };
+    let evaluation_every = if rounds >= 10 {
+        let choices = [1, 2, 5, 10].into_iter()
+            .filter(|&interval| interval <= rounds).collect::<Vec<_>>();
+        let Some(interval) = choose_count(
+            "Fixed-seed holdout every N optimizer rounds", &choices,
+        )? else { return Ok(()); };
+        interval
+    } else {
+        1
+    };
     let early_stop_patience = if rounds >= 10 {
         let choices = [
             BattleMenuRow {
@@ -608,6 +625,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "learner_side": learner_side,
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
+        "evaluation_every": evaluation_every,
         "trainer_config": trainer_config,
         "trainer_config_sha256": trainer_config_sha256,
         "worlds": worlds,
@@ -667,6 +685,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "learner_side": learner_side,
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
+        "evaluation_every": evaluation_every,
         "holdout_worlds": 8,
         "stdout": stdout_path,
         "stderr": stderr_path,
