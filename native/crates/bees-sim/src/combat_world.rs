@@ -4524,6 +4524,8 @@ impl CombatWorld {
             special_weapon_body_entries: self.special_weapon_measurements.body_entries - special_before.body_entries,
             automatic_weapon_shots: self.automatic_weapon_measurements.shots - automatic_before.shots,
             integrated_bodies: physics_counts.integrated_bodies,
+            inactive_ship_slots_skipped: physics_counts.inactive_ship_slots_skipped,
+            inactive_ship_grid_slots_skipped: physics_counts.inactive_ship_grid_slots_skipped,
             broadphase_candidates: physics_counts.broadphase_candidates,
             ship_grid_overflow_bodies: physics_counts.ship_grid_overflow_bodies,
             obstacle_grid_overflow_bodies: physics_counts.obstacle_grid_overflow_bodies,
