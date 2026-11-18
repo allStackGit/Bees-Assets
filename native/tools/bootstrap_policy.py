@@ -407,7 +407,9 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          library_game_title: str | None = None,
                          monitor_evaluation_run_configs: tuple[Path, ...] = (),
                          checkpoint_selection: str = "primary",
-                         evaluation_physics_workers: int | None = None) -> None:
+                         evaluation_physics_workers: int | None = None,
+                         rollout_gpus: str | None = None,
+                         rollout_gpu_mask: str | None = None) -> None:
     """Hand freshly verified artifacts to the one existing native trainer.
 
     The session has its own immutable recipe, model lineage, round receipts
@@ -439,6 +441,10 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
     ):
         if value is not None:
             command.extend([option, str(value)])
+    if rollout_gpus is not None:
+        command.extend(["--rollout-gpus", rollout_gpus])
+    if rollout_gpu_mask is not None:
+        command.extend(["--rollout-gpu-mask", rollout_gpu_mask])
     if rollout_binary is not None:
         command.extend(["--rollout-binary", str(rollout_binary.resolve(strict=True))])
     if distributed_plan is not None:
@@ -574,6 +580,11 @@ def main() -> None:
                         help="number of independent native simulation arenas per training round")
     parser.add_argument("--rollout-workers", type=int,
                         help="number of concurrent native rollout processes")
+    parser.add_argument("--rollout-gpus",
+                        help="physical GPU ordinals assigned round-robin to native inference processes")
+    parser.add_argument("--rollout-gpu-mask", choices=(
+        "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES"),
+        help="inference-process GPU isolation; ROCR_VISIBLE_DEVICES for ROCm Linux")
     parser.add_argument("--physics-workers", type=int,
                         help="CPU physics workers per rollout process")
     parser.add_argument("--torch-threads", type=int,
@@ -792,9 +803,18 @@ def main() -> None:
     if distributed and any(
         value is not None for value in (
             args.rollout_worlds, args.rollout_workers, args.physics_workers,
+            args.rollout_gpus, args.rollout_gpu_mask,
         )
     ):
         parser.error("distributed resource allocations belong to the fixed native source plan")
+    if args.rollout_gpus is not None:
+        from native_gpu_allocation import parse_rollout_gpus
+        try:
+            parse_rollout_gpus(args.rollout_gpus)
+        except ValueError as error:
+            parser.error(str(error))
+    elif args.rollout_gpu_mask is not None:
+        parser.error("--rollout-gpu-mask requires --rollout-gpus")
     for name, value, limit in (
         ("--rollout-worlds", args.rollout_worlds, 1024),
         ("--rollout-workers", args.rollout_workers, 256),
@@ -807,7 +827,7 @@ def main() -> None:
             any(value is not None for value in (
                 args.learner_slot, args.rollout_worlds, args.rollout_workers,
                 args.physics_workers, args.torch_threads, args.rollout_binary,
-                args.curriculum_plan,
+                args.rollout_gpus, args.rollout_gpu_mask, args.curriculum_plan,
             ))):
         parser.error("training allocation and learner options require --train-rounds")
     # A training-enabled native game distribution places the compiled
@@ -904,6 +924,8 @@ def main() -> None:
                 monitor_evaluation_run_configs=tuple(args.monitor_evaluation_run_config),
                 checkpoint_selection=args.checkpoint_selection,
                 evaluation_physics_workers=args.evaluation_physics_workers,
+                rollout_gpus=args.rollout_gpus,
+                rollout_gpu_mask=args.rollout_gpu_mask,
             )
 
 
