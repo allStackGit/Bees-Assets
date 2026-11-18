@@ -142,6 +142,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_devices_active',
             'training_gpu_rollout_lineages',
             'training_local_gpu_rollout_lineages',
+            'training_gpu_pin_reused_batches',
+            'training_gpu_pin_allocated_slots',
+            'training_gpu_pin_wait_max_seconds',
+            'training_gpu_pin_reuse_ratio',
             'training_gpu_forward_stream_max_seconds',
             'training_gpu_forward_stream_workers',
             'training_gpu_input_slots_reused',
@@ -336,6 +340,18 @@ class BottleneckEvidence {
                 (unit!=='ratio'||value<=1))
                 derived[name]={value,unit};
         };
+        // The pinned staging ring reduces host allocation churn; a wait
+        // for source reuse can run on the background CPU producer while the
+        // optimizer proceeds. Neither counter is GPU busy evidence.
+        const pinReused=metrics.training_gpu_pin_reused_batches;
+        const pinAllocated=metrics.training_gpu_pin_allocated_slots;
+        if(pinReused?.unit==='count'&&pinAllocated?.unit==='count'&&
+            Number.isSafeInteger(pinReused.value)&&
+            Number.isSafeInteger(pinAllocated.value)&&
+            pinReused.value>=0&&pinAllocated.value>=0&&
+            pinReused.value+pinAllocated.value>0)
+            add('training_gpu_pin_reuse_ratio',
+                pinReused.value/(pinReused.value+pinAllocated.value));
         const history=()=>{
             const version=metrics.training_environment_version;
             const environment=(version?.unit==='count'&&
