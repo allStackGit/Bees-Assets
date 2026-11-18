@@ -3845,6 +3845,12 @@ fn run_battle(
     let mut segment_generation = host.model_mut().model_generation();
     let mut segment_manifest_sha256 = host.model_mut().model_manifest_sha256();
     let mut completed_episodes = vec![0_u32; config.levels.len()];
+    // Each completed episode has its own CombatWorld; accumulate source
+    // MapBorder contacts at that boundary before a recycled world resets
+    // its counters. Include every headless arena, not only the selected UI.
+    let mut map_border_entries = 0_u64;
+    let mut map_border_movement_stops = 0_u64;
+    let mut map_border_override_skips = 0_u64;
     // Keep exactly one cumulative receipt over recycled training arenas.
     // The event processor owns per-episode admissions and resets with its
     // world; collect completed episode totals only at the reset boundary.
@@ -4214,6 +4220,10 @@ fn run_battle(
                             .map_err(|error| contextual("terminal policy observations", error))?;
                         host.sink_mut().capture_terminal_policy(id, revision, tick, &observations)?;
                     }
+                    let borders = world.state.combat.map_border_measurements();
+                    map_border_entries += borders.ship_entries;
+                    map_border_movement_stops += borders.movement_stops;
+                    map_border_override_skips += borders.override_skips;
                     completed_episodes[index] += 1;
                     counted_revisions[index] = Some(revision);
                 }
@@ -4787,6 +4797,13 @@ fn run_battle(
             "wakeup_scans": reinforcement_wakeup_scans,
         },
         "queen_minion_controllers": queen_controllers,
+        "map_border_ships": {
+            "entries": map_border_entries,
+            "movement_stops": map_border_movement_stops,
+            "override_skips": map_border_override_skips,
+            "completed_episodes": completed_episodes.iter()
+                .map(|&count| u64::from(count)).sum::<u64>(),
+        },
         "policy_boundary_capture": {
             "admission_rows": admission_snapshot_rows,
             "admission_frames": admission_snapshot_frames,
