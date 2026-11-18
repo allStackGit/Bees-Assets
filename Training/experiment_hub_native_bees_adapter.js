@@ -185,11 +185,39 @@ function rolloutGpuMeasurements(rollout) {
         proof.model_forwards > proof.agent_rows ||
         proof.agent_rows > rollout.successful_policy_rows)
         throw Error('Invalid native Bees measured GPU inference receipt.');
-    return {
+    const metrics = {
         rollout_gpu_verified_workers: {value: proof.verified_workers, unit: 'count'},
         rollout_gpu_model_forwards: {value: proof.model_forwards, unit: 'count'},
         rollout_gpu_agent_rows: {value: proof.agent_rows, unit: 'count'},
     };
+    if (proof.per_device !== undefined) {
+        if (!Array.isArray(proof.per_device) ||
+            ![1, 2].includes(proof.per_device.length) ||
+            !Array.isArray(proof.gpu_pci_addresses) ||
+            proof.per_device.length !== proof.gpu_pci_addresses.length ||
+            proof.per_device.some((entry, index) =>
+                !PCI.test(String(entry?.gpu_pci_address)) ||
+                entry.gpu_pci_address !== proof.gpu_pci_addresses[index] ||
+                ['rollout_processes','model_forwards','gpu_agent_rows',
+                    'successful_world_steps','successful_policy_rows'].some(key =>
+                    !Number.isSafeInteger(entry[key]) || entry[key] < 1
+                ))
+        ) throw Error('Invalid physical GPU attribution in native Bees rollout.');
+        for (const [index, entry] of proof.per_device.entries()) {
+            for (const [source, target] of [
+                ['rollout_processes', 'workers'],
+                ['model_forwards', 'model_forwards'],
+                ['gpu_agent_rows', 'agent_rows'],
+                ['successful_world_steps', 'world_steps'],
+                ['successful_policy_rows', 'policy_rows'],
+            ]) {
+                metrics[`rollout_gpu_${index}_${target}`] = {
+                    value: entry[source], unit: 'count',
+                };
+            }
+        }
+    }
+    return metrics;
 }
 
 function rolloutPhysicsMeasurements(rollout) {
