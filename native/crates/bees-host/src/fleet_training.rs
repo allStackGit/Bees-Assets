@@ -935,6 +935,29 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
                 }.to_string(), false,
             ));
         }
+        if let Some(model) = measurement["sampled_model_inference"].as_object() {
+            let latency = model.get("microseconds_per_sampled_policy_row")
+                .and_then(Value::as_f64)
+                .filter(|number| number.is_finite());
+            let rows = model.get("sampled_rows").and_then(Value::as_u64);
+            let rounds = model.get("rounds_with_samples").and_then(Value::as_u64);
+            if let (Some(us), Some(rows), Some(rounds)) = (latency, rows, rounds) {
+                details.push((
+                    format!("Sampled model forward: {us:.1} µs/row ({rows} rows, {rounds} rounds)"),
+                    "  [Sampled calls; not whole-fleet GPU utilization]".to_string(), false,
+                ));
+            }
+        }
+        let physics = measurement["total_parallel_physics_rounds"].as_u64();
+        let serialized = measurement["total_serialized_stage_arenas"].as_u64();
+        if let (Some(physics), Some(serialized)) = (physics, serialized) {
+            if physics > 0 || serialized > 0 {
+                details.push((
+                    format!("Physics parallel rounds: {physics}  |  Stage-serialized arenas: {serialized}"),
+                    "  [Measured native scheduling, not requested CPU allocation]".to_string(), false,
+                ));
+            }
+        }
         let optimize = measurement["sum_round_optimizer_wall_seconds"]
             .as_f64().unwrap_or(0.0);
         let collect = measurement["sum_round_rollout_wall_seconds"]
