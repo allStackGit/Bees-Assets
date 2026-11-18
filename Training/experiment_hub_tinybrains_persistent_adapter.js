@@ -10,7 +10,7 @@ const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
 const {applyOverrides,described}=require('./experiment_hub_design_fields');
 const {fixedCpuParallelism}=require('./experiment_hub_resources');
-const {modelFileSha256}=require('./experiment_hub_evaluation');
+const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -349,6 +349,7 @@ function stageFile(source,target) {
 function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
     seedCheckpointSha256,seedPpoUpdates,profiles,
+    evaluationRoot,evaluationSuites,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
     enableDualGpu=false,remoteCollectors=null,profilePpo=false,
     cpuParallelism='profile',
@@ -528,6 +529,9 @@ function createTinyBrainsPersistentDockerAdapter({
     const runner=HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
     return {
         executable,cwd:PROJECT_IN,docker,stop_policy:'interrupt-main',
+        ...evaluationReader('tinybrains',evaluationRoot,evaluationSuites,
+            [project,hub,artifacts,source,cache,
+             ...(remote?[remote.keyDirectory]:[])]),
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))throw Error('Invalid TinyBrains job identity.');
             return path.join(artifacts,jobId);
