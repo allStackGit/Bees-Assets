@@ -669,6 +669,7 @@ def aggregate_collection_metrics(bundles):
                 "reinforcement_arrivals": row.get("reinforcement_arrivals"),
                 "reinforcement_wakeup_work": row.get("reinforcement_wakeup_work"),
                 "queen_minion_controllers": row.get("queen_minion_controllers"),
+                "map_border_ships": row.get("map_border_ships"),
                 "world_steps": row["successful_world_steps"],
                 "policy_rows": row["successful_policy_rows"],
                 "wall_seconds": row["wall_seconds"],
@@ -700,6 +701,20 @@ def aggregate_collection_metrics(bundles):
                 row["queen_minion_controllers"]["retired_policy_routes_reclaimed"]
                 for row in rows
             )
+    # A distributed learner may mix old and new native collectors. Keep
+    # physical border evidence only when every signed input has it, and
+    # preserve per-collector totals for meaningful fault localization.
+    border_keys = ("entries", "movement_stops", "override_skips",
+                   "lethal_hits", "lethal_kills",
+                   "confinement_position_corrections",
+                   "confinement_velocity_clamps",
+                   "confinement_unfittable_hulls",
+                   "confinement_missing_profiles", "completed_episodes")
+    if all("map_border_ships" in row for row in rows):
+        result["map_border_ships"] = {
+            key: sum(row["map_border_ships"][key] for row in rows)
+            for key in border_keys
+        }
     if sampled:
         result["sampled_model_timing"] = {
             key: sum(sample[key] for sample in sampled)
