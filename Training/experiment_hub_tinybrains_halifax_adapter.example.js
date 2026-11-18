@@ -16,6 +16,11 @@ module.exports={
         artifactRoot:path.join(ai,'experiments/experiment-hub/tinybrains-jobs'),
         sourceRunRoot:path.join(ai,'experiments/tinybrains/mini-learning'),
         engineCacheRoot:path.join(ai,'experiments/tinybrains-cache'),
+        // Optional, separately installed fixed-opponent evaluator support.
+        // Use the same approved suite IDs as the evaluator timer and a
+        // private receipts directory outside Hub, source and job roots:
+        // evaluationRoot:path.join(ai,'experiments/experiment-hub/evaluator-receipts'),
+        // evaluationSuites:['nano_fixed','micro_fixed'],
         // User verified that the Exeter and Halifax files have this same SHA.
         seedCheckpointSha256:'fae407ef8db3fab7620b1407b17380e2eea0f616c8d4d8816d3924cac6e005d7',
         seedPpoUpdates:7199,
