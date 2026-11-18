@@ -7,14 +7,13 @@ This is an independent local audit, not a Hub job-evaluation receipt.
 import argparse
 from datetime import datetime, timezone
 import hashlib
-import http.client
 import json
 import os
 import re
 from pathlib import Path
 import tempfile
 
-from experiment_hub_eval_io import read_bounded, suite_digest
+from experiment_hub_eval_io import read_bounded, suite_digest, import_historical_audit
 from experiment_hub_tinybrains_evaluate import evaluate, read_suite
 from experiment_hub_tinybrains_eval_poll import checkpoint_update
 from experiment_hub_tinybrains_runtime import configure_engine
@@ -150,24 +149,7 @@ def publish_report(report, suites, output, run_name):
         "source_report_sha256": hashlib.sha256(report_bytes).hexdigest(),
         "results": items,
     }
-    body = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    if len(body) > 65536:
-        raise ValueError("Historical import request exceeds the Hub API limit; "
-                         "split the comparison into smaller checkpoint groups.")
-    conn = http.client.HTTPConnection("127.0.0.1", 7148, timeout=20)
-    try:
-        conn.request("POST", "/api/hub/evaluation/historical", body=body,
-                     headers={"Content-Type": "application/json"})
-        with conn.getresponse() as response:
-            message = response.read(65537)
-            if len(message) > 65536:
-                raise RuntimeError("Hub response exceeded its size limit.")
-            if response.status not in (200, 201):
-                raise RuntimeError(f"Hub import failed (HTTP {response.status}): "
-                                   + message.decode("utf-8", errors="replace"))
-            imported = json.loads(message)
-    finally:
-        conn.close()
+    imported = import_historical_audit(request)
     print("Historical evaluation archived for Compare under job",
           imported["job_id"], "with", imported["record_count"], "results; "
           "not authorized for native Stop, checkpoint selection or continuation.")
