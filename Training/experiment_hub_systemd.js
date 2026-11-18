@@ -180,6 +180,11 @@ function evaluatorDefinition({
         'After=network.target','',
         '[Service]','Type=oneshot','WorkingDirectory='+directory,
         ...(localEnv?['EnvironmentFile='+localEnv]:[]),
+        // These values identify the resource ceilings that systemd itself
+        // enforces below. The Python poller checks frozen experiment
+        // requirements before spending time evaluating checkpoints.
+        'Environment=EXPERIMENT_HUB_EVALUATOR_CPUS='+cpuBudget,
+        'Environment=EXPERIMENT_HUB_EVALUATOR_RAM_MB='+memoryBudget,
         'ExecStart='+[python,...args].join(' '),
         'CPUQuota='+(cpuBudget*100)+'%',
         'MemoryMax='+memoryBudget+'M',
