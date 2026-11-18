@@ -547,12 +547,19 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
             reference = source_ship.get("special_weapon") or {}
             physical = ship["special_weapon"]
             observation = reference.get("observation")
+            # A Bomb's observation has source-only weapon timing/value
+            # fields. It is safe to borrow those from the policy archetype
+            # only when the actual physical weapon, mount and trigger shapes
+            # match; a matching hull class, power and slot alone do not prove
+            # its authored range/aim parameters.
+            physical_fields = ("slot", "power", "mount_offset",
+                               "charge_range", "proximity")
             if (not isinstance(observation, dict) or
-                    reference.get("power") != physical.get("power") or
-                    reference.get("slot") != physical.get("slot")):
+                    any(reference.get(key) != physical.get(key)
+                        for key in physical_fields)):
                 raise ValueError(
-                    f"policy ship {ship['ship_type']} needs a matching "
-                    "source-authored Bomb observation"
+                    f"policy ship {ship['ship_type']} needs matching physical "
+                    "Bomb weapon geometry and source-authored observation"
                 )
             physical["observation"] = copy.deepcopy(observation)
         ship["policy"] = {
