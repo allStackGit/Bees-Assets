@@ -846,28 +846,12 @@ pub(super) fn archive(
     if matches!(selected.objective, Objective::Survival) {
         let defender = selected.objective_side.ok_or_else(||
             invalid("survival requires a real defending faction"))?;
-        let enemy_index = if defender == 1 { 1 } else { 0 };
         let defenders_first_ship = if defender == 1 { 11 } else { 12 };
         run["levels"][0]["survival"] = json!({
             "defending_side": defender,
             "protected_ship_id": defenders_first_ship,
             "seconds": 90.0,
         });
-        // Keep one authentic enemy squad active at the start and deploy
-        // only later clones. The combat engine reserves each future hull
-        // by its real faction; the common terminal will not declare the
-        // enemy defeated before its authored waves can arrive.
-        let late = &squad_ids[enemy_index][1..];
-        let mut waves = Vec::with_capacity(late.len());
-        for (index, &squad) in late.iter().enumerate() {
-            let at = if index < (late.len() + 1) / 2 { 25.0 } else { 55.0 };
-            waves.push(json!({
-                "after_seconds": at,
-                "squad_item_ids": [squad],
-            }));
-            deferred_squads.push(squad);
-        }
-        run["levels"][0]["reinforcements"] = json!(waves);
     } else if matches!(selected.objective, Objective::Extraction) {
         let player = selected.objective_side.ok_or_else(||
             invalid("extraction requires a real extracting faction"))?;
@@ -878,6 +862,42 @@ pub(super) fn archive(
             "activation_radius": 10.0,
             "layer": 19,
         });
+    }
+
+    // Every wave is an ordinary source-identified physical squad, not a
+    // fabricated wave spawner. Preserve the survival game's original enemy
+    // waves; other game modes can defer either or both fleets as selected.
+    // Keep the first squad per faction alive at tick zero. Physics reserves
+    // every later hull, so no early elimination silently discards a wave.
+    let defer_side = |side: usize| {
+        if matches!(selected.objective, Objective::Survival) {
+            selected.objective_side != Some(side as i32 + 1)
+        } else {
+            selected.reinforcements.includes(side)
+        }
+    };
+    let mut wave_times_and_squads = Vec::new();
+    for side in 0..2_usize {
+        if !defer_side(side) { continue; }
+        let late = &squad_ids[side][1..];
+        for (index, &squad) in late.iter().enumerate() {
+            let seconds = if index < late.len().div_ceil(2) { 25_u32 } else { 55 };
+            wave_times_and_squads.push((seconds, side, squad));
+            deferred_squads.push(squad);
+        }
+    }
+    if !wave_times_and_squads.is_empty() {
+        // The native wave constructor requires nondecreasing source times.
+        // Stable faction/squad tie ordering also gives every replay and
+        // training arena the same physical deployment sequence.
+        wave_times_and_squads.sort_unstable_by_key(|&(seconds, side, squad)|
+            (seconds, side, squad));
+        run["levels"][0]["reinforcements"] = json!(
+            wave_times_and_squads.iter().map(|&(seconds, _, squad)| json!({
+                "after_seconds": seconds as f32,
+                "squad_item_ids": [squad],
+            })).collect::<Vec<_>>()
+        );
     }
     run["next_squad_item_id"] = json!(3_000);
     run["run_id"] = json!(format!(
@@ -895,6 +915,17 @@ pub(super) fn archive(
         },
         selected.objective_side.unwrap_or(0),
     ));
+    // Different arrival patterns must have different immutable source IDs,
+    // especially when saved battles later become separate PPO experiments.
+    if !wave_times_and_squads.is_empty() &&
+        !matches!(selected.objective, Objective::Survival)
+    {
+        let run_id = run["run_id"].as_str()
+            .ok_or_else(|| invalid("native fleet run identity is missing"))?;
+        run["run_id"] = json!(format!(
+            "{run_id}-{}", selected.reinforcements.label(),
+        ));
+    }
     if selected.ai_both {
         // A repeatable multi-CPU stress case: the runner does no GUI or
         // Python inference here, and writes its normal sampled CPU/SPS
