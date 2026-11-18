@@ -1028,6 +1028,37 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number.isFinite(place.observed_host_cpu_busy_pct)
             ?' · '+place.observed_host_cpu_busy_pct.toFixed(1)+'% host CPU busy':'';
     }
+    function evaluatorBudgetCoverage(machine,job) {
+        const required=job.evaluation_monitor?.evaluator_resources;
+        if(!required)return null;
+        const policy=job.evaluation_monitor;
+        const rules=policy.all_of||[policy];
+        const active=(machine?.evaluator_services||[]).filter(service=>
+            service.project===job.project_id&&
+            (service.scheduler_state==='active'||service.service_state==='running'));
+        const qualified=active.filter(service=>
+            service.evaluator_cpus>=required.cpus&&
+            service.evaluator_ram_mb>=required.ram_mb);
+        const separate=!job.evaluation_stop&&rules.length>1&&
+            new Set(rules.map(rule=>
+                rule.every_n_checkpoints||policy.every_n_checkpoints||1)).size>1;
+        const fits=separate
+            ?rules.every(rule=>qualified.some(service=>
+                service.suite_ids?.includes(rule.suite_id)))
+            :qualified.some(service=>rules.every(rule=>
+                service.suite_ids?.includes(rule.suite_id)));
+        const resources=required.cpus+' CPU / '+required.ram_mb+' MiB RAM';
+        if(fits)return {qualified:true,description:
+            'Required independent evaluator budget '+resources+' matched an observed OS-bounded service; not proof of a benchmark receipt'};
+        const uncertainty=active.some(service=>
+            !service.suite_ids||service.evaluator_cpus==null||
+            service.evaluator_ram_mb==null);
+        return {qualified:false,description:
+            'Required independent evaluator budget '+resources+
+            (uncertainty?' has unverified service coverage or quotas':
+                ' has no matching active OS-budgeted service')+
+            '; evaluation may be delayed, but training continues'};
+    }
     function allocationBlocks(results) {
         const blocked=results.filter(item=>item.status==='insufficient_capacity');
         const counts=new Map();
@@ -2038,6 +2069,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         (machine.evaluator_service_issue
                             ?': '+machine.evaluator_service_issue:'')+
                         '; independent evaluation availability is unverified.');
+                const required=evaluatorBudgetCoverage(machine,job);
+                if(required&&!required.qualified)
+                    warnings.push('Run '+run.slot+': '+required.description+'.');
                 const active=services.filter(item=>
                     item.scheduler_state==='active'||item.service_state==='running');
                 if(active.length) {
@@ -4961,6 +4995,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const evaluatorServices=(machine?.evaluator_services||[])
                 .filter(service=>service.project===j.project_id);
             const schedulerIssue=machine?.evaluator_service_issue||null;
+            const budgetCoverage=evaluatorBudgetCoverage(machine,j);
             const confirmedServices=evaluatorServices.filter(service=>
                 service.scheduler_state==='active'||service.service_state==='running');
             const configured=new Set(confirmedServices.flatMap(service=>
@@ -5002,7 +5037,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 requiredSuites.filter(rule=>
                                     !advertised.includes(rule.suite_id))
                                     .map(rule=>rule.suite_id).join(', ')+')'
-                            :' · Evaluator: suite reader advertised'+serviceHealth+coverage;
+                            :' · Evaluator: suite reader advertised'+serviceHealth+coverage+
+                                (budgetCoverage?' · '+budgetCoverage.description:'');
             const regressionSignals=comparisonProject===project
                 ?comparisonData?.evaluation_regressions?.filter(row=>row.job_id===j.id)||[]
                 :[];
