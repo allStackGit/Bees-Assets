@@ -362,8 +362,8 @@ def author(args) -> tuple[dict, dict, dict]:
         [ship["entity_id"] for ship in scene["ships"]] +
         [resource["entity_id"] for key in ("mining_asteroids", "map_objects")
          for resource in scene.get(key, [])] +
-        [box["entity_id"] for key in ("add_static_boxes", "add_map_borders")
-         for box in scene.get("layout", {}).get(key, [])] +
+        [box["entity_id"] for box in
+         scene.get("layout", {}).get("add_static_boxes", [])] +
         [polygon["entity_id"] for polygon in
          scene.get("layout", {}).get("add_static_polygons", [])]
     )
@@ -560,6 +560,22 @@ def author(args) -> tuple[dict, dict, dict]:
 
     scene["ships"] = new_ships
     scene["squads"] = new_squads
+    if args.arena_size is not None:
+        # Border IDs must be allocated AFTER all real battle ships and
+        # reinforcements. The common native layout installer requires each
+        # added collider to exceed the scene's original highest entity ID;
+        # feeding provisional border IDs back into ship allocation would
+        # invert that ownership order and make the Level unloadable.
+        original_ids = [
+            *[ship["entity_id"] for ship in new_ships],
+            *[resource["entity_id"] for key in ("mining_asteroids", "map_objects")
+              for resource in scene.get(key, [])],
+            *[obj["entity_id"] for key in ("add_static_boxes", "add_static_polygons")
+              for obj in scene.get("layout", {}).get(key, [])],
+        ]
+        next_id = max(original_ids, default=0) + 1
+        for index, border in enumerate(scene["layout"]["add_map_borders"]):
+            border["entity_id"] = next_id + index
     run["run_id"] = slug
     run["stage_name"] = name
     run["max_rounds"] = rounds
