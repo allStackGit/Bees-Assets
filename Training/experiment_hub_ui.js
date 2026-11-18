@@ -2314,6 +2314,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Sustained shard receipt tail skew at PPO lineage '+
                     idleTailOwner+' (may reflect shard imbalance or receipt overhead, not measured CPU idle%)'
                 :'';
+            const forwardSignals=[
+                [job.project_id==='courier'&&
+                    measured.training_gpu_forward_pressure?.value===1,
+                    measured.training_gpu_forward_owner?.value,64,
+                    'PPO lineage '],
+                [job.project_id==='courier'&&
+                    measured.training_shared_gpu_fwd_pressure?.value===1,
+                    measured.training_shared_gpu_fwd_owner?.value,16,
+                    'shared-policy collector '],
+                [job.project_id==='tinybrains'&&
+                    measured.pipeline_local_gpu_fwd_pressure?.value===1,
+                    measured.pipeline_local_gpu_fwd_owner?.value,17,
+                    'local GPU collector '],
+                [job.project_id==='tinybrains'&&
+                    measured.pipeline_remote_gpu_fwd_pressure?.value===1,
+                    measured.pipeline_remote_gpu_fwd_owner?.value,17,
+                    'remote collector ']
+            ].filter(([active,id,limit])=>active&&Number.isSafeInteger(id)&&
+                id>=0&&id<limit).map(([,id,,label])=>label+id);
+            const forwardSignal=forwardSignals.length
+                ?' · Sustained exposed GPU-forward stream: '+
+                    forwardSignals.join('; ')+
+                    ' (stream time includes dispatch gaps; not hardware saturation)'
+                :'';
             const resourceFlags=[
                 ['pipeline_cpu_lease_pressure','CPU lease nearly occupied'],
                 ['pipeline_cpu_throttle_pressure','CPU quota throttling'],
@@ -2365,7 +2389,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
                 enginePressureSignal+connectSignal+remotePrepSignal+dispatchSignal+
-                courierQueueSignal+courierImbalanceSignal+resourceSignal+remoteResourceSignal+
+                courierQueueSignal+courierImbalanceSignal+
+                forwardSignal+resourceSignal+remoteResourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
