@@ -326,7 +326,9 @@ function rolloutLiveShipMeasurements(rollout) {
     const present = obstacle.filter(key => slots[key] !== undefined);
     if (present.length !== 0 && present.length !== obstacle.length)
         throw Error('Incomplete native Bees pooled obstacle work receipt.');
-    for (const key of [...required, ...present]) {
+    const projectile = slots.inactive_projectile_slots_skipped === undefined
+        ? [] : ['inactive_projectile_slots_skipped'];
+    for (const key of [...required, ...present, ...projectile]) {
         const value = slots[key];
         if (!Number.isSafeInteger(value) || value < 0)
             throw Error('Invalid native Bees active body-slot work receipt.');

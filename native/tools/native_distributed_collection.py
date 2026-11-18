@@ -731,6 +731,10 @@ def aggregate_collection_metrics(bundles):
                 key: sum(row["ship_slot_work"][key] for row in rows)
                 for key in obstacle_keys
             })
+        projectile_key = "inactive_projectile_slots_skipped"
+        if all(projectile_key in row["ship_slot_work"] for row in rows):
+            result["ship_slot_work"][projectile_key] = sum(
+                row["ship_slot_work"][projectile_key] for row in rows)
     if sampled:
         result["sampled_model_timing"] = {
             key: sum(sample[key] for sample in sampled)

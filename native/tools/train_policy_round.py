@@ -298,6 +298,8 @@ def rollout_metrics(summary_path, config, manifest_sha):
                     "inactive_obstacle_grid_slots_skipped")
         if isinstance(ship_slots, dict) and any(key in ship_slots for key in optional):
             keys += optional
+        if isinstance(ship_slots, dict) and "inactive_projectile_slots_skipped" in ship_slots:
+            keys += ("inactive_projectile_slots_skipped",)
         if (not isinstance(ship_slots, dict) or
                 any(type(ship_slots.get(key)) is not int or ship_slots[key] < 0
                     for key in keys)):
@@ -443,6 +445,12 @@ def combined_rollout_metrics(shards, wall_seconds):
                 key: sum(shard["ship_slot_work"][key] for shard in shards)
                 for key in obstacle_keys
             })
+        # A round may combine old and new collectors. Missing values mean
+        # unmeasured, never a fabricated zero for those older binaries.
+        projectile_key = "inactive_projectile_slots_skipped"
+        if all(projectile_key in shard["ship_slot_work"] for shard in shards):
+            metrics["ship_slot_work"][projectile_key] = sum(
+                shard["ship_slot_work"][projectile_key] for shard in shards)
     # Mixed historical collector binaries may report only the older
     # parallel-physics totals. Preserve unknown dispatch provenance as
     # absent, never treat missing direct rounds as zero.

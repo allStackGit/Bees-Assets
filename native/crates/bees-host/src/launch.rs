@@ -4875,6 +4875,8 @@ fn run_battle(
         "ship_slot_work": {
             "integrated_bodies": status.simulation.integrated_bodies,
             "inactive_ship_slots_skipped": status.simulation.inactive_ship_slots_skipped,
+            "inactive_projectile_slots_skipped":
+                status.simulation.inactive_projectile_slots_skipped,
             "inactive_ship_grid_slots_skipped":
                 status.simulation.inactive_ship_grid_slots_skipped,
             "inactive_obstacle_slots_skipped":
