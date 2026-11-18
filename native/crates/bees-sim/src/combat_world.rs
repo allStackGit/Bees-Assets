@@ -4530,6 +4530,8 @@ impl CombatWorld {
             integrated_bodies: physics_counts.integrated_bodies,
             inactive_ship_slots_skipped: physics_counts.inactive_ship_slots_skipped,
             inactive_ship_grid_slots_skipped: physics_counts.inactive_ship_grid_slots_skipped,
+            inactive_obstacle_slots_skipped: physics_counts.inactive_obstacle_slots_skipped,
+            inactive_obstacle_grid_slots_skipped: physics_counts.inactive_obstacle_grid_slots_skipped,
             broadphase_candidates: physics_counts.broadphase_candidates,
             ship_grid_overflow_bodies: physics_counts.ship_grid_overflow_bodies,
             obstacle_grid_overflow_bodies: physics_counts.obstacle_grid_overflow_bodies,
