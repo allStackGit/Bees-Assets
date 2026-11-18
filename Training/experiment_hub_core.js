@@ -2008,6 +2008,14 @@ class ExperimentHub {
                 .find(candidate=>candidate.suite_id===suiteId);
             const frozenSuite=rule.suite_sha256||
                 job.evaluation_suite_definitions?.[rule.suite_id];
+            const rules=evaluationRules(policy);
+            // Split only monitoring-only suites with genuinely different
+            // cadences. The existing coordinated batch remains unchanged
+            // for success-gated jobs and same-cadence monitoring.
+            const independentCadences=job.evaluation_monitor&&!job.evaluation_stop&&
+                rules.length>1&&new Set(rules.map(item=>
+                    item.every_n_checkpoints||
+                    policy.every_n_checkpoints||1)).size>1;
             return {job_id:job.id,dispatch_id:job.dispatch_id,
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 ...(frozenSuite?{suite_sha256:frozenSuite}:{}),
@@ -2018,12 +2026,13 @@ class ExperimentHub {
                 min_success_rate:job.evaluation_monitor?0:rule.min_success_rate,
                 ...(job.evaluation_monitor?{
                     monitor_only:true,
-                    every_n_checkpoints:job.evaluation_monitor.every_n_checkpoints||1,
+                    every_n_checkpoints:rule.every_n_checkpoints||
+                        job.evaluation_monitor.every_n_checkpoints||1,
                     ...(job.evaluation_monitor.include_baseline===false
                         ?{include_baseline:false}:{}),
                 }:{}),
-                required_suite_ids:evaluationRules(policy)
-                    .map(candidate=>candidate.suite_id)};
+                required_suite_ids:independentCadences?[suiteId]:
+                    rules.map(candidate=>candidate.suite_id)};
         });
     }
     hasPendingFinalEvaluations() {

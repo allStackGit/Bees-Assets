@@ -77,10 +77,10 @@ function monitoringPolicy(value) {
               value.every_n_checkpoints<1||value.every_n_checkpoints>1000000)))
             throw Error('Monitoring requires 2–8 distinct independent suites and a valid cadence.');
         const rules=value.all_of.map(monitoringPolicy);
-        if(rules.some(rule=>!rule||rule.all_of||rule.every_n_checkpoints!=null||
+        if(rules.some(rule=>!rule||rule.all_of||
             rule.include_baseline!==undefined||rule.include_final!==undefined)||
             new Set(rules.map(rule=>rule.suite_id)).size!==rules.length)
-            throw Error('Monitoring batches require distinct suite IDs and one common cadence.');
+            throw Error('Multi-suite monitoring requires distinct suite IDs; baseline and final scheduling are shared.');
         return {all_of:rules,...(value.every_n_checkpoints!=null
             ?{every_n_checkpoints:value.every_n_checkpoints}:{}),
             ...(value.include_baseline!==undefined?{include_baseline:value.include_baseline}:{}),
@@ -114,6 +114,11 @@ function compatibleMonitoringStop(monitor,stop) {
     if(!monitor||!stop)return;
     if(monitor.include_final===false)
         throw Error('A success-based Stop requires a final-checkpoint evaluation for verified continuation.');
+    // Per-suite monitoring frequencies run independently. Stop proof must
+    // remain a same-checkpoint batch; no asynchronous suite results can
+    // authorize a native transition or model promotion.
+    if(monitor.all_of?.some(rule=>rule.every_n_checkpoints!==undefined))
+        throw Error('Evaluation-based stopping requires one common multi-suite cadence; remove per-suite frequency overrides.');
     const watched=evaluationRules(monitor);
     const gated=evaluationRules(stop);
     const byId=new Map(watched.map(rule=>[rule.suite_id,rule]));
