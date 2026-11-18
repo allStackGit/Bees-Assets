@@ -574,6 +574,19 @@ def main() -> None:
     if (args.scenario == "custom" and not custom_inputs) or (
             args.scenario != "custom" and any_custom_input):
         parser.error("--scenario custom requires both --source-scene and --source-run; shipped scenarios use neither")
+    if custom_inputs:
+        # Saved in-game fleet scenarios carry a complete, atomic preparation
+        # receipt. Verify it even on resume when the game's UI invokes the
+        # existing bootstrap directly rather than rerunning the converter.
+        prepared = args.source_run.resolve(strict=True).parent
+        if (prepared / "training-source.json").exists():
+            from prepare_fleet_training import verify_prepared_source
+            verify_prepared_source(prepared)
+            if (args.source_scene.resolve(strict=True) !=
+                    (prepared / "battle.policy.scene.json").resolve(strict=True) or
+                    args.source_run.resolve(strict=True) !=
+                    (prepared / "battle.policy.run.json").resolve(strict=True)):
+                parser.error("saved native fleet bootstrap must use the verified policy scene/run pair")
     if args.train_rounds is not None and not 1 <= args.train_rounds <= 99999:
         parser.error("--train-rounds must be between 1 and 99999")
     if args.resume and args.train_rounds is None:
