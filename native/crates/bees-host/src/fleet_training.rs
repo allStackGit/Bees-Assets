@@ -211,6 +211,23 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     };
     let Some(rounds) = choose_count("MA-POCA optimizer rounds", &[1, 3, 10, 25, 100])?
         else { return Ok(()); };
+    let sides = [
+        BattleMenuRow {
+            title: "Train Bees faction",
+            status: "  [Policy team 0; evaluate Bees]", unlocked: true,
+        },
+        BattleMenuRow {
+            title: "Train Humans faction",
+            status: "  [Policy team 1; evaluate Humans]", unlocked: true,
+        },
+    ];
+    let mut side_choice = 0;
+    let Some(side_index) = select_library(&sides, &mut side_choice, false)? else {
+        return Ok(());
+    };
+    let learner_side = side_index as u32 + 1;
+    let learner_slot = side_index as u32;
+    let opponent_slot = 1 - learner_slot;
     let refresh_every = if rounds > 1 {
         let rows = [
             BattleMenuRow {
@@ -329,6 +346,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "kind": "native_game_fleet_training_invocation",
         "source": source,
         "rounds": rounds,
+        "learner_side": learner_side,
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
         "worlds": worlds,
@@ -359,10 +377,10 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     command.arg(&converter).arg(&source).arg(&prepared)
         .arg("--bootstrap-output").arg(&model)
         .arg("--bootstrap-args")
-        .arg("--train-rounds").arg(rounds.to_string());
+        .arg("--train-rounds").arg(rounds.to_string())
+        .arg("--learner-slot").arg(learner_slot.to_string());
     if let Some(every) = refresh_every {
-        command.arg("--learner-slot").arg("0")
-            .arg("--self-play-opponent-slot").arg("1")
+        command.arg("--self-play-opponent-slot").arg(opponent_slot.to_string())
             .arg("--self-play-refresh-every").arg(every.to_string());
     }
     if let Some(patience) = early_stop_patience {
@@ -377,7 +395,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let process = command
         .arg("--optimizer-device").arg(if device == 0 { "cpu" } else { "cuda" })
         .arg("--holdout-worlds").arg("8")
-        .arg("--evaluation-side").arg("1")
+        .arg("--evaluation-side").arg(learner_side.to_string())
         .arg("--library-save-root").arg(&saves)
         .arg("--library-game-id").arg(&game_id)
         .arg("--library-game-title").arg(format!("Trained: {title}"))
@@ -396,6 +414,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "allocation": if use_hub { "experiment_hub" } else { "local" },
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
         "rounds": rounds,
+        "learner_side": learner_side,
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
         "holdout_worlds": 8,
@@ -603,6 +622,13 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     let rounds = recipe["rounds"].as_u64()
         .filter(|value| (1..=99_999).contains(value))
         .ok_or_else(|| invalid("native training rounds are invalid"))?;
+    // Invocation files predating faction selection trained the Bees side.
+    let learner_side = recipe["learner_side"].as_u64().unwrap_or(1);
+    if ![1, 2].contains(&learner_side) {
+        return Err(invalid("native training learner faction is invalid").into());
+    }
+    let learner_slot = learner_side - 1;
+    let opponent_slot = 1 - learner_slot;
     let refresh_every = if recipe["self_play_refresh_every"].is_null() {
         None
     } else {
@@ -637,7 +663,7 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     if !source.is_file() || !saves.is_dir() ||
         !job.starts_with(saves.join("training").join("fleet-skirmish")) ||
         recipe["holdout_worlds"].as_u64() != Some(8) ||
-        recipe["evaluation_side"].as_u64() != Some(1)
+        recipe["evaluation_side"].as_u64() != Some(learner_side)
     {
         return Err(invalid("native training source, holdout or private job root changed").into());
     }
@@ -683,10 +709,10 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
             .arg("--bootstrap-output").arg(&model)
             .arg("--bootstrap-args");
     }
-    command.arg("--train-rounds").arg(rounds.to_string());
+    command.arg("--train-rounds").arg(rounds.to_string())
+        .arg("--learner-slot").arg(learner_slot.to_string());
     if let Some(every) = refresh_every {
-        command.arg("--learner-slot").arg("0")
-            .arg("--self-play-opponent-slot").arg("1")
+        command.arg("--self-play-opponent-slot").arg(opponent_slot.to_string())
             .arg("--self-play-refresh-every").arg(every.to_string());
     }
     if let Some(patience) = early_stop_patience {
@@ -700,7 +726,7 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     }
     command.arg("--optimizer-device").arg(device)
         .arg("--holdout-worlds").arg("8")
-        .arg("--evaluation-side").arg("1")
+        .arg("--evaluation-side").arg(learner_side.to_string())
         .arg("--library-save-root").arg(&saves)
         .arg("--library-game-id").arg(game_id)
         .arg("--library-game-title").arg(title);
