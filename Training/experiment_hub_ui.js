@@ -3702,6 +3702,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const label=row.querySelector('.hub-evaluation-extra-rate-label');
             label.hidden=!hasStop;
             label.querySelector('input').disabled=!hasStop;
+            const schedule=row.querySelector('.hub-evaluation-extra-frequency-label');
+            schedule.hidden=!monitor||hasStop;
+            schedule.querySelector('input').disabled=!monitor||hasStop;
         }
     }
     function appendEvaluationSuite(rule={}) {
@@ -3739,6 +3742,10 @@ document.addEventListener('DOMContentLoaded', () => {
         field('Suite ID','hub-evaluation-extra-suite-id',rule.suite_id);
         field('Suite SHA-256 (optional)','hub-evaluation-extra-digest',rule.suite_sha256);
         field('Minimum trials','hub-evaluation-extra-trials',rule.min_trials,'number');
+        field('Every N updates (optional, overrides shared interval)',
+            'hub-evaluation-extra-frequency',rule.every_n_checkpoints,'number');
+        row.querySelector('.hub-evaluation-extra-frequency').parentElement
+            .classList.add('hub-evaluation-extra-frequency-label');
         field('Minimum success rate (Stop only)',
             'hub-evaluation-extra-rate',rule.min_success_rate,'number');
         const remove=document.createElement('button');
@@ -3802,6 +3809,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 value('.hub-evaluation-extra-trials'),
                 stop?value('.hub-evaluation-extra-rate'):'');
             if(!rule)throw Error('Complete or remove every additional evaluation suite.');
+            const frequency=value('.hub-evaluation-extra-frequency');
+            if(frequency) {
+                if(stop)throw Error('Per-suite frequencies require monitoring without automatic Stop; coordinated stopping uses one shared frequency.');
+                const count=Number(frequency);
+                if(!Number.isSafeInteger(count)||count<1||count>1000000)
+                    throw Error('Each per-suite frequency must be 1–1,000,000 updates.');
+                rule.every_n_checkpoints=count;
+            }
             return rule;
         });
         const allOf=$('hub-evaluation-all-of').value.trim();
@@ -3817,6 +3832,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 policy.all_of.some(rule=>!Number.isFinite(rule.min_success_rate)||
                     rule.min_success_rate<=0||rule.min_success_rate>1)))
                 throw Error('Every stopping suite needs a success-rate threshold between 0 and 1.');
+            if(stop&&policy.all_of?.some(rule=>rule.every_n_checkpoints!==undefined))
+                throw Error('Per-suite checkpoint frequencies require monitoring only; automatic Stop requires same-checkpoint evaluation.');
         }else {
             const first=rawRule(suite,digest,trials,rate);
             if(!first&&extras.length)
@@ -4717,7 +4734,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const evaluation=policy
                 ?multi
                     ?' · '+(monitoring?(j.evaluation_stop?'Monitoring suites with optional Stop':'Monitoring suites'):'Benchmark gates')+
-                        ' ('+multi.length+' suites, same checkpoint): '+
+                        ' ('+multi.length+' suites'+
+                        (monitoring&&!j.evaluation_stop&&
+                            new Set(multi.map(rule=>rule.every_n_checkpoints||
+                                policy.every_n_checkpoints||1)).size>1
+                            ?', independently scheduled':', same checkpoint')+'): '+
                         gateSummary+(j.evaluation_stop_evidence?' · Stop authorized':'')+
                         (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
                     :' · Evaluation '+policy.suite_id+': '+(evidence
@@ -4791,7 +4812,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 :'Awaiting a checkpoint and compatible evaluator.');
                     }else {
                         const update=receipt.steps_completed;
-                        const cadence=j.evaluation_monitor?.every_n_checkpoints||1;
+                        const cadence=rule.every_n_checkpoints||
+                            j.evaluation_monitor?.every_n_checkpoints||1;
                         const next=Number.isSafeInteger(update)?update+cadence:null;
                         const eligible=monitoring
                             ?next===null

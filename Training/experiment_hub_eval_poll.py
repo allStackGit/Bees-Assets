@@ -467,8 +467,9 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     for job in per_suite) or
                 len({job["job_id"] for job in per_suite}) != 1 or
                 len({job["artifact_lineage_root_id"] for job in per_suite}) != 1):
-                print(f"{project} batch target {dispatch} needs the complete "
-                      "frozen suite set for one job and artifact lineage.",
+                print(f"{project} batch target {dispatch} needs one frozen "
+                      "suite set and lineage. Different monitoring frequencies "
+                      "require independent --suite pollers, not a batch.",
                       file=sys.stderr)
                 continue
             live[dispatch] = per_suite
