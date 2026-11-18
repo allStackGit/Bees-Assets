@@ -103,7 +103,66 @@ def _playable_run(source_path, selected):
     return source
 
 
-def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdout):
+def _rank_evaluation_suites(round_number, checkpoint, primary,
+                            recipe, monitor_baseline, monitor_results):
+    """Rank only models actually evaluated on every pinned independent suite.
+
+    The existing primary holdout still controls the default. Alternative
+    selection uses equal weighting per suite (not per episode), so an easy
+    large suite cannot drown out harder missions with fewer episodes.
+    """
+    learner_slot = recipe["learner_slot"]
+    primary_candidate = _candidate(
+        round_number, checkpoint, primary, learner_slot, primary["episodes"],
+    )
+    mode = recipe.get("checkpoint_selection", "primary")
+    if mode == "primary":
+        return primary_candidate
+    if mode not in ("mean", "worst"):
+        raise ValueError("unknown native multi-suite checkpoint ranking")
+    suites = recipe.get("monitor_evaluations", [])
+    if not suites or len(monitor_results) != len(suites):
+        raise ValueError("multi-suite checkpoint selection requires all scheduled holdouts")
+    all_suites = [{
+        "suite_id": "primary",
+        "source_run_config_sha256": recipe["evaluation_config"]["sha256"],
+        "wins": primary_candidate["wins"],
+        "episodes": primary_candidate["episodes"],
+        "win_rate": primary_candidate["win_rate"],
+    }]
+    for index, source in enumerate(suites, 1):
+        suite_id = f"monitor-{index:03d}"
+        baseline = monitor_baseline.get(suite_id)
+        result = monitor_results.get(suite_id)
+        if (not isinstance(baseline, dict) or not isinstance(result, dict) or
+                baseline.get("source_run_config_sha256") != source["sha256"] or
+                result.get("source_run_config_sha256") != source["sha256"] or
+                baseline.get("episodes") != result.get("episodes") or
+                baseline.get("learner_side") != primary["learner_side"] or
+                result.get("learner_side") != primary["learner_side"] or
+                baseline.get("policy_sampling_seed") != primary["policy_sampling_seed"] or
+                result.get("policy_sampling_seed") != primary["policy_sampling_seed"]):
+            raise ValueError(f"native checkpoint selection has incomparable suite {suite_id}")
+        candidate = _candidate(
+            round_number, checkpoint, result, learner_slot, result["episodes"],
+        )
+        all_suites.append({
+            "suite_id": suite_id,
+            "source_run_config_sha256": source["sha256"],
+            "wins": candidate["wins"],
+            "episodes": candidate["episodes"],
+            "win_rate": candidate["win_rate"],
+        })
+    rates = [suite["win_rate"] for suite in all_suites]
+    primary_candidate["selection_score"] = (
+        sum(rates) / len(rates) if mode == "mean" else min(rates)
+    )
+    primary_candidate["evaluation_suites"] = all_suites
+    return primary_candidate
+
+
+def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdout,
+                           monitor_baseline=None, monitor_observations=None):
     """Use identical holdout episodes to select a checkpoint and a runnable run.
 
     A candidate replaces the current selection only if it wins more of the
@@ -118,9 +177,13 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
     if not isinstance(evaluations, dict):
         raise ValueError("invalid native holdout evaluation registry")
     learner_slot = recipe["learner_slot"]
+    monitor_baseline = monitor_baseline or {}
+    monitor_observations = monitor_observations or {}
     initial_checkpoint = recipe["initial_checkpoint"]
-    baseline = _candidate(0, initial_checkpoint["path"], baseline_holdout,
-                          learner_slot, episodes)
+    baseline = _rank_evaluation_suites(
+        0, initial_checkpoint["path"], baseline_holdout, recipe,
+        monitor_baseline, monitor_baseline,
+    )
     if baseline["checkpoint_sha256"] != initial_checkpoint["sha256"] or (
             baseline["manifest_sha256"] != recipe["initial_manifest"]["sha256"]):
         raise ValueError("native holdout baseline does not match pinned initial weights")
@@ -132,12 +195,16 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
             continue
         if result.get("learner_side") != baseline_holdout.get("learner_side"):
             raise ValueError("native holdouts have inconsistent learner sides")
-        candidate = _candidate(number, record["next_checkpoint"], result,
-                               learner_slot, episodes)
+        candidate = _rank_evaluation_suites(
+            number, record["next_checkpoint"], result, recipe,
+            monitor_baseline, monitor_observations.get(str(directory), {}),
+        )
         if candidate["checkpoint_sha256"] != record["next_checkpoint_sha256"]:
             raise ValueError("native candidate checkpoint changed after round completion")
         evaluated += 1
-        if candidate["wins"] > best["wins"]:
+        if (candidate["selection_score"] > best["selection_score"]
+                if "selection_score" in candidate else
+                candidate["wins"] > best["wins"]):
             best = candidate
 
     # A curriculum's playable environment must advance with the session.
@@ -158,13 +225,19 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
     receipt = {
         "schema_version": 1,
         "kind": "native_training_best_evaluated",
-        "selection": "most_fixed_seed_side_victories_with_earliest_tie",
+        "selection": {
+            "primary": "most_fixed_seed_side_victories_with_earliest_tie",
+            "mean": "highest_equal_weight_mean_fixed_suite_win_rate_with_earliest_tie",
+            "worst": "highest_minimum_fixed_suite_win_rate_with_earliest_tie",
+        }[recipe.get("checkpoint_selection", "primary")],
         "learner_side": baseline_holdout["learner_side"],
         "learner_slot": learner_slot,
         "evaluated_rounds": evaluated,
         "completed_rounds": len(completed),
         "baseline_wins": baseline["wins"],
         "baseline_win_rate": baseline["win_rate"],
+        **({"baseline_selection_score": baseline["selection_score"]}
+           if "selection_score" in baseline else {}),
         "selected": best,
         "source_run_config": str(source),
         "source_run_config_sha256": source_run["sha256"],

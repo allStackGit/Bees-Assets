@@ -751,6 +751,9 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         **({"best_evaluated": {
             "round": best_evaluated["selected"]["round"],
             "side_win_rate": best_evaluated["selected"]["win_rate"],
+            **({"selection_score": best_evaluated["selected"]["selection_score"],
+                "selection": best_evaluated["selection"]}
+               if "selection_score" in best_evaluated["selected"] else {}),
             "checkpoint_sha256": best_evaluated["selected"]["checkpoint_sha256"],
             "playable_run": best_evaluated["playable_run"],
             "evaluated_rounds": best_evaluated["evaluated_rounds"],
@@ -891,6 +894,9 @@ def main():
                         help="primary fixed-seed Levels used for checkpoint selection and stopping")
     parser.add_argument("--monitor-evaluation-run-config", type=Path, action="append", default=[],
                         help="additional fixed-seed suite monitored against every evaluated checkpoint; repeatable")
+    parser.add_argument("--checkpoint-selection", choices=("primary", "mean", "worst"),
+                        default="primary",
+                        help="choose the best model by primary victories, mean suite win rate, or weakest suite win rate")
     parser.add_argument("--evaluation-side", type=int,
                         help="source side 1 or 2 whose victories are measured")
     parser.add_argument("--evaluation-policy-seed", type=int, default=0,
@@ -976,6 +982,8 @@ def main():
         parser.error("additional monitoring suites require a primary --evaluation-run-config")
     if len(args.monitor_evaluation_run_config) > 16:
         parser.error("no more than 16 independent monitoring suites per session")
+    if args.checkpoint_selection != "primary" and not args.monitor_evaluation_run_config:
+        parser.error("mean/worst checkpoint ranking requires additional monitoring suites")
     if not 1 <= args.evaluation_every <= 99999 or (
             args.evaluation_every != 1 and args.evaluation_run_config is None):
         parser.error("--evaluation-every must be positive and requires a fixed holdout suite")
@@ -1137,6 +1145,8 @@ def main():
         if len(set(hashes)) != len(hashes):
             parser.error("primary and monitoring evaluation suites must have distinct pinned source bytes")
         recipe["monitor_evaluations"] = suites
+    if args.checkpoint_selection != "primary":
+        recipe["checkpoint_selection"] = args.checkpoint_selection
     if args.early_stop_patience is not None:
         recipe["early_stop"] = {
             "patience_rounds": args.early_stop_patience,
@@ -1261,6 +1271,7 @@ def main():
                     monitor_observations[str(directory)] = checked
             best_evaluated = publish_best_evaluated(
                 root, recipe, completed, evaluations, baseline_holdout,
+                monitor_baseline, monitor_observations,
             )
             if args.library_save_root is not None:
                 display_title = args.library_game_title or config["run_id"]
@@ -1569,6 +1580,7 @@ def main():
                 if due or (curriculum is not None and stage_start == index):
                     best_evaluated = publish_best_evaluated(
                         root, recipe, completed, evaluations, baseline_holdout,
+                        monitor_baseline, monitor_observations,
                     )
             stop_state = early_stop_decision(
                 completed, evaluations, baseline_holdout, recipe,

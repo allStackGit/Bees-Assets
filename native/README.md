@@ -2165,9 +2165,14 @@ Each suite retains its own source SHA-256, fixed policy RNG seed, baseline,
 per-checkpoint evaluation receipts, and interrupted-attempt recovery. The
 `session-progress.json` `monitoring_suites` array reports wins, draws,
 latest change from baseline, and every verified round. Monitoring suites
-use the primary holdout's evaluation side and cadence, but do **not**
-silently change early stopping or best-checkpoint selection: those remain
-controlled by the explicitly chosen primary `--evaluation-run-config`.
+use the primary holdout's evaluation side and cadence. By default they
+do **not** change early stopping or best-checkpoint selection. With
+`--checkpoint-selection mean` or `--checkpoint-selection worst` at
+session creation, the best playable checkpoint instead maximizes the
+equal-weight mean win rate or the weakest win rate across **all** pinned
+suites. Only fully evaluated checkpoints qualify, and ties retain the
+earlier checkpoint. Early stopping still observes the primary holdout,
+regardless of the optional best-model ranking.
 A monitoring suite is pinned for the entire training session and must be
 specified again, unchanged and in the same order, when resuming. Source
 run configurations and all referenced scenes/assets are hash-pinned. This
