@@ -507,6 +507,24 @@ def verify_bundle(path, job, orders):
                 proof["agent_rows"] < proof["model_forwards"] or
                 proof["agent_rows"] > metrics["successful_policy_rows"]):
             raise ValueError(f"GPU collector has no verified model forward evidence: {path}")
+    if count == 2:
+        device_rows = proof.get("per_device")
+        if (not isinstance(device_rows, list) or len(device_rows) != 2 or
+                [item.get("gpu_pci_address") for item in device_rows
+                 if isinstance(item, dict)] != sorted(proof["gpu_pci_addresses"])):
+            raise ValueError(f"dual-GPU collector did not attribute actual work to both physical devices: {path}")
+        for row in device_rows:
+            if any(type(row.get(key)) is not int or row[key] <= 0
+                   for key in ("rollout_processes", "model_forwards",
+                               "gpu_agent_rows", "successful_world_steps",
+                               "successful_policy_rows")):
+                raise ValueError(f"invalid per-GPU native collection work counters: {path}")
+        if (sum(item["rollout_processes"] for item in device_rows) != receipt["rollout_processes"] or
+                sum(item["model_forwards"] for item in device_rows) != proof["model_forwards"] or
+                sum(item["gpu_agent_rows"] for item in device_rows) != proof["agent_rows"] or
+                sum(item["successful_world_steps"] for item in device_rows) != metrics["successful_world_steps"] or
+                sum(item["successful_policy_rows"] for item in device_rows) != metrics["successful_policy_rows"]):
+            raise ValueError(f"dual-GPU collector physical work attribution does not reconcile: {path}")
     requested = metrics.get("requested_physics_worker_slots")
     capacity = receipt["rollout_processes"] * per_process
     # Historical bundles did not record model-step CPU limits. Their
