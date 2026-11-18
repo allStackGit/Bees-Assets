@@ -28,7 +28,8 @@ from native_training_artifacts import (
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 from native_gpu_allocation import (
-    parse_rollout_gpus, validate_gpu_allocation, rollout_worker_environment,
+    parse_rollout_gpus, validate_gpu_allocation, validate_leased_gpu_inference,
+    rollout_worker_environment,
 )
 
 
@@ -514,7 +515,7 @@ def stop_parallel_rollout_workers(processes):
 
 
 def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
-                          gpu_ids=None, gpu_mask=None):
+                          gpu_ids=None, gpu_mask=None, leased_gpu_inference=False):
     """Supervise one immutable rollout subprocess per process allocation.
 
     Any failed exit OR invalid completed summary makes the collection
@@ -534,7 +535,9 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                 processes.append(subprocess.Popen(
                     [*command, str(config_path)],
                     stdout=log, stderr=subprocess.STDOUT if log is not None else None,
-                    env=rollout_worker_environment(gpu_ids, gpu_mask, index),
+                    env=rollout_worker_environment(
+                        gpu_ids, gpu_mask, index, leased_gpu_inference,
+                    ),
                     start_new_session=os.name != "nt",
                     creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
                 ))
@@ -703,6 +706,8 @@ def main() -> None:
     parser.add_argument("--rollout-gpu-mask", choices=(
         "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES"),
         help="GPU isolation selector; default CUDA_VISIBLE_DEVICES (ROCR for ROCm Linux)")
+    parser.add_argument("--leased-gpu-inference", action="store_true",
+                        help="use an externally supervised exclusive GPU for native inference")
     parser.add_argument("--rollout-worlds", type=int,
                         help="independent native Worlds in this collector's reproducible window")
     parser.add_argument("--rollout-world-start", type=int,
@@ -751,6 +756,9 @@ def main() -> None:
         rollout_gpus = parse_rollout_gpus(args.rollout_gpus)
     except ValueError as error:
         parser.error(str(error))
+    if args.leased_gpu_inference and (
+            rollout_gpus is not None or args.rollout_gpu_mask is not None):
+        parser.error("supervised GPU leases and standalone GPU allocations are exclusive")
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
     inbox = args.bundle_inbox.resolve(strict=True) if args.bundle_inbox else None
@@ -798,7 +806,7 @@ def main() -> None:
     if "rollout_bundles" in run_document:
         if (args.rollout_workers is not None or args.physics_workers is not None or
                 rollout_gpus is not None or args.rollout_gpu_mask is not None or
-                args.rollout_worlds is not None or
+                args.leased_gpu_inference or args.rollout_worlds is not None or
                 args.rollout_world_start is not None or
                 "rollout_world_start" in run_document or "rollout_worlds" in run_document):
             parser.error("imported rollout bundles cannot allocate local Worlds or workers")
@@ -920,6 +928,8 @@ def main() -> None:
         gpu_mask = validate_gpu_allocation(
             rollout_gpus, args.rollout_gpu_mask, workers, manifest,
         )
+        if args.leased_gpu_inference:
+            validate_leased_gpu_inference(manifest)
     except ValueError as error:
         parser.error(str(error))
     gpu_allocation = (None if rollout_gpus is None else {
@@ -969,12 +979,13 @@ def main() -> None:
                       "rollout_processes": workers,
                       "physics_workers_per_process": physics_workers,
                       **({"gpu_allocation": gpu_allocation} if gpu_allocation else {}),
+                      **({"leased_gpu_inference": True} if args.leased_gpu_inference else {}),
                       "seed_offset": args.seed_offset,
                       "input_manifest_sha256": input_manifest_sha,
                       "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
     rollout = run_parallel_rollouts(
         shards, command, input_manifest_sha, args.stage_diagnostics,
-        rollout_gpus, gpu_mask,
+        rollout_gpus, gpu_mask, args.leased_gpu_inference,
     )
     if args.collect_only:
         captures = []
@@ -1013,6 +1024,7 @@ def main() -> None:
             "rollout_processes": workers,
             "physics_workers_per_process": physics_workers,
             **({"gpu_allocation": gpu_allocation} if gpu_allocation else {}),
+            **({"leased_gpu_inference": True} if args.leased_gpu_inference else {}),
             "partition": {
                 "source_run_id": config["run_id"],
                 "world_start": world_start,
@@ -1043,6 +1055,8 @@ def main() -> None:
     )
     if gpu_allocation is not None:
         result["gpu_allocation"] = gpu_allocation
+    if args.leased_gpu_inference:
+        result["leased_gpu_inference"] = True
     if workers > 1:
         result["rollout_shards"] = [
             {"run_config": str(path), "run_config_sha256": file_sha256(path),
