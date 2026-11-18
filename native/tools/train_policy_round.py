@@ -270,6 +270,26 @@ def rollout_metrics(summary_path, config, manifest_sha):
                     reclaimed > queens["policy_minions_bound"]):
                 raise ValueError("invalid reclaimed dynamic policy route count")
             metrics["queen_minion_controllers"]["retired_policy_routes_reclaimed"] = reclaimed
+    borders = summary.get("map_border_ships")
+    if borders is not None:
+        keys = ("entries", "movement_stops", "override_skips",
+                "lethal_hits", "lethal_kills",
+                "confinement_position_corrections",
+                "confinement_velocity_clamps",
+                "confinement_unfittable_hulls",
+                "confinement_missing_profiles", "completed_episodes")
+        if (not isinstance(borders, dict) or
+                any(type(borders.get(key)) is not int or borders[key] < 0
+                    for key in keys) or
+                borders["completed_episodes"] != expected_episodes or
+                any(borders[key] > borders["entries"] for key in (
+                    "movement_stops", "override_skips", "lethal_hits",
+                    "lethal_kills")) or
+                borders["lethal_kills"] > borders["lethal_hits"]):
+            raise ValueError("native rollout contains inconsistent physical border events")
+        metrics["map_border_ships"] = {
+            key: borders[key] for key in keys
+        }
     # Preserve actual model-step CPU utilization reported by the native
     # simulator, not just the requested per-process thread limit. These
     # counters distinguish real parallel rounds from Stage-order fallbacks.
@@ -382,6 +402,17 @@ def combined_rollout_metrics(shards, wall_seconds):
             "peak_parallel_physics_workers":
                 max(shard["peak_parallel_physics_workers"] for shard in shards),
         })
+    border_keys = ("entries", "movement_stops", "override_skips",
+                   "lethal_hits", "lethal_kills",
+                   "confinement_position_corrections",
+                   "confinement_velocity_clamps",
+                   "confinement_unfittable_hulls",
+                   "confinement_missing_profiles", "completed_episodes")
+    if all("map_border_ships" in shard for shard in shards):
+        metrics["map_border_ships"] = {
+            key: sum(shard["map_border_ships"][key] for shard in shards)
+            for key in border_keys
+        }
     # Mixed historical collector binaries may report only the older
     # parallel-physics totals. Preserve unknown dispatch provenance as
     # absent, never treat missing direct rounds as zero.
