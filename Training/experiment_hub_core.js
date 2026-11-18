@@ -2136,6 +2136,10 @@ class ExperimentHub {
                 min_success_rate:job.evaluation_monitor?0:rule.min_success_rate,
                 ...(job.evaluation_monitor?{
                     monitor_only:true,
+                    ...(job.evaluation_monitor.evaluator_resources?{
+                        required_evaluator_cpus:job.evaluation_monitor.evaluator_resources.cpus,
+                        required_evaluator_ram_mb:job.evaluation_monitor.evaluator_resources.ram_mb,
+                    }:{}),
                     ...(job.evaluation_monitor.min_minutes_between_evaluations
                         ?{min_minutes_between_evaluations:
                             job.evaluation_monitor.min_minutes_between_evaluations}:{}),
