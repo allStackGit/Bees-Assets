@@ -2,7 +2,7 @@
 
 import argparse
 from array import array
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right, insort
 from collections import defaultdict, deque
 import hashlib
 import json
@@ -628,14 +628,31 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
     experiences = defaultdict(list)
     previous = {}
     initial_action = np.zeros(6, dtype=np.int32)
-    # This list is stable across frames, so the group critic does not
-    # inherit arbitrary hash-map or model-dispatch ordering.
+    # Maintain only *living* learning teammates in source group-ID order.
+    # A Queen can create thousands of sequential minions without thousands
+    # of concurrent ships: rescanning every historical member at each
+    # decision would make trajectory assembly quadratic in total births.
+    entering = sorted((starts[agent], agent, team) for agent, team in teams.items()
+                      if agent in learning_agents)
+    leaving = sorted((closing[agent], agent, team) for agent, team in teams.items()
+                     if agent in learning_agents)
+    entry_ticks = [row[0] for row in entering]
     team_members = defaultdict(list)
-    for agent, team in teams.items():
-        if agent in learning_agents:
-            team_members[team].append(agent)
+    entered = left = 0
 
     for tick, frame in frames:
+        while entered < len(entering) and entering[entered][0] <= tick:
+            _, agent, team = entering[entered]
+            if closing[agent] > tick:
+                insort(team_members[team], agent)
+            entered += 1
+        while left < len(leaving) and leaving[left][0] <= tick:
+            _, agent, team = leaving[left]
+            members = team_members[team]
+            index = bisect_left(members, agent)
+            if index < len(members) and members[index] == agent:
+                members.pop(index)
+            left += 1
         latest.update(frame)
         # Multiple same-phase agents share the identical teammate state.
         # Cache only for this decision tick; older frames are never held
@@ -701,10 +718,23 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
             )
             next_group = []
             ending_frame = boundaries.get(next_tick) if done else None
-            for mate in members:
-                if mate == agent or starts[mate] > next_tick or (
-                    closing[mate] <= next_tick and next_tick != terminal_tick
+            # Most next actions are only one policy period away. Start from
+            # the currently live cohort and add only real admissions in
+            # (tick, next_tick], rather than scanning every historical child.
+            future = [
+                mate for mate in members if
+                next_tick == terminal_tick or closing[mate] > next_tick
+            ]
+            for _, mate, mate_team in entering[
+                bisect_right(entry_ticks, tick):bisect_right(entry_ticks, next_tick)
+            ]:
+                if mate_team == team and (
+                    next_tick == terminal_tick or closing[mate] > next_tick
                 ):
+                    future.append(mate)
+            future.sort()
+            for mate in future:
+                if mate == agent:
                     continue
                 if ending_frame is not None:
                     observation = ending_frame.get(mate)
