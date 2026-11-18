@@ -62,6 +62,45 @@ def model_opponents(receipt, learner_slot):
     ).encode()).hexdigest()
 
 
+def source_dependencies_identity(receipt, recipe):
+    """Prove the source run's referenced scenes and Stage bytes are identical.
+
+    A matching run-config SHA alone does not pin external files. Compare a
+    digest over logically named dependencies, never machine-specific paths.
+    """
+    run_path = Path(receipt.get("source_run_config", ""))
+    if not run_path.is_file() or file_sha256(run_path) != receipt.get("source_run_config_sha256"):
+        return None
+    pins = {
+        Path(value["path"]).resolve(): value["sha256"]
+        for value in recipe.get("source_dependencies", [])
+        if isinstance(value, dict) and isinstance(value.get("path"), str)
+    }
+    run = read_json(run_path)
+    dependencies = []
+    for index, level in enumerate(run.get("levels", [])):
+        if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
+            return None
+        dependencies.append((f"level-{index}-scene", level["scene"]))
+    if not dependencies:
+        return None
+    for field in ("policy_worker", "collision_matrix", "stage_palette"):
+        if field in run and run[field] is not None:
+            if not isinstance(run[field], str):
+                return None
+            dependencies.append((field, run[field]))
+    observed = []
+    for role, source in dependencies:
+        path = (run_path.parent / source).resolve()
+        expected = pins.get(path)
+        if expected is None or not path.is_file() or file_sha256(path) != expected:
+            return None
+        observed.append((role, expected))
+    return hashlib.sha256(json.dumps(
+        observed, separators=(",", ":"), sort_keys=True
+    ).encode()).hexdigest()
+
+
 def validated_receipt(receipt, scene_sha, side, seed, episodes):
     if not isinstance(receipt, dict) or (
         receipt.get("kind") != "native_policy_evaluation_complete" or
@@ -146,6 +185,7 @@ def suites(progress, config):
             })
         fixed_opponent = (opponents[0] is not None and
                           all(identity == opponents[0] for identity in opponents))
+        input_identity = source_dependencies_identity(baseline, config)
         results[sha] = {
             "suite": label, "source_run_config_sha256": sha,
             "learner_side": side, "policy_sampling_seed": seed,
@@ -158,6 +198,7 @@ def suites(progress, config):
             },
             "rounds": curve,
             "fixed_opponent_identity": opponents[0] if fixed_opponent else None,
+            "source_dependency_identity": input_identity,
         }
     return results
 
@@ -176,6 +217,10 @@ def describe(reference, candidate):
         b = right["rounds"][-1] if right["rounds"] else right["baseline"]
         opponent_verified = (left["fixed_opponent_identity"] is not None and
                              left["fixed_opponent_identity"] == right["fixed_opponent_identity"])
+        assets_verified = (
+            left["source_dependency_identity"] is not None and
+            left["source_dependency_identity"] == right["source_dependency_identity"]
+        )
         report.append({
             "source_run_config_sha256": sha,
             "reference_suite": left["suite"], "candidate_suite": right["suite"],
@@ -183,6 +228,8 @@ def describe(reference, candidate):
             "policy_sampling_seed": left["policy_sampling_seed"],
             "episodes": left["episodes"],
             "fixed_opponent_identity_verified": opponent_verified,
+            "matching_source_dependencies_verified": assets_verified,
+            "controlled_environment_verified": opponent_verified and assets_verified,
             "reference": left, "candidate": right,
             "reference_latest_win_rate": a["win_rate"],
             "candidate_latest_win_rate": b["win_rate"],
@@ -200,6 +247,8 @@ def describe(reference, candidate):
         "unmatched_candidate_suite_sha256": sorted(candidate.keys() - reference.keys()),
         "fixed_opponent_verified_for_all_shared_suites":
             all(s["fixed_opponent_identity_verified"] for s in report),
+        "controlled_environment_verified_for_all_shared_suites":
+            all(s["controlled_environment_verified"] for s in report),
         "suites": report,
     }
 
@@ -210,6 +259,8 @@ def main():
     parser.add_argument("candidate", type=Path, help="session-progress.json")
     parser.add_argument("--require-fixed-opponent", action="store_true",
                         help="reject comparison unless every shared suite has verifiably identical opponent artifacts")
+    parser.add_argument("--require-controlled-environment", action="store_true",
+                        help="require identical verified opponent weights and scene/Stage source assets")
     args = parser.parse_args()
     ref = args.reference.resolve(strict=True)
     cand = args.candidate.resolve(strict=True)
@@ -218,6 +269,10 @@ def main():
     report = describe(reference, candidate)
     if args.require_fixed_opponent and not report["fixed_opponent_verified_for_all_shared_suites"]:
         parser.error("fixed opponent artifacts cannot be verified for every matched suite")
+    if args.require_controlled_environment and not report[
+        "controlled_environment_verified_for_all_shared_suites"
+    ]:
+        parser.error("matching opponent and source assets cannot be verified for every matched suite")
     print(json.dumps(report, sort_keys=True, indent=2))
 
 
