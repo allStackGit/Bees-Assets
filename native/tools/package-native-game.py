@@ -49,7 +49,10 @@ PROTECTED_SOURCE_NAMES = {
 }
 
 
-def package_native_training_runtime(destination: Path, rollout_binary: Path | None) -> None:
+def package_native_training_runtime(
+    destination: Path, rollout_binary: Path | None,
+    manifest_binary: Path | None,
+) -> None:
     native = destination / "native"
     native.mkdir(exist_ok=True)
     for name in ("Cargo.toml", "Cargo.lock"):
@@ -84,6 +87,14 @@ def package_native_training_runtime(destination: Path, rollout_binary: Path | No
                 "native training rollout executable platform must match bees binary"
             )
         shutil.copy2(rollout_binary, destination / target_name)
+    if manifest_binary is not None:
+        target_name = "policy_manifest.exe" if (
+            destination / "bees.exe").is_file() else "policy_manifest"
+        if manifest_binary.name != target_name:
+            raise ValueError(
+                "native policy ABI generator platform must match bees binary"
+            )
+        shutil.copy2(manifest_binary, destination / target_name)
 
 
 def package_policy_runtime(destination: Path) -> None:
@@ -472,6 +483,10 @@ def verify_native_package(directory: Path) -> dict:
             directory / "bees.exe").is_file() else "policy_rollout"
         if optional_rollout in expected and not (directory / optional_rollout).is_file():
             raise ValueError("native training rollout executable is missing")
+        optional_manifest = "policy_manifest.exe" if (
+            directory / "bees.exe").is_file() else "policy_manifest"
+        if optional_manifest in expected and not (directory / optional_manifest).is_file():
+            raise ValueError("native training policy ABI generator is missing")
 
     def owned_link(owner: Path, relative: str, name: str) -> Path:
         if (not isinstance(relative, str) or not relative or
@@ -567,6 +582,8 @@ def main() -> None:
                         help="ship the canonical native Rust workspace, Python learner and Hub bridge for Train Saved Fleet")
     parser.add_argument("--rollout-binary", type=Path,
                         help="optional prebuilt policy_rollout for the target game platform (requires --include-training)")
+    parser.add_argument("--manifest-binary", type=Path,
+                        help="optional prebuilt Rust policy_manifest ABI generator for compiler-free initialization")
     parser.add_argument("--python-command",
                         help="bare target-machine Python executable (python3, python, py)")
     parser.add_argument("--policy-device", choices=("cpu", "cuda"),
@@ -575,7 +592,7 @@ def main() -> None:
     if args.verify is not None:
         if (args.binary is not None or args.output is not None or
                 args.include_policies or args.include_training or
-                args.rollout_binary is not None or
+                args.rollout_binary is not None or args.manifest_binary is not None or
                 args.policy_device is not None or args.python_command is not None):
             parser.error("--verify accepts only the completed distribution directory")
         print(json.dumps(verify_native_package(args.verify)), flush=True)
@@ -584,12 +601,14 @@ def main() -> None:
         parser.error("create a native release with --binary and --output")
     if args.policy_device is not None and not args.include_policies:
         parser.error("--policy-device requires --include-policies")
-    if args.rollout_binary is not None and not args.include_training:
-        parser.error("--rollout-binary requires --include-training")
+    if (args.rollout_binary is not None or args.manifest_binary is not None) and not args.include_training:
+        parser.error("prebuilt training executables require --include-training")
     binary = args.binary.resolve()
     rollout_binary = args.rollout_binary.resolve(strict=True) if args.rollout_binary else None
-    if rollout_binary is not None and not rollout_binary.is_file():
-        parser.error("--rollout-binary requires an existing compiled file")
+    manifest_binary = args.manifest_binary.resolve(strict=True) if args.manifest_binary else None
+    if any(path is not None and not path.is_file()
+           for path in (rollout_binary, manifest_binary)):
+        parser.error("training executables must be existing compiled files")
     output = args.output.resolve()
     if not binary.is_file() or binary.name not in ("bees", "bees.exe"):
         parser.error("Provide a compiled native graphical bees or bees.exe binary")
@@ -627,7 +646,7 @@ def main() -> None:
         if policy_used:
             package_policy_runtime(staging)
         if args.include_training:
-            package_native_training_runtime(staging, rollout_binary)
+            package_native_training_runtime(staging, rollout_binary, manifest_binary)
         # The integrity checker travels with the immutable distribution,
         # including game-only builds. It is optional at PLAY time; copying
         # these tools does not introduce Python into native game execution.
