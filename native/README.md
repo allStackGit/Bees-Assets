@@ -61,7 +61,12 @@ commands and select another asteroid after depletion. When an allied
 Beehive is authored, scripted combat squads attempt `heal_available`
 between attacks using the original capacity-reserved healing command.
 Resource scarcity does not create synthetic ore or healing: an unavailable
-single-order mining queue retries after one simulated second. `--fog`, `--empty-map`, `--minutes`,
+auto-mining queue retries after one simulated second. Native Barge (type 0)
+and Fire Barge/Fire Tank (types 10/22) fleets issue authentic Charge and
+BombingRun special-weapon orders against live nearest opposing squads. They
+share the actual Bomb targeting, reservation, movement, contact and cooldown
+logic used by the player and headless learner, without generic projectiles.
+An unavailable nearest-target special retries after one simulated second. `--fog`, `--empty-map`, `--minutes`,
 and `--spacing` are supported. `--source-scene` and
 `--source-run` allow a larger native-authored arena or other verified
 archetypes without Unity. The default catalogue uses the existing

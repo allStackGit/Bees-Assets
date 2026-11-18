@@ -235,8 +235,11 @@ pub struct NativeScriptedQueueMeasurements {
     pub mining_nearest_commands_started: u64,
     /// Real healing commands that reserved a same-side Beehive.
     pub healing_available_commands_started: u64,
-    /// Empty mining cycles deferred for one source second.
-    pub mining_unavailable_retries: u64,
+    /// Live special-weapon commands issued to a real enemy lifetime.
+    pub bombing_nearest_commands_started: u64,
+    pub charge_nearest_commands_started: u64,
+    /// Resource-starved dynamic orders deferred for one source second.
+    pub dynamic_order_retries: u64,
     /// Authenticated source command had no current actionable target.
     pub orders_skipped_unavailable: u64,
     pub queues_completed: u64,
@@ -261,7 +264,9 @@ impl NativeScriptedQueueMeasurements {
         self.nearest_enemy_candidates_scanned += other.nearest_enemy_candidates_scanned;
         self.mining_nearest_commands_started += other.mining_nearest_commands_started;
         self.healing_available_commands_started += other.healing_available_commands_started;
-        self.mining_unavailable_retries += other.mining_unavailable_retries;
+        self.bombing_nearest_commands_started += other.bombing_nearest_commands_started;
+        self.charge_nearest_commands_started += other.charge_nearest_commands_started;
+        self.dynamic_order_retries += other.dynamic_order_retries;
         self.orders_skipped_unavailable += other.orders_skipped_unavailable;
         self.queues_completed += other.queues_completed;
         self.queues_cancelled += other.queues_cancelled;

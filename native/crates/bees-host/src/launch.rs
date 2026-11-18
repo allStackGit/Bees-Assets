@@ -154,6 +154,8 @@ enum ScriptedOrderConfig {
     MoveToRandom { #[serde(default)] range: f32 },
     Aggressive { enemy_squad_item_id: i64 },
     AggressiveNearest,
+    BombingNearest,
+    ChargeNearest,
     TargetEnemy { enemy_squad_item_id: i64 },
     Retreat { enemy_squad_item_id: i64 },
     CircleSquad { enemy_squad_item_id: i64 },
@@ -542,6 +544,10 @@ fn make_setup(
                         },
                     ScriptedOrderConfig::AggressiveNearest =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::AggressiveNearest,
+                    ScriptedOrderConfig::BombingNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::BombingNearest,
+                    ScriptedOrderConfig::ChargeNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::ChargeNearest,
                     ScriptedOrderConfig::TargetEnemy { enemy_squad_item_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::TargetEnemy {
                             enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)

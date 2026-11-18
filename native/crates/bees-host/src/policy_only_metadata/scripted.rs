@@ -39,6 +39,10 @@ pub enum NativeScriptedOrder {
     /// issuing the ordinary Aggressive command, then select again after
     /// its exact target lifetime ends. No extra movement or weapon logic.
     AggressiveNearest,
+    /// Select a live opponent, then execute the shared BombingRun engine.
+    BombingNearest,
+    /// Select a live opponent, then execute the shared Barge Charge engine.
+    ChargeNearest,
     TargetEnemy { enemy_squad_item_id: i64 },
     Retreat { enemy_squad_item_id: i64 },
     CircleSquad { enemy_squad_item_id: i64 },
@@ -82,8 +86,10 @@ impl NativeScriptedOrder {
             Self::RightSwipe { .. } => NativeLocalCommandAction::RightSwipe,
             Self::LeftSwipe { .. } => NativeLocalCommandAction::LeftSwipe,
             Self::InAndOut { .. } => NativeLocalCommandAction::InAndOut,
-            Self::BombingRun { .. } => NativeLocalCommandAction::BombingRun,
-            Self::Charge { .. } => NativeLocalCommandAction::Charge,
+            Self::BombingRun { .. } | Self::BombingNearest =>
+                NativeLocalCommandAction::BombingRun,
+            Self::Charge { .. } | Self::ChargeNearest =>
+                NativeLocalCommandAction::Charge,
             Self::Guard { .. } => NativeLocalCommandAction::Guard {
                 target: target.expect("authenticated current friendly squad"),
             },
@@ -120,6 +126,7 @@ impl NativeScriptedOrder {
             Self::Patrol { top_left, bottom_right } =>
                 top_left.is_finite() && bottom_right.is_finite(),
             Self::Hold | Self::ClosestFriendly | Self::AggressiveNearest |
+            Self::BombingNearest | Self::ChargeNearest |
             Self::MiningNearest | Self::HealAvailable => true,
             Self::Scouting { max_sight, human_side } =>
                 max_sight.is_finite() && max_sight >= 0.0 && human_side > 0,
@@ -503,7 +510,11 @@ impl NativePolicyOnlyMetadata {
             // Every prepared target is re-resolved against the current
             // roster lifetime. A destroyed squad cannot be replaced by an
             // unrelated new squad with the same hotkey or source item ID.
-            let linked_target = if matches!(&order, NativeScriptedOrder::AggressiveNearest) {
+            let linked_target = if matches!(&order,
+                NativeScriptedOrder::AggressiveNearest |
+                NativeScriptedOrder::BombingNearest |
+                NativeScriptedOrder::ChargeNearest
+            ) {
                 let roster = events.roster();
                 let own_side = roster.get(owner)
                     .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?
@@ -567,6 +578,8 @@ impl NativePolicyOnlyMetadata {
             let enemy = if matches!(&order,
                 NativeScriptedOrder::Aggressive { .. } |
                 NativeScriptedOrder::AggressiveNearest |
+                NativeScriptedOrder::BombingNearest |
+                NativeScriptedOrder::ChargeNearest |
                 NativeScriptedOrder::TargetEnemy { .. } |
                 NativeScriptedOrder::Retreat { .. } |
                 NativeScriptedOrder::CircleSquad { .. } |
@@ -596,7 +609,9 @@ impl NativePolicyOnlyMetadata {
             let mut bomb_enemies = Vec::new();
             let carrier = if matches!(&order,
                 NativeScriptedOrder::BombingRun { .. } |
-                NativeScriptedOrder::Charge { .. }
+                NativeScriptedOrder::BombingNearest |
+                NativeScriptedOrder::Charge { .. } |
+                NativeScriptedOrder::ChargeNearest
             ) {
                 Some(self.collect_bomb_activation(
                     world, events.roster(), owner,
@@ -668,10 +683,16 @@ impl NativePolicyOnlyMetadata {
                 Activation::Applied { .. } => {
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.commands_started += 1;
-                    if matches!(order, NativeScriptedOrder::MiningNearest) {
-                        self.scripted_counts.mining_nearest_commands_started += 1;
-                    } else if matches!(order, NativeScriptedOrder::HealAvailable) {
-                        self.scripted_counts.healing_available_commands_started += 1;
+                    match order {
+                        NativeScriptedOrder::MiningNearest =>
+                            self.scripted_counts.mining_nearest_commands_started += 1,
+                        NativeScriptedOrder::HealAvailable =>
+                            self.scripted_counts.healing_available_commands_started += 1,
+                        NativeScriptedOrder::BombingNearest =>
+                            self.scripted_counts.bombing_nearest_commands_started += 1,
+                        NativeScriptedOrder::ChargeNearest =>
+                            self.scripted_counts.charge_nearest_commands_started += 1,
+                        _ => {}
                     }
                     started += 1;
                 }
@@ -681,17 +702,20 @@ impl NativePolicyOnlyMetadata {
                     // fabricate a command or alter the physical world.
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.orders_skipped_unavailable += 1;
-                    if matches!(order, NativeScriptedOrder::MiningNearest) &&
-                        self.scripted_queues[index].orders.len() == 1 &&
-                        self.scripted_queues[index].repeat
+                    if matches!(order,
+                        NativeScriptedOrder::MiningNearest |
+                        NativeScriptedOrder::BombingNearest |
+                        NativeScriptedOrder::ChargeNearest
+                    ) && self.scripted_queues[index].repeat &&
+                        self.scripted_queues[index].cursor ==
+                            self.scripted_queues[index].orders.len()
                     {
-                        // When all ore is depleted, a repeating mining
-                        // fleet must not scan the empty asteroid registry
-                        // on every fixed step. A new resource is discovered
-                        // on the next one-second source-time retry.
+                        // Scarce ore or unavailable special-weapon targets
+                        // cannot trigger an O(ticks * squads) retry loop.
+                        // Include the final specialist after optional Heal.
                         self.scripted_queues[index].ready_tick =
                             completed_tick.saturating_add(self.scripted_retry_ticks);
-                        self.scripted_counts.mining_unavailable_retries += 1;
+                        self.scripted_counts.dynamic_order_retries += 1;
                     }
                 }
                 _ => return Err(NativeLevelEventError::Commands(

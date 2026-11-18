@@ -400,6 +400,15 @@ def author(args) -> tuple[dict, dict, dict]:
                 # selects another; don't author O(own * enemy) JSON orders
                 # or target ships reserved for a later reinforcement wave.
                 orders = []
+                if (example.get("special_weapon") and example["ship_type"] == 0):
+                    combat_order = "charge_nearest"
+                elif (example.get("special_weapon") and
+                      example["ship_type"] in (10, 22)):
+                    combat_order = "bombing_nearest"
+                else:
+                    # Linked carrier children retain their parent-driven
+                    # special lifetimes; their scripted order stays generic.
+                    combat_order = "aggressive_nearest"
                 if (example["ship_type"] != 2 and
                         any(kind == 2 for kind, _ in requested[side])):
                     # Between source combat lifetimes, repair injured
@@ -407,7 +416,7 @@ def author(args) -> tuple[dict, dict, dict]:
                     # If everyone is healthy, Heal is unavailable and the
                     # ordinary attack starts on the following fixed tick.
                     orders.append({"kind": "heal_available"})
-                orders.append({"kind": "aggressive_nearest"})
+                orders.append({"kind": combat_order})
             else:
                 orders = [{"kind": "move_to_point",
                            "destination": scene["starting_positions"][2 - side]}]
