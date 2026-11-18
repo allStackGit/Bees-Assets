@@ -221,6 +221,20 @@ def rollout_metrics(summary_path, config, manifest_sha):
         "policy_rows_per_execution_second":
             counts["successful_policy_rows"] / times["execution_wall_seconds"],
     }
+    # Actual reinforcement and policy enrollment events are recorded by
+    # the shared runtime, never inferred from authored plans or reserved
+    # entity IDs. An older runner's missing metric remains genuinely absent.
+    arrivals = summary.get("reinforcement_arrivals")
+    if arrivals is not None:
+        keys = ("waves", "squads", "ships", "policy_agents")
+        if (not isinstance(arrivals, dict) or
+                any(type(arrivals.get(key)) is not int or arrivals[key] < 0
+                    for key in keys) or
+                arrivals["policy_agents"] > arrivals["ships"]):
+            raise ValueError("native rollout has invalid reinforcement admissions")
+        metrics["reinforcement_arrivals"] = {
+            key: arrivals[key] for key in keys
+        }
     # Preserve actual model-step CPU utilization reported by the native
     # simulator, not just the requested per-process thread limit. These
     # counters distinguish real parallel rounds from Stage-order fallbacks.
@@ -356,6 +370,8 @@ def combined_rollout_metrics(shards, wall_seconds):
             "policy_rows_per_execution_second":
                 shard["policy_rows_per_execution_second"],
             "requested_physics_workers": shard["requested_physics_worker_slots"],
+            **({"reinforcement_arrivals": shard["reinforcement_arrivals"]}
+               if "reinforcement_arrivals" in shard else {}),
             **({key: shard[key] for key in (
                 "parallel_physics_rounds",
                 "parallel_physics_direct_rounds",
@@ -370,6 +386,11 @@ def combined_rollout_metrics(shards, wall_seconds):
         }
         for index, shard in enumerate(shards)
     ]
+    if all("reinforcement_arrivals" in shard for shard in shards):
+        metrics["reinforcement_arrivals"] = {
+            key: sum(shard["reinforcement_arrivals"][key] for shard in shards)
+            for key in ("waves", "squads", "ships", "policy_agents")
+        }
     samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
     if samples:
         metrics["sampled_model_timing"] = {
