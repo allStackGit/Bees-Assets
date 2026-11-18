@@ -81,6 +81,14 @@ Squad.MaxSight, making reconnaissance, discovery and eligible Beacon drops
 part of native AI battles. A live Carrier remains a rearming platform while
 its authored Striker children run the shared BombingRun; stationary Queens
 remain protected while their original wave/minion timers keep spawning.
+In standalone AI battles, each newly spawned, non-player Queen YellowJacket
+squad now receives the existing native `bombing_nearest` command queue,
+following its physical spawn and source formation registration. This uses the
+same BombingRun, damage and squad retirement as gameplay rather than a
+special minion combat simulator. When a Queen belongs to a player, a live
+HiveMind Stage, or a policy-controlled scene, those controllers retain
+command authority instead. The scripted queue's measurements count these
+automatic minion enrollments.
 These roles also carry into the matching headless MA-POCA scenario: ships
 with source-supported policy actors use policy input, while the remaining
 non-policy squads retain the same authored native script ownership. `--fog`, `--empty-map`, `--minutes`,
