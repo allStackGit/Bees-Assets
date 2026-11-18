@@ -1990,12 +1990,16 @@ document.addEventListener('DOMContentLoaded', () => {
             metricOptions.some(metric=>metric.key===key));
         const metricChoices=override?.length===0?[]:
             matchingOverride?.length?matchingOverride:
-                keep.length?keep:evaluationDefaults.length
+                // Newly completed independent evaluations become visible
+                // even if Compare was opened before the first receipt.
+                // Only a deliberate viewer choice (override) suppresses
+                // them; an automatically retained training selection does not.
+                evaluationDefaults.length
                     ?[...evaluationDefaults.slice(0,8),
-                        ...preferred.filter(key=>
-                            !evaluationDefaults.includes(key)).slice(
-                                0,Math.max(0,5-evaluationDefaults.length))]
-                    :preferred.length?preferred:
+                        ...(keep.length?keep:preferred)
+                            .filter(key=>!evaluationDefaults.includes(key))
+                            .slice(0,Math.max(0,5-evaluationDefaults.length))]
+                    :keep.length?keep:preferred.length?preferred:
                     learningDefaults.length?learningDefaults.slice(0,5):
                         [metricOptions[0]?.key];
         for(const option of metricSelect.options)
