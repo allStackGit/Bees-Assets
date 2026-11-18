@@ -833,11 +833,27 @@ fn current_state(
         visible_ids.insert(ship.entity_id);
         let discovered = viewer.is_some_and(|side|
             view.combat.discovery().has(side, DiscoveryKind::Ship, ship.entity_id));
+        // Presentation status is emitted only for already-visible ships;
+        // it cannot bypass the host's authoritative fog or ownership.
+        // Timers remain in CombatWorld, never in a remote shadow game.
+        let animation = match ship.ship_type {
+            4 | 9 if view.roster.owning_squad(ship.entity_id)
+                .is_some_and(|owner|
+                    view.commands.ship_is_mining(owner, ship.entity_id)) =>
+                Some((0u8, view.tick as f32 * view.fixed_step_seconds)),
+            20 => view.combat.game_warp_gate_animation_elapsed(ship.entity_id)
+                .map(|elapsed| if view.combat.game_warp_gate_ready(ship.entity_id) {
+                    (1u8, view.tick as f32 * view.fixed_step_seconds)
+                } else { (0u8, elapsed) }),
+            _ => None,
+        };
         Some(json!({
             "id": ship.entity_id,
             "side": ship.side, "ship_type": ship.ship_type,
             "x": body.motion.position.x, "y": body.motion.position.y,
             "rotation": body.motion.rotation_degrees,
+            "animation_variant": animation.map(|(variant, _)| variant),
+            "animation_seconds": animation.map(|(_, seconds)| seconds),
             "destination": if owned {
                 view.combat.ship_game_destination(ship.entity_id)
                     .map(|destination| [destination.x, destination.y])

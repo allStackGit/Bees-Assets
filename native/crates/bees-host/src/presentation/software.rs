@@ -714,31 +714,61 @@ impl NativeSoftwareRenderer {
 
     #[cfg(feature = "client")]
     pub(super) fn remote_ship_recolor_cache_size(&self) -> usize {
-        self.custom_ship_art.len()
+        self.custom_ship_art.len() + self.animated_ship_art.len()
     }
 
     #[cfg(feature = "client")]
     pub(super) fn remote_ship_art(
         &mut self, ship_type: u8, point: Vec2, rotation_degrees: f32,
-        color_rgb: Option<[u8; 3]>,
+        color_rgb: Option<[u8; 3]>, animation: Option<(u8, f32)>,
     ) -> bool {
-        let Some(art) = source_ship_art()
-            .and_then(|atlas| atlas.sprites.get(usize::from(ship_type)))
-            .and_then(Option::as_ref)
+        // Authenticated host packets select a presentation clip only for
+        // already visible ships. Both local and remote use the *same*
+        // native original-art decoder and exact source squad recolor mask.
+        let animated = animation.and_then(|(variant, elapsed)| {
+            if variant > 1 || !elapsed.is_finite() || elapsed < 0.0 {
+                return None;
+            }
+            let art = source_ship_animation_art()?
+                .clips.get(usize::from(ship_type) * 2 + usize::from(variant))
+                .and_then(Option::as_ref)?;
+            let frame = ((elapsed * art.frames_per_second).floor() as usize)
+                % art.frames.len();
+            Some((art, variant, frame))
+        });
+        let Some(art) = animated
+            .map(|(clip, _, frame)| &clip.frames[frame])
+            .or_else(|| source_ship_art()
+                .and_then(|atlas| atlas.sprites.get(usize::from(ship_type)))
+                .and_then(Option::as_ref))
         else { return false };
-        // Same cache key, 96-variant memory bound and source recolor-mask
-        // transform as local gameplay's original ship rendering pass.
         let recolored = color_rgb.filter(|_| art.recolor_mask.is_some())
             .map(|rgb| {
-                let key = (ship_type, rgb);
-                if !self.custom_ship_art.contains_key(&key) {
-                    if self.custom_ship_art.len() >= 96 {
-                        self.custom_ship_art.clear();
+                if let Some((_, variant, frame)) = animated {
+                    let key = (ship_type, variant, frame, rgb);
+                    if !self.animated_ship_art.contains_key(&key) {
+                        if self.animated_ship_art.len() >= 512 {
+                            self.animated_ship_art.clear();
+                        }
+                        self.animated_ship_art.insert(
+                            key, Arc::new(art.recolored(rgb)),
+                        );
                     }
-                    self.custom_ship_art.insert(key, Arc::new(art.recolored(rgb)));
+                    Arc::clone(self.animated_ship_art.get(&key)
+                        .expect("installed animated native squad recolor"))
+                } else {
+                    let key = (ship_type, rgb);
+                    if !self.custom_ship_art.contains_key(&key) {
+                        if self.custom_ship_art.len() >= 96 {
+                            self.custom_ship_art.clear();
+                        }
+                        self.custom_ship_art.insert(
+                            key, Arc::new(art.recolored(rgb)),
+                        );
+                    }
+                    Arc::clone(self.custom_ship_art.get(&key)
+                        .expect("installed static native squad recolor"))
                 }
-                Arc::clone(self.custom_ship_art.get(&key)
-                    .expect("installed native squad recolor"))
             });
         let sprite = recolored.as_deref().unwrap_or(&art.sprite);
         self.draw_sprite(

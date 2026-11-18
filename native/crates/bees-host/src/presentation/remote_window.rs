@@ -151,8 +151,13 @@ impl RemoteArtwork {
                     u8::try_from(rgb[1].as_u64()?).ok()?,
                     u8::try_from(rgb[2].as_u64()?).ok()?,
                 ]));
+            let animation = ship["animation_variant"].as_u64()
+                .and_then(|variant| u8::try_from(variant).ok())
+                .zip(ship["animation_seconds"].as_f64().map(|seconds| seconds as f32))
+                .filter(|(variant, seconds)| *variant <= 1 &&
+                    seconds.is_finite() && *seconds >= 0.0);
             if self.raster.remote_ship_art(kind, point,
-                visual.heading(ship, fraction), color_rgb) {
+                visual.heading(ship, fraction), color_rgb, animation) {
                 self.ships.insert(id);
                 stats.ship_sprite_draws += 1;
             }
