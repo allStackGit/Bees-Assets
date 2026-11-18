@@ -461,6 +461,13 @@ def verify_bundle(path, job, orders):
         raise ValueError(f"distributed collector has invalid physics allocation: {path}")
     if "leased_gpu_inference" in receipt and receipt["leased_gpu_inference"] is not True:
         raise ValueError(f"invalid leased-GPU collector receipt marker: {path}")
+    count = receipt.get("leased_gpu_count")
+    if receipt.get("leased_gpu_inference"):
+        if (type(count) is not int or count not in (1, 2) or
+                count > receipt["rollout_processes"]):
+            raise ValueError(f"GPU collector declared an impossible leased-device count: {path}")
+    elif count is not None:
+        raise ValueError(f"collector supplied a GPU device count without a verified lease: {path}")
     if receipt.get("gpu_allocation") is not None or receipt.get("leased_gpu_inference"):
         proof = metrics.get("gpu_inference")
         if (not isinstance(proof, dict) or
