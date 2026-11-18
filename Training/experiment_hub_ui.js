@@ -3620,6 +3620,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-rate').disabled=!hasStop;
         $('hub-evaluation-frequency-label').hidden=!monitor;
         $('hub-evaluation-frequency').disabled=!monitor;
+        $('hub-evaluation-baseline-label').hidden=!monitor;
+        $('hub-evaluation-final-label').hidden=!monitor;
         for(const row of $('hub-evaluation-more-suites').children) {
             const label=row.querySelector('.hub-evaluation-extra-rate-label');
             label.hidden=!hasStop;
@@ -3688,6 +3690,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-rate').value=stopBySuite.get(first?.suite_id)
             ?.min_success_rate??first?.min_success_rate??'';
         $('hub-evaluation-frequency').value=String(policy?.every_n_checkpoints??10);
+        $('hub-evaluation-baseline').checked=policy?.include_baseline!==false;
+        $('hub-evaluation-final').checked=policy?.include_final!==false;
         $('hub-evaluation-all-of').value='';
         $('hub-evaluation-more-suites').replaceChildren();
         for(const rule of multi?.slice(1)||[])
@@ -3749,9 +3753,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const {min_success_rate,...monitorRule}=rule;
             return monitorRule;
         };
+        const options={
+            ...(!$('hub-evaluation-baseline').checked?{include_baseline:false}:{}),
+            ...(!$('hub-evaluation-final').checked?{include_final:false}:{}),
+        };
         const watched=policy.all_of
-            ?{all_of:policy.all_of.map(withoutThreshold),every_n_checkpoints:cadence}
-            :{...withoutThreshold(policy),every_n_checkpoints:cadence};
+            ?{all_of:policy.all_of.map(withoutThreshold),every_n_checkpoints:cadence,...options}
+            :{...withoutThreshold(policy),every_n_checkpoints:cadence,...options};
         return {evaluation_monitor:watched,evaluation_stop:stop?policy:null};
     }
     // Worker-advertised suite names are suggestions, not execution authority.

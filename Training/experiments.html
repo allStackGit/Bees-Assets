@@ -870,6 +870,8 @@ label.hub-toggle-row > input[type="checkbox"] {
           <label id="hub-evaluation-frequency-label">Evaluate every N training updates / rounds
             <input id="hub-evaluation-frequency" type="number" min="1" max="1000000" step="1" value="10">
           </label>
+          <label id="hub-evaluation-baseline-label"><input id="hub-evaluation-baseline" type="checkbox" checked> Evaluate first available checkpoint (baseline)</label>
+          <label id="hub-evaluation-final-label"><input id="hub-evaluation-final" type="checkbox" checked> Evaluate verified final checkpoint (if available)</label>
           <label>Approved suite ID <input id="hub-evaluation-suite" maxlength="48" list="hub-evaluation-suite-options" placeholder="heldout"></label>
           <datalist id="hub-evaluation-suite-options"></datalist>
           <small class="muted wide" id="hub-evaluation-available-suites">Connected evaluator suites are listed as suggestions. Enter a known approved suite ID when its worker is offline.</small>
@@ -885,7 +887,7 @@ label.hub-toggle-row > input[type="checkbox"] {
             <p class="muted">Clear the individual suite fields above when using JSON. The editor uses the same validated suite definitions.</p>
             <textarea id="hub-evaluation-all-of" rows="5" placeholder='[{"suite_id":"short","min_trials":100,"min_success_rate":0.8},{"suite_id":"long","min_trials":100,"min_success_rate":0.7}]'></textarea>
           </details>
-          <p class="muted wide">Monitoring records results throughout training, with an optional success-based Stop using the same frozen suites and cadence. Stop targets require a success threshold for every suite; all must pass on one verified checkpoint. Use 2–8 distinct suites for a batch. In advanced JSON, include min_success_rate only when stopping is enabled.</p>
+          <p class="muted wide">Monitoring records results throughout training, with an optional success-based Stop using the same frozen suites and cadence. Disabling baseline skips the first available checkpoint; disabling final evaluation is only allowed without automatic stopping. Stop targets require a success threshold for every suite; all must pass on one verified checkpoint. Use 2–8 distinct suites for a batch. In advanced JSON, include min_success_rate only when stopping is enabled.</p>
           <div class="hub-controls wide">
             <button type="button" id="hub-evaluation-save-project-defaults">Save monitoring setup as project default</button>
             <button type="button" id="hub-evaluation-clear-project-defaults">Clear project evaluation default</button>
