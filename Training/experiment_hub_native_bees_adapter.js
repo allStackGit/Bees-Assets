@@ -260,6 +260,26 @@ function rolloutReinforcementWakeupMeasurements(rollout) {
     return result;
 }
 
+function rolloutPolicyBoundaryMeasurements(rollout) {
+    const capture = rollout?.policy_boundary_capture;
+    if (capture == null) return {};
+    const report = {};
+    for (const name of ['admission_rows', 'admission_frames',
+        'retirement_rows', 'retirement_frames']) {
+        const value = capture[name];
+        if (!Number.isSafeInteger(value) || value < 0)
+            throw Error('Invalid native Bees policy boundary receipt.');
+        report['rollout_policy_boundary_' + name] = {value, unit: 'count'};
+    }
+    const seconds = capture.observation_build_wall_seconds;
+    if (!Number.isFinite(seconds) || seconds < 0)
+        throw Error('Invalid native Bees policy observation timing.');
+    report.rollout_policy_boundary_observation_build_wall_seconds = {
+        value: seconds, unit: 'seconds',
+    };
+    return report;
+}
+
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
@@ -738,6 +758,7 @@ function createNativeBeesAdapter({
                         ...rolloutReinforcementMeasurements(rollout),
                         ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
+                        ...rolloutPolicyBoundaryMeasurements(rollout),
                         ...(rollout.sampled_model_timing ? {
                             rollout_sampled_model_calls: {
                                 value: rollout.sampled_model_timing.calls, unit: 'count',
@@ -786,6 +807,7 @@ function createNativeBeesAdapter({
                         ...rolloutReinforcementMeasurements(rollout),
                         ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
+                        ...rolloutPolicyBoundaryMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
