@@ -179,6 +179,13 @@ fn hub_arguments(
     Ok(())
 }
 
+fn valid_torch_device(device: &str) -> bool {
+    // These are the same PyTorch-visible device indices on CUDA and ROCm.
+    // The training interpreter validates actual availability before using
+    // a chosen device; the game never guesses PCI or visible GPU topology.
+    matches!(device, "cpu" | "cuda" | "cuda:0" | "cuda:1" | "cuda:2" | "cuda:3")
+}
+
 fn append_training_arguments(
     command: &mut Command, job: &Path, recipe: &Value,
 ) -> Result<(), Box<dyn Error>> {
@@ -280,12 +287,12 @@ fn append_training_arguments(
         return Err(invalid("orphan native trainer configuration digest").into());
     }
     let device = recipe["optimizer_device"].as_str()
-        .filter(|s| *s == "cpu" || *s == "cuda")
+        .filter(|value| valid_torch_device(value))
         .ok_or_else(|| invalid("invalid native optimizer device"))?;
     let inference = recipe["inference_device"].as_str().unwrap_or("cpu");
-    if !["cpu", "cuda"].contains(&inference) ||
-        (inference == "cuda" &&
-         (recipe["hub_plan"].is_string() || device != "cuda"))
+    if !valid_torch_device(inference) ||
+        (inference != "cpu" &&
+         (recipe["hub_plan"].is_string() || device != inference))
     {
         return Err(invalid(
             "GPU policy inference requires a locally allocated CUDA/ROCm optimizer"
@@ -579,12 +586,16 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     };
     let device_rows = [
         BattleMenuRow { title: "CPU", status: "  [Optimizer]", unlocked: true },
-        BattleMenuRow { title: "PyTorch CUDA / ROCm GPU", status: "  [Optimizer]", unlocked: true },
+        BattleMenuRow { title: "CUDA / ROCm GPU 0", status: "  [Optimizer device cuda:0]", unlocked: true },
+        BattleMenuRow { title: "CUDA / ROCm GPU 1", status: "  [Optimizer device cuda:1]", unlocked: true },
+        BattleMenuRow { title: "CUDA / ROCm GPU 2", status: "  [Optimizer device cuda:2]", unlocked: true },
+        BattleMenuRow { title: "CUDA / ROCm GPU 3", status: "  [Optimizer device cuda:3]", unlocked: true },
     ];
     let mut device_selection = 0;
     let Some(device) = select_library(&device_rows, &mut device_selection, false)?
         else { return Ok(()); };
-    let inference_device = if device == 1 && !use_hub {
+    let optimizer_device = ["cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"][device];
+    let inference_device = if device != 0 && !use_hub {
         let rows = [
             BattleMenuRow {
                 title: "CPU policy inference",
@@ -599,7 +610,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         let Some(selected) = select_library(&rows, &mut choice, false)? else {
             return Ok(());
         };
-        if selected == 1 { "cuda" } else { "cpu" }
+        if selected == 1 { optimizer_device } else { "cpu" }
     } else {
         // Hub's remote collectors can be CPU-only machines, and local CPU
         // optimizers do not imply an available GPU model worker.
@@ -649,7 +660,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "hub_receiver_listen": if use_hub { hub.as_ref().map(|h| h.1.clone()) } else { None },
         "hub_port": if use_hub { hub.as_ref().map(|h| h.2) } else { None },
         "hub_plan_sha256": if use_hub { hub.as_ref().map(|h| h.3.clone()) } else { None },
-        "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
+        "optimizer_device": optimizer_device,
         "inference_device": inference_device,
         "holdout_worlds": 8,
         "evaluation_side": learner_side,
@@ -688,7 +699,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "rollout_binary": rollout_binary,
         "hub_worlds": hub_worlds,
         "allocation": if use_hub { "experiment_hub" } else { "local" },
-        "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
+        "optimizer_device": optimizer_device,
         "inference_device": inference_device,
         "rounds": rounds,
         "episodes_per_world": episodes_per_world,
