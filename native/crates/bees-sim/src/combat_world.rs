@@ -641,6 +641,9 @@ pub struct GameMapBorderMeasurements {
     pub movement_stops: u64,
     /// Deliberate authored override for active Barge movement/charges.
     pub override_skips: u64,
+    /// Exact MapBorder contact damage in explicitly lethal native arenas.
+    pub lethal_hits: u64,
+    pub lethal_kills: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -823,6 +826,9 @@ pub struct CombatWorld {
     weapon_rank_history: weapon_rank_history::WeaponRankHistory,
     combat_activity: HashMap<i64, NativeCombatActivity>,
     level_geometry: Option<NativeLevelGeometry>,
+    /// Explicit authored rule: lethal MapBorder contact is a real combat
+    /// consequence for game and training, not a renderer or agent clamp.
+    lethal_map_borders: bool,
     ship_target_front_offsets: HashMap<i64, f32>,
     pending_weapon_range_exits: u64,
     weapon_range_candidates: Vec<usize>,
@@ -1018,7 +1024,8 @@ impl CombatWorld {
             automatic_rank_candidates: Vec::new(), automatic_distance_keys: HashMap::new(),
             weapon_rank_history: weapon_rank_history::WeaponRankHistory::default(),
             combat_activity: HashMap::new(),
-            level_geometry: None, ship_target_front_offsets: HashMap::new(),
+            level_geometry: None, lethal_map_borders: false,
+            ship_target_front_offsets: HashMap::new(),
             pending_weapon_range_exits: 0,
             weapon_range_candidates: Vec::new(), weapon_range_entering_ids: Vec::new(),
             special_weapons: BTreeMap::new(), special_body_entries: Vec::new(),
@@ -1338,6 +1345,12 @@ impl CombatWorld {
 
     pub fn map_border_measurements(&self) -> GameMapBorderMeasurements {
         self.map_border_measurements
+    }
+
+    /// Scene-owned physical rule used by both scripted gameplay and native
+    /// MA-POCA. False is Unity's ordinary nonlethal MapBorder behavior.
+    pub fn configure_lethal_map_borders(&mut self, enabled: bool) {
+        self.lethal_map_borders = enabled;
     }
 
     pub fn tracked_order_measurements(&self) -> TrackedOrderMeasurements {
@@ -3583,6 +3596,29 @@ impl CombatWorld {
                 continue;
             }
             self.map_border_measurements.ship_entries += 1;
+            if self.lethal_map_borders {
+                // Unity RL MapBorder.LogDamage(Health, "map_border") occurs
+                // before scripted override/charge handling. Preserve the
+                // ordinary death/event pipeline, including dynamic policy
+                // retirement and authored fleet attribution.
+                let ship_id = contact.ship_id;
+                let health = self.ships[ship_index].vitals.health();
+                if let Some(delta) = self.ships[ship_index].vitals
+                    .apply_damage(health, false)? {
+                    self.reservations.target_health_changed(
+                        ship_id, self.ships[ship_index].vitals.health(),
+                    );
+                    self.events.push(CombatEvent::UnattributedDamage {
+                        target_id: ship_id, delta,
+                    });
+                    self.map_border_measurements.lethal_hits += 1;
+                    if delta.killed {
+                        self.retire_dead_ship(ship_index, 0, 0)?;
+                        self.map_border_measurements.lethal_kills += 1;
+                    }
+                }
+                continue;
+            }
             // The source's movement boundary applies to game direction
             // commands; policies have their own episode-confinement rules.
             if self.physics.ships()[ship_index].motion.is_policy_controlled &&
@@ -4300,8 +4336,15 @@ impl CombatWorld {
         // Source MapBorder.OnTriggerEnter2D can end Barge.ChargeForward
         // immediately. Reuse the physics ship/obstacle entry stream before
         // accepting any later enemy-hull contacts in this fixed step.
-        self.resolve_game_barge_border_contacts()?;
-        self.process_map_border_ship_entries()?;
+        // Lethal RL border damage precedes Barge.StopCharge, as in Unity;
+        // ordinary borders preserve the existing first-chance Charge stop.
+        if self.lethal_map_borders {
+            self.process_map_border_ship_entries()?;
+            self.resolve_game_barge_border_contacts()?;
+        } else {
+            self.resolve_game_barge_border_contacts()?;
+            self.process_map_border_ship_entries()?;
+        }
         self.resolve_policy_barge_contacts(collision_matrix)?;
         self.resolve_game_barge_contacts(collision_matrix)?;
         // Striker.CheckCarrierReload runs on the same Level timer clock.
