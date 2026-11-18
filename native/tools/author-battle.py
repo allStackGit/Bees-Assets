@@ -661,6 +661,38 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         order for order in run["levels"][0].get("scripted_queues", [])
         if order["squad_item_id"] not in policy_squads
     ]
+    # An initially deployed mobile, armed ship which the source scene
+    # assigns to a human cannot lose its command owner merely because
+    # no source-compatible policy archetype exists. Reject that hidden
+    # training/gameplay divergence rather than training against a frozen
+    # combatant. Carrier-family autonomous child actors are controlled
+    # by their parent runtime, and passive support hulls need no orders.
+    scripted_squads = {
+        queue["squad_item_id"]
+        for queue in run["levels"][0]["scripted_queues"]
+        if queue.get("orders")
+    }
+    ships_by_id = {ship["entity_id"]: ship for ship in scene["ships"]}
+    for squad in scene["squads"]:
+        if squad["item_id"] in scripted_squads:
+            continue
+        for ship_id in squad["members"]:
+            ship = ships_by_id[ship_id]
+            if ship_id in scripted_reinforcement_ships or "policy" in ship:
+                continue
+            special = ship.get("special")
+            automated_child = (
+                ship.get("drone_carrier_id") is not None or
+                isinstance(special, dict) and
+                special.get("kind") in ("striker", "yellow_jacket")
+            )
+            if (ship.get("base_speed", 0) > 0 and
+                    (ship.get("turrets") or ship.get("special_weapon")) and
+                    not automated_child):
+                raise ValueError(
+                    f"native ship {ship_id} is an armed mobile combatant "
+                    "without a source policy or a scripted squad command"
+                )
     run["levels"][0]["scene"] = "battle.policy.scene.json"
     run["run_id"] += "-policy"
     return scene, run
