@@ -614,6 +614,16 @@ def main() -> None:
                 measurements["actual_model_forwards"],
             "model_slots": len(policy_map),
             "distinct_loaded_models": len(resident_models),
+            # Actual loaded actor device / ONNX providers, distinct from
+            # the operator's requested GPU visibility allocation.
+            "model_execution": {
+                str(slot): (
+                    {"device": str(model.device)}
+                    if isinstance(model, (TorchScriptPolicy, MlagentsPolicy))
+                    else {"providers": model.session.get_providers()}
+                )
+                for slot, model in policy_map.items()
+            },
             "action_buffer_capacity_rows": output_buffers.capacity,
             "action_buffer_growths": output_buffers.action_growths,
             "behavior_buffer_allocations": output_buffers.behavior_allocations,
