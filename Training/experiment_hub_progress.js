@@ -184,6 +184,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_gpu_state_reused',
             'training_gpu_forward_slowest_share',
             'training_shared_gpu_forward_share',
+            'training_gpu_forward_pressure','training_gpu_forward_owner',
+            'training_shared_gpu_fwd_pressure','training_shared_gpu_fwd_owner',
             'training_gpu_rollout_next_devices',
             'training_gpu_rollout_next_lineages','training_gpu_rollout_trial',
             'training_gpu_rollout_spare_candidates',
@@ -967,6 +969,17 @@ class BottleneckEvidence {
                 // Report measured work share without asserting GPU saturation.
                 add('training_gpu_forward_slowest_share',
                     forward/slowestCollection);
+            // A worker can have long GPU stream time but finish before the
+            // PPO barrier. Require measured exposure of the same owner.
+            const gpuForwardHint=Number.isSafeInteger(slowest)&&
+                slowest>=0&&slowest<count&&
+                metrics.training_last_reply_worker?.value===slowest&&
+                slowestCollection>0&&forward!==null&&
+                forward<=slowestCollection&&
+                forward/slowestCollection>=0.50&&forward>=0.25&&
+                forward>=0.20*wall&&slowestCollection>=0.30*wall&&
+                gapShare!==null&&gapShare>=0.20&&
+                (queueShare===null||queueShare<=0.10);
             const simDominant=slowestSimulation!==null&&slowestCollection>0&&
                 slowestSimulation>=0.45*slowestCollection&&
                 slowestSimulation>=0.20*wall;
@@ -1107,7 +1120,8 @@ class BottleneckEvidence {
                     courierRemoteProgress:progressHint,
                     courierGpuGuard:guardHint,
                     courierGpuSnapshot:snapshotHint,
-                    courierGpuCopy:gpuCopyHint});
+                    courierGpuCopy:gpuCopyHint,
+                    courierGpuForward:gpuForwardHint?slowest:null});
             add('training_timing_sample_count',recent.length,'count');
             if(recent.length>=5&&
                 recent.at(-1).at-recent[0].at>=120000) {
@@ -1135,6 +1149,12 @@ class BottleneckEvidence {
                     add('training_gpu_snapshot_pressure',1,'count');
                 if(sustained(x=>x.courierGpuCopy))
                     add('training_gpu_policy_copy_pressure',1,'count');
+                const forwardOwner=recent.at(-1).courierGpuForward;
+                if(forwardOwner!==null&&recent.filter(x=>
+                    x.courierGpuForward===forwardOwner).length>=5) {
+                    add('training_gpu_forward_pressure',1,'count');
+                    add('training_gpu_forward_owner',forwardOwner,'count');
+                }
                 if(sustained(x=>x.resourceHints?.cpuBusy))
                     add('pipeline_cpu_lease_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.throttled))
@@ -1183,12 +1203,16 @@ class BottleneckEvidence {
             const optimization=seconds('training_optimize_max_seconds');
             const gpuForwardOwner=metrics.training_shared_last_wire_worker?.value;
             const replyOwner=metrics.training_shared_last_reply_worker?.value;
+            let sharedForwardShare=null,sharedForwardSeconds=null;
             if(Number.isSafeInteger(gpuForwardOwner)&&gpuForwardOwner===replyOwner&&
                 gpuForwardOwner>=0&&gpuForwardOwner<metrics.training_collector_workers.value) {
                 const workerCollection=seconds('worker_'+gpuForwardOwner+'_collection_seconds');
                 const stream=seconds('worker_'+gpuForwardOwner+'_gpu_fwd_stream_seconds');
-                if(workerCollection>0&&stream!==null&&stream<=workerCollection)
-                    add('training_shared_gpu_forward_share',stream/workerCollection);
+                if(workerCollection>0&&stream!==null&&stream<=workerCollection) {
+                    sharedForwardShare=stream/workerCollection;
+                    sharedForwardSeconds=stream;
+                    add('training_shared_gpu_forward_share',sharedForwardShare);
+                }
             }
             const exposed=seconds('training_ingestion_exposed_seconds');
             const copied=seconds('training_ingestion_copy_wall_seconds');
@@ -1209,6 +1233,12 @@ class BottleneckEvidence {
             const wireShare=wireGap!==null&&wireGap<=wall?wireGap/wall:null;
             const postwireShare=postwire!==null&&postwire<=collection
                 ?postwire/wall:null;
+            const sharedForwardHint=sharedForwardShare!==null&&
+                sharedForwardShare>=0.50&&sharedForwardSeconds>=0.25&&
+                sharedForwardSeconds>=0.20*wall&&collection!==null&&
+                collection>=0.50*wall&&wireShare!==null&&
+                wireShare>=0.20&&wireGap>=0.25&&
+                gpuForwardOwner===wireOwner&&wireOwner===decodedOwner;
             if(wireShare!==null)
                 add('training_shared_wire_gap_work_share',wireShare);
             if(postwireShare!==null)
@@ -1247,6 +1277,7 @@ class BottleneckEvidence {
                     sharedImbalance:imbalance,
                     sharedCollection:collectionDominant,
                     sharedOptimization:optimizationDominant,
+                    sharedGpuForward:sharedForwardHint?gpuForwardOwner:null,
                     remoteResource:slowReply&&collectionDominant?matchedRemote(wireOwner):null});
             add('training_timing_sample_count',recent.length,'count');
             if(recent.length>=5&&
@@ -1258,6 +1289,12 @@ class BottleneckEvidence {
                     add('training_shared_collector_wait_pressure',1,'count');
                 if(sustained(x=>x.sharedPostwire))
                     add('training_shared_postwire_pressure',1,'count');
+                const forwardOwner=recent.at(-1).sharedGpuForward;
+                if(forwardOwner!==null&&recent.filter(x=>
+                    x.sharedGpuForward===forwardOwner).length>=5) {
+                    add('training_shared_gpu_fwd_pressure',1,'count');
+                    add('training_shared_gpu_fwd_owner',forwardOwner,'count');
+                }
                 if(sustained(x=>x.sharedImbalance))
                     add('training_collector_imbalance_pressure',1,'count');
                 if(sustained(x=>x.sharedCollection))
@@ -1306,7 +1343,11 @@ class BottleneckEvidence {
         // continuous ratios when nine profiled collectors approach the wire
         // limit. Never evict a project-owned source metric for a diagnosis.
         const priority=name=>
-            (name==='pipeline_local_gpu_fwd_owner'||
+            (name==='training_gpu_forward_pressure'||
+             name==='training_gpu_forward_owner'||
+             name==='training_shared_gpu_fwd_pressure'||
+             name==='training_shared_gpu_fwd_owner'||
+             name==='pipeline_local_gpu_fwd_owner'||
              name==='pipeline_remote_gpu_fwd_owner'||
              name==='pipeline_local_gpu_wait_owner'||
              name==='pipeline_local_gpu_lease_index'||
