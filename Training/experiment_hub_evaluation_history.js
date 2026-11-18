@@ -123,7 +123,8 @@ class EvaluationHistory {
         if(existing)return existing;
         this.directoryReady();
         const file=this.file(jobId);
-        const records=[],diagnostics=[],seen=new Map(),issueKeys=new Set();
+        const records=[],diagnostics=[],seen=new Map(),issueKeys=new Set(),
+            failureAttempts=new Map();
         let lastEntry=null,stat=null;
         if(fs.existsSync(file)) {
             stat=fs.lstatSync(file);
@@ -155,11 +156,15 @@ class EvaluationHistory {
                         new Date(observed_at).toISOString()!==observed_at||
                         checked.checkpoint_sha256!==row.checkpoint_sha256)
                         throw Error('Invalid archived failed evaluation attempt.');
-                    const key=JSON.stringify(['failed',row.dispatch_id,
-                        row.suite_id,row.checkpoint_sha256,row.reason]);
-                    if(issueKeys.has(key))
+                    // Two failed attempts against the same immutable model
+                    // remain distinct if they happened at different times.
+                    // Replayed native heartbeats retain the original attempt
+                    // timestamp and must not append the same attempt again.
+                    const key=JSON.stringify([row.dispatch_id,row.suite_id,
+                        row.checkpoint_sha256,row.attempted_at]);
+                    if(failureAttempts.has(key))
                         throw Error('Duplicate failed evaluation attempt in archive.');
-                    issueKeys.add(key);
+                    failureAttempts.set(key,JSON.stringify(row));
                     diagnostics.push(row);
                     lastEntry=row;
                     continue;
@@ -196,7 +201,8 @@ class EvaluationHistory {
                 lastEntry=row;
             }
         }
-        const loaded={project_id:projectId,records,diagnostics,seen,issueKeys,lastEntry,
+        const loaded={project_id:projectId,records,diagnostics,seen,issueKeys,
+            failureAttempts,lastEntry,
             size:stat?.size||0,dev:stat?.dev??null,ino:stat?.ino??null};
         this.loaded.set(jobId,loaded);
         return loaded;
@@ -336,12 +342,20 @@ class EvaluationHistory {
                     rule.suite_sha256||undefined,
             });
             const data=this.load(id,job.project_id);
-            const key=JSON.stringify(['failed',checked.dispatch_id,
-                checked.suite_id,checked.checkpoint_sha256,checked.reason]);
-            if(data.issueKeys.has(key))return false;
+            const key=JSON.stringify([checked.dispatch_id,checked.suite_id,
+                checked.checkpoint_sha256,checked.attempted_at]);
+            if(data.failureAttempts.has(key)) {
+                const {observed_at,...prior}=JSON.parse(
+                    data.failureAttempts.get(key));
+                if(JSON.stringify(prior)!==JSON.stringify(checked))
+                    this.issues.set('failure-conflict:'+id,
+                        'Conflicting independent evaluator failure report for an already archived attempt on job '+
+                        id+'; original evidence retained.');
+                return false;
+            }
             const row={...checked,observed_at:new Date().toISOString()};
             this.appendRow(id,data,row);
-            data.issueKeys.add(key);
+            data.failureAttempts.set(key,JSON.stringify(row));
             data.diagnostics.push(row);
             this.issues.delete('failure:'+id);
             return true;
