@@ -62,6 +62,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_cpu_optimizer_threads_settled','training_remote_cpu_optimizer_trials',
     'training_gpu_rollout_lineages','training_split_gpu_rollout_lineages',
     'training_gpu_forward_stream_workers',
+    'training_gpu_pin_reused_batches','training_gpu_pin_allocated_slots',
     'training_gpu_input_slots_reused','training_gpu_state_slots_reused',
     'training_gpu_policy_moves_skipped',
     'training_shared_gpu_forward_workers',
@@ -130,6 +131,7 @@ function courierMetrics(source) {
         name.startsWith('training_collector_probe_')||
         name==='training_collector_resume_restored'||
         /^training_(?:gpu_forward_stream_|shared_gpu_forward_|gpu_input_slots_reused$|gpu_state_slots_reused$|gpu_policy_moves_skipped$|shared_gpu_input_reused$|shared_gpu_state_reused$)/.test(name)||
+        name.startsWith('training_gpu_pin_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
         /^training_gpu_rollout_input_(?:packs|seconds|owner)$/.test(name)||
@@ -145,7 +147,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_pin_reused_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             /_probe_map_steps_per_second$/.test(name)?'rate':
