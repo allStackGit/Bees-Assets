@@ -125,6 +125,64 @@ def placements(bounds: dict, anchor: list[float], side: int,
     return [[round(x, 4), round(y, 4)] for x, y in candidates[:count]]
 
 
+def resize_empty_arena(scene: dict, map_size: float) -> None:
+    """Native equivalent of the Unity RL MapSize/MapBorder transformation.
+
+    One source-sized arena becomes both the playable and neural-training
+    physical scene. The four trigger colliders retain the actual Unity
+    24-unit thickness and 48-unit overhang; no scale is inferred at runtime.
+    """
+    bounds = scene["bounds"]
+    minimum, maximum = bounds["min"], bounds["max"]
+    center_x = (minimum[0] + maximum[0]) * 0.5
+    center_y = (minimum[1] + maximum[1]) * 0.5
+    half = map_size * 0.5
+    scene["bounds"] = {
+        "min": [center_x - half, center_y - half],
+        "max": [center_x + half, center_y + half],
+    }
+    # Game-only authoring retains its left/right faction arrangement.
+    # This is the existing native game's map-local orientation, not a
+    # second training-only variant of CombatWorld.
+    scene["starting_positions"] = [
+        [center_x - map_size * 0.25, center_y],
+        [center_x + map_size * 0.25, center_y],
+    ]
+    border_center = half + 12.0
+    half_long = (map_size + 48.0) * 0.5
+    borders = [
+        ("Top Border", (center_x, center_y + border_center), (half_long, 12.0)),
+        ("Bottom Border Variant", (center_x, center_y - border_center), (half_long, 12.0)),
+        ("Left Border Variant", (center_x - border_center, center_y), (12.0, half_long)),
+        ("Right Border Variant", (center_x + border_center, center_y), (12.0, half_long)),
+    ]
+    existing = {
+        item["entity_id"] for item in scene.get("ships", [])
+    } | {
+        item["entity_id"] for group in ("mining_asteroids", "map_objects")
+        for item in scene.get(group, [])
+    }
+    if existing and max(existing) > (1 << 63) - 6:
+        raise ValueError("native arena has no free runtime IDs for physical borders")
+    next_id = max(existing, default=0) + 1
+    scene["layout"] = {"add_static_boxes": []}
+    for index, (prefab, position, (half_x, half_y)) in enumerate(borders):
+        # Exact BoxCollider corners in obstacle-local space. This uses
+        # NativeSceneBuilder's existing live-box collider path, so all
+        # contacts (projectiles, Barges, drifting asteroids and navigation)
+        # go through the one authoritative CombatWorld.
+        scene["layout"]["add_static_boxes"].append({
+            "entity_id": next_id + index,
+            "prefab_name": prefab,
+            "position": list(position),
+            "rotation_degrees": 0.0,
+            "local_corners": [
+                [-half_x, -half_y], [half_x, -half_y],
+                [half_x, half_y], [-half_x, half_y],
+            ],
+        })
+
+
 def author(args) -> tuple[dict, dict, dict]:
     scene = load_json(args.source_scene)
     run = load_json(args.source_run)
@@ -140,6 +198,33 @@ def author(args) -> tuple[dict, dict, dict]:
             run.get("model_manifest") or run.get("hivemind") or
             not isinstance(run.get("fragment_spawn"), dict)):
         raise ValueError("the run template must contain native game-only stage assets")
+    if args.arena_size is not None:
+        # Imported obstacle layouts and authored resource positions cannot
+        # be rescaled safely from a scalar map size. Require a deliberately
+        # empty source arena, rather than moving those gameplay objects.
+        if not args.empty_map:
+            raise ValueError("--arena-size requires --empty-map (no authored resources to relocate)")
+        if (not math.isfinite(args.arena_size) or
+                not 64 <= args.arena_size <= 8192 or
+                args.arena_size % 4 != 0):
+            raise ValueError("--arena-size must be a finite 4-unit step from 64 to 8192")
+        original_bounds = scene.get("bounds")
+        if (not isinstance(original_bounds, dict) or
+                not isinstance(original_bounds.get("min"), list) or
+                not isinstance(original_bounds.get("max"), list) or
+                any(len(original_bounds[key]) != 2 for key in ("min", "max")) or
+                any(not isinstance(v, (int, float)) or not math.isfinite(v)
+                    for key in ("min", "max") for v in original_bounds[key]) or
+                any(original_bounds["min"][i] >= original_bounds["max"][i]
+                    for i in (0, 1))):
+            raise ValueError("resized native arena requires finite original Level bounds")
+        half = args.arena_size * 0.5
+        center = [(original_bounds["min"][i] + original_bounds["max"][i]) * 0.5
+                  for i in (0, 1)]
+        scene["bounds"] = {
+            "min": [center[i] - half for i in (0, 1)],
+            "max": [center[i] + half for i in (0, 1)],
+        }
     # Stage collision layers and asteroid prefab lists are immutable authored
     # assets, but the skirmish run template uses a smaller arena than the
     # Queen fleet source. A new battle must derive BOTH native fragment
@@ -273,6 +358,8 @@ def author(args) -> tuple[dict, dict, dict]:
         scene["map_objects"] = []
         scene["layout"] = {}
         scene["activate_mining"] = False
+    if args.arena_size is not None:
+        resize_empty_arena(scene, args.arena_size)
 
     max_reserved = max(
         [0] +
@@ -938,6 +1025,8 @@ def main() -> None:
                         help="use the authoritative native player fog system")
     parser.add_argument("--empty-map", action="store_true",
                         help="omit source mining resources, static boxes and map objects")
+    parser.add_argument("--arena-size", type=float,
+                        help="with --empty-map: square physical arena in 4-unit steps (64..8192), including source-sized trigger borders")
     parser.add_argument("--trainable", action="store_true",
                         help="also author a matching native MA-POCA policy scene and run")
     parser.add_argument("--policy-reinforcements", action="store_true",
@@ -1014,6 +1103,8 @@ def main() -> None:
         "fixed_rounds": run["max_rounds"],
         "objective": args.objective,
         "ai_tactics": args.ai_tactics,
+        "arena_size": args.arena_size,
+        "physical_map_borders": 4 if args.arena_size is not None else 0,
         "reinforcement_waves": len(run["levels"][0].get("reinforcements", [])),
         "reinforcement_ships": (
             sum(wave[3] for wave in args.reinforcements) +
