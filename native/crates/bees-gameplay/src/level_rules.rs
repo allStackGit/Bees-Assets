@@ -238,6 +238,10 @@ pub struct NativeScriptedQueueMeasurements {
     /// Live special-weapon commands issued to a real enemy lifetime.
     pub bombing_nearest_commands_started: u64,
     pub charge_nearest_commands_started: u64,
+    /// Source Circle/Swipe/InAndOut maneuvers against a real living squad.
+    pub circle_nearest_commands_started: u64,
+    pub swipe_nearest_commands_started: u64,
+    pub in_and_out_nearest_commands_started: u64,
     /// Real source scouting commands, including Beacon-capable scouts.
     pub scouting_commands_started: u64,
     /// Resource-starved dynamic orders deferred for one source second.
@@ -268,6 +272,9 @@ impl NativeScriptedQueueMeasurements {
         self.healing_available_commands_started += other.healing_available_commands_started;
         self.bombing_nearest_commands_started += other.bombing_nearest_commands_started;
         self.charge_nearest_commands_started += other.charge_nearest_commands_started;
+        self.circle_nearest_commands_started += other.circle_nearest_commands_started;
+        self.swipe_nearest_commands_started += other.swipe_nearest_commands_started;
+        self.in_and_out_nearest_commands_started += other.in_and_out_nearest_commands_started;
         self.scouting_commands_started += other.scouting_commands_started;
         self.dynamic_order_retries += other.dynamic_order_retries;
         self.orders_skipped_unavailable += other.orders_skipped_unavailable;

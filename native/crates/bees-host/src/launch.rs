@@ -156,6 +156,10 @@ enum ScriptedOrderConfig {
     AggressiveNearest,
     BombingNearest,
     ChargeNearest,
+    CircleNearest,
+    RightSwipeNearest,
+    LeftSwipeNearest,
+    InAndOutNearest,
     TargetEnemy { enemy_squad_item_id: i64 },
     Retreat { enemy_squad_item_id: i64 },
     CircleSquad { enemy_squad_item_id: i64 },
@@ -548,6 +552,14 @@ fn make_setup(
                         bees_host::policy_only_metadata::NativeScriptedOrder::BombingNearest,
                     ScriptedOrderConfig::ChargeNearest =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::ChargeNearest,
+                    ScriptedOrderConfig::CircleNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::CircleNearest,
+                    ScriptedOrderConfig::RightSwipeNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::RightSwipeNearest,
+                    ScriptedOrderConfig::LeftSwipeNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::LeftSwipeNearest,
+                    ScriptedOrderConfig::InAndOutNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::InAndOutNearest,
                     ScriptedOrderConfig::TargetEnemy { enemy_squad_item_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::TargetEnemy {
                             enemy_squad_item_id: remapped_squads.get(&enemy_squad_item_id)

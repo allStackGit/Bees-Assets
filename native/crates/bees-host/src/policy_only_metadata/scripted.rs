@@ -43,6 +43,13 @@ pub enum NativeScriptedOrder {
     BombingNearest,
     /// Select a live opponent, then execute the shared Barge Charge engine.
     ChargeNearest,
+    /// Tactical maneuvers reselect a living enemy SquadLifetime after their
+    /// actual native movement/weapon command completes. No guessed target
+    /// or alternate autonomous combat state is retained in the script.
+    CircleNearest,
+    RightSwipeNearest,
+    LeftSwipeNearest,
+    InAndOutNearest,
     TargetEnemy { enemy_squad_item_id: i64 },
     Retreat { enemy_squad_item_id: i64 },
     CircleSquad { enemy_squad_item_id: i64 },
@@ -82,10 +89,14 @@ impl NativeScriptedOrder {
                 target: target.expect("authenticated current enemy squad"),
             },
             Self::Retreat { .. } => NativeLocalCommandAction::Retreat,
-            Self::CircleSquad { .. } => NativeLocalCommandAction::CircleSquad,
-            Self::RightSwipe { .. } => NativeLocalCommandAction::RightSwipe,
-            Self::LeftSwipe { .. } => NativeLocalCommandAction::LeftSwipe,
-            Self::InAndOut { .. } => NativeLocalCommandAction::InAndOut,
+            Self::CircleSquad { .. } | Self::CircleNearest =>
+                NativeLocalCommandAction::CircleSquad,
+            Self::RightSwipe { .. } | Self::RightSwipeNearest =>
+                NativeLocalCommandAction::RightSwipe,
+            Self::LeftSwipe { .. } | Self::LeftSwipeNearest =>
+                NativeLocalCommandAction::LeftSwipe,
+            Self::InAndOut { .. } | Self::InAndOutNearest =>
+                NativeLocalCommandAction::InAndOut,
             Self::BombingRun { .. } | Self::BombingNearest =>
                 NativeLocalCommandAction::BombingRun,
             Self::Charge { .. } | Self::ChargeNearest =>
@@ -127,6 +138,8 @@ impl NativeScriptedOrder {
                 top_left.is_finite() && bottom_right.is_finite(),
             Self::Hold | Self::ClosestFriendly | Self::AggressiveNearest |
             Self::BombingNearest | Self::ChargeNearest |
+            Self::CircleNearest | Self::RightSwipeNearest |
+            Self::LeftSwipeNearest | Self::InAndOutNearest |
             Self::MiningNearest | Self::HealAvailable => true,
             Self::Scouting { max_sight, human_side } =>
                 max_sight.is_finite() && max_sight >= 0.0 && human_side > 0,
@@ -135,6 +148,15 @@ impl NativeScriptedOrder {
                 !beehive_ids.is_empty() && beehive_ids.iter().all(|id| *id > 0),
             Self::FullRetreat { warp_gate_id } => warp_gate_id > 0,
         }
+    }
+
+    fn targets_nearest_enemy(&self) -> bool {
+        matches!(self,
+            Self::AggressiveNearest | Self::BombingNearest |
+            Self::ChargeNearest | Self::CircleNearest |
+            Self::RightSwipeNearest | Self::LeftSwipeNearest |
+            Self::InAndOutNearest
+        )
     }
 
     fn target_squad(&self) -> Option<(i64, bool)> {
@@ -521,11 +543,7 @@ impl NativePolicyOnlyMetadata {
             // Every prepared target is re-resolved against the current
             // roster lifetime. A destroyed squad cannot be replaced by an
             // unrelated new squad with the same hotkey or source item ID.
-            let linked_target = if matches!(&order,
-                NativeScriptedOrder::AggressiveNearest |
-                NativeScriptedOrder::BombingNearest |
-                NativeScriptedOrder::ChargeNearest
-            ) {
+            let linked_target = if order.targets_nearest_enemy() {
                 let roster = events.roster();
                 let own_side = roster.get(owner)
                     .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?
@@ -594,6 +612,10 @@ impl NativePolicyOnlyMetadata {
                 NativeScriptedOrder::AggressiveNearest |
                 NativeScriptedOrder::BombingNearest |
                 NativeScriptedOrder::ChargeNearest |
+                NativeScriptedOrder::CircleNearest |
+                NativeScriptedOrder::RightSwipeNearest |
+                NativeScriptedOrder::LeftSwipeNearest |
+                NativeScriptedOrder::InAndOutNearest |
                 NativeScriptedOrder::TargetEnemy { .. } |
                 NativeScriptedOrder::Retreat { .. } |
                 NativeScriptedOrder::CircleSquad { .. } |
@@ -708,6 +730,13 @@ impl NativePolicyOnlyMetadata {
                             self.scripted_counts.charge_nearest_commands_started += 1,
                         NativeScriptedOrder::Scouting { .. } =>
                             self.scripted_counts.scouting_commands_started += 1,
+                        NativeScriptedOrder::CircleNearest =>
+                            self.scripted_counts.circle_nearest_commands_started += 1,
+                        NativeScriptedOrder::RightSwipeNearest |
+                        NativeScriptedOrder::LeftSwipeNearest =>
+                            self.scripted_counts.swipe_nearest_commands_started += 1,
+                        NativeScriptedOrder::InAndOutNearest =>
+                            self.scripted_counts.in_and_out_nearest_commands_started += 1,
                         _ => {}
                     }
                     started += 1;
@@ -718,12 +747,9 @@ impl NativePolicyOnlyMetadata {
                     // fabricate a command or alter the physical world.
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.orders_skipped_unavailable += 1;
-                    if matches!(order,
-                        NativeScriptedOrder::AggressiveNearest |
+                    if order.targets_nearest_enemy() || matches!(order,
                         NativeScriptedOrder::MiningNearest |
-                        NativeScriptedOrder::HealAvailable |
-                        NativeScriptedOrder::BombingNearest |
-                        NativeScriptedOrder::ChargeNearest
+                        NativeScriptedOrder::HealAvailable
                     ) {
                         // Resource-starved, healthy or targetless queues
                         // cannot spin on every fixed step. Heal in a
