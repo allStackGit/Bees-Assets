@@ -225,7 +225,9 @@ def receipt_with_suite_definition(receipt: dict, suite: dict) -> dict:
     if len(canonical.encode("utf-8")) > 2048:
         return receipt
     enriched = {**receipt, "suite_definition_canonical": canonical}
-    if len(json.dumps(enriched, separators=(",", ":")).encode("utf-8")) > 4096:
+    # The publication format appends one newline; native readers cap the
+    # complete receipt file at 4096 bytes, including that newline.
+    if len(json.dumps(enriched, separators=(",", ":")).encode("utf-8")) > 4095:
         return receipt
     return enriched
 
