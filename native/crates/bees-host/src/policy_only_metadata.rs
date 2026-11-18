@@ -192,6 +192,9 @@ pub struct NativePolicyOnlyMetadata {
     source_static_discovery_values: HashMap<i64, i32>,
     explorers: Vec<Explorer>,
     agents: HashMap<i64, AuthoredPolicyAgent>,
+    /// Stable original route by source faction. Newborn controllers inherit
+    /// from this route without scanning every past wave's agent metadata.
+    policy_side_representative: HashMap<i32, i64>,
     /// Separate from physical ship IDs. The source ML-Agents runtime
     /// allocates fresh participant identities for newborn ship agents.
     next_dynamic_group_agent_id: u64,
@@ -364,6 +367,12 @@ impl NativePolicyOnlyMetadata {
                 return Err(PolicyOnlyMetadataError::DuplicateAgent(id));
             }
         }
+        let mut policy_side_representative = HashMap::new();
+        for (&id, agent) in &agent_map {
+            policy_side_representative.entry(agent.side)
+                .and_modify(|old: &mut i64| *old = (*old).min(id))
+                .or_insert(id);
+        }
         let next_dynamic_group_agent_id = seen_group_agents.iter()
             .copied().max().unwrap_or(0)
             .checked_add(1).ok_or(PolicyOnlyMetadataError::InvalidSource)?;
@@ -397,7 +406,8 @@ impl NativePolicyOnlyMetadata {
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
-            agents: agent_map, next_dynamic_group_agent_id,
+            agents: agent_map, policy_side_representative,
+            next_dynamic_group_agent_id,
             sides: side_map, beacon_templates,
             queen_templates: HashMap::new(),
             queen_controller_measurements: NativeQueenControllerMeasurements::default(),
@@ -457,9 +467,9 @@ impl NativePolicyOnlyMetadata {
         { return None; }
         self.agents.get(&queen_id)
             .filter(|agent| agent.side == side)
-            .or_else(|| self.agents.values()
-                .filter(|agent| agent.side == side)
-                .min_by_key(|agent| agent.ship_id))
+            .or_else(|| self.policy_side_representative.get(&side)
+                .and_then(|id| self.agents.get(id))
+                .filter(|agent| agent.side == side))
     }
 
     /// A rendered Level may change externally authored ship/controller
