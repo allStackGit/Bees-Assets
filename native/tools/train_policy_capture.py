@@ -440,6 +440,26 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         # keep the learner's trajectory input sequence stable.
         yield from emit_ready()
 
+    # A real native episode can finish before either model's first
+    # DecisionRequester tick. The journal still supplies a terminal and
+    # the capture may supply retirement/terminal observations, but there
+    # are correctly zero action rows and therefore no entry in frames.
+    # Admit that episode to the same validator instead of silently losing
+    # its outcome or failing the entire multi-world training round.
+    for key, terminal in terminals.items():
+        if key in completed or key in frames:
+            continue
+        frames[key] = {}
+        context = terminal["evaluation_context"]
+        learner_agents_by_episode[key] = {
+            int(agent)
+            for team, members in context["group_agents_by_team"].items()
+            if context["model_slots_by_team"][team] in learner_slots
+            for agent in members
+        }
+        first_seen.append(key)
+        ready.add(key)
+
     # The capture writes no terminal frame when *no bound policy ship*
     # remains. An empty observation boundary is valid only if all group
     # controllers retired before terminal according to the same durable
@@ -488,7 +508,7 @@ def _validate_completed_episode(
     initial_agents = {int(agent) for members in initial_groups.values()
                       for agent in members}
     first_frame = next(iter(episode_ticks.values()), {})
-    if admissions or (episode_ticks and first_frame.keys() != initial_agents):
+    if admissions or not episode_ticks or first_frame.keys() != initial_agents:
         return _validate_dynamic_episode(
             key, episode_ticks, episode_boundaries, terminals, ended_teams,
             retirements, rewards, learning_agents, journal_id, admissions or {},
@@ -576,8 +596,8 @@ def _validate_dynamic_episode(
         for team, members in context["group_agents_by_team"].items()
         for agent in members
     }
-    if period <= 0 or not episode_ticks or not teams:
-        raise ValueError("dynamic MA-POCA episode has no decision interval")
+    if period <= 0 or not teams:
+        raise ValueError("dynamic MA-POCA episode has no authenticated cohort")
     if len(teams) != sum(len(members) for members in
                         context["group_agents_by_team"].values()):
         raise ValueError("duplicate native policy group identity")
@@ -668,8 +688,10 @@ def _validate_dynamic_episode(
     expected_teams = set(teams.values())
     if ended_teams[key] != dict.fromkeys(expected_teams, terminal_tick):
         raise ValueError("native dynamic group did not end both physical teams")
-    if not any(agent in learning_agents for agent in by_agent):
-        raise ValueError("native dynamic episode contains no learner decision")
+    # A valid short episode may have no neural decisions at all, or
+    # only opponent decisions if the learner's ships were killed before
+    # their first due tick. The exact source clock above proves this;
+    # never invent experiences to make a minibatch large enough.
     return (
         (journal_id, *key), teams, ticks, closing, episode_boundaries,
         {team: rewards[key, team] for team in expected_teams},
