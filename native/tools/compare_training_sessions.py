@@ -182,6 +182,8 @@ def suites(progress, config):
                 "draws": receipt["draws"],
                 "win_rate": receipt["side_win_rate"],
                 "draw_rate": receipt["draw_rate"],
+                **({"by_scene_sha256": receipt["by_scene_sha256"]}
+                   if "by_scene_sha256" in receipt else {}),
             })
         fixed_opponent = (opponents[0] is not None and
                           all(identity == opponents[0] for identity in opponents))
@@ -195,6 +197,8 @@ def suites(progress, config):
                 "draws": baseline["draws"],
                 "win_rate": baseline["side_win_rate"],
                 "draw_rate": baseline["draw_rate"],
+                **({"by_scene_sha256": baseline["by_scene_sha256"]}
+                   if "by_scene_sha256" in baseline else {}),
             },
             "rounds": curve,
             "fixed_opponent_identity": opponents[0] if fixed_opponent else None,
@@ -221,7 +225,36 @@ def describe(reference, candidate):
             left["source_dependency_identity"] is not None and
             left["source_dependency_identity"] == right["source_dependency_identity"]
         )
+        scenes_left = a.get("by_scene_sha256")
+        scenes_right = b.get("by_scene_sha256")
+        scene_report = {}
+        if isinstance(scenes_left, dict) and isinstance(scenes_right, dict):
+            for scene in sorted(scenes_left.keys() | scenes_right.keys()):
+                left_scene = scenes_left.get(scene)
+                right_scene = scenes_right.get(scene)
+                if left_scene is None or right_scene is None:
+                    scene_report[scene] = {
+                        "comparable": False,
+                        "reason": "source_scene_not_evaluated_in_both_sessions",
+                    }
+                    continue
+                compatible = left_scene["episodes"] == right_scene["episodes"]
+                scene_report[scene] = {
+                    "comparable": compatible,
+                    "episodes": left_scene["episodes"] if compatible else None,
+                    "reference": left_scene, "candidate": right_scene,
+                    "win_rate_difference": (
+                        right_scene["side_win_rate"] - left_scene["side_win_rate"]
+                        if compatible else None
+                    ),
+                    "timeout_rate_difference": (
+                        right_scene["timeout_rate"] - left_scene["timeout_rate"]
+                        if compatible else None
+                    ),
+                }
         report.append({
+            "by_scene_sha256": scene_report,
+            "per_scene_outcomes_available": bool(scene_report),
             "source_run_config_sha256": sha,
             "reference_suite": left["suite"], "candidate_suite": right["suite"],
             "learner_side": left["learner_side"],
