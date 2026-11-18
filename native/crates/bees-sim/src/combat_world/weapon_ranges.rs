@@ -113,12 +113,19 @@ impl CombatWorld {
 
         // Each shot knows its actual weapon slot, so this is linear in shots,
         // not weapons x shots. Match collider overlap, not center distance.
-        for index in 0..self.projectiles.len() {
-            if !self.physics.projectiles()[index].active { continue; }
+        let mut live_slot = 0;
+        while live_slot < self.physics.active_projectile_indices().len() {
+            let index = self.physics.active_projectile_indices()[live_slot];
             let shot = &self.projectiles[index];
-            let Some(slot) = shot.source_turret_slot else { continue };
+            let Some(slot) = shot.source_turret_slot else {
+                live_slot += 1;
+                continue;
+            };
             // Source exceptions never need range-exit tracking.
-            if matches!(shot.projectile_type, 13 | 15) { continue; }
+            if matches!(shot.projectile_type, 13 | 15) {
+                live_slot += 1;
+                continue;
+            }
             let owner_alive = self.ship(shot.owner.shooter_id).is_some_and(|owner| !owner.vitals.is_dead());
             let range = self.weapon_range(shot.owner.shooter_id, usize::from(slot)).ok().flatten();
             let within = if let Some(range) = range.filter(|range| range.enabled &&
@@ -133,6 +140,10 @@ impl CombatWorld {
             if exited && owner_alive {
                 self.end_projectile(index);
                 counts.weapon_range_projectile_exits += 1;
+                // Retirement shifts the next physical slot into this
+                // ordinal; do not skip its source RangeCollider check.
+            } else {
+                live_slot += 1;
             }
         }
         counts
