@@ -16,6 +16,81 @@ const HISTORICAL_SUFFIX='.historical.json';
 const MAX_IMPORT_RECORDS=128;
 const MAX_IMPORT_BYTES=65536;
 
+// Read-only regression signals are recomputed from the complete immutable
+// receipt archive. They never enter Stop evidence, candidate cohorts, or
+// native checkpoint-continuation policy.
+function wilson(successes,trials) {
+    const z=1.96,positive=z*z,rate=successes/trials;
+    const denominator=1+positive/trials;
+    const center=(rate+positive/(2*trials))/denominator;
+    const margin=z*Math.sqrt(rate*(1-rate)/trials+
+        positive/(4*trials*trials))/denominator;
+    return {lower:Math.max(0,center-margin),upper:Math.min(1,center+margin)};
+}
+function regressionSignals(job,records) {
+    const policy=job?.evaluation_monitor;
+    const alert=policy?.regression_alert;
+    if(!alert)return [];
+    const rules=policy.all_of||[policy];
+    return rules.map(rule=>{
+        const base={job_id:job.id,suite_id:rule.suite_id,
+            window_checkpoints:alert.window_checkpoints,
+            minimum_drop:alert.minimum_drop};
+        const rows=records.filter(row=>row.suite_id===rule.suite_id);
+        const state=(status,reason)=>({...base,status,reason});
+        if(!rows.length)
+            return state('unavailable','No accepted independent evaluation receipts for this suite.');
+        const pinned=rule.suite_sha256||
+            job.evaluation_suite_definitions?.[rule.suite_id]||null;
+        const definitions=new Set(rows.map(row=>row.suite_sha256));
+        const runtimes=new Set(rows.map(row=>row.runtime_sha256));
+        if(definitions.size!==1||!SHA256.test([...definitions][0]||'')||
+            pinned&&[...definitions][0]!==pinned)
+            return state('incompatible','Frozen evaluation suite definitions differ or are missing.');
+        if(pinned&&![...definitions].includes(pinned))
+            return state('incompatible','Recorded evaluation suite does not match the pinned job definition.');
+        if(runtimes.size!==1||!SHA256.test([...runtimes][0]||''))
+            return state('incompatible','Evaluation runtime fingerprint is missing or changed across checkpoints.');
+        if(rows.some(row=>!Number.isSafeInteger(row.steps_completed)||
+            row.steps_completed<0||!SHA256.test(String(row.checkpoint_sha256||''))||
+            !Number.isSafeInteger(row.trials)||row.trials<rule.min_trials||
+            !Number.isSafeInteger(row.successes)||row.successes<0||
+            row.successes>row.trials))
+            return state('incompatible','Checkpoint coordinates, trial counts or outcome identities are unavailable.');
+        const ordered=rows.slice().sort((a,b)=>a.steps_completed-b.steps_completed);
+        if(ordered.some((row,i)=>i>0&&
+            (row.steps_completed===ordered[i-1].steps_completed||
+             row.checkpoint_sha256===ordered[i-1].checkpoint_sha256)))
+            return state('incompatible','Multiple observations identify the same update or checkpoint.');
+        const n=alert.window_checkpoints;
+        if(ordered.length<2*n)
+            return {...state('insufficient','Need '+(2*n)+' distinct comparable checkpoint evaluations.'),recorded_checkpoints:ordered.length};
+        const summarize=window=>{
+            const trials=window.reduce((total,row)=>total+row.trials,0);
+            const successes=window.reduce((total,row)=>total+row.successes,0);
+            return {rate:successes/trials,successes,trials,
+                start_update:window[0].steps_completed,
+                end_update:window[window.length-1].steps_completed,
+                ...wilson(successes,trials)};
+        };
+        const baseline=summarize(ordered.slice(0,n));
+        const latest=summarize(ordered.slice(-n));
+        const drop=baseline.rate-latest.rate;
+        const reliable=drop>=alert.minimum_drop&&
+            baseline.lower>latest.upper;
+        return {...base,
+            suite_sha256:[...definitions][0],runtime_sha256:[...runtimes][0],
+            status:reliable?'regressed':
+                drop>=alert.minimum_drop?'inconclusive':'no_regression',
+            reason:reliable
+                ?'Fixed-suite success rate declined beyond the configured threshold and conservative binomial bounds.'
+                :drop>=alert.minimum_drop
+                    ?'Observed decline exceeds the threshold, but evidence is not separated by conservative binomial bounds.'
+                    :'No decline beyond the configured threshold.',
+            baseline,latest,drop,recorded_checkpoints:ordered.length};
+    });
+}
+
 class EvaluationHistory {
     constructor(root) {
         this.directory=path.join(root,'hub-evaluations-v1');
@@ -352,11 +427,12 @@ class EvaluationHistory {
         return {job_id:id,imported:true,recovered,record_count:rows.length};
     }
     snapshot(projectId,jobs) {
-        const samples=[];
+        const samples=[],regressions=[];
         for(const job of jobs) {
             if(job.project_id!==projectId)continue;
             try {
                 const records=this.load(job.id,job.project_id).records;
+                regressions.push(...regressionSignals(job,records));
                 if(!records.length)continue;
                 // Keep first and latest checkpoints and evenly sample the
                 // middle for interactive charting. All rows stay on disk.
@@ -376,7 +452,7 @@ class EvaluationHistory {
                     String(error.message||error).slice(0,160));
             }
         }
-        return {samples,storage_warning:this.error};
+        return {samples,regressions,storage_warning:this.error};
     }
 }
-module.exports={EvaluationHistory};
+module.exports={EvaluationHistory,regressionSignals};
