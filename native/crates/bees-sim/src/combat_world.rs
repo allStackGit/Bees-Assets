@@ -1923,6 +1923,17 @@ impl CombatWorld {
         )?)
     }
 
+    /// One point-order bounds rule for direct movement, tracked movement
+    /// and A* worker completion. The source's immutable ship property must
+    /// not be lost when the current order came from a different adapter.
+    fn ship_bounded_destination(&self, ship_id: i64, order: GamePointOrder) -> Vec2 {
+        if self.ship_bounds_overrides.contains(&ship_id) {
+            order.destination
+        } else {
+            order.bounded_destination()
+        }
+    }
+
     /// Unity Ship.MoveToPoint's order-selection boundary. The authored
     /// BoxCast selects the current closest live obstacle; an obstructed
     /// destination uses the shared A* queue, otherwise it moves directly.
@@ -1961,7 +1972,7 @@ impl CombatWorld {
         self.game_ship_steering.get_mut(&ship_id)
             .expect("validated steering").clear_tracked_replan();
         self.pending_game_point_orders.remove(&ship_id);
-        let destination = order.bounded_destination();
+        let destination = self.ship_bounded_destination(ship_id, order);
         if !self.physics.ships()[index].motion.mobile {
             return Ok(GamePointOrderResult::Unchanged);
         }
@@ -2042,7 +2053,7 @@ impl CombatWorld {
             self.tracked_order_measurements.failed_path_retry_suppressed += 1;
             return Ok(GamePointOrderResult::Unchanged);
         }
-        let destination = order.bounded_destination();
+        let destination = self.ship_bounded_destination(ship_id, order);
         // Pathfinder.Scale * 2 = 8 world units in Unity. A recurring
         // tracked order ignores lesser endpoint drift, preserving the current
         // useful path or direct target instead of restarting navigation.
@@ -2385,7 +2396,8 @@ impl CombatWorld {
                     // remembered Level order has enough bounds/clearance
                     // context to safely re-enter MoveToPoint.
                     let may_retry = self.latest_game_point_orders.get(&job.ship_id)
-                        .is_some_and(|order| order.bounded_destination() == job.destination);
+                        .is_some_and(|&order|
+                            self.ship_bounded_destination(job.ship_id, order) == job.destination);
                     if may_retry {
                         steering.failed_path(motion);
                     } else {
