@@ -105,6 +105,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         // CPU preparation may overlap GPU work; only wait is an exposed
         // learner stall. Pinned transfer enqueue is host wall, not PCIe time.
         'ppo_prep_cpu_seconds','ppo_prep_wait_seconds',
+        'ppo_prep_background_cpu_seconds',
+        'ppo_prep_background_wait_seconds',
         'ppo_prep_pin_seconds','ppo_prep_h2d_enqueue_seconds',
         'ppo_gpu_stream_sync_seconds',
         'ppo_gpu_stream_interval_seconds'])
@@ -133,6 +135,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_prefetch_engine_steps',
         'ppo_minibatches','ppo_microbatches',
         'ppo_prep_batches','ppo_prep_async_h2d_copies',
+        'ppo_prep_background_chunks',
         'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
         'ppo_gpu_pixel_budget',
         'ppo_gpu_batch_target_pixels','ppo_gpu_batch_next_target',
