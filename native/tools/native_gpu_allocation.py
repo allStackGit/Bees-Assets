@@ -17,6 +17,41 @@ GPU_MASK_ENVIRONMENTS = (
 )
 
 
+def rocm_visible_gpu_pci() -> str | None:
+    """Inspect HIP's *actually loaded* cuda:0 physical PCI identity.
+
+    Only used for post-forward telemetry. A dual Hub lease is never accepted
+    merely because two GPU masks were requested; each actor must report a
+    distinct HIP-mapped physical device matching the supervisor's lease.
+    """
+    if os.name != "posix":
+        return None
+    import ctypes
+
+    try:
+        with open("/proc/self/maps", encoding="utf-8") as maps:
+            loaded = {
+                fields[-1] for line in maps
+                if (fields := line.rstrip().split(maxsplit=5)) and len(fields) == 6
+                and re.fullmatch(r"libamdhip64\\.so(?:\\.[0-9]+)*",
+                                 os.path.basename(fields[-1]))
+                and os.path.isabs(fields[-1])
+            }
+        if len(loaded) != 1:
+            return None
+        hip = ctypes.CDLL(loaded.pop())
+        get_pci = hip.hipDeviceGetPCIBusId
+        get_pci.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+        get_pci.restype = ctypes.c_int
+        address = ctypes.create_string_buffer(64)
+        if get_pci(address, len(address), 0) != 0:
+            return None
+        value = address.value.decode("ascii").lower()
+        return value if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]", value) else None
+    except (OSError, AttributeError, UnicodeDecodeError):
+        return None
+
+
 def parse_rollout_gpus(value: str | None) -> tuple[int, ...] | None:
     if value is None:
         return None
