@@ -532,6 +532,7 @@ def verify_native_package(directory: Path) -> dict:
             "native/tools/train_policy_session.py",
             "native/tools/evaluate_policy.py",
             "native/tools/native_distributed_collection.py",
+            "native/tools/native_gpu_allocation.py",
             "native/tools/run_distributed_collector.py",
             "native/tools/native_bundle_receiver.py",
             "native/tools/native_training_artifacts.py",
