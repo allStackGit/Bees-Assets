@@ -222,6 +222,13 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_collector_imbalance_pressure',
             'training_collector_gpu_reserved_share',
             'training_collector_gpu_reserved_owner',
+            'training_policy_raw_bytes',
+            'training_policy_wire_bytes',
+            'training_policy_saved_bytes',
+            'training_policy_compressed_workers',
+            'training_policy_compress_seconds',
+            'training_policy_unpack_max_seconds',
+            'training_policy_saved_share',
             'training_rollout_raw_bytes',
             'training_rollout_wire_bytes',
             'training_rollout_saved_bytes',
@@ -1050,6 +1057,16 @@ class BottleneckEvidence {
             // overlap other copies and remote simulation; only the tail
             // after the last complete reply is exposed ingestion latency.
             const wall=seconds('training_batch_wall_seconds');
+            const policyRaw=metrics.training_policy_raw_bytes;
+            const policyWire=metrics.training_policy_wire_bytes;
+            if(policyRaw?.unit==='bytes'&&policyWire?.unit==='bytes'&&
+                Number.isSafeInteger(policyRaw.value)&&policyRaw.value>0&&
+                Number.isSafeInteger(policyWire.value)&&
+                policyWire.value>=0&&policyWire.value<=policyRaw.value)
+                // Complete policy payload savings, never physical bandwidth
+                // or proof that networking caused the collection bottleneck.
+                add('training_policy_saved_share',
+                    (policyRaw.value-policyWire.value)/policyRaw.value);
             const raw=metrics.training_rollout_raw_bytes;
             const wire=metrics.training_rollout_wire_bytes;
             if(raw?.unit==='bytes'&&wire?.unit==='bytes'&&
