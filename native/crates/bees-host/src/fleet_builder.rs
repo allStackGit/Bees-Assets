@@ -421,8 +421,11 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         order_count < queue_count {
         return Err(invalid("native benchmark contains an arena without authentic AI commands").into());
     }
-    let started_commands = summary["scripted_command_work_current_episodes"]
-        ["commands_started"].as_u64().unwrap_or(0);
+    let scripted = &summary["scripted_command_work_current_episodes"];
+    let started_commands = scripted["commands_started"].as_u64().unwrap_or(0);
+    let nearest_queries = scripted["nearest_enemy_resolutions"].as_u64().unwrap_or(0);
+    let nearest_candidates = scripted["nearest_enemy_candidates_scanned"]
+        .as_u64().unwrap_or(0);
     println!("{}", json!({
         "kind": "native_fleet_benchmark_complete",
         "world_steps": steps,
@@ -434,6 +437,8 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         "scripted_ai_orders": order_count,
         "scripted_worlds": worlds_with_orders,
         "scripted_commands_started_current_episodes": started_commands,
+        "nearest_enemy_queries_current_episodes": nearest_queries,
+        "nearest_enemy_candidates_current_episodes": nearest_candidates,
         "summary": file,
     }));
     let labels = [
@@ -441,6 +446,7 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         format!("Arenas: {arenas}  |  CPU physics workers: {workers}"),
         format!("AI combat: {queue_count} squads / {order_count} source orders in {worlds_with_orders} arenas"),
         format!("Current episodes: {started_commands} real scripted commands activated"),
+        format!("Current AI targeting: {nearest_queries} retarget checks / {nearest_candidates} live candidates"),
         format!("Completed: {steps} world steps in {wall:.2}s"),
         "Full timing, physics and scripted-command measurements: rollout-summary.json".to_owned(),
     ];
