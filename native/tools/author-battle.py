@@ -559,6 +559,16 @@ def author(args) -> tuple[dict, dict, dict]:
                 if squad["item_id"] == protected_squad:
                     queue["orders"] = [{"kind": "hold"}]
                     queue["repeat"] = False
+                elif queue["orders"][-1]["kind"] in (
+                        "bombing_nearest", "charge_nearest",
+                        "mining_nearest", "scouting", "hold"):
+                    # Guard is an ordinary squad-following command. It
+                    # cannot execute a Fire Barge/Barge Bomb or Scout
+                    # Beacon lifecycle. Preserve the actual specialist
+                    # command for mobile defenders and the original Hold
+                    # platform for Carriers/Queens. Only conventional
+                    # weapon squads should guard the physical objective.
+                    continue
                 elif any(ship["entity_id"] in squad["members"] and
                          ship.get("base_speed", 0) > 0
                          for ship in by_side[owner]):
@@ -598,23 +608,46 @@ def author(args) -> tuple[dict, dict, dict]:
             # extra steering/AI implementation) to send one deployed mobile
             # squad toward the real trigger; other escorts keep their
             # source combat commands and reinforcement activation clocks.
-            mobiles = [
-                squad["item_id"] for squad in by_side_squads[owner]
-                if squad["item_id"] not in deferred_squad_ids and
-                any(ship["entity_id"] in squad["members"] and
-                    ship.get("base_speed", 0) > 0 and
+            extraction_candidates = []
+            by_ship_id = {
+                ship["entity_id"]: ship for ship in by_side[owner]
+            }
+            for index, squad in enumerate(by_side_squads[owner]):
+                if squad["item_id"] in deferred_squad_ids:
+                    continue
+                members = [by_ship_id[ship_id] for ship_id in squad["members"]]
+                candidates = [
+                    ship for ship in members
+                    if ship.get("base_speed", 0) > 0 and
                     ship.get("drone_carrier_id") is None and
                     not (isinstance(ship.get("special"), dict) and
                          ship["special"].get("kind") == "striker")
-                    for ship in by_side[owner])
-            ]
-            if not mobiles:
+                ]
+                if not candidates:
+                    continue
+                # Scout hulls are authored reconnaissance ships that can
+                # reach the actual extraction collider while their heavier
+                # escorts keep attacking. Prefer other mobile ships over
+                # Queens and Carriers, whose live minion/rearm roles make
+                # them more useful to keep in the combat zone.
+                fastest = max(ship["base_speed"] for ship in candidates)
+                scout = any(ship["ship_type"] == 18 for ship in candidates)
+                support_parent = all(ship["ship_type"] in (5, 17)
+                                     for ship in candidates)
+                extraction_candidates.append((
+                    support_parent, not scout, -fastest, index, squad["item_id"]
+                ))
+            if not extraction_candidates:
                 raise ValueError("scripted extraction has no initial mobile command owner")
-            # Keep combat escorts whenever possible, but send several
-            # independently spawned squads if available. Otherwise one
-            # unlucky early casualty would make an AI-only extraction
-            # unwinnable despite surviving mobile hulls.
-            escaping = set(mobiles[:max(1, (len(mobiles) + 2) // 3)])
+            preferred = [item for item in extraction_candidates if not item[0]]
+            if not preferred:
+                preferred = extraction_candidates
+            # Retain the physical authored source order for exact priority
+            # ties, and send multiple independent squads when available.
+            # Fast Scouts generally escape first; attackers stay as cover.
+            preferred.sort()
+            escape_count = max(1, (len(preferred) + 2) // 3)
+            escaping = {item[-1] for item in preferred[:escape_count]}
             for queue in queues:
                 if queue["squad_item_id"] not in escaping:
                     continue

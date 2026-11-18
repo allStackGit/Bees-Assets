@@ -104,9 +104,13 @@ These write the normal `levels[0].survival` or `levels[0].extraction`
 contracts consumed by the *same* native combat and terminal rules.
 They work as standalone battles or missions in an authored campaign.
 With `--control none`, the existing native scripted AI directs the real
-defending/extracting faction: survival squads guard the protected hull,
-while mobile extraction squads advance toward the authored exit and other
-ships provide combat cover. `--trainable` assigns policy controllers to
+defending/extracting faction: ordinary survival defenders guard the
+protected hull, while specialist bombers, miners, Scouts, Carriers and Queens
+retain their original physical abilities. Mobile extraction squads are
+selected from the existing deployed fleet using Scout suitability and
+authored speed, avoiding dedicated Carrier/Queen platforms when other
+mobile ships exist. Those squads navigate toward the real exit while
+combat escorts retain their source attack commands. `--trainable` assigns policy controllers to
 source-backed active ships without inventing another combat engine.
 
 Timed multi-wave battles also use the native Level's existing
