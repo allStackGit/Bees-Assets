@@ -2550,12 +2550,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const finalCohort=hubFinalEvaluationCohort(job);
             const entries=rules.length?rules:[null];
             for(const [index,rule] of entries.entries()) {
+                // A bounded candidate cache is not a historical evaluator
+                // archive. Prefer the newest *accepted* checkpoint receipt
+                // for this exact suite, even after older candidates expire.
+                // Never fill a missing suite with another suite's last result.
+                const pinned=rule&&(rule.suite_sha256||
+                    job.evaluation_suite_definitions?.[rule.suite_id]);
+                const matches=receipt=>Boolean(receipt&&rule&&
+                    receipt.suite_id===rule.suite_id&&
+                    (!pinned||receipt.suite_sha256===pinned));
+                const latestArchived=rule?evaluation_points.filter(matches)
+                    .reduce((best,receipt)=>!best||
+                        receipt.steps_completed>best.steps_completed||
+                        (receipt.steps_completed===best.steps_completed&&
+                         String(receipt.observed_at||'')>String(best.observed_at||''))
+                            ?receipt:best,null):null;
                 const finalReceipt=rule&&finalCohort?.[rule.suite_id];
-                const evidence=finalReceipt||(passed?passed[index]:
-                    rule?cohort[rule.suite_id]||
-                        (!policy?.all_of?job.evaluation_stop_evidence:null)||
-                        job.last_evaluation:
-                        job.evaluation_stop_evidence||job.last_evaluation);
+                const evidence=rule
+                    ?[finalReceipt,latestArchived,passed?.[index],
+                        cohort[rule.suite_id],
+                        !policy?.all_of?job.evaluation_stop_evidence:null,
+                        job.last_evaluation].find(matches)||null
+                    :job.evaluation_stop_evidence||job.last_evaluation;
                 const row=document.createElement('tr');
                 cell(row,slot+' · '+job.configuration_name);
                 cell(row,evidence?.suite_id||rule?.suite_id||'—');
