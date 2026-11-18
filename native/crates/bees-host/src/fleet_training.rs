@@ -1051,6 +1051,34 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
                 "  [Verified checkpoint selection]".to_string(), false,
             ));
         }
+        if let Some(stages) = measurement["curriculum"]["stages"].as_array() {
+            let active_start = measurement["curriculum"]["active_stage_start_round"]
+                .as_u64().unwrap_or(1);
+            details.push((
+                format!("Native curriculum: {} physical Stage(s), active from round {active_start}",
+                    stages.len()),
+                "  [Shared simulator, one policy checkpoint lineage]".to_string(),
+                false,
+            ));
+            for (index, stage) in stages.iter().enumerate() {
+                let start = stage["start_round"].as_u64().unwrap_or(1);
+                let completed = stage["completed_rounds"].as_u64().unwrap_or(0);
+                let sps = stage["world_steps_per_training_wall_second"].as_f64()
+                    .filter(|number| number.is_finite())
+                    .map_or("SPS pending".to_string(), |number|
+                        format!("{number:.0} measured SPS")
+                    );
+                let outcome = stage["fixed_reference_side_win_rate"].as_f64()
+                    .filter(|number| number.is_finite())
+                    .map_or("holdout pending".to_string(), |number|
+                        format!("{:.1}% holdout wins", number * 100.0)
+                    );
+                details.push((
+                    format!("Stage {} (round {start}): {completed} rounds | {sps} | {outcome}", index + 1),
+                    "  [Verified per-stage source and learning]".to_string(), false,
+                ));
+            }
+        }
         if let Some(count) = measurement["self_play_opponent_promotions"].as_u64() {
             details.push((
                 format!("Self-play opponent promotions: {count}"),
