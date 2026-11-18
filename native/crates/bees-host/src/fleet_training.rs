@@ -192,7 +192,15 @@ fn append_training_arguments(
         return Err(invalid("training learner and holdout sides do not match").into());
     }
     let slot = side - 1;
-    command.arg("--train-rounds").arg(rounds.to_string())
+    // Native Simulation resets the original CombatWorld and policy routing
+    // after each episode without respawning a process or reloading weights.
+    // Keep this part of the immutable model bootstrap identity on resume.
+    let episodes = recipe["episodes_per_world"].as_u64().unwrap_or(1);
+    if ![1, 2, 4, 8, 16].contains(&episodes) {
+        return Err(invalid("invalid native episodes-per-arena count").into());
+    }
+    command.arg("--episodes-per-world").arg(episodes.to_string())
+        .arg("--train-rounds").arg(rounds.to_string())
         .arg("--learner-slot").arg(slot.to_string());
     if !recipe["self_play_refresh_every"].is_null() {
         let every = recipe["self_play_refresh_every"].as_u64()
@@ -414,6 +422,9 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let Some(trainer_source) = choose_trainer_config(save_root)? else {
         return Ok(());
     };
+    let Some(episodes_per_world) = choose_count(
+        "Episodes per persistent native arena", &[1, 2, 4, 8, 16],
+    )? else { return Ok(()); };
     let sides = [
         BattleMenuRow {
             title: "Train Bees faction",
@@ -562,6 +573,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "kind": "native_game_fleet_training_invocation",
         "source": source,
         "rounds": rounds,
+        "episodes_per_world": episodes_per_world,
         "learner_side": learner_side,
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
@@ -618,6 +630,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "allocation": if use_hub { "experiment_hub" } else { "local" },
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
         "rounds": rounds,
+        "episodes_per_world": episodes_per_world,
         "learner_side": learner_side,
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
