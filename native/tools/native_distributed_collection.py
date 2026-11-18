@@ -14,6 +14,7 @@ import re
 import time
 
 from native_training_artifacts import atomic_json, file_sha256, native_source_contract_sha256
+from native_gpu_allocation import GPU_MASK_ENVIRONMENTS
 
 
 COLLECTOR_ID = re.compile(r"[A-Za-z0-9_-]{1,48}\Z")
@@ -99,7 +100,8 @@ def _issued_allocations(path, baseline):
             orders.get("schema_version") != 1 or
             not isinstance(orders.get("jobs"), list)):
         raise ValueError(f"invalid issued native collection order: {path}")
-    keys = ("id", "world_start", "world_count", "rollout_workers", "physics_workers")
+    keys = ("id", "world_start", "world_count", "rollout_workers", "physics_workers",
+            "rollout_gpus", "rollout_gpu_mask")
     previous = {"collectors": [
         {key: job[key] for key in keys if key in job} for job in orders["jobs"]
     ]}
@@ -108,7 +110,9 @@ def _issued_allocations(path, baseline):
     if (len(read_plan_document["collectors"]) != len(original) or
             any(item["id"] not in original or
                 item["rollout_workers"] != original[item["id"]]["rollout_workers"] or
-                item.get("physics_workers") != original[item["id"]].get("physics_workers")
+                item.get("physics_workers") != original[item["id"]].get("physics_workers") or
+                item.get("rollout_gpus") != original[item["id"]].get("rollout_gpus") or
+                item.get("rollout_gpu_mask") != original[item["id"]].get("rollout_gpu_mask")
                 for item in read_plan_document["collectors"])):
         raise ValueError(f"issued collector resources differ from pinned plan: {path}")
     initial = sorted(baseline["collectors"], key=lambda row: row["world_start"])
@@ -134,7 +138,7 @@ def _validate_collector_plan(plan):
         required = {"id", "world_start", "world_count", "rollout_workers"}
         if (not isinstance(item, dict) or
                 not required.issubset(item) or
-                set(item) - required - {"physics_workers"}):
+                set(item) - required - {"physics_workers", "rollout_gpus", "rollout_gpu_mask"}):
             raise ValueError("collector needs id, world_start, world_count, rollout_workers and optional physics_workers")
         name, start, count, workers = (item[key] for key in (
             "id", "world_start", "world_count", "rollout_workers",
@@ -148,6 +152,16 @@ def _validate_collector_plan(plan):
                  (type(item["physics_workers"]) is not int or
                   not 1 <= item["physics_workers"] <= 128))):
             raise ValueError(f"invalid or duplicate collector allocation: {name!r}")
+        if "rollout_gpus" in item:
+            gpus = item["rollout_gpus"]
+            if (not isinstance(gpus, list) or not 1 <= len(gpus) <= workers or
+                    any(type(gpu) is not int or not 0 <= gpu <= 255 for gpu in gpus) or
+                    len(set(gpus)) != len(gpus) or
+                    item.get("rollout_gpu_mask", "CUDA_VISIBLE_DEVICES")
+                    not in GPU_MASK_ENVIRONMENTS):
+                raise ValueError(f"invalid collector GPU allocation: {name!r}")
+        elif "rollout_gpu_mask" in item:
+            raise ValueError("collector GPU visibility selector requires rollout_gpus")
         seen.add(name)
         ranges.append((start, start + count, name))
     for left, right in zip(sorted(ranges), sorted(ranges)[1:]):
@@ -337,6 +351,10 @@ def make_orders(root, round_number, seed_offset, plan, run, checkpoint, manifest
                 *([] if "physics_workers" not in item else [
                     "--physics-workers", str(item["physics_workers"]),
                 ]),
+                *([] if "rollout_gpus" not in item else [
+                    "--rollout-gpus", ",".join(str(gpu) for gpu in item["rollout_gpus"]),
+                    "--rollout-gpu-mask", item.get("rollout_gpu_mask", "CUDA_VISIBLE_DEVICES"),
+                ]),
             ],
         })
     path = root / f"collection-round-{round_number:05d}.json"
@@ -369,6 +387,21 @@ def make_orders(root, round_number, seed_offset, plan, run, checkpoint, manifest
     return orders, path
 
 
+def expected_gpu_allocation(job):
+    """Physical placement is part of an immutable collector order, not a
+    runtime-selected or inferred allocation. Missing means no override.
+    """
+    gpus = job.get("rollout_gpus")
+    if gpus is None:
+        return None
+    return {
+        "visibility_environment": job.get("rollout_gpu_mask", "CUDA_VISIBLE_DEVICES"),
+        "physical_gpu_ids": gpus,
+        "worker_gpu_ids": [gpus[index % len(gpus)]
+                           for index in range(job["rollout_workers"])],
+    }
+
+
 def verify_bundle(path, job, orders):
     raw = path.read_bytes()
     receipt = json.loads(raw)
@@ -395,6 +428,7 @@ def verify_bundle(path, job, orders):
         receipt.get("learner_slot") == orders["learner_slot"] and
         receipt.get("rollout_worlds") == job["world_count"] and
         receipt.get("rollout_processes") == job["rollout_workers"] and
+        receipt.get("gpu_allocation") == expected_gpu_allocation(job) and
         # Resource constraints belong to the signed work order. Verify
         # explicit allocations rather than trusting collector assertions.
         ("physics_workers" not in job or
