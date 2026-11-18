@@ -34,24 +34,35 @@ enum Objective { Elimination, Survival, Extraction }
 /// changes only when squads enter the same live combat/roster pipeline,
 /// never their hulls, weapon behaviors, or trainer's simulation engine.
 #[derive(Clone, Copy)]
-enum ReinforcementPattern { AllAtStart, Bees, Humans, Both }
+enum ReinforcementPattern {
+    AllAtStart,
+    BeesTimed, HumansTimed, BothTimed,
+    BeesOnDeath, HumansOnDeath, BothOnDeath,
+}
 
 impl ReinforcementPattern {
     fn includes(self, side: usize) -> bool {
         match self {
             Self::AllAtStart => false,
-            Self::Bees => side == 0,
-            Self::Humans => side == 1,
-            Self::Both => true,
+            Self::BeesTimed | Self::BeesOnDeath => side == 0,
+            Self::HumansTimed | Self::HumansOnDeath => side == 1,
+            Self::BothTimed | Self::BothOnDeath => true,
         }
+    }
+
+    fn on_command_ship_death(self) -> bool {
+        matches!(self, Self::BeesOnDeath | Self::HumansOnDeath | Self::BothOnDeath)
     }
 
     fn label(self) -> &'static str {
         match self {
             Self::AllAtStart => "no-waves",
-            Self::Bees => "bee-waves",
-            Self::Humans => "human-waves",
-            Self::Both => "both-waves",
+            Self::BeesTimed => "bee-waves",
+            Self::HumansTimed => "human-waves",
+            Self::BothTimed => "both-waves",
+            Self::BeesOnDeath => "bee-death-reserves",
+            Self::HumansOnDeath => "human-death-reserves",
+            Self::BothOnDeath => "both-death-reserves",
         }
     }
 }
@@ -96,16 +107,23 @@ fn choose_reinforcements(
          "All squads deploy at the start", "  [Ordinary skirmish]"),
     ];
     if fleet_sizes[0] > 1 {
-        patterns.push((ReinforcementPattern::Bees,
-            "Bee reinforcement waves", "  [Additional Bees at 25s and 55s]"));
+        patterns.push((ReinforcementPattern::BeesTimed,
+            "Bee timed reinforcement waves", "  [Additional Bees at 25s and 55s]"));
+        patterns.push((ReinforcementPattern::BeesOnDeath,
+            "Bee command-ship-loss reserves", "  [Bees arrive when Bee command ship dies]"));
     }
     if fleet_sizes[1] > 1 {
-        patterns.push((ReinforcementPattern::Humans,
-            "Human reinforcement waves", "  [Additional Humans at 25s and 55s]"));
+        patterns.push((ReinforcementPattern::HumansTimed,
+            "Human timed reinforcement waves", "  [Additional Humans at 25s and 55s]"));
+        patterns.push((ReinforcementPattern::HumansOnDeath,
+            "Human command-ship-loss reserves", "  [Humans arrive when Human command ship dies]"));
     }
     if fleet_sizes.iter().all(|&size| size > 1) {
-        patterns.push((ReinforcementPattern::Both,
-            "Both factions receive waves", "  [Each side at 25s and 55s]"));
+        patterns.push((ReinforcementPattern::BothTimed,
+            "Both factions receive timed waves", "  [Each side at 25s and 55s]"));
+        patterns.push((ReinforcementPattern::BothOnDeath,
+            "Both factions have loss-triggered reserves",
+            "  [Each side reinforces when its command ship dies]"));
     }
     if patterns.len() == 1 {
         return Ok(Some(ReinforcementPattern::AllAtStart));
