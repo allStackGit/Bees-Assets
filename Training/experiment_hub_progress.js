@@ -138,6 +138,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'collector_dispatch_tail_seconds','collector_dispatch_tail_owner',
             'pipeline_collector_dispatch_pressure','pipeline_collector_dispatch_owner',
             'pipeline_local_gpu_lease_index',
+            'pipeline_local_gpu_fwd_pressure','pipeline_local_gpu_fwd_owner',
+            'pipeline_remote_gpu_fwd_pressure','pipeline_remote_gpu_fwd_owner',
             'collector_0_sim_draining'])
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
@@ -640,6 +642,23 @@ class BottleneckEvidence {
                     localGpuLease=first.leaseIndex;
                 }
             }
+            // Stream elapsed time includes dispatch gaps, not GPU kernel
+            // occupancy. Require the uniquely exposed collector's OWN
+            // measured inference interval to be materially GPU-stream work.
+            const forwardLimiting=index=>{
+                if(!Number.isSafeInteger(index)||index<0||
+                    index>=MAX_TINYBRAINS_COLLECTORS)return false;
+                const host=seconds('collector_'+index+'_learner_inference_seconds');
+                const gpu=seconds('collector_'+index+'_learner_gpu_stream_seconds');
+                return host>0&&gpu!==null&&gpu<=host&&
+                    gpu/host>=0.50&&gpu>=0.25&&gpu>=0.20*collection;
+            };
+            const localGpuForward=(localGpuOwner!==null&&
+                localGpuShare>=0.25&&forwardLimiting(localGpuOwner))
+                ?localGpuOwner:null;
+            const remoteGpuForward=(remoteOwner!==null&&
+                exposedShare>=0.25&&forwardLimiting(remoteOwner))
+                ?remoteOwner:null;
             // Bounded observational state is neither a scheduler input
             // nor evidence that any particular device is saturated.
             const {at,prior}=history();
@@ -753,6 +772,7 @@ class BottleneckEvidence {
             const recent=collectTimingEvidence(prior,at,{fraction,waitShare,mergeShare,
                     prepShare,
                     localGpuShare,localGpuOwner,localGpuLease,remoteOwner,remoteCompeting,
+                    localGpuForward,remoteGpuForward,
                     remoteConnectCritical,remotePrepCritical,dispatchOwner,
                     stageHints,simHints,resourceHints,
                     remoteResource:!remoteCompeting&&fraction>=0.5&&waitShare>=0.5
@@ -801,6 +821,18 @@ class BottleneckEvidence {
                             x.localGpuLease===lease&&x.localGpuShare>=0.5).length>=5)
                             add('pipeline_local_gpu_lease_index',lease,'count');
                     }
+                }
+                const localForward=recent.at(-1).localGpuForward;
+                if(localForward!==null&&recent.filter(x=>
+                    x.localGpuForward===localForward).length>=5) {
+                    add('pipeline_local_gpu_fwd_pressure',1,'count');
+                    add('pipeline_local_gpu_fwd_owner',localForward,'count');
+                }
+                const remoteForward=recent.at(-1).remoteGpuForward;
+                if(remoteForward!==null&&recent.filter(x=>
+                    x.remoteGpuForward===remoteForward).length>=5) {
+                    add('pipeline_remote_gpu_fwd_pressure',1,'count');
+                    add('pipeline_remote_gpu_fwd_owner',remoteForward,'count');
                 }
                 const connect=recent.at(-1);
                 if(connect.remoteConnectCritical&&recent.filter(x=>
@@ -1274,7 +1306,9 @@ class BottleneckEvidence {
         // continuous ratios when nine profiled collectors approach the wire
         // limit. Never evict a project-owned source metric for a diagnosis.
         const priority=name=>
-            (name==='pipeline_local_gpu_wait_owner'||
+            (name==='pipeline_local_gpu_fwd_owner'||
+             name==='pipeline_remote_gpu_fwd_owner'||
+             name==='pipeline_local_gpu_wait_owner'||
              name==='pipeline_local_gpu_lease_index'||
              name==='pipeline_remote_connect_owner'||
              name==='pipeline_remote_resource_owner'||
