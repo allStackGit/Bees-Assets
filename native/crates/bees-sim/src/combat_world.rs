@@ -3687,32 +3687,46 @@ impl CombatWorld {
             let max_x = bounds.max.x - extent;
             let min_y = bounds.min.y + extent;
             let max_y = bounds.max.y - extent;
-            let motion = &mut self.physics.ships_mut()[index].motion;
+            let motion = &self.physics.ships()[index].motion;
+            let original = motion.position;
+            let original_velocity = motion.body_velocity;
             if min_x > max_x || min_y > max_y {
-                motion.body_velocity = Vec2::ZERO;
                 self.map_border_measurements.confinement_unfittable_hulls += 1;
+                if original_velocity != Vec2::ZERO {
+                    self.physics.ships_mut()[index].motion.body_velocity = Vec2::ZERO;
+                }
                 continue;
             }
-            let original = motion.position;
-            motion.position.x = motion.position.x.clamp(min_x, max_x);
-            motion.position.y = motion.position.y.clamp(min_y, max_y);
-            if original != motion.position {
+            let position = Vec2::new(
+                original.x.clamp(min_x, max_x),
+                original.y.clamp(min_y, max_y),
+            );
+            let projected = position + original_velocity * dt;
+            let mut velocity = original_velocity;
+            if projected.x < min_x && velocity.x < 0.0 {
+                velocity.x = (min_x - position.x) / dt;
+            } else if projected.x > max_x && velocity.x > 0.0 {
+                velocity.x = (max_x - position.x) / dt;
+            }
+            if projected.y < min_y && velocity.y < 0.0 {
+                velocity.y = (min_y - position.y) / dt;
+            } else if projected.y > max_y && velocity.y > 0.0 {
+                velocity.y = (max_y - position.y) / dt;
+            }
+            if position != original {
                 self.map_border_measurements.confinement_position_corrections += 1;
             }
-            let original_velocity = motion.body_velocity;
-            let projected = motion.position + original_velocity * dt;
-            if projected.x < min_x && motion.body_velocity.x < 0.0 {
-                motion.body_velocity.x = (min_x - motion.position.x) / dt;
-            } else if projected.x > max_x && motion.body_velocity.x > 0.0 {
-                motion.body_velocity.x = (max_x - motion.position.x) / dt;
-            }
-            if projected.y < min_y && motion.body_velocity.y < 0.0 {
-                motion.body_velocity.y = (min_y - motion.position.y) / dt;
-            } else if projected.y > max_y && motion.body_velocity.y > 0.0 {
-                motion.body_velocity.y = (max_y - motion.position.y) / dt;
-            }
-            if original_velocity != motion.body_velocity {
+            if velocity != original_velocity {
                 self.map_border_measurements.confinement_velocity_clamps += 1;
+            }
+            // Physics.ship_mut invalidates its spatial hull cache. Avoid
+            // that mutable borrow for in-bounds ships: ordinary GPU/CPU
+            // training should not rebuild the ship broadphase every tick
+            // merely because this cheap guard was enabled.
+            if position != original || velocity != original_velocity {
+                let motion = &mut self.physics.ships_mut()[index].motion;
+                motion.position = position;
+                motion.body_velocity = velocity;
             }
         }
         Ok(())
