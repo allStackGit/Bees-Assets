@@ -165,13 +165,13 @@ def resize_empty_arena(scene: dict, map_size: float) -> None:
     if existing and max(existing) > (1 << 63) - 6:
         raise ValueError("native arena has no free runtime IDs for physical borders")
     next_id = max(existing, default=0) + 1
-    scene["layout"] = {"add_static_boxes": []}
+    scene["layout"] = {"add_map_borders": []}
     for index, (prefab, position, (half_x, half_y)) in enumerate(borders):
         # Exact BoxCollider corners in obstacle-local space. This uses
         # NativeSceneBuilder's existing live-box collider path, so all
         # contacts (projectiles, Barges, drifting asteroids and navigation)
         # go through the one authoritative CombatWorld.
-        scene["layout"]["add_static_boxes"].append({
+        scene["layout"]["add_map_borders"].append({
             "entity_id": next_id + index,
             "prefab_name": prefab,
             "position": list(position),
@@ -241,7 +241,9 @@ def author(args) -> tuple[dict, dict, dict]:
         raise ValueError("source native map bounds must be finite and nonempty")
     run["fragment_spawn"]["map_bounds"] = copy.deepcopy(bounds)
     run["fragment_spawn"]["half_map_extents"] = extents
-    if set(scene.get("layout", {})) - {"add_static_boxes", "add_static_polygons"}:
+    if set(scene.get("layout", {})) - {
+        "add_static_boxes", "add_static_polygons", "add_map_borders",
+    }:
         raise ValueError("source layout contains squad-relative changes that cannot be safely cloned")
     if not math.isfinite(args.spacing) or args.spacing < 12:
         raise ValueError("spacing must be a finite world distance of at least 12")
@@ -366,7 +368,8 @@ def author(args) -> tuple[dict, dict, dict]:
         [ship["entity_id"] for ship in scene["ships"]] +
         [resource["entity_id"] for key in ("mining_asteroids", "map_objects")
          for resource in scene.get(key, [])] +
-        [box["entity_id"] for box in scene.get("layout", {}).get("add_static_boxes", [])] +
+        [box["entity_id"] for key in ("add_static_boxes", "add_map_borders")
+         for box in scene.get("layout", {}).get(key, [])] +
         [polygon["entity_id"] for polygon in
          scene.get("layout", {}).get("add_static_polygons", [])]
     )
