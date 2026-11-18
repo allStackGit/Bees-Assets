@@ -9,11 +9,14 @@ Example:
     --suite /evaluators/nano.json --suite /evaluators/micro.json \
     --scratch /evaluators/scratch --output /evaluators/historical-audit.json
 
-Import the resulting JSON in Experiment Hub's historical evaluation panel.
-This never creates a native Hub job, changes a trainer checkpoint or starts training.
+Import the resulting JSON in Experiment Hub's historical evaluation panel,
+or pass --import-to-hub to archive it through the existing loopback API
+immediately after the completed report is safely written.
+Neither path creates a native job, changes a checkpoint or starts training.
 """
 
 import argparse
+from http.client import HTTPException
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -24,7 +27,7 @@ import shutil
 import sys
 import tempfile
 
-from experiment_hub_eval_io import SHA256, suite_digest
+from experiment_hub_eval_io import SHA256, suite_digest, import_historical_audit
 from experiment_hub_tinybrains_evaluate import evaluate_with_metrics, read_suite
 from experiment_hub_tinybrains_eval_poll import checkpoint_update
 from experiment_hub_tinybrains_runtime import configure_engine
@@ -136,6 +139,10 @@ def main() -> int:
     parser.add_argument("--scratch", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--engine-path", type=Path)
+    parser.add_argument("--import-to-hub", action="store_true",
+                        help="After writing the immutable JSON report, also import it into the local Experiment Hub.")
+    parser.add_argument("--hub-port", type=int, default=7148,
+                        help="Local Experiment Hub loopback port (default 7148).")
     args = parser.parse_args()
     try:
         if args.checkpoint_dir is not None:
@@ -172,6 +179,22 @@ def main() -> int:
             stream.flush()
             os.fsync(stream.fileno())
         print(f"Historical evaluation audit: {args.output} ({len(report['results'])} observations)")
+        if args.import_to_hub:
+            try:
+                imported = import_historical_audit(report, args.hub_port)
+            except (OSError, RuntimeError, ValueError, HTTPException) as error:
+                print(
+                    f"Historical audit was saved at {args.output}, but Hub import "
+                    f"failed: {error}. The original report remains available "
+                    "for manual import without rerunning evaluations.",
+                    file=sys.stderr,
+                )
+                return 1
+            print(
+                f"Historical evaluation archived in Compare as read-only job "
+                f"{imported['job_id']} ({imported['record_count']} results); "
+                "no native Stop, training or promotion authorized."
+            )
         return 0
     except (OSError, RuntimeError, ValueError, TypeError, KeyError) as error:
         print(f"Historical evaluation failed: {error}", file=sys.stderr)
