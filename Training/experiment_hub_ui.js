@@ -995,6 +995,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return data;
     };
     const feedback=(id,message)=>{ $(id).textContent=message; };
+    function evaluatorAdmissionLabel(place) {
+        const available=place?.available;
+        if(!available)return '';
+        if(available.evaluator_budget_unknown)
+            return ' · Active evaluator has unverified CPU/RAM quota; no new admission';
+        if(!available.evaluator_reserved_cpus&&!available.evaluator_reserved_ram_mb)
+            return '';
+        return ' · Independent evaluator allocation: '+
+            available.evaluator_reserved_cpus+' CPU / '+
+            available.evaluator_reserved_ram_mb+' MiB RAM '+
+            '(excluded from new machine admission; existing claims unchanged)';
+    }
     function placementObservedLoad(place) {
         if(!place.capacity_fits)return '';
         if(place.suggested_gpus?.length===1) {
@@ -6281,7 +6293,7 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-placements',(data.placements||[]).map(p=>
                 p.machine_name+': '+(p.capacity_fits?'Advisory capacity fits':'Unavailable')+
                 (p.suggested_gpus?.length?' · GPUs '+p.suggested_gpus.join(', '):'')+
-                placementObservedLoad(p)+
+                placementObservedLoad(p)+evaluatorAdmissionLabel(p)+
                 (p.observed_headroom_block?' · Current Start blocked: '+p.observed_headroom_block:'')+
                 ' — '+p.reason
             ).join('\n')||'No registered machines.');
@@ -6397,7 +6409,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?p.machine_name+(p.suggested_gpus.length
                         ?' · '+p.suggested_gpus.join(', '):'')
                     :'No fit')+
-                placementObservedLoad(p)+
+                placementObservedLoad(p)+evaluatorAdmissionLabel(p)+
                 (p.observed_headroom_block?' · Current Start blocked: '+p.observed_headroom_block:'')+
                 ' — '+p.reason
             ).join('\n')||'No workloads entered. No changes made.');
