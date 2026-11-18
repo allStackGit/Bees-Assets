@@ -3508,30 +3508,46 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Local progress unavailable: '+live.progress_issue;
         return job.dispatch_id?'Awaiting trusted project summary':'—';
     }
-    function setEvaluationEditor(policy) {
+    function refreshEvaluationEditor() {
+        const monitor=$('hub-evaluation-mode').value==='monitor';
+        $('hub-evaluation-rate-label').hidden=monitor;
+        $('hub-evaluation-rate').disabled=monitor;
+    }
+    function setEvaluationEditor(policy=null,monitor=policy==null) {
         const multi=policy?.all_of||null;
+        $('hub-evaluation-mode').value=monitor?'monitor':'stop';
         $('hub-evaluation-suite').value=multi?'':policy?.suite_id??'';
         $('hub-evaluation-digest').value=multi?'':policy?.suite_sha256??'';
         $('hub-evaluation-trials').value=multi?'':policy?.min_trials??'';
         $('hub-evaluation-rate').value=multi?'':policy?.min_success_rate??'';
         $('hub-evaluation-all-of').value=multi?JSON.stringify(multi,null,2):'';
+        refreshEvaluationEditor();
     }
+    $('hub-evaluation-mode').addEventListener('change',refreshEvaluationEditor);
     function evaluationFromEditor() {
+        const monitor=$('hub-evaluation-mode').value==='monitor';
         const suite=$('hub-evaluation-suite').value.trim();
         const digest=$('hub-evaluation-digest').value.trim();
         const trials=$('hub-evaluation-trials').value;
-        const rate=$('hub-evaluation-rate').value;
+        const rate=monitor?'':$('hub-evaluation-rate').value;
         const allOf=$('hub-evaluation-all-of').value.trim();
+        let policy=null;
         if(allOf) {
             if(suite||digest||trials||rate)
                 throw Error('Choose either the single-suite fields or all-required-suites JSON.');
-            return {all_of:JSON.parse(allOf)};
+            policy={all_of:JSON.parse(allOf)};
+            if(monitor&&(!Array.isArray(policy.all_of)||
+                policy.all_of.some(rule=>Object.hasOwn(rule,'min_success_rate'))))
+                throw Error('Monitoring-only suites do not use success thresholds.');
+        }else if(suite||digest||trials||rate) {
+            if(!suite||!trials||(!monitor&&(!rate||Number(rate)<=0)))
+                throw Error('Enter a suite ID and minimum trials; Stop mode also requires a success rate greater than zero.');
+            policy={suite_id:suite,min_trials:Number(trials),
+                ...(digest?{suite_sha256:digest}:{}),
+                ...(!monitor?{min_success_rate:Number(rate)}:{})};
         }
-        if(!suite&&!digest&&!trials&&!rate)return null;
-        if(!suite||!trials||!rate||Number(rate)<=0)
-            throw Error('Enter an approved suite ID, minimum trials, and a success rate greater than zero.');
-        return {suite_id:suite,min_trials:Number(trials),min_success_rate:Number(rate),
-            ...(digest?{suite_sha256:digest}:{})};
+        return {evaluation_monitor:monitor?policy:null,
+            evaluation_stop:monitor?null:policy};
     }
     // New jobs inherit a project-specific measurement priority, not a claim
     // that every candidate metric is available in every worker version.
@@ -3896,7 +3912,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tinyBrainsThreads.value=c.parameters.threads??'';
                 tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
                     ?c.parameters.device:'';
-                setEvaluationEditor(c.evaluation_stop);
+                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor));
                 syncTinyBrainsEditor(c.parameters);
                 renderDesignEditor(true);
                 $('hub-config-save').textContent='Save revision';
@@ -3909,7 +3925,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tinyBrainsThreads.value=c.parameters.threads??'';
                 tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
                     ?c.parameters.device:'';
-                setEvaluationEditor(c.evaluation_stop);
+                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor));
                 syncTinyBrainsEditor(c.parameters);
                 renderDesignEditor(true);
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
@@ -5288,7 +5304,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 project_id:project,
                 name:$('hub-config-name').value,
                 parameters:readDesignControls(),
-                ...(project!=='bees'?{evaluation_stop:evaluationFromEditor()}:{}),
+                ...(project!=='bees'?evaluationFromEditor():{}),
             });
             editing={id:saved.id,revision:saved.revision};
             feedback('hub-config-message','Saved revision '+saved.revision+'. No training scheduled.');
