@@ -692,6 +692,8 @@ impl NativePolicyOnlyMetadata {
                             self.scripted_counts.bombing_nearest_commands_started += 1,
                         NativeScriptedOrder::ChargeNearest =>
                             self.scripted_counts.charge_nearest_commands_started += 1,
+                        NativeScriptedOrder::Scouting { .. } =>
+                            self.scripted_counts.scouting_commands_started += 1,
                         _ => {}
                     }
                     started += 1;

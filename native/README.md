@@ -66,7 +66,15 @@ and Fire Barge/Fire Tank (types 10/22) fleets issue authentic Charge and
 BombingRun special-weapon orders against live nearest opposing squads. They
 share the actual Bomb targeting, reservation, movement, contact and cooldown
 logic used by the player and headless learner, without generic projectiles.
-An unavailable nearest-target special retries after one simulated second. `--fog`, `--empty-map`, `--minutes`,
+An unavailable nearest-target special retries after one simulated second.
+Source Scouts now issue genuine Scouting commands with their captured
+Squad.MaxSight, making reconnaissance, discovery and eligible Beacon drops
+part of native AI battles. A live Carrier remains a rearming platform while
+its authored Striker children run the shared BombingRun; stationary Queens
+remain protected while their original wave/minion timers keep spawning.
+These roles also carry into the matching headless MA-POCA scenario: ships
+with source-supported policy actors use policy input, while the remaining
+non-policy squads retain the same authored native script ownership. `--fog`, `--empty-map`, `--minutes`,
 and `--spacing` are supported. `--source-scene` and
 `--source-run` allow a larger native-authored arena or other verified
 archetypes without Unity. The default catalogue uses the existing

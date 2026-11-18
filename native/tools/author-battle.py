@@ -387,6 +387,23 @@ def author(args) -> tuple[dict, dict, dict]:
             example = members[0]
             if example["base_speed"] == 0:
                 orders = [{"kind": "hold"}]
+            elif example["ship_type"] == 18 and example.get("special", {}).get("kind") == "scout":
+                # ScoutingRun alone owns source exploration, discovery and
+                # ten-second Scout Beacon timers. Derive Squad.MaxSight from
+                # the actual authored members, never from nominal ship type.
+                sights = [ship["sight"]["source_sight"] for ship in members]
+                if any(not isinstance(value, (int, float)) or
+                       not math.isfinite(value) or value < 0 for value in sights):
+                    raise ValueError("scouting AI requires authored finite member sight ranges")
+                orders = [{"kind": "scouting",
+                           "max_sight": max(sights),
+                           "human_side": scene["human_side"]}]
+            elif example["ship_type"] in (5, 17):
+                # A Carrier is a live return/rearm platform for its Striker
+                # children, while the Queen owns a timed minion wave. Neither
+                # should suicide into the enemy start when it has no weapon.
+                # Their real specials continue updating in CombatWorld.
+                orders = [{"kind": "hold"}]
             elif (example["ship_type"] in (4, 9) and
                   scene.get("activate_mining") and scene.get("mining_asteroids")):
                 # The source Mining command already owns real ore extraction,
@@ -403,11 +420,9 @@ def author(args) -> tuple[dict, dict, dict]:
                 if (example.get("special_weapon") and example["ship_type"] == 0):
                     combat_order = "charge_nearest"
                 elif (example.get("special_weapon") and
-                      example["ship_type"] in (10, 22)):
+                      example["ship_type"] in (10, 19, 22)):
                     combat_order = "bombing_nearest"
                 else:
-                    # Linked carrier children retain their parent-driven
-                    # special lifetimes; their scripted order stays generic.
                     combat_order = "aggressive_nearest"
                 if (example["ship_type"] != 2 and
                         any(kind == 2 for kind, _ in requested[side])):

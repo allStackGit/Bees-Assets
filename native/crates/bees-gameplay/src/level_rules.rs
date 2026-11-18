@@ -238,6 +238,8 @@ pub struct NativeScriptedQueueMeasurements {
     /// Live special-weapon commands issued to a real enemy lifetime.
     pub bombing_nearest_commands_started: u64,
     pub charge_nearest_commands_started: u64,
+    /// Real source scouting commands, including Beacon-capable scouts.
+    pub scouting_commands_started: u64,
     /// Resource-starved dynamic orders deferred for one source second.
     pub dynamic_order_retries: u64,
     /// Authenticated source command had no current actionable target.
@@ -266,6 +268,7 @@ impl NativeScriptedQueueMeasurements {
         self.healing_available_commands_started += other.healing_available_commands_started;
         self.bombing_nearest_commands_started += other.bombing_nearest_commands_started;
         self.charge_nearest_commands_started += other.charge_nearest_commands_started;
+        self.scouting_commands_started += other.scouting_commands_started;
         self.dynamic_order_retries += other.dynamic_order_retries;
         self.orders_skipped_unavailable += other.orders_skipped_unavailable;
         self.queues_completed += other.queues_completed;
