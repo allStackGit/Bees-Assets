@@ -134,6 +134,7 @@ class IndependentEvaluationRows(SelectedObservationRows):
 
     def __init__(self, job_id: str, project: str, writer) -> None:
         super().__init__(job_id, project, None, writer)
+        self.missing_coordinates = 0
 
     def _line(self, raw: bytes) -> None:
         if len(raw) > 65536:
@@ -151,8 +152,10 @@ class IndependentEvaluationRows(SelectedObservationRows):
         shared = (
             self.job_id, self.project, row.get("observed_at"),
             row.get("evaluated_at"), row.get("attempted_at"),
-            row.get("steps_completed"), row.get("suite_id"),
-            row.get("suite_sha256"), row.get("runtime_sha256"),
+            row.get("steps_completed"),
+            ("recorded" if type(row.get("steps_completed")) is int
+             else "unreported" if status == "complete" else "not_scored"),
+            row.get("suite_id"), row.get("suite_sha256"), row.get("runtime_sha256"),
             row.get("checkpoint_sha256"), row.get("dispatch_id"), status,
         )
         provenance = (
@@ -179,11 +182,14 @@ class IndependentEvaluationRows(SelectedObservationRows):
         trials, successes = row.get("trials"), row.get("successes")
         if (type(trials) is not int or type(successes) is not int or
                 not 1 <= trials <= 1000000 or not 0 <= successes <= trials or
-                type(row.get("steps_completed")) is not int or
-                row["steps_completed"] < 0 or
+                (row.get("steps_completed") is not None and
+                 (type(row["steps_completed"]) is not int or
+                  row["steps_completed"] < 0)) or
                 not re.fullmatch(r"[0-9a-f]{64}", str(row.get("suite_sha256", ""))) or
                 not re.fullmatch(r"[0-9a-f]{64}", str(row.get("checkpoint_sha256", "")))):
             raise ValueError("Incomplete independent checkpoint evaluation identity")
+        if row.get("steps_completed") is None:
+            self.missing_coordinates += 1
         write("success_rate", successes / trials, "ratio")
         metrics = row.get("metrics") or {}
         if not isinstance(metrics, dict):
@@ -489,6 +495,7 @@ def export(spec: dict, output: Path) -> dict:
         evaluation_rows = 0
         evaluation_sources = 0
         partial_evaluation_files = 0
+        missing_evaluation_coordinates = 0
         evaluation_path = None
         evaluation_stream = None
         evaluation_writer = None
@@ -501,7 +508,8 @@ def export(spec: dict, output: Path) -> dict:
             evaluation_writer = csv.writer(evaluation_stream)
             evaluation_writer.writerow((
                 "job_id", "project_id", "observed_at", "evaluated_at",
-                "attempted_at", "steps_completed", "suite_id", "suite_sha256",
+                "attempted_at", "steps_completed", "coordinate_status",
+                "suite_id", "suite_sha256",
                 "runtime_sha256", "checkpoint_sha256", "dispatch_id",
                 "evaluation_status", "trials", "successes", "metric", "value",
                 "unit", "source_kind", "source_report_sha256",
@@ -626,6 +634,7 @@ def export(spec: dict, output: Path) -> dict:
                 if isinstance(observer, IndependentEvaluationRows):
                     evaluation_sources += 1
                     evaluation_rows += observer.rows
+                    missing_evaluation_coordinates += observer.missing_coordinates
                     partial_evaluation_files += int(observer.finish())
                 elif observer is not None:
                     observation_sources += 1
@@ -656,6 +665,9 @@ def export(spec: dict, output: Path) -> dict:
         manifest["independent_evaluation_csv_rows"] = evaluation_rows
         manifest["independent_evaluation_source_files"] = evaluation_sources
         manifest["incomplete_evaluation_lines"] = partial_evaluation_files
+        manifest["independent_evaluation_missing_checkpoint_coordinates"] = (
+            missing_evaluation_coordinates
+        )
         manifest["independent_evaluation_csv_scope"] = (
             "complete archived checkpoint receipts and non-scoring diagnostic events; "
             "one row per validated outcome, including a measured success rate"
