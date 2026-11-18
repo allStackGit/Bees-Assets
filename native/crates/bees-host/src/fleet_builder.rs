@@ -641,19 +641,6 @@ pub(super) fn archive(
         run["timing_sample_period"] = json!(32);
         run["status_every_rounds"] = json!(2_000);
         run["physics_workers"] = json!(selected.benchmark_workers);
-        // The source physical scene and scripted actions are identical
-        // in every independent arena; only world identity and RNG seed
-        // differ. Native Simulation already owns persistent work-stealing
-        // CPU workers and correct Stage squad-ID remapping.
-        let original = run["levels"][0].clone();
-        run["levels"] = Value::Array((0..selected.benchmark_worlds)
-            .map(|index| {
-                let mut level = original.clone();
-                level["world_id"] = json!(index as u64 + 1);
-                level["level_id"] = json!(index as i64 + 1);
-                level["seed"] = json!(347_u64 + (index as u64) * 1_009);
-                level
-            }).collect());
     }
     // AI squads use the ordinary source command director and target real
     // opposing SquadLifetimes, not an approximate trainer-only opponent.
@@ -703,6 +690,22 @@ pub(super) fn archive(
         }
     }
     run["levels"][0]["scripted_queues"] = json!(queues);
+    if selected.ai_both {
+        // Every independent World must have the same fully authored AI
+        // commands, physical hulls and objectives. Fan out only AFTER
+        // queues are installed; otherwise all but World 1 become idle
+        // and an apparent SPS improvement measures no meaningful combat.
+        // The native runtime remaps per-World Stage squad lifetimes.
+        let original = run["levels"][0].clone();
+        run["levels"] = Value::Array((0..selected.benchmark_worlds)
+            .map(|index| {
+                let mut level = original.clone();
+                level["world_id"] = json!(index as u64 + 1);
+                level["level_id"] = json!(index as i64 + 1);
+                level["seed"] = json!(347_u64 + (index as u64) * 1_009);
+                level
+            }).collect());
+    }
     let scene_path = parent.join("replay-source-scene.json");
     let run_path = parent.join("replay-source-run.json");
     write_json_new(&scene_path, &scene)?;
