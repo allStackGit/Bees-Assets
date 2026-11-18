@@ -353,8 +353,7 @@ impl GameQueenSpawn {
         if weapon.slot >= 5 || weapon.weapon_id != 0 ||
             weapon.charge_range.is_some() ||
             (require_observation && (weapon.observation.is_none() ||
-                minion.observed_weapon_type.is_none() ||
-                minion.max_living_ships_per_side.is_none())) ||
+                minion.observed_weapon_type.is_none())) ||
             minion.observed_weapon_type.is_some_and(|kind| kind != 0) ||
             !offset.is_finite() || sight.source_sight < 0 ||
             sight.effective_range < 0 || sight.trigger_range < 0 ||
@@ -778,8 +777,12 @@ impl NativePhysicalScene {
                             refill_distance: *refill_distance,
                         },
                     }),
+                // Queen minion observation belongs to its own authored
+                // policy controller, not to an unrelated policy on the
+                // opposing faction (or a different fleet squad). An
+                // ordinary Queen keeps its original game command owner.
                 Some(GameShipSpecial::Queen { spawn }) if ship.ship_type == 17 =>
-                    Some(spawn.clone().into_native(catalog, has_agents)?),
+                    Some(spawn.clone().into_native(catalog, ship.policy.is_some())?),
                 Some(GameShipSpecial::Scout { enabled, beacon }) if ship.ship_type == 18 => {
                     if beacon.health <= 0 || beacon.original_health < beacon.health ||
                         beacon.max_tsv < 0 || !beacon.size_class.is_finite() ||
