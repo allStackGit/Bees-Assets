@@ -253,7 +253,14 @@ other reinforcements retain their existing scripted commands. Both factions
 must still have a deploy-time independent policy participant at tick zero.
 Each deferred agent preserves its authored model/team identity, remains
 absent from the reward group until physical arrival, and joins the ordinary
-fixed-step training/trajectory pipeline afterward. Without the flag,
+fixed-step training/trajectory pipeline afterward. The native journal now
+records each real late enrollment and retirement; the MA-POCA learner
+reconstructs those ships' independently phased decision intervals and
+group rewards, rather than incorrectly requiring future participants at
+tick zero. The original fixed-cohort learner path is unchanged. Retired
+Queen child inference routes are reclaimed after their terminal boundary
+is delivered, while their episode group/reward identities remain durable.
+Without the flag,
 trainable authoring continues to leave all reinforcements scripted. The initializer
 uses the existing checkpoint serializer, pinned holdout evaluation,
 multi-round optimizer, resumable lineage and optional Experiment Hub
