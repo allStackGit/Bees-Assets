@@ -9,6 +9,7 @@ const POST_ACTIONS={
     '/api/hub/projects':[201,'addProject'],
     '/api/hub/projects/metric-defaults':[200,'setProjectMetricDefaults'],
     '/api/hub/projects/evaluation-defaults':[200,'setProjectEvaluationDefaults'],
+    '/api/hub/evaluation/historical':[201,'importHistoricalEvaluation'],
     '/api/hub/configurations':[200,'saveConfiguration'],
     '/api/hub/machines':[201,'addMachine'],
     '/api/hub/machines/budget':[200,'updateMachineBudget'],
@@ -75,9 +76,11 @@ function route(hub,method,pathname,query,value,bees) {
         if(pathname==='/api/hub/progress')
             return {status:200,data:hub.progressComparison(query.get('project_id'))};
         if(pathname==='/api/hub/state')
-            return {status:200,data:{...hub.snapshot(),bees:bees||{
-                active_id:null,queue_armed:false,runs:[],
-            }}};
+            return {status:200,data:{...hub.snapshot(),
+                historical_evaluation_jobs:hub.historicalEvaluations(),
+                bees:bees||{
+                    active_id:null,queue_armed:false,runs:[],
+                }}};
         if(pathname==='/api/hub/placements') {
             const snapshot=hub.snapshot();
             const gpus=(query.get('gpus')||'').split(',').filter(Boolean);

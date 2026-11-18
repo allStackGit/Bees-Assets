@@ -2031,10 +2031,22 @@ class ExperimentHub {
         return snapshot.jobs.some(job=>
             finalEvaluationPending(snapshot,job,observedAt));
     }
+    // Historical audits are read-only comparison sources, not native jobs.
+    // Keep them out of lifecycle, scheduling, reservation and promotion state.
+    historicalEvaluations() {
+        return this.evaluationHistory.historicalJobs();
+    }
+    importHistoricalEvaluation(value) {
+        if(!value||value.project_id!=='tinybrains'||
+            !this.state.projects.some(p=>p.id==='tinybrains'))
+            throw Error('Historical evaluation imports require a registered TinyBrains project.');
+        return this.evaluationHistory.importHistorical(value,this.state.jobs.map(j=>j.id));
+    }
     progressComparison(projectId) {
         this.project(projectId);
         const chart=this.progressHistory.snapshot(projectId,this.state.jobs);
-        const evaluations=this.evaluationHistory.snapshot(projectId,this.state.jobs);
+        const comparisonJobs=[...this.state.jobs,...this.historicalEvaluations()];
+        const evaluations=this.evaluationHistory.snapshot(projectId,comparisonJobs);
         return {...chart,evaluations:evaluations.samples,
             evaluation_storage_warning:evaluations.storage_warning};
     }
