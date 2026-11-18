@@ -23,6 +23,8 @@ const JOB_FIELDS=[
     'evaluation_regression_stop_evidence','evaluation_candidates',
     'last_evaluation','final_progress','final_resource_usage',
     'execution_diagnostic','native_bees_run_id',
+    // Historical audits are read-only comparison sources, never native jobs.
+    'evaluation_history_only','source_report_sha256','source_suites',
 ];
 // Exported job metadata is operator-readable but can leave the machine when
 // downloaded. Never copy credential-like configuration fields verbatim.
@@ -196,7 +198,12 @@ class JobExporter {
         if(typeof python!=='string'||!python.trim())
             throw Error('A trusted Python interpreter is required for ZIP export.');
         const snapshot=legacy?{jobs:this.legacyBees.jobs()}:this.hub.snapshot();
-        const available=new Map(snapshot.jobs.filter(job=>job.project_id===project)
+        const historical=legacy||project!=='tinybrains'?[]:
+            this.hub.historicalEvaluations();
+        if(historical.some(job=>snapshot.jobs.some(native=>native.id===job.id)))
+            throw Error('Historical audit identity conflicts with a native job.');
+        const available=new Map([...snapshot.jobs,...historical]
+            .filter(job=>job.project_id===project)
             .map(job=>[job.id,job]));
         const jobs=value.job_ids.map(id=>{
             const job=available.get(id);
@@ -211,7 +218,8 @@ class JobExporter {
         // Each mounted root is keyed by an already assigned machine and a
         // trusted project ID. Job IDs are UUIDs from the Hub registry, never
         // arbitrary caller path components.
-        const mounted=legacy?[]:jobs.flatMap(job=>{
+        const mounted=legacy?[]:jobs.filter(job=>
+            !job.evaluation_history_only).flatMap(job=>{
             const machine=Object.hasOwn(configured.machineRoots,
                 job.assigned_machine_id)
                 ?configured.machineRoots[job.assigned_machine_id]:null;
@@ -230,6 +238,7 @@ class JobExporter {
         // source for machine-owned text histories. Do not mistake mere
         // Hub heartbeat observations for project-owned artifacts.
         const mirrored=legacy?[]:jobs.filter(job=>
+            !job.evaluation_history_only&&
             !mounted.some(item=>item.job_id===job.id)).flatMap(job=>{
             const folder=path.join(this.dataRoot,'hub-remote-artifacts',job.id);
             if(!fs.existsSync(folder))return [];
@@ -252,7 +261,8 @@ class JobExporter {
         // Include its coordinator-received observations in the learner export,
         // even when no worker-local log directory is mounted. All IDs are
         // frozen Hub UUIDs, not browser-supplied filesystem paths.
-        const linkedCollectorSources=legacy?[]:jobs.flatMap(selected=>{
+        const linkedCollectorSources=legacy?[]:jobs.filter(job=>
+            !job.evaluation_history_only).flatMap(selected=>{
             const learner=snapshot.jobs.find(job=>
                 job.id===selected.id&&job.project_id==='tinybrains'&&
                 job.distributed_rollout_managed===true);
@@ -337,10 +347,16 @@ class JobExporter {
                     },{
                         job_id:job.id,label:'hub-host-observations',
                         path:hostFile,
-                    },...(job.evaluation_monitor||job.evaluation_stop?[{
+                    },...(job.evaluation_history_only||
+                        job.evaluation_monitor||job.evaluation_stop?[{
                         job_id:job.id,label:'hub-evaluations',
                         path:path.join(this.dataRoot,'hub-evaluations-v1',
                             job.id+'.jsonl'),
+                    }]:[]),
+                    ...(job.evaluation_history_only?[{
+                        job_id:job.id,label:'hub-historical-source',
+                        path:path.join(this.dataRoot,'hub-evaluations-v1',
+                            job.id+'.historical.json'),
                     }]:[])];
                 }),...linkedCollectorSources,...mounted,...mirrored],
         }),{flag:'wx',mode:0o600});
