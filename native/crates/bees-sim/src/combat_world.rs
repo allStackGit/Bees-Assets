@@ -818,6 +818,7 @@ pub struct CombatWorld {
     pending_player_scout_beacons: Vec<i64>,
     navigation_requests: NavigationRequests,
     game_ship_steering: HashMap<i64, GameShipSteering>,
+    ship_bounds_overrides: HashSet<i64>,
     map_border_measurements: GameMapBorderMeasurements,
     /// The Level-owned policy controller stores actual ongoing action
     /// state for each bound ship; no secondary training-only movement world.
@@ -1022,6 +1023,7 @@ impl CombatWorld {
             pending_player_scout_beacons: Vec::new(),
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
+            ship_bounds_overrides: HashSet::new(),
             map_border_measurements: GameMapBorderMeasurements::default(),
             policy_ship_runtime: BTreeMap::new(),
             ship_weapons: BTreeMap::new(),
@@ -1304,6 +1306,7 @@ impl CombatWorld {
             attacker != victim_id && victim != victim_id);
         self.navigation_requests.retire_ship(victim_id);
         self.game_ship_steering.remove(&victim_id);
+        self.ship_bounds_overrides.remove(&victim_id);
         self.pending_game_point_orders.remove(&victim_id);
         self.latest_game_point_orders.remove(&victim_id);
         self.asteroid_navigation_refresh.remove(&victim_id);
@@ -1815,6 +1818,21 @@ impl CombatWorld {
         let controller = GameShipSteering::new(profile)
             .ok_or(CombatWorldError::InvalidGameMovementProfile)?;
         self.game_ship_steering.insert(ship_id, controller);
+        Ok(())
+    }
+
+    /// Persistent source Ship.CanOverrideBounds must be supplied by the
+    /// Level, independently of active specials or transient point orders.
+    pub fn configure_ship_bounds_override(
+        &mut self, ship_id: i64, enabled: bool,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        if enabled { self.ship_bounds_overrides.insert(ship_id); }
+        else { self.ship_bounds_overrides.remove(&ship_id); }
         Ok(())
     }
 
@@ -3643,8 +3661,9 @@ impl CombatWorld {
                 .is_some_and(|steering| steering.has_direction_order()) {
                 continue;
             }
-            if self.game_barge_charges.get(&contact.ship_id)
-                .is_some_and(|charge| charge.can_override_bounds) ||
+            if self.ship_bounds_overrides.contains(&contact.ship_id) ||
+                self.game_barge_charges.get(&contact.ship_id)
+                    .is_some_and(|charge| charge.can_override_bounds) ||
                 self.game_barge_player_config.get(&contact.ship_id)
                     .is_some_and(|&(_, can_override)| can_override) {
                 self.map_border_measurements.override_skips += 1;
@@ -3677,8 +3696,9 @@ impl CombatWorld {
                 !self.physics.ships()[index].active {
                 continue;
             }
-            if self.game_barge_charges.get(&id)
-                .is_some_and(|charge| charge.can_override_bounds) ||
+            if self.ship_bounds_overrides.contains(&id) ||
+                self.game_barge_charges.get(&id)
+                    .is_some_and(|charge| charge.can_override_bounds) ||
                 self.game_barge_player_config.get(&id)
                     .is_some_and(|&(_, can_override)| can_override) ||
                 self.latest_game_point_orders.get(&id)
