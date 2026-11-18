@@ -186,6 +186,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_rollout_saved_share',
             'training_rollout_compressed_collectors',
             'training_rollout_decompress_seconds',
+            'training_shared_last_wire_worker',
+            'training_shared_wire_gap_seconds',
+            'training_shared_postwire_tail_seconds',
+            'training_shared_wire_gap_work_share',
+            'training_shared_postwire_work_share',
+            'training_shared_postwire_pressure',
             'training_prev_rollout_compress_seconds',
             'training_prev_rollout_send_seconds',
             'training_ingestion_exposed_seconds',
@@ -979,6 +985,10 @@ class BottleneckEvidence {
             const exposed=seconds('training_ingestion_exposed_seconds');
             const copied=seconds('training_ingestion_copy_wall_seconds');
             const gap=seconds('training_shared_reply_gap_seconds');
+            const wireGap=seconds('training_shared_wire_gap_seconds');
+            const postwire=seconds('training_shared_postwire_tail_seconds');
+            const wireOwner=metrics.training_shared_last_wire_worker?.value;
+            const decodedOwner=metrics.training_shared_last_reply_worker?.value;
             const count=metrics.training_ingestion_peak_parallel_copies;
             const measured=(collection!==null&&optimization!==null&&
                 collection<=wall*1.02&&optimization<=wall*1.02&&
@@ -988,14 +998,27 @@ class BottleneckEvidence {
                 count.value<=metrics.training_collector_workers.value);
             const exposedShare=measured?exposed/wall:null;
             const gapShare=gap!==null&&gap<=wall?gap/wall:null;
+            const wireShare=wireGap!==null&&wireGap<=wall?wireGap/wall:null;
+            const postwireShare=postwire!==null&&postwire<=collection
+                ?postwire/wall:null;
+            if(wireShare!==null)
+                add('training_shared_wire_gap_work_share',wireShare);
+            if(postwireShare!==null)
+                add('training_shared_postwire_work_share',postwireShare);
             if(exposedShare!==null)
                 add('training_shared_ingestion_work_share',exposedShare);
             if(gapShare!==null)
                 add('training_shared_reply_gap_work_share',gapShare);
             const ingestionDelay=exposedShare!==null&&
                 exposedShare>=0.20&&exposed>=0.25;
-            const slowReply=gapShare!==null&&gapShare>=0.25&&
-                gap>=0.25&&(exposedShare===null||exposedShare<=0.10);
+            // A late DECODED packet can be late because the learner is
+            // busy unpickling, even if bytes arrived first. Only confirmed
+            // learner-clock last-wire gaps support a remote-completion tail.
+            const slowReply=wireShare!==null&&wireShare>=0.25&&
+                wireGap>=0.25&&wireOwner===decodedOwner&&
+                (exposedShare===null||exposedShare<=0.10);
+            const postwirePressure=postwireShare!==null&&
+                postwireShare>=0.20&&postwire>=0.25;
             const collectionDominant=measured&&collection>=0.70*wall&&
                 optimization<=0.30*wall;
             const optimizationDominant=measured&&optimization>=0.70*wall&&
@@ -1005,6 +1028,7 @@ class BottleneckEvidence {
                 prior.samples.push({at,resourceHints,
                     sharedIngestion:ingestionDelay,
                     sharedReply:slowReply,
+                    sharedPostwire:postwirePressure,
                     sharedCollection:collectionDominant,
                     sharedOptimization:optimizationDominant});
                 if(prior.samples.length>8)prior.samples.shift();
@@ -1019,6 +1043,8 @@ class BottleneckEvidence {
                     add('training_shared_ingestion_pressure',1,'count');
                 if(sustained(x=>x.sharedReply))
                     add('training_shared_collector_wait_pressure',1,'count');
+                if(sustained(x=>x.sharedPostwire))
+                    add('training_shared_postwire_pressure',1,'count');
                 if(sustained(x=>x.sharedCollection))
                     add('training_shared_collection_dominant',1,'count');
                 if(sustained(x=>x.sharedOptimization))
