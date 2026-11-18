@@ -388,7 +388,10 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          early_stop_minimum_extra_victories: int,
                          resume: bool = False,
                          self_play_opponent_slot: int | None = None,
-                         self_play_refresh_every: int | None = None) -> None:
+                         self_play_refresh_every: int | None = None,
+                         library_save_root: Path | None = None,
+                         library_game_id: str | None = None,
+                         library_game_title: str | None = None) -> None:
     """Hand freshly verified artifacts to the one existing native trainer.
 
     The session has its own immutable recipe, model lineage, round receipts
@@ -453,6 +456,13 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
             "--early-stop-minimum-extra-victories",
             str(early_stop_minimum_extra_victories),
         ])
+    if library_save_root is not None:
+        command.extend([
+            "--library-save-root", str(library_save_root.resolve(strict=True)),
+            "--library-game-id", library_game_id,
+        ])
+        if library_game_title is not None:
+            command.extend(["--library-game-title", library_game_title])
     subprocess.run(command, cwd=ROOT, check=True)
 
 
@@ -536,7 +546,29 @@ def main() -> None:
                         help="minimum completed PPO rounds before early stopping")
     parser.add_argument("--early-stop-minimum-extra-victories", type=int, default=1,
                         help="minimum extra fixed-holdout wins qualifying as a learning improvement")
+    parser.add_argument("--library-save-root", type=Path,
+                        help="existing native game save directory for verified playable checkpoints")
+    parser.add_argument("--library-game-id",
+                        help="stable native game gallery identity across learner rounds")
+    parser.add_argument("--library-game-title",
+                        help="native game gallery title (default: native run ID)")
     args = parser.parse_args()
+    if (args.library_save_root is None) != (args.library_game_id is None):
+        parser.error("--library-save-root and --library-game-id must be used together")
+    if args.library_game_title is not None and args.library_game_id is None:
+        parser.error("--library-game-title requires --library-game-id")
+    if args.library_game_id is not None:
+        limit = 35 if args.holdout_worlds is not None or args.evaluation_run_config is not None else 40
+        if (args.train_rounds is None or
+                not 1 <= len(args.library_game_id) <= limit or
+                any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+                    for character in args.library_game_id) or
+                not args.library_save_root.is_dir()):
+            parser.error("gallery publication requires training, an existing save directory and valid native game ID")
+    if args.library_game_title is not None and (
+            not 1 <= len(args.library_game_title) <= 120 or
+            any(ord(character) < 32 for character in args.library_game_title)):
+        parser.error("gallery title must be 1..120 printable characters")
     custom_inputs = args.source_scene is not None and args.source_run is not None
     any_custom_input = args.source_scene is not None or args.source_run is not None
     if (args.scenario == "custom" and not custom_inputs) or (
@@ -728,6 +760,9 @@ def main() -> None:
             resume=args.resume and session.is_dir(),
             self_play_opponent_slot=args.self_play_opponent_slot,
             self_play_refresh_every=args.self_play_refresh_every,
+            library_save_root=args.library_save_root,
+            library_game_id=args.library_game_id,
+            library_game_title=args.library_game_title,
         )
 
 
