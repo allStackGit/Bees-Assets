@@ -18,10 +18,10 @@ function suiteIds(value) {
     return value.slice();
 }
 
-function command(file,args) {
+function command(file,args,timeout=1500) {
     const result=spawnSync(file,args,{
         shell:false,windowsHide:true,encoding:'utf8',
-        timeout:2500,maxBuffer:32768,
+        timeout,maxBuffer:32768,
     });
     if(result.error||result.status!==0||typeof result.stdout!=='string')
         throw Error(file+' service status unavailable.');
@@ -75,6 +75,10 @@ function linuxHealth(machine) {
         }
         if(fields.Id)details.set(fields.Id,fields);
     }
+    // A slow journal must not block the machine agent's 15-second native
+    // heartbeat. Capture at most one detailed failure per health sample;
+    // every failed unit still reports its systemd result and exit code.
+    let detailedJournalRemaining=1;
     return files.map(timer=>{
         const serviceName=timer.slice(0,-6)+'.service';
         const service=details.get(serviceName)||{};
@@ -85,7 +89,7 @@ function linuxHealth(machine) {
         const definition=/ \[suites:([a-z0-9_,-]+)\]$/.exec(service.Description||'');
         const configuredSuites=definition?suiteIds(definition[1].split(',')):null;
         let diagnostic=failed?('systemd evaluator result: '+service.Result):null;
-        if(failed) {
+        if(failed&&detailedJournalRemaining-->0) {
             // The dedicated evaluator writes bounded human-readable failures
             // to its own unit's journal; no training log or protected
             // repository path is read. Treat it as a diagnostic only.
@@ -93,7 +97,7 @@ function linuxHealth(machine) {
                 const lines=command('journalctl',[
                     '--user','-u',serviceName,'-n','24',
                     '--no-pager','-o','cat',
-                ]).split(/\r?\n/);
+                ],1000).split(/\r?\n/);
                 const failure=lines.reverse().find(line=>
                     /^Scheduled (TinyBrains|Courier) evaluation failed:/.test(line));
                 if(failure)diagnostic=failure;
@@ -140,6 +144,10 @@ function windowsHealth(machine,env) {
     if(files.length>MAX_SERVICES)
         throw Error('More than 16 Windows evaluator status files; reporting is incomplete.');
     const services=[];
+    // Query SCM state with a machine-wide deadline. Beyond it we retain
+    // useful persisted status files but report unknown live ownership.
+    // Sixteen wedged SCM queries must not prevent native Stop/Inspect polls.
+    const scmDeadline=Date.now()+3000;
     for(const name of files) {
         const serviceName=name.slice(0,-'.evaluation.json'.length);
         const file=path.join(root,name),entry=fs.lstatSync(file);
@@ -152,8 +160,10 @@ function windowsHealth(machine,env) {
             !['running','completed','failed'].includes(record.state))
             continue;
         let running=null;
-        try {
-            const output=command('sc.exe',['query',serviceName]);
+        const remaining=scmDeadline-Date.now();
+        if(remaining>100)try {
+            const output=command('sc.exe',['query',serviceName],
+                Math.min(750,remaining));
             const match=/STATE\s*:\s*([0-9]+)/i.exec(output);
             running=match?Number(match[1])===4:null;
         }catch { /* Missing SCM proof must not imply a running evaluator. */ }
