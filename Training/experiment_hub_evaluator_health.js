@@ -1,0 +1,149 @@
+'use strict';
+
+// Read-only machine-local evaluator scheduler observations. These are not
+// training ownership, evaluation receipts, or authorization to run jobs.
+const fs=require('node:fs');
+const path=require('node:path');
+const {spawnSync}=require('node:child_process');
+
+const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;
+const SERVICE=/^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$/;
+const MAX_SERVICES=16;
+
+function command(file,args) {
+    const result=spawnSync(file,args,{
+        shell:false,windowsHide:true,encoding:'utf8',
+        timeout:2500,maxBuffer:32768,
+    });
+    if(result.error||result.status!==0||typeof result.stdout!=='string')
+        throw Error(file+' service status unavailable.');
+    return result.stdout;
+}
+function instant(value) {
+    const at=Date.parse(value||'');
+    return Number.isFinite(at)?new Date(at).toISOString():null;
+}
+function linuxHealth(machine) {
+    // Query the systemd user manager; unit files need not be running to
+    // appear. Do not read user unit files or execute their commands.
+    const list=command('systemctl',[
+        '--user','list-unit-files','--type=timer','--no-legend',
+        '--no-pager','bees-experiment-hub-*-evaluator*.timer',
+    ]);
+    const regex=new RegExp('^bees-experiment-hub-(tinybrains|courier)-'+
+        machine+'-evaluator(?:-[a-z][a-z0-9_-]{0,31})?\\.timer$');
+    const files=list.split(/\r?\n/).map(line=>line.trim().split(/\s+/)[0])
+        .filter(name=>regex.test(name)).sort();
+    if(files.length>MAX_SERVICES)
+        throw Error('More than 16 evaluator timers; service health is incomplete.');
+    if(!files.length)return [];
+    const units=files.flatMap(timer=>[timer,timer.slice(0,-6)+'.service']);
+    const shown=command('systemctl',[
+        '--user','show','--no-pager',
+        '--property=Id,ActiveState,Result,ExecMainStatus,ExecMainExitTimestamp',
+        ...units,
+    ]);
+    const details=new Map();
+    for(const block of shown.trim().split(/\r?\n\r?\n/)) {
+        const fields={};
+        for(const line of block.split(/\r?\n/)) {
+            const i=line.indexOf('=');
+            if(i>0)fields[line.slice(0,i)]=line.slice(i+1);
+        }
+        if(fields.Id)details.set(fields.Id,fields);
+    }
+    return files.map(timer=>{
+        const serviceName=timer.slice(0,-6)+'.service';
+        const service=details.get(serviceName)||{};
+        const scheduler=details.get(timer)||{};
+        const exit=Number(service.ExecMainStatus);
+        const finished=instant(service.ExecMainExitTimestamp);
+        const failed=Boolean(service.Result&&service.Result!=='success');
+        return {
+            project:regex.exec(timer)[1],
+            unit:serviceName,
+            executor:'systemd-user',
+            service_state:service.ActiveState==='active'||
+                service.ActiveState==='activating'?'running':
+                service.ActiveState==='failed'?'failed':
+                service.ActiveState==='inactive'?'stopped':'unknown',
+            scheduler_state:scheduler.ActiveState==='active'?'active':
+                scheduler.ActiveState==='inactive'||
+                scheduler.ActiveState==='failed'?'inactive':'unknown',
+            last_result:failed?'failed':finished?'completed':'unknown',
+            last_exit_code:Number.isSafeInteger(exit)&&exit>=0&&exit<=255?exit:null,
+            last_finished_at:finished,
+            diagnostic:failed?('systemd evaluator result: '+service.Result).slice(0,160):null,
+        };
+    });
+}
+function windowsHealth(machine,env) {
+    // Windows evaluator services already publish a private, atomic status
+    // file. The SCM provides independent evidence that each service is
+    // presently running; an old "running" status file alone does not.
+    const supplied=env.EXPERIMENT_HUB_EVALUATOR_STATUS_ROOT;
+    if(!supplied)return [];
+    if(!path.isAbsolute(supplied)||supplied.startsWith('\\\\'))
+        throw Error('Evaluator status root must be an absolute local directory.');
+    const root=fs.realpathSync(supplied);
+    const stat=fs.lstatSync(root);
+    if(!stat.isDirectory()||stat.isSymbolicLink()||root.startsWith('\\\\'))
+        throw Error('Evaluator status root must be a local regular directory.');
+    const files=fs.readdirSync(root).filter(name=>
+        name.endsWith('.evaluation.json')&&
+        SERVICE.test(name.slice(0,-'.evaluation.json'.length))).sort();
+    if(files.length>MAX_SERVICES)
+        throw Error('More than 16 Windows evaluator status files; reporting is incomplete.');
+    const services=[];
+    for(const name of files) {
+        const serviceName=name.slice(0,-'.evaluation.json'.length);
+        const file=path.join(root,name),entry=fs.lstatSync(file);
+        if(!entry.isFile()||entry.isSymbolicLink()||entry.nlink!==1||
+            entry.size>8192||entry.size<1)
+            throw Error('Windows evaluator status file is unsafe or oversized.');
+        const record=JSON.parse(fs.readFileSync(file,'utf8'));
+        if(record.schema_version!==1||record.machine!==machine||
+            !['tinybrains','courier'].includes(record.project)||
+            !['running','completed','failed'].includes(record.state))
+            continue;
+        let running=null;
+        try {
+            const output=command('sc.exe',['query',serviceName]);
+            const match=/STATE\s*:\s*([0-9]+)/i.exec(output);
+            running=match?Number(match[1])===4:null;
+        }catch { /* Missing SCM proof must not imply a running evaluator. */ }
+        const completed=instant(record.finished_at);
+        const diagnostic=typeof record.diagnostic==='string'
+            ?record.diagnostic.slice(0,160):null;
+        services.push({
+            project:record.project,unit:serviceName,executor:'windows-service',
+            service_state:running===true?'running':
+                running===false?'stopped':'unknown',
+            scheduler_state:running===true?'active':
+                running===false?'inactive':'unknown',
+            last_result:record.state==='failed'?'failed':
+                record.state==='completed'?'completed':'unknown',
+            last_exit_code:Number.isSafeInteger(record.python_exit_code)&&
+                record.python_exit_code>=0&&record.python_exit_code<=255
+                ?record.python_exit_code:null,
+            last_finished_at:completed,
+            diagnostic,
+        });
+    }
+    return services;
+}
+function evaluatorHealth(machine,env=process.env,platform=process.platform) {
+    if(!MACHINE.test(machine))return {evaluator_services:[],
+        evaluator_service_issue:'Invalid evaluator machine identity.'};
+    try {
+        if(platform==='linux')
+            return {evaluator_services:linuxHealth(machine),evaluator_service_issue:null};
+        if(platform==='win32')
+            return {evaluator_services:windowsHealth(machine,env),evaluator_service_issue:null};
+        return {evaluator_services:[],evaluator_service_issue:'Evaluator status unsupported on this platform.'};
+    }catch(error) {
+        return {evaluator_services:[],evaluator_service_issue:
+            String(error.message||error).slice(0,160)};
+    }
+}
+module.exports={evaluatorHealth};
