@@ -2009,6 +2009,8 @@ class ExperimentHub {
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 ...(frozenSuite?{suite_sha256:frozenSuite}:{}),
                 ...(job.capacity_released_at?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
+                ...(job.capacity_released_at&&Number.isSafeInteger(job.final_progress?.steps_completed)
+                    ?{final_steps_completed:job.final_progress.steps_completed}:{}),
                 min_trials:rule.min_trials,
                 min_success_rate:job.evaluation_monitor?0:rule.min_success_rate,
                 ...(job.evaluation_monitor?{monitor_only:true}:{}),
