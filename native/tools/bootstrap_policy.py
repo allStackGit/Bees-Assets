@@ -7,6 +7,7 @@ neural architecture is involved. The completion receipt is written last.
 """
 
 import argparse
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
@@ -477,6 +478,55 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
     subprocess.run(command, cwd=ROOT, check=True)
 
 
+
+@contextmanager
+def exclusive_native_training_owner(output: Path):
+    """One live bootstrap/session writer per immutable model lineage.
+
+    A kernel-held lock releases on process exit, including power loss or a
+    crashed optimizer. Keep its inode across attempts: unlinking the file
+    would allow two processes to lock different inodes for the same model.
+    This guards BOTH atomic model bootstrap and all optimizer rounds, unlike
+    a lock acquired only after the model directory has been published.
+    """
+    if not output.parent.is_dir():
+        raise ValueError("native training output parent directory does not exist")
+    lock_path = output.parent / f".{output.name}.native-training.lock"
+    with lock_path.open("a+b") as owner:
+        if os.name == "nt":
+            import msvcrt
+            owner.seek(0)
+            if not owner.read(1):
+                owner.seek(0)
+                owner.write(b"\\0")
+                owner.flush()
+            owner.seek(0)
+            try:
+                msvcrt.locking(owner.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as error:
+                raise RuntimeError(
+                    f"native training model is already owned by another live process: {output}"
+                ) from error
+            try:
+                yield
+            finally:
+                owner.seek(0)
+                msvcrt.locking(owner.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            try:
+                fcntl.flock(owner.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                raise RuntimeError(
+                    f"native training model is already owned by another live process: {output}"
+                ) from error
+            try:
+                yield
+            finally:
+                fcntl.flock(owner.fileno(), fcntl.LOCK_UN)
+
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="new directory; existing paths are never overwritten")
@@ -743,73 +793,75 @@ def main() -> None:
         if not args.rollout_binary.resolve().is_file():
             parser.error("--rollout-binary must identify an existing executable")
     output = args.output.resolve()
-    if args.resume:
-        result = verified_existing_bootstrap(
-            output, args.seed, args.slots, args.scenario, args.episodes_per_world,
-            args.holdout_worlds, args.holdout_seed, args.holdout_episodes,
-            args.source_scene, args.source_run,
-        )
-    else:
-        if output.exists():
-            raise FileExistsError(
-                f"native bootstrap destination already exists: {output}; "
-                "use --resume only for completed bootstrap receipts"
-            )
-        if not output.parent.is_dir():
-            raise ValueError("native bootstrap output parent must already exist")
-        # Model initialization, ABI manifest generation and inference loading
-        # can each fail. Never expose a half-built run or checkpoint under
-        # the final experiment path. Stage on the same filesystem so the
-        # complete, fsynced directory is published with one atomic rename.
-        # All generated references are relative to the completed directory,
-        # and the resident model loader verifies them before publication.
-        with tempfile.TemporaryDirectory(
-            prefix=f".{output.name}.bootstrap-", dir=output.parent,
-        ) as temporary:
-            staged = Path(temporary) / "initialized"
-            result = bootstrap(
-                staged, args.trainer_config, args.seed, args.slots,
-                args.inference_device, args.cargo, args.scenario,
-                args.episodes_per_world, args.holdout_worlds,
-                args.holdout_seed, args.holdout_episodes,
+    owner = exclusive_native_training_owner(output) if args.train_rounds is not None else nullcontext()
+    with owner:
+        if args.resume:
+            result = verified_existing_bootstrap(
+                output, args.seed, args.slots, args.scenario, args.episodes_per_world,
+                args.holdout_worlds, args.holdout_seed, args.holdout_episodes,
                 args.source_scene, args.source_run,
             )
+        else:
             if output.exists():
                 raise FileExistsError(
-                    f"native bootstrap destination appeared during initialization: {output}"
+                    f"native bootstrap destination already exists: {output}; "
+                    "use --resume only for completed bootstrap receipts"
                 )
-            os.rename(staged, output)
-            sync_directory(output.parent)
-    print(json.dumps(result, sort_keys=True), flush=True)
-    if args.train_rounds is not None:
-        learner_slot = chosen_learner
-        session = output / "session"
-        if args.resume and session.exists() and not session.is_dir():
-            raise ValueError("existing native training session is not a directory")
-        run_training_session(
-            output, args.train_rounds, learner_slot,
-            args.rollout_worlds, args.rollout_workers,
-            args.physics_workers, args.torch_threads,
-            args.optimizer_device, args.rollout_binary,
-            args.distributed_plan, args.bundle_inbox,
-            args.bundle_archive_inbox,
-            args.bundle_receiver_listen,
-            args.collector_input_outbox,
-            args.hub_dispatch_plan, args.hub_dispatch_port,
-            args.hub_auto_worlds,
-            args.collector_timeout_seconds, args.auto_balance_collectors,
-            (output / "holdout-run.json" if args.holdout_worlds is not None
-             else args.evaluation_run_config),
-            args.evaluation_side, args.evaluation_policy_seed,
-            args.evaluation_every, args.early_stop_patience, args.early_stop_minimum_rounds,
-            args.early_stop_minimum_extra_victories,
-            resume=args.resume and session.is_dir(),
-            self_play_opponent_slot=args.self_play_opponent_slot,
-            self_play_refresh_every=args.self_play_refresh_every,
-            library_save_root=args.library_save_root,
-            library_game_id=args.library_game_id,
-            library_game_title=args.library_game_title,
-        )
+            if not output.parent.is_dir():
+                raise ValueError("native bootstrap output parent must already exist")
+            # Model initialization, ABI manifest generation and inference loading
+            # can each fail. Never expose a half-built run or checkpoint under
+            # the final experiment path. Stage on the same filesystem so the
+            # complete, fsynced directory is published with one atomic rename.
+            # All generated references are relative to the completed directory,
+            # and the resident model loader verifies them before publication.
+            with tempfile.TemporaryDirectory(
+                prefix=f".{output.name}.bootstrap-", dir=output.parent,
+            ) as temporary:
+                staged = Path(temporary) / "initialized"
+                result = bootstrap(
+                    staged, args.trainer_config, args.seed, args.slots,
+                    args.inference_device, args.cargo, args.scenario,
+                    args.episodes_per_world, args.holdout_worlds,
+                    args.holdout_seed, args.holdout_episodes,
+                    args.source_scene, args.source_run,
+                )
+                if output.exists():
+                    raise FileExistsError(
+                        f"native bootstrap destination appeared during initialization: {output}"
+                    )
+                os.rename(staged, output)
+                sync_directory(output.parent)
+        print(json.dumps(result, sort_keys=True), flush=True)
+        if args.train_rounds is not None:
+            learner_slot = chosen_learner
+            session = output / "session"
+            if args.resume and session.exists() and not session.is_dir():
+                raise ValueError("existing native training session is not a directory")
+            run_training_session(
+                output, args.train_rounds, learner_slot,
+                args.rollout_worlds, args.rollout_workers,
+                args.physics_workers, args.torch_threads,
+                args.optimizer_device, args.rollout_binary,
+                args.distributed_plan, args.bundle_inbox,
+                args.bundle_archive_inbox,
+                args.bundle_receiver_listen,
+                args.collector_input_outbox,
+                args.hub_dispatch_plan, args.hub_dispatch_port,
+                args.hub_auto_worlds,
+                args.collector_timeout_seconds, args.auto_balance_collectors,
+                (output / "holdout-run.json" if args.holdout_worlds is not None
+                 else args.evaluation_run_config),
+                args.evaluation_side, args.evaluation_policy_seed,
+                args.evaluation_every, args.early_stop_patience, args.early_stop_minimum_rounds,
+                args.early_stop_minimum_extra_victories,
+                resume=args.resume and session.is_dir(),
+                self_play_opponent_slot=args.self_play_opponent_slot,
+                self_play_refresh_every=args.self_play_refresh_every,
+                library_save_root=args.library_save_root,
+                library_game_id=args.library_game_id,
+                library_game_title=args.library_game_title,
+            )
 
 
 if __name__ == "__main__":
