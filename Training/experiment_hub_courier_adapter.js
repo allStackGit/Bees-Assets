@@ -15,6 +15,9 @@ const NVIDIA_UUID=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers','training_collector_workers',
+    'training_collector_probe_count',
+    'training_collector_probe_layout_changed',
+    'training_collector_resume_layout_restored',
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
     'training_rollout_compressed_collectors',
     'training_shared_last_reply_worker','training_shared_last_copy_worker',
@@ -124,6 +127,8 @@ function courierMetrics(source) {
     // optional per-lineage details. The append-only Courier event still
     // contains every original measurement for full native history.
     const primary=name=>name.startsWith('training_gpu_placement_')||
+        name.startsWith('training_collector_probe_')||
+        name==='training_collector_resume_layout_restored'||
         /^training_(?:gpu_forward_stream_|shared_gpu_forward_|gpu_input_slots_reused$|gpu_state_slots_reused$|gpu_policy_moves_skipped$|shared_gpu_input_reused$|shared_gpu_state_reused$)/.test(name)||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
@@ -143,6 +148,7 @@ function courierMetrics(source) {
             /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
+            /_probe_map_steps_per_second$/.test(name)?'rate':
             name.endsWith('_mb')?'mb':
             name==='training_gpu_snapshot_work_share'&&value>=0&&value<=1?'ratio':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
