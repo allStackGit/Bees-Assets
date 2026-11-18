@@ -152,6 +152,13 @@ impl NativeGroupRewardDelivery {
         Ok(())
     }
 
+    /// Constant-time membership check for the event journal's physical
+    /// admission receipt. No fabricated agent or team is accepted.
+    pub fn is_registered(&self, side: i32, agent: u64) -> bool {
+        self.sides.iter().position(|&value| value == side)
+            .is_some_and(|index| self.participants[index].contains(&agent))
+    }
+
     pub fn unregister_agent(
         &mut self, side: i32, agent: u64,
     ) -> Result<bool, GroupRewardError> {
