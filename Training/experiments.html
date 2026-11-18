@@ -873,6 +873,13 @@ label.hub-toggle-row > input[type="checkbox"] {
           <label id="hub-evaluation-minutes-label">Minimum elapsed minutes between completed evaluations (optional)
             <input id="hub-evaluation-minutes" type="number" min="1" max="10080" step="1" placeholder="No clock limit">
           </label>
+          <label id="hub-evaluation-cpus-label">Required independent evaluator CPU quota (optional)
+            <input id="hub-evaluation-cpus" type="number" min="1" max="64" step="1" placeholder="Set both CPU and RAM">
+          </label>
+          <label id="hub-evaluation-ram-label">Required independent evaluator RAM limit (MiB, optional)
+            <input id="hub-evaluation-ram" type="number" min="512" max="1048576" step="1" placeholder="Set both CPU and RAM">
+          </label>
+          <small class="muted wide">Evaluator resources are separate from the training job's CPU/RAM lease. An installed Linux systemd or Windows native evaluator service must provide at least these enforced limits. Missing or undersized evaluator services skip evaluation and report an issue; training continues.</small>
           <label id="hub-evaluation-baseline-label"><input id="hub-evaluation-baseline" type="checkbox" checked> Evaluate first available checkpoint (baseline)</label>
           <label id="hub-evaluation-final-label"><input id="hub-evaluation-final" type="checkbox" checked> Evaluate verified final checkpoint (if available)</label>
           <label id="hub-evaluation-regression-enable-label"><input id="hub-evaluation-regression-enable" type="checkbox"> Flag sustained regression in independent success rate (observation only)</label>

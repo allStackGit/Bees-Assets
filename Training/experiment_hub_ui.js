@@ -3837,6 +3837,10 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-frequency').disabled=!monitor;
         $('hub-evaluation-minutes-label').hidden=!monitor;
         $('hub-evaluation-minutes').disabled=!monitor;
+        for(const resource of ['cpus','ram']) {
+            $('hub-evaluation-'+resource+'-label').hidden=!monitor;
+            $('hub-evaluation-'+resource).disabled=!monitor;
+        }
         $('hub-evaluation-baseline-label').hidden=!monitor;
         $('hub-evaluation-final-label').hidden=!monitor;
         const regression=$('hub-evaluation-regression-enable');
@@ -3925,6 +3929,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-frequency').value=String(policy?.every_n_checkpoints??10);
         $('hub-evaluation-minutes').value=String(
             policy?.min_minutes_between_evaluations??'');
+        $('hub-evaluation-cpus').value=String(policy?.evaluator_resources?.cpus??'');
+        $('hub-evaluation-ram').value=String(policy?.evaluator_resources?.ram_mb??'');
         $('hub-evaluation-baseline').checked=policy?.include_baseline!==false;
         $('hub-evaluation-final').checked=policy?.include_final!==false;
         $('hub-evaluation-regression-enable').checked=Boolean(monitor&&policy?.regression_alert);
@@ -3953,6 +3959,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if(timeEntry&&(!Number.isSafeInteger(minMinutes)||
             minMinutes<1||minMinutes>10080))
             throw Error('Minimum evaluator spacing must be 1–10,080 minutes.');
+        const cpuEntry=monitor?$('hub-evaluation-cpus').value.trim():'';
+        const ramEntry=monitor?$('hub-evaluation-ram').value.trim():'';
+        if(Boolean(cpuEntry)!==Boolean(ramEntry))
+            throw Error('Enter both the evaluator CPU quota and RAM limit, or leave both blank.');
+        const evaluatorBudget=cpuEntry?{
+            cpus:Number(cpuEntry),ram_mb:Number(ramEntry),
+        }:null;
+        if(evaluatorBudget&&(!Number.isSafeInteger(evaluatorBudget.cpus)||
+            evaluatorBudget.cpus<1||evaluatorBudget.cpus>64||
+            !Number.isSafeInteger(evaluatorBudget.ram_mb)||
+            evaluatorBudget.ram_mb<512||evaluatorBudget.ram_mb>1048576))
+            throw Error('Evaluator quota requires 1–64 CPUs and 512–1,048,576 MiB RAM.');
         const rawRule=(suite,digest,trials,rate)=>{
             if(!suite&&!digest&&!trials&&!rate)return null;
             if(!suite||!trials||(stop&&(!rate||Number(rate)<=0)))
@@ -4020,6 +4038,7 @@ document.addEventListener('DOMContentLoaded', () => {
             regression.minimum_drop<=0||regression.minimum_drop>1))
             throw Error('Regression detection needs 2–20 checkpoints in each window and a drop threshold in (0, 1].');
         const options={
+            ...(evaluatorBudget?{evaluator_resources:evaluatorBudget}:{}),
             ...(minMinutes?{min_minutes_between_evaluations:minMinutes}:{}),
             ...(regression?{regression_alert:regression}:{}),
             ...(!$('hub-evaluation-baseline').checked?{include_baseline:false}:{}),
@@ -5017,6 +5036,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     (monitoring&&j.evaluation_monitor.min_minutes_between_evaluations
                         ?' · at least '+j.evaluation_monitor.min_minutes_between_evaluations+
                             ' minutes between completed evaluations':'')+
+                    (monitoring&&j.evaluation_monitor.evaluator_resources
+                        ?' · required evaluator quota '+
+                            j.evaluation_monitor.evaluator_resources.cpus+' CPU / '+
+                            j.evaluation_monitor.evaluator_resources.ram_mb+' MiB RAM':'')+
                     (monitoring&&j.evaluation_monitor.include_final===false
                         ?' · final checkpoint evaluation disabled':'');
                 details.append(description);
