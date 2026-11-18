@@ -17,7 +17,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers','training_collector_workers',
     'training_collector_probe_count',
     'training_collector_probe_layout_changed',
-    'training_collector_resume_layout_restored',
+    'training_collector_resume_restored',
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
     'training_rollout_compressed_collectors',
     'training_shared_last_reply_worker','training_shared_last_copy_worker',
@@ -128,7 +128,7 @@ function courierMetrics(source) {
     // contains every original measurement for full native history.
     const primary=name=>name.startsWith('training_gpu_placement_')||
         name.startsWith('training_collector_probe_')||
-        name==='training_collector_resume_layout_restored'||
+        name==='training_collector_resume_restored'||
         /^training_(?:gpu_forward_stream_|shared_gpu_forward_|gpu_input_slots_reused$|gpu_state_slots_reused$|gpu_policy_moves_skipped$|shared_gpu_input_reused$|shared_gpu_state_reused$)/.test(name)||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
