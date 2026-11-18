@@ -52,8 +52,9 @@ fn archived_battles(save_root: &Path) -> Result<Vec<(PathBuf, String)>, Box<dyn 
         if run["episodes_per_world"].as_u64() != Some(1) ||
             !run["run_id"].as_str().is_some_and(|id| id.starts_with("native-fleet-")) ||
             levels.len() != 1 ||
-            ["survival", "reinforcements"].iter()
-                .any(|key| !levels[0][*key].is_null())
+            levels[0]["reinforcements"].as_array().is_some_and(|waves| !waves.is_empty()) ||
+            levels[0]["reinforcements"].is_object() ||
+            (!levels[0]["survival"].is_null() && !levels[0]["extraction"].is_null())
         {
             continue;
         }
@@ -489,7 +490,7 @@ fn new_training_job(save_root: &Path) -> io::Result<(PathBuf, String)> {
 pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let battles = archived_battles(save_root)?;
     if battles.is_empty() {
-        println!("No saved elimination or extraction fleet skirmishes available for native training.");
+        println!("No saved fixed-roster elimination, extraction, or survival fleet skirmishes available for native training.");
         return Ok(());
     }
     let rows = battles.iter().map(|(_, title)| BattleMenuRow {
