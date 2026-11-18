@@ -18,6 +18,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_collector_probe_count',
     'training_collector_probe_layout_changed',
     'training_collector_resume_restored',
+    'training_checkpoint_parallel_workers',
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
     'training_rollout_compressed_collectors',
     'training_policy_compressed_workers','training_policy_early_dispatch_count',
@@ -140,6 +141,7 @@ function courierMetrics(source) {
         name.startsWith('training_collector_probe_')||
         /^worker_[0-9]{1,2}_probe_maps_(?:before|after)$/.test(name)||
         name.startsWith('training_collector_start_')||
+        name.startsWith('training_checkpoint_')||
         name.startsWith('training_resume_')||
         name.startsWith('training_sim_migration_')||
         name==='training_sim_process_migrations'||
