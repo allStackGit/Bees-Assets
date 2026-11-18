@@ -154,6 +154,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             // throughput clue, not an independent hardware saturation claim.
             'training_info_pack_max_seconds',
             'training_collector_probe_moved_maps',
+            'training_resume_map_moves',
+            'training_resume_gain_ratio',
+            'training_resume_proof_ready',
+            'training_resume_proof_rounds',
+            'training_resume_proof_seconds',
             'training_collector_start_parallel',
             'training_collector_start_wall_seconds',
             'training_sim_pack_max_ratio','training_sim_pack_ratio_owner',
