@@ -164,6 +164,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_ingestion_logical_bytes',
             'training_ingestion_shards',
             'training_ingestion_final_shard_seconds',
+            'training_ingestion_exposed_seconds',
             'training_cpu_parallelism','training_queue_max_seconds',
             'training_sim_processes',
             'training_sim_multiplexed_shards',
