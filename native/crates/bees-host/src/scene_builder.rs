@@ -51,6 +51,9 @@ pub struct NativeAuthoredShip {
     /// Actual source turning radius and sprite half-extents. Stationary
     /// members also need this for shared squad speed/finalization preflight.
     pub game_movement: GameMovementProfile,
+    /// Source Ship.CanOverrideBounds is a ship property, not inferred from
+    /// a particular weapon or a currently active Barge special.
+    pub can_override_bounds: bool,
     pub original_health: i32,
     pub size_class: f32,
     /// Actual child trigger geometry, in the same body-local frame as the hull.
@@ -521,6 +524,8 @@ pub(crate) fn spawn_authored_ship(
             .map_err(NativeSceneBuildError::Combat)?;
     }
     combat.configure_ship_game_movement(ship.entity_id, ship.game_movement)
+        .map_err(NativeSceneBuildError::Combat)?;
+    combat.configure_ship_bounds_override(ship.entity_id, ship.can_override_bounds)
         .map_err(NativeSceneBuildError::Combat)?;
     combat.configure_game_ship_original_health(
         ship.entity_id, ship.original_health,
