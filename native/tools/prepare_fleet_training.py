@@ -212,15 +212,35 @@ def deferred_reinforcement_ships(scene: dict, run: dict) -> set[int]:
                 if ship_id in ship_ids:
                     raise ValueError("native reinforcement shares a physical ship")
                 ship_ids.add(ship_id)
+    command_squads = set()
     for queue in run["levels"][0].get("scripted_queues", []):
-        if queue["squad_item_id"] in deferred and (
-            queue.get("activation") != {"kind": "on_deployment"}
-        ):
+        squad_id = queue["squad_item_id"]
+        if squad_id not in deferred:
+            continue
+        if queue.get("activation") != {"kind": "on_deployment"}:
             raise ValueError(
                 "native reinforced squad commands must activate on deployment"
             )
-    if not ship_ids.issubset({ship["entity_id"] for ship in scene["ships"]}):
+        command_squads.add(squad_id)
+    ships_by_id = {ship["entity_id"]: ship for ship in scene["ships"]}
+    if not ship_ids.issubset(ships_by_id):
         raise ValueError("native reinforcement has a missing authored hull")
+    for squad_id in deferred - command_squads:
+        for ship_id in squads[squad_id]["members"]:
+            ship = ships_by_id[ship_id]
+            # Authentic Carriers' children follow their parent without
+            # command queues; immobile support also needs no active order.
+            # Mobile ships previously owned by a human cannot become
+            # controller-less training opponents when that human is removed.
+            carrier_child = ship.get("drone_carrier_id") is not None or (
+                isinstance(ship.get("special"), dict) and
+                ship["special"].get("kind") == "striker"
+            )
+            if ship.get("base_speed", 0) > 0 and not carrier_child:
+                raise ValueError(
+                    f"native deferred mobile squad {squad_id} needs an "
+                    "on_deployment scripted queue before training"
+                )
     return ship_ids
 
 
