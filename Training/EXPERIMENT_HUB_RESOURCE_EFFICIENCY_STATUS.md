@@ -3,6 +3,7 @@
 Updated 2026-11-18. Branch: `feat/hub-gpu-forward-evidence-20261118` (continuing `feat/hub-rollout-transfer-evidence-20261118`).
 Scope: TinyBrains, Courier, future native projects; Bees remains with the unified native rewrite.
 The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimize useful training throughput inside those leases. Benchmarks below are not implied: these are source-level changes awaiting real workload qualification.
+Latest GPU execution: TinyBrains now batches frozen Torch opponents up to per-model, VRAM-aware inference widths with deterministic OOM splitting; Courier reuses compatible pinned observation/recurrent readback slots across completed GPU PPO rollouts and skips redundant policy moves. Both report previously unavailable opponent/forward GPU stream intervals to the same Hub metric pipeline, with same-worker ratios rather than unsupported device-saturation claims. GPU inference aggregation across independent Courier PPO lineages and real cross-machine useful-SPS qualification remain open.
 
 ## Implemented code, not yet live-system qualified
 
