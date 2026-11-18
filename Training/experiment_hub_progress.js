@@ -194,6 +194,13 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_topology_max_migration_seconds',
             'training_topology_max_pred_gain_ratio','training_topology_migration_owner',
             'training_topology_sps_change_pct','training_topology_result_owner',
+            'training_collector_probe_count',
+            'training_collector_probe_layout_changed',
+            'training_collector_probe_gain_ratio',
+            'training_collector_probe_wall_seconds',
+            'training_collector_resume_restored',
+            'training_collector_span_ratio',
+            'training_collector_imbalance_pressure',
             'training_rollout_raw_bytes',
             'training_rollout_wire_bytes',
             'training_rollout_saved_bytes',
@@ -1057,6 +1064,14 @@ class BottleneckEvidence {
                 (exposedShare===null||exposedShare<=0.10);
             const postwirePressure=postwireShare!==null&&
                 postwireShare>=0.20&&postwire>=0.25;
+            const span=metrics.training_collector_span_ratio;
+            const spread=(span?.unit==='ratio'&&span.value>=0&&
+                span.value<=1)?span.value:null;
+            // Unequal collector completion walls are a real scheduling
+            // imbalance, not evidence of a saturated CPU or slow network.
+            // Ignore it if collection is mostly hidden by PPO optimization.
+            const imbalance=spread!==null&&spread>=0.25&&
+                collection>=0.50*wall&&collection>=0.50;
             const collectionDominant=measured&&collection>=0.70*wall&&
                 optimization<=0.30*wall;
             const optimizationDominant=measured&&optimization>=0.70*wall&&
@@ -1067,6 +1082,7 @@ class BottleneckEvidence {
                     sharedIngestion:ingestionDelay,
                     sharedReply:slowReply,
                     sharedPostwire:postwirePressure,
+                    sharedImbalance:imbalance,
                     sharedCollection:collectionDominant,
                     sharedOptimization:optimizationDominant});
                 if(prior.samples.length>8)prior.samples.shift();
@@ -1083,6 +1099,8 @@ class BottleneckEvidence {
                     add('training_shared_collector_wait_pressure',1,'count');
                 if(sustained(x=>x.sharedPostwire))
                     add('training_shared_postwire_pressure',1,'count');
+                if(sustained(x=>x.sharedImbalance))
+                    add('training_collector_imbalance_pressure',1,'count');
                 if(sustained(x=>x.sharedCollection))
                     add('training_shared_collection_dominant',1,'count');
                 if(sustained(x=>x.sharedOptimization))
