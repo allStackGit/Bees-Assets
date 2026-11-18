@@ -1523,9 +1523,11 @@ impl CombatWorld {
     pub fn render_ships(&self)
         -> impl Iterator<Item = (&CombatShip, &ShipBody)> + '_
     {
-        self.ships.iter().zip(self.physics.ships()).filter(
-            |(ship, body)| body.active && !ship.vitals.is_dead(),
-        )
+        self.physics.active_ship_indices().iter().filter_map(|&index| {
+            let ship = &self.ships[index];
+            let body = &self.physics.ships()[index];
+            (body.active && !ship.vitals.is_dead()).then_some((ship, body))
+        })
     }
 
     pub fn render_projectiles(&self)
