@@ -534,6 +534,35 @@ class EvaluationHistory {
                     points=[records[0],...middle.slice(0,MAX_UI_POINTS-2),
                         records[records.length-1]];
                 }
+                // Supersession is a comparison annotation, never a rewrite
+                // of the immutable receipt. Only a strictly later training
+                // coordinate under the exact same frozen suite AND runtime
+                // can supersede an older observation. All points remain
+                // inspectable, chartable and available for full export.
+                const newest=new Map();
+                const comparableKey=row=>
+                    SHA256.test(String(row.suite_sha256||''))&&
+                    SHA256.test(String(row.runtime_sha256||''))&&
+                    Number.isSafeInteger(row.steps_completed)
+                        ?row.suite_id+':'+row.suite_sha256+':'+row.runtime_sha256
+                        :null;
+                for(const row of records) {
+                    const key=comparableKey(row);
+                    if(key&&(!newest.has(key)||
+                        row.steps_completed>newest.get(key).steps_completed))
+                        newest.set(key,row);
+                }
+                points=points.map(row=>{
+                    const latest=newest.get(comparableKey(row));
+                    const superseded=latest&&
+                        latest.steps_completed>row.steps_completed;
+                    return {...row,comparison_status:superseded
+                        ?'superseded':'complete',
+                        ...(superseded?{
+                            superseded_by_checkpoint_sha256:latest.checkpoint_sha256,
+                            superseded_by_steps_completed:latest.steps_completed,
+                        }:{})};
+                });
                 samples.push({job_id:job.id,points});
                 this.issues.delete(job.id);
             }catch(error) {
