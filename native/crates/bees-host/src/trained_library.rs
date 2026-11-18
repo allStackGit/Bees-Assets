@@ -421,6 +421,11 @@ impl TrainedGame {
     }
 }
 
+// Keep a finite bound for malformed or externally populated save roots,
+// but do not cap ordinary experiment history at just 32 latest/best jobs.
+// The existing native library menu already pages its selectable rows.
+const MAX_TRAINED_GALLERY_ENTRIES: usize = 4096;
+
 /// Explicit manual registrations and independently published job receipts.
 /// Each training job owns one atomic JSON registration under trained-models.d;
 /// simultaneous jobs cannot lose each other's entries by rewriting a shared
@@ -437,8 +442,8 @@ pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>>
     } else {
         Vec::new()
     };
-    if registrations.len() > 64 {
-        return Err(invalid("native game gallery supports at most 64 models").into());
+    if registrations.len() > MAX_TRAINED_GALLERY_ENTRIES {
+        return Err(invalid("native game gallery exceeds its bounded registration inventory").into());
     }
 
     let published = save_root.join("trained-models.d");
@@ -457,8 +462,8 @@ pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>>
                 return Err(invalid("native trained-model registration is not a regular file").into());
             }
             files.push(path);
-            if registrations.len() + files.len() > 64 {
-                return Err(invalid("native game gallery supports at most 64 models").into());
+            if registrations.len() + files.len() > MAX_TRAINED_GALLERY_ENTRIES {
+                return Err(invalid("native game gallery exceeds its bounded registration inventory").into());
             }
         }
         // read_dir order is OS/filesystem dependent. Stable IDs must give
