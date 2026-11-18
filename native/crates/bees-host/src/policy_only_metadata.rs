@@ -225,6 +225,7 @@ impl NativePolicyOnlyMetadata {
     /// or MA-POCA group membership may be activated before a live hull exists.
     pub(crate) fn deferred_policy_participant(
         &self, ship: &crate::scene_builder::NativeAuthoredShip,
+        receiving_team: Option<u8>,
     ) -> Result<Option<(i32, u64)>, &'static str> {
         let Some(policy) = ship.policy else {
             if ship.motion.is_policy_controlled || self.agents.contains_key(&ship.entity_id) {
@@ -236,7 +237,8 @@ impl NativePolicyOnlyMetadata {
             .ok_or("Deferred policy ship has no authored controller metadata")?;
         if agent.ship_id != ship.entity_id || agent.side != ship.side ||
             agent.frame != policy.frame ||
-            agent.controller.movement_disabled_for_team != policy.movement_disabled
+            agent.controller.movement_disabled_for_team != policy.movement_disabled ||
+            Some(agent.route.team_id) != receiving_team
         {
             return Err("Deferred policy controller does not match its physical ship");
         }
