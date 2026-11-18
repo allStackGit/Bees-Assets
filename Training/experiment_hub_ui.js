@@ -60,6 +60,12 @@ function hubFinalEvaluationCohort(job) {
     return job.checkpoint_model_sha256?job.evaluation_candidates?.find(cohort=>
         cohort.checkpoint_sha256===job.checkpoint_model_sha256)?.receipts:null;
 }
+// Keep every project-neutral evaluation key within the Hub's 64-character
+// metric/export contract, without confusing two frozen suite definitions.
+function hubEvaluationMetricPrefix(row) {
+    return 'eval_'+String(row.suite_id||'').replace(/-/g,'_').slice(0,21)+
+        '_'+String(row.suite_sha256||'').slice(0,12);
+}
 function hubComparisonPoints(run) {
     const training=run.points.length?run.points:
         [run.job.live_execution?.progress||run.job.final_progress].filter(Boolean);
@@ -70,10 +76,9 @@ function hubComparisonPoints(run) {
         Number.isSafeInteger(row.successes)&&Number.isSafeInteger(row.trials)&&
         row.trials>0&&row.successes>=0&&row.successes<=row.trials)
         .map(row=>{
-            const prefix='eval_'+row.suite_id.replace(/-/g,'_')+'_'+
-                row.suite_sha256.slice(0,8);
+            const prefix=hubEvaluationMetricPrefix(row);
             const details=Object.entries(row.metrics||{})
-                .filter(([name,item])=>/^[a-z][a-z0-9_]{0,47}$/.test(name)&&
+                .filter(([name,item])=>/^[a-z][a-z0-9_]{0,23}$/.test(name)&&
                     item&&Number.isFinite(item.value)&&
                     ['count','ratio','scalar','seconds'].includes(item.unit))
                 .map(([name,item])=>[prefix+'_'+name,item]);
@@ -382,7 +387,7 @@ const HUB_GPU_METRIC_SUFFIXES=Object.freeze({
     power_w: "Current physical GPU power draw. Indicates load, not energy attributable to this particular job.",
 });
 function hubMetricDescription(name,units=[]) {
-    if(/^eval_[a-z][a-z0-9_]{0,47}_[a-f0-9]{8}$/.test(name))
+    if(/^eval_[a-z][a-z0-9_]{0,20}_[a-f0-9]{12}$/.test(name))
         return 'Independent fixed-suite evaluation win or success rate at a verified checkpoint. The fingerprint identifies the frozen suite definition.';
     if(name.startsWith('eval_')) {
         const meanings={
@@ -1873,17 +1878,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // runs' metrics, saved requests and speculative capabilities are not data.
         const metricOptions=hubGenericMetricCatalog(runs).map(metric=>{
             const details=runs.flatMap(run=>run.evaluation_points||[]).find(row=>{
-                const prefix='eval_'+String(row.suite_id||'').replace(/-/g,'_')+'_'+
-                    String(row.suite_sha256||'').slice(0,8);
+                const prefix=hubEvaluationMetricPrefix(row);
                 return metric.key===prefix||metric.key.startsWith(prefix+'_');
             });
-            const prefix=details?'eval_'+details.suite_id.replace(/-/g,'_')+'_'+
-                details.suite_sha256.slice(0,8):null;
+            const prefix=details?hubEvaluationMetricPrefix(details):null;
             const measurement=details?(metric.key===prefix
                 ?'success rate':metric.key.slice(prefix.length+1).replace(/_/g,' ')):null;
             return {key:'metric:'+metric.key,
                 label:details?'Evaluation '+details.suite_id+' · '+measurement+
-                    ' ('+details.suite_sha256.slice(0,8)+')':
+                    ' ('+details.suite_sha256.slice(0,12)+')':
                     metric.key+' ('+metric.units.join('/')+')',
                 units:metric.units};
         });
