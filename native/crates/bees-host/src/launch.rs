@@ -5,7 +5,6 @@ use std::env;
 use std::error::Error;
 use std::fs;
 use std::io::{self, ErrorKind};
-#[cfg(feature = "client")]
 use std::io::Write;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::{Path, PathBuf};
@@ -1084,7 +1083,7 @@ fn apply_remote_side_input(
     result
 }
 
-const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
+const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
        bees menu <catalog.json> --output-dir <battle-runs>
        bees library <library.json> --output-dir <player-save-root>
        bees connect <host:port> --token-file <private-file> --side <1|2>
@@ -1097,6 +1096,8 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
        bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>]
   play  Open the native battle window (requires the client feature)
+  serve  Host headless authenticated multiplayer with deterministic input recording
+         (requires --output-dir, BEES_NATIVE_REMOTE_LISTEN and remote token)
   library  Open packaged native campaigns and quick battles
   connect  Join authoritative native multiplayer without Python
   run   Run the battle headlessly (default)
@@ -1495,9 +1496,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         #[cfg(not(feature = "client"))]
         return Err(invalid("The battle menu requires building with --features client").into());
     }
-    let play = first == "play";
-    let mut view = play;
-    let config_path = PathBuf::from(if view || first == "run" {
+    let serve = first == "serve";
+    let play = first == "play" || serve;
+    let mut view = first == "play";
+    let config_path = PathBuf::from(if play || first == "run" {
         args.next().ok_or_else(|| invalid(USAGE))?
     } else { first });
     let mut capture = None;
@@ -1523,6 +1525,27 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     if view { return Err(invalid("Windowed play requires building with --features client").into()); }
     if replay_inputs.is_some() && output.is_none() {
         return Err(invalid("--replay-inputs requires --output-dir").into());
+    }
+    if serve {
+        if view || replay_inputs.is_some() || output.is_none() ||
+            env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_none()
+        {
+            return Err(invalid(
+                "serve requires --output-dir, BEES_NATIVE_REMOTE_LISTEN, and no --view or --replay-inputs",
+            ).into());
+        }
+        // Source command, model reload, or asynchronous navigation
+        // would make an apparently recorded multiplayer trace unreplayable.
+        // Reject before constructing a Level or touching durable outputs.
+        let config: RunConfig = serde_json::from_slice(&fs::read(&config_path)?)?;
+        if config.levels.len() != 1 || config.episodes_per_world != 1 ||
+            config.hivemind.is_some() || !config.model_updates.is_empty() ||
+            config.navigation_workers.is_some()
+        {
+            return Err(invalid(
+                "serve requires one offline Level/episode without HiveMind, model updates, or background navigation",
+            ).into());
+        }
     }
     run_session(&config_path, play, view, output, capture, replay_inputs, None)
 }
@@ -3746,9 +3769,7 @@ fn run_battle(
         )?;
     }
     host.set_timing_sample_period(timing);
-    #[cfg(feature = "client")]
     let recorded_inputs = trace_output.map(|directory| directory.join("player-inputs.jsonl"));
-    #[cfg(feature = "client")]
     let mut input_trace = if let Some(path) = &recorded_inputs {
         let mut trace = fs::OpenOptions::new().write(true).create_new(true)
             .open(path)?;
@@ -3882,14 +3903,12 @@ fn run_battle(
     // Physical signatures are trace-only. Sample at 64-step intervals,
     // at the start of the next input boundary *after* any model reset,
     // never per physics step or on every idle graphical frame.
-    #[cfg(feature = "client")]
     let mut last_physical_checkpoint_round: Option<u64> = None;
-    #[cfg(feature = "client")]
     let mut recorded_physical_checkpoints = 0_u64;
+    let mut recorded_player_inputs = 0_u64;
     let mut verified_physical_checkpoints = 0_u64;
     let mut verified_gameplay_checkpoints = 0_u64;
     'battle: loop {
-        #[cfg(feature = "client")]
         if let Some(trace) = &mut input_trace {
             if (rounds == 0 || rounds % 64 == 0) &&
                 last_physical_checkpoint_round != Some(rounds)
@@ -4012,7 +4031,6 @@ fn run_battle(
                         Err("stale world, unauthorized side, or unavailable squad"));
                     continue;
                 }
-                #[cfg(feature = "client")]
                 if let Some(trace) = &mut input_trace {
                     let tick = host.simulation().world(0).expect("checked remote World").tick();
                     if let Err(error) = writeln!(trace, "{}", json!({
@@ -4023,6 +4041,7 @@ fn run_battle(
                         failed_window = Some(format!("recording remote player input: {error}"));
                         break 'battle;
                     }
+                    recorded_player_inputs += 1;
                 }
                 match apply_remote_side_input(&mut host, order.action, order.side) {
                     Ok(feedback) => server.reply(order.peer, order.request_id,
@@ -4087,6 +4106,7 @@ fn run_battle(
                     failed_window = Some(format!("recording player input: {error}"));
                     break;
                 }
+                recorded_player_inputs += 1;
             }
             match action {
                 Ok(bees_host::client::NativeClientAction::Wait |
@@ -4135,10 +4155,7 @@ fn run_battle(
         // Player traces require their bitwise checkpoints at exact 64-round
         // boundaries. A catch-up batch must not skip across one. All other
         // interactive rounds still run the ordinary fixed-step host pipeline.
-        #[cfg(feature = "client")]
         let checkpoint_limit = if input_trace.is_some() { 64 - rounds % 64 } else { u64::MAX };
-        #[cfg(not(feature = "client"))]
-        let checkpoint_limit = u64::MAX;
         let count = nonzero(remaining.min(source_pulse_limit).min(checkpoint_limit)
             .min(u64::from(if remote.is_some() { 1 }
                 else if view || playback.is_some() { client_step_budget }
@@ -4515,7 +4532,6 @@ fn run_battle(
     // execution boundary, even when the game quits between the sampled
     // 64-round checkpoints. No gameplay owner is modified here.
     // Match the v4 reader contract before finite-budget cancellation.
-    #[cfg(feature = "client")]
     if let Some(trace) = &mut input_trace {
         if last_physical_checkpoint_round != Some(rounds) {
             for index in 0..count {
@@ -4540,7 +4556,6 @@ fn run_battle(
             }
         }
     }
-    #[cfg(feature = "client")]
     if let Some(mut trace) = input_trace {
         let policy_actions_sha256 = host.model_mut().recorder.take().and_then(|recorder| {
             match recorder.finish() {
@@ -4556,6 +4571,7 @@ fn run_battle(
         let finished = writeln!(trace, "{}", json!({
             "kind": "player_input_trace_end",
             "rounds": rounds,
+            "recorded_inputs": recorded_player_inputs,
             "user_closed": user_closed,
             "failed_window": failed_window,
             "policy_actions_sha256": policy_actions_sha256,
@@ -4670,10 +4686,7 @@ fn run_battle(
     }
     let policy_generation = host.model_mut().model_generation();
     let policy_manifest_sha256 = host.model_mut().model_manifest_sha256();
-    #[cfg(feature = "client")]
     let captured_checkpoints = recorded_physical_checkpoints;
-    #[cfg(not(feature = "client"))]
-    let captured_checkpoints = 0_u64;
     drop(host.model_mut().resident.take());
     let run_end = Instant::now();
     let wall_seconds = run_end.duration_since(run_start).as_secs_f64();
@@ -4960,6 +4973,7 @@ fn run_battle(
             rounds == trace.end_round && trace.inputs.is_empty() &&
             trace.checkpoints.is_empty() && failed_window.is_none()),
         "recorded_physical_checkpoints": captured_checkpoints,
+        "recorded_player_inputs": recorded_player_inputs,
         "verified_physical_checkpoints": verified_physical_checkpoints,
         "verified_gameplay_checkpoints": verified_gameplay_checkpoints,
         "player_trace_stream": playback.as_ref().map(|trace| trace.measurements()),
