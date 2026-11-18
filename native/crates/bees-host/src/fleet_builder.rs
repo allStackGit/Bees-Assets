@@ -441,6 +441,11 @@ pub(super) fn archive(
                 new_squad_item_id: new_squad,
                 ship_ids: vec![new_ship],
                 by: [offset[0] - base[0], offset[1] - base[1]],
+                // An intentionally built fighter/support fleet has real
+                // independent combat value even though the cloned squads
+                // are not persistent SavedSquads in a player's campaign.
+                // Legacy ad-hoc scene clones still default to false.
+                count_as_fleet_value: true,
             });
             squad_ids[side].push(new_squad);
             if supporting { support_squads.push(new_squad); }
