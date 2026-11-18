@@ -319,11 +319,17 @@ function rolloutLiveShipMeasurements(rollout) {
     const slots = rollout?.ship_slot_work;
     if (slots == null) return {};
     const metrics = {};
-    for (const key of ['integrated_bodies', 'inactive_ship_slots_skipped',
-        'inactive_ship_grid_slots_skipped']) {
+    const required = ['integrated_bodies', 'inactive_ship_slots_skipped',
+        'inactive_ship_grid_slots_skipped'];
+    const obstacle = ['inactive_obstacle_slots_skipped',
+        'inactive_obstacle_grid_slots_skipped'];
+    const present = obstacle.filter(key => slots[key] !== undefined);
+    if (present.length !== 0 && present.length !== obstacle.length)
+        throw Error('Incomplete native Bees pooled obstacle work receipt.');
+    for (const key of [...required, ...present]) {
         const value = slots[key];
         if (!Number.isSafeInteger(value) || value < 0)
-            throw Error('Invalid native Bees active ship-slot work receipt.');
+            throw Error('Invalid native Bees active body-slot work receipt.');
         metrics['rollout_' + key] = {value, unit: 'count'};
     }
     return metrics;
