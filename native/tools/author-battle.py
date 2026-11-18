@@ -227,10 +227,12 @@ def author(args) -> tuple[dict, dict, dict]:
         scene["activate_mining"] = False
     if args.arena_size is not None:
         resize_empty_arena(scene, args.arena_size)
+    if args.arena_size is not None:
+        # Source RL's nonlethal border mode uses an exact whole-hull guard,
+        # while its lethal contact mode deliberately disables confinement.
+        # Game and learner consume the same authored rule and CombatWorld.
+        scene["constrain_map_borders"] = not args.lethal_borders
     if args.lethal_borders:
-        # Both playable and MA-POCA runs receive the identical physical
-        # rule. Source RL MapBorder damage uses the ship's own health,
-        # independent of projectile MakeShotsHarmless.
         scene["lethal_map_borders"] = True
     # Stage collision layers and asteroid prefab lists are immutable authored
     # assets, but the skirmish run template uses a smaller arena than the
