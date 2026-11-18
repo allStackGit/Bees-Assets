@@ -10,7 +10,7 @@ use std::fs::{self, OpenOptions, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use bees_host::presentation::{select_library, BattleMenuRow};
 use serde_json::{json, Value};
@@ -640,11 +640,44 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "model": model,
         "game_id": game_id,
     }));
+    reap_training_process(process, stderr_path);
     println!("Native fleet training started. Progress is recorded in the training job logs; completed verified checkpoints will appear in the game library.");
     Ok(())
 }
 
 
+
+
+fn reap_training_process(mut child: Child, stderr_path: PathBuf) {
+    // Command::spawn is intentionally nonblocking for the game. Child::drop
+    // does NOT reap a terminated child on Unix, so one lightweight waiter
+    // owns each actual process until it finishes. The learner still owns
+    // model checkpoints, round locks and all continuation decisions.
+    std::thread::spawn(move || {
+        use std::io::Write;
+        let pid = child.id();
+        let outcome = child.wait();
+        let record = match outcome {
+            Ok(status) => json!({
+                "kind": "native_fleet_training_process_exit",
+                "pid": pid,
+                "success": status.success(),
+                "exit_code": status.code(),
+            }),
+            Err(error) => json!({
+                "kind": "native_fleet_training_process_wait_error",
+                "pid": pid,
+                "error": error.to_string(),
+            }),
+        };
+        // Append only after the child has closed its own redirected stderr;
+        // no polling, extra log database or checkpoint owner is introduced.
+        if let Ok(mut file) = OpenOptions::new().append(true).open(stderr_path) {
+            let _ = writeln!(file, "{record}");
+            let _ = file.sync_all();
+        }
+    });
+}
 
 fn recent_job_logs(job: &Path) -> io::Result<(PathBuf, PathBuf, Option<String>)> {
     // Read only the latest completed or active attempt's diagnostic tail.
@@ -965,6 +998,7 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
         "rounds": rounds, "worlds": worlds,
         "hub_worlds": recipe["hub_worlds"],
     }));
+    reap_training_process(child, stderr_path);
     println!("Existing native fleet training lineage resumed; the learner validates its original bootstrap, receipts and source before proceeding.");
     Ok(())
 }
