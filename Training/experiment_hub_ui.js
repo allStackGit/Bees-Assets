@@ -3564,43 +3564,117 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-evaluation-rate').disabled=monitor;
         $('hub-evaluation-frequency-label').hidden=!monitor;
         $('hub-evaluation-frequency').disabled=!monitor;
+        for(const row of $('hub-evaluation-more-suites').children) {
+            const label=row.querySelector('.hub-evaluation-extra-rate-label');
+            label.hidden=monitor;
+            label.querySelector('input').disabled=monitor;
+        }
     }
+    function appendEvaluationSuite(rule={}) {
+        const container=$('hub-evaluation-more-suites');
+        if(container.children.length>=7)
+            throw Error('A configuration supports at most eight independent evaluation suites.');
+        const row=document.createElement('div');
+        row.className='formgrid hub-evaluation-extra-suite';
+        row.style.margin='10px 0';
+        const field=(title,className,value,type='text')=>{
+            const label=document.createElement('label');
+            label.textContent=title;
+            const input=document.createElement('input');
+            input.className=className;
+            input.type=type;
+            input.value=String(value??'');
+            if(type==='number') {
+                input.min=className==='hub-evaluation-extra-rate'?'0':'1';
+                input.max=className==='hub-evaluation-extra-rate'?'1':'1000000';
+                input.step=className==='hub-evaluation-extra-rate'?'any':'1';
+            }
+            if(className==='hub-evaluation-extra-suite-id') {
+                input.maxLength=48;
+                input.setAttribute('list','hub-evaluation-suite-options');
+            }
+            if(className==='hub-evaluation-extra-digest') {
+                input.maxLength=64;
+                input.pattern='[0-9a-f]{64}';
+            }
+            if(className==='hub-evaluation-extra-rate')
+                label.className='hub-evaluation-extra-rate-label';
+            label.append(input);
+            row.append(label);
+        };
+        field('Suite ID','hub-evaluation-extra-suite-id',rule.suite_id);
+        field('Suite SHA-256 (optional)','hub-evaluation-extra-digest',rule.suite_sha256);
+        field('Minimum trials','hub-evaluation-extra-trials',rule.min_trials,'number');
+        field('Minimum success rate (Stop only)',
+            'hub-evaluation-extra-rate',rule.min_success_rate,'number');
+        const remove=document.createElement('button');
+        remove.type='button';
+        remove.textContent='Remove suite';
+        remove.addEventListener('click',()=>row.remove());
+        row.append(remove);
+        container.append(row);
+        refreshEvaluationEditor();
+    }
+    $('hub-evaluation-add-suite').addEventListener('click',()=>{
+        try {appendEvaluationSuite();}
+        catch(error){feedback('hub-config-message',error.message);}
+    });
     function setEvaluationEditor(policy=null,monitor=policy==null) {
-        const multi=policy?.all_of||null;
+        const multi=Array.isArray(policy?.all_of)?policy.all_of:null;
+        const first=multi?.[0]||policy;
         $('hub-evaluation-mode').value=monitor?'monitor':'stop';
-        $('hub-evaluation-suite').value=multi?'':policy?.suite_id??'';
-        $('hub-evaluation-digest').value=multi?'':policy?.suite_sha256??'';
-        $('hub-evaluation-trials').value=multi?'':policy?.min_trials??'';
-        $('hub-evaluation-rate').value=multi?'':policy?.min_success_rate??'';
+        $('hub-evaluation-suite').value=first?.suite_id??'';
+        $('hub-evaluation-digest').value=first?.suite_sha256??'';
+        $('hub-evaluation-trials').value=first?.min_trials??'';
+        $('hub-evaluation-rate').value=first?.min_success_rate??'';
         $('hub-evaluation-frequency').value=String(policy?.every_n_checkpoints??10);
-        $('hub-evaluation-all-of').value=multi?JSON.stringify(multi,null,2):'';
+        $('hub-evaluation-all-of').value='';
+        $('hub-evaluation-more-suites').replaceChildren();
+        for(const rule of multi?.slice(1)||[])appendEvaluationSuite(rule);
         refreshEvaluationEditor();
     }
     $('hub-evaluation-mode').addEventListener('change',refreshEvaluationEditor);
     function evaluationFromEditor() {
         const monitor=$('hub-evaluation-mode').value==='monitor';
+        const cadence=monitor?Number($('hub-evaluation-frequency').value):null;
+        if(monitor&&(!Number.isSafeInteger(cadence)||cadence<1||cadence>1000000))
+            throw Error('Evaluation update interval must be an integer from 1 to 1,000,000.');
+        const rawRule=(suite,digest,trials,rate)=>{
+            if(!suite&&!digest&&!trials&&!rate)return null;
+            if(!suite||!trials||(!monitor&&(!rate||Number(rate)<=0)))
+                throw Error('Each suite requires an ID and trial count. Stop mode also requires a success rate.');
+            return {suite_id:suite,min_trials:Number(trials),
+                ...(digest?{suite_sha256:digest}:{}),
+                ...(!monitor?{min_success_rate:Number(rate)}:{})};
+        };
         const suite=$('hub-evaluation-suite').value.trim();
         const digest=$('hub-evaluation-digest').value.trim();
         const trials=$('hub-evaluation-trials').value;
         const rate=monitor?'':$('hub-evaluation-rate').value;
-        const cadence=monitor?Number($('hub-evaluation-frequency').value):null;
-        if(monitor&&(!Number.isSafeInteger(cadence)||cadence<1||cadence>1000000))
-            throw Error('Evaluation update interval must be an integer from 1 to 1,000,000.');
+        const extras=[...$('hub-evaluation-more-suites').children].map(row=>{
+            const value=selector=>row.querySelector(selector).value.trim();
+            const rule=rawRule(
+                value('.hub-evaluation-extra-suite-id'),
+                value('.hub-evaluation-extra-digest'),
+                value('.hub-evaluation-extra-trials'),
+                monitor?'':value('.hub-evaluation-extra-rate'));
+            if(!rule)throw Error('Complete or remove every additional evaluation suite.');
+            return rule;
+        });
         const allOf=$('hub-evaluation-all-of').value.trim();
         let policy=null;
         if(allOf) {
-            if(suite||digest||trials||rate)
-                throw Error('Choose either the single-suite fields or all-required-suites JSON.');
+            if(suite||digest||trials||rate||extras.length)
+                throw Error('Use either the individual suite fields or advanced JSON, not both.');
             policy={all_of:JSON.parse(allOf)};
             if(monitor&&(!Array.isArray(policy.all_of)||
                 policy.all_of.some(rule=>Object.hasOwn(rule,'min_success_rate'))))
                 throw Error('Monitoring-only suites do not use success thresholds.');
-        }else if(suite||digest||trials||rate) {
-            if(!suite||!trials||(!monitor&&(!rate||Number(rate)<=0)))
-                throw Error('Enter a suite ID and minimum trials; Stop mode also requires a success rate greater than zero.');
-            policy={suite_id:suite,min_trials:Number(trials),
-                ...(digest?{suite_sha256:digest}:{}),
-                ...(!monitor?{min_success_rate:Number(rate)}:{})};
+        }else {
+            const first=rawRule(suite,digest,trials,rate);
+            if(!first&&extras.length)
+                throw Error('Configure the first evaluation suite before adding others.');
+            if(first)policy=extras.length?{all_of:[first,...extras]}:first;
         }
         if(monitor&&policy)policy.every_n_checkpoints=cadence;
         return {evaluation_monitor:monitor?policy:null,
