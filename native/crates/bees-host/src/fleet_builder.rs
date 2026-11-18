@@ -26,12 +26,26 @@ pub(super) const GAME_ID: &str = "fleet-skirmish";
 enum Terrain { Open, Original, Cover, DenseCover }
 
 #[derive(Clone, Copy)]
+enum Objective { Elimination, Survival, Extraction }
+
+impl Objective {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Elimination => "Elimination",
+            Self::Survival => "Defend Command Ship",
+            Self::Extraction => "Escape to Extraction",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct FleetChoice {
     /// None preserves the source's two human-controlled factions.
     player_side: Option<i32>,
     fleet_sizes: [usize; 2],
     terrain: Terrain,
     ai_both: bool,
+    objective: Objective,
     benchmark_worlds: usize,
     benchmark_workers: usize,
 }
@@ -54,9 +68,16 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         return Ok(None);
     };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
-    Ok(choose_terrain()?.map(|terrain| FleetChoice {
+    let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let objective = if mode == 2 {
+        Objective::Elimination
+    } else {
+        let Some(chosen) = choose_objective()? else { return Ok(None); };
+        chosen
+    };
+    Ok(Some(FleetChoice {
         player_side: match mode { 0 => Some(1), 1 => Some(2), _ => None },
-        fleet_sizes, terrain, ai_both: false,
+        fleet_sizes, terrain, ai_both: false, objective,
         benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -67,6 +88,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     Ok(choose_terrain()?.map(|terrain| FleetChoice {
         player_side: None, fleet_sizes, terrain, ai_both: false,
+        objective: Objective::Elimination,
         benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -84,6 +106,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
         else { return Ok(None); };
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, terrain, ai_both: true,
+        objective: Objective::Elimination,
         benchmark_worlds: worlds, benchmark_workers: threads,
     }))
 }
@@ -114,6 +137,23 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
         fleet_sizes[index] = FLEET_SIZES[choice];
     }
     Ok(Some(fleet_sizes))
+}
+
+fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
+    let choices = [
+        ("Eliminate all opposing ships", "  [Standard battle]"),
+        ("Defend your command ship for 90 seconds", "  [Incoming waves]"),
+        ("Reach the enemy-side extraction zone", "  [Tactical escape]"),
+    ];
+    let rows = choices.iter().map(|(title, status)| BattleMenuRow {
+        title, status, unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = 0_usize;
+    Ok(select_library(&rows, &mut selected, false)?.map(|index| match index {
+        1 => Objective::Survival,
+        2 => Objective::Extraction,
+        _ => Objective::Elimination,
+    }))
 }
 
 fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
@@ -251,8 +291,9 @@ pub(super) fn archive(
         scene["local_player_side"] = json!(selected.player_side.unwrap_or(2));
     }
     scene["level_name"] = json!(format!(
-        "Fleet Skirmish: {} Bees vs {} Humans",
+        "Fleet Skirmish: {} Bees vs {} Humans ({})",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
+        selected.objective.label(),
     ));
 
     let mut cloned = NativeLevelLayout::default();
@@ -298,13 +339,55 @@ pub(super) fn archive(
         cover_box(20_001 + index as i64, position)
     ));
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
+    let mut deferred_squads = Vec::new();
+    if matches!(selected.objective, Objective::Survival) {
+        let defender = selected.player_side.ok_or_else(||
+            invalid("survival requires one real locally controlled faction"))?;
+        let enemy_index = if defender == 1 { 1 } else { 0 };
+        let defenders_first_ship = if defender == 1 { 11 } else { 12 };
+        run["levels"][0]["survival"] = json!({
+            "defending_side": defender,
+            "protected_ship_id": defenders_first_ship,
+            "seconds": 90.0,
+        });
+        // Keep one authentic enemy squad active at the start and deploy
+        // only later clones. The combat engine reserves each future hull
+        // by its real faction; the common terminal will not declare the
+        // enemy defeated before its authored waves can arrive.
+        let late = &squad_ids[enemy_index][1..];
+        let mut waves = Vec::with_capacity(late.len());
+        for (index, &squad) in late.iter().enumerate() {
+            let at = if index < (late.len() + 1) / 2 { 25.0 } else { 55.0 };
+            waves.push(json!({
+                "after_seconds": at,
+                "squad_item_ids": [squad],
+            }));
+            deferred_squads.push(squad);
+        }
+        run["levels"][0]["reinforcements"] = json!(waves);
+    } else if matches!(selected.objective, Objective::Extraction) {
+        let player = selected.player_side.ok_or_else(||
+            invalid("extraction requires one real locally controlled faction"))?;
+        run["levels"][0]["extraction"] = json!({
+            "player_side": player,
+            "center": [if player == 1 { 125.0 } else { -125.0 }, 0.0],
+            "half_extents": [6.0, 6.0],
+            "activation_radius": 10.0,
+            "layer": 19,
+        });
+    }
     run["next_squad_item_id"] = json!(3_000);
     run["run_id"] = json!(format!(
-        "native-fleet-{}v{}-{}",
+        "native-fleet-{}v{}-{}-{}",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
         if selected.ai_both { "benchmark" }
         else { selected.player_side.map_or("local", |side|
             if side == 1 { "bees" } else { "humans" }) },
+        match selected.objective {
+            Objective::Elimination => "elimination",
+            Objective::Survival => "survival",
+            Objective::Extraction => "extraction",
+        },
     ));
     if selected.ai_both {
         // A repeatable multi-CPU stress case: the runner does no GUI or
@@ -353,12 +436,18 @@ pub(super) fn archive(
                     start[1],
                 ],
             })];
-            orders.extend(squad_ids[1 - side].iter().map(|&enemy| json!({
+            orders.extend(squad_ids[1 - side].iter().filter(|&&enemy|
+                !deferred_squads.contains(&enemy)
+            ).map(|&enemy| json!({
                 "kind": "aggressive", "enemy_squad_item_id": enemy,
             })));
-            queues.push(json!({
+            let mut queue = json!({
                 "squad_item_id": owner, "repeat": true, "orders": orders,
-            }));
+            });
+            if deferred_squads.contains(&owner) {
+                queue["activation"] = json!({"kind": "on_deployment"});
+            }
+            queues.push(queue);
         }
     }
     run["levels"][0]["scripted_queues"] = json!(queues);

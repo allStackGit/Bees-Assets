@@ -922,9 +922,15 @@ survival defense against two genuine deferred enemy waves (35s, 70s).
 **Build Fleet Skirmish** is also available in the native game library,
 including packaged custom libraries. Pick either player faction or two
 local commanders, then independently choose 1, 2, 4, 8, 16, 32 or 64 ships per
-side and open, classic, flanking-cover or dense-cover terrain. Cover is
-made of the real source-authored obstacle prefabs; its collisions, health,
-visibility and navigation all use the same native CombatWorld as training.
+side and open, classic, flanking-cover or dense-cover terrain.
+Single-player commanders can choose elimination, a 90-second protected
+command-ship defense with genuinely reserved enemy waves at 25 and 55
+seconds, or extraction at the far end of the map. These are the actual
+native Level survival, reinforcement and extraction rules; the same
+objectives run unchanged in headless simulation. Two-player and benchmark
+matches retain ordinary elimination. Cover is made of the real
+source-authored obstacle prefabs; its collisions, health, visibility and
+navigation all use the same native CombatWorld as training.
 This uses verified native squad cloning and the same physical
 Level, real AI commands and player controls as any other game. Each
 custom battle saves its starting scene and replay configuration alongside
