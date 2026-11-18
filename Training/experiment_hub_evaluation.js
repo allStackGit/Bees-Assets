@@ -67,24 +67,34 @@ function evaluationPolicy(value) {
 function monitoringPolicy(value) {
     if(value==null)return null;
     if(record(value)&&Object.hasOwn(value,'all_of')) {
-        if(Object.keys(value).length!==1||!Array.isArray(value.all_of)||
-            value.all_of.length<2||value.all_of.length>8)
-            throw Error('Monitoring requires 2–8 distinct independent suites.');
+        if(Object.keys(value).some(key=>!['all_of','every_n_checkpoints'].includes(key))||
+            !Array.isArray(value.all_of)||
+            value.all_of.length<2||value.all_of.length>8||
+            (value.every_n_checkpoints!==undefined&&
+             (!Number.isSafeInteger(value.every_n_checkpoints)||
+              value.every_n_checkpoints<1||value.every_n_checkpoints>1000000)))
+            throw Error('Monitoring requires 2–8 distinct independent suites and a valid cadence.');
         const rules=value.all_of.map(monitoringPolicy);
-        if(rules.some(rule=>!rule||rule.all_of)||
+        if(rules.some(rule=>!rule||rule.all_of||rule.every_n_checkpoints!=null)||
             new Set(rules.map(rule=>rule.suite_id)).size!==rules.length)
-            throw Error('Monitoring requires distinct nonnested suite IDs.');
-        return {all_of:rules};
+            throw Error('Monitoring batches require distinct suite IDs and one common cadence.');
+        return {all_of:rules,...(value.every_n_checkpoints!=null
+            ?{every_n_checkpoints:value.every_n_checkpoints}:{})};
     }
     if(!record(value)||Object.keys(value).some(key=>
-        !['suite_id','suite_sha256','min_trials'].includes(key))||
+        !['suite_id','suite_sha256','min_trials','every_n_checkpoints'].includes(key))||
         typeof value.suite_id!=='string'||!SUITE.test(value.suite_id)||
         (Object.hasOwn(value,'suite_sha256')&&
             (typeof value.suite_sha256!=='string'||!SHA256.test(value.suite_sha256)))||
-        !trials(value.min_trials))
-        throw Error('Evaluation monitoring requires a suite ID and minimum trial count.');
+        !trials(value.min_trials)||
+        (value.every_n_checkpoints!==undefined&&
+         (!Number.isSafeInteger(value.every_n_checkpoints)||
+          value.every_n_checkpoints<1||value.every_n_checkpoints>1000000)))
+        throw Error('Evaluation monitoring requires a suite ID, trial count and valid cadence.');
     return {suite_id:value.suite_id,min_trials:value.min_trials,
-        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
+        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{}),
+        ...(value.every_n_checkpoints!=null
+            ?{every_n_checkpoints:value.every_n_checkpoints}:{})};
 }
 function activeEvaluation(job) {
     return job?.evaluation_monitor||job?.evaluation_stop||null;
