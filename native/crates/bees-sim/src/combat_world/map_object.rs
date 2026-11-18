@@ -73,7 +73,7 @@ impl CombatWorld {
             !self.physics.obstacles()[index].active {
             return false;
         }
-        self.physics.obstacles_mut()[index].active = false;
+        self.physics.retire_obstacle(index);
         self.obstacle_by_id.remove(&entity_id);
         self.map_objects.remove(&entity_id);
         self.range_visible_map_objects.remove(&entity_id);
@@ -98,11 +98,11 @@ impl CombatWorld {
         if self.obstacles[index].kind != ObstacleKind::StaticObstacle {
             return Err(CombatWorldError::InvalidObstacle);
         }
-        let body = &mut self.physics.obstacles_mut()[index];
+        let body = &self.physics.obstacles()[index];
         let bounds = body.primary_bounds().unwrap_or(Aabb {
             min: body.pose.position, max: body.pose.position,
         });
-        body.active = false;
+        self.physics.retire_obstacle(index);
         // This wall was part of the authoritative pathfinder's static
         // clearance. Removing it must invalidate both synchronous cached
         // grids and interactive workers' immutable snapshots; the original
