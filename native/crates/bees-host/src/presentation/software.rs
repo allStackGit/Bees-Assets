@@ -872,17 +872,25 @@ impl NativeSoftwareRenderer {
         if !fixed_dt.is_finite() || fixed_dt <= 0.0 { return 0; }
         self.impact_effects.retain(|fx| tick >= fx.born_tick &&
             (tick - fx.born_tick) as f32 * fixed_dt < 0.3);
+        let mut drawn = 0;
         for i in 0..self.impact_effects.len() {
             let fx = self.impact_effects[i];
             let progress = ((tick - fx.born_tick) as f32 * fixed_dt / 0.3)
                 .clamp(0.0, 1.0);
-            self.shape(&ShipShape::Circle {
-                offset: Vec2::ZERO,
-                radius: 0.7 + progress * if fx.fatal { 4.0 } else { 2.4 },
-            }, Pose { position: fx.position, rotation_degrees: 0.0 },
+            let radius = 0.7 + progress * (if fx.fatal { 4.0 } else { 2.4 });
+            let (x, y) = self.project(fx.position);
+            let pixels = radius * self.camera.pixels_per_unit;
+            if x < -pixels || y < -pixels ||
+                x > self.width as f32 + pixels ||
+                y > self.height as f32 + pixels {
+                continue;
+            }
+            self.shape(&ShipShape::Circle { offset: Vec2::ZERO, radius },
+                Pose { position: fx.position, rotation_degrees: 0.0 },
                 if fx.fatal { 0xff8e77 } else { 0xffe19c });
+            drawn += 1;
         }
-        self.impact_effects.len()
+        drawn
     }
 
     /// No physics, RNG, allocation or enemy discovery is performed here.
