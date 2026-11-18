@@ -97,6 +97,11 @@ function hubComparisonPoints(run) {
                     source_report_sha256:row.source_report_sha256||null,
                     source_checkpoint_name:row.source_checkpoint_name||null,
                     trials:row.trials,successes:row.successes,
+                    comparison_status:row.comparison_status||'complete',
+                    superseded_by_checkpoint_sha256:
+                        row.superseded_by_checkpoint_sha256||null,
+                    superseded_by_steps_completed:
+                        row.superseded_by_steps_completed??null,
                 },
                 metrics:{[prefix]:{value:row.successes/row.trials,unit:'ratio'},
                     ...Object.fromEntries(details)},
@@ -2618,6 +2623,14 @@ document.addEventListener('DOMContentLoaded', () => {
         svg.onpointerleave=null;
         const axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
+        // Independent evaluations are discrete checkpoint observations,
+        // not a continuous trainer measurement. Never draw an interpolated
+        // strength curve through checkpoints that were never evaluated.
+        const discreteEvaluation=Boolean(genericKey)&&runs.some(run=>
+            (run.evaluation_points||[]).some(row=>{
+                const prefix=hubEvaluationMetricPrefix(row);
+                return genericKey===prefix||genericKey.startsWith(prefix+'_');
+            }));
         const units=genericKey?[...new Set(runs.flatMap(run=>
             hubComparisonPoints(run).map(point=>
                 point.metrics?.[genericKey]?.unit).filter(Boolean)))]:[];
@@ -2642,9 +2655,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         svg.setAttribute('aria-label',metric.label+
-            ' by '+axisLabel.toLowerCase()+' for selected runs');
+            ' by '+axisLabel.toLowerCase()+' for selected runs'+
+            (discreteEvaluation?'; measured checkpoints only, gaps are not interpolated':''));
         const usable=p=>hubComparisonAxisValue(p,xKey)!==null&&
-            Number.isFinite(hubMetricValue(p,key));
+            Number.isFinite(hubMetricValue(p,key))&&
+            (!discreteEvaluation||Boolean(p.evaluation_identity));
         const allSeries=runs.map(run=>({
             ...run,valid:hubComparisonPoints(run),
         }));
@@ -2799,6 +2814,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     lastStep=step;lastAxis=axis;
                 }
                 flush();
+            }
+            if(discreteEvaluation) {
+                // One SVG path per run avoids thousands of individual DOM
+                // circles when many archived checkpoints are selected.
+                const dots=run.valid.filter(usable).map(point=>{
+                    const cx=x(hubComparisonAxisValue(point,xKey));
+                    const cy=y(hubMetricValue(point,key));
+                    return 'M'+(cx-3.5).toFixed(1)+' '+cy.toFixed(1)+
+                        ' a3.5 3.5 0 1 0 7 0 a3.5 3.5 0 1 0 -7 0';
+                }).join(' ');
+                if(dots)node('path',{d:dots,fill:run.color,
+                    class:'plot-evaluation-points'});
+                continue;
             }
             let part=[],previousX=null;
             const flush=()=>{
@@ -2962,6 +2990,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         line('Source checkpoint: '+evaluated.source_checkpoint_name);
                     }
                     line('Successes / trials: '+evaluated.successes+' / '+evaluated.trials);
+                    line('Archive status: '+(evaluated.comparison_status==='superseded'
+                        ?'Superseded by a newer checkpoint under the same frozen suite and runtime'
+                        :'Complete measured evaluation'));
+                    if(evaluated.superseded_by_checkpoint_sha256) {
+                        line('Newer checkpoint SHA-256: '+evaluated.superseded_by_checkpoint_sha256);
+                        line('Newer checkpoint update: '+
+                            evaluated.superseded_by_steps_completed);
+                    }
                     line('Evaluated at: '+(evaluated.evaluated_at||'unreported'));
                 }else line('Segment: '+(closest.point.segment_id||'unknown'));
                 const summary=stats.get(run);
