@@ -165,6 +165,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_ingestion_shards',
             'training_ingestion_final_shard_seconds',
             'training_ingestion_exposed_seconds',
+            'training_shared_reply_gap_seconds',
+            'training_shared_last_reply_worker',
+            'training_shared_last_copy_worker',
+            'training_shared_reply_gap_work_share',
+            'training_shared_reply_skew_pressure',
             'training_shared_ingestion_exposed_share',
             'training_shared_ingestion_pressure',
             'training_shared_collection_pressure',
@@ -696,17 +701,22 @@ class BottleneckEvidence {
             // validate/copy completed shards while other workers collect.
             // Summed ingestion work is nested inside the collection wall;
             // only post-last-reply ingestion is exposed to the next Adam step.
+            const count=metrics.training_collector_workers.value;
             const wall=seconds('training_batch_wall_seconds');
             const collect=seconds('training_collect_max_seconds');
             const optimize=seconds('training_optimize_max_seconds');
             const ingestion=seconds('training_ingestion_max_seconds');
             const exposed=seconds('training_ingestion_exposed_seconds');
+            const replyGap=seconds('training_shared_reply_gap_seconds');
             const share=value=>value!==null&&value<=wall
                 ?value/wall:null;
             const collectShare=share(collect);
             const optimizeShare=share(optimize);
             const ingestionShare=share(ingestion);
             const exposedShare=share(exposed);
+            const replyGapShare=share(replyGap);
+            if(replyGapShare!==null)
+                add('training_shared_reply_gap_work_share',replyGapShare);
             if(collectShare!==null)
                 add('training_shared_collection_work_share',collectShare);
             if(optimizeShare!==null)
@@ -724,6 +734,9 @@ class BottleneckEvidence {
                         exposed>=0.20&&collectShare!==null&&collectShare>=0.25,
                     sharedCollection:collectShare!==null&&collectShare>=0.65&&
                         collect>=0.50,
+                    sharedReplySkew:count>1&&replyGapShare!==null&&
+                        replyGapShare>=0.25&&replyGap>=0.20&&
+                        collectShare!==null&&collectShare>=0.30,
                     sharedOptimizer:optimizeShare!==null&&optimizeShare>=0.65&&
                         optimize>=0.50});
                 if(prior.samples.length>8)prior.samples.shift();
@@ -738,6 +751,8 @@ class BottleneckEvidence {
                     add('training_shared_ingestion_pressure',1,'count');
                 if(sustained(x=>x.sharedCollection))
                     add('training_shared_collection_pressure',1,'count');
+                if(sustained(x=>x.sharedReplySkew))
+                    add('training_shared_reply_skew_pressure',1,'count');
                 if(sustained(x=>x.sharedOptimizer))
                     add('training_shared_optimizer_pressure',1,'count');
                 if(sustained(x=>x.resourceHints?.cpuBusy))
