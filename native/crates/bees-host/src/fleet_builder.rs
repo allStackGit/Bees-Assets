@@ -742,13 +742,16 @@ pub(super) fn archive(
             let supporting = support_squads.contains(&owner);
             let scout = scout_squads.contains(&owner);
             let start = offsets[side][position];
-            // Passive Beehives and Carriers have no source gun mounts.
-            // Never issue them Aggressive: that command requires real
-            // armed ships. Fighters still use the normal native target
-            // and command lifetime engine.
-            let mut orders = if supporting {
+            // A source-authored Aggressive lifetime still owns all
+            // physical movement, weapon targeting and enemy deaths.
+            // Do not store O(allies * enemies) scripted target lists
+            // for a large battle: after one target dies the nearest live
+            // opponent is chosen deterministically from the actual roster.
+            // Passive support has no guns; scouts retain their movement
+            // orders rather than inventing combat weapons.
+            let orders = if supporting {
                 vec![json!({"kind": "hold"})]
-            } else {
+            } else if scout {
                 vec![json!({
                     "kind": "move_to_point",
                     "destination": [
@@ -756,14 +759,9 @@ pub(super) fn archive(
                         start[1],
                     ],
                 })]
+            } else {
+                vec![json!({"kind": "aggressive_nearest"})]
             };
-            if !supporting && !scout {
-                orders.extend(squad_ids[1 - side].iter().filter(|&&enemy|
-                    !deferred_squads.contains(&enemy)
-                ).map(|&enemy| json!({
-                    "kind": "aggressive", "enemy_squad_item_id": enemy,
-                })));
-            }
             let mut queue = json!({
                 "squad_item_id": owner, "repeat": !supporting,
                 "orders": orders,
