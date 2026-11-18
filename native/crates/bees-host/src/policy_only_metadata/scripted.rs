@@ -406,6 +406,45 @@ impl NativePolicyOnlyMetadata {
         Ok(())
     }
 
+    /// Unity Queen.CreateMinionSquad adds each autonomous YellowJacket wave
+    /// to the ordinary game command list. The authored standalone game's
+    /// scripted-command director is that list when HiveMind is disabled.
+    /// Do not steal authority from a player, network strategy or the
+    /// MA-POCA controller; they operate the SAME physical minion roster.
+    ///
+    /// Called only for QueenMinionCreated, after the canonical roster
+    /// registered the new squad and its real formation/command source has
+    /// been installed. A subsequent QueenMinionAdded never adds a duplicate.
+    pub(super) fn enqueue_game_queen_minion(
+        &mut self, child: SquadLifetime,
+    ) -> Result<(), GameCommandError> {
+        let player = self.player.squads.get(&child)
+            .ok_or(GameCommandError::InvalidSquad)?;
+        if player.user_controlled || self.hivemind_active == Some(true) ||
+            !self.agents.is_empty()
+        {
+            return Ok(());
+        }
+        if !self.player.commands.contains_key(&child) ||
+            self.scripted_queues.iter().any(|queue| queue.owner == child)
+        {
+            return Err(GameCommandError::MissingCombatSnapshot);
+        }
+        // Newly registered Queen squads are appended to the source's
+        // Level.State.Squads order. The scripted queue uses that same order.
+        // BombingNearest invokes the original special-weapon command and
+        // reselects a living enemy only when that command ends. An absent
+        // target uses the existing one-second script retry cadence.
+        self.scripted_queues.push(NativeScriptedQueueState {
+            owner: child, orders: vec![NativeScriptedOrder::BombingNearest],
+            cursor: 0, repeat: true, ready_tick: 1,
+            on_deployment: false, wait_for_entry: false,
+            required_event: None, event_armed: true, claimed: true,
+        });
+        self.scripted_counts.queen_minion_scripted_queues_created += 1;
+        Ok(())
+    }
+
     pub(super) fn current_scripted_queue_measurements(
         &self, tick: u64, events: &NativeLevelEventProcessor,
     ) -> bees_gameplay::level_rules::NativeScriptedQueueMeasurements {
