@@ -313,6 +313,22 @@ function rolloutReinforcementWakeupMeasurements(rollout) {
 
 // Only exact native episode-complete physical border counts are comparable.
 // Missing fields in historical rollouts stay absent rather than fabricated.
+// Direct counters from completed canonical physics ticks. They count
+// real traversals avoided, not an assumed speedup or CPU utilization.
+function rolloutLiveShipMeasurements(rollout) {
+    const slots = rollout?.ship_slot_work;
+    if (slots == null) return {};
+    const metrics = {};
+    for (const key of ['integrated_bodies', 'inactive_ship_slots_skipped',
+        'inactive_ship_grid_slots_skipped']) {
+        const value = slots[key];
+        if (!Number.isSafeInteger(value) || value < 0)
+            throw Error('Invalid native Bees active ship-slot work receipt.');
+        metrics['rollout_' + key] = {value, unit: 'count'};
+    }
+    return metrics;
+}
+
 function rolloutBorderMeasurements(rollout) {
     const border = rollout?.map_border_ships;
     if (border == null) return {};
@@ -907,6 +923,7 @@ function createNativeBeesAdapter({
                         ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
                         ...rolloutBorderMeasurements(rollout),
+                        ...rolloutLiveShipMeasurements(rollout),
                         ...rolloutPolicyBoundaryMeasurements(rollout),
                         ...(rollout.sampled_model_timing ? {
                             rollout_sampled_model_calls: {
@@ -958,6 +975,7 @@ function createNativeBeesAdapter({
                         ...rolloutReinforcementWakeupMeasurements(rollout),
                         ...rolloutQueenControllerMeasurements(rollout),
                         ...rolloutBorderMeasurements(rollout),
+                        ...rolloutLiveShipMeasurements(rollout),
                         ...rolloutPolicyBoundaryMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
