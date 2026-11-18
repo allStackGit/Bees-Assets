@@ -220,6 +220,16 @@ function boundedReport(value) {
         threadOverrides.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
         new Set(threadOverrides).size!==threadOverrides.length)
         throw Error('TinyBrains thread override requires a locally approved profile.');
+    const curriculumStages=value.tinybrains_curriculum_stages??[];
+    const knownStages=['basic_tiny','tiny_two_player','small_two_player',
+        'all_two_player','full_multiplayer'];
+    if(!Array.isArray(curriculumStages)||
+        curriculumStages.length>knownStages.length||
+        curriculumStages.some(stage=>!knownStages.includes(stage))||
+        new Set(curriculumStages).size!==curriculumStages.length||
+        (curriculumStages.length&&
+            (value.platform!=='linux'||!Object.keys(profiles).length)))
+        throw Error('TinyBrains curriculum stages require an approved native Linux runner.');
     const cpuFallback=value.tinybrains_cpu_fallback_profiles??[];
     if(!Array.isArray(cpuFallback)||cpuFallback.length>cudaProfiles.length||
         cpuFallback.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
@@ -346,6 +356,7 @@ function boundedReport(value) {
         design_catalog:designCatalog,
         tinybrains_cuda_profiles:cudaProfiles.slice(),
         tinybrains_thread_overrides:threadOverrides.slice(),
+        tinybrains_curriculum_stages:curriculumStages.slice(),
         tinybrains_cpu_fallback_profiles:cpuFallback.slice(),
         tinybrains_required_import_profiles:requiredImports.slice(),
         tinybrains_dual_gpu_profiles:dualProfiles.slice(),
@@ -1428,6 +1439,7 @@ class ExperimentHub {
                 machine.design_catalog=copy(report.design_catalog||{});
                 machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();
                 machine.tinybrains_thread_overrides=report.tinybrains_thread_overrides.slice();
+                machine.tinybrains_curriculum_stages=report.tinybrains_curriculum_stages.slice();
                 machine.tinybrains_cpu_fallback_profiles=report.tinybrains_cpu_fallback_profiles.slice();
                 machine.tinybrains_required_import_profiles=report.tinybrains_required_import_profiles.slice();
                 machine.tinybrains_dual_gpu_profiles=report.tinybrains_dual_gpu_profiles.slice();
