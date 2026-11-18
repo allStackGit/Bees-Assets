@@ -567,10 +567,9 @@ impl NativePolicyOnlyMetadata {
             // discovers their CombatWorld policy bindings normally.
             let policy_agents = wave.policy_agents;
             if !wave.group_agents.is_empty() {
-                let group = events.group_delivery_mut().ok_or_else(||
-                    invalid("Missing MA-POCA group for policy reinforcements".into()))?;
                 for (ship_id, side, group_id) in wave.group_agents {
-                    events.group_delivery_mut().expect("preflighted group")
+                    events.group_delivery_mut().ok_or_else(||
+                        invalid("Missing MA-POCA group for policy reinforcements".into()))?
                         .register_agent(side, group_id)
                         .map_err(|error| invalid(format!("Policy reinforcement group: {error:?}")))?;
                     let binding_revision = world.policy_binding_revision(ship_id)
