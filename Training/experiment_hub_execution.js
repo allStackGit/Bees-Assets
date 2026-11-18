@@ -13,7 +13,7 @@ const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {matchingLeaseBudget}=require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
-const {activeEvaluation,evaluationEvidence,evaluationRules,suiteIds,supportsEvaluation}=
+const {activeEvaluation,evaluationEvidence,evaluationFailure,evaluationRules,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -260,26 +260,38 @@ class LocalExecution {
         if(ownsArtifacts&&(state==='running'&&lease.status==='acknowledged'||
             lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256)&&activeEvaluation(job)&&
             supportsEvaluation(this.evaluationSuites,job)) {
-            const results=[],issues=[];
+            const results=[],failures=[],issues=[];
             for(const rule of evaluationRules(activeEvaluation(job))) {
+                const context=Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
+                });
                 try {
-                    const result=localAdapter.readEvaluation(Object.freeze({
-                        job_id:job.id,project_id:job.project_id,
-                        artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
-                        dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
-                    }));
+                    const result=localAdapter.readEvaluation(context);
                     if(result!=null&&(state==='running'||result.checkpoint_sha256===job.final_checkpoint_sha256))
                         results.push(evaluationEvidence(result,rule,order.dispatch_id));
                 }catch(error) {
                     issues.push((rule.suite_id+': '+
                         String(error.message||error)).slice(0,160));
                 }
+                if(typeof localAdapter.readEvaluationFailure==='function')try {
+                    const failure=localAdapter.readEvaluationFailure(context);
+                    if(failure!=null&&(state==='running'||
+                        failure.checkpoint_sha256===job.final_checkpoint_sha256))
+                        failures.push(evaluationFailure(failure,context));
+                }catch(error) {
+                    issues.push((rule.suite_id+': failure observation: '+
+                        String(error.message||error)).slice(0,160));
+                }
             }
+            if(failures.length)report.evaluation_failures=failures;
             if(issues.length) {
-                // Keep the original single-issue field for older Hub versions,
-                // while preserving every failing suite for the shared archive.
-                report.evaluation_issue=issues.at(-1);
-                report.evaluation_issues=issues;
+                // Preserve older Hub compatibility with one diagnostic and
+                // keep the heartbeat report bounded at eight distinct issues.
+                const bounded=[...new Set(issues)].slice(0,8);
+                report.evaluation_issue=bounded.at(-1);
+                report.evaluation_issues=bounded;
             }
             if(activeEvaluation(job).all_of) {
                 if(results.length)report.evaluations=results;
