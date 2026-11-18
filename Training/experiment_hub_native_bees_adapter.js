@@ -581,7 +581,11 @@ function createNativeBeesAdapter({
         stop_policy: 'terminate-group',
         config_sha256: configSha256,
         gpu_execution: 'cuda',
-        gpu_dual_execution: 'native-rollouts',
+        // Import-only learner jobs do not have native simulation actors
+        // and therefore cannot use a second GPU. Advertise two-GPU
+        // capability only when this installed adapter owns local rollouts.
+        ...(!inboxLearner&&!bundleRound
+            ?{gpu_dual_execution:'native-rollouts'}:{}),
         rocr_gpu_uuids,
         // Collection and optimization both run the same native model
         // inference backend. A collector may require GPU inference even
