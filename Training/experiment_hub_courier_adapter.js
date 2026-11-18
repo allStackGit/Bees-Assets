@@ -18,6 +18,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
     'training_rollout_compressed_collectors',
     'training_shared_last_reply_worker','training_shared_last_copy_worker',
+    'training_shared_last_wire_worker',
     'training_slowest_worker','training_last_reply_worker',
     'training_simulation_slowest_worker',
     'training_simulated_steps','training_useful_steps','training_collected_useful_steps',
