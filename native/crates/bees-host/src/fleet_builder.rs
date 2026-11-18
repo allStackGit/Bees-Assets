@@ -30,6 +30,32 @@ enum Terrain { Open, Original, Cover, DenseCover }
 #[derive(Clone, Copy)]
 enum Objective { Elimination, Survival, Extraction }
 
+/// Native Level waves are source-authored physical squads. This option
+/// changes only when squads enter the same live combat/roster pipeline,
+/// never their hulls, weapon behaviors, or trainer's simulation engine.
+#[derive(Clone, Copy)]
+enum ReinforcementPattern { AllAtStart, Bees, Humans, Both }
+
+impl ReinforcementPattern {
+    fn includes(self, side: usize) -> bool {
+        match self {
+            Self::AllAtStart => false,
+            Self::Bees => side == 0,
+            Self::Humans => side == 1,
+            Self::Both => true,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::AllAtStart => "no-waves",
+            Self::Bees => "bee-waves",
+            Self::Humans => "human-waves",
+            Self::Both => "both-waves",
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists }
 
@@ -57,6 +83,39 @@ impl AiTactics {
             Self::Mixed => unreachable!("mixed doctrine resolved above"),
         }
     }
+}
+
+/// A single hull cannot be deferred: both factions need a real starting
+/// squad. Hide impossible choices rather than accepting a misleading menu
+/// setting with zero waves.
+fn choose_reinforcements(
+    fleet_sizes: [usize; 2],
+) -> Result<Option<ReinforcementPattern>, Box<dyn Error>> {
+    let mut patterns = vec![
+        (ReinforcementPattern::AllAtStart,
+         "All squads deploy at the start", "  [Ordinary skirmish]"),
+    ];
+    if fleet_sizes[0] > 1 {
+        patterns.push((ReinforcementPattern::Bees,
+            "Bee reinforcement waves", "  [Additional Bees at 25s and 55s]"));
+    }
+    if fleet_sizes[1] > 1 {
+        patterns.push((ReinforcementPattern::Humans,
+            "Human reinforcement waves", "  [Additional Humans at 25s and 55s]"));
+    }
+    if fleet_sizes.iter().all(|&size| size > 1) {
+        patterns.push((ReinforcementPattern::Both,
+            "Both factions receive waves", "  [Each side at 25s and 55s]"));
+    }
+    if patterns.len() == 1 {
+        return Ok(Some(ReinforcementPattern::AllAtStart));
+    }
+    let rows = patterns.iter().map(|(_, title, status)| BattleMenuRow {
+        title, status, unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = 0;
+    Ok(select_library(&rows, &mut selected, false)?
+        .map(|index| patterns[index].0))
 }
 
 fn choose_ai_tactics() -> Result<Option<AiTactics>, Box<dyn Error>> {
@@ -120,6 +179,7 @@ pub(super) struct FleetChoice {
     ai_both: bool,
     ai_tactics: AiTactics,
     objective: Objective,
+    reinforcements: ReinforcementPattern,
     /// Mission ownership is independent of whose input commands this host
     /// accepts. Both local/remote players retain full command permissions.
     objective_side: Option<i32>,
@@ -161,9 +221,18 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
             Some(side)
         },
     };
+    let reinforcements = if matches!(objective, Objective::Survival) {
+        // Preserve the original dedicated incoming-enemy wave objective.
+        ReinforcementPattern::AllAtStart
+    } else {
+        let Some(pattern) = choose_reinforcements(fleet_sizes)? else {
+            return Ok(None);
+        };
+        pattern
+    };
     Ok(Some(FleetChoice {
         player_side, fleet_sizes, mix, terrain, ai_both: false, ai_tactics, objective,
-        objective_side, benchmark_worlds: 1, benchmark_workers: 1,
+        reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
 
@@ -181,10 +250,19 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
             Some(side)
         },
     };
+    let reinforcements = if matches!(objective, Objective::Survival) {
+        ReinforcementPattern::AllAtStart
+    } else {
+        let Some(pattern) = choose_reinforcements(fleet_sizes)? else {
+            return Ok(None);
+        };
+        pattern
+    };
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, mix, terrain, ai_both: false,
         ai_tactics: AiTactics::Aggressive,
-        objective, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
+        objective, reinforcements, objective_side,
+        benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
 
@@ -204,6 +282,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, mix, terrain, ai_both: true,
         ai_tactics, objective: Objective::Elimination, objective_side: None,
+        reinforcements: ReinforcementPattern::AllAtStart,
         benchmark_worlds: worlds, benchmark_workers: threads,
     }))
 }
