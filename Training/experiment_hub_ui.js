@@ -4428,7 +4428,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         :'awaiting evidence')+
                         (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
                 :'';
-            cell(tr,learningSummary(j)+evaluation);
+            const requiredSuites=multi||[policy].filter(Boolean);
+            const advertised=machine?.evaluation_suites?.[j.project_id]||[];
+            const availability=!policy?'':!j.assigned_machine_id
+                ?' · Evaluator: awaiting assigned machine'
+                :machine?.status!=='connected'
+                    ?' · Evaluator: agent '+(machine?.status||'unavailable')
+                    :!machine.local_executor_enabled
+                        ?' · Evaluator: native adapter unavailable'
+                        :requiredSuites.some(rule=>!advertised.includes(rule.suite_id))
+                            ?' · Evaluator: suite reader unavailable ('+
+                                requiredSuites.filter(rule=>
+                                    !advertised.includes(rule.suite_id))
+                                    .map(rule=>rule.suite_id).join(', ')+')'
+                            :' · Evaluator: suite reader advertised; timer/service health not yet reported';
+            cell(tr,learningSummary(j)+evaluation+availability);
             const actions=cell(tr,'');
             actions.append(button('Rename run',async()=>{
                 const entered=prompt('Run name (optional; blank restores the configuration name):',
