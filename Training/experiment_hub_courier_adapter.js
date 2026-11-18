@@ -141,6 +141,7 @@ function courierMetrics(source) {
         name.startsWith('training_shared_gpu_state_')||
         name.startsWith('training_shared_gpu_lease_')||
         name.startsWith('training_shared_gpu_reserved_')||
+        name.startsWith('training_collector_gpu_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
         /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
         /^training_gpu_rollout_input_(?:packs|seconds|owner)$/.test(name)||
@@ -161,7 +162,9 @@ function courierMetrics(source) {
             name.endsWith('_bytes')?'bytes':
             /_probe_map_steps_per_second$/.test(name)?'rate':
             name.endsWith('_mb')?'mb':
-            name==='training_gpu_snapshot_work_share'&&value>=0&&value<=1?'ratio':
+            (name==='training_gpu_snapshot_work_share'||
+             name==='training_collector_gpu_reserved_share')&&
+                value>=0&&value<=1?'ratio':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
                     ?'rate':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
