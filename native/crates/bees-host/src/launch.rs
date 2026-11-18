@@ -2488,6 +2488,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             title: "Train Saved Fleet",
             status: "  [MA-POCA native training]", unlocked: true,
         });
+        let fleet_training_jobs_index = rows.len();
+        rows.push(BattleMenuRow {
+            title: "Fleet Training Progress",
+            status: "  [Rounds, SPS, checkpoint]", unlocked: true,
+        });
         let fleet_benchmark_index = rows.len();
         rows.push(BattleMenuRow {
             title: "Benchmark Fleet Simulation",
@@ -2497,6 +2502,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             else { break };
         let creating_fleet = index == fleet_builder_index;
         let training_fleet = index == fleet_train_index;
+        let inspecting_fleet_training = index == fleet_training_jobs_index;
         let benchmarking_fleet = index == fleet_benchmark_index;
         let trained_index = (index >= library.games.len() &&
             index < library.games.len() + trained.len())
@@ -2511,6 +2517,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             (fleet_builder::GAME_ID, "custom_fleet", "Build Fleet Skirmish")
         } else if training_fleet {
             ("fleet-training", "train", "Train Saved Fleet")
+        } else if inspecting_fleet_training {
+            ("fleet-training-progress", "training_progress", "Fleet Training Progress")
         } else if benchmarking_fleet {
             ("fleet-benchmark", "benchmark", "Benchmark Fleet Simulation")
         } else if watching {
@@ -2550,6 +2558,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             })()
         } else if training_fleet {
             fleet_training::choose_and_train(save_root)
+        } else if inspecting_fleet_training {
+            fleet_training::inspect_training_jobs(save_root)
         } else if benchmarking_fleet {
             (|| {
                 let Some(choice) = fleet_builder::choose_benchmark()? else {
