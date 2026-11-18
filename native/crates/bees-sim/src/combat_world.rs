@@ -2924,7 +2924,10 @@ impl CombatWorld {
         if self.shot_outcomes.measurements().in_flight_roots == 0 {
             return;
         }
-        for &index in self.physics.active_projectile_indices() {
+        for slot in 0..self.physics.active_projectile_indices().len() {
+            // Release the immutable registry borrow before the exact
+            // proximity query mutates the shared physics spatial grid.
+            let index = self.physics.active_projectile_indices()[slot];
             let root = self.physics.projectiles()[index]
                 .motion.attribution.root_shot_id;
             if !self.shot_outcomes.needs_nearness(root) { continue; }
@@ -3323,11 +3326,15 @@ impl CombatWorld {
     /// Advance script-driven bombs. Their physics bodies have no collider
     /// or velocity; the bomb remains allocated through both callback stages.
     fn update_striker_bombs(&mut self, dt: f32) -> Result<(), CombatWorldError> {
-        for index in 0..self.projectiles.len() {
-            if !self.physics.projectiles()[index].active { continue; }
+        let mut slot = 0;
+        while slot < self.physics.active_projectile_indices().len() {
+            let index = self.physics.active_projectile_indices()[slot];
             let (target_id, shooter_fleet_id, attachment_offset) = {
                 let ImpactBehavior::StrikerBomb(fuse) =
-                    &self.projectiles[index].behavior else { continue };
+                    &self.projectiles[index].behavior else {
+                        slot += 1;
+                        continue;
+                    };
                 (fuse.contacted_ship_id(), fuse.shooter_fleet_ship_id(),
                     fuse.local_attachment_offset())
             };
@@ -3348,7 +3355,10 @@ impl CombatWorld {
             }
             let action = {
                 let ImpactBehavior::StrikerBomb(fuse) =
-                    &mut self.projectiles[index].behavior else { continue };
+                    &mut self.projectiles[index].behavior else {
+                        slot += 1;
+                        continue;
+                    };
                 fuse.advance(dt, target_alive)
             };
             match action {
@@ -3399,6 +3409,11 @@ impl CombatWorld {
                     }
                     self.end_projectile(index);
                 }
+            }
+            // Removing a bomb shifts the next live slot into this position.
+            // Do not skip that shot, or process a retired pool entry.
+            if self.physics.projectiles()[index].active {
+                slot += 1;
             }
         }
         Ok(())
@@ -4528,6 +4543,7 @@ impl CombatWorld {
             automatic_weapon_shots: self.automatic_weapon_measurements.shots - automatic_before.shots,
             integrated_bodies: physics_counts.integrated_bodies,
             inactive_ship_slots_skipped: physics_counts.inactive_ship_slots_skipped,
+            inactive_projectile_slots_skipped: physics_counts.inactive_projectile_slots_skipped,
             inactive_ship_grid_slots_skipped: physics_counts.inactive_ship_grid_slots_skipped,
             inactive_obstacle_slots_skipped: physics_counts.inactive_obstacle_slots_skipped,
             inactive_obstacle_grid_slots_skipped: physics_counts.inactive_obstacle_grid_slots_skipped,

@@ -31,6 +31,8 @@ pub struct StepCounts {
     pub integrated_bodies: u64,
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
+    /// Inactive pooled projectile slots skipped during the actual physics tick.
+    pub inactive_projectile_slots_skipped: u64,
     pub inactive_ship_grid_slots_skipped: u64,
     pub inactive_obstacle_slots_skipped: u64,
     pub inactive_obstacle_grid_slots_skipped: u64,
@@ -90,6 +92,8 @@ pub struct Measurements {
     pub integrated_bodies: u64,
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
+    /// Inactive pooled projectile slots skipped during the actual physics tick.
+    pub inactive_projectile_slots_skipped: u64,
     pub inactive_ship_grid_slots_skipped: u64,
     pub inactive_obstacle_slots_skipped: u64,
     pub inactive_obstacle_grid_slots_skipped: u64,
@@ -164,6 +168,7 @@ impl Default for Measurements {
             policy_roots_near_missed: 0,
             integrated_bodies: 0,
             inactive_ship_slots_skipped: 0,
+            inactive_projectile_slots_skipped: 0,
             inactive_ship_grid_slots_skipped: 0,
             inactive_obstacle_slots_skipped: 0,
             inactive_obstacle_grid_slots_skipped: 0,
@@ -227,6 +232,7 @@ impl Measurements {
         self.policy_roots_near_missed += counts.policy_roots_near_missed;
         self.integrated_bodies += counts.integrated_bodies;
         self.inactive_ship_slots_skipped += counts.inactive_ship_slots_skipped;
+        self.inactive_projectile_slots_skipped += counts.inactive_projectile_slots_skipped;
         self.inactive_ship_grid_slots_skipped += counts.inactive_ship_grid_slots_skipped;
         self.inactive_obstacle_slots_skipped += counts.inactive_obstacle_slots_skipped;
         self.inactive_obstacle_grid_slots_skipped += counts.inactive_obstacle_grid_slots_skipped;
@@ -304,6 +310,7 @@ impl Measurements {
         self.policy_roots_near_missed += other.policy_roots_near_missed;
         self.integrated_bodies += other.integrated_bodies;
         self.inactive_ship_slots_skipped += other.inactive_ship_slots_skipped;
+        self.inactive_projectile_slots_skipped += other.inactive_projectile_slots_skipped;
         self.inactive_ship_grid_slots_skipped += other.inactive_ship_grid_slots_skipped;
         self.inactive_obstacle_slots_skipped += other.inactive_obstacle_slots_skipped;
         self.inactive_obstacle_grid_slots_skipped += other.inactive_obstacle_grid_slots_skipped;

@@ -2387,6 +2387,7 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
             decisions: 0,
             active_ships: world.state.active_ship_indices().len() as u32,
             active_projectiles: world.state.active_projectile_indices().len() as u32,
+            inactive_projectile_slots_skipped: counts.inactive_projectile_slots_skipped,
             integrated_bodies: counts.integrated_bodies,
             broadphase_candidates: counts.broadphase_candidates,
             ship_grid_overflow_bodies: counts.ship_grid_overflow_bodies,
