@@ -102,7 +102,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_board_iterative_h2d_bytes',
             'ppo_board_saved_h2d_bytes',
             'ppo_board_h2d_saved_share',
-            'ppo_board_cache_partial_batches',
+            'ppo_board_cache_mixed_chunks',
             'rollout_gpu_batch_target_pixels',
             'rollout_gpu_batch_next_target','rollout_gpu_batch_settled',
             'rollout_gpu_batch_proven_target',
