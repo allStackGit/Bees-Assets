@@ -2850,6 +2850,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const byJob=new Map(samples.map(sample=>
             [sample.job_id,sample.points||[]]));
+        const evalByJob=new Map((comparisonProject===project&&
+            comparisonData?.evaluations||[]).map(sample=>
+            [sample.job_id,sample.points||[]]));
         const runs=compareSlots.map(slot=>{
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(item=>item.id===id);
@@ -2876,6 +2879,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...(project==='tinybrains'?{profile_sha256:job.frozen_parameters?.profile_sha256||null}:{}),
                 final_resource_usage:job.final_resource_usage||null,
                 evaluation_stop:job.evaluation_stop||null,
+                evaluation_monitor:job.evaluation_monitor||null,
                 evaluation_suite_definitions:job.evaluation_suite_definitions||null,
                 checkpoint_model_sha256:job.checkpoint_model_sha256||null,
                 expected_parent_model_sha256:job.expected_parent_model_sha256||null,
@@ -2884,7 +2888,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
-                points:hubComparisonPoints({job,points:byJob.get(id)||[]})
+                evaluation_history:evalByJob.get(id)||[],
+                points:hubComparisonPoints({job,points:byJob.get(id)||[],
+                    evaluation_points:evalByJob.get(id)||[]})
                     .map(point=>({...point,
                         x_value:hubComparisonAxisValue(
                             point,$('hub-compare-x-axis').value),
@@ -2903,7 +2909,7 @@ document.addEventListener('DOMContentLoaded', () => {
             x_axis:$('hub-compare-x-axis').value,
             metric:selectedComparisonMetrics()[0]||null,metrics,
             source:'Experiment Hub validated project metrics',
-            interpretation:'Training curves are observational. Their selected horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
+            interpretation:'Training curves and independent evaluation records are observational. Their horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Evaluation curves are checkpoint-bound and only directly comparable across matching frozen suite definitions.',
             runs,
             candidate_selection_plans:(state.candidate_selections||[]).filter(p=>
                 p.candidate_job_ids?.some(id=>runs.some(r=>r.job_id===id))),
