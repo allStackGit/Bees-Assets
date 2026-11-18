@@ -546,17 +546,20 @@ function createNativeBeesAdapter({
         stop_policy: 'terminate-group',
         config_sha256: configSha256,
         gpu_execution: 'cuda',
+        gpu_dual_execution: 'native-rollouts',
         rocr_gpu_uuids,
         // Collection and optimization both run the same native model
         // inference backend. A collector may require GPU inference even
         // though it does not own an optimizer or the learner checkpoint.
         // Verify the exact PCI/HIP ordinal before either workload starts.
         gpu_verify_args(_parameters, context) {
-            if (!PCI.test(String(context?.gpu_pci_address || '')) ||
-                context?.gpu_pci_addresses !== undefined)
-                throw Error('Native Bees ROCm verification requires one leased physical GPU.');
+            const ids=context?.gpu_pci_addresses ?? [context?.gpu_pci_address];
+            if(!Array.isArray(ids)||![1,2].includes(ids.length)||
+                ids.some(pci=>!PCI.test(String(pci)))||
+                new Set(ids).size!==ids.length)
+                throw Error('Native Bees ROCm verification requires one or two unique leased PCI GPUs.');
             return ['-B', path.join(__dirname, 'experiment_hub_tinybrains_rocm_verify.py'),
-                context.gpu_pci_address];
+                ...ids];
         },
         args(parameters, context) {
             const output = jobRoot(context);
@@ -606,8 +609,15 @@ function createNativeBeesAdapter({
                         source_run_contract_sha256 !== sourceContract))
             ))
                 throw Error('Native distributed work order needs an exact ID, bounded World window and safe inbox name.');
-            const activeWorlds = rollout_worlds ?? config.rollout_worlds ?? config.levels?.length;
-            const activeWorkers = rollout_workers ?? config.rollout_workers ?? 1;
+            const dualGpu=Array.isArray(context.gpu_pci_addresses);
+            // Each exclusive physical GPU requires its own persistent
+            // model worker; expand the default native World pool rather
+            // than forcing users to tune counts for every project.
+            const activeWorlds = rollout_worlds ??
+                Math.max(config.rollout_worlds ?? config.levels?.length ?? 1,
+                    dualGpu ? 2 : 1);
+            const activeWorkers = rollout_workers ??
+                Math.max(config.rollout_workers ?? 1, dualGpu ? 2 : 1);
             // Rollout processes each retain a model worker and run their
             // own shared physical CPU pool. Both dimensions consume the
             // same fixed machine lease; never advertise more runnable
@@ -640,12 +650,22 @@ function createNativeBeesAdapter({
             verifyModelDependencies(manifest, new Map([[input, pins.get(input)]]), input, learnerSlot);
             const pci = context.gpu_pci_address;
             const cudaUuid = context.gpu_cuda_uuid;
-            const gpu = pci !== undefined;
-            if (context.gpu_pci_addresses !== undefined ||
-                (gpu && (!PCI.test(String(pci)) || context.gpu_mode !== 'exclusive' ||
+            const gpu = pci !== undefined || dualGpu;
+            if (dualGpu && (
+                !['bees_native','bees_native_collect'].includes(context.project_id)||
+                context.gpu_mode !== 'exclusive' ||
+                context.gpu_pci_addresses.length !== 2 ||
+                new Set(context.gpu_pci_addresses).size !== 2 ||
+                context.gpu_pci_addresses.some(pci=>!PCI.test(String(pci))) ||
+                inboxLearner || bundleRound || cudaUuid !== undefined
+            ))
+                throw Error('Two native GPU leases require physical rollout collection, not a bundle-only learner.');
+            if ((pci !== undefined && (
+                    dualGpu || !PCI.test(String(pci)) ||
+                    context.gpu_mode !== 'exclusive' ||
                     (cudaUuid !== undefined && !CUDA_UUID.test(String(cudaUuid))))) ||
                 (!gpu && cudaUuid !== undefined))
-                throw Error('Native Bees execution requires an exclusive single-GPU lease or CPU-only placement.');
+                throw Error('Native Bees execution requires an exclusive one- or two-GPU lease or CPU-only placement.');
             const inputs = roundInputs(context);
             if (refresh_opponent_slot !== undefined) {
                 if (learnerSlot === undefined || !Number.isSafeInteger(refresh_opponent_slot) ||
@@ -678,7 +698,8 @@ function createNativeBeesAdapter({
                 // The round supplies cuda:0 to every resident PyTorch/MA-POCA
                 // worker, without changing the immutable checkpoint manifest.
                 ...(gpu && !inboxLearner && !bundleRound
-                    ? ['--leased-gpu-inference'] : []),
+                    ? ['--leased-gpu-inference',
+                        ...(dualGpu?['--leased-gpu-count','2']:[])] : []),
                 ...(collectOnly ? ['--collect-only'] : []),
                 ...(collectOnly && inbox ? ['--bundle-inbox', inbox] : []),
                 ...(collection_id === undefined ? [] : [
@@ -693,10 +714,10 @@ function createNativeBeesAdapter({
                 '--device', gpu ? 'cuda' : 'cpu',
                 ...(optimizer_threads === undefined ? [] :
                     ['--torch-threads', String(optimizer_threads)]),
-                ...(rollout_workers === undefined ? [] :
-                    ['--rollout-workers', String(rollout_workers)]),
-                ...(!collectOnly && rollout_worlds !== undefined ?
-                    ['--rollout-worlds', String(rollout_worlds)] : []),
+                ...(rollout_workers === undefined && !dualGpu ? [] :
+                    ['--rollout-workers', String(activeWorkers)]),
+                ...(!collectOnly && rollout_worlds !== undefined || dualGpu ?
+                    ['--rollout-worlds', String(activeWorlds)] : []),
                 ...(physics_workers === undefined ? [] :
                     ['--physics-workers', String(activePhysicsWorkers)]),
                 '--seed-offset', String(seed_offset),
