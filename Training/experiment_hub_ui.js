@@ -408,14 +408,26 @@ const HUB_GPU_METRIC_SUFFIXES=Object.freeze({
     power_w: "Current physical GPU power draw. Indicates load, not energy attributable to this particular job.",
 });
 function hubMetricDescription(name,units=[]) {
-    if(/^eval_[a-z][a-z0-9_]{0,20}_[a-f0-9]{12}$/.test(name))
-        return 'Independent fixed-suite evaluation win or success rate at a verified checkpoint. The fingerprint identifies the frozen suite definition.';
+    if(/^eval_[a-z][a-z0-9_]{0,11}_[a-f0-9]{12}_(?:[a-f0-9]{8}|unverifi)$/.test(name)||
+        /^eval_[a-z][a-z0-9_]{0,20}_[a-f0-9]{12}$/.test(name))
+        return 'Independent fixed-suite success rate measured at an identified checkpoint. Compare only the same frozen suite definition and evaluator runtime.';
     if(name.startsWith('eval_')) {
         const meanings={
             win_count:'Number of controlled evaluation games won by the candidate.',
             loss_count:'Number of controlled evaluation games lost by the candidate.',
             draw_count:'Number of controlled evaluation games ending in a draw.',
             score_rate:'Draw-adjusted controlled evaluation score: (wins + 0.5 × draws) divided by all evaluated games.',
+            survival_rate:'Fraction of frozen Courier evaluation trials in which the candidate survives.',
+            mean_lifespan:'Mean lifespan across independent Courier evaluation trials, measured in simulation steps.',
+            mean_survival_score:'Mean project-defined survival score on the frozen Courier evaluation scenarios, not a survival rate.',
+            mean_deliveries:'Mean deliveries per independent Courier evaluation trial.',
+            total_deliveries:'Total deliveries in the independent Courier evaluation trials.',
+            pickup_rate:'Fraction of eligible pickups completed in frozen Courier evaluation scenarios.',
+            mean_steps_per_delivery:'Mean simulation steps per delivery in independent Courier evaluation trials.',
+            gross_energy_per_step:'Mean gross energy expenditure per simulation step during Courier evaluation.',
+            mean_reward:'Mean environment reward during the fixed Courier evaluation, not a substitute for independent survival.',
+            mean_feedings:'Mean feeding events per independent Courier evaluation trial.',
+            mean_births:'Mean births per independent Courier evaluation trial.',
         };
         for(const [suffix,description] of Object.entries(meanings))
             if(name.endsWith('_'+suffix))return description;
@@ -2185,8 +2197,25 @@ document.addEventListener('DOMContentLoaded', () => {
             'Reported metrics','Segment','Latest summary'];
         labels.forEach((label,i)=>{if(headings[i])headings[i].textContent=label;});
         for(const run of runs) {
-            const j=run.job,p=j.live_execution?.progress||j.final_progress||
-                run.points[run.points.length-1]||null;
+            const j=run.job;
+            const recorded=hubComparisonPoints(run);
+            const latestTraining=j.live_execution?.progress||j.final_progress||null;
+            const p=latestTraining||run.points.at(-1)||recorded.at(-1)||null;
+            // The summary must show the last actually measured value for
+            // each selected metric. Evaluation samples are checkpoint-bound,
+            // so the latest training heartbeat cannot stand in for them.
+            const observations=[...recorded,...(latestTraining?[latestTraining]:[])];
+            const latestMetric=key=>{
+                let found=null;
+                for(const point of observations) {
+                    const measurement=point.metrics?.[key.slice(7)];
+                    if(!measurement||!Number.isFinite(measurement.value)||
+                        !Number.isSafeInteger(point.steps_completed))continue;
+                    if(!found||point.steps_completed>=found.point.steps_completed)
+                        found={measurement,point};
+                }
+                return found;
+            };
             const tr=document.createElement('tr');
             cell(tr,run.slot+' · '+hubJobLabel(j)+
                 trialBatchLabel(j)+
@@ -2198,8 +2227,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 (j.execution_diagnostic?' · '+j.execution_diagnostic:''));
             cell(tr,p?.steps_completed?.toLocaleString()||'—');
             cell(tr,selectedMetrics.map(key=>{
-                const metric=p?.metrics?.[key.slice(7)];
-                return metric?key.slice(7)+': '+metric.value.toLocaleString()+' '+metric.unit:null;
+                const found=latestMetric(key);
+                if(!found)return null;
+                const {measurement,point}=found;
+                const display=measurement.unit==='ratio'
+                    ?(measurement.value*100).toLocaleString(undefined,{
+                        maximumFractionDigits:2})+'%'
+                    :measurement.value.toLocaleString(undefined,{
+                        maximumFractionDigits:2})+
+                        (measurement.unit==='count'?'':' '+measurement.unit);
+                return key.slice(7)+': '+display+
+                    (point.evaluation_identity
+                        ?' (evaluated update '+point.steps_completed+')':'');
             }).filter(Boolean).join(' · ')||'—');
             cell(tr,Object.keys(p?.metrics||{}).join(', ')||'—');
             cell(tr,p?.segment_id||'—');
@@ -3254,7 +3293,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         feedback('hub-compare-export-message','Exported '+runs.length+
             ' selected runs as '+format.toUpperCase()+
-            '. This is observational progress, not independent evaluation.');
+            '. Training metrics and checkpoint-bound independent evaluations are observational; neither grants model promotion authority.');
     }
     // The coordinator invokes only an installed trusted exporter. No browser
     // request can choose a filesystem path, executable or checkpoint filename.
