@@ -509,6 +509,36 @@ def author(args) -> tuple[dict, dict, dict]:
             "protected_ship_id": target["entity_id"],
             "seconds": seconds,
         }
+        if owner not in controlled:
+            # Use the same source Squad.Guard and Hold lifetimes as native
+            # player commands. An automated defense must defend its actual
+            # protected hull rather than pursue enemy squads out of range.
+            # On-deployment reinforcement scripts keep their activation.
+            protected_squad = next(
+                squad["item_id"] for squad in by_side_squads[owner]
+                if target["entity_id"] in squad["members"]
+            )
+            defending_squads = {
+                squad["item_id"]: squad for squad in by_side_squads[owner]
+            }
+            for queue in queues:
+                squad = defending_squads.get(queue["squad_item_id"])
+                if squad is None:
+                    continue
+                if squad["item_id"] == protected_squad:
+                    queue["orders"] = [{"kind": "hold"}]
+                    queue["repeat"] = False
+                elif any(ship["entity_id"] in squad["members"] and
+                         ship.get("base_speed", 0) > 0
+                         for ship in by_side[owner]):
+                    queue["orders"] = [{
+                        "kind": "guard",
+                        "friendly_squad_item_id": protected_squad,
+                    }]
+                    queue["repeat"] = True
+                else:
+                    queue["orders"] = [{"kind": "hold"}]
+                    queue["repeat"] = False
     elif args.objective == "extraction":
         if owner not in controlled and not scripted_controller:
             raise ValueError("extraction needs an initially deployed player or scripted extracting squad")
