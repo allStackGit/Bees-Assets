@@ -98,8 +98,13 @@ def main():
     parser.add_argument("--expected-workers", type=int)
     parser.add_argument("--expected-physics-workers", type=int)
     parser.add_argument("--permit-leased-gpu", action="store_true",
-                        help="Hub confirmed one exclusive GPU binding for this job")
+                        help="Hub confirmed an exclusive GPU binding for this job")
+    parser.add_argument("--leased-gpu-count", type=int, default=1,
+                        help="number of Hub-attested exclusive ROCm GPUs (1 or 2)")
     args = parser.parse_args()
+    if args.leased_gpu_count not in (1, 2) or (
+            args.leased_gpu_count != 1 and not args.permit_leased_gpu):
+        parser.error("dual-GPU native collection needs an authorized Hub GPU lease")
     if args.input_url and not args.collector_id:
         parser.error("--collector-id is required with --input-url")
     if args.hub_job_id is not None:
@@ -190,7 +195,7 @@ def main():
                 raise ValueError("downloaded native collector allocation differs from the immutable Hub job")
             workers = job["rollout_workers"]
             physics = job.get("physics_workers", 1)
-            if (not 1 <= workers <= job["world_count"] or
+            if (not args.leased_gpu_count <= workers <= job["world_count"] or
                     not 1 <= physics <= 128 or
                     workers * physics > args.cpu_quota):
                 raise ValueError("issued native simulations exceed the acknowledged Hub CPU lease")
@@ -229,7 +234,10 @@ def main():
             *([] if args.hub_job_id is None else [
                 "--hub-artifact-job-id", args.hub_job_id,
             ]),
-            *([] if not args.permit_leased_gpu else ["--leased-gpu-inference"]),
+            *([] if not args.permit_leased_gpu else [
+                "--leased-gpu-inference", "--leased-gpu-count",
+                str(args.leased_gpu_count),
+            ]),
             *([] if not args.stage_diagnostics else ["--stage-diagnostics"]),
         ]
         env = os.environ.copy()
