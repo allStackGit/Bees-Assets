@@ -1533,9 +1533,9 @@ impl CombatWorld {
     pub fn render_projectiles(&self)
         -> impl Iterator<Item = (&CombatProjectile, &ProjectileBody)> + '_
     {
-        self.projectiles.iter().zip(self.physics.projectiles()).filter(
-            |(_, body)| body.active,
-        )
+        self.physics.active_projectile_indices().iter().map(|&index| {
+            (&self.projectiles[index], &self.physics.projectiles()[index])
+        })
     }
 
     pub fn render_obstacles(&self)
@@ -2924,8 +2924,7 @@ impl CombatWorld {
         if self.shot_outcomes.measurements().in_flight_roots == 0 {
             return;
         }
-        for index in 0..self.projectiles.len() {
-            if !self.physics.projectiles()[index].active { continue; }
+        for &index in self.physics.active_projectile_indices() {
             let root = self.physics.projectiles()[index]
                 .motion.attribution.root_shot_id;
             if !self.shot_outcomes.needs_nearness(root) { continue; }
@@ -3140,16 +3139,16 @@ impl CombatWorld {
                 }
             }
         }
-        let projectile = &mut self.physics.projectiles_mut()[index];
+        let projectile = &self.physics.projectiles()[index];
         if !projectile.active {
             return;
         }
-        projectile.active = false;
         let id = projectile.id;
+        let root = projectile.motion.attribution.root_shot_id;
+        self.physics.retire_projectile(index);
         self.reservations.release(id);
         self.free_projectile_slots.push(index);
         self.events.push(CombatEvent::ProjectileEnded { projectile_id: id });
-        let root = projectile.motion.attribution.root_shot_id;
         if let Some(result) = self.shot_outcomes.ended(root) {
             self.events.push(CombatEvent::ProjectileRootCompleted(result));
         }
@@ -3260,10 +3259,9 @@ impl CombatWorld {
     /// immediate first callback. Timer advancement is kept separate from
     /// projectile collision and only operates on active rocket bodies.
     fn update_rocket_timers(&mut self, dt: f32) {
-        for (index, shot) in self.projectiles.iter_mut().enumerate() {
-            if !self.physics.projectiles()[index].active {
-                continue;
-            }
+        for slot in 0..self.physics.active_projectile_indices().len() {
+            let index = self.physics.active_projectile_indices()[slot];
+            let shot = &mut self.projectiles[index];
             let ImpactBehavior::Rocket { acceleration_timer, max_speed } =
                 &mut shot.behavior else { continue };
             if let Some(due) = acceleration_timer.begin_update(dt) {
@@ -3280,9 +3278,11 @@ impl CombatWorld {
     /// All due events are consumed in clip order; callbacks can affect
     /// broadphase contacts during the physics step immediately below.
     fn update_explosion_timelines(&mut self, dt: f32) -> Result<(), CombatWorldError> {
-        for index in 0..self.projectiles.len() {
-            if !self.physics.projectiles()[index].active ||
-                !self.projectiles[index].is_explosion() {
+        let mut slot = 0;
+        while slot < self.physics.active_projectile_indices().len() {
+            let index = self.physics.active_projectile_indices()[slot];
+            if !self.projectiles[index].is_explosion() {
+                slot += 1;
                 continue;
             }
             self.projectiles[index].advance_explosion_timeline(dt);
@@ -3310,6 +3310,11 @@ impl CombatWorld {
                         break;
                     }
                 }
+            }
+            // Kill removes this sorted slot; visit the next element which
+            // shifted into its place without skipping a live explosion.
+            if self.physics.projectiles()[index].active {
+                slot += 1;
             }
         }
         Ok(())
@@ -4405,14 +4410,15 @@ impl CombatWorld {
         // Base Projectile.FixedUpdate checks strict distance > Range after
         // contact processing, not on a newly fired shot or as a swept ray.
         // Rocket explosions override FixedUpdate and never range-expire here.
-        for index in 0..self.projectiles.len() {
-            if self.projectiles[index].is_explosion() ||
-                matches!(&self.projectiles[index].behavior, ImpactBehavior::StrikerBomb(_)) {
-                continue;
-            }
-            if self.physics.projectiles()[index].active &&
+        let mut slot = 0;
+        while slot < self.physics.active_projectile_indices().len() {
+            let index = self.physics.active_projectile_indices()[slot];
+            if !self.projectiles[index].is_explosion() &&
+                !matches!(&self.projectiles[index].behavior, ImpactBehavior::StrikerBomb(_)) &&
                 self.physics.projectiles()[index].motion.has_exceeded_range() {
                 self.end_projectile(index);
+            } else {
+                slot += 1;
             }
         }
 

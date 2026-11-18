@@ -968,6 +968,9 @@ pub struct PhysicsStepCounts {
     pub integrated_bodies: u64,
     /// Historical dead hull slots bypassed by the active-only integration.
     pub inactive_ship_slots_skipped: u64,
+    /// Retired pooled shots skipped during physics integration and both
+    /// projectile collision phases, rather than examined each fixed step.
+    pub inactive_projectile_slots_skipped: u64,
     /// Additional dead slots avoided across actual ship-grid rebuilds.
     pub inactive_ship_grid_slots_skipped: u64,
     /// Historical pooled obstacle slots bypassed by integration and grids.
@@ -1240,6 +1243,10 @@ pub struct KinematicPhysics {
     // indices continue to identify the canonical original physics slots.
     active_ship_indices: Vec<usize>,
     projectiles: Vec<ProjectileBody>,
+    /// Sorted original slots of living projectiles. Recycled shots retain
+    /// their physical slot, but never force integration/contact walks over
+    /// historical peak allocations.
+    active_projectile_indices: Vec<usize>,
     obstacles: Vec<ObstacleBody>,
     /// Sorted physical obstacle slots, including reused pooled asteroids.
     /// Never holds a second copy of any collider or source entity.
@@ -1287,6 +1294,7 @@ impl KinematicPhysics {
             ships: Vec::new(),
             active_ship_indices: Vec::new(),
             projectiles: Vec::new(),
+            active_projectile_indices: Vec::new(),
             obstacles: Vec::new(),
             active_obstacle_indices: Vec::new(),
             grid: SpatialGrid::new(area, cell_size)?,
@@ -1735,6 +1743,9 @@ impl KinematicPhysics {
         Ok(query)
     }
     pub fn projectiles(&self) -> &[ProjectileBody] { &self.projectiles }
+    /// Physical slot order remains stable across reuse; callers must
+    /// retire shots through retire_projectile instead of toggling active.
+    pub fn active_projectile_indices(&self) -> &[usize] { &self.active_projectile_indices }
     pub fn projectiles_mut(&mut self) -> &mut [ProjectileBody] { &mut self.projectiles }
     pub fn counts(&self) -> PhysicsStepCounts { self.counts }
     pub fn trigger_entries(&self) -> &[TriggerEnter] { &self.entries }
@@ -1944,7 +1955,20 @@ impl KinematicPhysics {
         projectile.update_hull();
         let index = self.projectiles.len();
         self.projectiles.push(projectile);
+        if self.projectiles[index].active {
+            self.active_projectile_indices.push(index);
+        }
         index
+    }
+
+    /// One source of truth for projectile retirement. Keep entity IDs in
+    /// historical contact streams but remove dormant slots from each tick.
+    pub(crate) fn retire_projectile(&mut self, index: usize) {
+        debug_assert!(self.projectiles[index].active);
+        let position = self.active_projectile_indices.binary_search(&index)
+            .expect("active projectile slot must be registered");
+        self.active_projectile_indices.remove(position);
+        self.projectiles[index].active = false;
     }
 
     /// Recycle the physical storage of an ended projectile without allowing
@@ -1962,6 +1986,11 @@ impl KinematicPhysics {
         }
         projectile.update_hull();
         *slot = projectile;
+        if slot.active {
+            let insertion = self.active_projectile_indices.binary_search(&index)
+                .expect_err("reused projectile slot must not already be active");
+            self.active_projectile_indices.insert(insertion, index);
+        }
         Ok(())
     }
 
@@ -2003,6 +2032,8 @@ impl KinematicPhysics {
             (self.ships.len() - self.active_ship_indices.len()) as u64;
         self.counts.inactive_obstacle_slots_skipped =
             (self.obstacles.len() - self.active_obstacle_indices.len()) as u64;
+        self.counts.inactive_projectile_slots_skipped =
+            (self.projectiles.len() - self.active_projectile_indices.len()) as u64;
         let mut has_active_ships = false;
         for &index in &self.active_ship_indices {
             let ship = &mut self.ships[index];
@@ -2019,7 +2050,8 @@ impl KinematicPhysics {
         // this during the mandatory integration pass rather than scanning
         // allocated (often retired) projectile slots again.
         let mut has_physical_projectiles = false;
-        for projectile in &mut self.projectiles {
+        for &index in &self.active_projectile_indices {
+            let projectile = &mut self.projectiles[index];
             if !projectile.active { continue; }
             if projectile.has_body {
                 projectile.motion.position += projectile.motion.velocity * dt;
@@ -2080,9 +2112,10 @@ impl KinematicPhysics {
         }
         self.overlaps_current.clear();
         let projectiles_to_check = if has_active_ships && has_physical_projectiles {
-            self.projectiles.as_slice()
+            self.active_projectile_indices.as_slice()
         } else { &[] };
-        for projectile in projectiles_to_check {
+        for &index in projectiles_to_check {
+            let projectile = &self.projectiles[index];
             if !projectile.active { continue; }
             let Some(projectile_collider) = &projectile.collider else { continue };
             let Some(area) = projectile_collider.bounds else { continue };
@@ -2180,7 +2213,8 @@ impl KinematicPhysics {
         // physical shot. Skip historical inactive projectile slots in those
         // cases, but still reconcile the previous overlap history below.
         if active_obstacle_count > 0 && has_physical_projectiles && !self.grid.is_empty() {
-            for projectile in &self.projectiles {
+            for &index in &self.active_projectile_indices {
+                let projectile = &self.projectiles[index];
                 if !projectile.active { continue; }
                 let Some(projectile_collider) = &projectile.collider else { continue };
                 let Some(area) = projectile_collider.bounds else { continue };
@@ -2351,8 +2385,8 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
         let counts = world.state.counts();
         Ok(crate::telemetry::StepCounts {
             decisions: 0,
-            active_ships: world.state.ships().iter().filter(|ship| ship.active).count() as u32,
-            active_projectiles: world.state.projectiles().iter().filter(|shot| shot.active).count() as u32,
+            active_ships: world.state.active_ship_indices().len() as u32,
+            active_projectiles: world.state.active_projectile_indices().len() as u32,
             integrated_bodies: counts.integrated_bodies,
             broadphase_candidates: counts.broadphase_candidates,
             ship_grid_overflow_bodies: counts.ship_grid_overflow_bodies,
