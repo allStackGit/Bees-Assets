@@ -112,6 +112,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'rollout_opponent_grouped_calls',
             'rollout_opponent_grouped_models',
             'rollout_opponent_grouped_states',
+            'rollout_opponent_grouped_padding',
             'rollout_opponent_grouped_fallbacks',
             'rollout_opponent_grouped_weight_reuses',
             'rollout_opponent_batch_budget_pixels',
