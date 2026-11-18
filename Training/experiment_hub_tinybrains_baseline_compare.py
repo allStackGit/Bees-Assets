@@ -60,7 +60,7 @@ def publish_report(report, suites, output, run_name):
         if not file.is_absolute() or file.resolve(strict=True) != file or not file.is_file() or \
            checkpoint_digest(file) != result.get("checkpoint_sha256"):
             raise ValueError("Historical checkpoint bytes differ or are unavailable: " + str(file))
-        match = re.fullmatch(r"update-([0-9]{6,8})\\.pt", file.name)
+        match = re.fullmatch(r"update-([0-9]{6,8})\.pt", file.name)
         if match is None:
             raise ValueError("Checkpoint filename lacks an immutable update coordinate: " + file.name)
         update = int(match[1])
