@@ -2143,6 +2143,7 @@ class ExperimentHub {
         const evaluations=this.evaluationHistory.snapshot(projectId,comparisonJobs);
         return {...chart,evaluations:evaluations.samples,
             evaluation_regressions:evaluations.regressions,
+            evaluation_diagnostics:evaluations.diagnostics,
             evaluation_storage_warning:evaluations.storage_warning};
     }
     // These are conservative coordinator-side claims, NOT operating system
@@ -4092,6 +4093,15 @@ class ExperimentHub {
             const job=this.state.jobs.find(j=>j.id===report.job_id);
             const policy=activeEvaluation(job);
             if(!job||!policy||job.dispatch_id!==report.dispatch_id)continue;
+            // Only an authenticated, lifecycle-accepted native observation
+            // may produce a diagnostic entry. Receipt-reader failures have
+            // no trustworthy checkpoint coordinate or outcome count.
+            const issue=acceptedReports.get(job.id)?.evaluationIssue;
+            if(issue) {
+                const rule=evaluationRules(policy).find(rule=>
+                    issue.startsWith(rule.suite_id+': '));
+                this.evaluationHistory.recordIssue(job,issue,rule?.suite_id||null);
+            }
             const raw=Array.isArray(report.evaluations)?report.evaluations:
                 report.evaluation?[report.evaluation]:[];
             for(const value of raw) {
