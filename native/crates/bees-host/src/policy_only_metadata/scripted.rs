@@ -178,6 +178,58 @@ impl NativeScriptedOrder {
     }
 }
 
+/// Exact nearest squad by source sprite-AABB centers. The x coordinate
+/// is a lower bound on squared distance: once its squared gap exceeds the
+/// best complete distance, no more distant x coordinate can win. Equal
+/// distances still choose the source's smallest squad ID regardless of
+/// iteration order. No physics state or target identity is cached between
+/// fixed ticks.
+fn nearest_scripted_enemy(
+    centers: &[(SquadLifetime, i32, Vec2)],
+    owner: SquadLifetime, own_side: i32, own_center: Vec2,
+) -> Result<(Option<SquadLifetime>, u64), GameCommandError> {
+    let pivot = centers.partition_point(|(_, _, center)| center.x < own_center.x);
+    let (mut left, mut right) = (pivot, pivot);
+    let mut best: Option<(f32, SquadLifetime)> = None;
+    let mut inspected = 0;
+    while left > 0 || right < centers.len() {
+        let left_dx2 = if left > 0 {
+            let dx = centers[left - 1].2.x - own_center.x;
+            dx * dx
+        } else { f32::INFINITY };
+        let right_dx2 = if right < centers.len() {
+            let dx = centers[right].2.x - own_center.x;
+            dx * dx
+        } else { f32::INFINITY };
+        let (candidate, side, center, lower_bound) = if left_dx2 <= right_dx2 && left > 0 {
+            left -= 1;
+            let (candidate, side, center) = centers[left];
+            (candidate, side, center, left_dx2)
+        } else {
+            let (candidate, side, center) = centers[right];
+            right += 1;
+            (candidate, side, center, right_dx2)
+        };
+        if best.is_some_and(|(distance, _)| lower_bound > distance) {
+            break;
+        }
+        if candidate.level_id != owner.level_id || side == own_side {
+            continue;
+        }
+        inspected += 1;
+        let distance = (center - own_center).length_squared();
+        if !distance.is_finite() {
+            return Err(GameCommandError::InvalidEnemy);
+        }
+        if best.is_none_or(|(prior, selected)|
+            distance < prior || (distance == prior && candidate.squad_id < selected.squad_id))
+        {
+            best = Some((distance, candidate));
+        }
+    }
+    Ok((best.map(|(_, owner)| owner), inspected))
+}
+
 /// Captured scenario orders, keyed by the source Squad.ItemId, not the
 /// recycled hotkey number. The initial order starts on the first completed
 /// fixed step; delayed/cutscene-triggered orders require their actual Level
@@ -600,6 +652,14 @@ impl NativePolicyOnlyMetadata {
                             .map_err(NativeLevelEventError::Commands)?;
                         self.scripted_centers.push((candidate, target.side, center));
                     }
+                    // Sort once for all orders on this tick. The
+                    // lower-bound search below cannot alter source tie
+                    // ordering, and keeps dense native AI battles from
+                    // comparing every opposing squad against every caller.
+                    self.scripted_centers.sort_unstable_by(|a, b|
+                        a.2.x.total_cmp(&b.2.x)
+                            .then_with(|| a.0.squad_id.cmp(&b.0.squad_id))
+                    );
                     self.scripted_counts.nearest_enemy_centers_sampled +=
                         self.scripted_centers.len() as u64;
                     centers_ready = true;
@@ -608,29 +668,12 @@ impl NativePolicyOnlyMetadata {
                     .find(|(candidate, _, _)| *candidate == owner)
                     .map(|(_, _, center)| *center)
                     .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
-                let mut nearest: Option<(f32, SquadLifetime)> = None;
-                let mut inspected = 0_u64;
-                for &(candidate, enemy_side, enemy_center) in &self.scripted_centers {
-                    if candidate.level_id != owner.level_id ||
-                        enemy_side == own_side
-                    { continue; }
-                    inspected += 1;
-                    let distance = (enemy_center - own_center).length_squared();
-                    if !distance.is_finite() {
-                        return Err(NativeLevelEventError::Commands(
-                            GameCommandError::InvalidEnemy,
-                        ));
-                    }
-                    if nearest.is_none_or(|(best_distance, best_owner)|
-                        distance < best_distance ||
-                        (distance == best_distance && candidate.squad_id < best_owner.squad_id))
-                    {
-                        nearest = Some((distance, candidate));
-                    }
-                }
+                let (nearest, inspected) = nearest_scripted_enemy(
+                    &self.scripted_centers, owner, own_side, own_center,
+                ).map_err(NativeLevelEventError::Commands)?;
                 self.scripted_counts.nearest_enemy_resolutions += 1;
                 self.scripted_counts.nearest_enemy_candidates_scanned += inspected;
-                let Some((_, target)) = nearest else {
+                let Some(target) = nearest else {
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.orders_skipped_target_gone += 1;
                     // A faction with queued enemy reinforcements must wait,
