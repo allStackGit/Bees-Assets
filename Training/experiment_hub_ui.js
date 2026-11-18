@@ -1795,6 +1795,9 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-compare-selection-panel').hidden=project==='bees';
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
         const evalHistory=new Map(evalSamples.map(s=>[s.job_id,s.points||[]]));
+        const evalDiagnostics=new Map((comparisonProject===project
+            ?comparisonData?.evaluation_diagnostics||[]:[])
+            .map(s=>[s.job_id,s.events||[]]));
         const hasSamples=j=>j.live_execution?.progress||j.final_progress||
             history.get(j.id)?.length||evalHistory.get(j.id)?.length;
         const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonEvaluation(j)||
@@ -1887,7 +1890,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(j=>j.id===id);
             return job?{job,color:compareColor(i),slot:String(i+1),
-                points:history.get(id)||[],evaluation_points:evalHistory.get(id)||[]}:null;
+                points:history.get(id)||[],evaluation_points:evalHistory.get(id)||[],
+                evaluation_diagnostics:evalDiagnostics.get(id)||[]}:null;
         }).filter(Boolean);
         const metricSelect=$('hub-compare-metric');
         const oldMetrics=metricSelect.dataset.metricProject===project
@@ -2000,6 +2004,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' regression analysis '+observation.status+': '+observation.reason);
         }
         for(const run of runs) {
+            const recentIssue=run.evaluation_diagnostics?.at(-1);
+            if(recentIssue)warnings.push('Run '+run.slot+
+                ' recorded an independent-evaluation receipt availability issue'+
+                (recentIssue.suite_id?' for '+recentIssue.suite_id:'')+
+                ' at '+recentIssue.observed_at+': '+recentIssue.issue+
+                '. This is not a measured failure or zero score; inspect evaluator health and receipts.');
             const job=run.job;
             if(job.evaluation_history_only||!(job.evaluation_monitor||job.evaluation_stop)||
                 !['running','stop_requested','stopped','finished','failed'].includes(job.status))
@@ -4933,6 +4943,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusLine.textContent+=' · last service-health check '+
                         machine.evaluator_service_checked_at;
                 details.append(statusLine);
+                const archivedIssues=comparisonProject===project
+                    ?comparisonData?.evaluation_diagnostics?.find(row=>
+                        row.job_id===j.id)?.events||[]:[];
+                if(archivedIssues.length) {
+                    const historyLine=document.createElement('p');
+                    historyLine.textContent='Archived evaluator receipt-availability issues '+
+                        '(not measured match outcomes or checkpoint failures): '+
+                        archivedIssues.slice(-5).map(row=>
+                            row.observed_at+' · '+(row.suite_id||'suite unspecified')+
+                            ': '+row.issue).join(' | ');
+                    details.append(historyLine);
+                }
                 if(monitoring&&j.evaluation_monitor.regression_alert) {
                     const info=document.createElement('p');
                     info.textContent=regressionSignals.length
