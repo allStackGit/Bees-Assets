@@ -698,6 +698,7 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
     experiences = defaultdict(list)
     previous = {}
     initial_action = np.zeros(6, dtype=np.int32)
+    initial_continuous = np.zeros(16, dtype=np.float32)
     # Maintain only *living* learning teammates in source group-ID order.
     # A Queen can create thousands of sequential minions without thousands
     # of concurrent ships: rescanning every historical member at each
@@ -715,6 +716,12 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
             _, agent, team = entering[entered]
             if closing[agent] > tick:
                 insort(team_members[team], agent)
+                if starts[agent] > 0:
+                    # Genuine post-spawn observation, not a fabricated
+                    # policy decision. Until the first action, CombatWorld
+                    # holds its source-initialized zero controller.
+                    born = boundaries[starts[agent]][agent]
+                    latest[agent] = born
             entered += 1
         while left < len(leaving) and leaving[left][0] <= tick:
             _, agent, team = leaving[left]
@@ -757,8 +764,12 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
                     mate: AgentStatus(
                         [latest[mate]["observations"]], 0.0,
                         ActionTuple(
-                            latest[mate]["sampled_continuous"],
-                            latest[mate]["discrete"].astype(np.int32),
+                            (latest[mate]["sampled_continuous"]
+                             if "sampled_continuous" in latest[mate].dtype.names
+                             else initial_continuous),
+                            (latest[mate]["discrete"].astype(np.int32)
+                             if "discrete" in latest[mate].dtype.names
+                             else initial_action),
                         ), closing[mate] <= next_tick,
                     )
                     for mate in members if
@@ -818,7 +829,8 @@ def _dynamic_trajectories(rollout, horizon, behavior_id):
                     indices = decision_ticks[mate]
                     found = bisect_right(indices, next_tick) - 1
                     observation = (decision_rows[mate][found]
-                                   if found >= 0 else None)
+                                   if found >= 0 else
+                                   boundaries.get(starts[mate], {}).get(mate))
                 if observation is not None:
                     next_group.append([observation["observations"]])
             yield Trajectory(
