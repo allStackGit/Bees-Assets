@@ -60,11 +60,14 @@ function hubFinalEvaluationCohort(job) {
     return job.checkpoint_model_sha256?job.evaluation_candidates?.find(cohort=>
         cohort.checkpoint_sha256===job.checkpoint_model_sha256)?.receipts:null;
 }
-// Keep every project-neutral evaluation key within the Hub's 64-character
-// metric/export contract, without confusing two frozen suite definitions.
+// Both suite and runtime fingerprints are part of one independently
+// comparable measurement. Do not combine a changed evaluation engine with
+// an older result merely because the suite ID remained the same. Reserve
+// 25 characters for a full project metric suffix within the 64-char limit.
 function hubEvaluationMetricPrefix(row) {
-    return 'eval_'+String(row.suite_id||'').replace(/-/g,'_').slice(0,21)+
-        '_'+String(row.suite_sha256||'').slice(0,12);
+    return 'eval_'+String(row.suite_id||'').replace(/-/g,'_').slice(0,12)+
+        '_'+String(row.suite_sha256||'').slice(0,12)+
+        '_'+String(row.runtime_sha256||'unverified').slice(0,8);
 }
 function hubComparisonPoints(run) {
     const training=run.points.length?run.points:
@@ -1917,7 +1920,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'success rate':metric.key.slice(prefix.length+1).replace(/_/g,' ')):null;
             return {key:'metric:'+metric.key,
                 label:details?'Evaluation '+details.suite_id+' · '+measurement+
-                    ' ('+details.suite_sha256.slice(0,12)+')':
+                    ' (suite '+details.suite_sha256.slice(0,12)+
+                    ' · runtime '+(details.runtime_sha256?.slice(0,12)||'unverified')+')':
                     metric.key+' ('+metric.units.join('/')+')',
                 units:metric.units};
         });
