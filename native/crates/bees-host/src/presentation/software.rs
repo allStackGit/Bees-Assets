@@ -108,6 +108,13 @@ pub struct NativeRenderCounts {
     /// Actual translucent samples that required destination blending.
     pub sprite_raster_blended_pixels: u64,
     pub ship_fallback_hulls: usize,
+    /// Source CombatEvent::ShipDied events admitted this frame.
+    pub ship_deaths_observed: usize,
+    /// Rendered short explosion flashes and five-second ship remains.
+    pub ship_explosion_visual_draws: usize,
+    pub ship_remains_draws: usize,
+    /// Oldest effects evicted to keep large battles bounded.
+    pub ship_death_visuals_dropped: usize,
     /// Loaded source-art types, not the number of active ship entities.
     pub ship_art_types_loaded: usize,
     pub asteroid_sprite_draws: usize,
@@ -204,6 +211,10 @@ pub struct NativeSoftwareRenderer {
     pub hovered_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
     obstacle_debris: Vec<ObstacleDebris>,
+    /// Optional source-identified death presentation, bounded independently
+    /// of the underlying CombatWorld's entity and training lifetimes.
+    death_owner: Option<(WorldId, u64)>,
+    death_effects: Vec<ShipDeathVisual>,
     /// Cosmetic first-seen ticks belong to the displayed world and
     /// episode. No world model state or RNG changes when sprites animate.
     projectile_art_owner: Option<(WorldId, u64)>,
@@ -230,6 +241,21 @@ impl FogFade {
         let phases = (elapsed / 0.1).floor().max(0.0);
         self.radius * 0.8f32.powf(phases)
     }
+}
+
+/// The source ShipRemains is visible for five simulated seconds. This
+/// read-only snapshot is captured only from an authenticated ShipDied event,
+/// never from absence in a rendered roster (fog or extraction also hides ships).
+#[derive(Clone, Copy)]
+struct ShipDeathVisual {
+    ship_id: i64,
+    born_tick: u64,
+    ship_type: u8,
+    position: Vec2,
+    rotation_degrees: f32,
+    radius: f32,
+    side: i32,
+    color_rgb: Option<[u8; 3]>,
 }
 
 struct ObstacleDebris {
@@ -684,7 +710,102 @@ impl NativeSoftwareRenderer {
             attack_on_sight_selection_all: false,
             hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new(),
+            death_owner: None, death_effects: Vec::new(),
             projectile_art_owner: None, projectile_art_ticks: HashMap::new() })
+    }
+
+    /// A source-scoped gameplay death is rendered from its exact physical
+    /// last pose, not from a missing ship or separate cosmetic simulation.
+    /// Remote snapshots use the same method after host-side fog filtering.
+    pub(super) fn begin_death_scene(&mut self, world: WorldId, revision: u64) {
+        let owner = (world, revision);
+        if self.death_owner != Some(owner) {
+            self.death_owner = Some(owner);
+            self.death_effects.clear();
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn record_ship_death(&mut self,
+        ship_id: i64, born_tick: u64, ship_type: u8, side: i32,
+        position: Vec2, rotation_degrees: f32, radius: f32,
+        color_rgb: Option<[u8; 3]>,
+    ) -> (bool, bool) {
+        if !position.is_finite() || !rotation_degrees.is_finite() ||
+            !radius.is_finite() || radius <= 0.0 ||
+            self.death_effects.iter().any(|effect|
+                effect.ship_id == ship_id && effect.born_tick == born_tick)
+        {
+            return (false, false);
+        }
+        let dropped = if self.death_effects.len() == 512 {
+            self.death_effects.remove(0);
+            true
+        } else { false };
+        self.death_effects.push(ShipDeathVisual {
+            ship_id, born_tick, ship_type, side, position,
+            rotation_degrees, radius: radius.clamp(1.0, 100.0),
+            color_rgb,
+        });
+        (true, dropped)
+    }
+
+    /// No physics, RNG, allocation or enemy discovery is performed here.
+    /// The ordinary post-render fog stencil masks every visual sample.
+    /// A paused simulation keeps its remains indefinitely until time runs.
+    pub(super) fn draw_ship_death_visuals(
+        &mut self, tick: u64, fixed_dt: f32,
+    ) -> (usize, usize) {
+        if !fixed_dt.is_finite() || fixed_dt <= 0.0 { return (0, 0); }
+        self.death_effects.retain(|fx|
+            tick >= fx.born_tick &&
+            (tick - fx.born_tick) as f32 * fixed_dt < 5.0);
+        let mut remains_drawn = 0;
+        let mut flashes_drawn = 0;
+        for index in 0..self.death_effects.len() {
+            let fx = self.death_effects[index];
+            let seconds = (tick - fx.born_tick) as f32 * fixed_dt;
+            let alpha = 0.6 * (1.0 - seconds / 5.0).clamp(0.0, 1.0);
+            let art = source_ship_art()
+                .and_then(|atlas| atlas.sprites.get(usize::from(fx.ship_type)))
+                .and_then(Option::as_ref);
+            let tinted = art.and_then(|art| art.recolor_mask.as_ref()
+                .and_then(|_| fx.color_rgb.map(|rgb| (art, rgb))))
+                .map(|(art, rgb)| {
+                    let key = (fx.ship_type, rgb);
+                    if !self.custom_ship_art.contains_key(&key) {
+                        if self.custom_ship_art.len() >= 96 {
+                            self.custom_ship_art.clear();
+                        }
+                        self.custom_ship_art.insert(key, Arc::new(art.recolored(rgb)));
+                    }
+                    Arc::clone(self.custom_ship_art.get(&key)
+                        .expect("installed native ship remains color"))
+                });
+            let sprite_drawn = art.is_some_and(|art| {
+                let sprite = tinted.as_deref().unwrap_or(&art.sprite);
+                self.draw_sprite(sprite, fx.position,
+                    fx.rotation_degrees.to_radians(),
+                    self.camera.pixels_per_unit / art.pixels_per_unit,
+                    alpha)
+            });
+            if !sprite_drawn {
+                // Source art is optional on both platforms. Preserve the
+                // real death position when the artwork is not installed.
+                self.cross(fx.position, fx.radius.min(4.0), 0x66717d);
+            }
+            remains_drawn += 1;
+            if seconds < 0.4 {
+                let progress = seconds / 0.4;
+                let radius = fx.radius * (0.75 + 1.5 * progress);
+                self.shape(&ShipShape::Circle {
+                    offset: Vec2::ZERO, radius,
+                }, Pose { position: fx.position, rotation_degrees: 0.0 },
+                if fx.side == 1 { 0xffca81 } else { 0xffa281 });
+                flashes_drawn += 1;
+            }
+        }
+        (remains_drawn, flashes_drawn)
     }
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
@@ -1512,6 +1633,28 @@ impl NativeSoftwareRenderer {
                 }
             }
         }
+        self.begin_death_scene(view.world_id, view.episode_revision);
+        for event in view.combat.events() {
+            let bees_sim::combat_world::CombatEvent::ShipDied { victim_id, .. } = event
+                else { continue };
+            let (Some(ship), Some(body)) = (
+                view.combat.ship(*victim_id), view.combat.ship_body(*victim_id),
+            ) else { continue };
+            let radius = body.primary_bounds().map(|bounds|
+                (bounds.max.x - bounds.min.x)
+                    .max(bounds.max.y - bounds.min.y) * 0.5
+            ).unwrap_or(3.0);
+            let custom_color = view.roster.owning_squad(*victim_id)
+                .and_then(|owner|
+                    view.player_authority.player_squad_color_rgb(owner));
+            let (observed, dropped) = self.record_ship_death(
+                *victim_id, view.tick, ship.ship_type, ship.side,
+                body.motion.position, body.motion.rotation_degrees,
+                radius, custom_color,
+            );
+            counts.ship_deaths_observed += usize::from(observed);
+            counts.ship_death_visuals_dropped += usize::from(dropped);
+        }
         let projectile_art = source_projectile_art();
         counts.projectile_art_types_loaded = projectile_art.map_or(0, |atlas| atlas.loaded);
         let artwork_world = (view.world_id, view.episode_revision);
@@ -1580,6 +1723,10 @@ impl NativeSoftwareRenderer {
         // view; retained battles with millions of shots cannot accumulate
         // stale animation state over time.
         self.projectile_art_ticks.retain(|_, &mut (_, seen)| seen == view.tick);
+        let (remains, explosions) =
+            self.draw_ship_death_visuals(view.tick, view.fixed_step_seconds);
+        counts.ship_remains_draws = remains;
+        counts.ship_explosion_visual_draws = explosions;
         counts.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels;
         counts.sprite_raster_opaque_pixels = self.sprite_raster_opaque_pixels;
         counts.sprite_raster_blended_pixels = self.sprite_raster_blended_pixels;
