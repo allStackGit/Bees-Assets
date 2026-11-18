@@ -228,6 +228,25 @@ function evaluationMeasurements(metrics) {
     return normalized;
 }
 
+function verifiedSuiteDefinition(value) {
+    if(value.suite_definition_canonical===undefined)return undefined;
+    const canonical=value.suite_definition_canonical;
+    if(typeof canonical!=='string'||
+        Buffer.byteLength(canonical,'utf8')>2048||
+        !SHA256.test(String(value.suite_sha256||''))||
+        crypto.createHash('sha256').update(canonical,'utf8').digest('hex')!==
+            value.suite_sha256)
+        throw Error('Independent evaluation frozen suite definition fingerprint differs.');
+    let definition;
+    try {definition=JSON.parse(canonical);}
+    catch {throw Error('Independent evaluation frozen suite definition is invalid JSON.');}
+    if(!record(definition)||
+        definition.suite_id!==value.suite_id||
+        (definition.runtime_sha256??null)!==(value.runtime_sha256??null))
+        throw Error('Independent evaluation frozen suite or runtime identity differs.');
+    return canonical;
+}
+
 function evaluationEvidence(value,policy,dispatchId) {
     if(!record(value)||value.schema_version!==1||
         value.suite_id!==policy.suite_id||value.dispatch_id!==dispatchId||
@@ -245,6 +264,10 @@ function evaluationEvidence(value,policy,dispatchId) {
             (typeof value.evaluated_at!=='string'||!Number.isFinite(Date.parse(value.evaluated_at))||
              new Date(value.evaluated_at).toISOString()!==value.evaluated_at)))
         throw Error('Invalid independent evaluation evidence for this suite and dispatch.');
+    // The exact source is optional for legacy receipts and large suites.
+    // When present it must hash to the same immutable suite fingerprint
+    // already required for checkpoint comparison and Stop authorization.
+    const frozen=verifiedSuiteDefinition(value);
     return {schema_version:1,suite_id:value.suite_id,dispatch_id:dispatchId,
         checkpoint_sha256:value.checkpoint_sha256,trials:value.trials,
         successes:value.successes,
@@ -252,6 +275,7 @@ function evaluationEvidence(value,policy,dispatchId) {
         ...(value.runtime_sha256?{runtime_sha256:value.runtime_sha256}:{}),
         ...(value.steps_completed!==undefined?{steps_completed:value.steps_completed}:{}),
         ...(value.evaluated_at?{evaluated_at:value.evaluated_at}:{}),
+        ...(frozen!==undefined?{suite_definition_canonical:frozen}:{}),
         ...(value.metrics!==undefined?{metrics:evaluationMeasurements(value.metrics)}:{})};
 }
 // A failed evaluator attempt is an observation, never an evaluation score.
