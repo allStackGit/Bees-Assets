@@ -1,6 +1,6 @@
 # Resource-efficient training workstream
 
-Updated 2026-11-18. Branch: `feat/hub-heterogeneous-bootstrap-20261118` (continuing `feat/hub-gpu-forward-evidence-20261118`).
+Updated 2026-11-18. Branch: `feat/hub-resource-efficiency-20261112` (incorporates heterogeneous startup and GPU-forward evidence).
 Scope: TinyBrains, Courier, future native projects; Bees remains with the unified native rewrite.
 The Hub reserves **fixed** CPU/RAM/GPU and machine allocations. Backends optimize useful training throughput inside those leases. Benchmarks below are not implied: these are source-level changes awaiting real workload qualification.
 Latest GPU execution: TinyBrains now batches frozen Torch opponents up to per-model, VRAM-aware inference widths with deterministic OOM splitting; Courier reuses compatible pinned observation/recurrent readback slots across completed GPU PPO rollouts and skips redundant policy moves. Both report previously unavailable opponent/forward GPU stream intervals to the same Hub metric pipeline, with same-worker ratios rather than unsupported device-saturation claims. New shared-policy Courier jobs can use a declared backend capability to benchmark one disposable native map on each approved machine through its authenticated collector socket before assigning any PPO slot. Stable, clamped relative rates adjust CPU-proportional whole-map shares only when the predicted critical-worker benefit exceeds 12%; the Hub preserves all fixed resource claims and the full PPO batch. Ordinary continuation reuses exact saved worker ranges and RNG ownership if the approved endpoint/CPU plan is unchanged. Startup calibration is a heuristic, distinguished from reported actual collector wall-time spread and sustained collection imbalance. Both learner and remote collectors need the new backend version. GPU inference aggregation across independent Courier PPO lineages and real cross-machine useful-SPS qualification remain open.
@@ -230,6 +230,8 @@ of link utilization or a real SPS qualification.
   probes. A TinyBrains Docker learner uses the image and GPU topology it
   just qualified. The Hub supports a leased single-GPU learner and
   separately leased single-GPU collectors in the same rollout group.
+
+- **2026-11-18 exposed Courier GPU-forward attribution:** The existing Hub bottleneck analyzer now distinguishes forward-stream work on the uniquely last-completing independent PPO lineage from a shared-policy collector whose bytes and decoded experience both arrive last. It requires material measured work and exposed arrival gap, then at least five matching owner receipts across a sustained two-minute window; unrelated workers cannot combine into a diagnosis. The existing metrics, default chart cache, Train/Monitor summary and complete source exports include a candidate's owner and sustained pressure. GPU stream intervals include scheduling gaps: these are critical-path clues, not exclusive GPU utilization or validated SPS gains.
 
 ## Significant remaining development
 
