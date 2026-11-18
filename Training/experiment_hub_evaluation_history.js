@@ -916,11 +916,27 @@ class EvaluationHistory {
                         row.steps_completed>newest.get(key).steps_completed))
                         newest.set(key,row);
                 }
-                points=points.map(row=>{
+                // Keep one complete frozen definition per exact suite and
+                // runtime in the bounded chart response. All original JSONL
+                // rows remain intact; duplicating a 2 KiB manifest for every
+                // checkpoint would inflate frequent polling and comparisons.
+                const definitionsLast=new Map();
+                const definitionKey=row=>JSON.stringify([
+                    row.suite_id,row.suite_sha256,row.runtime_sha256||null,
+                ]);
+                points.forEach((row,index)=>{
+                    if(typeof row.suite_definition_canonical==='string')
+                        definitionsLast.set(definitionKey(row),index);
+                });
+                points=points.map((row,index)=>{
                     const latest=newest.get(comparableKey(row));
                     const superseded=latest&&
                         latest.steps_completed>row.steps_completed;
-                    return {...row,comparison_status:superseded
+                    const compact=definitionsLast.get(definitionKey(row))===index
+                        ?row:(({
+                            suite_definition_canonical,...receipt
+                        })=>receipt)(row);
+                    return {...compact,comparison_status:superseded
                         ?'superseded':'complete',
                         ...(superseded?{
                             superseded_by_checkpoint_sha256:latest.checkpoint_sha256,
