@@ -38,6 +38,54 @@ POLICY_RUNTIME_MODULES = (
 )
 
 
+
+# Training-capable distributions keep the exact canonical Python learner,
+# native Rust workspace and authored physical assets alongside the client.
+# Python, ML-Agents, PyTorch, Cargo and Node (for Hub) remain target-machine
+# prerequisites; ordinary game-only distributions remain small and Python-free.
+PROTECTED_SOURCE_NAMES = {
+    "results", ".results", "Demonstrations", "Logs", "TrainingHistory~",
+    "target", ".git", "__pycache__",
+}
+
+
+def package_native_training_runtime(destination: Path, rollout_binary: Path | None) -> None:
+    native = destination / "native"
+    native.mkdir(exist_ok=True)
+    for name in ("Cargo.toml", "Cargo.lock"):
+        shutil.copy2(ROOT / "native" / name, native / name)
+    shutil.copytree(
+        ROOT / "native" / "crates", native / "crates",
+        ignore=lambda folder, names: [
+            name for name in names if name in PROTECTED_SOURCE_NAMES or
+            name.endswith(".meta") or name.endswith(".pyc")
+        ],
+    )
+    shutil.copytree(ROOT / "native" / "assets", native / "assets")
+    shutil.copytree(ROOT / "native" / "examples", native / "examples")
+    tools = native / "tools"
+    tools.mkdir(exist_ok=True)
+    for source in (ROOT / "native" / "tools").glob("*.py"):
+        shutil.copy2(source, tools / source.name)
+    training = destination / "Training"
+    training.mkdir(exist_ok=True)
+    for source in (ROOT / "Training").iterdir():
+        if (source.is_file() and
+                (source.suffix == ".js" or
+                 (source.suffix == ".py" and
+                  not source.name.endswith("_tests.py")) or
+                 source.name == "rl_1v1_config.yaml")):
+            shutil.copy2(source, training / source.name)
+    if rollout_binary is not None:
+        target_name = "policy_rollout.exe" if (
+            destination / "bees.exe").is_file() else "policy_rollout"
+        if rollout_binary.name != target_name:
+            raise ValueError(
+                "native training rollout executable platform must match bees binary"
+            )
+        shutil.copy2(rollout_binary, destination / target_name)
+
+
 def package_policy_runtime(destination: Path) -> None:
     worker = destination / "native/tools/policy_worker.py"
     worker.parent.mkdir(parents=True, exist_ok=True)
@@ -311,7 +359,7 @@ def write_launchers(output: Path, binary_name: str) -> None:
         launcher.chmod(0o755)
 
 
-def create_manifest(output: Path) -> None:
+def create_manifest(output: Path, *, include_training: bool = False) -> None:
     files = []
     for path in sorted(output.rglob("*")):
         if not path.is_file() or path == output / "manifest.json":
@@ -329,6 +377,7 @@ def create_manifest(output: Path) -> None:
         json.dumps({
             "format": "bees-native-game-package",
             "version": 1,
+            "training_runtime": include_training,
             "content": files,
         }, indent=2) + "\n",
         encoding="utf-8",
@@ -394,6 +443,35 @@ def verify_native_package(directory: Path) -> dict:
 
     if not any((directory / name).is_file() for name in ("bees", "bees.exe")):
         raise ValueError("native release is missing the game executable")
+    if manifest.get("training_runtime", False) not in (True, False):
+        raise ValueError("invalid native training distribution marker")
+    training_runtime = manifest.get("training_runtime", False)
+    if training_runtime:
+        required = (
+            "native/Cargo.toml", "native/Cargo.lock",
+            "native/crates/bees-host/Cargo.toml",
+            "native/crates/bees-host/examples/policy_manifest.rs",
+            "native/tools/bootstrap_policy.py",
+            "native/tools/prepare_fleet_training.py",
+            "native/tools/train_policy_round.py",
+            "native/tools/train_policy_session.py",
+            "native/tools/native_training_artifacts.py",
+            "native/tools/author-battle.py",
+            "native/examples/native-skirmish.policy.scene.json",
+            "native/assets/box-obstacle-colliders.json",
+            "native/assets/polygon-obstacle-colliders.json",
+            "Training/rl_1v1_config.yaml",
+            "Training/bees_mlagents_ppo_compat.py",
+            "Training/experiment_hub_native_round_dispatch.js",
+            "Training/experiment_hub_resources.js",
+            "Training/experiment_hub_native_portable_adapter.js",
+        )
+        if any(name not in expected for name in required):
+            raise ValueError("native training release lacks canonical runtime inputs")
+        optional_rollout = "policy_rollout.exe" if (
+            directory / "bees.exe").is_file() else "policy_rollout"
+        if optional_rollout in expected and not (directory / optional_rollout).is_file():
+            raise ValueError("native training rollout executable is missing")
 
     def owned_link(owner: Path, relative: str, name: str) -> Path:
         if (not isinstance(relative, str) or not relative or
@@ -468,6 +546,7 @@ def verify_native_package(directory: Path) -> dict:
         "kind": "bees_native_game_package_verified",
         "files": len(expected), "bytes": total_bytes,
         "battles": count_runs, "portable_models": len(policies),
+        "training_runtime": training_runtime,
     }
 
 
@@ -484,6 +563,10 @@ def main() -> None:
                         help="native game library to package (built-in or Unity-free authored campaign)")
     parser.add_argument("--include-policies", action="store_true",
                         help="include SHA-verified model manifests, weights and the native worker")
+    parser.add_argument("--include-training", action="store_true",
+                        help="ship the canonical native Rust workspace, Python learner and Hub bridge for Train Saved Fleet")
+    parser.add_argument("--rollout-binary", type=Path,
+                        help="optional prebuilt policy_rollout for the target game platform (requires --include-training)")
     parser.add_argument("--python-command",
                         help="bare target-machine Python executable (python3, python, py)")
     parser.add_argument("--policy-device", choices=("cpu", "cuda"),
@@ -491,8 +574,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.verify is not None:
         if (args.binary is not None or args.output is not None or
-                args.include_policies or args.policy_device is not None or
-                args.python_command is not None):
+                args.include_policies or args.include_training or
+                args.rollout_binary is not None or
+                args.policy_device is not None or args.python_command is not None):
             parser.error("--verify accepts only the completed distribution directory")
         print(json.dumps(verify_native_package(args.verify)), flush=True)
         return
@@ -500,7 +584,12 @@ def main() -> None:
         parser.error("create a native release with --binary and --output")
     if args.policy_device is not None and not args.include_policies:
         parser.error("--policy-device requires --include-policies")
+    if args.rollout_binary is not None and not args.include_training:
+        parser.error("--rollout-binary requires --include-training")
     binary = args.binary.resolve()
+    rollout_binary = args.rollout_binary.resolve(strict=True) if args.rollout_binary else None
+    if rollout_binary is not None and not rollout_binary.is_file():
+        parser.error("--rollout-binary requires an existing compiled file")
     output = args.output.resolve()
     if not binary.is_file() or binary.name not in ("bees", "bees.exe"):
         parser.error("Provide a compiled native graphical bees or bees.exe binary")
@@ -537,6 +626,8 @@ def main() -> None:
         )
         if policy_used:
             package_policy_runtime(staging)
+        if args.include_training:
+            package_native_training_runtime(staging, rollout_binary)
         # The integrity checker travels with the immutable distribution,
         # including game-only builds. It is optional at PLAY time; copying
         # these tools does not introduce Python into native game execution.
@@ -552,7 +643,7 @@ def main() -> None:
         for name in ("remote_play_client.py", "remote_play_window.py"):
             shutil.copy2(ROOT / "native/tools" / name, clients / name)
         write_launchers(staging, binary.name)
-        create_manifest(staging)
+        create_manifest(staging, include_training=args.include_training)
         # Publish only a complete, freshly validated package and preserve
         # the old release when another process already owns output.
         if output.exists():
