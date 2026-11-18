@@ -44,6 +44,8 @@ struct GameScene {
     #[serde(default)]
     lethal_map_borders: bool,
     #[serde(default)]
+    constrain_map_borders: bool,
+    #[serde(default)]
     activate_collision_asteroids: bool,
     #[serde(default)]
     activate_mining: bool,
@@ -618,7 +620,8 @@ impl NativePhysicalScene {
                 side != raw.bee_side && side != raw.human_side) ||
             !raw.fixed_dt_seconds.is_finite() || raw.fixed_dt_seconds <= 0.0 ||
             !raw.time_scale.is_finite() || raw.time_scale <= 0.0 ||
-            raw.ships.is_empty() || raw.squads.is_empty()
+            raw.ships.is_empty() || raw.squads.is_empty() ||
+            raw.lethal_map_borders && raw.constrain_map_borders
         {
             return Err(invalid("invalid native game Level identity, bounds or fixed timestep"));
         }
@@ -1383,6 +1386,7 @@ impl NativePhysicalScene {
             time_scale: raw.time_scale,
             shots_harmless: raw.shots_harmless,
             lethal_map_borders: raw.lethal_map_borders,
+            constrain_map_borders: raw.constrain_map_borders,
             activate_collision_asteroids: raw.activate_collision_asteroids,
             activate_mining: Some(raw.activate_mining),
             activate_fog_of_war: Some(raw.activate_fog_of_war),
