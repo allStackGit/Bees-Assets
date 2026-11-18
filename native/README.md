@@ -67,6 +67,15 @@ BombingRun special-weapon orders against live nearest opposing squads. They
 share the actual Bomb targeting, reservation, movement, contact and cooldown
 logic used by the player and headless learner, without generic projectiles.
 An unavailable nearest-target special retries after one simulated second.
+Conventional armed AI squads can also execute authentic source CircleSquad,
+RightSwipe, LeftSwipe and InAndOut maneuvers against the nearest currently
+living enemy, then reselect an enemy when their original command ends.
+Use `--ai-tactics circle|right-swipe|left-swipe|in-and-out|mixed` (the
+default remains `aggressive`). Mixed tactics assign one of the five
+source maneuvers in stable authored squad order, with no extra gameplay
+randomness. Bomb/Charge specialists, Scouts, miners and Carriers retain
+their dedicated physical abilities instead of receiving inappropriate
+generic movement commands.
 Source Scouts now issue genuine Scouting commands with their captured
 Squad.MaxSight, making reconnaissance, discovery and eligible Beacon drops
 part of native AI battles. A live Carrier remains a rearming platform while
@@ -1129,7 +1138,13 @@ or 128 ships per side. The dense 128-ship layout admits only original
 6x6 Wasp/Gunship fighters; mixed fleets up to 64 ships still offer
 all-fighter, balanced, support-heavy or specialist
 fleets for each faction, and open, classic, flanking-cover or dense-cover
-terrain. Specialists add one genuine Bee Scout with its physical Beacon
+terrain. The one-player skirmish and CPU-only native benchmark creators
+also offer a tactical-doctrine selector: aggressive, circling, left or
+right swipe, strike-and-withdraw, or mixed source maneuvers. Every
+selection uses the same native Squad command director as headless
+training and authored scenes; an out-of-range or destroyed target is
+resolved against the next living squad rather than a baked target list.
+Specialists add one genuine Bee Scout with its physical Beacon
 ability or one Human Fire Barge with its source-authored explosive weapon,
 plus authentic Beehives/Carriers where the fleet is large enough.
 Mixed fleets use original source hulls; physical metadata, weapons,

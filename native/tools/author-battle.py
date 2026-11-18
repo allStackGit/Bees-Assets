@@ -381,7 +381,7 @@ def author(args) -> tuple[dict, dict, dict]:
     for side in (1, 2):
         if side in controlled:
             continue
-        for squad in by_side_squads[side]:
+        for squad_index, squad in enumerate(by_side_squads[side]):
             members = [ship for ship in by_side[side]
                        if ship["entity_id"] in squad["members"]]
             example = members[0]
@@ -423,7 +423,21 @@ def author(args) -> tuple[dict, dict, dict]:
                       example["ship_type"] in (10, 19, 22)):
                     combat_order = "bombing_nearest"
                 else:
-                    combat_order = "aggressive_nearest"
+                    chosen = getattr(args, "ai_tactics", "aggressive")
+                    tactics = {
+                        "aggressive": "aggressive_nearest",
+                        "circle": "circle_nearest",
+                        "right-swipe": "right_swipe_nearest",
+                        "left-swipe": "left_swipe_nearest",
+                        "in-and-out": "in_and_out_nearest",
+                    }
+                    if chosen == "mixed":
+                        # Stable authored squad order; do not consume the
+                        # environment's training/gameplay RNG when assigning
+                        # cosmetic or scripted tactical doctrine.
+                        combat_order = tuple(tactics.values())[squad_index % 5]
+                    else:
+                        combat_order = tactics[chosen]
                 if (example["ship_type"] != 2 and
                         any(kind == 2 for kind, _ in requested[side])):
                     # Between source combat lifetimes, repair injured
@@ -832,6 +846,11 @@ def main() -> None:
                         default="bees", help="which sides have player input authority")
     parser.add_argument("--host-side", type=int, choices=(1, 2),
                         help="local host window side when both sides are controlled")
+    parser.add_argument("--ai-tactics",
+                        choices=("aggressive", "circle", "right-swipe",
+                                 "left-swipe", "in-and-out", "mixed"),
+                        default="aggressive",
+                        help="autonomous armed squads' native command strategy (default: aggressive); specialists retain their own actions")
     parser.add_argument("--title", default="Custom Native Battle")
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--minutes", type=int, default=4)
@@ -921,6 +940,7 @@ def main() -> None:
                                 if s["user_controlled"]}),
         "fixed_rounds": run["max_rounds"],
         "objective": args.objective,
+        "ai_tactics": args.ai_tactics,
         "reinforcement_waves": len(run["levels"][0].get("reinforcements", [])),
         "reinforcement_ships": (
             sum(wave[3] for wave in args.reinforcements) +

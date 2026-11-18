@@ -33,6 +33,58 @@ enum Objective { Elimination, Survival, Extraction }
 #[derive(Clone, Copy)]
 enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists }
 
+#[derive(Clone, Copy)]
+enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
+
+impl AiTactics {
+    fn source_order(self, squad_index: usize) -> &'static str {
+        let tactic = match self {
+            Self::Mixed => match squad_index % 5 {
+                0 => Self::Aggressive,
+                1 => Self::Circle,
+                2 => Self::RightSwipe,
+                3 => Self::LeftSwipe,
+                _ => Self::InAndOut,
+            },
+            fixed => fixed,
+        };
+        match tactic {
+            Self::Aggressive => "aggressive_nearest",
+            Self::Circle => "circle_nearest",
+            Self::RightSwipe => "right_swipe_nearest",
+            Self::LeftSwipe => "left_swipe_nearest",
+            Self::InAndOut => "in_and_out_nearest",
+            Self::Mixed => unreachable!("mixed doctrine resolved above"),
+        }
+    }
+}
+
+fn choose_ai_tactics() -> Result<Option<AiTactics>, Box<dyn Error>> {
+    let options = [
+        ("Aggressive pursuit", "  [Source Aggressive command]"),
+        ("Circle the target", "  [Source CircleSquad command]"),
+        ("Right-side swipe", "  [Source RightSwipe command]"),
+        ("Left-side swipe", "  [Source LeftSwipe command]"),
+        ("Strike and withdraw", "  [Source InAndOut command]"),
+        ("Mixed tactics", "  [Different tactics per squad]"),
+    ];
+    let rows = options.iter().map(|(title, status)| BattleMenuRow {
+        title, status, unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = 0;
+    let Some(chosen) = select_library(&rows, &mut selected, false)? else {
+        return Ok(None);
+    };
+    Ok(Some(match chosen {
+        0 => AiTactics::Aggressive,
+        1 => AiTactics::Circle,
+        2 => AiTactics::RightSwipe,
+        3 => AiTactics::LeftSwipe,
+        4 => AiTactics::InAndOut,
+        _ => AiTactics::Mixed,
+    }))
+}
+
 impl FleetMix {
     fn support_count(self, total: usize) -> usize {
         (match self {
@@ -66,6 +118,7 @@ pub(super) struct FleetChoice {
     mix: [FleetMix; 2],
     terrain: Terrain,
     ai_both: bool,
+    ai_tactics: AiTactics,
     objective: Objective,
     /// Mission ownership is independent of whose input commands this host
     /// accepts. Both local/remote players retain full command permissions.
@@ -94,6 +147,10 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let ai_tactics = if mode == 2 { AiTactics::Aggressive } else {
+        let Some(value) = choose_ai_tactics()? else { return Ok(None); };
+        value
+    };
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let player_side = match mode { 0 => Some(1), 1 => Some(2), _ => None };
     let objective_side = match objective {
@@ -105,7 +162,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         },
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, mix, terrain, ai_both: false, objective,
+        player_side, fleet_sizes, mix, terrain, ai_both: false, ai_tactics, objective,
         objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -126,6 +183,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
     };
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, mix, terrain, ai_both: false,
+        ai_tactics: AiTactics::Aggressive,
         objective, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -136,6 +194,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
     let Some(worlds) = choose_resource("Concurrent physical arenas",
         &[1, 2, 4, 8, 16, 32])? else { return Ok(None); };
     let workers = [1, 2, 4, 8, 16, 32].into_iter()
@@ -144,7 +203,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
         else { return Ok(None); };
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, mix, terrain, ai_both: true,
-        objective: Objective::Elimination, objective_side: None,
+        ai_tactics, objective: Objective::Elimination, objective_side: None,
         benchmark_worlds: worlds, benchmark_workers: threads,
     }))
 }
@@ -790,7 +849,7 @@ pub(super) fn archive(
                     ],
                 })]
             } else {
-                vec![json!({"kind": "aggressive_nearest"})]
+                vec![json!({"kind": selected.ai_tactics.source_order(position)})]
             };
             let mut queue = json!({
                 "squad_item_id": owner, "repeat": !supporting,
