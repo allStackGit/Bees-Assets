@@ -164,7 +164,15 @@ The native game's **Fleet Skirmish** builder saves a
 `replay-source-run.json` beside its recorded battle. In the game library,
 choose **Train Saved Fleet** to select an elimination skirmish, which
 faction learns, optimizer rounds, parallel arenas, CPU physics workers, and
-CPU or PyTorch GPU optimization. You can select a saved PPO configuration from
+CPU or PyTorch GPU optimization. To reduce process and model reload costs,
+choose 1–16 episodes per persistent native arena. Long experiments can
+evaluate the same fixed-seed holdout every 1, 2, 5 or 10 optimizer rounds,
+rather than paying evaluation overhead after every round. With a local GPU
+optimizer, model inference may stay on CPU or use the CUDA/ROCm GPU; Hub
+collectors default to portable CPU inference. These choices are pinned for
+continuation, and the progress view distinguishes useful end-to-end SPS
+from summed collector-local simulation efficiency.
+You can select a saved PPO configuration from
 `<save-root>/training/configurations/*.yaml` or `*.yml`; the chosen
 file is copied and SHA-256 pinned to that experiment before model creation.
 When a compiled `policy_rollout` executable is available, the menu also
@@ -183,7 +191,10 @@ than being automatically restarted.
 completed rounds, measured training SPS, and the path to each job's logs;
 newly published models appear in the same game library. Each job has its
 own `<save-root>/training/fleet-skirmish/training-NNNNNN/` directory
-with the original immutable invocation and separate process logs. Selecting
+with the original immutable invocation and separate process logs.
+While the game remains open, completed child processes are reaped and their
+actual exit status is appended to the current attempt's diagnostic log.
+Selecting
 a job in **Fleet Training Progress** also offers **Resume Training Job**:
 the original bootstrap receipt, checkpoint, scene and optimizer receipts
 are reverified by the existing learner before continuing. Completed jobs
