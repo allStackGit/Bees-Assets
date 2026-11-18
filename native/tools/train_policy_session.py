@@ -934,6 +934,11 @@ def main():
                         help="number of finished optimizer rounds between opponent promotions")
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--rollout-workers", type=int)
+    parser.add_argument("--rollout-gpus",
+                        help="local physical GPU ordinals assigned round-robin to rollout processes")
+    parser.add_argument("--rollout-gpu-mask", choices=(
+        "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES"),
+        help="GPU isolation selector for local rollouts (use ROCR on ROCm Linux)")
     parser.add_argument("--physics-workers", type=int,
                         help="CPU physics threads in each local rollout process; distributed collectors use their plan")
     parser.add_argument("--rollout-worlds", type=int)
@@ -982,6 +987,14 @@ def main():
         parser.error("invalid native game ID (1..40 ASCII characters; max 35 with best holdout)")
     if not 1 <= args.rounds <= 99999:
         parser.error("--rounds must be between 1 and 99999")
+    if args.rollout_gpus is not None:
+        from native_gpu_allocation import parse_rollout_gpus
+        try:
+            parse_rollout_gpus(args.rollout_gpus)
+        except ValueError as error:
+            parser.error(str(error))
+    elif args.rollout_gpu_mask is not None:
+        parser.error("--rollout-gpu-mask requires --rollout-gpus")
     if (args.self_play_opponent_slot is None) != (args.self_play_refresh_every is None):
         parser.error("self-play requires both --self-play-opponent-slot and --self-play-refresh-every")
     if args.self_play_opponent_slot is not None and (
@@ -1060,7 +1073,7 @@ def main():
     if distributed_requested and any(
         value is not None for value in (
             args.rollout_workers, args.rollout_worlds, args.rollout_world_start,
-            args.physics_workers,
+            args.physics_workers, args.rollout_gpus, args.rollout_gpu_mask,
         )
     ):
         parser.error("distributed collector windows/workers belong to --distributed-plan")
@@ -1132,6 +1145,9 @@ def main():
     # selection was not specified; older recipes have no such field.
     if args.physics_workers is not None:
         recipe["physics_workers"] = args.physics_workers
+    if args.rollout_gpus is not None:
+        recipe["rollout_gpus"] = args.rollout_gpus
+        recipe["rollout_gpu_mask"] = args.rollout_gpu_mask or "CUDA_VISIBLE_DEVICES"
     if self_play is not None:
         recipe["self_play"] = self_play
     if curriculum is not None:
@@ -1551,6 +1567,8 @@ def main():
             else:
                 command.extend(["--seed-offset", str(seed_offset)])
                 for option, value in (("--rollout-workers", args.rollout_workers),
+                                      ("--rollout-gpus", args.rollout_gpus),
+                                      ("--rollout-gpu-mask", args.rollout_gpu_mask),
                                       ("--physics-workers", args.physics_workers),
                                       ("--rollout-worlds", args.rollout_worlds),
                                       ("--rollout-world-start", args.rollout_world_start)):
