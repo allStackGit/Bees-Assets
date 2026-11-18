@@ -280,8 +280,13 @@ function boundedReport(value) {
     const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
         .map(([project,ids])=>[project,suiteIds(ids)]));
     const serviceIssue=value.evaluator_service_issue??null;
+    const serviceChecked=value.evaluator_service_checked_at??null;
     const rawServices=value.evaluator_services??[];
-    if((serviceIssue!==null&&(typeof serviceIssue!=='string'||
+    if((serviceChecked!==null&&
+        (typeof serviceChecked!=='string'||
+         !Number.isFinite(Date.parse(serviceChecked))||
+         new Date(serviceChecked).toISOString()!==serviceChecked))||
+        (serviceIssue!==null&&(typeof serviceIssue!=='string'||
         serviceIssue.length<1||serviceIssue.length>160))||
         !Array.isArray(rawServices)||rawServices.length>16)
         throw Error('Invalid evaluator service health report.');
@@ -328,6 +333,7 @@ function boundedReport(value) {
         native_preflight_reason:reason||null,
         evaluation_suites:localExecutor?evaluationSuites:{},
         evaluator_services:services,evaluator_service_issue:serviceIssue,
+        evaluator_service_checked_at:serviceChecked,
         tinybrains_profiles:profiles,
         design_catalog:designCatalog,
         tinybrains_cuda_profiles:cudaProfiles.slice(),
@@ -1364,6 +1370,8 @@ class ExperimentHub {
                 machine.evaluation_suites = copy(report.evaluation_suites);
                 machine.evaluator_services=copy(report.evaluator_services||[]);
                 machine.evaluator_service_issue=report.evaluator_service_issue||null;
+                machine.evaluator_service_checked_at=
+                    report.evaluator_service_checked_at||null;
                 machine.tinybrains_profiles = copy(report.tinybrains_profiles||{});
                 machine.design_catalog=copy(report.design_catalog||{});
                 machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();

@@ -4896,6 +4896,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         :schedulerIssue
                             ?'Evaluator scheduler probe unavailable: '+schedulerIssue
                             :'No OS scheduler was observed for this project. A suite reader alone does not verify evaluation execution.';
+                if(machine?.status==='connected'&&
+                    machine.evaluator_service_checked_at)
+                    statusLine.textContent+=' · last service-health check '+
+                        machine.evaluator_service_checked_at;
                 details.append(statusLine);
                 if(monitoring&&j.evaluation_monitor.regression_alert) {
                     const info=document.createElement('p');

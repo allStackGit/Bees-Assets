@@ -100,6 +100,8 @@ function windowsHealth(machine,env) {
     if(!supplied)return [];
     if(!path.isAbsolute(supplied)||supplied.startsWith('\\\\'))
         throw Error('Evaluator status root must be an absolute local directory.');
+    if(fs.lstatSync(supplied).isSymbolicLink())
+        throw Error('Evaluator status root must not be redirected.');
     const root=fs.realpathSync(supplied);
     const stat=fs.lstatSync(root);
     if(!stat.isDirectory()||stat.isSymbolicLink()||root.startsWith('\\\\'))
@@ -148,17 +150,19 @@ function windowsHealth(machine,env) {
     return services;
 }
 function evaluatorHealth(machine,env=process.env,platform=process.platform) {
-    if(!MACHINE.test(machine))return {evaluator_services:[],
-        evaluator_service_issue:'Invalid evaluator machine identity.'};
+    const checked=new Date().toISOString();
+    const report=(services,issue)=>({evaluator_services:services,
+        evaluator_service_issue:issue,evaluator_service_checked_at:checked});
+    if(!MACHINE.test(machine))
+        return report([],'Invalid evaluator machine identity.');
     try {
-        if(platform==='linux')
-            return {evaluator_services:linuxHealth(machine),evaluator_service_issue:null};
-        if(platform==='win32')
-            return {evaluator_services:windowsHealth(machine,env),evaluator_service_issue:null};
-        return {evaluator_services:[],evaluator_service_issue:'Evaluator status unsupported on this platform.'};
+        if(platform==='linux')return report(linuxHealth(machine),null);
+        if(platform==='win32')return env.EXPERIMENT_HUB_EVALUATOR_STATUS_ROOT
+            ?report(windowsHealth(machine,env),null)
+            :report([],'Set EXPERIMENT_HUB_EVALUATOR_STATUS_ROOT to the evaluator private service-state directory.');
+        return report([],'Evaluator service status unsupported on this platform.');
     }catch(error) {
-        return {evaluator_services:[],evaluator_service_issue:
-            String(error.message||error).slice(0,160)};
+        return report([],String(error.message||error).slice(0,160));
     }
 }
 module.exports={evaluatorHealth};
