@@ -2116,9 +2116,15 @@ class ExperimentHub {
         const chart=this.progressHistory.snapshot(projectId,this.state.jobs);
         const comparisonJobs=[...this.state.jobs,...this.historicalEvaluations()];
         const evaluations=this.evaluationHistory.snapshot(projectId,comparisonJobs);
+        const machines=this.state.jobs.filter(job=>
+            job.project_id===projectId&&job.assigned_machine_id)
+            .map(job=>job.assigned_machine_id);
+        const serviceEvents=this.evaluationHistory.machineObservations(machines,projectId);
         return {...chart,evaluations:evaluations.samples,
             evaluation_regressions:evaluations.regressions,
-            evaluation_storage_warning:evaluations.storage_warning};
+            evaluation_service_events:serviceEvents,
+            evaluation_storage_warning:this.evaluationHistory.error||
+                evaluations.storage_warning};
     }
     // These are conservative coordinator-side claims, NOT operating system
     // isolation or an authorization to execute a workload.
@@ -4102,6 +4108,10 @@ class ExperimentHub {
                 if(job.assigned_machine_id===machine.id)
                     this.executionTelemetry.delete(job.id);
         }
+        // Record authenticated machine-owned scheduler transitions after
+        // the native registry transaction. This archive is diagnostic:
+        // it never changes leases, Stop, promotion or training liveness.
+        this.evaluationHistory.recordMachineHealth(machine.id,report);
         this.agentReports.set(machine.id,{
             ...report,instance_id:instance||null,received_ms:received,
         });
