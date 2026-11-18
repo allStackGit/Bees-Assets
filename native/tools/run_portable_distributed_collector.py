@@ -22,6 +22,46 @@ from native_bundle_receiver import download_input_archive, bundle_token
 from transfer_policy_bundle import checked_order
 
 
+
+def pinned_allocation_matches(orders, job, args):
+    return (
+        job["bundle_directory"] == args.expected_bundle_directory and
+        job["collection_id"] == args.expected_collection_id and
+        orders.get("source_run_contract_sha256") == args.expected_source_contract and
+        orders.get("seed_offset") == args.expected_seed_offset and
+        job["world_start"] == args.expected_world_start and
+        job["world_count"] == args.expected_worlds and
+        job["rollout_workers"] == args.expected_workers and
+        job.get("physics_workers", 1) == args.expected_physics_workers
+    )
+
+
+def prior_pinned_input_archive(scratch, attempt, args):
+    """Reuse an already downloaded input only for the exact frozen Hub lease.
+
+    Failed attempts remain inspectable. An immutable archive is re-imported
+    through the ordinary digest/path/scene checks rather than trusting old
+    unpacked files or bypassing the source contract.
+    """
+    if args.input_url is None or args.hub_job_id is None:
+        return None
+    for previous in sorted(scratch.glob("native-portable-collector-*"), reverse=True):
+        if previous == attempt or previous.is_symlink() or not previous.is_dir():
+            continue
+        archive = previous / "issued-inputs.tar"
+        order = previous / "inputs" / "orders.json"
+        if (archive.is_symlink() or not archive.is_file() or
+                order.is_symlink() or not order.is_file()):
+            continue
+        try:
+            orders, job = checked_order(order, args.collector_id)
+            if pinned_allocation_matches(orders, job, args):
+                return archive
+        except (ValueError, OSError, KeyError, TypeError):
+            continue
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
@@ -101,25 +141,27 @@ def main():
     try:
         input_archive = args.input_archive
         if args.input_url:
-            input_archive = attempt / "issued-inputs.tar"
-            received = download_input_archive(
-                args.input_url, args.collector_id, input_archive,
-                token=transport_token,
-            )
-            print(json.dumps(received, sort_keys=True), flush=True)
+            previous_archive = prior_pinned_input_archive(scratch, attempt, args)
+            if previous_archive is not None:
+                input_archive = previous_archive
+                print(json.dumps({
+                    "kind": "native_collector_inputs_archive_reused",
+                    "collector_id": args.collector_id,
+                    "archive": str(input_archive),
+                }, sort_keys=True), flush=True)
+            else:
+                input_archive = attempt / "issued-inputs.tar"
+                received = download_input_archive(
+                    args.input_url, args.collector_id, input_archive,
+                    token=transport_token,
+                )
+                print(json.dumps(received, sort_keys=True), flush=True)
         imported = import_inputs(input_archive, inputs,
                                  args.policy_worker, args.python, args.collector_id)
         print(json.dumps(imported, sort_keys=True), flush=True)
         if args.hub_job_id is not None:
             orders, job = checked_order(inputs / "orders.json", args.collector_id)
-            if (job["bundle_directory"] != args.expected_bundle_directory or
-                    job["collection_id"] != args.expected_collection_id or
-                    orders.get("source_run_contract_sha256") != args.expected_source_contract or
-                    orders.get("seed_offset") != args.expected_seed_offset or
-                    job["world_start"] != args.expected_world_start or
-                    job["world_count"] != args.expected_worlds or
-                    job["rollout_workers"] != args.expected_workers or
-                    job.get("physics_workers", 1) != args.expected_physics_workers):
+            if not pinned_allocation_matches(orders, job, args):
                 raise ValueError("downloaded native collector allocation differs from the immutable Hub job")
             workers = job["rollout_workers"]
             physics = job.get("physics_workers", 1)
