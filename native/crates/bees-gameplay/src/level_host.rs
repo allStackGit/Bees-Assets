@@ -701,16 +701,19 @@ impl NativeLevelBatchDriver {
                 .map_err(NativeLevelSourceError::TerminalPerception)?;
             rows.push(NativeTerminalObservation { ship_id, group_agent, binding_revision, features });
         }
-        let result = world.state.events.latest_finalized_episode().map(|finalized| finalized.result);
         let [bee_side, human_side] = world.state.events.sides();
         for event in combat.events() {
             let CombatEvent::ShipDied {
                 victim_id: ship_id, policy_binding_revision: Some(binding_revision), ..
             } = *event else { continue };
             let Some(ship) = combat.ship(ship_id) else { continue };
+            // A controller that dies on the SAME tick as a timeout or
+            // unrelated terminal outcome still needs its real retirement
+            // boundary. The faction need not have been eliminated; the
+            // physical ship's binding revision proves its death.
             let faction = match ship.side {
-                side if side == bee_side && result.is_none_or(|r| r.bee_side_eliminated) => 1.0,
-                side if side == human_side && result.is_none_or(|r| r.human_side_eliminated) => -1.0,
+                side if side == bee_side => 1.0,
+                side if side == human_side => -1.0,
                 _ => continue,
             };
             let Some(group_agent) = metadata.group_agent_for_ship(ship_id)
