@@ -122,6 +122,7 @@ function learnerMeasurements(metrics) {
     add('total_wall_seconds', 'seconds');
     add('total_cpu_seconds', 'seconds');
     for (const name of ['capture_peak_inflight_decisions', 'capture_peak_inflight_episodes',
+        'empty_policy_terminal_boundaries',
         'capture_compact_opponent_decisions', 'capture_compact_opponent_boundaries',
         'dynamic_policy_episodes', 'dynamic_policy_admissions',
         'dynamic_policy_admissions_without_decisions',
