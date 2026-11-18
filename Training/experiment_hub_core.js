@@ -8,7 +8,8 @@ const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacemen
     startHeadroom,observedLoadPreference} = require('./experiment_hub_resources');
 const {validateProgress,selectChartMetrics}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
-const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
+const {evaluationPolicy,monitoringPolicy,activeEvaluation,
+       evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
 const {validateCatalog,supportsDesign}=require('./experiment_hub_design_fields');
@@ -509,7 +510,7 @@ function missingFinalEvaluationRules(job) {
     if(!job.capacity_released_at||!checkpointContinuationComplete(job)||
         !independentSequenceComplete(job)||!SHA256.test(job.checkpoint_model_sha256||''))return [];
     const cohort=job.evaluation_candidates?.find(row=>row.checkpoint_sha256===job.checkpoint_model_sha256);
-    return evaluationRules(job.evaluation_stop).filter(rule=>{
+    return evaluationRules(activeEvaluation(job)).filter(rule=>{
         const receipt=cohort?.receipts?.[rule.suite_id];
         try {
             const evidence=evaluationEvidence(receipt,rule,job.dispatch_id);
@@ -559,7 +560,8 @@ function finalEvaluationPending(snapshot,job,observedAt) {
 function retainFinalEvaluations(job,report) {
     const rules=missingFinalEvaluationRules(job);
     if(!rules.length||report.checkpoint_model_sha256!==job.checkpoint_model_sha256)return false;
-    const raw=job.evaluation_stop.all_of?report.evaluations:report.evaluation?[report.evaluation]:[];
+    const policy=activeEvaluation(job);
+    const raw=policy.all_of?report.evaluations:report.evaluation?[report.evaluation]:[];
     if(!Array.isArray(raw)||raw.length>8)return false;
     const definitions={...job.evaluation_suite_definitions};
     const receipts=[];
@@ -1988,7 +1990,7 @@ class ExperimentHub {
             const observed=this.executionTelemetry.get(job.id);
             const age=observedAt-Date.parse(observed?.at||'');
             return job.project_id===projectId&&job.assigned_machine_id===machineId&&
-                evaluationRules(job.evaluation_stop).some(rule=>rule.suite_id===suiteId)&&
+                evaluationRules(activeEvaluation(job)).some(rule=>rule.suite_id===suiteId)&&
                 UUID.test(job.dispatch_id||'')&&UUID.test(job.artifact_lineage_root_id||job.id)&&
                 (finalEvaluationPending(snapshot,job,observedAt)&&snapshot.reservations.some(lease=>
                     lease.id===job.lease_id&&lease.job_id===job.id&&lease.machine_id===machineId&&
@@ -1998,7 +2000,8 @@ class ExperimentHub {
                 observed?.state==='running'&&
                 age>=0&&age<AGENT_HEARTBEAT_TTL_MS));
         }).map(job=>{
-            const rule=evaluationRules(job.evaluation_stop)
+            const policy=activeEvaluation(job);
+            const rule=evaluationRules(policy)
                 .find(candidate=>candidate.suite_id===suiteId);
             const frozenSuite=rule.suite_sha256||
                 job.evaluation_suite_definitions?.[rule.suite_id];
@@ -2007,8 +2010,9 @@ class ExperimentHub {
                 ...(frozenSuite?{suite_sha256:frozenSuite}:{}),
                 ...(job.capacity_released_at?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
                 min_trials:rule.min_trials,
-                min_success_rate:rule.min_success_rate,
-                required_suite_ids:evaluationRules(job.evaluation_stop)
+                min_success_rate:job.evaluation_monitor?0:rule.min_success_rate,
+                ...(job.evaluation_monitor?{monitor_only:true}:{}),
+                required_suite_ids:evaluationRules(policy)
                     .map(candidate=>candidate.suite_id)};
         });
     }
@@ -3382,12 +3386,13 @@ class ExperimentHub {
             // telemetry and comparison samples. A delayed older report
             // must not make a terminal job appear to be running again.
             let evaluation=null,evaluations=[],evaluationDefinitions=null,evaluationIssue=null;
-            if(state==='running'&&job.project_id!=='ants'&&job.evaluation_stop&&
+            if(state==='running'&&job.project_id!=='ants'&&activeEvaluation(job)&&
                 supportsEvaluation(evaluationSuites,job)) {
                 evaluationIssue=typeof report.evaluation_issue==='string'
                     ?report.evaluation_issue.slice(0,160):null;
-                const rules=evaluationRules(job.evaluation_stop);
-                if(job.evaluation_stop.all_of) {
+                const activePolicy=activeEvaluation(job);
+                const rules=evaluationRules(activePolicy);
+                if(activePolicy.all_of) {
                     if(report.evaluations!=null) {
                         try {
                             if(!Array.isArray(report.evaluations)||
@@ -3434,7 +3439,7 @@ class ExperimentHub {
                 }else if(report.evaluation!=null) {
                     try {
                         evaluation=evaluationEvidence(
-                            report.evaluation,job.evaluation_stop,job.dispatch_id);
+                            report.evaluation,activePolicy,job.dispatch_id);
                         // A suite name alone cannot authorize a training Stop.
                         // Keep single-suite receipts as strictly identified as
                         // all-of batches before pinning or acting on results.
@@ -3487,7 +3492,7 @@ class ExperimentHub {
                 // Results from different checkpoints must never be mixed
                 // to authorize a benchmark-driven Stop.
                 if(retainEvaluationCohorts(job,evaluations))changed=true;
-                for(const cohort of job.evaluation_candidates||[]) {
+                if(job.evaluation_stop)for(const cohort of job.evaluation_candidates||[]) {
                     const proof={all_of:evaluationRules(job.evaluation_stop)
                         .map(rule=>cohort.receipts[rule.suite_id])};
                     if(evaluationComplete(proof,job.evaluation_stop,job.dispatch_id)) {
@@ -3499,7 +3504,7 @@ class ExperimentHub {
                         break;
                     }
                 }
-            }else if(evaluation&&evaluationComplete(evaluation,
+            }else if(evaluation&&job.evaluation_stop&&evaluationComplete(evaluation,
                 job.evaluation_stop,job.dispatch_id)) {
                 if(retainEvaluationCohorts(job,[evaluation]))changed=true;
                 job.status='stop_requested';
@@ -3718,6 +3723,7 @@ class ExperimentHub {
                     ...(action==='inspect'&&job.checkpoint_reinspection_requested_at
                         ?{reverify_checkpoint:true}:{}),
                     ...(job.evaluation_stop?{evaluation_stop:copy(job.evaluation_stop)}:{}),
+                    ...(job.evaluation_monitor?{evaluation_monitor:copy(job.evaluation_monitor)}:{}),
                     ...(lease.status==='released'?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
                     ...(job.expected_parent_model_sha256
                         ?{expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
@@ -4229,7 +4235,10 @@ class ExperimentHub {
         const params = config(value.parameters);
         requireCourierTrainingPin(project.id,params);
         const stop=evaluationPolicy(value.evaluation_stop);
-        if(stop&&project.adapter==='bees')
+        const monitor=monitoringPolicy(value.evaluation_monitor);
+        if(stop&&monitor)
+            throw Error('Choose monitoring or evaluation-based stopping, not both.');
+        if((stop||monitor)&&project.adapter==='bees')
             throw Error('Bees evaluation targets use the existing Bees experiment configuration.');
         const time = now();
         const next = copy(this.state);
@@ -4252,6 +4261,8 @@ class ExperimentHub {
         }
         if(stop)item.evaluation_stop=stop;
         else if(Object.hasOwn(value,'evaluation_stop'))delete item.evaluation_stop;
+        if(monitor)item.evaluation_monitor=monitor;
+        else if(Object.hasOwn(value,'evaluation_monitor'))delete item.evaluation_monitor;
         this.commit(next);
         return copy(item);
     }
@@ -5157,6 +5168,8 @@ class ExperimentHub {
                 ?{checkpoint_proof_required:true}:{}),
             ...(selected.evaluation_stop
                 ?{evaluation_stop:evaluationPolicy(selected.evaluation_stop)}:{}),
+            ...(selected.evaluation_monitor
+                ?{evaluation_monitor:monitoringPolicy(selected.evaluation_monitor)}:{}),
             status:waitingPredecessor?'waiting_predecessor':'waiting_adapter',
             status_reason:waitingPredecessor
                 ?'Prequeued stage; awaiting successful predecessor completion and capacity release.'
