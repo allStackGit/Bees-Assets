@@ -35,9 +35,10 @@ def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False):
         return None
     try:
         receipt = verify_bundle(receipt_path, job, orders)
-        if bool(receipt['receipt'].get('leased_gpu_inference', False)) != leased_gpu_inference:
+        document = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if bool(document.get("leased_gpu_inference", False)) != leased_gpu_inference:
             return None
-        captures = artifact_paths(json.loads(receipt_path.read_text(encoding="utf-8")))
+        captures = artifact_paths(document)
         canonical = root.resolve(strict=True)
         for name, digest in captures.items():
             file = root.joinpath(*PurePosixPath(name).parts)
