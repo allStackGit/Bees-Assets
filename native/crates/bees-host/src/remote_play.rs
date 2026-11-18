@@ -1090,6 +1090,16 @@ fn current_state(
                 "last_reinforcement_tick": view.last_reinforcement_tick,
             }))
         } else { None },
+        // Preserve survival's legacy objective fields; non-survival
+        // skirmishes now expose the same authoritative wave clock to their
+        // authenticated commander, including event-only reserve plans.
+        "reinforcements": if view.player_authority.player_viewer_side() == Some(side) {
+            Some(json!({
+                "pending": view.reinforcement_waves_pending,
+                "next_tick": view.next_reinforcement_tick,
+                "last_arrival_tick": view.last_reinforcement_tick,
+            }))
+        } else { None },
         "ships": ships, "squads": squads, "obstacles": obstacles,
         "projectiles": projectiles,
     })
