@@ -6,7 +6,8 @@
 
 use std::env;
 use std::error::Error;
-use std::fs::{self, OpenOptions};
+use std::fs::{self, OpenOptions, File};
+use std::io::Read;
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -207,7 +208,9 @@ fn append_training_arguments(
         command.arg("--early-stop-patience").arg(patience.to_string());
     }
     if recipe["hub_plan"].is_string() {
-        if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() {
+        if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() ||
+            !recipe["rollout_processes"].is_null() || !recipe["rollout_binary"].is_null()
+        {
             return Err(invalid("Hub allocation cannot also claim local CPU workers").into());
         }
         hub_arguments(command, job, recipe)?;
@@ -223,6 +226,23 @@ fn append_training_arguments(
             .ok_or_else(|| invalid("invalid native physics worker count"))?;
         command.arg("--rollout-worlds").arg(worlds.to_string())
             .arg("--physics-workers").arg(physics.to_string());
+        if !recipe["rollout_binary"].is_null() {
+            let binary = PathBuf::from(recipe["rollout_binary"].as_str()
+                .ok_or_else(|| invalid("invalid native rollout executable path"))?);
+            let expected = recipe["rollout_binary_sha256"].as_str()
+                .ok_or_else(|| invalid("missing pinned native rollout executable identity"))?;
+            let processes = recipe["rollout_processes"].as_u64()
+                .filter(|n| (1..=256).contains(n) && *n <= worlds)
+                .ok_or_else(|| invalid("invalid native rollout process count"))?;
+            if !binary.is_file() || sha256_file(&binary)? != expected {
+                return Err(invalid("compiled native rollout executable changed since training selection").into());
+            }
+            command.arg("--rollout-binary").arg(binary)
+                .arg("--rollout-workers").arg(processes.to_string());
+        } else if !recipe["rollout_binary_sha256"].is_null() ||
+                  !recipe["rollout_processes"].is_null() {
+            return Err(invalid("native rollout process allocation requires its compiled binary").into());
+        }
     }
     if !recipe["trainer_config"].is_null() {
         let config = PathBuf::from(recipe["trainer_config"].as_str()
@@ -258,6 +278,43 @@ fn append_training_arguments(
     Ok(())
 }
 
+
+
+fn sha256_file(path: &Path) -> io::Result<String> {
+    // Unlike trainer YAML, rollout executables may be tens of MiB: hash in
+    // bounded chunks without retaining or copying binary bytes into Rust.
+    let mut file = File::open(path)?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 { break; }
+        digest.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn available_rollout_binary() -> Result<Option<PathBuf>, Box<dyn Error>> {
+    let executable = if cfg!(windows) { "policy_rollout.exe" } else { "policy_rollout" };
+    if let Some(value) = env::var_os("BEES_NATIVE_ROLLOUT_BINARY") {
+        let file = PathBuf::from(value).canonicalize()?;
+        if !file.is_file() {
+            return Err(invalid("configured native policy rollout binary is missing").into());
+        }
+        return Ok(Some(file));
+    }
+    let cwd = env::current_dir()?;
+    let mut candidates = vec![
+        cwd.join("native/target/release").join(executable),
+        cwd.join("native/target/debug").join(executable),
+    ];
+    if let Some(parent) = env::current_exe()?.parent() {
+        candidates.insert(0, parent.join(executable));
+        candidates.push(parent.join("native/target/release").join(executable));
+    }
+    Ok(candidates.into_iter().find(|path| path.is_file())
+       .map(|path| path.canonicalize()).transpose()?)
+}
 
 fn choose_trainer_config(save_root: &Path) -> Result<Option<Option<PathBuf>>, Box<dyn Error>> {
     // User-authored PPO configs belong to the player's saved experiments,
@@ -441,19 +498,30 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         false
     };
     let hub = if use_hub { approved_hub_plan()? } else { None };
-    let (worlds, workers, hub_worlds) = if use_hub {
+    let (worlds, workers, hub_worlds, rollout_processes, rollout_binary) = if use_hub {
         let Some(worlds) = choose_count(
             "Total distributed native arenas", &[16, 32, 64, 128, 256, 512, 1024],
         )? else { return Ok(()); };
-        (None, None, Some(worlds))
+        (None, None, Some(worlds), None, None)
     } else {
         let Some(worlds) = choose_count(
             "Parallel native arenas", &[1, 2, 4, 8, 16, 32, 64],
         )? else { return Ok(()); };
+        let binary = available_rollout_binary()?;
+        let processes = if binary.is_some() {
+            let choices = [1, 2, 4, 8, 16].into_iter()
+                .filter(|&count| count <= worlds).collect::<Vec<_>>();
+            let Some(count) = choose_count("Persistent rollout processes", &choices)? else {
+                return Ok(());
+            };
+            Some(count)
+        } else {
+            None
+        };
         let Some(workers) = choose_count(
-            "Native physics CPU workers", &[1, 2, 4, 8, 16, 32],
+            "CPU physics workers per rollout process", &[1, 2, 4, 8, 16, 32],
         )? else { return Ok(()); };
-        (Some(worlds), Some(workers), None)
+        (Some(worlds), Some(workers), None, processes, binary)
     };
     let device_rows = [
         BattleMenuRow { title: "CPU", status: "  [Optimizer]", unlocked: true },
@@ -495,6 +563,10 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "trainer_config_sha256": trainer_config_sha256,
         "worlds": worlds,
         "physics_workers": workers,
+        "rollout_processes": rollout_processes,
+        "rollout_binary": rollout_binary,
+        "rollout_binary_sha256": rollout_binary.as_ref()
+            .map(|binary| sha256_file(binary)).transpose()?,
         "hub_worlds": hub_worlds,
         "hub_plan": if use_hub { hub.as_ref().map(|h| h.0.clone()) } else { None },
         "hub_receiver_listen": if use_hub { hub.as_ref().map(|h| h.1.clone()) } else { None },
@@ -534,6 +606,8 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "pid": process.id(),
         "worlds": worlds,
         "physics_workers": workers,
+        "rollout_processes": rollout_processes,
+        "rollout_binary": rollout_binary,
         "hub_worlds": hub_worlds,
         "allocation": if use_hub { "experiment_hub" } else { "local" },
         "optimizer_device": if device == 0 { "cpu" } else { "cuda" },
