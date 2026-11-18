@@ -184,9 +184,17 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
         0, initial_checkpoint["path"], baseline_holdout, recipe,
         monitor_baseline, monitor_baseline,
     )
-    if baseline["checkpoint_sha256"] != initial_checkpoint["sha256"] or (
+    if baseline["checkpoint_sha256"] != initial_checkpoint["sha256"]:
+        raise ValueError("native holdout baseline does not match pinned initial learner weights")
+    # Self-play holdouts deliberately replace the mutable opponent with
+    # the pinned initial reference model and resolve both artifact paths
+    # to absolute paths. That scientifically necessary derived manifest
+    # has different bytes from initial_manifest even for round zero.
+    # _candidate already authenticated the actual learner checkpoint;
+    # ensure_evaluation pins the original opponent and every artifact.
+    if ("self_play" not in recipe and
             baseline["manifest_sha256"] != recipe["initial_manifest"]["sha256"]):
-        raise ValueError("native holdout baseline does not match pinned initial weights")
+        raise ValueError("native holdout baseline manifest changed")
     best = baseline
     evaluated = 0
     for number, (directory, record) in enumerate(completed, 1):
