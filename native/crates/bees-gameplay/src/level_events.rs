@@ -1103,6 +1103,10 @@ impl NativeLevelEventProcessor {
         Ok(())
     }
 
+    pub fn group_delivery(&self) -> Option<&NativeGroupRewardDelivery> {
+        self.group_delivery.as_ref()
+    }
+
     pub fn group_delivery_mut(&mut self) -> Option<&mut NativeGroupRewardDelivery> {
         self.group_delivery.as_mut()
     }
