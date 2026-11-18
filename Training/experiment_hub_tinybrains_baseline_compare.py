@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 import tempfile
 
-from experiment_hub_eval_io import suite_digest
+from experiment_hub_eval_io import read_bounded, suite_digest
 from experiment_hub_tinybrains_evaluate import evaluate, read_suite
 from experiment_hub_tinybrains_runtime import configure_engine
 
@@ -38,14 +38,138 @@ def write_atomic(path, report):
             os.unlink(name)
 
 
+def publish_report(report, suites, output, run_name):
+    """Archive a fully verified local benchmark, never a native stop receipt."""
+    if report.get("schema_version") != 1 or report.get("complete") is not True or \
+       report.get("scope") != "Independent local checkpoint comparison; not a Hub promotion receipt." or \
+       not isinstance(report.get("results"), list) or not 1 <= len(report["results"]) <= 128:
+        raise ValueError("Only complete TinyBrains independent baseline reports can be imported.")
+    by_suite = {suite["suite_id"]: suite for suite in suites}
+    if any("runtime_sha256" not in suite for suite in suites):
+        raise ValueError("Hub imports require frozen suites with pinned evaluator runtime identities.")
+    items = []
+    seen = set()
+    lineage = {}
+    for result in report["results"]:
+        if not isinstance(result, dict):
+            raise ValueError("Invalid baseline result.")
+        suite = by_suite.get(result.get("suite_id"))
+        if suite is None or result.get("suite_sha256") != suite_digest(suite):
+            raise ValueError("Baseline result does not match its exact frozen suite definition.")
+        file = Path(result.get("checkpoint", ""))
+        if not file.is_absolute() or file.resolve(strict=True) != file or not file.is_file() or \
+           checkpoint_digest(file) != result.get("checkpoint_sha256"):
+            raise ValueError("Historical checkpoint bytes differ or are unavailable: " + str(file))
+        match = re.fullmatch(r"update-([0-9]{6,8})\\.pt", file.name)
+        if match is None:
+            raise ValueError("Checkpoint filename lacks an immutable update coordinate: " + file.name)
+        update = int(match[1])
+        if result.get("steps_completed", update) != update:
+            raise ValueError("Historical checkpoint update does not match the file identity.")
+        candidate = result.get("candidate")
+        if not isinstance(candidate, str) or not candidate:
+            raise ValueError("Historical candidate label is missing.")
+        if candidate in lineage and lineage[candidate] != result["checkpoint_sha256"]:
+            raise ValueError("A candidate label refers to conflicting checkpoint bytes.")
+        lineage[candidate] = result["checkpoint_sha256"]
+        identity = (result["checkpoint_sha256"], suite["suite_id"])
+        if identity in seen:
+            raise ValueError("Repeated historical checkpoint/suite result.")
+        seen.add(identity)
+        matches = result.get("matches")
+        expected = {(board, seed, seat) for board in suite["maps"]
+                    for seed in suite["seeds"] for seat in (0, 1)}
+        observed = set()
+        counts = {"win": 0, "loss": 0, "draw": 0}
+        if not isinstance(matches, list) or len(matches) != len(expected) or \
+           result.get("trials") != len(expected):
+            raise ValueError("Historical report lacks the complete balanced match evidence.")
+        for item in matches:
+            if not isinstance(item, dict) or item.get("outcome") not in counts or \
+               item.get("opponent") != suite.get("opponent", "nano"):
+                raise ValueError("Historical report contains invalid opponent or outcome evidence.")
+            key = (item.get("map"), item.get("seed"), item.get("candidate_seat"))
+            if key not in expected or key in observed:
+                raise ValueError("Historical report contains missing or repeated map/seed/seat pairs.")
+            ranks = item.get("ranks")
+            if not isinstance(ranks, list) or len(ranks) != 2 or \
+               any(type(rank) is not int for rank in ranks):
+                raise ValueError("Historical match lacks valid engine ranks.")
+            seat = key[2]
+            outcome = ("win" if ranks[seat] < ranks[1 - seat] else
+                       "loss" if ranks[seat] > ranks[1 - seat] else "draw")
+            if outcome != item["outcome"]:
+                raise ValueError("Historical outcome disagrees with recorded engine ranks.")
+            observed.add(key)
+            counts[outcome] += 1
+        wins, losses, draws = counts["win"], counts["loss"], counts["draw"]
+        if wins != result.get("wins") or losses != result.get("losses") or \
+           draws != result.get("draws") or \
+           abs((wins + draws / 2) / len(expected) - result.get("score_rate", -1)) > 1e-10:
+            raise ValueError("Historical success/score aggregate disagrees with match outcomes.")
+        timestamp = result.get("evaluated_at") or report.get("created_utc")
+        when = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            raise ValueError("Evaluation timestamp must carry a time zone.")
+        timestamp = when.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        items.append({
+            "checkpoint_name": file.name,
+            "checkpoint_sha256": result["checkpoint_sha256"],
+            "suite_id": suite["suite_id"],
+            "suite_sha256": suite_digest(suite),
+            "suite_definition_canonical": json.dumps(suite, sort_keys=True),
+            "runtime_sha256": suite["runtime_sha256"],
+            "steps_completed": update,
+            "evaluated_at": timestamp,
+            "trials": len(expected), "successes": wins,
+            "metrics": {
+                "win_count": {"value": wins, "unit": "count"},
+                "loss_count": {"value": losses, "unit": "count"},
+                "draw_count": {"value": draws, "unit": "count"},
+                "score_rate": {"value": (wins + draws / 2) / len(expected), "unit": "ratio"},
+            },
+        })
+    if not isinstance(run_name, str) or not 1 <= len(run_name.strip()) <= 100:
+        raise ValueError("Historical comparison run name must be 1–100 characters.")
+    request = {
+        "project_id": "tinybrains", "complete": True,
+        "run_name": run_name.strip(),
+        "source_report_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+        "results": items,
+    }
+    body = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    if len(body) > 65536:
+        raise ValueError("Historical import request exceeds the Hub API limit; "
+                         "split the comparison into smaller checkpoint groups.")
+    conn = http.client.HTTPConnection("127.0.0.1", 7148, timeout=20)
+    try:
+        conn.request("POST", "/api/hub/evaluation/historical", body=body,
+                     headers={"Content-Type": "application/json"})
+        with conn.getresponse() as response:
+            message = response.read(65537)
+            if len(message) > 65536:
+                raise RuntimeError("Hub response exceeded its size limit.")
+            if response.status not in (200, 201):
+                raise RuntimeError(f"Hub import failed (HTTP {response.status}): "
+                                   + message.decode("utf-8", errors="replace"))
+            imported = json.loads(message)
+    finally:
+        conn.close()
+    print("Historical evaluation archived for Compare under job",
+          imported["job_id"], "with", imported["record_count"], "results; "
+          "not authorized for native Stop, checkpoint selection or continuation.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--candidate", action="append", required=True,
+    parser.add_argument("--candidate", action="append",
                         help="Repeat LABEL=/absolute/path/to/checkpoint.pt.")
     parser.add_argument("--suite", action="append", required=True, type=Path,
                         help="Repeat for the Nano and Micro held-out suites.")
-    parser.add_argument("--scratch", required=True, type=Path)
-    parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--scratch", type=Path)
+    parser.add_argument("--out", type=Path)
+    parser.add_argument("--publish-existing-report", type=Path,
+                        help="Archive an already completed baseline report without rerunning matches.")
     parser.add_argument("--engine-path", type=Path)
     parser.add_argument("--publish-to-hub", action="store_true",
                         help="Import a complete checkpoint audit into the local Hub's read-only Compare history.")
@@ -53,6 +177,20 @@ def main():
                         help="Comparison label for the historical run in the Hub.")
     args = parser.parse_args()
 
+    if args.publish_existing_report:
+        if args.candidate or args.scratch or args.out or args.publish_to_hub:
+            parser.error("--publish-existing-report uses --suite and optional --hub-run-name only.")
+        output = args.publish_existing_report.expanduser().resolve(strict=True)
+        if not output.is_file():
+            parser.error("Existing baseline report must be a regular file.")
+        report = json.loads(read_bounded(output, 64 * 1024 * 1024))
+        suites = [read_suite(file.expanduser().resolve(strict=True)) for file in args.suite]
+        if len(set(suite["suite_id"] for suite in suites)) != len(suites):
+            parser.error("Use distinct immutable suite IDs.")
+        publish_report(report, suites, output, args.hub_run_name or output.stem)
+        return
+    if not args.candidate or args.scratch is None or args.out is None:
+        parser.error("New checkpoint evaluations require --candidate, --scratch and --out.")
     configure_engine(args.engine_path)
     scratch = args.scratch.expanduser().resolve(strict=True)
     if not scratch.is_dir():
@@ -150,55 +288,7 @@ def main():
     write_atomic(output, report)
     print(f"Complete independent baseline report: {output}")
     if args.publish_to_hub:
-        by_suite = {suite["suite_id"]: suite for suite in suites}
-        items = []
-        for result in report["results"]:
-            suite = by_suite[result["suite_id"]]
-            items.append({
-                "checkpoint_name": Path(result["checkpoint"]).name,
-                "checkpoint_sha256": result["checkpoint_sha256"],
-                "suite_id": result["suite_id"],
-                "suite_sha256": result["suite_sha256"],
-                "suite_definition_canonical": json.dumps(suite, sort_keys=True),
-                "runtime_sha256": suite["runtime_sha256"],
-                "steps_completed": result["steps_completed"],
-                "evaluated_at": result["evaluated_at"],
-                "trials": result["trials"],
-                "successes": result["wins"],
-                "metrics": {
-                    "win_count": {"value": result["wins"], "unit": "count"},
-                    "loss_count": {"value": result["losses"], "unit": "count"},
-                    "draw_count": {"value": result["draws"], "unit": "count"},
-                    "score_rate": {"value": result["score_rate"], "unit": "ratio"},
-                },
-            })
-        request = {
-            "project_id": "tinybrains", "complete": True,
-            "run_name": (args.hub_run_name or output.stem).strip()[:100],
-            "source_report_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
-            "results": items,
-        }
-        body = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
-        if len(body) > 65536:
-            raise ValueError("Historical import request exceeds the Hub API limit; "
-                             "split the comparison into smaller checkpoint groups.")
-        conn = http.client.HTTPConnection("127.0.0.1", 7148, timeout=20)
-        try:
-            conn.request("POST", "/api/hub/evaluation/historical", body=body,
-                         headers={"Content-Type": "application/json"})
-            with conn.getresponse() as response:
-                message = response.read(65537)
-                if len(message) > 65536:
-                    raise RuntimeError("Hub response exceeded its size limit.")
-                if response.status not in (200, 201):
-                    raise RuntimeError(f"Hub import failed (HTTP {response.status}): "
-                                       + message.decode("utf-8", errors="replace"))
-                imported = json.loads(message)
-        finally:
-            conn.close()
-        print("Historical evaluation archived for Compare under job",
-              imported["job_id"], "with", imported["record_count"], "results; "
-              "not authorized for native Stop, checkpoint selection or continuation.")
+        publish_report(report, suites, output, args.hub_run_name or output.stem)
 
 
 if __name__ == "__main__":
