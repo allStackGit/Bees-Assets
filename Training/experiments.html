@@ -866,6 +866,9 @@ label.hub-toggle-row > input[type="checkbox"] {
               <option value="stop">Stop when the evaluation target is met</option>
             </select>
           </label>
+          <label id="hub-evaluation-frequency-label">Evaluate every N training updates / rounds
+            <input id="hub-evaluation-frequency" type="number" min="1" max="1000000" step="1" value="10">
+          </label>
           <label>Approved suite ID <input id="hub-evaluation-suite" maxlength="48" placeholder="heldout"></label>
           <label>Suite SHA-256 (optional) <input id="hub-evaluation-digest" maxlength="64" pattern="[0-9a-f]{64}"></label>
           <label>Minimum trials <input id="hub-evaluation-trials" type="number" min="1" max="1000000" step="1" placeholder="100"></label>
