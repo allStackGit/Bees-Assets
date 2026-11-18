@@ -113,6 +113,10 @@ pub struct NativeRenderCounts {
     /// Rendered short explosion flashes and five-second ship remains.
     pub ship_explosion_visual_draws: usize,
     pub ship_remains_draws: usize,
+    /// Original imported source ship-remains frames, excluding fallback art.
+    pub ship_remains_source_frame_draws: usize,
+    pub ship_remains_art_classes_loaded: usize,
+    pub ship_remains_color_cache_variants: usize,
     /// Oldest effects evicted to keep large battles bounded.
     pub ship_death_visuals_dropped: usize,
     /// Source CombatEvent::Hit feedback from real physical damage, presentation only.
@@ -195,6 +199,9 @@ pub struct NativeSoftwareRenderer {
     custom_ship_art: HashMap<(u8, [u8; 3]), Arc<NativeSprite>>,
     /// Recolor variants of source clips, owned only by the visible UI.
     animated_ship_art: HashMap<(u8, u8, usize, [u8; 3]), Arc<NativeSprite>>,
+    /// Frames and recolor of actual 20-frame source ShipRemains, never
+    /// retained by the physical world or headless learner.
+    colored_ship_remains: HashMap<(u8, usize, [u8; 3]), Arc<NativeSprite>>,
     sprite_raster_candidate_pixels: u64,
     sprite_raster_opaque_pixels: u64,
     sprite_raster_blended_pixels: u64,
@@ -482,6 +489,38 @@ struct SourceShipAnimationArt {
     frames: Vec<SourceShipArt>,
 }
 
+/// Common decoder for living ship clips and death remains. Keeping the
+/// same pixels-per-unit and source recolor mask rules avoids drift between
+/// ordinary and destroyed source sprites.
+fn decode_ship_clip(
+    bytes: &[u8], at: &mut usize, ppu: usize, fps: usize,
+    frame_count: usize, total_pixels: &mut usize,
+) -> io::Result<SourceShipAnimationArt> {
+    let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+        "invalid native animated ship source frame");
+    if ppu == 0 || !(1..=120).contains(&fps) ||
+        !(1..=64).contains(&frame_count) {
+        return Err(invalid());
+    }
+    let mut frames = Vec::with_capacity(frame_count);
+    for _ in 0..frame_count {
+        let width = source_art_u16(bytes, at).ok_or_else(invalid)?;
+        let height = source_art_u16(bytes, at).ok_or_else(invalid)?;
+        if !(1..=2048).contains(&width) || !(1..=2048).contains(&height) {
+            return Err(invalid());
+        }
+        *total_pixels = total_pixels.checked_add(width * height)
+            .ok_or_else(invalid)?;
+        if *total_pixels > 16_777_216 { return Err(invalid()); }
+        frames.push(SourceShipArt {
+            pixels_per_unit: ppu as f32,
+            sprite: source_art_sprite(bytes, at, width, height)?,
+            recolor_mask: source_art_color_mask(bytes, at, width * height)?,
+        });
+    }
+    Ok(SourceShipAnimationArt { frames_per_second: fps as f32, frames })
+}
+
 struct SourceShipAnimationAtlas {
     clips: [Option<SourceShipAnimationArt>; SOURCE_SHIP_TYPES * 2],
     loaded: usize,
@@ -510,25 +549,45 @@ impl SourceShipAnimationAtlas {
                 clips[ty * 2 + variant].is_some() {
                 return Err(invalid());
             }
-            let mut decoded = Vec::with_capacity(frames);
-            for _ in 0..frames {
-                let width = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
-                let height = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
-                if !(1..=2048).contains(&width) || !(1..=2048).contains(&height) {
-                    return Err(invalid());
-                }
-                pixels_total = pixels_total.checked_add(width * height)
-                    .ok_or_else(invalid)?;
-                if pixels_total > 16_777_216 { return Err(invalid()); }
-                decoded.push(SourceShipArt {
-                    pixels_per_unit: ppu as f32,
-                    sprite: source_art_sprite(bytes, &mut at, width, height)?,
-                    recolor_mask: source_art_color_mask(bytes, &mut at, width * height)?,
-                });
+            clips[ty * 2 + variant] = Some(decode_ship_clip(
+                bytes, &mut at, ppu, fps, frames, &mut pixels_total,
+            )?);
+        }
+        if at != bytes.len() { return Err(invalid()); }
+        Ok(Self { clips, loaded: count })
+    }
+}
+
+/// Lazy source ShipRemains atlas. Separate from living sprite animation
+/// data so 20-frame wreck sheets consume no memory until actual combat
+/// destruction is displayed; old Windows/Linux PCs keep small 1v1 loads.
+struct SourceShipRemainsAtlas {
+    clips: [Option<SourceShipAnimationArt>; SOURCE_SHIP_TYPES],
+    loaded: usize,
+}
+
+impl SourceShipRemainsAtlas {
+    fn decode(bytes: &[u8]) -> io::Result<Self> {
+        let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+            "invalid source ship remains atlas");
+        if bytes.get(..4) != Some(&b"BSR1"[..]) { return Err(invalid()); }
+        let mut at = 4usize;
+        let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+        if count > SOURCE_SHIP_TYPES { return Err(invalid()); }
+        let mut clips = std::array::from_fn(|_| None);
+        let mut total_pixels = 0;
+        for _ in 0..count {
+            let kind = usize::from(*bytes.get(at).ok_or_else(invalid)?);
+            at += 1;
+            let ppu = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            let fps = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            let frames = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+            if kind >= SOURCE_SHIP_TYPES || clips[kind].is_some() {
+                return Err(invalid());
             }
-            clips[ty * 2 + variant] = Some(SourceShipAnimationArt {
-                frames_per_second: fps as f32, frames: decoded,
-            });
+            clips[kind] = Some(decode_ship_clip(
+                bytes, &mut at, ppu, fps, frames, &mut total_pixels,
+            )?);
         }
         if at != bytes.len() { return Err(invalid()); }
         Ok(Self { clips, loaded: count })
@@ -635,6 +694,13 @@ fn source_ship_animation_art() -> Option<&'static SourceShipAnimationAtlas> {
     )).as_ref()
 }
 
+fn source_ship_remains_art() -> Option<&'static SourceShipRemainsAtlas> {
+    static ATLAS: OnceLock<Option<SourceShipRemainsAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "ship-remains.rgba", SourceShipRemainsAtlas::decode,
+    )).as_ref()
+}
+
 fn source_projectile_art() -> Option<&'static SourceProjectileAtlas> {
     static ATLAS: OnceLock<Option<SourceProjectileAtlas>> = OnceLock::new();
     ATLAS.get_or_init(|| load_source_art(
@@ -712,6 +778,7 @@ impl NativeSoftwareRenderer {
             selected_squad_lookup: HashSet::new(),
             command_target_ship_ids: HashSet::new(),
             custom_ship_art: HashMap::new(), animated_ship_art: HashMap::new(),
+            colored_ship_remains: HashMap::new(),
             sprite_raster_candidate_pixels: 0,
             sprite_raster_opaque_pixels: 0,
             sprite_raster_blended_pixels: 0,
