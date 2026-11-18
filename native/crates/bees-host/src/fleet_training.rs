@@ -224,7 +224,7 @@ fn append_training_arguments(
     command.arg("--evaluation-every").arg(evaluation_every.to_string());
     if recipe["hub_plan"].is_string() {
         if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() ||
-            !recipe["rollout_processes"].is_null() || !recipe["rollout_binary"].is_null()
+            !recipe["rollout_processes"].is_null()
         {
             return Err(invalid("Hub allocation cannot also claim local CPU workers").into());
         }
@@ -241,23 +241,30 @@ fn append_training_arguments(
             .ok_or_else(|| invalid("invalid native physics worker count"))?;
         command.arg("--rollout-worlds").arg(worlds.to_string())
             .arg("--physics-workers").arg(physics.to_string());
-        if !recipe["rollout_binary"].is_null() {
-            let binary = PathBuf::from(recipe["rollout_binary"].as_str()
-                .ok_or_else(|| invalid("invalid native rollout executable path"))?);
-            let expected = recipe["rollout_binary_sha256"].as_str()
-                .ok_or_else(|| invalid("missing pinned native rollout executable identity"))?;
+        if !recipe["rollout_processes"].is_null() {
             let processes = recipe["rollout_processes"].as_u64()
                 .filter(|n| (1..=256).contains(n) && *n <= worlds)
                 .ok_or_else(|| invalid("invalid native rollout process count"))?;
-            if !binary.is_file() || sha256_file(&binary)? != expected {
-                return Err(invalid("compiled native rollout executable changed since training selection").into());
+            if recipe["rollout_binary"].is_null() {
+                return Err(invalid("native rollout processes require a compiled binary").into());
             }
-            command.arg("--rollout-binary").arg(binary)
-                .arg("--rollout-workers").arg(processes.to_string());
-        } else if !recipe["rollout_binary_sha256"].is_null() ||
-                  !recipe["rollout_processes"].is_null() {
-            return Err(invalid("native rollout process allocation requires its compiled binary").into());
+            command.arg("--rollout-workers").arg(processes.to_string());
         }
+    }
+    // The learner's local holdout evaluator always needs the same native
+    // binary, even when its training experience comes entirely from Hub.
+    // This is NOT a Hub collector allocation or remote process request.
+    if !recipe["rollout_binary"].is_null() {
+        let binary = PathBuf::from(recipe["rollout_binary"].as_str()
+            .ok_or_else(|| invalid("invalid native rollout executable path"))?);
+        let expected = recipe["rollout_binary_sha256"].as_str()
+            .ok_or_else(|| invalid("missing pinned native rollout executable identity"))?;
+        if !binary.is_file() || sha256_file(&binary)? != expected {
+            return Err(invalid("compiled native rollout executable changed since training selection").into());
+        }
+        command.arg("--rollout-binary").arg(binary);
+    } else if !recipe["rollout_binary_sha256"].is_null() {
+        return Err(invalid("native rollout executable digest has no binary").into());
     }
     if !recipe["trainer_config"].is_null() {
         let config = PathBuf::from(recipe["trainer_config"].as_str()
@@ -546,7 +553,10 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         let Some(worlds) = choose_count(
             "Total distributed native arenas", &[16, 32, 64, 128, 256, 512, 1024],
         )? else { return Ok(()); };
-        (None, None, Some(worlds), None, None)
+        // A distributed learner still evaluates holdouts on its own host.
+        // Forward a prebuilt rollout executable if available; remote jobs
+        // continue using only Hub-approved allocations.
+        (None, None, Some(worlds), None, available_rollout_binary()?)
     } else {
         let Some(worlds) = choose_count(
             "Parallel native arenas", &[1, 2, 4, 8, 16, 32, 64],
