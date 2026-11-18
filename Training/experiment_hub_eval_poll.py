@@ -291,6 +291,38 @@ def completed_recently(path: Path, dispatch: str, suite_id: str,
     return seconds < minutes * 60
 
 
+def awaits_archive_ack(path: Path, job: dict, suite_id: str,
+                       fingerprint: str) -> bool:
+    """Do not overwrite the single published receipt before Hub archival.
+
+    A verified native agent may inspect a published receipt after a delayed
+    heartbeat or after the Hub restarts. The coordinator returns only the
+    last *durably archived* receipt, never the bounded candidate cache.
+    No training or native job lifecycle is blocked by this evaluation-only
+    throttle.
+    """
+    try:
+        receipt = json.loads(read_bounded(path, 4096))
+    except FileNotFoundError:
+        return False
+    if (not isinstance(receipt, dict) or
+        receipt.get("schema_version") != 1 or
+        receipt.get("dispatch_id") != job["dispatch_id"] or
+        receipt.get("suite_id") != suite_id or
+        receipt.get("suite_sha256") != fingerprint or
+        not isinstance(receipt.get("checkpoint_sha256"), str) or
+        not SHA256.fullmatch(receipt["checkpoint_sha256"])):
+        raise ValueError("Published evaluator receipt has unexpected identity; retain for inspection.")
+    archived = job.get("archived_evaluation")
+    # Compare complete, normalized measurement evidence. A matching model
+    # digest alone cannot acknowledge a contradictory measured result.
+    fields = ("schema_version", "dispatch_id", "suite_id", "suite_sha256",
+              "checkpoint_sha256", "runtime_sha256", "steps_completed",
+              "evaluated_at", "trials", "successes", "metrics")
+    return not isinstance(archived, dict) or any(
+        receipt.get(field) != archived.get(field) for field in fields)
+
+
 def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> None:
     receipt = pending["receipt"]
     dispatch = receipt["dispatch_id"]
@@ -372,6 +404,11 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                     print(f"{project} evaluation target {dispatch} requires a different suite definition.", file=sys.stderr)
                     continue
                 receipt = args.receipt_root / f"{dispatch}.{suite_id}.json"
+                if awaits_archive_ack(receipt, job, suite_id, digest):
+                    print(f"{project} evaluator {dispatch} awaiting Hub archive for "
+                          f"{suite_id}; preserving previous checkpoint receipt.",
+                          file=sys.stderr)
+                    continue
                 # A monitoring-only result does not finish a suite: keep
                 # observing newer checkpoints. An exact final result is reusable.
                 if passed_receipt(receipt, dispatch, receipt_suite, job, digest) and (
@@ -573,6 +610,14 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     print(f"{project} batch target {dispatch} has a changed "
                           "benchmark suite definition; restore the pinned "
                           "suite or use a new experiment.", file=sys.stderr)
+                    continue
+                if any(awaits_archive_ack(
+                    args.receipt_root / f"{dispatch}.{sid}.json",
+                    target_sets[sid][dispatch], sid, definitions[sid]
+                ) for sid, _ in ordered):
+                    print(f"{project} evaluator batch {dispatch} awaiting Hub "
+                          "archive acknowledgement; preserving existing receipts.",
+                          file=sys.stderr)
                     continue
                 seen = []
                 for sid, (_, receipt_suite) in ordered:
