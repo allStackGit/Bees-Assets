@@ -638,6 +638,37 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 if(fits())break;
             }
         }
+        if(!fits()) {
+            // A fully instrumented seventeen-collector update can still
+            // exceed the fixed wire envelope after ordinary optional
+            // columns are removed. Shed additional columns ACROSS EVERY
+            // collector rather than dropping the last machines altogether.
+            // Retain comparable useful throughput, learner-facing waits,
+            // the principal rollout stage walls, and physical GPU identity.
+            const essential=new Set([
+                'ant_decisions','decisions_per_second','elapsed_seconds',
+                'roundtrip_seconds','service_seconds',
+                'wait_after_local_seconds','learner_inference_seconds',
+                'rollout_engine_step_seconds','observation_prepare_seconds',
+                'opponent_processing_seconds','result_processing_seconds',
+                'is_local_gpu','gpu_lease_index'
+            ]);
+            const columns=new Set();
+            for(const name of Object.keys(metrics)) {
+                const match=/^collector_(?:[0-9]|1[0-6])_(.+)$/.exec(name);
+                if(match&&!essential.has(match[1]))
+                    columns.add(match[1]);
+            }
+            // Deterministic order, with larger optional source columns
+            // removed first. These details remain in native run history.
+            const optional=[...columns].sort((a,b)=>b.length-a.length||
+                a.localeCompare(b));
+            for(const suffix of optional) {
+                for(let i=0;i<collectors;i++)
+                    delete metrics['collector_'+i+'_'+suffix];
+                if(fits())break;
+            }
+        }
     }
     return metrics;
 }
