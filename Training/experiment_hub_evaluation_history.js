@@ -196,6 +196,8 @@ class EvaluationHistory {
             throw Error('Expected a complete, bounded independent TinyBrains checkpoint audit.');
         if(Buffer.byteLength(JSON.stringify(value),'utf8')>MAX_IMPORT_BYTES)
             throw Error('Historical evaluation import exceeds the request limit.');
+        const importDigest=crypto.createHash('sha256').update(
+            JSON.stringify(value.results)).digest('hex');
         const seed=crypto.createHash('sha256').update(
             value.project_id+':'+value.source_report_sha256).digest('hex');
         // Deterministic identity makes resubmission idempotent and prevents
@@ -209,12 +211,14 @@ class EvaluationHistory {
         const file=this.file(id);
         if(fs.existsSync(metaFile)) {
             const existing=this.historicalJobs().find(job=>job.id===id);
-            if(existing&&existing.source_report_sha256===value.source_report_sha256)
+            if(existing&&existing.source_report_sha256===value.source_report_sha256) {
+                const meta=JSON.parse(fs.readFileSync(metaFile,'utf8'));
+                if(meta.import_sha256!==importDigest)
+                    throw Error('Historical report identity was reused with conflicting results.');
                 return {job_id:id,imported:false,record_count:this.load(id,'tinybrains').records.length};
+            }
             throw Error('An existing historical report with this identity is invalid.');
         }
-        if(fs.existsSync(file))
-            throw Error('A previous historical import was interrupted; retained for inspection.');
         const observed=new Date().toISOString(),seen=new Set(),suites=new Map(),rows=[];
         for(const raw of value.results) {
             if(!raw||typeof raw!=='object'||Array.isArray(raw)||
@@ -226,7 +230,8 @@ class EvaluationHistory {
                 !SHA256.test(String(raw.runtime_sha256||''))||
                 !Number.isSafeInteger(raw.steps_completed)||raw.steps_completed<0||
                 typeof raw.checkpoint_name!=='string'||
-                !/^[a-zA-Z0-9_.-]{1,128}$/.test(raw.checkpoint_name))
+                !/^update-[0-9]{6,8}\.pt$/.test(raw.checkpoint_name)||
+                Number(raw.checkpoint_name.slice(7,-3))!==raw.steps_completed)
                 throw Error('Historical evaluation checkpoint or suite provenance is invalid.');
             let suite;
             try{suite=JSON.parse(raw.suite_definition_canonical);}
@@ -294,6 +299,7 @@ class EvaluationHistory {
             schema_version:1,id,project_id:value.project_id,
             run_name:value.run_name.trim(),created_at:observed,
             source_report_sha256:value.source_report_sha256,
+            import_sha256:importDigest,
             suites:[...suites.values()],
         };
         const metadata=Buffer.from(JSON.stringify(meta)+'\n');
@@ -311,11 +317,24 @@ class EvaluationHistory {
                 fs.fsyncSync(fd);
             }finally{fs.closeSync(fd);}
         };
+        // An interrupted import may leave a fully fsynced history file
+        // without its discoverable metadata. Recover only if every byte
+        // matches the now-validated import; never truncate or replace it.
+        let recovered=false;
+        if(fs.existsSync(file)) {
+            const stat=fs.lstatSync(file);
+            if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||
+                stat.size!==records.length||
+                (typeof process.getuid==='function'&&
+                 (stat.uid!==process.getuid()||(stat.mode&0o077)!==0))||
+                !fs.readFileSync(file).equals(records))
+                throw Error('Previous historical import differs; retained for inspection.');
+            recovered=true;
+        }else writeNew(file,records);
         // History first, discoverable metadata last. Neither operation
         // modifies the native registry or any existing evaluation file.
-        writeNew(file,records);
         writeNew(metaFile,metadata);
-        return {job_id:id,imported:true,record_count:rows.length};
+        return {job_id:id,imported:true,recovered,record_count:rows.length};
     }
     snapshot(projectId,jobs) {
         const samples=[];
