@@ -1833,6 +1833,30 @@ impl NativeSoftwareRenderer {
                 }
                 continue;
             }
+            // Asteroids, static walls and destructible MapObjects share the
+            // canonical obstacle collider. Its identity lookup is O(1), not
+            // a scan over every obstacle per impact in a large battle.
+            let obstacle_impact = match event {
+                bees_sim::combat_world::CombatEvent::StaticObstacleImpact {
+                    projectile_id, obstacle_id,
+                } | bees_sim::combat_world::CombatEvent::AsteroidDamaged {
+                    projectile_id, obstacle_id, ..
+                } | bees_sim::combat_world::CombatEvent::MapObjectDamaged {
+                    projectile_id, object_id: obstacle_id, ..
+                } => Some((*projectile_id, *obstacle_id)),
+                _ => None,
+            };
+            if let Some((projectile_id, obstacle_id)) = obstacle_impact {
+                if let Some(body) = view.combat.obstacle_body(obstacle_id) {
+                    let (admitted, dropped) = self.record_combat_impact(
+                        view.tick, projectile_id, obstacle_id,
+                        body.pose.position, false,
+                    );
+                    counts.combat_impacts_observed += usize::from(admitted);
+                    counts.combat_impact_visuals_dropped += usize::from(dropped);
+                }
+                continue;
+            }
             let bees_sim::combat_world::CombatEvent::ShipDied { victim_id, .. } = event
                 else { continue };
             let (Some(ship), Some(body)) = (
