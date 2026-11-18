@@ -650,6 +650,11 @@ impl NativePolicyOnlyMetadata {
                         if target.members.is_empty() { continue; }
                         let center = self.command_center(world, roster, candidate)
                             .map_err(NativeLevelEventError::Commands)?;
+                        if !center.is_finite() {
+                            return Err(NativeLevelEventError::Commands(
+                                GameCommandError::InvalidEnemy,
+                            ));
+                        }
                         self.scripted_centers.push((candidate, target.side, center));
                     }
                     // Sort once for all orders on this tick. The
