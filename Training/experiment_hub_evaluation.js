@@ -67,7 +67,9 @@ function evaluationPolicy(value) {
 function monitoringPolicy(value) {
     if(value==null)return null;
     if(record(value)&&Object.hasOwn(value,'all_of')) {
-        if(Object.keys(value).some(key=>!['all_of','every_n_checkpoints'].includes(key))||
+        if(Object.keys(value).some(key=>!['all_of','every_n_checkpoints','include_baseline','include_final'].includes(key))||
+            (value.include_baseline!==undefined&&typeof value.include_baseline!=='boolean')||
+            (value.include_final!==undefined&&typeof value.include_final!=='boolean')||
             !Array.isArray(value.all_of)||
             value.all_of.length<2||value.all_of.length>8||
             (value.every_n_checkpoints!==undefined&&
@@ -75,14 +77,20 @@ function monitoringPolicy(value) {
               value.every_n_checkpoints<1||value.every_n_checkpoints>1000000)))
             throw Error('Monitoring requires 2–8 distinct independent suites and a valid cadence.');
         const rules=value.all_of.map(monitoringPolicy);
-        if(rules.some(rule=>!rule||rule.all_of||rule.every_n_checkpoints!=null)||
+        if(rules.some(rule=>!rule||rule.all_of||rule.every_n_checkpoints!=null||
+            rule.include_baseline!==undefined||rule.include_final!==undefined)||
             new Set(rules.map(rule=>rule.suite_id)).size!==rules.length)
             throw Error('Monitoring batches require distinct suite IDs and one common cadence.');
         return {all_of:rules,...(value.every_n_checkpoints!=null
-            ?{every_n_checkpoints:value.every_n_checkpoints}:{})};
+            ?{every_n_checkpoints:value.every_n_checkpoints}:{}),
+            ...(value.include_baseline!==undefined?{include_baseline:value.include_baseline}:{}),
+            ...(value.include_final!==undefined?{include_final:value.include_final}:{})};
     }
     if(!record(value)||Object.keys(value).some(key=>
-        !['suite_id','suite_sha256','min_trials','every_n_checkpoints'].includes(key))||
+        !['suite_id','suite_sha256','min_trials','every_n_checkpoints',
+          'include_baseline','include_final'].includes(key))||
+        (value.include_baseline!==undefined&&typeof value.include_baseline!=='boolean')||
+        (value.include_final!==undefined&&typeof value.include_final!=='boolean')||
         typeof value.suite_id!=='string'||!SUITE.test(value.suite_id)||
         (Object.hasOwn(value,'suite_sha256')&&
             (typeof value.suite_sha256!=='string'||!SHA256.test(value.suite_sha256)))||
@@ -94,7 +102,9 @@ function monitoringPolicy(value) {
     return {suite_id:value.suite_id,min_trials:value.min_trials,
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{}),
         ...(value.every_n_checkpoints!=null
-            ?{every_n_checkpoints:value.every_n_checkpoints}:{})};
+            ?{every_n_checkpoints:value.every_n_checkpoints}:{}),
+        ...(value.include_baseline!==undefined?{include_baseline:value.include_baseline}:{}),
+        ...(value.include_final!==undefined?{include_final:value.include_final}:{})};
 }
 // A monitoring cadence may also have a success gate, but both policies
 // must describe precisely the same frozen suite set and trial requirements.
@@ -102,6 +112,8 @@ function monitoringPolicy(value) {
 // a second evaluator or accepting results from unrelated benchmark suites.
 function compatibleMonitoringStop(monitor,stop) {
     if(!monitor||!stop)return;
+    if(monitor.include_final===false)
+        throw Error('A success-based Stop requires a final-checkpoint evaluation for verified continuation.');
     const watched=evaluationRules(monitor);
     const gated=evaluationRules(stop);
     const byId=new Map(watched.map(rule=>[rule.suite_id,rule]));

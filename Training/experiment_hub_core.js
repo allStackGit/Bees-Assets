@@ -508,6 +508,7 @@ function retainEvaluationCohorts(job,receipts) {
     return changed;
 }
 function missingFinalEvaluationRules(job) {
+    if(job.evaluation_monitor?.include_final===false&&!job.evaluation_stop)return [];
     if(!job.capacity_released_at||!checkpointContinuationComplete(job)||
         !independentSequenceComplete(job)||!SHA256.test(job.checkpoint_model_sha256||''))return [];
     const cohort=job.evaluation_candidates?.find(row=>row.checkpoint_sha256===job.checkpoint_model_sha256);
@@ -2018,6 +2019,8 @@ class ExperimentHub {
                 ...(job.evaluation_monitor?{
                     monitor_only:true,
                     every_n_checkpoints:job.evaluation_monitor.every_n_checkpoints||1,
+                    ...(job.evaluation_monitor.include_baseline===false
+                        ?{include_baseline:false}:{}),
                 }:{}),
                 required_suite_ids:evaluationRules(policy)
                     .map(candidate=>candidate.suite_id)};
