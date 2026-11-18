@@ -235,6 +235,39 @@ def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_d
         return False
 
 
+def completed_recently(path: Path, dispatch: str, suite_id: str,
+                       fingerprint: str, minutes: int) -> bool:
+    """Throttle only a verified receipt from this dispatch and frozen suite.
+
+    A time interval is a minimum spacing between completed evaluations,
+    not a substitute for a new checkpoint or the update-based cadence.
+    """
+    if type(minutes) is not int or not 1 <= minutes <= 10080:
+        raise ValueError("Invalid minimum time between independent evaluations.")
+    try:
+        value = json.loads(read_bounded(path, 4096))
+    except FileNotFoundError:
+        return False
+    if (value.get("schema_version") != 1 or
+        value.get("dispatch_id") != dispatch or
+        value.get("suite_id") != suite_id or
+        value.get("suite_sha256") != fingerprint):
+        return False
+    timestamp = value.get("evaluated_at")
+    if not isinstance(timestamp, str):
+        return False  # A legacy receipt cannot prove a completed clock interval.
+    try:
+        when = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            raise ValueError("Missing evaluator time zone.")
+        seconds = (datetime.now(timezone.utc) - when).total_seconds()
+    except ValueError as error:
+        raise ValueError("Invalid evaluator receipt timestamp.") from error
+    if seconds < -60:
+        raise ValueError("Evaluation receipt is from the future; inspect evaluator clock.")
+    return seconds < minutes * 60
+
+
 def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> None:
     receipt = pending["receipt"]
     dispatch = receipt["dispatch_id"]
@@ -338,6 +371,10 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                     # available checkpoint when the baseline is disabled.
                     if previous == 0 and job.get("include_baseline", True) is False:
                         cursor[dispatch] = update
+                        continue
+                    interval = job.get("min_minutes_between_evaluations")
+                    if interval is not None and completed_recently(
+                        receipt, dispatch, suite_id, digest, interval):
                         continue
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 print(f"{project} evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
@@ -526,6 +563,20 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     if previous == 0 and jobs[0].get("include_baseline", True) is False:
                         cursor[dispatch] = update
                         continue
+                    interval = jobs[0].get("min_minutes_between_evaluations")
+                    if interval is not None:
+                        if any(job.get("min_minutes_between_evaluations") != interval
+                               for job in jobs):
+                            raise ValueError("Inconsistent multi-suite time interval.")
+                        # Do not delay completion of a partially published
+                        # cohort: time spacing applies only after all suites
+                        # finished the same previous checkpoint.
+                        if len(seen) == len(ordered) and len(set(seen)) == 1:
+                            sid = ordered[0][0]
+                            if completed_recently(
+                                args.receipt_root / f"{dispatch}.{sid}.json",
+                                dispatch, sid, definitions[sid], interval):
+                                continue
                 if not file.is_file():
                     continue
             except (OSError, ValueError, TypeError, KeyError) as exc:
