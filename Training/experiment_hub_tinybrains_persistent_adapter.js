@@ -475,6 +475,13 @@ function createTinyBrainsPersistentDockerAdapter({
     const learningPath=path.join(project,'src/ants_mapoca/learning_path.py');
     const installedLearningPath=fs.readFileSync(learningPath,'utf8');
     const stageSupport=installedLearningPath.includes('--hub-stage-json');
+    const supportedStages=stageSupport?[
+        'basic_tiny','tiny_two_player','small_two_player',
+        'all_two_player','full_multiplayer',
+    ].filter(name=>{
+        try { return Boolean(approvedStage(name)); }
+        catch { return false; }
+    }):[];
     const designEnabled=installedLearningPath
         .includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
     const designFields=described(originalSpec,'tinybrains');
@@ -609,6 +616,7 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_required_import_profiles:[...approved.keys()],
         tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
+        tinybrains_curriculum_stages:supportedStages,
         tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
         tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
         tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
