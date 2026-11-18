@@ -644,9 +644,10 @@ def _validate_dynamic_episode(
     # are emitted by the shared Level, even when controllers have independent
     # inference phases. Never invent inactive observations in Python.
     closing_ticks = {end for end in closing.values() if end < terminal_tick}
-    required_ticks = closing_ticks | {terminal_tick}
+    admission_ticks = {start for start in starts.values() if start > 0}
+    required_ticks = closing_ticks | admission_ticks | {terminal_tick}
     if episode_boundaries.keys() != required_ticks:
-        raise ValueError("dynamic policy boundary misses a retirement or terminal")
+        raise ValueError("dynamic policy boundary misses an enrollment, retirement or terminal")
     for tick, frame in episode_boundaries.items():
         active = {agent for agent in teams if starts[agent] <= tick <= closing[agent]}
         if frame.keys() != active:
