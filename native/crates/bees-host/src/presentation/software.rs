@@ -694,11 +694,20 @@ fn source_ship_animation_art() -> Option<&'static SourceShipAnimationAtlas> {
     )).as_ref()
 }
 
+static SOURCE_SHIP_REMAINS_ATLAS: OnceLock<Option<SourceShipRemainsAtlas>> =
+    OnceLock::new();
+
 fn source_ship_remains_art() -> Option<&'static SourceShipRemainsAtlas> {
-    static ATLAS: OnceLock<Option<SourceShipRemainsAtlas>> = OnceLock::new();
-    ATLAS.get_or_init(|| load_source_art(
+    SOURCE_SHIP_REMAINS_ATLAS.get_or_init(|| load_source_art(
         "ship-remains.rgba", SourceShipRemainsAtlas::decode,
     )).as_ref()
+}
+
+fn loaded_ship_remains_art_classes() -> usize {
+    // A per-frame gauge must not accidentally decode every 20-frame
+    // source wreck sheet at game startup before a single ship dies.
+    SOURCE_SHIP_REMAINS_ATLAS.get()
+        .and_then(Option::as_ref).map_or(0, |atlas| atlas.loaded)
 }
 
 fn source_projectile_art() -> Option<&'static SourceProjectileAtlas> {
@@ -895,7 +904,11 @@ impl NativeSoftwareRenderer {
         let mut remains_drawn = 0;
         let mut flashes_drawn = 0;
         let mut source_frames_drawn = 0;
-        let authored_remains = source_ship_remains_art();
+        let authored_remains = if self.death_effects.is_empty() {
+            None
+        } else {
+            source_ship_remains_art()
+        };
         for index in 0..self.death_effects.len() {
             let fx = self.death_effects[index];
             let seconds = (tick - fx.born_tick) as f32 * fixed_dt;
@@ -1914,7 +1927,7 @@ impl NativeSoftwareRenderer {
         counts.ship_explosion_visual_draws = explosions;
         counts.ship_remains_source_frame_draws = source_frames;
         counts.ship_remains_art_classes_loaded =
-            source_ship_remains_art().map_or(0, |atlas| atlas.loaded);
+            loaded_ship_remains_art_classes();
         counts.ship_remains_color_cache_variants = self.colored_ship_remains.len();
         counts.combat_impact_visual_draws =
             self.draw_combat_impact_visuals(view.tick, view.fixed_step_seconds);
