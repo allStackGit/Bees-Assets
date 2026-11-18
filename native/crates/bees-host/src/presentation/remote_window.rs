@@ -58,6 +58,9 @@ struct WireCounts {
     sprite_blended_pixels: u64,
     recolor_cache_peak: usize,
     ship_deaths_received: u64,
+    combat_impacts_received: u64,
+    combat_impact_visual_draws: u64,
+    combat_impact_visuals_dropped: u64,
     ship_remains_draws: u64,
     ship_explosion_visual_draws: u64,
     obstacle_hull_draws: u64,
@@ -171,6 +174,22 @@ impl RemoteArtwork {
         }
         self.raster.begin_death_scene(WorldId(episode.0), episode.1);
         for cue in state["audio_events"].as_array().into_iter().flatten() {
+            let impact = &cue["combat_impact"];
+            if let (Some(projectile), Some(target), Some(fatal),
+                    Some(x), Some(y), Some(born_tick)) = (
+                impact["projectile_id"].as_i64(),
+                impact["target_id"].as_i64(),
+                impact["fatal"].as_bool(),
+                cue["x"].as_f64().map(|v| v as f32),
+                cue["y"].as_f64().map(|v| v as f32),
+                cue["tick"].as_u64(),
+            ) {
+                let (admitted, dropped) = self.raster.record_combat_impact(
+                    born_tick, projectile, target, Vec2::new(x, y), fatal,
+                );
+                stats.combat_impacts_received += u64::from(admitted);
+                stats.combat_impact_visuals_dropped += u64::from(dropped);
+            }
             let death = &cue["ship_death"];
             let (Some(id), Some(kind), Some(side), Some(x), Some(y),
                  Some(rotation), Some(radius), Some(born_tick)) = (
@@ -200,6 +219,8 @@ impl RemoteArtwork {
             self.raster.draw_ship_death_visuals(tick, dt);
         stats.ship_remains_draws += remains as u64;
         stats.ship_explosion_visual_draws += flashes as u64;
+        stats.combat_impact_visual_draws +=
+            self.raster.draw_combat_impact_visuals(tick, dt) as u64;
         let (candidates, opaque, blended) = self.raster.remote_raster_counts();
         stats.sprite_candidate_pixels += candidates;
         stats.sprite_opaque_pixels += opaque;
@@ -1490,6 +1511,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "interpolated_draw_frames":peer.metrics.interpolated_draw_frames,
         "ship_sprite_draws":peer.metrics.ship_sprite_draws,
         "ship_deaths_received":peer.metrics.ship_deaths_received,
+        "combat_impacts_received":peer.metrics.combat_impacts_received,
+        "combat_impact_visual_draws":peer.metrics.combat_impact_visual_draws,
+        "combat_impact_visuals_dropped":peer.metrics.combat_impact_visuals_dropped,
         "ship_remains_draws":peer.metrics.ship_remains_draws,
         "ship_explosion_visual_draws":peer.metrics.ship_explosion_visual_draws,
         "projectile_sprite_draws":peer.metrics.projectile_sprite_draws,
