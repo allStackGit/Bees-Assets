@@ -5,7 +5,8 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
-const {evaluationEvidence}=require('./experiment_hub_evaluation');
+const {activeEvaluation,evaluationEvidence,evaluationFailure,evaluationRules}=
+    require('./experiment_hub_evaluation');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
 const MAX_BYTES=64*1024*1024;
@@ -141,6 +142,28 @@ class EvaluationHistory {
                     row.project_id!==projectId||
                     !UUID.test(String(row.dispatch_id)))
                     throw Error('Invalid independent evaluation archive identity.');
+                if(row.evaluation_status==='failed') {
+                    // A failed evaluation has exact checkpoint provenance,
+                    // but never a measured success/trial count or score.
+                    const {observed_at,...attempt}=row;
+                    const checked=evaluationFailure(attempt,{
+                        project_id:projectId,job_id:jobId,
+                        dispatch_id:row.dispatch_id,suite_id:row.suite_id,
+                    });
+                    if(typeof observed_at!=='string'||
+                        !Number.isFinite(Date.parse(observed_at))||
+                        new Date(observed_at).toISOString()!==observed_at||
+                        checked.checkpoint_sha256!==row.checkpoint_sha256)
+                        throw Error('Invalid archived failed evaluation attempt.');
+                    const key=JSON.stringify(['failed',row.dispatch_id,
+                        row.suite_id,row.checkpoint_sha256,row.reason]);
+                    if(issueKeys.has(key))
+                        throw Error('Duplicate failed evaluation attempt in archive.');
+                    issueKeys.add(key);
+                    diagnostics.push(row);
+                    lastEntry=row;
+                    continue;
+                }
                 if(row.evaluation_status==='unavailable') {
                     // A native evaluator reported an unavailable or invalid
                     // receipt. No checkpoint or measured score is asserted.
@@ -291,6 +314,40 @@ class EvaluationHistory {
         }catch(error) {
             this.issues.set('diagnostic:'+id,
                 'Independent evaluation diagnostic archive unavailable: '+
+                String(error.message||error).slice(0,160));
+            return false;
+        }
+    }
+    recordFailure(job,failure) {
+        const id=job?.id;
+        try {
+            if(!UUID.test(String(id))||!PROJECT.test(String(job?.project_id))||
+                !UUID.test(String(job?.dispatch_id)))
+                throw Error('Invalid native evaluator failure owner.');
+            const policy=activeEvaluation(job);
+            const rule=evaluationRules(policy).find(rule=>
+                rule.suite_id===failure?.suite_id);
+            if(!rule)
+                throw Error('Failed attempt does not belong to a configured evaluation suite.');
+            const checked=evaluationFailure(failure,{
+                project_id:job.project_id,job_id:id,
+                dispatch_id:job.dispatch_id,suite_id:rule.suite_id,
+                suite_sha256:job.evaluation_suite_definitions?.[rule.suite_id]||
+                    rule.suite_sha256||undefined,
+            });
+            const data=this.load(id,job.project_id);
+            const key=JSON.stringify(['failed',checked.dispatch_id,
+                checked.suite_id,checked.checkpoint_sha256,checked.reason]);
+            if(data.issueKeys.has(key))return false;
+            const row={...checked,observed_at:new Date().toISOString()};
+            this.appendRow(id,data,row);
+            data.issueKeys.add(key);
+            data.diagnostics.push(row);
+            this.issues.delete('failure:'+id);
+            return true;
+        }catch(error) {
+            this.issues.set('failure:'+id,
+                'Independent failed-attempt archive unavailable: '+
                 String(error.message||error).slice(0,160));
             return false;
         }
