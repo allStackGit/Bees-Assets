@@ -388,14 +388,20 @@ class EvaluationHistory {
             !UUID.test(String(job?.dispatch_id))||
             !SUITE.test(String(suiteId)))
             throw Error('Invalid evaluation archive acknowledgement identity.');
-        const records=this.load(job.id,job.project_id).records;
-        for(let i=records.length-1;i>=0;i--) {
-            const row=records[i];
-            if(row.suite_id===suiteId&&row.dispatch_id===job.dispatch_id)
-                return evaluationEvidence(row,{suite_id:suiteId},
-                    job.dispatch_id);
+        try {
+            const records=this.load(job.id,job.project_id).records;
+            for(let i=records.length-1;i>=0;i--) {
+                const row=records[i];
+                if(row.suite_id===suiteId&&row.dispatch_id===job.dispatch_id)
+                    return evaluationEvidence(row,{suite_id:suiteId},
+                        job.dispatch_id);
+            }
+            return null;
+        }catch(error) {
+            this.issues.set(job.id,'Independent evaluation archive acknowledgement unavailable: '+
+                String(error.message||error).slice(0,160));
+            throw error;
         }
-        return null;
     }
     hasReceiptConflict(job) {
         const id=job?.id;
