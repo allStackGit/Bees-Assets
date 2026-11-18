@@ -2111,6 +2111,21 @@ class ExperimentHub {
             throw Error('Historical evaluation imports require a registered TinyBrains project.');
         return this.evaluationHistory.importHistorical(value,this.state.jobs.map(j=>j.id));
     }
+    // Operator-only, bounded pagination of the immutable machine scheduler
+    // observation archive. Separate from receipts and the training registry.
+    evaluatorServiceHistory(machineId,offset=0,limit=32) {
+        if(!ID.test(String(machineId))||
+            !this.state.machines.some(machine=>machine.id===machineId)||
+            !Number.isSafeInteger(offset)||offset<0||offset>1000000||
+            !Number.isSafeInteger(limit)||limit<1||limit>40)
+            throw Error('Select a registered evaluator machine and a bounded history page.');
+        const data=this.evaluationHistory.machineHistory(machineId).rows;
+        const next=offset+limit;
+        return {schema_version:1,machine_id:machineId,
+            scope:'read-only evaluator operating-system observations; not verified benchmark receipts',
+            offset,total:data.length,events:data.slice(offset,next),
+            next_offset:next<data.length?next:null};
+    }
     progressComparison(projectId) {
         this.project(projectId);
         const chart=this.progressHistory.snapshot(projectId,this.state.jobs);
