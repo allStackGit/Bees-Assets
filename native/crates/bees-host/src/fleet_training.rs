@@ -717,6 +717,14 @@ fn recent_job_logs(job: &Path) -> io::Result<(PathBuf, PathBuf, Option<String>)>
     Ok((stdout, stderr, message))
 }
 
+fn latest_child_exit(message: Option<&str>) -> Option<bool> {
+    let status = serde_json::from_str::<Value>(message?).ok()?;
+    if status["kind"].as_str() != Some("native_fleet_training_process_exit") {
+        return None;
+    }
+    status["success"].as_bool()
+}
+
 /// A game-menu read of learner-owned atomic progress. No polling, process
 /// supervision, second measurement journal or checkpoint inspection occurs.
 pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Error>> {
@@ -764,13 +772,25 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         ));
         let stopped = progress.as_ref()
             .and_then(|row| row["holdout_stopping"]["stop"].as_bool()) == Some(true);
-        let has_diagnostics = recent_job_logs(job)?.2.is_some();
-        statuses.push(if stopped {
+        let (_, _, diagnostic) = recent_job_logs(job)?;
+        let exited = latest_child_exit(diagnostic.as_deref());
+        let has_playable = job.join("model").join("session")
+            .join("latest-playable.json").is_file();
+        let finished = completed.zip(target)
+            .is_some_and(|(done, total)| done >= total);
+        statuses.push(if exited == Some(false) {
+            if has_playable {
+                "  [Last attempt failed; playable checkpoint retained]"
+            } else {
+                "  [Training process failed; inspect diagnostics]"
+            }
+        } else if stopped {
             "  [Stopped at measured holdout plateau]"
-        } else if job.join("model").join("session")
-            .join("latest-playable.json").is_file() {
+        } else if finished {
+            "  [Training complete]"
+        } else if has_playable {
             "  [Playable checkpoint]"
-        } else if has_diagnostics {
+        } else if diagnostic.is_some() {
             "  [No checkpoint; recent diagnostics]"
         } else {
             "  [No published checkpoint]"
@@ -842,9 +862,15 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         if let Some(sps) = measurement["world_steps_per_rollout_wall_second"]
             .as_f64().filter(|number| number.is_finite())
         {
+            let distributed = measurement["rollout_wall_seconds_scope"].as_str() ==
+                Some("sum_of_independent_collector_wall_seconds");
             details.push((
-                format!("Native simulation SPS: {sps:.1}"),
-                "  [Rollout wall time]".to_string(), false,
+                format!("Native rollout efficiency: {sps:.1} World steps/s"),
+                if distributed {
+                    "  [Sum of collector wall times; not fleet-wide SPS]"
+                } else {
+                    "  [Local rollout wall time]"
+                }.to_string(), false,
             ));
         }
         let optimize = measurement["sum_round_optimizer_wall_seconds"]
