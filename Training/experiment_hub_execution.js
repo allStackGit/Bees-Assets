@@ -335,6 +335,15 @@ class LocalExecution {
                     state,
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    // Carry the acknowledged physical allocation into
+                    // observational receipt verification. A completed
+                    // multi-GPU bundle must not self-assert a different
+                    // machine/GPU count during recovery or progress export.
+                    ...(lease.gpu_bindings?.length===1
+                        ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
+                        :lease.gpu_bindings?.length===2
+                            ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
+                            :{}),
                 }));
                 if(result!==null&&result!==undefined)
                     report.progress=validateProgress(result,job.project_id);
