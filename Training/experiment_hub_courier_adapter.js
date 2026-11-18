@@ -35,6 +35,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_sim_multiplexed_shards','training_sim_child_os_threads',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
     'training_sim_migration_workers','training_collector_sim_trial_workers',
+    'training_collector_sim_eligible_workers',
     'training_sim_process_migrations','training_sim_process_migration_denials',
     'training_sim_topology_rejected','training_sim_topology_unavailable',
     'training_sim_topology_unverified','training_sim_topology_migrations',
@@ -154,7 +155,8 @@ function courierMetrics(source) {
         name.startsWith('training_resume_')||
         name.startsWith('training_sim_migration_')||
         name.startsWith('training_sim_process_migration_')||
-        name==='training_collector_sim_trial_workers'||
+        (name==='training_collector_sim_trial_workers'||
+         name==='training_collector_sim_eligible_workers')||
         /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
         /^worker_[0-9]{1,2}_resume_maps_(?:before|after)$/.test(name)||
         name==='training_collector_resume_restored'||
