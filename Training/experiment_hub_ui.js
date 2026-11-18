@@ -2229,7 +2229,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const suites=new Set(),digestBySuite=new Map(),trialsBySuite=new Map();
         let missingDigest=false,differentDigests=false,differentTrialCounts=false;
         for(const {job,slot} of runs) {
-            const rules=job.evaluation_stop?.all_of||[job.evaluation_stop].filter(Boolean);
+            const policy=job.evaluation_monitor||job.evaluation_stop;
+            const rules=policy?.all_of||[policy].filter(Boolean);
             const passed=job.evaluation_stop_evidence?.all_of||null;
             const cohort=job.evaluation_candidates?.[0]?.receipts||{};
             const finalCohort=hubFinalEvaluationCohort(job);
@@ -2238,7 +2239,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const finalReceipt=rule&&finalCohort?.[rule.suite_id];
                 const evidence=finalReceipt||(passed?passed[index]:
                     rule?cohort[rule.suite_id]||
-                        (!job.evaluation_stop?.all_of?job.evaluation_stop_evidence:null)||
+                        (!policy?.all_of?job.evaluation_stop_evidence:null)||
                         job.last_evaluation:
                         job.evaluation_stop_evidence||job.last_evaluation);
                 const row=document.createElement('tr');
@@ -2252,15 +2253,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     .toLocaleString(undefined,{style:'percent',maximumFractionDigits:2}):'—');
                 cell(row,evidence?.checkpoint_sha256||'—')
                     .classList.add('hub-checkpoint-digest');
-                const meets=Boolean(evidence&&rule&&
+                const meets=Boolean(evidence&&rule&&!job.evaluation_monitor&&
                     evidence.trials>=rule.min_trials&&
                     evidence.successes/evidence.trials>=rule.min_success_rate);
                 const final=Boolean(evidence&&evidence.checkpoint_sha256===job.checkpoint_model_sha256);
-                const outcome=final?(meets?'Final checkpoint · suite target met':'Final checkpoint · below target'):
-                    job.evaluation_stop_evidence?'All stop targets met':
-                    evidence?(meets?'This suite passed; awaiting remaining gates':
-                        'Target not met') :
-                    rule?'Awaiting receipt':'No evaluation configured';
+                const outcome=job.evaluation_monitor
+                    ?evidence?(final?'Final checkpoint · monitoring result':
+                        'Monitoring · evaluated checkpoint'):'Awaiting monitoring receipt'
+                    :final?(meets?'Final checkpoint · suite target met':'Final checkpoint · below target'):
+                        job.evaluation_stop_evidence?'All stop targets met':
+                        evidence?(meets?'This suite passed; awaiting remaining gates':
+                            'Target not met'):
+                        rule?'Awaiting receipt':'No evaluation configured';
                 cell(row,!final&&evidence&&job.checkpoint_model_sha256?'Earlier checkpoint · '+outcome:outcome);
                 table.append(row);
                 if(evidence) {
@@ -4389,7 +4393,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const resourceCell=cell(tr,resourceText);
             if(j.resources.gpu_count)
                 resourceCell.title='GPU budget reservations and observed host telemetry are separate. Shared Windows PyTorch limits do not enforce GPU compute time or non-PyTorch memory.';
-            const policy=j.evaluation_stop;
+            const policy=j.evaluation_monitor||j.evaluation_stop;
+            const monitoring=Boolean(j.evaluation_monitor);
             const multi=policy?.all_of||null;
             const evidence=j.evaluation_stop_evidence||j.last_evaluation;
             const cohort=j.evaluation_candidates?.[0];
@@ -4399,17 +4404,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const met=receipt&&receipt.trials>=rule.min_trials&&
                     receipt.successes/receipt.trials>=rule.min_success_rate;
                 return rule.suite_id+': '+(receipt
-                    ?receipt.successes+'/'+receipt.trials+(met?' passed':' below target')
+                    ?receipt.successes+'/'+receipt.trials+
+                        (monitoring?' recorded':met?' passed':' below target')
                     :'pending');
             }).join(' · '):null;
             const evaluation=policy
                 ?multi
-                    ?' · Benchmark gates ('+multi.length+' required, same checkpoint): '+
+                    ?' · '+(monitoring?'Monitoring suites':'Benchmark gates')+
+                        ' ('+multi.length+' suites, same checkpoint): '+
                         gateSummary+(j.evaluation_stop_evidence?' · Stop authorized':'')+
                         (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
                     :' · Evaluation '+policy.suite_id+': '+(evidence
                         ?evidence.successes+'/'+evidence.trials+' successes'+
-                            (j.evaluation_stop_evidence?' · stop target met':' · target not met')
+                            (monitoring?' · monitoring only':
+                                j.evaluation_stop_evidence?' · stop target met':' · target not met')
                         :'awaiting evidence')+
                         (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
                 :'';
