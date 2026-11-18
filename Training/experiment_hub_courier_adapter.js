@@ -16,6 +16,7 @@ const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12
 const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers','training_collector_workers',
     'training_ingestion_shards','training_ingestion_peak_parallel_copies',
+    'training_rollout_compressed_collectors',
     'training_shared_last_reply_worker','training_shared_last_copy_worker',
     'training_slowest_worker','training_last_reply_worker',
     'training_simulation_slowest_worker',
@@ -131,7 +132,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|is_remote)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             name.endsWith('_mb')?'mb':
