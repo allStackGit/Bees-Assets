@@ -5334,13 +5334,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         const cadence=rule.every_n_checkpoints||
                             j.evaluation_monitor?.every_n_checkpoints||1;
                         const next=Number.isSafeInteger(update)?update+cadence:null;
+                        const interval=j.evaluation_monitor
+                            ?.min_minutes_between_evaluations;
+                        const receiptTime=Date.parse(receipt.evaluated_at||'');
+                        const earliest=monitoring&&interval&&
+                            Number.isFinite(receiptTime)
+                            ?receiptTime+interval*60000:null;
+                        const timePending=earliest!==null&&Date.now()<earliest&&
+                            !j.capacity_released_at;
+                        const clockEligibility=earliest!==null&&!j.capacity_released_at
+                            ?' · next periodic evaluator time ≥ '+
+                                new Date(earliest).toLocaleString()+
+                                (timePending?' (minimum spacing pending)':' (time spacing met)')
+                            :'';
                         const eligible=monitoring
-                            ?next===null
+                            ?(next===null
                                 ?' · next after '+cadence+' newer checkpoint update(s)'
                                 :currentValid&&currentUpdate>=next
-                                    ?' · evaluation eligibility reached by trainer counter; awaiting a saved checkpoint/evaluator receipt'
+                                    ?' · update eligibility reached; awaiting a saved checkpoint/evaluator receipt'
                                     :' · next checkpoint eligible at update ≥ '+
-                                        next.toLocaleString()
+                                        next.toLocaleString())+clockEligibility
                             :'';
                         line.textContent=rule.suite_id+': last completed '+
                             receipt.successes+'/'+receipt.trials+
