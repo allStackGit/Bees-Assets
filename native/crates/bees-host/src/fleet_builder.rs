@@ -30,7 +30,7 @@ enum Terrain { Open, Original, Cover, DenseCover }
 enum Objective { Elimination, Survival, Extraction }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy }
+enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists }
 
 impl FleetMix {
     fn support_count(self, total: usize) -> usize {
@@ -38,7 +38,12 @@ impl FleetMix {
             Self::Fighters => 0,
             Self::Balanced => total.div_ceil(4),
             Self::SupportHeavy => total / 2,
-        }).min(total.saturating_sub(1))
+            Self::Specialists => if total >= 4 { total.div_ceil(4) } else { 0 },
+        }).min(total.saturating_sub(1 + self.specialist_count(total)))
+    }
+
+    fn specialist_count(self, total: usize) -> usize {
+        usize::from(matches!(self, Self::Specialists) && total >= 2)
     }
 }
 
@@ -176,6 +181,12 @@ fn choose_mix(fleet_sizes: [usize; 2])
                 "{} fighters, {} {support_name}  |  Support-heavy",
                 total - FleetMix::SupportHeavy.support_count(total),
                 FleetMix::SupportHeavy.support_count(total),
+            )),
+            (FleetMix::Specialists, format!(
+                "{} fighters, 1 {}, {} {support_name}  |  Specialist",
+                total - FleetMix::Specialists.support_count(total) - 1,
+                if side == 0 { "Scout" } else { "Fire Barge" },
+                FleetMix::Specialists.support_count(total),
             )),
         ];
         let rows = options.iter().map(|(_, title)| BattleMenuRow {
@@ -361,6 +372,7 @@ pub(super) fn archive(
     let mut cloned = NativeLevelLayout::default();
     let mut squad_ids = [vec![101_i64], vec![102_i64]];
     let mut support_squads = Vec::new();
+    let mut scout_squads = Vec::new();
     let offsets = [
         fleet_offsets(0, selected.fleet_sizes[0]),
         fleet_offsets(1, selected.fleet_sizes[1]),
@@ -369,9 +381,13 @@ pub(super) fn archive(
         selected.mix[0].support_count(selected.fleet_sizes[0]),
         selected.mix[1].support_count(selected.fleet_sizes[1]),
     ];
+    let specialist_count = [
+        selected.mix[0].specialist_count(selected.fleet_sizes[0]),
+        selected.mix[1].specialist_count(selected.fleet_sizes[1]),
+    ];
     let fighter_count = [
-        selected.fleet_sizes[0] - support_count[0],
-        selected.fleet_sizes[1] - support_count[1],
+        selected.fleet_sizes[0] - support_count[0] - specialist_count[0],
+        selected.fleet_sizes[1] - support_count[1] - specialist_count[1],
     ];
     // Embed the actual side-specific source Beehive and Carrier
     // archetypes ONLY when requested. Their healing/support capabilities,
@@ -392,7 +408,7 @@ pub(super) fn archive(
         let squad_id = 103 + side as i64;
         let controlled = !selected.ai_both &&
             selected.player_side.is_none_or(|player| i64::from(player) == side_id);
-        let offset = offsets[side][fighter_count[side]];
+        let offset = offsets[side][fighter_count[side] + specialist_count[side]];
         let mut ship = template.clone();
         ship["entity_id"] = json!(ship_id);
         ship["position"] = json!([
@@ -414,10 +430,52 @@ pub(super) fn archive(
                 "command_bans": [],
             }));
     }
+    // Source special abilities are genuine ships, not cloned fighter stats.
+    // Only the first specialist of each side is authored; its physical
+    // beacon/charge definitions come from the same game scenario as combat.
+    for side in 0..2_usize {
+        if specialist_count[side] == 0 { continue; }
+        let side_id = side as i64 + 1;
+        let specialist_type = if side == 0 { 18 } else { 10 };
+        let template = available.iter().find(|ship|
+            ship["side"].as_i64() == Some(side_id) &&
+            ship["ship_type"].as_u64() == Some(specialist_type)
+        ).ok_or_else(|| invalid("native specialist hull has no authentic source archetype"))?;
+        let ship_id = 15 + side as i64;
+        let squad_id = 105 + side as i64;
+        let offset = offsets[side][fighter_count[side]];
+        let controlled = !selected.ai_both &&
+            selected.player_side.is_none_or(|player| i64::from(player) == side_id);
+        let mut ship = template.clone();
+        ship["entity_id"] = json!(ship_id);
+        ship["fleet_ship_id"] = json!(ship_id);
+        ship["position"] = json!([
+            (if side == 0 { -75.0 } else { 75.0 }) + offset[0], offset[1],
+        ]);
+        ship["user_controlled"] = json!(controlled);
+        scene["ships"].as_array_mut().ok_or_else(||
+            invalid("native specialist fleet lost its physical scene ships"))?
+            .push(ship);
+        scene["squads"].as_array_mut().ok_or_else(||
+            invalid("native specialist fleet lost its physical source squads"))?
+            .push(json!({
+                "item_id": squad_id, "side": side_id, "members": [ship_id],
+                "shooting_strategy_id": 1,
+                "user_controlled": controlled, "can_accept_input": controlled,
+                "command_bans": [],
+            }));
+        if side == 0 { scout_squads.push(squad_id); }
+    }
     for side in 0..2_usize {
         for index in 1..selected.fleet_sizes[side] {
-            let supporting = index >= fighter_count[side];
-            let support_origin = fighter_count[side];
+            let specialist = specialist_count[side] != 0 &&
+                index == fighter_count[side];
+            let supporting = index >= fighter_count[side] + specialist_count[side];
+            let support_origin = fighter_count[side] + specialist_count[side];
+            if specialist {
+                squad_ids[side].push(105 + side as i64);
+                continue;
+            }
             let source_squad = if supporting {
                 103 + side as i64
             } else { 101 + side as i64 };
@@ -568,6 +626,7 @@ pub(super) fn archive(
         }
         for (position, &owner) in squad_ids[side].iter().enumerate() {
             let supporting = support_squads.contains(&owner);
+            let scout = scout_squads.contains(&owner);
             let start = offsets[side][position];
             // Passive Beehives and Carriers have no source gun mounts.
             // Never issue them Aggressive: that command requires real
@@ -584,7 +643,7 @@ pub(super) fn archive(
                     ],
                 })]
             };
-            if !supporting {
+            if !supporting && !scout {
                 orders.extend(squad_ids[1 - side].iter().filter(|&&enemy|
                     !deferred_squads.contains(&enemy)
                 ).map(|&enemy| json!({
