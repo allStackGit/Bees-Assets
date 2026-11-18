@@ -115,6 +115,10 @@ pub struct NativeRenderCounts {
     pub ship_remains_draws: usize,
     /// Oldest effects evicted to keep large battles bounded.
     pub ship_death_visuals_dropped: usize,
+    /// Source CombatEvent::Hit feedback from real physical damage, presentation only.
+    pub combat_impacts_observed: usize,
+    pub combat_impact_visual_draws: usize,
+    pub combat_impact_visuals_dropped: usize,
     /// Loaded source-art types, not the number of active ship entities.
     pub ship_art_types_loaded: usize,
     pub asteroid_sprite_draws: usize,
@@ -215,6 +219,7 @@ pub struct NativeSoftwareRenderer {
     /// of the underlying CombatWorld's entity and training lifetimes.
     death_owner: Option<(WorldId, u64)>,
     death_effects: Vec<ShipDeathVisual>,
+    impact_effects: Vec<CombatImpactVisual>,
     /// Cosmetic first-seen ticks belong to the displayed world and
     /// episode. No world model state or RNG changes when sprites animate.
     projectile_art_owner: Option<(WorldId, u64)>,
@@ -256,6 +261,16 @@ struct ShipDeathVisual {
     radius: f32,
     side: i32,
     color_rgb: Option<[u8; 3]>,
+}
+
+/// No additional damage or physics: an ephemeral rendering of an actual hit.
+#[derive(Clone, Copy)]
+struct CombatImpactVisual {
+    born_tick: u64,
+    projectile_id: i64,
+    target_id: i64,
+    position: Vec2,
+    fatal: bool,
 }
 
 struct ObstacleDebris {
@@ -711,6 +726,7 @@ impl NativeSoftwareRenderer {
             hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new(),
             death_owner: None, death_effects: Vec::new(),
+            impact_effects: Vec::new(),
             projectile_art_owner: None, projectile_art_ticks: HashMap::new() })
     }
 
@@ -722,6 +738,7 @@ impl NativeSoftwareRenderer {
         if self.death_owner != Some(owner) {
             self.death_owner = Some(owner);
             self.death_effects.clear();
+            self.impact_effects.clear();
         }
     }
 
@@ -748,6 +765,48 @@ impl NativeSoftwareRenderer {
             color_rgb,
         });
         (true, dropped)
+    }
+
+    /// Capture only genuine positive-damage events. Multiple drawing passes
+    /// over one tick must not restart an effect, and old episodes cannot leak.
+    pub(super) fn record_combat_impact(&mut self,
+        born_tick: u64, projectile_id: i64, target_id: i64,
+        position: Vec2, fatal: bool,
+    ) -> (bool, bool) {
+        if !position.is_finite() || self.impact_effects.iter().any(|fx|
+            fx.born_tick == born_tick && fx.projectile_id == projectile_id &&
+            fx.target_id == target_id) {
+            return (false, false);
+        }
+        let dropped = if self.impact_effects.len() == 512 {
+            self.impact_effects.remove(0);
+            true
+        } else { false };
+        self.impact_effects.push(CombatImpactVisual {
+            born_tick, projectile_id, target_id, position, fatal,
+        });
+        (true, dropped)
+    }
+
+    /// A short fixed-step flash shared by local and authenticated LAN views.
+    /// Nothing here changes collision, combat RNG or training state.
+    pub(super) fn draw_combat_impact_visuals(&mut self,
+        tick: u64, fixed_dt: f32,
+    ) -> usize {
+        if !fixed_dt.is_finite() || fixed_dt <= 0.0 { return 0; }
+        self.impact_effects.retain(|fx| tick >= fx.born_tick &&
+            (tick - fx.born_tick) as f32 * fixed_dt < 0.3);
+        for i in 0..self.impact_effects.len() {
+            let fx = self.impact_effects[i];
+            let progress = ((tick - fx.born_tick) as f32 * fixed_dt / 0.3)
+                .clamp(0.0, 1.0);
+            self.shape(&ShipShape::Circle {
+                offset: Vec2::ZERO,
+                radius: 0.7 + progress * if fx.fatal { 4.0 } else { 2.4 },
+            }, Pose { position: fx.position, rotation_degrees: 0.0 },
+                if fx.fatal { 0xff8e77 } else { 0xffe19c });
+        }
+        self.impact_effects.len()
     }
 
     /// No physics, RNG, allocation or enemy discovery is performed here.
@@ -1635,6 +1694,19 @@ impl NativeSoftwareRenderer {
         }
         self.begin_death_scene(view.world_id, view.episode_revision);
         for event in view.combat.events() {
+            if let bees_sim::combat_world::CombatEvent::Hit(hit) = event {
+                if hit.delta.applied_damage > 0 {
+                    if let Some(body) = view.combat.ship_body(hit.target_id) {
+                        let (admitted, dropped) = self.record_combat_impact(
+                            view.tick, hit.projectile_id, hit.target_id,
+                            body.motion.position, hit.delta.killed,
+                        );
+                        counts.combat_impacts_observed += usize::from(admitted);
+                        counts.combat_impact_visuals_dropped += usize::from(dropped);
+                    }
+                }
+                continue;
+            }
             let bees_sim::combat_world::CombatEvent::ShipDied { victim_id, .. } = event
                 else { continue };
             let (Some(ship), Some(body)) = (
@@ -1727,6 +1799,8 @@ impl NativeSoftwareRenderer {
             self.draw_ship_death_visuals(view.tick, view.fixed_step_seconds);
         counts.ship_remains_draws = remains;
         counts.ship_explosion_visual_draws = explosions;
+        counts.combat_impact_visual_draws =
+            self.draw_combat_impact_visuals(view.tick, view.fixed_step_seconds);
         counts.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels;
         counts.sprite_raster_opaque_pixels = self.sprite_raster_opaque_pixels;
         counts.sprite_raster_blended_pixels = self.sprite_raster_blended_pixels;
