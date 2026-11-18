@@ -862,6 +862,10 @@ impl NativeClient {
         if accepts_orders {
             for (key, button, mode, prompt) in [
                 (None, HudAction::Attack, NativeTargetMode::Support(NativeSupportMode::Attack), "Attack: click an enemy ship"),
+                (None, HudAction::Circle, NativeTargetMode::Support(NativeSupportMode::Circle), "Circle: click an enemy squad"),
+                (None, HudAction::RightSwipe, NativeTargetMode::Support(NativeSupportMode::RightSwipe), "Right Swipe: click an enemy squad"),
+                (None, HudAction::LeftSwipe, NativeTargetMode::Support(NativeSupportMode::LeftSwipe), "Left Swipe: click an enemy squad"),
+                (None, HudAction::InAndOut, NativeTargetMode::Support(NativeSupportMode::InAndOut), "In and Out: click an enemy squad"),
                 (Some(Key::G), HudAction::Guard, NativeTargetMode::Support(NativeSupportMode::Guard), "Guard: click a friendly ship"),
                 (Some(Key::P), HudAction::Patrol, NativeTargetMode::Support(NativeSupportMode::Patrol), "Patrol: drag the patrol area"),
                 (Some(Key::M), HudAction::Mine, NativeTargetMode::Support(NativeSupportMode::Mining), "Mine: click a mining asteroid"),
@@ -1218,6 +1222,10 @@ impl NativeClient {
         } else { None };
         self.renderer.active_tactical_action = match self.support_mode {
             Some(NativeTargetMode::Support(NativeSupportMode::Attack)) => Some(HudAction::Attack),
+            Some(NativeTargetMode::Support(NativeSupportMode::Circle)) => Some(HudAction::Circle),
+            Some(NativeTargetMode::Support(NativeSupportMode::RightSwipe)) => Some(HudAction::RightSwipe),
+            Some(NativeTargetMode::Support(NativeSupportMode::LeftSwipe)) => Some(HudAction::LeftSwipe),
+            Some(NativeTargetMode::Support(NativeSupportMode::InAndOut)) => Some(HudAction::InAndOut),
             Some(NativeTargetMode::Support(NativeSupportMode::Guard)) => Some(HudAction::Guard),
             Some(NativeTargetMode::Support(NativeSupportMode::Patrol)) => Some(HudAction::Patrol),
             Some(NativeTargetMode::Support(NativeSupportMode::Mining)) => Some(HudAction::Mine),

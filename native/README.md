@@ -93,6 +93,15 @@ For playback with no original Unity authoring tools, both the game and
 headless executable need only the compiled native assets and generated
 JSON. Authoring Python is not a runtime dependency.
 
+The native tactical command strip also exposes **Circle**, **Right Swipe**,
+**Left Swipe** and **In & Out** for an existing player-selected squad:
+choose the maneuver, then click a visible enemy ship. The host binds the
+original enemy SquadLifetime and executes the source maneuver through the
+same movement, weapon, timer and navigation code as scripted/HiveMind
+commands. These authenticated player inputs are eligible for normal
+LAN transport and deterministic player-action recording, without a
+second player combat simulation.
+
 The same battle author also exposes the real native game objective rules:
 
 ```sh

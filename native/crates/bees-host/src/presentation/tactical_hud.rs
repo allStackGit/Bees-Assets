@@ -8,9 +8,10 @@ pub enum HudAction {
     Retreat, Hold, CeaseFire, AttackOnSight, PointFire,
     StopFire, Beacon, Detonate, Charge, SelectAll,
     MatchSpeed, FreeSpeed, Shooting, LockOn, Chase,
+    Circle, RightSwipe, LeftSwipe, InAndOut,
 }
 
-pub const ACTIONS: [HudAction; 20] = [
+pub const ACTIONS: [HudAction; 24] = [
     HudAction::Attack, HudAction::Guard, HudAction::Patrol,
     HudAction::Mine, HudAction::Heal,
     HudAction::Retreat, HudAction::Hold, HudAction::CeaseFire,
@@ -19,12 +20,18 @@ pub const ACTIONS: [HudAction; 20] = [
     HudAction::Charge, HudAction::SelectAll,
     HudAction::MatchSpeed, HudAction::FreeSpeed, HudAction::Shooting,
     HudAction::LockOn, HudAction::Chase,
+    HudAction::Circle, HudAction::RightSwipe,
+    HudAction::LeftSwipe, HudAction::InAndOut,
 ];
 
 impl HudAction {
     pub fn hint(self) -> &'static str {
         match self {
             Self::Attack => "Attack: click an enemy ship",
+            Self::Circle => "Circle: click the enemy squad to orbit",
+            Self::RightSwipe => "Right Swipe: click enemy to make a flanking pass",
+            Self::LeftSwipe => "Left Swipe: click enemy to make a flanking pass",
+            Self::InAndOut => "In and Out: click enemy for a strike-and-withdraw approach",
             Self::Guard => "Guard: click a friendly ship",
             Self::Patrol => "Patrol: drag a rectangular patrol area",
             Self::Mine => "Mine: click a mining asteroid",
@@ -50,6 +57,10 @@ impl HudAction {
     pub fn label(self) -> &'static str {
         match self {
             Self::Attack => "ATTACK",
+            Self::Circle => "CIRCLE",
+            Self::RightSwipe => "SWIPE R",
+            Self::LeftSwipe => "SWIPE L",
+            Self::InAndOut => "IN & OUT",
             Self::Guard => "GUARD",
             Self::Patrol => "PATROL",
             Self::Mine => "MINE",
@@ -91,7 +102,7 @@ impl HudRect {
 
 /// Keep the strip out of the lower-left minimap and lower-right special
 /// readiness panels. Hide rather than crowd the battlefield on small windows.
-/// Five columns / four rows scale to any sufficiently wide viewport.
+/// Five columns / five rows scale to any sufficiently wide viewport.
 pub fn action_rect(width: usize, height: usize, index: usize) -> Option<HudRect> {
     if width < 980 || height < 430 || index >= ACTIONS.len() {
         return None;
@@ -102,7 +113,7 @@ pub fn action_rect(width: usize, height: usize, index: usize) -> Option<HudRect>
     const GAP: usize = 5;
     let panel_width = COLS * BUTTON_W + (COLS - 1) * GAP;
     let left = (width - panel_width) / 2 + index % COLS * (BUTTON_W + GAP);
-    let top = height - 134 + index / COLS * (BUTTON_H + GAP);
+    let top = height - 164 + index / COLS * (BUTTON_H + GAP);
     Some(HudRect {
         left, top, right: left + BUTTON_W, bottom: top + BUTTON_H,
     })

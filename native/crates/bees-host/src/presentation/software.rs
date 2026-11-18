@@ -1122,7 +1122,13 @@ impl NativeSoftwareRenderer {
             .filter_map(|id| {
                 let ship = view.combat.ship(id)?;
                 if ship.vitals.is_dead() || selected_side.is_none() ||
-                    selected_side.is_some_and(|side| if mode == Mode::Attack { ship.side == side } else { ship.side != side }) ||
+                    selected_side.is_some_and(|side|
+                        if matches!(mode, Mode::Attack | Mode::Circle | Mode::RightSwipe |
+                            Mode::LeftSwipe | Mode::InAndOut) {
+                            ship.side == side
+                        } else {
+                            ship.side != side
+                        }) ||
                     (mode == Mode::Heal && ship.ship_type != bees_sim::combat_world::BEEHIVE_TYPE) ||
                     (mode == Mode::FullRetreat && ship.ship_type != bees_sim::combat_world::WARP_GATE_TYPE) {
                     return None;
@@ -1132,6 +1138,10 @@ impl NativeSoftwareRenderer {
             }).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))?.1;
         match mode {
             Mode::Attack => Some(Action::Attack { target: view.roster.owning_squad(id)? }),
+            Mode::Circle => Some(Action::Circle { target: view.roster.owning_squad(id)? }),
+            Mode::RightSwipe => Some(Action::RightSwipe { target: view.roster.owning_squad(id)? }),
+            Mode::LeftSwipe => Some(Action::LeftSwipe { target: view.roster.owning_squad(id)? }),
+            Mode::InAndOut => Some(Action::InAndOut { target: view.roster.owning_squad(id)? }),
             Mode::Guard => Some(Action::Guard { target: view.roster.owning_squad(id)? }),
             // Source input sends every Beehive in the clicked squad, in
             // GetShips order, rather than silently restricting it to one hull.
