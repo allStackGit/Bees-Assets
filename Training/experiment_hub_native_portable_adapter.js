@@ -281,6 +281,19 @@ function createNativeBeesPortableCollectorAdapter({
                     rollout_physics_workers_per_process:{
                         value:receipt.physics_workers_per_process,unit:'count',
                     },
+                    ...(Array.isArray(metrics.gpu_inference?.per_device)
+                        ?Object.fromEntries(metrics.gpu_inference.per_device.flatMap(
+                            (gpu,index)=>[
+                                [`rollout_gpu_${index}_world_steps`,
+                                    {value:gpu.successful_world_steps,unit:'count'}],
+                                [`rollout_gpu_${index}_policy_rows`,
+                                    {value:gpu.successful_policy_rows,unit:'count'}],
+                                [`rollout_gpu_${index}_model_forwards`,
+                                    {value:gpu.model_forwards,unit:'count'}],
+                                [`rollout_gpu_${index}_agent_rows`,
+                                    {value:gpu.gpu_agent_rows,unit:'count'}],
+                            ],
+                        )):{}),
                     ...(metrics.gpu_inference?{
                         rollout_gpu_verified_workers:{
                             value:metrics.gpu_inference.verified_workers,unit:'count',
