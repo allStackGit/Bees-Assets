@@ -9,6 +9,14 @@ const {spawnSync}=require('node:child_process');
 const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;
 const SERVICE=/^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$/;
 const MAX_SERVICES=16;
+const SUITE=/^[a-z][a-z0-9_-]{0,47}$/;
+function suiteIds(value) {
+    if(!Array.isArray(value)||value.length<1||value.length>8||
+        value.some(id=>typeof id!=='string'||!SUITE.test(id))||
+        new Set(value).size!==value.length)
+        return null;
+    return value.slice();
+}
 
 function command(file,args) {
     const result=spawnSync(file,args,{
@@ -55,7 +63,7 @@ function linuxHealth(machine) {
     const units=files.flatMap(timer=>[timer,timer.slice(0,-6)+'.service']);
     const shown=command('systemctl',[
         '--user','show','--no-pager',
-        '--property=Id,ActiveState,Result,ExecMainStatus,ExecMainExitTimestamp,CPUQuotaPerSecUSec,MemoryMax',
+        '--property=Id,Description,ActiveState,Result,ExecMainStatus,ExecMainExitTimestamp,CPUQuotaPerSecUSec,MemoryMax',
         ...units,
     ]);
     const details=new Map();
@@ -74,6 +82,8 @@ function linuxHealth(machine) {
         const exit=Number(service.ExecMainStatus);
         const finished=instant(service.ExecMainExitTimestamp);
         const failed=Boolean(service.Result&&service.Result!=='success');
+        const definition=/ \[suites:([a-z0-9_,-]+)\]$/.exec(service.Description||'');
+        const configuredSuites=definition?suiteIds(definition[1].split(',')):null;
         let diagnostic=failed?('systemd evaluator result: '+service.Result):null;
         if(failed) {
             // The dedicated evaluator writes bounded human-readable failures
@@ -105,6 +115,7 @@ function linuxHealth(machine) {
             last_finished_at:finished,
             evaluator_cpus:cpuQuota(service.CPUQuotaPerSecUSec),
             evaluator_ram_mb:memoryQuota(service.MemoryMax),
+            suite_ids:configuredSuites,
             diagnostic:diagnostic?diagnostic.replace(/[\x00-\x1f]/g,' ').slice(0,160):null,
         };
     });
@@ -165,6 +176,7 @@ function windowsHealth(machine,env) {
                 ?record.cpus:null,
             evaluator_ram_mb:Number.isSafeInteger(record.ram_mb)&&
                 record.ram_mb>=512&&record.ram_mb<=1048576?record.ram_mb:null,
+            suite_ids:suiteIds(record.suite_ids),
             diagnostic,
         });
     }

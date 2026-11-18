@@ -317,6 +317,11 @@ function boundedReport(value) {
             (row.evaluator_ram_mb!=null&&
                 (!Number.isSafeInteger(row.evaluator_ram_mb)||
                  row.evaluator_ram_mb<512||row.evaluator_ram_mb>1048576))||
+            (row.suite_ids!=null&&
+                (!Array.isArray(row.suite_ids)||row.suite_ids.length<1||
+                 row.suite_ids.length>8||
+                 row.suite_ids.some(id=>typeof id!=='string'||!ID.test(id))||
+                 new Set(row.suite_ids).size!==row.suite_ids.length))||
             (row.diagnostic!=null&&(typeof row.diagnostic!=='string'||
                 row.diagnostic.length>160)))
             throw Error('Invalid evaluator scheduler service observation.');
@@ -326,6 +331,7 @@ function boundedReport(value) {
             last_finished_at:row.last_finished_at??null,
             evaluator_cpus:row.evaluator_cpus??null,
             evaluator_ram_mb:row.evaluator_ram_mb??null,
+            suite_ids:row.suite_ids??null,
             diagnostic:row.diagnostic??null};
     });
     if(new Set(services.map(row=>row.unit)).size!==services.length)

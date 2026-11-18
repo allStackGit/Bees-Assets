@@ -4910,6 +4910,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const evaluatorServices=(machine?.evaluator_services||[])
                 .filter(service=>service.project===j.project_id);
             const schedulerIssue=machine?.evaluator_service_issue||null;
+            const confirmedServices=evaluatorServices.filter(service=>
+                service.scheduler_state==='active'||service.service_state==='running');
+            const configured=new Set(confirmedServices.flatMap(service=>
+                service.suite_ids||[]));
+            const uncovered=requiredSuites.filter(rule=>!configured.has(rule.suite_id));
+            const unknownCoverage=confirmedServices.some(service=>!service.suite_ids);
+            const coverage=uncovered.length&&!unknownCoverage
+                ?' · No active evaluator unit identifies configured suites: '+
+                    uncovered.map(rule=>rule.suite_id).join(', ')
+                :uncovered.length
+                    ?' · Evaluator suite coverage unverified for '+
+                        uncovered.map(rule=>rule.suite_id).join(', ')+
+                        ' (older service metadata)'
+                    :' · Configured suites matched to observed evaluator units';
             const serviceFailures=evaluatorServices.filter(service=>
                 service.last_result==='failed'||service.service_state==='failed'||
                 service.scheduler_state==='inactive');
@@ -4937,7 +4951,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 requiredSuites.filter(rule=>
                                     !advertised.includes(rule.suite_id))
                                     .map(rule=>rule.suite_id).join(', ')+')'
-                            :' · Evaluator: suite reader advertised'+serviceHealth;
+                            :' · Evaluator: suite reader advertised'+serviceHealth+coverage;
             const regressionSignals=comparisonProject===project
                 ?comparisonData?.evaluation_regressions?.filter(row=>row.job_id===j.id)||[]
                 :[];
@@ -4983,6 +4997,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ' · service '+service.service_state+
                                 ' · scheduler '+service.scheduler_state+
                                 ' · last poll '+service.last_result+
+                                ' · suite IDs '+(service.suite_ids?.join(', ')||
+                                    'not reported (older unit)')+
                                 (service.evaluator_cpus!=null&&
                                  service.evaluator_ram_mb!=null
                                     ?' · evaluator ceiling '+service.evaluator_cpus+
