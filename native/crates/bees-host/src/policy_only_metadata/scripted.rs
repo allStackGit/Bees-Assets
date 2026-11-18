@@ -500,12 +500,14 @@ impl NativePolicyOnlyMetadata {
                 let own_center = self.command_center(world, roster, owner)
                     .map_err(NativeLevelEventError::Commands)?;
                 let mut nearest: Option<(f32, SquadLifetime)> = None;
+                let mut inspected = 0_u64;
                 for &candidate in roster.source_order() {
                     if candidate.level_id != owner.level_id { continue; }
                     let Some(target) = roster.get(candidate) else { continue };
                     if target.side == own_side || target.members.is_empty() {
                         continue;
                     }
+                    inspected += 1;
                     let enemy_center = self.command_center(world, roster, candidate)
                         .map_err(NativeLevelEventError::Commands)?;
                     let distance = (enemy_center - own_center).length_squared();
@@ -521,6 +523,8 @@ impl NativePolicyOnlyMetadata {
                         nearest = Some((distance, candidate));
                     }
                 }
+                self.scripted_counts.nearest_enemy_resolutions += 1;
+                self.scripted_counts.nearest_enemy_candidates_scanned += inspected;
                 let Some((_, target)) = nearest else {
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.orders_skipped_target_gone += 1;
