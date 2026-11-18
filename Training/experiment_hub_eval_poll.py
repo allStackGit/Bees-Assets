@@ -230,7 +230,17 @@ def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> Non
     # worker and Hub verify independently. Do not discard completed work
     # because a heartbeat expires during a long independent evaluation.
     destination = args.receipt_root / f"{dispatch}.{suite['suite_id']}.json"
-    if not passed_receipt(destination, dispatch, suite, job, expected_digest):
+    # Monitoring results are checkpoint-indexed observations, not terminal
+    # threshold passes. A newer checkpoint must replace the current receipt.
+    # Stop-gated evaluations keep the existing pass-until-final behavior.
+    if job.get("monitor_only"):
+        try:
+            existing = json.loads(read_bounded(destination, 4096))
+        except (FileNotFoundError, ValueError, json.JSONDecodeError):
+            existing = None
+        if existing != receipt:
+            print(publish(args.receipt_root, receipt))
+    elif not passed_receipt(destination, dispatch, suite, job, expected_digest):
         print(publish(args.receipt_root, receipt))
 
 
