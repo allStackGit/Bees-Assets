@@ -211,8 +211,10 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     };
     let Some(rounds) = choose_count("MA-POCA optimizer rounds", &[1, 3, 10, 25, 100])?
         else { return Ok(()); };
-    let hub = approved_hub_plan()?;
-    let use_hub = if hub.is_some() {
+    // A configured Hub plan is opt-in, not a prerequisite for local
+    // training. An expired or malformed Hub plan must never prevent the
+    // player from running an ordinary CPU-only experiment.
+    let use_hub = if env::var_os("BEES_NATIVE_HUB_PLAN").is_some() {
         let rows = [
             BattleMenuRow {
                 title: "Local CPU arenas", status: "  [This computer]",
@@ -231,6 +233,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     } else {
         false
     };
+    let hub = if use_hub { approved_hub_plan()? } else { None };
     let (worlds, workers, hub_worlds) = if use_hub {
         let Some(worlds) = choose_count(
             "Total distributed native arenas", &[16, 32, 64, 128, 256, 512, 1024],
