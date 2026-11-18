@@ -64,12 +64,17 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_forward_stream_workers',
     'training_gpu_input_slots_reused','training_gpu_state_slots_reused',
     'training_gpu_output_staged_batches','training_gpu_output_slots_reused',
+    'training_gpu_input_device_copy_batches',
+    'training_gpu_input_device_reused_slots',
+    'training_gpu_input_device_new_slots',
     'training_gpu_output_slots_allocated',
     'training_gpu_state_pack_reuse_batches',
     'training_gpu_policy_moves_skipped',
     'training_shared_gpu_forward_workers',
     'training_shared_gpu_input_reused','training_shared_gpu_state_reused',
     'training_shared_gpu_output_staged','training_shared_gpu_output_reused',
+    'training_shared_gpu_input_device_copies',
+    'training_shared_gpu_input_device_reused',
     'training_shared_gpu_state_pack_reused',
     'training_shared_gpu_moves_skipped',
     'training_local_gpu_rollout_devices','training_gpu_rollout_next_devices',
@@ -133,6 +138,8 @@ function courierMetrics(source) {
     // contains every original measurement for full native history.
     const primary=name=>name.startsWith('training_gpu_placement_')||
         name.startsWith('training_gpu_output_')||
+        name.startsWith('training_gpu_input_device_')||
+        name.startsWith('training_shared_gpu_input_device_')||
         name.startsWith('training_shared_gpu_output_')||
         name==='training_gpu_state_pack_reuse_batches'||
         name==='training_shared_gpu_state_pack_reused'||
@@ -158,7 +165,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             /_probe_map_steps_per_second$/.test(name)?'rate':
