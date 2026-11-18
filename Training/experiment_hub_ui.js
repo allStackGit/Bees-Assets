@@ -3471,6 +3471,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsUpdates=document.createElement('input');
     const tinyBrainsThreads=document.createElement('input');
     const tinyBrainsDevice=document.createElement('select');
+    const tinyBrainsStage=document.createElement('select');
+    tinyBrainsStage.append(
+        new Option('Existing maps (no stage change)',''),
+        new Option('Stage 1 — Basic tiny, two players','basic_tiny'),
+        new Option('Stage 2 — Tiny two-player maps','tiny_two_player'),
+        new Option('Stage 3 — Small two-player maps','small_two_player'),
+        new Option('Stage 4 — All two-player maps','all_two_player'),
+        new Option('Stage 5 — Full multiplayer maps','full_multiplayer'));
     const tinyBrainsRemote=document.createElement('input');
     const tinyBrainsWeights=document.createElement('input');
     tinyBrainsRemote.type='checkbox';
@@ -3496,6 +3504,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
+        const stage=tinyBrainsStage.value;
         const remoteRollouts=tinyBrainsRemote.checked;
         const weightText=tinyBrainsWeights.value.trim();
         const weights=weightText?weightText.split(',').map(s=>Number(s.trim())):[];
@@ -3550,6 +3559,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
             ...(remoteRollouts?{remote_rollouts:true}:{}),
             ...(weights.length?{rollout_action_weights:weights}:{}),
+            ...(stage?{training_stage:stage}:{}),
             ...(current.profile===profile&&current.profile_sha256===digest&&
                 current.design_overrides?{design_overrides:current.design_overrides,
                     design_source_sha256:current.design_source_sha256}:{}),
@@ -3570,6 +3580,7 @@ document.addEventListener('DOMContentLoaded', () => {
             (sourceId
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
+            (stage?'The map stage and turn limit are pinned at launch by the trusted runtime; advance only after independent held-out evaluation. ':'')+
             (hasThreads?'The CPU thread override does not change the job CPU quota. ':'')+
             (remoteRollouts?'In Train, use Queue and reserve entire group to atomically assign learner and approved remote collector CPU/GPU budgets before any Start. ':'')+
             (weights.length?'Fixed action weights change rollout work shares, not hardware reservations. ':'')+
@@ -3580,6 +3591,7 @@ document.addEventListener('DOMContentLoaded', () => {
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
+        ['Learning curriculum map stage ',tinyBrainsStage],
         ['Use approved remote CPU rollout collectors ',tinyBrainsRemote],
         ['Fixed rollout action weights (optional; local then remotes) ',tinyBrainsWeights],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
@@ -3680,6 +3692,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tinyBrainsUpdates.value=parameters.updates??1000;
         tinyBrainsThreads.value=parameters.threads??'';
         tinyBrainsDevice.value=parameters.device||'';
+        tinyBrainsStage.value=parameters.training_stage||'';
         tinyBrainsRemote.checked=parameters.remote_rollouts===true;
         tinyBrainsWeights.value=(parameters.rollout_action_weights||[]).join(',');
         displayTinyBrainsImports();
