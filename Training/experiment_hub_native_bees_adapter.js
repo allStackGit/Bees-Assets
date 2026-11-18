@@ -323,6 +323,8 @@ function createNativeBeesAdapter({
     const trainer = trustedFile(trainerConfig);
     const input = trustedFile(checkpoint);
     const runner = trustedFile(path.resolve(__dirname, '../native/tools/train_policy_round.py'));
+    const gpuAllocationScript = trustedFile(path.resolve(__dirname,
+        '../native/tools/native_gpu_allocation.py'));
     const contractScript = trustedFile(path.resolve(__dirname,
         '../native/tools/native_training_artifacts.py'));
     if (typeof artifactRoot !== 'string' || !path.isAbsolute(artifactRoot))
@@ -402,7 +404,8 @@ function createNativeBeesAdapter({
     const pins = new Map([
         ...basePins,
         ...sourcePins,
-        ...[runner, contractScript, ...(binary ? [binary] : []), ...gallerySources]
+        ...[runner, contractScript, gpuAllocationScript,
+            ...(binary ? [binary] : []), ...gallerySources]
             .map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
     const initialGpuSupport = verifyModelDependencies(
