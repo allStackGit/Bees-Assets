@@ -84,13 +84,26 @@ function regressionAlertPolicy(value) {
         ...(value.stop_on_regression===true?{stop_on_regression:true}:{})};
 }
 
+// These names select existing, already validated receipt measurements for
+// presentation. They are not evaluator instructions, proof of a measurement,
+// or model-selection authority. Keep the contract project-neutral.
+function preferredEvaluationMetrics(value) {
+    if(value===undefined)return undefined;
+    if(!Array.isArray(value)||value.length>12||
+        value.some(name=>typeof name!=='string'||
+            !/^[a-z][a-z0-9_]{0,23}$/.test(name))||
+        new Set(value).size!==value.length)
+        throw Error('Preferred evaluation chart measurements need up to 12 distinct metric names.');
+    return value.slice();
+}
+
 // Monitoring suites share the immutable receipt contract, but have no
 // success threshold and cannot authorize a native Stop.
 function monitoringPolicy(value) {
     if(value==null)return null;
     if(record(value)&&Object.hasOwn(value,'all_of')) {
         if(Object.keys(value).some(key=>!['all_of','every_n_checkpoints','include_baseline','include_final',
-            'regression_alert','min_minutes_between_evaluations'].includes(key))||
+            'regression_alert','min_minutes_between_evaluations','preferred_metrics'].includes(key))||
             (value.min_minutes_between_evaluations!==undefined&&
              (!Number.isSafeInteger(value.min_minutes_between_evaluations)||
               value.min_minutes_between_evaluations<1||
@@ -105,7 +118,8 @@ function monitoringPolicy(value) {
             throw Error('Monitoring requires 2–8 distinct independent suites and a valid cadence.');
         const rules=value.all_of.map(rule=>{
             if(record(rule)&&(Object.hasOwn(rule,'regression_alert')||
-                Object.hasOwn(rule,'min_minutes_between_evaluations')))
+                Object.hasOwn(rule,'min_minutes_between_evaluations')||
+                Object.hasOwn(rule,'preferred_metrics')))
                 throw Error('Regression and time-spacing parameters belong to the policy, not individual suite rules.');
             return monitoringPolicy(rule);
         });
@@ -122,12 +136,14 @@ function monitoringPolicy(value) {
             ...(value.min_minutes_between_evaluations!==undefined
                 ?{min_minutes_between_evaluations:value.min_minutes_between_evaluations}:{}),
             ...(value.include_baseline!==undefined?{include_baseline:value.include_baseline}:{}),
-            ...(value.include_final!==undefined?{include_final:value.include_final}:{})};
+            ...(value.include_final!==undefined?{include_final:value.include_final}:{}),
+            ...(value.preferred_metrics!==undefined
+                ?{preferred_metrics:preferredEvaluationMetrics(value.preferred_metrics)}:{})};
     }
     if(!record(value)||Object.keys(value).some(key=>
         !['suite_id','suite_sha256','min_trials','every_n_checkpoints',
           'include_baseline','include_final','regression_alert',
-          'min_minutes_between_evaluations'].includes(key))||
+          'min_minutes_between_evaluations','preferred_metrics'].includes(key))||
         (value.min_minutes_between_evaluations!==undefined&&
          (!Number.isSafeInteger(value.min_minutes_between_evaluations)||
           value.min_minutes_between_evaluations<1||
@@ -153,7 +169,9 @@ function monitoringPolicy(value) {
         ...(value.regression_alert!==undefined
             ?{regression_alert:regressionAlertPolicy(value.regression_alert)}:{}),
         ...(value.min_minutes_between_evaluations!==undefined
-            ?{min_minutes_between_evaluations:value.min_minutes_between_evaluations}:{})};
+            ?{min_minutes_between_evaluations:value.min_minutes_between_evaluations}:{}),
+        ...(value.preferred_metrics!==undefined
+            ?{preferred_metrics:preferredEvaluationMetrics(value.preferred_metrics)}:{})};
 }
 // A monitoring cadence may also have a success gate, but both policies
 // must describe precisely the same frozen suite set and trial requirements.
