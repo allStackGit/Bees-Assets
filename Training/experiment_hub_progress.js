@@ -153,6 +153,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             // Exposed Python simulation packing is a cross-project CPU
             // throughput clue, not an independent hardware saturation claim.
             'training_info_pack_max_seconds',
+            'training_collector_probe_moved_maps',
             'training_collector_start_parallel',
             'training_collector_start_wall_seconds',
             'training_sim_pack_max_ratio','training_sim_pack_ratio_owner',
