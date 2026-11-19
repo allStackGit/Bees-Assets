@@ -368,6 +368,28 @@ def rollout_metrics(summary_path, config, manifest_sha):
         # that implements it; old binaries may be used only for untouched
         # single-worker configurations.
         raise ValueError("native runner did not report requested physical worker allocation")
+    # Native escort/survival/demolition policies must actually receive the
+    # authored goal through the v26 reserved channels. Refuse a successful
+    # physical rollout from an old binary that still emitted blind PPO rows.
+    has_native_mission = any(
+        any(key in level for key in ("survival", "demolition", "escort"))
+        for level in config["levels"]
+    )
+    observation_work = summary.get("policy_observations")
+    if observation_work is not None:
+        rows = observation_work.get("rows_encoded")
+        objective_rows = observation_work.get("native_mission_rows")
+        if (type(rows) is not int or type(objective_rows) is not int or
+                rows < 0 or objective_rows < 0 or objective_rows > rows):
+            raise ValueError("native policy observation work has invalid denominators")
+        metrics["policy_observations"] = observation_work
+    if has_native_mission and (
+            observation_work is None or
+            observation_work["native_mission_rows"] == 0):
+        raise ValueError(
+            "native mission rollout supplied no verified objective feature rows; "
+            "the collector cannot produce valid mission learning data"
+        )
     model_timing = summary.get("sampled_model_timing")
     if model_timing is not None:
         calls, rows, seconds = (model_timing[key] for key in ("calls", "rows", "wall_seconds"))
@@ -421,6 +443,14 @@ def combined_rollout_metrics(shards, wall_seconds):
         "shards_with_physics_worker_measurements":
             sum("parallel_physics_rounds" in shard for shard in shards),
     })
+    if all("policy_observations" in shard for shard in shards):
+        keys = ("rows_encoded", "native_mission_rows", "allies_encoded",
+                "enemies_encoded", "map_objects_encoded")
+        metrics["policy_observations"] = {
+            key: sum(shard["policy_observations"].get(key, 0) for shard in shards)
+            for key in keys
+            if all(key in shard["policy_observations"] for shard in shards)
+        }
     if all("parallel_physics_rounds" in shard for shard in shards):
         metrics.update({
             "parallel_physics_rounds":
@@ -511,6 +541,8 @@ def combined_rollout_metrics(shards, wall_seconds):
             ) if key in shard} if "parallel_physics_rounds" in shard else {}),
             **({"sampled_model_timing": shard["sampled_model_timing"]}
                if "sampled_model_timing" in shard else {}),
+            **({"policy_observations": shard["policy_observations"]}
+               if "policy_observations" in shard else {}),
             **({"source_scene_template_cache": shard["source_scene_template_cache"]}
                if "source_scene_template_cache" in shard else {}),
         }

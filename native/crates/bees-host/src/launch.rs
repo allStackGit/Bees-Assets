@@ -5224,6 +5224,13 @@ fn run_battle(
             "peak_parallel_physics_workers": peak_parallel_physics_workers,
             "parallel_worker_cpu_wall_seconds_sum": parallel_physics_worker_nanos as f64 / 1e9,
         },
+        "policy_observations": {
+            "rows_encoded": status.perception_work.observations,
+            "native_mission_rows": status.perception_work.native_mission_rows,
+            "allies_encoded": status.perception_work.allies_encoded,
+            "enemies_encoded": status.perception_work.enemies_encoded,
+            "map_objects_encoded": status.perception_work.map_objects_encoded,
+        },
         "sampled_model_timing": (status.inference.model_forward_timed_calls != 0).then(|| json!({
             "calls": status.inference.model_forward_timed_calls,
             "rows": status.inference.model_forward_timed_rows,

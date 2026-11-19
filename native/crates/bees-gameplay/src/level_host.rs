@@ -496,6 +496,9 @@ pub enum NativeLevelDriverError {
 pub struct NativeRuntimeStatus {
     pub simulation: Measurements,
     pub inference: NativeInferenceMeasurements,
+    /// Lifetime inference rows encoded through the single native writer.
+    /// Independent of episode resets and separate from physical step counts.
+    pub perception_work: bees_sim::full_perception::PerceptionWork,
     /// Episode-local authored scripted mission queue work and remaining
     /// pending orders. Collected only when a status snapshot is requested.
     pub scripted_queues: crate::level_rules::NativeScriptedQueueMeasurements,
@@ -1262,6 +1265,7 @@ impl NativeLevelBatchDriver {
         let mut status = NativeRuntimeStatus {
             simulation: simulation.measurements(),
             inference: self.inference.measurements(),
+            perception_work: self.inference.perceptions(),
             scripted_queues: Default::default(),
             observation_candidates: Default::default(),
             total_worlds: simulation.world_count(),
