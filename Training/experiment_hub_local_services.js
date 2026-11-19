@@ -5,6 +5,7 @@
 const path=require('node:path');
 const {execFile,spawn}=require('node:child_process');
 const {promisify}=require('node:util');
+const localEvaluators=require('./experiment_hub_local_evaluators');
 const run=promisify(execFile);
 
 const SYSTEMCTL='/usr/bin/systemctl';
@@ -66,7 +67,8 @@ async function status(hub) {
     const [coordinator,agent]=await Promise.all([
         unitStatus('coordinator'),unitStatus('agent'),
     ]);
-    return {coordinator,agent,active_jobs:activeJobs(hub).length};
+    return {coordinator,agent,active_jobs:activeJobs(hub).length,
+        evaluators:await localEvaluators.status(hub)};
 }
 async function scheduleRestart(kind,hub,res) {
     if(!Object.hasOwn(UNITS,kind))reject('Unknown local service.',400);
@@ -87,4 +89,8 @@ async function scheduleRestart(kind,hub,res) {
     return {requested:true,service:kind,
         message:'Restart requested from the local user systemd manager.'};
 }
-module.exports={status,scheduleRestart,unitStatus};
+async function evaluatorAction(hub,value) {
+    // Evaluator actions never stop or restart a native trainer or its owner.
+    return localEvaluators.action(hub,value);
+}
+module.exports={status,scheduleRestart,unitStatus,evaluatorAction};
