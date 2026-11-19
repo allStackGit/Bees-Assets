@@ -145,6 +145,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_gpu_batch_settled','ppo_gpu_batch_restored',
         'ppo_gpu_batch_changed_next','ppo_gpu_batch_proven_target',
         'ppo_gpu_batch_vram_capped',
+        // The integrated learner can evaluate PPO losses on additional
+        // leased GPUs. These are completed backend observations, not
+        // a claim that the GPUs were saturated or improved useful SPS.
+        'ppo_parallel_devices','ppo_parallel_next_devices',
+        'ppo_parallel_adjustments','ppo_parallel_accepted',
+        'ppo_parallel_settled','ppo_parallel_proven_target',
+        'ppo_parallel_batches','ppo_parallel_device_batches',
+        'ppo_parallel_states','ppo_parallel_max_group',
         'rollout_gpu_batch_target_pixels','rollout_gpu_batch_next_target',
         'rollout_gpu_batch_adjustments','rollout_gpu_batch_accepted',
         'rollout_gpu_batch_settled','rollout_gpu_batch_restored',
@@ -251,6 +259,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         row.local_lease_completed_cadence_sps,'rate');
     add('simulation_global_cadence_gain',
         row.simulation_global_cadence_gain,'scalar');
+    add('ppo_parallel_result_bytes',row.ppo_parallel_result_bytes,'bytes');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     add('ppo_prep_board_bytes',row.ppo_prep_board_bytes,'bytes');
     add('ppo_prep_async_h2d_bytes',row.ppo_prep_async_h2d_bytes,'bytes');
