@@ -1029,6 +1029,8 @@ function courierWorkerSlot(machine,slot) {
 // PPO's recurrent worker slot is independent of the native port index.
 // Previously frozen jobs without a distinct listener slot retain parity.
 function courierWorkerListener(machine,job) {
+    if(job?.frozen_parameters?.listener_slot!==undefined&&
+        !machine?.courier_lineage_slots?.length)return null;
     return courierWorkerSlot(machine,
         job?.frozen_parameters?.listener_slot??job?.frozen_parameters?.slot);
 }
