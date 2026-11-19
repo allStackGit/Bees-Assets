@@ -63,6 +63,15 @@ impl CombatWorld {
             state.escort_ship_id == Some(ship_id) && state.escort_delivered)
     }
 
+    /// The destination is mission-authored and visible to the escorting
+    /// commander even before the first nearby ship activates the collider.
+    /// This accessor never changes physics activation or exit processing.
+    pub fn escorted_destination_bounds(&self) -> Option<Aabb> {
+        self.extraction.as_ref()
+            .filter(|state| state.escort_ship_id.is_some())
+            .map(|state| state.zone.bounds())
+    }
+
     pub fn active_extraction_bounds(&self) -> Option<Aabb> {
         self.extraction.as_ref().filter(|state| state.active).map(|state| state.zone.bounds())
     }

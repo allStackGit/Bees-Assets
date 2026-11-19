@@ -154,6 +154,7 @@ pub struct NativeRenderCounts {
     pub missing_range_data: usize,
     pub minimap_ship_markers: usize,
     pub minimap_visible_enemy_markers: usize,
+    pub minimap_escort_exit_markers: usize,
     pub numbered_squad_rows: usize,
     pub special_ready_ships: usize,
     /// Real game/policy Striker loaded indicators drawn for visible hulls.
@@ -1509,7 +1510,9 @@ impl NativeSoftwareRenderer {
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);
-        if let Some(zone) = view.combat.active_extraction_bounds() {
+        if let Some(zone) = view.combat.active_extraction_bounds()
+            .or_else(|| view.combat.escorted_destination_bounds())
+        {
             self.shape(&ShipShape::Box { offset: (zone.min + zone.max) * 0.5,
                 half_extents: (zone.max - zone.min) * 0.5 },
                 Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x75dbab);
@@ -2081,9 +2084,10 @@ impl NativeSoftwareRenderer {
             }
         }
         if self.show_minimap {
-            let (ships, enemies) = self.draw_minimap(view, bounds);
+            let (ships, enemies, escort_exits) = self.draw_minimap(view, bounds);
             counts.minimap_ship_markers = ships;
             counts.minimap_visible_enemy_markers = enemies;
+            counts.minimap_escort_exit_markers = escort_exits;
         }
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts.special_ready_ships = self.draw_special_readiness(view);
@@ -2155,10 +2159,10 @@ impl NativeSoftwareRenderer {
     /// vision used by the main viewport. When source fog is OFF, all live
     /// ships are visible as in the unmasked tactical battlefield.
     fn draw_minimap(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb)
-        -> (usize, usize)
+        -> (usize, usize, usize)
     {
         let Some(layout) = MiniMapLayout::new(self.width, self.height, bounds)
-            else { return (0, 0) };
+            else { return (0, 0, 0) };
         let mut markers = 0usize;
         let mut enemies = 0usize;
         for y in layout.top..layout.bottom {
@@ -2264,6 +2268,22 @@ impl NativeSoftwareRenderer {
                 break;
             }
         }
+        // The exit is a known authored mission destination, not a
+        // hidden enemy unit. Show it before physics activates its trigger
+        // so the player can actually command the convoy across the map.
+        let mut escort_exits = 0usize;
+        if let Some(exit) = view.combat.escorted_destination_bounds() {
+            if let (Some((x0, y0)), Some((x1, y1))) = (
+                layout.project(exit.min), layout.project(exit.max),
+            ) {
+                let color = 0x75dbab;
+                self.line(x0, y1, x1, y1, color);
+                self.line(x1, y1, x1, y0, color);
+                self.line(x1, y0, x0, y0, color);
+                self.line(x0, y0, x0, y1, color);
+                escort_exits = 1;
+            }
+        }
         let bottom_left = self.camera.screen_to_world(
             0.0, self.height as f32, self.width, self.height);
         let top_right = self.camera.screen_to_world(
@@ -2275,7 +2295,7 @@ impl NativeSoftwareRenderer {
             self.line(x1, y1, x0, y1, color);
             self.line(x0, y1, x0, y0, color);
         }
-        (markers, enemies)
+        (markers, enemies, escort_exits)
     }
 
     /// A lightweight source-squad tab strip. Shortcut numbers come from the
