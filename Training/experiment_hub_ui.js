@@ -1908,6 +1908,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const evalDiagnostics=new Map((comparisonProject===project
             ?comparisonData?.evaluation_diagnostics||[]:[])
             .map(s=>[s.job_id,s.events||[]]));
+        const evalOpen=new Map((comparisonProject===project
+            ?comparisonData?.evaluation_open_diagnostics||[]:[])
+            .map(item=>[item.job_id,item]));
         const hasSamples=j=>j.live_execution?.progress||j.final_progress||
             history.get(j.id)?.length||evalHistory.get(j.id)?.length;
         const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonEvaluation(j)||
@@ -2002,7 +2005,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return job?{job,color:compareColor(i),slot:String(i+1),
                 points:history.get(id)||[],evaluation_points:evalHistory.get(id)||[],
                 evaluation_total_records:evalTotals.get(id)??0,
-                evaluation_diagnostics:evalDiagnostics.get(id)||[]}:null;
+                evaluation_diagnostics:evalDiagnostics.get(id)||[],
+                evaluation_open_diagnostics:evalOpen.get(id)?.events||[],
+                evaluation_open_count:evalOpen.get(id)?.total_open||0}:null;
         }).filter(Boolean);
         const metricSelect=$('hub-compare-metric');
         const oldMetrics=metricSelect.dataset.metricProject===project
@@ -2185,38 +2190,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     run.evaluation_points.length+' of '+
                     run.evaluation_total_records+
                     ' archived independent evaluation observations. The chart is sampled by frozen suite and runtime; Export complete job diagnostics to retrieve the original unsampled native-job history.');
-            const recentIssue=run.evaluation_diagnostics?.at(-1);
-            // A later accepted receipt for the affected suite closes an
-            // availability warning, without erasing its archived diagnostic.
-            // Checkpoint failures require a later success for that checkpoint.
-            // Contradictory receipt evidence remains disqualifying forever.
-            const laterAccepted=receipt=>
-                receipt.suite_id===recentIssue?.suite_id&&
-                Number.isFinite(Date.parse(receipt.observed_at))&&
-                Date.parse(receipt.observed_at)>Date.parse(recentIssue.observed_at);
-            const conflict=recentIssue?.evaluation_status==='unavailable'&&
-                (recentIssue.issue?.includes(
-                    'Conflicting independent result for checkpoint ')||
-                 recentIssue.issue?.startsWith(
-                    'Conflicting independent evaluation receipt at checkpoint '));
-            const resolved=recentIssue?.evaluation_status==='failed'
-                ?(run.evaluation_points||[]).some(receipt=>
-                    laterAccepted(receipt)&&
-                    receipt.checkpoint_sha256===recentIssue.checkpoint_sha256)
-                :recentIssue?.evaluation_status==='unavailable'&&
-                    recentIssue.suite_id&&!conflict&&
-                    (run.evaluation_points||[]).some(laterAccepted);
-            if(recentIssue&&!resolved)warnings.push('Run '+run.slot+
-                (recentIssue.evaluation_status==='failed'
-                    ?' independently evaluated checkpoint '+recentIssue.checkpoint_sha256+
-                        ' failed for '+recentIssue.suite_id+
-                        (Number.isSafeInteger(recentIssue.steps_completed)
-                            ?' at update '+recentIssue.steps_completed:'')+
-                        ' ('+recentIssue.attempted_at+'): '+recentIssue.reason
-                    :' recorded an independent-evaluation receipt availability issue'+
-                        (recentIssue.suite_id?' for '+recentIssue.suite_id:'')+
-                        ' at '+recentIssue.observed_at+': '+recentIssue.issue)+
-                '. No match score or zero performance is implied; inspect evaluator health.');
+            // All unresolved issues come from the complete immutable archive,
+            // not the newest of the last 32 events or sampled chart receipts.
+            for(const issue of run.evaluation_open_diagnostics) {
+                warnings.push('Run '+run.slot+
+                    (issue.evaluation_status==='failed'
+                        ?' independent checkpoint '+issue.checkpoint_sha256+
+                            ' evaluation failed for '+issue.suite_id+
+                            (Number.isSafeInteger(issue.steps_completed)
+                                ?' at update '+issue.steps_completed:'')+
+                            ' ('+issue.attempted_at+'): '+issue.reason
+                        :' has an unresolved independent evaluation receipt issue'+
+                            (issue.suite_id?' for '+issue.suite_id:'')+
+                            ' at '+issue.observed_at+': '+issue.issue)+
+                    '. Missing evaluation evidence is not a model score; inspect evaluator health.');
+            }
+            if(run.evaluation_open_count>run.evaluation_open_diagnostics.length)
+                warnings.push('Run '+run.slot+' has '+
+                    (run.evaluation_open_count-run.evaluation_open_diagnostics.length)+
+                    ' additional unresolved evaluator issues in the complete diagnostic archive.');
             const job=run.job;
             if(job.evaluation_history_only||!(job.evaluation_monitor||job.evaluation_stop)||
                 !['running','stop_requested','stopped','finished','failed'].includes(job.status))
@@ -3445,6 +3437,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_history_export_is_sampled:
                     (evalTotalsByJob.get(id)??0)>(evalByJob.get(id)||[]).length,
                 evaluation_diagnostics:issuesByJob.get(id)||[],
+                evaluation_open_diagnostics:(comparisonProject===project
+                    ?comparisonData?.evaluation_open_diagnostics||[]:[])
+                    .find(item=>item.job_id===id)?.events||[],
                 historical_evaluation_only:job.evaluation_history_only===true,
                 historical_source_report_sha256:job.source_report_sha256||null,
                 historical_suite_definitions:job.source_suites||null,
