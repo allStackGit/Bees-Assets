@@ -4475,10 +4475,19 @@ class ExperimentHub {
                     job.resources.gpu_count!==jobs[0].resources.gpu_count))
                 throw Error('Native MA-POCA optimizer bundle requires one checkpoint owner and 1–7 exclusive GPU worker machines with identical verified model, trainer, backend and pinned rollout inputs.');
         }
-        if(value.model_source_job_id!==undefined&&
-            !(jobs[0]?.project_id==='bees_native'&&
-                jobs[0].frozen_parameters?.optimizer_group===true))
-            throw Error('A native checkpoint source can only be attached to a synchronized Bees optimizer bundle.');
+        if(value.model_source_job_id!==undefined) {
+            const optimizer=jobs[0]?.project_id==='bees_native'&&
+                jobs[0].frozen_parameters?.optimizer_group===true;
+            const collectorsOnly=jobs.every(job=>
+                job.project_id==='bees_native_collect'&&
+                job.model_source_job_id===value.model_source_job_id&&
+                job.frozen_parameters?.optimizer_group!==true&&
+                job.frozen_parameters?.seed_offset>=0);
+            if(!optimizer&&!collectorsOnly)
+                throw Error('Native checkpoint group must contain either a synchronized optimizer or physical rollout collectors pinned to the same predecessor.');
+            if(collectorsOnly&&new Set(jobs.map(job=>job.assigned_machine_id)).size!==jobs.length)
+                throw Error('Distributed native collectors require distinct leased machines.');
+        }
         if(collectors&&!(jobs[0]?.project_id==='bees_native'&&
             jobs[0].frozen_parameters?.optimizer_group===true))
             throw Error('Physical native collector pins require an authorized synchronized Bees optimizer group.');
