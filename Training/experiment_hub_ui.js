@@ -1026,10 +1026,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const row=document.createElement('div');
             row.className='hub-pipeline-stage';
             const details=document.createElement('span');
+            const completeRounds=Array.isArray(plan.round_history)
+                ?plan.round_history:[];
+            const lastRound=completeRounds.at(-1);
             details.textContent='Native Bees multi-round '+plan.id.slice(-8)+
                 ' · '+plan.completed_rounds+'/'+plan.round_count+' rounds'+
                 ' · '+plan.status+
+                (lastRound?' · checkpoint '+lastRound.checkpoint_sha256.slice(0,12):'')+
                 (plan.reason?' · '+plan.reason:'');
+            // The compact main row stays readable. The original immutable
+            // collector/optimizer ownership and seed lineage remain
+            // inspectable without generating separate Hub status logs.
+            if(completeRounds.length)
+                details.title=completeRounds.map(entry=>
+                    'Round '+entry.round+
+                    ' · seed '+(entry.collector_seed_offset??'original')+
+                    ' · '+entry.source_checkpoint_sha256.slice(0,12)+
+                    ' -> '+entry.checkpoint_sha256.slice(0,12)+
+                    ' · collectors '+entry.collector_job_ids.join(', ')+
+                    ' · optimizers '+entry.optimizer_job_ids.join(', ')
+                ).join('\n');
             row.append(details);
             if(['pending_collectors','awaiting_collectors','pending_optimizer',
                 'awaiting_optimizer','needs_review'].includes(plan.status))
