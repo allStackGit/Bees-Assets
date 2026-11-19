@@ -302,6 +302,44 @@ class LocalExecution {
                 report.evaluation=results[0];
             }
         }
+        // This is a second read of the SAME independent evaluator's
+        // dispatch-scoped receipt directory, not another evaluator service.
+        // The approved native round-plan ID isolates a newly selected suite
+        // policy from the finished source job's historical evaluation.
+        const baseline=job.native_baseline_evaluation;
+        if(baseline!==undefined) {
+            if(order.action!=='inspect'||job.project_id!=='bees_native'||
+                lease.status!=='released'||state!=='finished'||
+                !UUID.test(String(baseline?.plan_id||''))||
+                baseline.checkpoint_sha256!==job.final_checkpoint_sha256||
+                !supportsEvaluation(this.evaluationSuites,{
+                    project_id:job.project_id,
+                    evaluation_stop:baseline.policy,
+                }))
+                throw Error('Native baseline evaluation must belong to its approved released checkpoint and evaluator suites.');
+            if(ownsArtifacts) {
+                const results=[];
+                for(const rule of evaluationRules(baseline.policy)) {
+                    try {
+                        const result=localAdapter.readEvaluation(Object.freeze({
+                            job_id:job.id,project_id:job.project_id,
+                            artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                            dispatch_id:baseline.plan_id,suite_id:rule.suite_id,
+                        }));
+                        if(result!=null&&
+                            result.checkpoint_sha256===baseline.checkpoint_sha256)
+                            results.push(evaluationEvidence(result,rule,baseline.plan_id));
+                    }catch(error) {
+                        report.evaluation_issue=(rule.suite_id+': '+
+                            String(error.message||error)).slice(0,160);
+                    }
+                }
+                if(results.length)
+                    report.native_baseline_evaluation={
+                        plan_id:baseline.plan_id,receipts:results,
+                    };
+            }
+        }
         const checkpointProject=['courier','tinybrains','bees_native'].includes(job.project_id);
         if(checkpointProject&&(lease.status!=='released'||
             order.action==='inspect'&&job.reverify_checkpoint===true||
