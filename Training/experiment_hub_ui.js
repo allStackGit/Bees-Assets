@@ -966,9 +966,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 m.status==='connected'&&m.local_executor_enabled===true&&
                 m.native_preflight_passed===true&&
                 m.installed_projects?.includes(selected?.project_id)&&
-                (!source||i===0
-                    ?!source||m.id===source.assigned_machine_id
-                    :m.id!==source.assigned_machine_id));
+                (!source||(i===0
+                    ?m.id===source.assigned_machine_id
+                    :m.id!==source.assigned_machine_id)));
             machine.replaceChildren(...eligible.map(m=>
                 new Option(m.name+' ('+m.id+')',m.id)));
             if(eligible.some(m=>m.id===oldMachine))machine.value=oldMachine;
@@ -1001,12 +1001,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const unresolvedLaunch=launchPlan&&
                 ['pending','needs_review'].includes(launchPlan.status);
             const active=members.filter(j=>j.status!=='cancelled');
+            const synchronized=members[0]?.project_id==='bees_native'&&
+                members[0]?.frozen_parameters?.optimizer_group===true;
             const claims=active.filter(j=>
                 (state.reservations||[]).some(lease=>lease.id===j.lease_id&&
                     ['offered','acknowledged'].includes(lease.status)));
             const details=document.createElement('span');
-            details.textContent='Bundle '+id.slice(-8)+' · '+
-                members.length+' jobs · '+claims.length+' outstanding claims · '+
+            details.textContent=(synchronized?'Synchronized PPO bundle ':'Bundle ')+
+                id.slice(-8)+' · '+members.length+' jobs · '+
+                claims.length+' outstanding claims · '+
                 members.map(j=>j.project_id+' on '+
                     (j.assigned_machine_id||'unassigned')+': '+j.status).join('; ')+
                 (launchPlan?' · Scheduled launch '+launchPlan.status+
@@ -1048,7 +1051,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 async function scheduleLaunch(restart,gpu) {
                     if(!confirm('Approve one native Start for each of the '+members.length+
-                        ' reserved jobs as soon as ALL native lease receipts and Start checks pass? '+
+                        (synchronized?' synchronized PPO ranks':' reserved jobs')+
+                        ' as soon as ALL native lease receipts and Start checks pass? '+
                         'No work starts until every machine is qualified. '+
                         'Every finished/stopped member will release its own claim after a verified native report. '+
                         (gpu?'This includes GPU execution, expires after 20 minutes and NEVER survives a coordinator restart. ':
@@ -1090,9 +1094,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if(canStart)row.append(button('Start entire bundle',async()=>{
                 const autoRelease=$('hub-native-release-on-terminal').checked;
                 if(!confirm('Authorize '+members.length+
-                    ' independent native Starts across the selected Windows/Linux machines in one durable operation? '+
+                    (synchronized
+                        ?' synchronized MA-POCA optimizer ranks'
+                        :' independent native jobs')+
+                    ' across the selected Windows/Linux machines in one durable operation? '+
                     'All members must retain their original leases, fresh native readiness and any GPU access qualification. '+
-                    'The machines enforce each Start independently; this does not guarantee simultaneous execution or link the jobs into distributed training. '+
+                    (synchronized
+                        ?'These ranks share verified rollout inputs, synchronized gradients and one checkpoint owner; each native machine enforces its own Start and joins the same torchrun collective. '
+                        :'The machines enforce each Start independently; these jobs are not automatically linked. ')+
+                    'Native starts are not simultaneous. '+
                     'CUDA/ROCm GPU compute sharing is not an enforced quota. '+
                     (autoRelease
                         ?'Verified native finished/stopped reports will release each member’s claimed capacity. '
