@@ -133,6 +133,9 @@ def per_scene_results(score, learner_side, episodes):
                 raise ValueError("native scene has invalid physical mission totals")
             mission_outcomes = {}
             attempts = 0
+            role_attempts = 0
+            learner_successes = 0
+            all_roles_recorded = True
             for kind, counts in mission_counts.items():
                 if (kind not in ("survival", "demolition", "escort", "extraction") or
                         not isinstance(counts, dict)):
@@ -142,13 +145,47 @@ def per_scene_results(score, learner_side, episodes):
                         total < 1 or not 0 <= completed <= total):
                     raise ValueError("native scene has invalid mission completion counts")
                 attempts += total
+                by_side = counts.get("by_objective_side")
+                verified_sides = None
+                if by_side is not None:
+                    if not isinstance(by_side, dict):
+                        raise ValueError("invalid native physical mission objective-side counters")
+                    verified_sides = {}
+                    side_attempts = side_completions = 0
+                    for side_id, split in by_side.items():
+                        if (side_id not in ("1", "2") or not isinstance(split, dict) or
+                                type(split.get("attempts")) is not int or
+                                type(split.get("completions")) is not int or
+                                split["attempts"] < 0 or
+                                not 0 <= split["completions"] <= split["attempts"]):
+                            raise ValueError("invalid native mission objective-side totals")
+                        count, success = split["attempts"], split["completions"]
+                        side_attempts += count
+                        side_completions += success
+                        role_attempts += count
+                        learner_successes += (
+                            success if int(side_id) == learner_side else count - success
+                        )
+                        if count:
+                            verified_sides[side_id] = {
+                                "attempts": count, "completions": success,
+                                "completion_rate": success / count,
+                            }
+                    if side_attempts != total or side_completions != completed:
+                        raise ValueError("native mission goal side totals disagree with episode outcomes")
+                else:
+                    all_roles_recorded = False
                 mission_outcomes[kind] = {
                     "attempts": total,
                     "completions": completed,
                     "completion_rate": completed / total,
+                    **({"by_objective_side": verified_sides}
+                       if verified_sides is not None else {}),
                 }
             if attempts > n:
                 raise ValueError("physical mission attempts exceed completed episodes")
+            if all_roles_recorded and role_attempts != attempts:
+                raise ValueError("native mission objective-side total is incomplete")
         results[digest] = {
             "episodes": n,
             "side_victories": wins,
@@ -160,6 +197,11 @@ def per_scene_results(score, learner_side, episodes):
             "mean_episode_seconds": seconds / n,
             **({"mission_outcomes": mission_outcomes}
                if mission_outcomes is not None else {}),
+            **({
+                "mission_attempts": attempts,
+                "learner_mission_successes": learner_successes,
+                "learner_mission_success_rate": learner_successes / attempts,
+            } if mission_outcomes is not None and all_roles_recorded and attempts else {}),
         }
     global_wins = score.get("victories_by_side")
     if (totals["episodes"] != episodes or
@@ -267,11 +309,22 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     if all("mission_outcomes" in scene for scene in scenes.values()):
         for scene in scenes.values():
             for kind, counts in scene["mission_outcomes"].items():
-                total = mission_totals.setdefault(kind, {"attempts": 0, "completions": 0})
+                total = mission_totals.setdefault(kind, {
+                    "attempts": 0, "completions": 0,
+                })
                 total["attempts"] += counts["attempts"]
                 total["completions"] += counts["completions"]
         for totals in mission_totals.values():
             totals["completion_rate"] = totals["completions"] / totals["attempts"]
+    fully_attributed = all(
+        "mission_attempts" in scene and
+        scene["mission_attempts"] == scene["episodes"]
+        for scene in scenes.values()
+    )
+    learner_objectives = (
+        sum(scene["learner_mission_successes"] for scene in scenes.values())
+        if fully_attributed else None
+    )
     selected_workers = config.get("physics_workers", 1)
     if (throughput.get("requested_physics_workers") != selected_workers or
             type(throughput.get("peak_parallel_physics_workers")) is not int or
@@ -302,6 +355,11 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         "by_scene_sha256": scenes,
         **({"mission_outcomes": mission_totals}
            if all("mission_outcomes" in scene for scene in scenes.values()) else {}),
+        **({
+            "mission_attempts": expected,
+            "learner_mission_successes": learner_objectives,
+            "learner_mission_success_rate": learner_objectives / expected,
+        } if learner_objectives is not None else {}),
         "rollout_summary_sha256": file_sha256(summary_path),
     }
     atomic_json(output / "evaluation-result.json", receipt)
