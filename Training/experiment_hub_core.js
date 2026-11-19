@@ -4389,6 +4389,10 @@ class ExperimentHub {
                     (kind==='collector'&&(
                         parameters.optimizer_group===true||
                         parameters.collection_id!==undefined||
+                        parameters.rollout_world_start!==undefined||
+                        parameters.rollout_worlds!==undefined||
+                        parameters.bundle_directory!==undefined||
+                        parameters.source_run_contract_sha256!==undefined||
                         parameters.rollout_bundles!==undefined))||
                     (kind==='optimizer'&&(
                         parameters.optimizer_group!==true||
