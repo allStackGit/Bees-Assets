@@ -4684,7 +4684,9 @@ class ExperimentHub {
                             ?'Independent fixed-reference evaluation target met; further authorized native training rounds are stopped.'
                             :nextCount===plan.round_count
                                 ?'All approved native collection and optimizer rounds completed.'
-                                :'Independent evaluation did not meet its target; collecting fresh native experience from the latest verified checkpoint.',
+                                :rules.length
+                                    ?'Independent evaluation did not meet its target; collecting fresh native experience from the latest verified checkpoint.'
+                                    :'Starting fresh physical collection against the newly verified checkpoint.',
                         {
                             completed_rounds:nextCount,
                             round_history:history,

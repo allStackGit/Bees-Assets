@@ -1043,6 +1043,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' · seed '+(entry.collector_seed_offset??'original')+
                     ' · '+entry.source_checkpoint_sha256.slice(0,12)+
                     ' -> '+entry.checkpoint_sha256.slice(0,12)+
+                    (entry.evaluation_receipts?.length
+                        ?' · fixed-reference evaluation '+
+                            entry.evaluation_receipts.map(receipt=>
+                                receipt.suite_id+': '+receipt.successes+'/'+receipt.trials
+                            ).join(', ')+
+                            (entry.evaluation_stop_satisfied?' (target met)':' (below target)')
+                        :'')+
                     ' · collectors '+entry.collector_job_ids.join(', ')+
                     ' · optimizers '+entry.optimizer_job_ids.join(', ')
                 ).join('\n');
