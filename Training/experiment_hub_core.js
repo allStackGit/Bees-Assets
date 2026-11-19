@@ -647,6 +647,21 @@ function nativeOptimizerGroupBlock(snapshot,parent) {
     return null;
 }
 
+// A pinned successor model source must retain verified checkpoint ownership
+// and the full original distributed group must have completed and released.
+function nativeModelSourceBlock(snapshot,job) {
+    if(!job?.model_source_job_id)return null;
+    const source=snapshot.jobs.find(item=>item.id===job.model_source_job_id);
+    if(!source||source.id===job.id||source.project_id!=='bees_native'||
+        source.status!=='finished'||!checkpointContinuationComplete(source)||
+        !source.capacity_released_at||!source.dispatch_id||
+        !source.execution_updated_at||
+        !SHA256.test(String(source.checkpoint_model_sha256||''))||
+        source.checkpoint_model_sha256!==job.expected_parent_model_sha256)
+        return 'The selected native model source has no verified, released checkpoint matching the job pin.';
+    return nativeOptimizerGroupBlock(snapshot,source);
+}
+
 // Shared by planning, capacity claims, automation and native Start.
 function predecessorBlock(snapshot,job) {
     if(job.continuation_of_job_id&&job.after_job_id)
@@ -694,6 +709,8 @@ function nativeStartReadiness(snapshot, job) {
         return block('Only queued non-Bees jobs support Hub native starts.');
     const predecessor=predecessorBlock(snapshot,job);
     if(predecessor)return block(predecessor);
+    const modelSource=nativeModelSourceBlock(snapshot,job);
+    if(modelSource)return block(modelSource);
     if(!job.lease_id)
         return block('Coordinate machine capacity before requesting Start.');
     const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
@@ -4238,6 +4255,9 @@ class ExperimentHub {
     queueConfiguration(value) {
         const next=copy(this.state);
         const job=this.queueIn(next,value);
+        if(job.project_id==='bees_native_optimizer_worker'||
+            job.frozen_parameters?.optimizer_group===true)
+            throw Error('Native distributed PPO ranks require one atomically reserved Hub resource bundle.');
         this.commit(next);
         return copy(job);
     }
@@ -5005,6 +5025,16 @@ class ExperimentHub {
         const ancestorId=value.continuation_of_job_id==null
             ?null:value.continuation_of_job_id;
         const afterId=value.after_job_id==null?null:value.after_job_id;
+        const sourceId=value.model_source_job_id==null
+            ?null:value.model_source_job_id;
+        if(sourceId!==null&&(
+            !UUID.test(String(sourceId))||
+            !['bees_native','bees_native_collect','bees_native_optimizer_worker']
+                .includes(project.id)||
+            afterId!==null||
+            (ancestorId!==null&&ancestorId!==sourceId)||
+            (project.id==='bees_native'&&ancestorId!==sourceId)))
+            throw Error('Native model handoffs require an exact eligible Bees checkpoint owner.');
         if(afterId!==null&&ancestorId!==null)
             throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
         if(project.id==='tinybrains_rollout') {
@@ -5120,6 +5150,11 @@ class ExperimentHub {
             predecessor_ready_at:dependencyReady?now():null,
             artifact_lineage_root_id:parent
                 ?(parent.artifact_lineage_root_id||parent.id):jobId,
+            ...(sourceId?{
+                model_source_job_id:sourceId,
+                expected_parent_model_sha256:next.jobs.find(
+                    item=>item.id===sourceId)?.checkpoint_model_sha256,
+            }:{}),
             continuation_machine_id:parent
                 ?(parent.continuation_machine_id||
                     (parent.dispatch_id?parent.assigned_machine_id:null)):null,
@@ -5140,6 +5175,8 @@ class ExperimentHub {
                 :'Queued; a separate machine claim and explicit native start authorization are required.',
             created_at:now(), cancelled_at:null,
         };
+        const modelSourceBlock=nativeModelSourceBlock(next,job);
+        if(modelSourceBlock)throw Error(modelSourceBlock);
         next.jobs.push(job);
         return job;
     }
