@@ -5227,6 +5227,16 @@ fn run_battle(
         "policy_observations": {
             "rows_encoded": status.perception_work.observations,
             "native_mission_rows": status.perception_work.native_mission_rows,
+            "native_mission_rows_by_kind": {
+                "survival": status.perception_work.native_mission_rows_by_kind[0],
+                "demolition": status.perception_work.native_mission_rows_by_kind[1],
+                "escort": status.perception_work.native_mission_rows_by_kind[2],
+                "extraction": status.perception_work.native_mission_rows_by_kind[3],
+            },
+            "native_mission_visible_target_rows":
+                status.perception_work.native_mission_visible_target_rows,
+            "native_mission_destination_rows":
+                status.perception_work.native_mission_destination_rows,
             "native_mission_encoding_version": bees_sim::perception::NATIVE_MISSION_OBSERVATION_VERSION,
             "native_mission_objective_start": bees_sim::perception::OBJECTIVE_START,
             "native_mission_objective_width": bees_sim::perception::OBJECTIVE_LEN,

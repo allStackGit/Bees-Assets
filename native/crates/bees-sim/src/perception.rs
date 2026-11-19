@@ -363,12 +363,7 @@ pub fn write_native_mission_objectives(
     let out = &mut row[OBJECTIVE_START..NAV_START];
     out.fill(0.0);
     out[0] = 1.0;
-    out[match mission.kind {
-        EpisodeMissionKind::Survival => 1,
-        EpisodeMissionKind::Demolition => 2,
-        EpisodeMissionKind::Escort => 3,
-        EpisodeMissionKind::Extraction => 4,
-    }] = 1.0;
+    out[1 + mission.kind.index()] = 1.0;
     out[5] = if mission.objective_side { 1.0 } else { -1.0 };
     let relative = |target: Vec2| {
         let world_delta = target - observer;

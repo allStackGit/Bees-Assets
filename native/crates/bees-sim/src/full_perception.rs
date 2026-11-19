@@ -67,6 +67,11 @@ pub struct PerceptionWork {
     pub collision_asteroids_encoded: u64,
     /// Real native mission-observation rows, distinct from ordinary v26.
     pub native_mission_rows: u64,
+    /// Stable order: survival, demolition, escort, extraction.
+    pub native_mission_rows_by_kind: [u64; 4],
+    /// Count actual feature availability, not merely authored target IDs.
+    pub native_mission_visible_target_rows: u64,
+    pub native_mission_destination_rows: u64,
 }
 
 /// Owns reusable candidate-sort scratch and only six cumulative counters.
@@ -156,7 +161,14 @@ impl NativePerceptionWriter {
         self.measurements.mining_encoded += mining as u64;
         self.measurements.map_objects_encoded += objects as u64;
         self.measurements.collision_asteroids_encoded += asteroids as u64;
-        self.measurements.native_mission_rows += u64::from(source.native_mission.is_some());
+        if let Some(mission) = source.native_mission {
+            self.measurements.native_mission_rows += 1;
+            self.measurements.native_mission_rows_by_kind[mission.kind.index()] += 1;
+            self.measurements.native_mission_visible_target_rows +=
+                u64::from(mission.visible_target.is_some());
+            self.measurements.native_mission_destination_rows +=
+                u64::from(mission.destination.is_some());
+        }
         Ok(())
     }
 }

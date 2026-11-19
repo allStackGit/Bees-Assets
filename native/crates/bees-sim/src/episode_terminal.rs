@@ -248,6 +248,16 @@ pub enum EpisodeMissionKind {
 }
 
 impl EpisodeMissionKind {
+    /// Stable reserved-channel order, shared with source PerceptionWork.
+    pub fn index(self) -> usize {
+        match self {
+            Self::Survival => 0,
+            Self::Demolition => 1,
+            Self::Escort => 2,
+            Self::Extraction => 3,
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Survival => "survival",
