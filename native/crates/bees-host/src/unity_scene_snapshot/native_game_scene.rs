@@ -27,6 +27,11 @@ struct GameScene {
     local_player_side: Option<i32>,
     command_settings: GameCommandSettings,
     ships: Vec<GameShip>,
+    /// Complete, inert native hull definitions for future campaign FleetShips.
+    /// They are parsed and validated identically to physical ships, then
+    /// removed before any gameplay, perception or learner World is created.
+    #[serde(default)]
+    fleet_templates: Vec<GameShip>,
     squads: Vec<GameSquad>,
     /// Native-authored physical resources and destructible level objects.
     #[serde(default)]
@@ -629,6 +634,19 @@ impl NativePhysicalScene {
         }
         let policy_episode = raw.policy_episode;
         let has_agents = raw.ships.iter().any(|ship| ship.policy.is_some());
+        if raw.fleet_templates.iter().any(|ship|
+            ship.persistent_fleet || ship.fleet_ship_id.is_some() ||
+            ship.user_controlled || ship.policy.is_some() ||
+            ship.drone_carrier_id.is_some() || ship.mined_cargo != 0 ||
+            ship.health != ship.max_health
+        ) {
+            return Err(invalid("inert native FleetShip templates cannot own live progress, policy or carrier state"));
+        }
+        let template_ids = raw.fleet_templates.iter().map(|ship|
+            ship.entity_id).collect::<HashSet<_>>();
+        if template_ids.len() != raw.fleet_templates.len() {
+            return Err(invalid("duplicate native FleetShip source template identity"));
+        }
         if has_agents != policy_episode.is_some() {
             return Err(invalid("native policy ships require a complete MA-POCA episode and group source"));
         }
@@ -684,8 +702,10 @@ impl NativePhysicalScene {
             return Err(invalid("native HiveMind home coordinates or initial delay are invalid"));
         }
 
-        let mut entities = Vec::with_capacity(raw.ships.len());
-        let mut fleet = Vec::with_capacity(raw.ships.len());
+        let mut entities = Vec::with_capacity(
+            raw.ships.len() + raw.fleet_templates.len()
+        );
+        let mut fleet = Vec::with_capacity(entities.capacity());
         let mut authored_ship_perceptions = HashMap::new();
         let mut source_vision = HashMap::new();
         let mut source_formation = HashMap::new();
@@ -708,7 +728,9 @@ impl NativePhysicalScene {
         let mut active_policy_ship_ids = Vec::new();
         let mut group_participants = Vec::new();
         let mut team_frames: [Option<u8>; 2] = [None, None];
-        for ship in raw.ships {
+        let mut source_ships = raw.ships;
+        source_ships.extend(raw.fleet_templates);
+        for ship in source_ships {
             let id = ship.entity_id;
             let pos = Vec2::new(ship.position[0], ship.position[1]);
             let offset = Vec2::new(ship.formation_offset[0], ship.formation_offset[1]);
@@ -1337,9 +1359,32 @@ impl NativePhysicalScene {
                 },
             });
         }
-        if assigned.len() != ship_sides.len() {
-            return Err(invalid("every native game ship must belong to exactly one squad"));
+        if assigned.len() + template_ids.len() != ship_sides.len() ||
+            assigned.iter().any(|id| template_ids.contains(id))
+        {
+            return Err(invalid("every live native ship must belong to one squad; reserve templates cannot deploy"));
         }
+        // The complete native source parser above constructs the exact
+        // same collision, ship, vision and weapon definitions for reserves.
+        // Extract them before any live Level/CombatWorld/learner exists.
+        let mut fleet_templates = Vec::with_capacity(template_ids.len());
+        entities.retain(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if template_ids.contains(&ship.entity_id) => {
+                let id = ship.entity_id;
+                fleet_templates.push(NativeFleetTemplate {
+                    ship: ship.clone(),
+                    perception: authored_ship_perceptions.remove(&id)
+                        .expect("validated native source perception"),
+                    vision: source_vision.remove(&id)
+                        .expect("validated native source sight"),
+                    formation: source_formation.remove(&id)
+                        .expect("validated native source formation"),
+                });
+                false
+            }
+            _ => true,
+        });
+        fleet.retain(|item| !template_ids.contains(&item.ship_id));
         let local_player_side = if let Some(explicit) = raw.local_player_side {
             if !player_sides.contains(&explicit) {
                 return Err(invalid("local player side must own an authored player-controlled squad"));
@@ -1401,6 +1446,7 @@ impl NativePhysicalScene {
             has_obstacles: false,
             command_settings: settings,
             entities,
+            fleet_templates,
             // Apply explicitly authored initial static layout before
             // installing immutable reward baselines and PPO membership.
             source_episode: None,
