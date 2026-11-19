@@ -66,6 +66,9 @@
                     evaluatorButton('Run now','run',item.id,busy||item.running,item.project),
                     evaluatorButton('Stop','stop',item.id,busy||!item.active,item.project)
                 );
+                if(item.project==='tinybrains')line.append(
+                    evaluatorButton('Refresh suite','refresh',item.id,
+                        busy||item.running,item.project));
             }
             evaluatorRows.append(line);
         }
@@ -76,6 +79,8 @@
             ?(project==='courier'
                 ?'Set up the approved Courier survival evaluator using the installed local environment? The suite is pinned to the current environment file. A local agent restart is needed to advertise it.'
                 :'Set up and start the two approved TinyBrains Nano/Micro evaluation timers? Each evaluator uses a fixed Docker image and its own CPU/RAM limits. This does not start or stop training.')
+            :action==='refresh'
+                ?'Create a new immutable '+id+' evaluation suite pinned to the installed runtime and replace its local schedule? Old suite files and receipts are preserved. Restart the local agent afterward.'
             :action==='stop'
                 ?'Stop the '+id+' evaluation schedule? An evaluation already running may finish.'
                 :action==='run'
