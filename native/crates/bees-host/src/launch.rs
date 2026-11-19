@@ -342,8 +342,9 @@ struct RunConfig {
     /// Omitted or one retains the original serial gameplay path.
     #[serde(default)]
     physics_workers: Option<usize>,
-    /// Interactive-only persistent path-search CPU threads per Level.
-    /// Omitted leaves deterministic synchronous navigation unchanged.
+    /// Live local or authenticated remote gameplay may use persistent
+    /// path-search CPU threads per Level. Offline training and input replay
+    /// retain deterministic synchronous navigation.
     #[serde(default)]
     navigation_workers: Option<usize>,
     status_every_rounds: Option<u64>,
@@ -1797,16 +1798,26 @@ fn launch_catalog_battle(
     };
     if interactive || env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
         if let Some(mission) = mission {
-            let setup = CampaignReplaySetup::capture(&config, mission)?;
-            let path = output.parent().expect("created campaign battle directory")
-                .join("campaign-replay-setup.json");
-            // The source career projection was read under the writer lease;
-            // commit it before gameplay begins, not after the career changes.
-            let file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
-            serde_json::to_writer(&file, &setup)?;
-            file.sync_all()?;
-            #[cfg(unix)]
-            fs::File::open(path.parent().expect("campaign battle parent"))?.sync_all()?;
+            let run_config: RunConfig = serde_json::from_slice(&fs::read(&config)?)?;
+            // Live HiveMind replies and OS-scheduled navigation completions
+            // can change a physical tick independently of player input.
+            // Preserve their durable campaign results without advertising
+            // a recording that cannot be reproduced by the input trace.
+            let replayable = run_config.hivemind.is_none() &&
+                run_config.navigation_workers.is_none() &&
+                run_config.model_updates.is_empty();
+            if replayable {
+                let setup = CampaignReplaySetup::capture(&config, mission)?;
+                let path = output.parent().expect("created campaign battle directory")
+                    .join("campaign-replay-setup.json");
+                // The source career projection was read under the writer
+                // lease; save it before gameplay, not after the career changes.
+                let file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+                serde_json::to_writer(&file, &setup)?;
+                file.sync_all()?;
+                #[cfg(unix)]
+                fs::File::open(path.parent().expect("campaign battle parent"))?.sync_all()?;
+            }
         }
     }
     run_session(&config, interactive, interactive, Some(output.clone()), None, None, mission)?;
@@ -2462,17 +2473,18 @@ fn run_campaign_mission(
                 "campaign --serve requires BEES_NATIVE_REMOTE_LISTEN and authentication tokens",
             ).into());
         }
-        // The same campaign ledger and CombatWorld as graphical play.
-        // Refuse non-replayable command clocks or scene changes before
-        // reserving a new campaign battle output.
+        // Live LAN campaign battles use the original Level, account writer,
+        // HiveMind socket owner and player-command dispatcher. The host
+        // already separates live network/navigation clocks from replayable
+        // input traces. Model manifest changes within one campaign episode
+        // remain unsupported.
         let run_path = resolve(root, entry.config_for(&progress));
         let config: RunConfig = serde_json::from_slice(&fs::read(run_path)?)?;
         if config.levels.len() != 1 || config.episodes_per_world != 1 ||
-            config.hivemind.is_some() || !config.model_updates.is_empty() ||
-            config.navigation_workers.is_some()
+            !config.model_updates.is_empty()
         {
             return Err(invalid(
-                "campaign --serve requires one offline Level/episode without HiveMind, model updates, or background navigation",
+                "campaign --serve requires one Level/episode with a fixed model manifest",
             ).into());
         }
     }
@@ -3364,9 +3376,12 @@ fn run_battle(
     }
     let navigation_workers = config.navigation_workers;
     if let Some(workers) = navigation_workers {
-        if !(1..=128).contains(&workers) || !view || replay_inputs.is_some() {
+        let live_remote = env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some();
+        if !(1..=128).contains(&workers) || (!view && !live_remote) ||
+            replay_inputs.is_some()
+        {
             return Err(invalid(
-                "navigation_workers must be 1..128 and is available only for live interactive play, not headless training or input playback",
+                "navigation_workers must be 1..128 and requires live local or remote gameplay, not offline training or input playback",
             ).into());
         }
     }
