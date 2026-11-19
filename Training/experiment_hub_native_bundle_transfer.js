@@ -231,30 +231,41 @@ function authorizedModelFile(hub,machineId,token,recipientId,sourceId,relative) 
     return mirroredFile(packageFiles.root,sourceId,relative,expected);
 }
 
-function bundleUrl(endpoint,machineId,learnerId,collectorId,relative) {
+function bundleUrl(endpoint,machineId,learnerId,sourceId,relative,kind='bundle') {
     const url=new URL(endpoint);
     if(url.protocol!=='http:'||!['127.0.0.1','localhost'].includes(url.hostname))
-        fail('Native bundle transfer requires the authenticated loopback Hub tunnel.');
-    url.pathname='/api/hub/agent/native-bundle-file';
+        fail('Native transfer requires the authenticated loopback Hub tunnel.');
+    if(!['bundle','model'].includes(kind))
+        fail('Unknown native transfer kind.');
+    url.pathname=kind==='model'
+        ?'/api/hub/agent/native-model-file'
+        :'/api/hub/agent/native-bundle-file';
     url.search='';
     for(const [key,value] of Object.entries({
         machine_id:machineId,learner_job_id:learnerId,
-        collector_job_id:collectorId,file:relative,
+        [kind==='model'?'source_job_id':'collector_job_id']:sourceId,
+        file:relative,
     }))url.searchParams.set(key,value);
     return url;
 }
 
-async function downloadFile(endpoint,machineId,token,learnerId,collectorId,
-    relative,expectedSha,folder) {
-    const url=bundleUrl(endpoint,machineId,learnerId,collectorId,relative);
+async function downloadFile(endpoint,machineId,token,learnerId,sourceId,
+    relative,expectedSha,folder,kind='bundle') {
+    if(kind==='model'?!safeNativeModelPath(relative):!safeNativeCollectorPath(relative))
+        fail('Invalid native transfer path.');
+    if(expectedSha===null
+        ?kind!=='model'||relative!=='learner/manifest.json'
+        :!SHA.test(String(expectedSha||'')))
+        fail('Invalid native transfer artifact digest.');
+    const url=bundleUrl(endpoint,machineId,learnerId,sourceId,relative,kind);
     const destination=path.join(folder,...relative.split('/'));
     fs.mkdirSync(path.dirname(destination),{recursive:true,mode:0o700});
     const fd=fs.openSync(destination,
         fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|
             (fs.constants.O_NOFOLLOW||0),0o600);
-    let ok=false;
+    let ok=false,receivedSha;
     try {
-        await new Promise((resolve,reject)=>{
+        receivedSha=await new Promise((resolve,reject)=>{
             const request=http.request(url,{
                 method:'GET',timeout:60000,
                 headers:{Host:'127.0.0.1:7149',
@@ -262,7 +273,7 @@ async function downloadFile(endpoint,machineId,token,learnerId,collectorId,
             },async response=>{
                 if(response.statusCode!==200) {
                     response.resume();
-                    return reject(Error('Native bundle transfer rejected: HTTP '+
+                    return reject(Error('Native artifact transfer rejected: HTTP '+
                         response.statusCode));
                 }
                 const size=Number(response.headers['content-length']);
@@ -271,38 +282,43 @@ async function downloadFile(endpoint,machineId,token,learnerId,collectorId,
                     reject(Error(message));
                 };
                 if(!Number.isSafeInteger(size)||size<1||size>MAX_FILE||
-                    relative==='rollout-bundle.json'&&size>1024*1024||
-                    response.headers['x-native-bundle-sha256']!==expectedSha)
-                    return abort('Invalid native bundle file identity.');
+                    ['rollout-bundle.json','learner/manifest.json'].includes(relative)&&
+                        size>1024*1024)
+                    return abort('Invalid native artifact transfer size.');
+                const advertised=response.headers[
+                    kind==='model'?'x-native-model-sha256':'x-native-bundle-sha256'];
+                if(!SHA.test(String(advertised||''))||
+                    (expectedSha!==null&&advertised!==expectedSha))
+                    return abort('Native artifact differs from its authorized SHA-256.');
                 let free;
                 try {
                     const volume=fs.statfsSync(folder,{bigint:true});
                     free=BigInt(volume.bavail)*BigInt(volume.bsize);
-                }catch{return abort('Native bundle requires verified free disk space.');}
+                }catch{return abort('Native transfer requires verified free disk space.');}
                 if(free<RESERVE+BigInt(size))
-                    return abort('Native bundle transfer violates disk reserve.');
+                    return abort('Native artifact transfer violates disk reserve.');
                 const digest=crypto.createHash('sha256');
                 let offset=0;
                 try {
                     for await(const chunk of response) {
                         offset+=chunk.length;
-                        if(offset>size)throw Error('Native bundle response exceeded its advertised length.');
+                        if(offset>size)throw Error('Native transfer exceeded its advertised length.');
                         digest.update(chunk);
                         let position=0;
                         while(position<chunk.length) {
                             const written=fs.writeSync(fd,chunk,position,
                                 chunk.length-position,offset-chunk.length+position);
-                            if(written<1)throw Error('Native bundle file write stopped.');
+                            if(written<1)throw Error('Native transfer file write stopped.');
                             position+=written;
                         }
                     }
-                    if(offset!==size||digest.digest('hex')!==expectedSha)
-                        throw Error('Native bundle content differs from its pinned SHA-256.');
+                    if(offset!==size||digest.digest('hex')!==advertised)
+                        throw Error('Native artifact content differs from its pinned SHA-256.');
                     fs.fsyncSync(fd);
-                    resolve();
+                    resolve(advertised);
                 }catch(error){reject(error);}
             });
-            request.on('timeout',()=>request.destroy(Error('Native bundle transfer timed out.')));
+            request.on('timeout',()=>request.destroy(Error('Native transfer timed out.')));
             request.on('error',reject);
             request.end();
         });
@@ -311,6 +327,7 @@ async function downloadFile(endpoint,machineId,token,learnerId,collectorId,
         fs.closeSync(fd);
         if(!ok)fs.unlinkSync(destination);
     }
+    return receivedSha;
 }
 
 async function verifyLocalBundle(directory,expectedReceiptSha) {
