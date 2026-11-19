@@ -2371,6 +2371,8 @@ class ExperimentHub {
             throw Error('Cancel the frozen distributed group plan before individually starting one of its members.');
         const snapshot=this.snapshot();
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
+        if(job?.frozen_parameters?.optimizer_group===true)
+            throw Error('Synchronized native optimizer nodes must start together through their exact approved resource bundle.');
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible)
             throw Error(readiness.reason);
