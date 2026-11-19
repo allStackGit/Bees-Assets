@@ -26,8 +26,6 @@ function filesForJob(folder,projectId,nativeModelsOnly=false) {
         for(const item of found) {
             const relative=next.prefix+item.name;
             if(item.isSymbolicLink())continue;
-            const modelAllowed=projectId==='bees_native'&&
-                safeNativeModelPath(relative);
             const allowed=name=>nativeModelsOnly
                 ?projectId==='bees_native'&&safeNativeModelPath(name)
                 :projectId==='bees_native_collect'
