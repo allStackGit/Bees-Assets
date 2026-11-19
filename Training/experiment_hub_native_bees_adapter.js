@@ -704,7 +704,7 @@ function createNativeBeesAdapter({
         throw Error('Native Bees requires an absolute artifact root.');
     const artifacts = fs.realpathSync(artifactRoot);
     if (!fs.statSync(artifacts).isDirectory()) throw Error('Native Bees artifact root is not a directory.');
-    const evaluator = collectOnly ? {} : evaluationReader(
+    const evaluator = collectOnly || distributedOptimizer?.role==='worker' ? {} : evaluationReader(
         PROJECT, evaluationRoot, evaluationSuites,
         [path.resolve(__dirname, '..'), artifacts],
     );
@@ -1022,7 +1022,11 @@ function createNativeBeesAdapter({
                 !Number.isFinite(row.gradient_submission_wall_seconds) ||
                 row.gradient_submission_wall_seconds<0 ||
                 !Number.isFinite(row.masked_loss_submission_wall_seconds) ||
-                row.masked_loss_submission_wall_seconds<0)
+                row.masked_loss_submission_wall_seconds<0 ||
+                !Number.isSafeInteger(row.torch_cuda_process_peak_allocated_bytes) ||
+                row.torch_cuda_process_peak_allocated_bytes<0 ||
+                !Number.isSafeInteger(row.torch_cuda_process_peak_reserved_bytes) ||
+                row.torch_cuda_process_peak_reserved_bytes<0)
                 throw Error('Native optimizer worker did not provide valid synchronized rank evidence.');
             threads+=row.torch_intraop_threads;
             interopThreads+=row.torch_interop_threads;
@@ -1338,6 +1342,12 @@ function createNativeBeesAdapter({
                     };
                     metrics['optimizer_gpu_'+index+'_masked_loss_submission_seconds']={
                         value:row.masked_loss_submission_wall_seconds,unit:'seconds',
+                    };
+                    metrics['optimizer_gpu_'+index+'_peak_allocated_bytes']={
+                        value:row.torch_cuda_process_peak_allocated_bytes,unit:'bytes',
+                    };
+                    metrics['optimizer_gpu_'+index+'_peak_reserved_bytes']={
+                        value:row.torch_cuda_process_peak_reserved_bytes,unit:'bytes',
                     };
                 });
                 return validateProgress({
