@@ -492,10 +492,34 @@ class RemoteBattleWindow:
         left, top = self.to_screen(x0, y1)
         right, bottom = self.to_screen(x1, y0)
         self.canvas.create_rectangle(left, top, right, bottom, outline="#40546c", width=2)
+        # These destinations are public objective geometry from the host.
+        # Rendering never guesses target areas from visible ship positions.
+        for field, caption, color in (
+            ("escort_destination", "Escort destination", FRIENDLY),
+            ("extraction_destination", "Extraction zone", MINERAL),
+        ):
+            destination = state.get(field)
+            if destination is None:
+                continue
+            (ax, ay), (bx, by) = destination
+            px, py = self.to_screen(ax, ay)
+            qx, qy = self.to_screen(bx, by)
+            left, right = sorted((px, qx))
+            top, bottom = sorted((py, qy))
+            self.canvas.create_rectangle(left, top, right, bottom,
+                                         outline=color, dash=(7, 4), width=2)
+            self.canvas.create_text(left + 4, top + 4, text=caption, anchor="nw",
+                                    fill=color)
+        objective = state.get("campaign_objective") or {}
+        demolition_target = (objective.get("target_map_object_id")
+                             if objective.get("kind") == "demolition" else None)
         for obj in state.get("obstacles", []):
             x, y = self.to_screen(obj["x"], obj["y"])
             color = MINERAL if obj["mining"] else NEUTRAL
             self.canvas.create_oval(x-5, y-5, x+5, y+5, outline=color, width=2)
+            if obj["id"] == demolition_target:
+                self.canvas.create_oval(x-16, y-16, x+16, y+16,
+                                        outline=ENEMY, dash=(4, 3), width=2)
         for shot in state.get("projectiles", []):
             x, y = self.to_screen(shot["x"], shot["y"])
             self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="#ffe4a2", outline="")
@@ -504,6 +528,10 @@ class RemoteBattleWindow:
             sid for squad in state["squads"] if squad["owner"] in selected
             for sid in squad["members"]
         }
+        protected_id = (objective.get("protected_ship_id")
+                        if objective.get("kind") == "survival" else
+                        objective.get("escorted_ship_id")
+                        if objective.get("kind") == "escort" else None)
         for ship in state["ships"]:
             x, y = self.to_screen(ship["x"], ship["y"])
             # Rotation comes from the authoritative native ship motion.
@@ -517,6 +545,9 @@ class RemoteBattleWindow:
             self.canvas.create_polygon(*triangle, fill=color, outline=OUTLINE if ship["owned"] else "")
             if ship["id"] in selected_ship_ids:
                 self.canvas.create_oval(x-14, y-14, x+14, y+14, outline="#ffffff", width=2)
+            if ship["id"] == protected_id:
+                self.canvas.create_oval(x-19, y-19, x+19, y+19,
+                                        outline=MINERAL, dash=(4, 3), width=2)
             health = max(0.0, min(1.0, ship["health"] / max(1, ship["max_health"])))
             if ship["id"] in selected_ship_ids and ship.get("destination"):
                 tx, ty = self.to_screen(*ship["destination"])
@@ -541,6 +572,14 @@ class RemoteBattleWindow:
             self.canvas.create_text(14, 38, text=outcome["reason"], anchor="nw",
                                     fill="#e7efff",
                                     width=max(200, self.canvas.winfo_width() - 28))
+        else:
+            objective_text = self.console.objective_summary(state)
+            if objective_text is not None:
+                self.canvas.create_text(
+                    14, 38, text=f"Objective: {objective_text}", anchor="nw",
+                    fill=MINERAL, width=max(200, self.canvas.winfo_width() - 28),
+                    font=("TkDefaultFont", 10, "bold"),
+                )
         dialogue = self.visible_dialogue()
         if dialogue is not None:
             speaker, line_text = dialogue

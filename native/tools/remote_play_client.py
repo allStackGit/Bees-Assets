@@ -35,6 +35,7 @@ def remote_token(side):
 
 HELP = """Commands:
   status               Show the latest world and selected friendly squads
+  objective            Show the authored mission and reinforcement status
   ships                List currently visible ships and their positions
   squads               List friendly and visible target squads
   obstacles            List visible map objects and mining asteroids
@@ -148,6 +149,36 @@ class RemoteConsole:
             return self.last_campaign_receipt
 
     @staticmethod
+    def objective_summary(state):
+        """Display the host's current objective; never infer it from ships."""
+        objective = state.get("campaign_objective")
+        if objective is None:
+            return None
+        kind = objective["kind"]
+        if kind == "survival":
+            description = (f"Defend ship {objective['protected_ship_id']}"
+                           f" (side {objective['defending_side']})")
+        elif kind == "demolition":
+            description = (f"Demolish map target {objective['target_map_object_id']}"
+                           f" (attacking side {objective['attacking_side']})")
+        elif kind == "escort":
+            description = (f"Escort ship {objective['escorted_ship_id']}"
+                           f" to the destination (side {objective['escorting_side']})")
+        elif kind == "extraction":
+            description = f"Extract ships from side {objective['exiting_side']}"
+        else:
+            return None
+        remaining = objective.get("seconds_remaining")
+        if remaining is not None:
+            description += f" | {remaining:.1f}s remaining"
+        waves = state.get("reinforcements") or {}
+        if waves.get("pending", 0):
+            description += f" | {waves['pending']} reinforcement waves pending"
+            if waves.get("next_tick") is not None:
+                description += f" (next tick {waves['next_tick']})"
+        return description
+
+    @staticmethod
     def campaign_receipt_summary(message):
         outcome = message["campaign_outcome"]
         saved = "victory" if outcome.get("mission_success",
@@ -222,9 +253,17 @@ class RemoteConsole:
             outcome = state.get("terminal_outcome")
             if outcome is not None:
                 print(f"Battle finished: {outcome['label']} — {outcome['reason']}")
+            objective = self.objective_summary(state)
+            if objective is not None:
+                print(f"Objective: {objective}")
             receipt = self.campaign_receipt_snapshot()
             if receipt is not None:
                 print(self.campaign_receipt_summary(receipt))
+            return
+        if cmd == "objective":
+            objective = self.objective_summary(state)
+            print(f"Objective: {objective}" if objective is not None
+                  else "No active authored objective")
             return
         if cmd == "ships":
             for ship in state["ships"]:
