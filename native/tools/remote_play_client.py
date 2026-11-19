@@ -7,6 +7,7 @@ Requires BEES_NATIVE_REMOTE_TOKEN to match the server's environment.
 """
 import argparse
 import json
+import math
 import os
 from queue import SimpleQueue
 import shlex
@@ -89,6 +90,7 @@ class RemoteConsole:
         self.selected = []
         self.next_request = 1
         self.held_scope = None
+        self.held_begin_request = None
         self.alive = True
         self.last_terminal_episode = None
         self.last_dialogue_cue = None
@@ -144,11 +146,18 @@ class RemoteConsole:
                             print(f"Authenticated; player side {side} ready")
                     elif kind == "held_fire_released":
                         self.held_scope = None
+                        self.held_begin_request = None
                         note = "Held fire released by native host"
                         self.notifications.put(note)
                         if not self.silent:
                             print(note)
                     elif kind == "input_result":
+                        if message.get("request_id") == self.held_begin_request:
+                            self.held_begin_request = None
+                            if message.get("processed") is not True:
+                                # The host rejected Begin; do not keep a
+                                # fictional local gesture that blocks retry.
+                                self.held_scope = None
                         note = f"Order {message['request_id']}: {message['feedback']}"
                         self.notifications.put(note)
                         if not self.silent:
@@ -259,16 +268,28 @@ class RemoteConsole:
         if self.held_scope is not None and (
                 self.held_scope["world_id"], self.held_scope["episode_revision"]) != scope:
             self.held_scope = None
+            self.held_begin_request = None
+        if kind in ("begin", "aim") and (
+                not isinstance(target, dict) or
+                not all(isinstance(target.get(axis), (int, float)) and
+                        math.isfinite(target[axis]) for axis in ("x", "y"))):
+            raise ValueError("held fire needs a finite world aim point")
         if kind == "begin":
             if self.held_scope is not None:
                 raise ValueError("end the existing held-fire gesture first")
             owners = self.selected_owners(state) if owners is None else owners
             if not owners or target is None:
                 raise ValueError("held fire needs selected squads and an aim point")
-            self.send(("held_fire", {"action": {
-                "Begin": {"squads": owners, "target": target},
-            }}), state, owners)
             self.held_scope = {"world_id": scope[0], "episode_revision": scope[1]}
+            self.held_begin_request = self.next_request
+            try:
+                self.send(("held_fire", {"action": {
+                    "Begin": {"squads": owners, "target": target},
+                }}), state, owners)
+            except (OSError, ValueError):
+                self.held_scope = None
+                self.held_begin_request = None
+                raise
         elif kind in ("aim", "end"):
             if self.held_scope is None:
                 raise ValueError("no held-fire gesture is active")
@@ -276,6 +297,7 @@ class RemoteConsole:
             self.send(("held_fire", {"action": action}), self.held_scope, [])
             if kind == "end":
                 self.held_scope = None
+                self.held_begin_request = None
         else:
             raise ValueError("unknown held-fire action")
 
@@ -297,6 +319,11 @@ class RemoteConsole:
             print(HELP)
             return
         if cmd == "quit":
+            if self.held_scope is not None:
+                try:
+                    self.held_fire("end")
+                except (OSError, ValueError):
+                    pass  # Socket disconnect also releases host-owned weapons.
             self.alive = False
             return
         state = self.snapshot()
