@@ -59,7 +59,12 @@ function configuration(hub) {
     const project=path.join(ai,'projects/basic-training');
     const config=path.join(project,'environment.json');
     const interpreter=path.join(ai,'envs/cpu-training/bin/python');
-    regular(config);regular(interpreter);
+    regular(config);
+    // Preserve this approved Python virtualenv invocation path. bin/python
+    // may be a symlink; resolving it loses the environment's site-packages.
+    if(path.resolve(interpreter)!==interpreter||
+        !fs.statSync(interpreter).isFile())
+        throw Error('Approved Courier Python virtual environment is unavailable.');
     directory(project);
     const raw=fs.readFileSync(config);
     if(raw.length<2||raw.length>262144)throw Error('Courier environment JSON is invalid.');
