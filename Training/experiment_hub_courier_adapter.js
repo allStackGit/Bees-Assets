@@ -33,6 +33,9 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_rollout_compressed_collectors',
     'training_shared_last_reply_worker','training_shared_last_copy_worker',
     'training_shared_last_wire_worker',
+    'training_shared_gpu_collectors','training_shared_gpu_policy_retained',
+    'training_shared_gpu_policy_reused',
+    'training_checkpoint_parallel_workers',
     'training_slowest_worker','training_last_reply_worker',
     'training_simulation_slowest_worker',
     'training_simulated_steps','training_useful_steps','training_collected_useful_steps',
@@ -159,6 +162,15 @@ function courierMetrics(source) {
         'training_sim_processes','training_gpu_devices_active',
         'training_gpu_devices_assigned','training_slowest_worker',
         'training_shared_last_wire_worker',
+        'training_shared_gpu_collectors',
+        'training_shared_gpu_policy_retained',
+        'training_shared_gpu_policy_reused',
+        'training_shared_gpu_snapshot_seconds',
+        'training_shared_gpu_snapshot_bytes',
+        'training_checkpoint_parallel_workers',
+        'training_checkpoint_snapshot_bytes',
+        'training_checkpoint_worker_max_seconds',
+        'training_checkpoint_append_seconds',
     ].includes(name)||name.startsWith('training_live_')||
         name.startsWith('training_gpu_memory_')||
         name.startsWith('training_gpu_placement_')||
@@ -210,7 +222,8 @@ function courierMetrics(source) {
     const criticalWorkerFields=[
         'collect_steps_per_second','collection_seconds',
         'optimization_seconds','simulation_seconds',
-        'inference_seconds','sim_physical_processes',
+        'inference_seconds','gpu_policy_snapshot_seconds',
+        'remote_roundtrip_seconds','sim_physical_processes',
         'sim_process_ceiling','gpu_fwd_stream_seconds',
         'observation_seconds','is_remote','sim_trial',
     ];
