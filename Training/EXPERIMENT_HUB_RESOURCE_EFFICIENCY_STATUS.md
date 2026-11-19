@@ -3,7 +3,7 @@
 Updated 2026-11-19. Local integration branches: Hub `feat/hub-partial-ppo-staging-20261118`; TinyBrains `feat/training-efficiency-integrated-20261118`; Courier `feat/courier-versioned-policy-delta-20261118`. Native Bees rewrite is out of scope.
 
 Latest companion branches are integrated locally (Courier `694a825`, TinyBrains
-`c61ec99d`, Hub `773d326b1`). The Courier merge preserves cached vectorized
+`c61ec99d`, Hub listener continuation `16956847e`). The Courier merge preserves cached vectorized
 process groups, one aggregate receipt and live partial owner migrations, while
 exposing the companion grouped-command counters through the existing Hub path.
 Sparse speed observations retain the batched base-observation contract. Short
@@ -18,6 +18,23 @@ remains complete. Previously invalid GPU detail names shorten only when they
 exceed the existing neutral limit, preserving valid historical names. All 34
 1–17 collector / small-and-large numeric fixtures validate within 500 fields
 and the unchanged 32-KiB report envelope, with complete critical worker coverage.
+
+Shared inference timing now separates producer body/calibration/copies,
+consumer GPU-ready waits/copies and host IPC/packing. Bounded reusable events
+add no per-step stream join. Shared work counts once per device; overlapping
+consumer service spans retain their own coverage. Explicit producer/client
+GPU identities exclude remote ordinal aliases. Compact critical-worker evidence
+survives source truncation. Existing Hub diagnosis and monitor report sustained
+registration/queue/IPC/copy/inference/calibration pressure and missing coverage,
+without treating stream intervals as exclusive GPU utilization. Busy peer work
+alone cannot identify the critical consumer. Checks passed for deferred timing,
+retirement/drain, 166 exact-unit native fields, 64-worker compact retention,
+asynchronous replies, rotating owners and four persistent PPO workers.
+
+Next implementation priority is retaining unchanged live world shards when
+shared collector map allocations change; the existing checkpoint-aligned path
+reconstructs changed pools. Joint physical-machine useful-SPS/continuation
+qualification remains outstanding.
 
 Courier now has a checked frozen-policy batch executor for the outstanding
 independent-policy inference work. Distinct LSTM/MLP weights pack once; each

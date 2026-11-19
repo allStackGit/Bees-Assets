@@ -2304,7 +2304,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Collector '+dispatchOwner+' regularly waits for learner dispatch'
                 :'';
             const measuredWorkers=[];
-            for(let i=0;i<9;i++) {
+            for(let i=0;i<17;i++) {
                 for(const stageName of ['engine','observation','inference','opponent']) {
                     if(measured['collector_'+i+'_stage_'+stageName+
                             '_dominant']?.value===1)
@@ -2319,7 +2319,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' (not hardware saturation)'
                 :'';
             const enginePressure=[];
-            for(let i=0;i<9;i++) {
+            for(let i=0;i<17;i++) {
                 if(measured['collector_'+i+'_sim_straggler_pressure']?.value===1)
                     enginePressure.push((i===0?'Learner':'Collector '+i)+
                         ' waiting for slowest simulation');
@@ -2374,6 +2374,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     forwardSignals.join('; ')+
                     ' (stream time includes dispatch gaps; not hardware saturation)'
                 :'';
+            const brokerOwner=measured.training_broker_pressure_owner?.value;
+            const brokerGpu=measured.training_broker_pressure_gpu?.value;
+            const brokerFlags=[
+                ['training_broker_wait_pressure','waiting for shared inference'],
+                ['training_broker_register_pressure','waiting for model snapshots'],
+                ['training_broker_probe_pressure','inference calibration'],
+                ['training_broker_queue_pressure','inference requests queueing'],
+                ['training_broker_copy_pressure','input/output copying'],
+                ['training_broker_rpc_pressure','inference communication delay'],
+                ['training_broker_device_pressure','slow GPU inference stage'],
+                ['training_broker_io_pressure','slow GPU input/output stage'],
+                ['training_broker_gpu_uncertain','GPU contribution still uncertain'],
+                ['training_broker_gpu_host_busy','high observed GPU activity'],
+                ['training_broker_gpu_host_idle','low observed GPU activity'],
+            ].filter(([metric])=>measured[metric]?.value===1).map(([,label])=>label);
+            const brokerLocation=Number.isSafeInteger(brokerOwner)&&brokerOwner>=0&&brokerOwner<64
+                ?'worker '+brokerOwner+(Number.isSafeInteger(brokerGpu)&&brokerGpu>=0&&brokerGpu<8
+                    ?' / GPU '+brokerGpu:''):Number.isSafeInteger(brokerGpu)&&brokerGpu>=0&&brokerGpu<8
+                    ?'GPU '+brokerGpu:'shared inference';
+            const brokerSignal=job.project_id==='courier'&&brokerFlags.length
+                ?' · Sustained inference delay at '+brokerLocation+': '+brokerFlags.join('; '):'';
             const resourceFlags=[
                 ['pipeline_cpu_lease_pressure','CPU lease nearly occupied'],
                 ['pipeline_cpu_throttle_pressure','CPU quota throttling'],
@@ -2426,7 +2447,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
                 enginePressureSignal+connectSignal+remotePrepSignal+dispatchSignal+
                 courierQueueSignal+courierImbalanceSignal+
-                forwardSignal+resourceSignal+remoteResourceSignal+
+                forwardSignal+brokerSignal+resourceSignal+remoteResourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2476,6 +2497,36 @@ document.addEventListener('DOMContentLoaded', () => {
         'value_loss','baseline_loss','entropy','local_elo','mean_reward'];
     const knownPerformanceMetrics=[
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
+        'source_metrics_omitted',
+        ...['mode','next_mode','policies','next_policies','max_policies','cohorts','next_cohorts',
+            'requests','results','host_requests','kernel_batches','routed_states','compute_states',
+            'padding_states','wait_max_seconds','wait_owner','queue_max_seconds','queue_owner',
+            'request_pack_max_seconds','result_copy_max_seconds','reply_pack_max_seconds',
+            'send_max_seconds','recv_max_seconds','finish_max_seconds',
+            'register_owner','register_max_seconds','register_work_share','register_pressure',
+            'request_tensor_bytes','result_tensor_bytes','body_sum_seconds',
+            'gpu_stream_sum_seconds','gpu_probe_sum_seconds','gpu_input_sum_seconds',
+            'gpu_output_sum_seconds','gpu_stream_samples','gpu_probe_samples',
+            'gpu_service_max_seconds','gpu_service_samples','gpu_service_probes','gpu_service_missed',
+            'probe_wait_max_seconds','probe_work_share','probe_pressure','service_work_share',
+            'own_io_work_share','input_stage_max_seconds',
+            'client_wait_max_seconds','client_copy_max_seconds','client_wait_samples',
+            'client_copy_samples','client_timing_missed',
+            'gpu_input_samples','gpu_output_samples','gpu_timing_missed',
+            'wait_work_share','queue_wait_share','copy_work_share','rpc_work_share',
+            'device_work_share','io_work_share','wait_pressure','queue_pressure',
+            'copy_pressure','rpc_pressure','device_pressure','io_pressure',
+            'pressure_owner','pressure_gpu','gpu_uncertain','gpu_host_busy','gpu_host_idle'
+        ].map(name=>'training_broker_'+name),
+        ...['owner','gpu','client_gpu','requests','forward_seconds','wait_seconds','queue_seconds','register_seconds',
+            'service_seconds','service_samples','service_probes','service_missed','results',
+            'io_seconds','io_samples','io_expected','io_missed','probe_seconds','pack_seconds',
+            'copy_seconds','send_seconds','recv_seconds','input_seconds',
+            'client_wait_seconds','client_copy_seconds','client_wait_samples',
+            'client_copy_samples','client_missed'
+        ].map(name=>'training_broker_crit_'+name),
+        ...Array.from({length:8},(_,i)=>['seconds','samples','probes','batches','missed',
+            'io_seconds','io_samples','io_expected'].map(name=>'training_broker_gpu_'+i+'_'+name)).flat(),
         'active_training_time','training_tracked_active_seconds','total_ant_decisions',
         'pipeline_collection_work_share','pipeline_optimization_work_share',
         'pipeline_collection_dominant','pipeline_optimization_dominant',

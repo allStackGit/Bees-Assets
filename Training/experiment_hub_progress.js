@@ -93,6 +93,18 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_remote_cpu_throttle_pressure','pipeline_remote_cpu_underuse_evidence',
             'pipeline_remote_ram_lease_pressure','pipeline_remote_gpu_host_busy_pressure'])
             retain(name,reported[name]);
+        for(const name of ['training_broker_mode','training_broker_policies',
+            'training_broker_wait_pressure','training_broker_queue_pressure',
+            'training_broker_register_pressure','training_broker_register_work_share',
+            'training_broker_probe_pressure','training_broker_probe_work_share',
+            'training_broker_service_work_share','training_broker_own_io_work_share',
+            'training_broker_copy_pressure','training_broker_rpc_pressure',
+            'training_broker_device_pressure','training_broker_io_pressure',
+            'training_broker_pressure_owner','training_broker_pressure_gpu',
+            'training_broker_gpu_uncertain','training_broker_gpu_host_busy',
+            'training_broker_gpu_host_idle','training_broker_wait_work_share',
+            'training_broker_device_work_share','training_broker_io_work_share'])
+            retain(name,reported[name]);
         retain('simulation_match_steps_per_second',
             reported.simulation_match_steps_per_second);
         for(const name of ['ppo_gpu_batch_target_pixels',
@@ -341,6 +353,24 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_broker_routed_states','training_broker_compute_states',
             'training_broker_padding_states','training_broker_register_denials',
             'training_broker_wait_max_seconds','training_broker_queue_max_seconds',
+            'training_broker_wait_work_share','training_broker_queue_wait_share',
+            'training_broker_copy_work_share','training_broker_rpc_work_share',
+            'training_broker_device_work_share','training_broker_io_work_share',
+            'training_broker_wait_pressure','training_broker_queue_pressure',
+            'training_broker_register_pressure','training_broker_register_work_share',
+            'training_broker_probe_pressure','training_broker_probe_work_share',
+            'training_broker_service_work_share','training_broker_own_io_work_share',
+            'training_broker_copy_pressure','training_broker_rpc_pressure',
+            'training_broker_device_pressure','training_broker_io_pressure',
+            'training_broker_pressure_owner','training_broker_pressure_gpu',
+            'training_broker_gpu_uncertain','training_broker_gpu_host_busy',
+            'training_broker_gpu_host_idle','training_broker_gpu_stream_sum_seconds',
+            'training_broker_gpu_probe_sum_seconds','training_broker_gpu_input_sum_seconds',
+            'training_broker_gpu_service_max_seconds','training_broker_probe_wait_max_seconds',
+            'training_broker_input_stage_max_seconds',
+            'training_broker_gpu_output_sum_seconds','training_broker_gpu_timing_missed',
+            'training_broker_request_tensor_bytes','training_broker_result_tensor_bytes',
+            'training_broker_request_pack_max_seconds','training_broker_result_copy_max_seconds',
             'training_broker_body_sum_seconds','training_broker_pack_setup_sum_seconds',
             'training_sim_child_os_threads',
             'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
@@ -552,9 +582,16 @@ function collectTimingEvidence(prior,at,sample) {
         const point={...sample,at};
         // Heartbeats can land every 15 seconds. Retaining only the last
         // six raw reports would never meet the two-minute evidence gate.
-        if(prior.bucketAt!==undefined&&at-prior.bucketAt<30000)
+        if(prior.bucketAt!==undefined&&at-prior.bucketAt<30000) {
+            // A last-value overwrite must not hide rotating broker owners
+            // within the bucket. Device evidence can remain stable while
+            // individual workers alternate on the same producer.
+            const previous=prior.samples[prior.samples.length-1];
+            for(const key of Object.keys(point))
+                if(key.startsWith('broker')&&Object.hasOwn(previous,key)&&previous[key]!==point[key])
+                    point[key]=null;
             prior.samples[prior.samples.length-1]=point;
-        else {
+        } else {
             prior.samples.push(point);
             prior.bucketAt=at;
             if(prior.samples.length>6)prior.samples.shift();
@@ -1157,8 +1194,134 @@ class BottleneckEvidence {
                 ?seconds('worker_'+slowest+'_simulation_seconds'):null;
             const slowestCollection=Number.isSafeInteger(slowest)
                 ?seconds('worker_'+slowest+'_collection_seconds'):null;
+            const brokerCount=name=>{
+                const item=metrics[name];
+                return item?.unit==='count'&&Number.isSafeInteger(item.value)&&item.value>=0
+                    ?item.value:null;
+            };
+            const brokerCritOwner=brokerCount('training_broker_crit_owner');
+            const brokerOwnSeconds=(name,alias=name)=>seconds('worker_'+slowest+'_broker_'+name)??
+                (brokerCritOwner===slowest?seconds('training_broker_crit_'+alias):null);
+            const brokerOwnCount=(name,alias=name)=>brokerCount('worker_'+slowest+'_broker_'+name)??
+                (brokerCritOwner===slowest?brokerCount('training_broker_crit_'+alias):null);
+            const brokerWaitOwner=brokerCount('training_broker_wait_owner');
+            const brokerQueueOwner=brokerCount('training_broker_queue_owner');
+            const brokerRegisterOwner=brokerCount('training_broker_register_owner');
+            const brokerRegister=brokerOwnSeconds('register_seconds')??
+                (brokerRegisterOwner===slowest?seconds('training_broker_register_max_seconds'):null);
+            const brokerCpuWait=brokerOwnSeconds('wait_seconds')??
+                (brokerWaitOwner===slowest?seconds('training_broker_wait_max_seconds'):null);
+            const brokerQueue=brokerOwnSeconds('queue_seconds')??
+                (brokerQueueOwner===slowest?seconds('training_broker_queue_max_seconds'):null);
+            const brokerClientMissed=brokerOwnCount('client_timing_missed','client_missed');
+            const brokerClientWait=brokerOwnSeconds('client_wait_seconds');
+            const brokerClientWaitKnown=brokerOwnCount('client_wait_samples')>=6&&
+                brokerOwnCount('client_wait_samples')===brokerOwnCount('requests')&&
+                brokerClientMissed===0&&brokerClientWait!==null&&brokerClientWait<=slowestCollection;
+            // Response bytes can arrive while the producer's CUDA work is
+            // pending. The consumer stream interval includes IPC readiness;
+            // neither this interval nor CPU polling is exclusive GPU work.
+            const brokerWait=brokerClientWaitKnown?brokerClientWait:brokerCpuWait;
+            const brokerUsed=brokerWait>0||brokerRegister>0||brokerOwnCount('requests')>0;
+            const brokerWaitShare=slowestCollection>0&&brokerWait!==null&&brokerWait<=slowestCollection
+                ?brokerWait/slowestCollection:null;
+            if(brokerWaitShare!==null)add('training_broker_wait_work_share',brokerWaitShare);
+            const brokerQueueShare=brokerWait>0&&brokerQueue!==null&&brokerQueue<=brokerWait
+                ?brokerQueue/brokerWait:null;
+            if(brokerQueueShare!==null)add('training_broker_queue_wait_share',brokerQueueShare);
+            const brokerPack=brokerOwnSeconds('request_pack_seconds','pack_seconds');
+            const brokerCopy=brokerOwnSeconds('result_copy_seconds','copy_seconds');
+            const brokerClientCopy=brokerOwnSeconds('client_copy_seconds');
+            const brokerClientCopyKnown=brokerOwnCount('client_copy_samples')>=6&&
+                brokerOwnCount('client_copy_samples')===brokerOwnCount('results')&&
+                brokerClientMissed===0&&brokerClientCopy!==null&&brokerClientCopy<=slowestCollection;
+            // Host dispatch and device copy intervals overlap. Keep the
+            // larger observed copy wall rather than adding nested work.
+            const brokerCopySeconds=brokerPack!==null&&brokerCopy!==null
+                ?brokerPack+Math.max(brokerCopy,brokerClientCopyKnown?brokerClientCopy:0):null;
+            const brokerCopyShare=slowestCollection>0&&brokerCopySeconds!==null&&
+                brokerCopySeconds<=slowestCollection?brokerCopySeconds/slowestCollection:null;
+            if(brokerCopyShare!==null)add('training_broker_copy_work_share',brokerCopyShare);
+            const brokerSend=brokerOwnSeconds('send_seconds'),brokerRecv=brokerOwnSeconds('recv_seconds');
+            // Send includes request packing. Remove that nested wall;
+            // local serialization/IPC is not physical-network throughput.
+            const brokerRpc=brokerSend!==null&&brokerPack!==null&&brokerRecv!==null&&
+                brokerSend>=brokerPack?brokerSend-brokerPack+brokerRecv:null;
+            const brokerRpcShare=slowestCollection>0&&brokerRpc!==null&&brokerRpc<=slowestCollection
+                ?brokerRpc/slowestCollection:null;
+            if(brokerRpcShare!==null)add('training_broker_rpc_work_share',brokerRpcShare);
+            const brokerUseful=metrics.training_useful_steps_per_second,brokerRejected=metrics.training_rejected_workers;
+            const brokerComparable=brokerUseful?.unit==='rate'&&Number.isFinite(brokerUseful.value)&&
+                brokerUseful.value>0&&(brokerRejected===undefined||
+                    brokerRejected.unit==='count'&&brokerRejected.value===0);
+            const brokerCritical=brokerComparable&&Number.isSafeInteger(slowest)&&slowest>=0&&slowest<count&&
+                metrics.training_last_reply_worker?.value===slowest&&brokerUsed&&
+                slowestCollection>=0.30*wall&&gapShare!==null&&gapShare>=0.20&&
+                (queueShare===null||queueShare<=0.10);
+            const brokerRegisterShare=slowestCollection>0&&brokerRegister!==null&&
+                brokerRegister<=slowestCollection?brokerRegister/slowestCollection:null;
+            if(brokerRegisterShare!==null)add('training_broker_register_work_share',brokerRegisterShare);
+            const brokerRegisterHint=brokerCritical&&brokerRegisterShare!==null&&
+                brokerRegisterShare>=0.30&&brokerRegister>=0.25;
+            const brokerWaitHint=brokerCritical&&brokerWaitShare!==null&&brokerWaitShare>=0.35&&brokerWait>=0.25;
+            const brokerQueueHint=brokerWaitHint&&brokerQueueShare!==null&&brokerQueueShare>=0.25&&brokerQueue>=0.25;
+            const brokerCopyHint=brokerCritical&&brokerCopyShare!==null&&brokerCopyShare>=0.25&&brokerCopySeconds>=0.25;
+            const brokerRpcHint=brokerCritical&&brokerRpcShare!==null&&brokerRpcShare>=0.25&&brokerRpc>=0.25;
+            // Shared device totals count each interval once. Consumer
+            // service spans overlap and must never be summed as device work.
+            // Only this critical consumer's covered spans identify its delay.
+            const brokerGpu=brokerOwnCount('gpu_device','gpu')??
+                (brokerWaitOwner===slowest?brokerCount('training_broker_wait_gpu'):null);
+            const brokerGpuExpected=Number.isSafeInteger(gpuCount)&&gpuCount>0;
+            const brokerDevice=brokerGpuExpected&&Number.isSafeInteger(brokerGpu)&&
+                brokerGpu>=0&&brokerGpu<Math.min(8,gpuCount)?'training_broker_gpu_'+brokerGpu+'_':null;
+            const brokerSamples=brokerDevice?brokerCount(brokerDevice+'samples'):null;
+            const brokerProbes=brokerDevice?brokerCount(brokerDevice+'probes'):null;
+            const brokerBatches=brokerDevice?brokerCount(brokerDevice+'batches'):null;
+            const brokerMissed=brokerDevice?brokerCount(brokerDevice+'missed'):null;
+            const brokerDeviceSeconds=brokerDevice?seconds(brokerDevice+'seconds'):null;
+            const brokerKnown=brokerSamples!==null&&brokerSamples>=6&&brokerProbes!==null&&
+                brokerMissed===0&&brokerSamples+brokerProbes===brokerBatches&&
+                brokerDeviceSeconds!==null&&brokerDeviceSeconds<=wall;
+            if(brokerKnown)add('training_broker_device_work_share',brokerDeviceSeconds/wall);
+            const brokerServiceSeconds=brokerOwnSeconds('gpu_service_seconds','service_seconds');
+            const brokerServiceSamples=brokerOwnCount('gpu_service_samples','service_samples');
+            const brokerServiceProbes=brokerOwnCount('gpu_service_probes','service_probes');
+            const brokerServiceMissed=brokerOwnCount('gpu_service_missed','service_missed');
+            const brokerServiceKnown=brokerServiceSamples!==null&&brokerServiceSamples>=6&&
+                brokerServiceProbes!==null&&brokerServiceSamples+brokerServiceProbes===brokerOwnCount('results')&&
+                brokerServiceMissed===0&&brokerServiceSeconds!==null&&brokerServiceSeconds<=slowestCollection&&
+                (!brokerKnown||brokerServiceSeconds<=brokerDeviceSeconds+1e-6);
+            if(brokerServiceKnown)add('training_broker_service_work_share',brokerServiceSeconds/slowestCollection);
+            const brokerProbeSeconds=brokerOwnSeconds('probe_wait_seconds','probe_seconds');
+            const brokerProbeShare=slowestCollection>0&&brokerProbeSeconds!==null&&
+                brokerProbeSeconds<=slowestCollection?brokerProbeSeconds/slowestCollection:null;
+            if(brokerProbeShare!==null)add('training_broker_probe_work_share',brokerProbeShare);
+            const brokerProbeHint=brokerCritical&&brokerServiceMissed===0&&brokerServiceProbes>0&&
+                brokerProbeShare!==null&&brokerProbeShare>=0.30&&brokerProbeSeconds>=0.25;
+            const brokerDeviceHint=brokerCritical&&brokerDevice!==null&&brokerServiceKnown&&
+                brokerServiceSeconds>=0.30*wall&&brokerServiceSeconds>=0.30*slowestCollection;
+            const brokerIoSamples=brokerDevice?brokerCount(brokerDevice+'io_samples'):null;
+            const brokerIoExpected=brokerDevice?brokerCount(brokerDevice+'io_expected'):null;
+            const brokerIoSeconds=brokerDevice?seconds(brokerDevice+'io_seconds'):null;
+            const brokerIoKnown=brokerIoSamples!==null&&brokerIoSamples>=6&&
+                brokerIoSamples===brokerIoExpected&&brokerMissed===0&&brokerIoSeconds!==null&&brokerIoSeconds<=wall;
+            if(brokerIoKnown)add('training_broker_io_work_share',brokerIoSeconds/wall);
+            const brokerOwnIoSeconds=brokerOwnSeconds('io_seconds');
+            const brokerOwnIoSamples=brokerOwnCount('io_samples'),brokerOwnIoExpected=brokerOwnCount('io_expected');
+            const brokerOwnIoMissed=brokerOwnCount('io_missed');
+            const brokerOwnIoKnown=brokerOwnIoSamples!==null&&brokerOwnIoSamples>=6&&
+                brokerOwnIoSamples===brokerOwnIoExpected&&brokerOwnIoMissed===0&&brokerOwnIoSeconds!==null&&
+                brokerOwnIoSeconds<=slowestCollection&&(!brokerIoKnown||brokerOwnIoSeconds<=brokerIoSeconds+1e-6);
+            if(brokerOwnIoKnown)add('training_broker_own_io_work_share',brokerOwnIoSeconds/slowestCollection);
+            const brokerIoHint=brokerCritical&&brokerDevice!==null&&brokerOwnIoKnown&&
+                brokerOwnIoSeconds>=0.30*wall&&brokerOwnIoSeconds>=0.30*slowestCollection;
+            const brokerHostMetric=eligibleGpu&&brokerGpu<gpuCount&&(brokerDeviceHint||brokerIoHint)
+                ?percent('host_gpu_'+brokerGpu+'_busy_pct'):null;
+            const brokerHostBusy=brokerHostMetric!==null&&brokerHostMetric<=100?brokerHostMetric:null;
             const forward=Number.isSafeInteger(slowest)
-                ?seconds('worker_'+slowest+'_gpu_fwd_stream_seconds'):null;
+                ?(seconds('worker_'+slowest+'_gpu_fwd_stream_seconds')??
+                    (brokerCritOwner===slowest?seconds('training_broker_crit_forward_seconds'):null)):null;
             if(slowestCollection>0&&forward!==null&&forward<=slowestCollection)
                 // The longest worker is not necessarily the last reply.
                 // Report measured work share without asserting GPU saturation.
@@ -1166,7 +1329,7 @@ class BottleneckEvidence {
                     forward/slowestCollection);
             // A worker can have long GPU stream time but finish before the
             // PPO barrier. Require measured exposure of the same owner.
-            const gpuForwardHint=Number.isSafeInteger(slowest)&&
+            const gpuForwardHint=!brokerUsed&&Number.isSafeInteger(slowest)&&
                 slowest>=0&&slowest<count&&
                 metrics.training_last_reply_worker?.value===slowest&&
                 slowestCollection>0&&forward!==null&&
@@ -1316,11 +1479,55 @@ class BottleneckEvidence {
                     courierGpuGuard:guardHint,
                     courierGpuSnapshot:snapshotHint,
                     courierGpuCopy:gpuCopyHint,
-                    courierGpuForward:gpuForwardHint?slowest:null});
+                    courierGpuForward:gpuForwardHint?slowest:null,
+                    brokerWait:brokerWaitHint?slowest:null,
+                    brokerRegister:brokerRegisterHint?slowest:null,
+                    brokerQueue:brokerQueueHint?slowest:null,
+                    brokerCopy:brokerCopyHint?slowest:null,
+                    brokerRpc:brokerRpcHint?slowest:null,
+                    brokerStageOwner:brokerDeviceHint||brokerIoHint?slowest:null,
+                    brokerDevice:brokerDeviceHint?brokerGpu:null,
+                    brokerIo:brokerIoHint?brokerGpu:null,
+                    brokerProbe:brokerProbeHint?slowest:null,
+                    brokerUncertain:brokerCritical&&brokerGpuExpected&&
+                        (brokerWaitHint||forward>=0.35*slowestCollection)&&
+                        (!brokerDevice||!brokerServiceKnown||!brokerOwnIoKnown||
+                         brokerClientMissed>0)?slowest:null,
+                    brokerHostBusy:brokerHostBusy!==null&&brokerHostBusy>=90?brokerGpu:null,
+                    brokerHostIdle:brokerHostBusy!==null&&brokerHostBusy<=30?brokerGpu:null});
             add('training_timing_sample_count',recent.length,'count');
             if(recent.length>=5&&
                 recent.at(-1).at-recent[0].at>=120000) {
                 const sustained=fn=>recent.filter(fn).length>=5;
+                for(const [field,name] of [
+                    ['brokerWait','training_broker_wait_pressure'],
+                    ['brokerRegister','training_broker_register_pressure'],
+                    ['brokerProbe','training_broker_probe_pressure'],
+                    ['brokerQueue','training_broker_queue_pressure'],
+                    ['brokerCopy','training_broker_copy_pressure'],
+                    ['brokerRpc','training_broker_rpc_pressure'],
+                    ['brokerUncertain','training_broker_gpu_uncertain']]) {
+                    const owner=recent.at(-1)[field];
+                    if(Number.isSafeInteger(owner)&&recent.filter(x=>x[field]===owner).length>=5) {
+                        add(name,1,'count');
+                        add('training_broker_pressure_owner',owner,'count');
+                    }
+                }
+                const brokerStageOwner=recent.at(-1).brokerStageOwner;
+                if(Number.isSafeInteger(brokerStageOwner)&&
+                    recent.filter(x=>x.brokerStageOwner===brokerStageOwner).length>=5)
+                    add('training_broker_pressure_owner',brokerStageOwner,'count');
+                for(const [field,name] of [
+                    ['brokerDevice','training_broker_device_pressure'],
+                    ['brokerIo','training_broker_io_pressure'],
+                    ['brokerHostBusy','training_broker_gpu_host_busy'],
+                    ['brokerHostIdle','training_broker_gpu_host_idle']]) {
+                    const owner=recent.at(-1)[field];
+                    if(Number.isSafeInteger(owner)&&recent.filter(x=>x[field]===owner).length>=5) {
+                        add(name,1,'count');
+                        add('training_broker_pressure_gpu',owner,'count');
+                    }
+                }
                 if(sustained(x=>x.courierQueue))
                     add('training_queue_pressure',1,'count');
                 if(sustained(x=>x.courierSimQueue))

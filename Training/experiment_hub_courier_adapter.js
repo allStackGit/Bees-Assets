@@ -67,7 +67,15 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_broker_cohorts','training_broker_next_cohorts',
     'training_broker_eligible','training_broker_adjustments','training_broker_accepted',
     'training_broker_ram_denials','training_broker_vram_denials','training_broker_start_denials',
-    'training_broker_requests','training_broker_host_requests','training_broker_register_denials',
+    'training_broker_requests','training_broker_results','training_broker_host_requests','training_broker_register_denials',
+    'training_broker_wait_owner','training_broker_queue_owner','training_broker_wait_gpu',
+    'training_broker_register_owner',
+    'training_broker_client_wait_samples','training_broker_client_copy_samples',
+    'training_broker_client_timing_missed',
+    'training_broker_gpu_stream_samples','training_broker_gpu_probe_samples',
+    'training_broker_gpu_input_samples','training_broker_gpu_output_samples',
+    'training_broker_gpu_timing_missed','training_broker_gpu_service_samples',
+    'training_broker_gpu_service_probes','training_broker_gpu_service_missed',
     'training_broker_kernel_batches','training_broker_routed_states',
     'training_broker_compute_states','training_broker_padding_states',
     'training_broker_pack_attempts','training_broker_pack_rejections',
@@ -194,6 +202,7 @@ function courierMetrics(source) {
     const primary=name=>[
         'training_profile_round','training_end_to_end_steps_per_second',
         'training_useful_steps_per_second','training_total_useful_steps',
+        'training_useful_steps','training_rejected_workers',
         'training_collector_workers','training_lineage_workers',
         'training_sim_processes','training_gpu_devices_active',
         'training_sim_proc_starts_total','training_sim_owner_retains_total',
@@ -308,7 +317,9 @@ function courierMetrics(source) {
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
-            /^worker_[0-9]{1,2}_broker_(?:requests|host_requests|register_denials|kernel_batches|routed_states|compute_states|padding_states|pack_attempts|pack_rejections)$/.test(name)||
+            /^training_broker_gpu_[0-7]_(?:samples|probes|batches|missed|io_samples|io_expected)$/.test(name)||
+            /^training_broker_crit_(?:owner|gpu|client_gpu|requests|client_wait_samples|client_copy_samples|client_missed|service_samples|service_probes|service_missed|results|io_samples|io_expected|io_missed)$/.test(name)||
+            /^worker_[0-9]{1,2}_broker_(?:requests|results|host_requests|register_denials|kernel_batches|routed_states|compute_states|padding_states|pack_attempts|pack_rejections|gpu_stream_samples|gpu_probe_samples|gpu_input_samples|gpu_output_samples|gpu_timing_missed|gpu_service_samples|gpu_service_probes|gpu_service_missed|gpu_device|client_device|client_wait_samples|client_copy_samples|client_timing_missed|io_samples|io_expected|io_missed)$/.test(name)||
             /^worker_[0-9]{1,2}_sim_(?:step_receipts|batch_reuses|proc_starts|owner_retains|shard_moves)$/.test(name)||
             /^worker_[0-9]{1,2}_gpu_graph_(?:attempts|rejections|failures|replays)$/.test(name)||
             /^worker_[0-9]{1,2}_sim_vector_(?:groups|shards)$/.test(name)||
