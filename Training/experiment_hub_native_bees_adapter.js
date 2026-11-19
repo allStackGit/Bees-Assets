@@ -1168,7 +1168,7 @@ function createNativeBeesAdapter({
             const cudaUuid = context.gpu_cuda_uuid;
             const gpu = pci !== undefined || dualGpu;
             if (dualGpu && (
-                !['bees_native','bees_native_collect'].includes(context.project_id)||
+                !['bees_native','bees_native_collect','bees_native_optimizer_worker'].includes(context.project_id)||
                 context.gpu_mode !== 'exclusive' ||
                 context.gpu_pci_addresses.length !== 2 ||
                 new Set(context.gpu_pci_addresses).size !== 2 ||
