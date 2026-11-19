@@ -2089,16 +2089,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if(dualGpu&&!(state?.machines||[]).some(machine=>
             machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
             machine.tinybrains_dual_gpu_profiles?.includes(profile))) {
-            feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
+            feedback('hub-config-message','No connected CUDA/ROCm worker approves two-GPU split PPO for this profile.');
             return;
         }
         if(remoteRollouts&&!(state?.machines||[]).some(machine=>
-            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.status==='connected'&&
+            ['linux','win32'].includes(machine.agent_platform)&&
             machine.tinybrains_profiles?.[profile]===digest&&
             machine.tinybrains_remote_rollout_profiles?.includes(profile)&&
             (!cpuFallback||machine.tinybrains_remote_cpu_learner===true&&
                 machine.tinybrains_cpu_fallback_profiles?.includes(profile)))) {
-            feedback('hub-config-message','Remote rollouts require an approved Linux learner for this device mode and a locally installed Tailnet worker configuration.');
+            feedback('hub-config-message','Remote rollouts require an approved native learner for this device mode and locally installed private-network worker configuration.');
             return;
         }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
@@ -4820,8 +4821,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if(distributedPanel.hidden)return;
         const prior=distributedMachine.value;
         const machines=state.machines.filter(m=>m.status==='connected'&&
-            m.agent_platform==='linux'&&m.local_executor_enabled&&
-            m.native_preflight_passed&&m.tinybrains_profiles?.[selected.parameters.profile]===
+            ['linux','win32'].includes(m.agent_platform)&&
+            m.local_executor_enabled&&m.native_preflight_passed&&
+            m.tinybrains_profiles?.[selected.parameters.profile]===
                 selected.parameters.profile_sha256&&
             m.tinybrains_remote_rollout_profiles?.includes(selected.parameters.profile)&&
             (selected.parameters.device!=='cpu'||m.tinybrains_remote_cpu_learner===true&&
