@@ -2839,9 +2839,6 @@ class ExperimentHub {
             learner_start_pending:coordinated,
             resume_after_restart:coordinated&&value.resume_after_restart===true};
     }
-    // A never-started learner may abandon its already-dispatched sidecars
-    // without inventing a second process owner. Stops remain native orders;
-    // no claim is released while a process/probe is active or unverified.
     // An optimizer rank that fails or is stopped cannot leave other leased
     // torchrun nodes waiting indefinitely. Use the existing native Stop
     // ownership states; never assume the OS process is gone or free a lease
@@ -2892,6 +2889,9 @@ class ExperimentHub {
         return changed;
     }
 
+    // A never-started learner may abandon its already-dispatched sidecars
+    // without inventing a second process owner. Stops remain native orders;
+    // no claim is released while a process/probe is active or unverified.
     reconcileDistributedAborts(next) {
         let changed=false;
         for(const learner of next.jobs.filter(job=>
