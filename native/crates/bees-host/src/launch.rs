@@ -1922,12 +1922,12 @@ fn launch_catalog_battle(
     if interactive || env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
         if let Some(mission) = mission {
             let run_config: RunConfig = serde_json::from_slice(&fs::read(&config)?)?;
-            // Live HiveMind replies and OS-scheduled navigation completions
-            // can change a physical tick independently of player input.
-            // Preserve their durable campaign results without advertising
-            // a recording that cannot be reproduced by the input trace.
-            let replayable = run_config.hivemind.is_none() &&
-                run_config.navigation_workers.is_none() &&
+            // Live HiveMind replies are now captured in the same
+            // versioned player trace with the original connection
+            // allocator and source command clock. Asynchronous path
+            // completion and mid-episode model switching still cannot
+            // be reproduced by that trace.
+            let replayable = run_config.navigation_workers.is_none() &&
                 run_config.model_updates.is_empty();
             if replayable {
                 let setup = CampaignReplaySetup::capture(&config, mission)?;
