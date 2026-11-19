@@ -28,7 +28,7 @@ pub(super) const GAME_ID: &str = "fleet-skirmish";
 enum Terrain { Open, Original, Cover, DenseCover }
 
 #[derive(Clone, Copy)]
-enum Objective { Elimination, Survival, Extraction }
+enum Objective { Elimination, Survival, Extraction, Escort, Demolition }
 
 /// Native Level waves are source-authored physical squads. This option
 /// changes only when squads enter the same live combat/roster pipeline,
@@ -183,6 +183,8 @@ impl Objective {
             Self::Elimination => "Elimination",
             Self::Survival => "Defend Command Ship",
             Self::Extraction => "Escape to Extraction",
+            Self::Escort => "Deliver Command Convoy",
+            Self::Demolition => "Destroy Enemy Objective",
         }
     }
 }
@@ -394,6 +396,8 @@ fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
         ("Eliminate all opposing ships", "  [Standard battle]"),
         ("Defend your command ship for 90 seconds", "  [Incoming waves]"),
         ("Reach the enemy-side extraction zone", "  [Tactical escape]"),
+        ("Escort your command ship to extraction", "  [Defend the convoy]"),
+        ("Destroy a fortified MapObject", "  [90-second assault]"),
     ];
     let rows = choices.iter().map(|(title, status)| BattleMenuRow {
         title, status, unlocked: true,
@@ -402,6 +406,8 @@ fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
     Ok(select_library(&rows, &mut selected, false)?.map(|index| match index {
         1 => Objective::Survival,
         2 => Objective::Extraction,
+        3 => Objective::Escort,
+        4 => Objective::Demolition,
         _ => Objective::Elimination,
     }))
 }
@@ -1002,15 +1008,51 @@ pub(super) fn archive(
             "protected_ship_id": defenders_first_ship,
             "seconds": 90.0,
         });
-    } else if matches!(selected.objective, Objective::Extraction) {
+    } else if matches!(selected.objective, Objective::Extraction | Objective::Escort) {
         let player = selected.objective_side.ok_or_else(||
-            invalid("extraction requires a real extracting faction"))?;
+            invalid("extraction and escort require a real objective faction"))?;
         run["levels"][0]["extraction"] = json!({
             "player_side": player,
             "center": [if player == 1 { 125.0 } else { -125.0 }, 0.0],
             "half_extents": [6.0, 6.0],
             "activation_radius": 10.0,
             "layer": 19,
+        });
+        if matches!(selected.objective, Objective::Escort) {
+            // The first commander is a real mobile, immediately deployed
+            // hull in either faction. Delivery and death use the same
+            // extraction collider and shared terminal as headless training.
+            run["levels"][0]["escort"] = json!({
+                "escorting_side": player,
+                "escorted_ship_id": if player == 1 { 11 } else { 12 },
+                "seconds": 90.0,
+            });
+        }
+    } else if matches!(selected.objective, Objective::Demolition) {
+        let attacker = selected.objective_side.ok_or_else(||
+            invalid("demolition requires a real attacking faction"))?;
+        // This is a *physical* native MapObject, not a cosmetic marker:
+        // authored collision, durable health, point-fire and terminal
+        // logic all belong to the normal CombatWorld. Choose a fresh
+        // identity distinct from the duel's original ships/obstacle.
+        let target_id = 91_i64;
+        let map_objects = scene.as_object_mut().ok_or_else(||
+            invalid("fleet source scene must be a JSON object"))?
+            .entry("map_objects").or_insert_with(|| json!([]));
+        map_objects.as_array_mut().ok_or_else(||
+            invalid("fleet scene has invalid MapObjects"))?.push(json!({
+                "entity_id": target_id,
+                "kind": "generic",
+                "position": [0.0, 0.0],
+                "rotation_degrees": 0.0,
+                "layer": 18,
+                "max_health": 240,
+                "collider": { "kind": "circle", "offset": [0.0, 0.0], "radius": 7.0 },
+            }));
+        run["levels"][0]["demolition"] = json!({
+            "attacking_side": attacker,
+            "target_map_object_id": target_id,
+            "seconds": 90.0,
         });
     }
 
@@ -1082,6 +1124,8 @@ pub(super) fn archive(
             Objective::Elimination => "elimination",
             Objective::Survival => "survival",
             Objective::Extraction => "extraction",
+            Objective::Escort => "escort",
+            Objective::Demolition => "demolition",
         },
         selected.objective_side.unwrap_or(0),
     ));
