@@ -169,7 +169,7 @@ async function status(hub) {
 }
 async function setup(hub) {
     const o=configuration(hub);
-    directory(o.artifacts);
+    privateDirectory(o.artifacts,true);
     privateDirectory(o.snapshots,true);
     privateDirectory(o.scratch,true);
     privateDirectory(o.receipts,true);
