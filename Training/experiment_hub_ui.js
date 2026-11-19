@@ -181,15 +181,16 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
         }
         if([...ownersByHost].some(([host,owners])=>owners.length>1&&
             (!courierGroup||job.frozen_parameters?.shared_policy!==true||
-                host!==job.assigned_machine_id||owners.length!==2||
-                owners[0].role!=='learner'||owners[1].role!=='collector'||
+                host!==job.assigned_machine_id||
+                owners.filter(owner=>owner.role==='learner').length!==1||
                 owners.some(owner=>owner.shared_policy!==true||
                     owner.mode!=='exclusive'||owner.gpus!==1||
                     owner.gpu_ids?.length!==1)||
-                owners[0].gpu_ids[0]===owners[1].gpu_ids[0])))
+                new Set(owners.map(owner=>owner.gpu_ids[0])).size!==owners.length)))
             return null;
         members.sort((a,b)=>a.host.localeCompare(b.host)||
-            a.role.localeCompare(b.role));
+            a.role.localeCompare(b.role)||
+            (a.gpu_ids?.[0]||'').localeCompare(b.gpu_ids?.[0]||''));
         return {
             members,
             cpus:members.reduce((total,m)=>total+m.cpus,0),
@@ -1513,7 +1514,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains and Courier groups sum only their explicitly reserved learner and collector resources; the remote threads/CPU column shows frozen TinyBrains thread limits or Courier collector CPU leases, not actual CPU occupancy. One same-host Courier collector is counted only with two distinct, verified exclusive GPU leases. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains and Courier groups sum only their explicitly reserved learner and collector resources; the remote threads/CPU column shows frozen TinyBrains thread limits or Courier collector CPU leases, not actual CPU occupancy. Same-host Courier collectors are counted only with distinct, verified exclusive GPU leases. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {
@@ -4815,7 +4816,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const subset=machine?.courier_lineage_subset===true;
         courierMatch.label.hidden=!subset;
         const available=match.filter(hosts=>hosts.length===1).map(hosts=>hosts[0]);
-        const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated:null;
+        const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
+            ':'+machine.courier_lineage_slots?.map(item=>item.slot+'@'+item.endpoint).join('|'):null;
         const population=selected.parameters.workers;
         const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
         if(courierBudgetHost!==budgetHost) {
