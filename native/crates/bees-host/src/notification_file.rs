@@ -46,6 +46,13 @@ fn command_identity(selection: &NativeCommandSelection) -> serde_json::Value {
     }
 }
 
+/// Only a durably committed terminal counts as one objective attempt.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct NativeMissionOutcomeCounts {
+    pub attempts: u64,
+    pub completions: u64,
+}
+
 /// One physical authored scene's completed episode results, keyed by the
 /// exact content digest already bound to the source Level. Only terminal
 /// notifications update this map; physics and inference never touch it.
@@ -56,14 +63,24 @@ pub struct NativeSceneOutcomes {
     pub draws: u64,
     pub victories_by_side: BTreeMap<i32, u64>,
     pub total_episode_seconds: f64,
+    pub mission_outcomes: BTreeMap<String, NativeMissionOutcomeCounts>,
 }
 
 impl NativeSceneOutcomes {
-    fn record(&mut self, winner: i32, timed_out: bool, seconds: f32) {
+    fn record(&mut self, winner: i32, timed_out: bool, seconds: f32,
+        mission: Option<bees_sim::episode_terminal::EpisodeMissionOutcome>,
+    ) {
         self.episodes_finished = self.episodes_finished.saturating_add(1);
         self.episodes_timed_out = self.episodes_timed_out
             .saturating_add(u64::from(timed_out));
         self.total_episode_seconds += f64::from(seconds);
+        if let Some(mission) = mission {
+            let outcome = self.mission_outcomes
+                .entry(mission.kind.as_str().to_owned()).or_default();
+            outcome.attempts = outcome.attempts.saturating_add(1);
+            outcome.completions = outcome.completions
+                .saturating_add(u64::from(mission.completed));
+        }
         if winner == 0 {
             self.draws = self.draws.saturating_add(1);
         } else {
@@ -84,12 +101,27 @@ impl NativeSceneOutcomes {
         {
             return None;
         }
+        let mut mission_outcomes = BTreeMap::new();
+        for (kind, outcome) in &self.mission_outcomes {
+            let prior = previous.mission_outcomes.get(kind);
+            mission_outcomes.insert(kind.clone(), NativeMissionOutcomeCounts {
+                attempts: outcome.attempts.checked_sub(
+                    prior.map_or(0, |value| value.attempts))?,
+                completions: outcome.completions.checked_sub(
+                    prior.map_or(0, |value| value.completions))?,
+            });
+        }
+        if previous.mission_outcomes.keys().any(|kind|
+            !self.mission_outcomes.contains_key(kind)) {
+            return None;
+        }
         Some(Self {
             episodes_finished: self.episodes_finished.checked_sub(previous.episodes_finished)?,
             episodes_timed_out: self.episodes_timed_out.checked_sub(previous.episodes_timed_out)?,
             draws: self.draws.checked_sub(previous.draws)?,
             victories_by_side,
             total_episode_seconds: self.total_episode_seconds - previous.total_episode_seconds,
+            mission_outcomes,
         })
     }
 }
@@ -227,6 +259,7 @@ impl NativeDiagnosticMeasurements {
                         finalized.result.winner_side,
                         finalized.result.timed_out,
                         finalized.result.duration_seconds,
+                        finalized.mission,
                     );
                 }
                 self.episodes_finished = self.episodes_finished.saturating_add(1);
@@ -571,6 +604,11 @@ impl DurableDiagnosticNotifications {
             }
             NativeLevelNotificationKind::EpisodeFinal(value) => Some(json!({
                 "winner_side": value.result.winner_side,
+                "mission": value.mission.map(|mission| json!({
+                    "kind": mission.kind.as_str(),
+                    "objective_side": mission.objective_side,
+                    "completed": mission.completed,
+                })),
                 "timed_out": value.result.timed_out,
                 "extraction_victory": value.result.extraction_victory,
                 "duration_seconds": value.result.duration_seconds,
