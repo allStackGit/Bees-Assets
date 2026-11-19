@@ -27,7 +27,8 @@ function filesForJob(folder,projectId,nativeModelsOnly=false) {
             const relative=next.prefix+item.name;
             if(item.isSymbolicLink())continue;
             const allowed=name=>nativeModelsOnly
-                ?projectId==='bees_native'&&safeNativeModelPath(name)
+                ?projectId==='bees_native'&&
+                    (safeNativeModelPath(name)||name==='round-result.json')
                 :projectId==='bees_native_collect'
                     ?safeNativeCollectorPath(name)
                     :safeLogPath(name)||
