@@ -542,6 +542,26 @@ function missingFinalEvaluationRules(job) {
         }
     });
 }
+// Both the starting checkpoint and every subsequent native PPO checkpoint
+// use the same final fixed-reference evaluation decision. Incomplete suite
+// coverage is never interpreted as a failed target or an invitation to
+// allocate more physical workers.
+function nativeRoundFinalEvaluation(job) {
+    const rules=evaluationRules(job.evaluation_stop);
+    const missing=rules.length?missingFinalEvaluationRules(job):[];
+    if(missing.length||!rules.length)
+        return {rules,missing,receipts:[],passed:false};
+    const cohort=job.evaluation_candidates?.find(item=>
+        item.checkpoint_sha256===job.checkpoint_model_sha256);
+    const receipts=rules.map(rule=>cohort?.receipts?.[rule.suite_id]);
+    if(receipts.some(receipt=>!receipt))
+        throw Error('Native round evaluator lacks a verified receipt for the completed checkpoint.');
+    const passed=evaluationComplete(
+        job.evaluation_stop.all_of?{all_of:receipts}:receipts[0],
+        job.evaluation_stop,job.dispatch_id,
+    );
+    return {rules,missing,receipts,passed};
+}
 // A missing final receipt cannot justify inspecting a historical terminal
 // job forever. A waiting candidate plan extends the grace period until
 // 24 hours after its last contender releases verified native capacity.
@@ -4734,7 +4754,8 @@ class ExperimentHub {
                     const targetPolicy=evaluationPolicy(target.evaluation_stop);
                     if(sourcePolicy&&targetPolicy&&
                         JSON.stringify(sourcePolicy)===JSON.stringify(targetPolicy)) {
-                        const missing=missingFinalEvaluationRules(source);
+                        const {missing,receipts,passed}=
+                            nativeRoundFinalEvaluation(source);
                         if(missing.length) {
                             if(!finalEvaluationPending(this.snapshot(),source,Date.now()))
                                 throw Error('Starting native checkpoint has no complete independent evaluation for the approved stopping policy.');
@@ -4742,13 +4763,6 @@ class ExperimentHub {
                             if(plan.reason!==reason)update(plan.status,reason);
                             continue;
                         }
-                        const rules=evaluationRules(targetPolicy);
-                        const cohort=source.evaluation_candidates?.find(item=>
-                            item.checkpoint_sha256===source.checkpoint_model_sha256);
-                        const receipts=rules.map(rule=>cohort?.receipts?.[rule.suite_id]);
-                        const passed=evaluationComplete(targetPolicy.all_of
-                            ?{all_of:receipts}:receipts[0],targetPolicy,
-                            source.dispatch_id);
                         if(passed) {
                             update('complete',
                                 'Starting checkpoint already meets the approved independent evaluation target; no new collection or PPO Starts required.',
@@ -4900,8 +4914,8 @@ class ExperimentHub {
                     // checkpoint-bound receipts may decide whether further
                     // physical experience is necessary. Never advance an
                     // approved round before the frozen suites have reported.
-                    const rules=evaluationRules(owner.evaluation_stop);
-                    const missing=rules.length?missingFinalEvaluationRules(owner):[];
+                    const {rules,missing,receipts,passed}=
+                        nativeRoundFinalEvaluation(owner);
                     if(missing.length) {
                         if(!finalEvaluationPending(snapshot,owner,Date.now()))
                             throw Error('Native optimizer completed but its independent final evaluations did not arrive before the approved evaluation window closed.');
@@ -4910,13 +4924,6 @@ class ExperimentHub {
                         if(plan.reason!==reason)update(plan.status,reason);
                         continue;
                     }
-                    const cohort=rules.length?owner.evaluation_candidates?.find(item=>
-                        item.checkpoint_sha256===owner.checkpoint_model_sha256):null;
-                    const receipts=rules.map(rule=>cohort.receipts[rule.suite_id]);
-                    const passed=rules.length>0&&evaluationComplete(
-                        owner.evaluation_stop.all_of?{all_of:receipts}:receipts[0],
-                        owner.evaluation_stop,owner.dispatch_id,
-                    );
                     const nextCount=plan.completed_rounds+1;
                     // The source and output checkpoints were verified by
                     // the exact collector/optimizer group owners above.
