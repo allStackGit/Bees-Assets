@@ -1391,8 +1391,10 @@ function createNativeBeesAdapter({
                 ...(collection_id === undefined ? [] : [
                     '--collection-id', collection_id,
                     '--rollout-world-start', String(rollout_world_start),
-                    ...(rollout_worlds === undefined ? [] :
-                        ['--rollout-worlds', String(rollout_worlds)]),
+                    // Match the exact native World count admitted above.
+                    // Dual-GPU collectors may need more replicas than
+                    // the original one-Level template declares.
+                    '--rollout-worlds', String(activeWorlds),
                 ]),
                 ...(bundle_directory === undefined ? [] : [
                     '--bundle-delivery-name', bundle_directory,
