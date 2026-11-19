@@ -56,19 +56,42 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
         receipt["selected"]["checkpoint_sha256"]
         if "selected" in receipt else receipt["checkpoint_sha256"]
     )
+    selected_manifest_sha = (
+        receipt["selected"]["manifest_sha256"]
+        if "selected" in receipt else receipt["manifest_sha256"]
+    )
+    packaged = source.get("packaged_model")
+    if packaged is None:
+        # Original nonportable challenges bind the exact source manifest.
+        manifest_verified = challenge_manifest == selected_manifest
+    else:
+        # Standalone portable challenges replace the original manifest's
+        # machine-local checkpoint paths. The challenge receipt pins BOTH
+        # the selected original and the fully rebased playable manifest,
+        # while individual checkpoint bytes are verified during repackaging.
+        manifest_verified = (
+            isinstance(packaged, dict) and
+            packaged.get("original_manifest_sha256") == selected_manifest_sha and
+            packaged.get("packaged_manifest") == run.get("model_manifest") and
+            packaged.get("packaged_manifest_sha256") ==
+                file_sha256(challenge_manifest) and
+            any(isinstance(slot, dict) and
+                slot.get("slot") == learner_slot and
+                slot.get("sha256") == checkpoint_sha
+                for slot in packaged.get("model_slots", [])
+                if isinstance(packaged.get("model_slots"), list))
+        )
     if (source.get("selected_checkpoint_sha256") != checkpoint_sha or
             source.get("learner_slot") != learner_slot or
-            challenge_manifest != selected_manifest):
+            not manifest_verified):
         raise ValueError("campaign opponent model differs from the verified training selection")
     return {
         "challenge_receipt": str(provenance_path),
         "challenge_receipt_sha256": file_sha256(provenance_path),
         "selected_checkpoint_sha256": checkpoint_sha,
         "selected_learner_slot": learner_slot,
-        "selected_model_manifest_sha256": (
-            receipt["selected"]["manifest_sha256"]
-            if "selected" in receipt else receipt["manifest_sha256"]
-        ),
+        "selected_model_manifest_sha256": selected_manifest_sha,
+        "source_model_manifest_sha256": file_sha256(challenge_manifest),
     }
 
 
