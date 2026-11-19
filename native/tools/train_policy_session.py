@@ -724,6 +724,10 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
     ]
     optimizer_steps = sum(record["learner_metrics"]["optimizer_input_steps"]
                           for _, record in completed)
+    multi_gpu_rounds = [
+        record["learner_metrics"] for _, record in completed
+        if record["learner_metrics"].get("optimizer_gpu_workers") == 2
+    ]
     optimizer_seconds = sum(record["learner_metrics"]["total_wall_seconds"]
                             for _, record in completed)
     # These are the simulator's real sampled model-forward calls, not
@@ -898,6 +902,26 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
             "not_a_fleet_wall_time_or_gpu_utilization": True,
         }} if inference_samples else {}),
         "total_optimizer_input_steps": optimizer_steps,
+        **({"multi_gpu_optimizer": {
+            "scope": "synchronized_native_ppo_gradient_updates_not_simulation",
+            "completed_dual_gpu_rounds": len(multi_gpu_rounds),
+            "total_synchronized_minibatches": sum(
+                sample["optimizer_synchronized_minibatches"]
+                for sample in multi_gpu_rounds
+            ),
+            "sum_largest_gpu_update_wall_seconds": sum(
+                sample["optimizer_gpu_update_wall_seconds_max"]
+                for sample in multi_gpu_rounds
+            ),
+            "per_gpu_process_memory_peak_bytes": {
+                str(rank): max(
+                    sample["optimizer_gpu_per_device"][rank][
+                        "torch_cuda_process_peak_allocated_bytes"
+                    ] for sample in multi_gpu_rounds
+                )
+                for rank in (0, 1)
+            },
+        }} if multi_gpu_rounds else {}),
         "self_play_opponent_promotions": sum(
             record["learner_metrics"].get("refreshed_opponent_slot") is not None
             for _, record in completed
@@ -1393,6 +1417,14 @@ def main():
             root, Path(manifest["path"]), Path(checkpoint["path"]), args.learner_slot,
             recipe.get("self_play"), recipe.get("curriculum"), run,
         )
+        if any(
+            (record["learner_metrics"].get("optimizer_gpu_workers") == 2) !=
+            (args.learner_gpus == 2)
+            for _, record in completed
+        ):
+            raise ValueError(
+                "resumed native training session changed the actual optimizer GPU allocation"
+            )
         latest_playable = publish_latest_playable(
             root, recipe, completed, next_manifest, next_checkpoint,
         )
