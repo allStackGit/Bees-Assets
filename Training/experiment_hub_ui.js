@@ -4733,9 +4733,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const matching=courierMatch.input.checked&&!courierMatch.label.hidden;
             if(budgets.some(item=>item.machine_id===courierMachine.value)&&!matching)
                 throw Error('Same-machine Courier GPU collectors require explicitly matched machine budgets.');
+            const slotBound=budgets.some(item=>Object.hasOwn(item,'endpoint'));
+            if(slotBound&&!matching)
+                throw Error('Selected Courier listeners require fixed machine binding.');
             const budgetRequest=distributedBudgetRequest(
-                budgets.map(({machine_id,...resources})=>({resources,machine_id})),
-                matching,'lineages');
+                budgets.map(({machine_id,endpoint,...resources})=>({
+                    resources,machine_id,...(endpoint!==undefined?{endpoint}:{})
+                })),matching,'lineages');
             const predecessor=$('hub-job-predecessor').value;
             if(predecessor) {
                 const parent=state.jobs.find(job=>job.id===predecessor);
@@ -4847,22 +4851,19 @@ document.addEventListener('DOMContentLoaded', () => {
         courierMatch.label.hidden=!subset;
         const population=selected.parameters.workers;
         const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
-        // The learner's selected PPO slots remain a contiguous prefix.
-        // Each corresponding native collector may bind any approved free
-        // listener port on its selected physical machine.
+        // PPO slots are logical and contiguous. An explicitly chosen
+        // endpoint can be any still-approved free native listener, so
+        // a second experiment need not wait for listener zero to free.
         const slotPinned=shared&&match.some(hosts=>hosts.some(host=>
             host.courier_lineage_slots?.length>0));
-        const candidates=slotPinned?match.slice(0,capacity):match;
-        const gap=slotPinned?candidates.findIndex(hosts=>hosts.length!==1):-1;
-        const eligible=gap>=0?candidates.slice(0,gap):candidates;
-        const available=eligible.filter(hosts=>hosts.length===1)
-            .map(hosts=>hosts[0]);
+        const entries=match.flatMap((hosts,index)=>
+            hosts.length===1?[{host:hosts[0],endpoint:endpoints[index]}]:[]);
+        const available=entries.map(entry=>entry.host);
         courierMatch.label.lastChild.textContent=slotPinned
-            ?' Bind each budget to this exact collector slot and machine'
+            ?' Bind each budget to its selected approved endpoint and machine'
             :' Match budgets across the selected machines';
         const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
-            ':'+available.map(host=>host.id+':'+
-                host.courier_lineage_slots?.map(item=>item.slot+'@'+item.endpoint).join('|')).join(';'):null;
+            ':'+entries.map(entry=>entry.host.id+'@'+entry.endpoint).join(';'):null;
         if(courierBudgetHost!==budgetHost) {
             const local=colocated&&available.some(host=>host.id===machine.id);
             const repeated=available.some(host=>
@@ -4872,8 +4873,9 @@ document.addEventListener('DOMContentLoaded', () => {
             courierMatch.input.checked=Boolean(local||repeated||slotPinned);
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
-                (subset?available.slice(0,capacity):match).map(worker=>
-                    ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,
+                entries.slice(0,capacity).map(({host:worker,endpoint})=>
+                    ({...(subset?{machine_id:worker.id}:{}),
+                        ...(slotPinned?{endpoint}:{}),cpus:2,ram_mb:4096,
                         ...(subset&&(worker.id===machine.id||
                             available.filter(other=>other.id===worker.id).length>1||
                             worker.courier_lineage_slots?.length&&
