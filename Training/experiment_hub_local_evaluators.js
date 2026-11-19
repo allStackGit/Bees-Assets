@@ -41,7 +41,14 @@ function presentDirectory(dir) {
 function privateDirectory(dir,create=false) {
     checkedPath(dir);
     if(create)fs.mkdirSync(dir,{recursive:true,mode:0o700});
-    const stat=fs.lstatSync(dir);
+    let stat=fs.lstatSync(dir);
+    if(create&&stat.isDirectory()&&!stat.isSymbolicLink()&&
+        stat.uid===process.getuid()&&(stat.mode&0o077)!==0) {
+        // Existing user-owned evaluation scratch folders may predate the Hub
+        // UI. Tighten permissions rather than requiring a terminal command.
+        fs.chmodSync(dir,0o700);
+        stat=fs.lstatSync(dir);
+    }
     if(!stat.isDirectory()||stat.isSymbolicLink()||
         stat.uid!==process.getuid()||(stat.mode&0o077)!==0)
         throw Error('Evaluator writable directories must be private user-owned directories: '+dir);
