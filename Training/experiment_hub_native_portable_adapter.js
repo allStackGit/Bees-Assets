@@ -125,11 +125,27 @@ function createNativeBeesPortableCollectorAdapter({
             throw Error('Native collector receipt is not a regular bounded artifact.');
         const receipt=JSON.parse(fs.readFileSync(file,'utf8'));
         const metrics=receipt.rollout_metrics;
-        // The Hub observation callback intentionally exposes no frozen job
-        // configuration. That already passed adapter.args() before launch,
-        // and Python checked the downloaded order against it before running.
-        // Validate the completed artifact's own bounded identity here; the
-        // coordinator independently verifies the stored job and mirroring.
+        // Start validates the downloaded work order. Progress and completion
+        // must separately bind the observed receipt to the same immutable Hub
+        // assignment, not simply accept an unrelated file under this job ID.
+        const frozen=context.frozen_parameters;
+        if(!frozen||frozen.config_sha256!==configSha256||
+            !SHA.test(String(frozen.collection_id||''))||
+            !SHA.test(String(frozen.source_run_contract_sha256||''))||
+            !Number.isSafeInteger(frozen.seed_offset)||
+            !Number.isSafeInteger(frozen.rollout_world_start)||
+            !Number.isSafeInteger(frozen.rollout_worlds)||
+            !Number.isSafeInteger(frozen.rollout_workers)||
+            !Number.isSafeInteger(frozen.physics_workers)||
+            receipt.collection_id!==frozen.collection_id||
+            receipt.source_run_contract_sha256!==frozen.source_run_contract_sha256||
+            receipt.seed_offset!==frozen.seed_offset||
+            receipt.partition?.world_start!==frozen.rollout_world_start||
+            receipt.partition?.world_count!==frozen.rollout_worlds||
+            receipt.rollout_worlds!==frozen.rollout_worlds||
+            receipt.rollout_processes!==frozen.rollout_workers||
+            receipt.physics_workers_per_process!==frozen.physics_workers)
+            throw Error('Native portable collector metrics differ from its frozen Hub work order.');
         if(receipt?.kind!=='native_rollout_bundle'||receipt.schema_version!==1||
             !SHA.test(String(receipt.collection_id||''))||
             !SHA.test(String(receipt.input_checkpoint_sha256||''))||
