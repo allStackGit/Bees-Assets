@@ -1077,29 +1077,63 @@ fn current_state(
                 "line_count": crate::presentation::campaign_dialogue::lines(cue).len(),
             }))
         } else { None },
-        // Mission timing and wave ownership come from the same native
-        // Level controller as local gameplay; clients cannot schedule waves.
-        "campaign_objective": if view.player_authority.player_viewer_side() == Some(side) {
-            view.survival.map(|status| json!({
-                "protected_ship_id": status.protected_ship_id,
-                "elapsed_seconds": status.elapsed_seconds,
-                "duration_seconds": status.duration_seconds,
-                "seconds_remaining": status.seconds_remaining,
+        // The native Level, not the network client, owns objective time,
+        // entity identity and completion. Only authenticated commanders
+        // receive their own convoy/defense target IDs. Demolition is a
+        // public faction objective; the fog-filtered obstacle list remains
+        // the only source of its current location and hit points.
+        "campaign_objective": if let Some(objective) = view.survival.filter(|status|
+            view.combat.ship(status.protected_ship_id)
+                .is_some_and(|ship| ship.side == side)
+        ) {
+            Some(json!({
+                "kind": "survival",
+                "protected_ship_id": objective.protected_ship_id,
+                "elapsed_seconds": objective.elapsed_seconds,
+                "duration_seconds": objective.duration_seconds,
+                "seconds_remaining": objective.seconds_remaining,
                 "reinforcements_pending": view.reinforcement_waves_pending,
                 "next_reinforcement_tick": view.next_reinforcement_tick,
                 "last_reinforcement_tick": view.last_reinforcement_tick,
             }))
-        } else { None },
-        // Preserve survival's legacy objective fields; non-survival
-        // skirmishes now expose the same authoritative wave clock to their
-        // authenticated commander, including event-only reserve plans.
-        "reinforcements": if view.player_authority.player_viewer_side() == Some(side) {
+        } else if let Some(objective) = view.demolition {
             Some(json!({
-                "pending": view.reinforcement_waves_pending,
-                "next_tick": view.next_reinforcement_tick,
-                "last_arrival_tick": view.last_reinforcement_tick,
+                "kind": "demolition",
+                "attacking_side": objective.attacking_side,
+                "target_map_object_id": objective.target_map_object_id,
+                "duration_seconds": objective.duration_seconds,
+                "seconds_remaining": objective.seconds_remaining,
+            }))
+        } else if let Some(objective) = view.escort.filter(|status|
+            status.escorting_side == side
+        ) {
+            Some(json!({
+                "kind": "escort",
+                "escorting_side": objective.escorting_side,
+                "escorted_ship_id": objective.escorted_ship_id,
+                "duration_seconds": objective.duration_seconds,
+                "seconds_remaining": objective.seconds_remaining,
             }))
         } else { None },
+        // Only the convoy's authenticated commander receives its authored
+        // destination before the actual physical exit trigger activates.
+        // This fixed AABB comes from the canonical combat Level, not from
+        // a second client-side extraction controller.
+        "escort_destination": if view.escort.is_some_and(|objective|
+            objective.escorting_side == side
+        ) {
+            view.combat.escorted_destination_bounds().map(|bounds| [
+                [bounds.min.x, bounds.min.y],
+                [bounds.max.x, bounds.max.y],
+            ])
+        } else { None },
+        // Every authenticated commander sees Level-owned wave activity,
+        // without exposing reserved ship identities or mission story cues.
+        "reinforcements": Some(json!({
+            "pending": view.reinforcement_waves_pending,
+            "next_tick": view.next_reinforcement_tick,
+            "last_arrival_tick": view.last_reinforcement_tick,
+        })),
         "ships": ships, "squads": squads, "obstacles": obstacles,
         "projectiles": projectiles,
     })
