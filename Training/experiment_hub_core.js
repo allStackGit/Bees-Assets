@@ -5371,7 +5371,7 @@ class ExperimentHub {
         const parameters=config?.parameters;
         if(!config||parameters?.remote_rollouts!==true||
             !learnerMachine||learnerMachine.status!=='connected'||
-            learnerMachine.agent_platform!=='linux'||
+            !['linux','win32'].includes(learnerMachine.agent_platform)||
             learnerMachine.local_executor_enabled!==true||
             learnerMachine.native_preflight_passed!==true||
             !learnerMachine.installed_projects?.includes('tinybrains')||
@@ -5386,7 +5386,7 @@ class ExperimentHub {
             !Array.isArray(endpoints)||!endpoints.length||endpoints.length>8||
             value.collectors.length!==endpoints.length||
             !SHA256.test(String(learnerMachine.tinybrains_remote_key_fingerprint||'')))
-            throw Error('The selected Linux learner must approve this profile, device allocation and collector count.');
+            throw Error('The selected native learner must approve this profile, device allocation and collector count.');
         const rolloutProject=snapshot.projects.find(p=>p.id==='tinybrains_rollout');
         if(rolloutProject?.adapter!=='unconfigured')
             throw Error('Register the TinyBrains rollout project before creating a distributed group.');
