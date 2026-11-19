@@ -148,17 +148,21 @@ function learnerMeasurements(metrics) {
             (count === 2 && (
                 !Number.isSafeInteger(metrics.optimizer_synchronized_minibatches) ||
                 metrics.optimizer_synchronized_minibatches < 1 ||
+                metrics.optimizer_masked_loss_normalizations !==
+                    metrics.optimizer_synchronized_minibatches ||
                 !Array.isArray(metrics.optimizer_gpu_per_device) ||
                 metrics.optimizer_gpu_per_device.length !== 2)))
             throw Error('Invalid native optimizer GPU worker measurements.');
         add('optimizer_gpu_workers', 'count');
         if (count === 2) {
             add('optimizer_synchronized_minibatches', 'count');
+            add('optimizer_masked_loss_normalizations', 'count');
             add('optimizer_gradient_submission_wall_seconds_sum', 'seconds');
             add('optimizer_gpu_update_wall_seconds_max', 'seconds');
             metrics.optimizer_gpu_per_device.forEach((worker,index) => {
                 if (worker.rank !== index ||
                     worker.gradient_syncs !== metrics.optimizer_synchronized_minibatches ||
+                    worker.masked_loss_syncs !== metrics.optimizer_masked_loss_normalizations ||
                     !Number.isFinite(worker.update_wall_seconds) ||
                     worker.update_wall_seconds < 0)
                     throw Error('Invalid native synchronized optimizer worker evidence.');
@@ -865,11 +869,15 @@ function createNativeBeesAdapter({
             if (proof.optimizer_gpu_workers !== 2 ||
                 !Number.isSafeInteger(proof.optimizer_synchronized_minibatches) ||
                 proof.optimizer_synchronized_minibatches < 1 ||
+                proof.optimizer_masked_loss_normalizations !==
+                    proof.optimizer_synchronized_minibatches ||
                 !Array.isArray(proof.optimizer_gpu_per_device) ||
                 proof.optimizer_gpu_per_device.length !== 2 ||
                 proof.optimizer_gpu_per_device.some((row, index) =>
                     row?.rank !== index || row.gradient_syncs !==
-                        proof.optimizer_synchronized_minibatches))
+                        proof.optimizer_synchronized_minibatches ||
+                    row.masked_loss_syncs !==
+                        proof.optimizer_masked_loss_normalizations))
                 throw Error('Native learner claimed two GPUs without verified synchronized policy updates.');
         }
         const inputs = roundInputs(context);

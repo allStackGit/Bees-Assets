@@ -890,6 +890,8 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
             (args.learner_gpus > 1 and (
                 type(metrics.get("optimizer_synchronized_minibatches")) is not int or
                 metrics["optimizer_synchronized_minibatches"] < 1 or
+                metrics.get("optimizer_masked_loss_normalizations") !=
+                    metrics["optimizer_synchronized_minibatches"] or
                 not isinstance(metrics.get("optimizer_gpu_per_device"), list) or
                 len(metrics["optimizer_gpu_per_device"]) != args.learner_gpus
             ))):

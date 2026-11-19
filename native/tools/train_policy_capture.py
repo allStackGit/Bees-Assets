@@ -1384,6 +1384,9 @@ def main():
             "rank": rank, "device": str(device),
             "device_name": torch.cuda.get_device_name(device),
             "gradient_syncs": getattr(trainer.optimizer, "_bees_distributed_grad_syncs", 0),
+            "masked_loss_syncs": getattr(
+                trainer.optimizer, "_bees_distributed_masked_loss_syncs", 0,
+            ),
             "gradient_backend": torch.distributed.get_backend(),
             "gradient_submission_wall_seconds": getattr(
                 trainer.optimizer, "_bees_distributed_sync_submission_seconds", 0.0,
@@ -1393,7 +1396,8 @@ def main():
         }
         gpu_worker_metrics = [None] * learner_workers
         torch.distributed.all_gather_object(gpu_worker_metrics, local)
-        if (any(row["rank"] != i or row["gradient_syncs"] < 1
+        if (any(row["rank"] != i or row["gradient_syncs"] < 1 or
+                row["masked_loss_syncs"] != row["gradient_syncs"]
                 for i, row in enumerate(gpu_worker_metrics)) or
                 len({row["gradient_syncs"] for row in gpu_worker_metrics}) != 1):
             raise ValueError("native GPUs completed different optimizer minibatch counts")
@@ -1502,6 +1506,7 @@ def main():
         "optimizer_device": str(device),
         "optimizer_gpu_workers": learner_workers if device.type == "cuda" else 0,
         **({"optimizer_synchronized_minibatches": gpu_worker_metrics[0]["gradient_syncs"],
+            "optimizer_masked_loss_normalizations": gpu_worker_metrics[0]["masked_loss_syncs"],
             "optimizer_gpu_per_device": gpu_worker_metrics,
             "optimizer_gradient_backend": gpu_worker_metrics[0]["gradient_backend"],
             "optimizer_gradient_submission_wall_seconds_sum": sum(

@@ -909,6 +909,10 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
                 sample["optimizer_synchronized_minibatches"]
                 for sample in multi_gpu_rounds
             ),
+            "total_global_masked_loss_normalizations": sum(
+                sample["optimizer_masked_loss_normalizations"]
+                for sample in multi_gpu_rounds
+            ),
             "sum_largest_gpu_update_wall_seconds": sum(
                 sample["optimizer_gpu_update_wall_seconds_max"]
                 for sample in multi_gpu_rounds
