@@ -241,11 +241,21 @@ function courierMetrics(source) {
                a.localeCompare(b);
     }).flatMap(([,column])=>column.sort(([a],[b])=>a-b)
         .map(([,entry])=>entry));
+    // The backend retains complete original names in native history.
+    // Shorten only the few broker measurements exceeding the Hub's
+    // unchanged 39-character metric wire key limit.
+    const brokerAliases=new Map([
+        ['training_broker_request_pack_max_seconds','training_broker_req_pack_max_seconds'],
+        ['training_broker_crit_client_wait_samples','training_broker_crit_cl_wait_samples'],
+        ['training_broker_crit_client_copy_samples','training_broker_crit_cl_copy_samples'],
+        ['training_broker_crit_client_wait_seconds','training_broker_crit_cl_wait_seconds'],
+        ['training_broker_crit_client_copy_seconds','training_broker_crit_cl_copy_seconds'],
+    ]);
     const entries=[
         ...global.filter(([name])=>primary(name)),
         ...workerColumns,
         ...global.filter(([name])=>!primary(name)),
-    ];
+    ].map(([name,value])=>[brokerAliases.get(name)||name,value]);
     for(const [name,value] of entries) {
         if(retained>=480)break;
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
