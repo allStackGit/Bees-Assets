@@ -62,6 +62,7 @@ pub struct NativeFleetCombatStats {
 /// registry, including temporary/minion ships with persistent=false.
 /// A killed ship's record stays available for deferred damage/economics
 /// until the Level itself is retired.
+#[derive(Clone)]
 pub struct NativeFleetInventory {
     entries: HashMap<i64, NativeFleetShipValue>,
     /// Fatal losses for the current Level. A successful extraction or

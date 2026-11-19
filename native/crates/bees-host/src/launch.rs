@@ -3425,12 +3425,22 @@ fn run_battle(
     let mut highest_squad_item_id = 0_i64;
     let mut source_levels = Vec::with_capacity(config.levels.len());
     let mut source_sides = Vec::with_capacity(config.levels.len());
-    // Many headless arenas often share one exported Level. Keep one
-    // immutable source template per canonical path, not N copies and
-    // filesystem reads. Each arena still parses its own mutable world.
-    let mut source_jsons = Vec::with_capacity(config.levels.len());
-    let mut source_templates: HashMap<PathBuf, (Arc<str>, String)> = HashMap::new();
+    // Parse and validate an immutable authored scene/layout ONCE per
+    // distinct source configuration. Every independent arena/episode clones
+    // mutable game state from that validated template, while immutable
+    // physical collider catalogs remain Arc-shared. This avoids repeating
+    // JSON decoding and native layout construction at every episode reset.
+    let mut source_scene_templates = Vec::with_capacity(config.levels.len());
+    let mut source_documents: HashMap<PathBuf, (Arc<str>, String)> = HashMap::new();
+    let mut source_templates: HashMap<(PathBuf, Option<String>), Arc<NativePhysicalScene>> =
+        HashMap::new();
     let mut source_digests = Vec::with_capacity(config.levels.len());
+    let mut source_template_parse_count = 0_u64;
+    let mut source_template_parse_wall = std::time::Duration::ZERO;
+    let mut source_template_clone_count = 0_u64;
+    let mut source_template_clone_wall = std::time::Duration::ZERO;
+    let mut recycled_template_clone_count = 0_u64;
+    let mut recycled_template_clone_wall = std::time::Duration::ZERO;
     let mut saved_squad_sources = Vec::new();
     let single_level = config.levels.len() == 1;
     for level in &mut config.levels {
@@ -3442,23 +3452,42 @@ fn run_battle(
             return Err(invalid("duplicate/invalid Level or missing real model slot").into());
         }
         let source_path = resolve(root, &level.scene).canonicalize()?;
-        let (source_json, source_digest) = if let Some(cached) = source_templates.get(&source_path) {
-            cached.clone()
-        } else {
-            let text: Arc<str> = fs::read_to_string(&source_path)?.into();
-            let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
-            source_templates.insert(source_path, (Arc::clone(&text), digest.clone()));
-            (text, digest)
-        };
+        let (source_json, source_digest) =
+            if let Some(cached) = source_documents.get(&source_path) {
+                cached.clone()
+            } else {
+                let text: Arc<str> = fs::read_to_string(&source_path)?.into();
+                let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+                source_documents.insert(source_path.clone(), (Arc::clone(&text), digest.clone()));
+                (text, digest)
+            };
         source_digests.push(source_digest);
-        let mut source = NativePhysicalScene::parse_scene_with_assets(&source_json, &assets)
-            .map_err(|error| contextual("exported Level", error))?;
-        if let Some(layout) = &level.native_layout {
-            source.apply_native_layout(
-                layout, assets.box_catalog(), assets.polygon_catalog(),
-            )
-                .map_err(|error| contextual("native Level layout", error))?;
-        }
+        // Layout is part of the physical source identity. Two arenas with
+        // different layouts must never clone one another's colliders/squads.
+        let key = (source_path, level.native_layout.as_ref()
+            .map(serde_json::to_string).transpose()?);
+        let template = if let Some(cached) = source_templates.get(&key) {
+            Arc::clone(cached)
+        } else {
+            let started = Instant::now();
+            let mut parsed = NativePhysicalScene::parse_scene_with_assets(&source_json, &assets)
+                .map_err(|error| contextual("exported Level", error))?;
+            if let Some(layout) = &level.native_layout {
+                parsed.apply_native_layout(
+                    layout, assets.box_catalog(), assets.polygon_catalog(),
+                ).map_err(|error| contextual("native Level layout", error))?;
+            }
+            source_template_parse_count += 1;
+            source_template_parse_wall += started.elapsed();
+            let parsed = Arc::new(parsed);
+            source_templates.insert(key, Arc::clone(&parsed));
+            parsed
+        };
+        let started = Instant::now();
+        let mut source = template.as_ref().clone();
+        source_template_clone_count += 1;
+        source_template_clone_wall += started.elapsed();
+        source_scene_templates.push(template);
         if let Some(created) = mission.and_then(|mission| mission.created_squads) {
             source.install_created_squads(
                 mission.expect("campaign squad creation owner").player_side, created,
@@ -3739,7 +3768,6 @@ fn run_battle(
         }
         source_levels.push(source);
         source_sides.push(sides);
-        source_jsons.push(source_json);
     }
     if config.next_squad_item_id <= highest_squad_item_id {
         return Err(invalid(
@@ -4560,14 +4588,10 @@ fn run_battle(
                 {
                     continue;
                 }
-                let mut scene = NativePhysicalScene::parse_scene_with_assets(&source_jsons[index], &assets)
-                    .map_err(|error| contextual("cached authored Level", error))?;
-                if let Some(layout) = &level.native_layout {
-                    scene.apply_native_layout(
-                        layout, assets.box_catalog(), assets.polygon_catalog(),
-                    )
-                        .map_err(|error| contextual("native episode layout", error))?;
-                }
+                let started = Instant::now();
+                let mut scene = source_scene_templates[index].as_ref().clone();
+                recycled_template_clone_count += 1;
+                recycled_template_clone_wall += started.elapsed();
                 // Replaying an authored template creates new real Stage
                 // squad lifetimes, not aliases of retired pooled wrappers.
                 let mut remapped = HashMap::new();

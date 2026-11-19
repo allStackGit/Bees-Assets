@@ -109,6 +109,7 @@ pub struct NativeAuthoredPolicy {
 /// these monotonically across ships and obstacles, even though its GameState
 /// stores them in separate lists. Sort once by that ID at setup to recover
 /// original creation order; never reorder the live physics hot path.
+#[derive(Clone)]
 pub enum NativeAuthoredEntity {
     Ship(NativeAuthoredShip),
     BoxObstacle {

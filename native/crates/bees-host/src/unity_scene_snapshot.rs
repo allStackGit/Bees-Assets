@@ -747,7 +747,10 @@ struct NativeFleetTemplate {
 /// A source-authored INITIAL physical scene, ready to compose with actual
 /// squad identities, full RL metadata, episode configuration and model slots.
 /// Records are owned, but shared immutable prefab geometry stays in the
-/// existing NativeSceneAssets Arc catalogs.
+/// existing NativeSceneAssets Arc catalogs. Parsed sources are cloneable:
+/// cloned episode state is independently owned, while immutable collider
+/// catalogs stay Arc-shared by the existing physics/gameplay implementation.
+#[derive(Clone)]
 pub struct NativePhysicalScene {
     pub targeting_context: Option<bees_gameplay::squad_targeting::NativeTargetingContext>,
     bee_side: i32,
@@ -1009,7 +1012,7 @@ pub struct NativeSourceGroupParticipant {
     pub team_id: u8,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NativeSourcePolicyGroup {
     pub episode_number: u32,
     pub movement_disabled_by_team: [bool; 2],
