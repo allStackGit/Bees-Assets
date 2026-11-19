@@ -611,8 +611,13 @@ function createNativeBeesAdapter({
         'train_policy_capture.py',
         'native_training_outcomes.py',
         'read_policy_capture.py',
+        'policy_worker.py',
     ].map(name => trustedFile(path.resolve(__dirname,
-        '../native/tools', name)));
+        '../native/tools', name))).concat([
+        'bees_mlagents_ppo_compat.py',
+        'bees_mlagents_structured_policy.py',
+        'bees_learner_stall_diagnostics.py',
+    ].map(name => trustedFile(path.resolve(__dirname, name))));
     if (typeof artifactRoot !== 'string' || !path.isAbsolute(artifactRoot))
         throw Error('Native Bees requires an absolute artifact root.');
     const artifacts = fs.realpathSync(artifactRoot);
