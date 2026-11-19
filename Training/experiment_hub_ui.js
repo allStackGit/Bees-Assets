@@ -180,8 +180,8 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
         }
         if([...ownersByHost].some(([host,owners])=>owners.length>1&&
             (!courierGroup||job.frozen_parameters?.shared_policy!==true||
-                host!==job.assigned_machine_id||
-                owners.filter(owner=>owner.role==='learner').length!==1||
+                owners.filter(owner=>owner.role==='learner').length!==
+                    (host===job.assigned_machine_id?1:0)||
                 owners.some(owner=>owner.shared_policy!==true||
                     owner.mode!=='exclusive'||owner.gpus!==1||
                     owner.gpu_ids?.length!==1)||
