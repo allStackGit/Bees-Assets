@@ -1037,6 +1037,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · '+lastRound.collector_world_partitions.reduce(
                         (total,part)=>total+part.world_count,0)+' physical Worlds'
                     :'')+
+                (lastRound?.collector_world_partitions?.[0]?.source_run_contract_sha256
+                    ?' · Level source '+
+                        lastRound.collector_world_partitions[0].source_run_contract_sha256.slice(0,12)
+                    :'')+
                 (plan.reason?' · '+plan.reason:'');
             // The compact main row stays readable. The original immutable
             // collector/optimizer ownership and seed lineage remain
@@ -1060,7 +1064,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     (entry.collector_world_partitions?.length
                         ?' · physical partitions '+entry.collector_world_partitions.map(part=>
                             part.job_id.slice(-8)+': ['+part.world_start+','+
-                            (part.world_start+part.world_count)+')'
+                            (part.world_start+part.world_count)+')'+
+                            (part.native_round_number
+                                ?' (curriculum round '+part.native_round_number+')':'')+
+                            (part.source_run_contract_sha256
+                                ?' source '+part.source_run_contract_sha256.slice(0,12):'')
                         ).join(', ')
                         :'')+
                     ' · optimizers '+entry.optimizer_job_ids.join(', ')
