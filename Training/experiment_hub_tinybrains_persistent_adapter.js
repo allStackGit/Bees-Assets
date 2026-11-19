@@ -785,8 +785,6 @@ function createTinyBrainsPersistentDockerAdapter({
     if(typeof nativeWindows!=='boolean'||
         (nativeWindows?process.platform!=='win32':process.platform!=='linux'))
         throw Error('TinyBrains execution must match its installed Windows or Linux owner.');
-    if(nativeWindows&&remoteCollectors!==null)
-        throw Error('Windows persistent PPO currently uses local GPU collectors only.');
     let remote=null;
     if(remoteCollectors!==null) {
         if(!remoteCollectors||typeof remoteCollectors!=='object'||
@@ -801,7 +799,8 @@ function createTinyBrainsPersistentDockerAdapter({
         const keyFile=path.join(keyDirectory,'rollout.key');
         const stat=fs.lstatSync(keyFile);
         if(!stat.isFile()||fs.realpathSync(keyFile)!==keyFile||
-            (stat.mode&0o077)!==0||stat.size<32||stat.size>4096)
+            (!nativeWindows&&(stat.mode&0o077)!==0)||
+            stat.size<32||stat.size>4096)
             throw Error('Remote collector rollout.key must be an existing private regular file.');
         remote={keyDirectory,endpoints:remoteCollectors.endpoints.slice(),
             keyFingerprint:crypto.createHash('sha256').update(fs.readFileSync(keyFile)).digest('hex')};
@@ -878,7 +877,8 @@ function createTinyBrainsPersistentDockerAdapter({
         const file=path.join(remote.keyDirectory,'rollout.key');
         const stat=fs.lstatSync(file);
         return stat.isFile()&&fs.realpathSync(file)===file&&
-            (stat.mode&0o077)===0&&stat.size>=32&&stat.size<=4096&&
+            (nativeWindows||(stat.mode&0o077)===0)&&
+            stat.size>=32&&stat.size<=4096&&
             crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')===remote.keyFingerprint;
     }
 
@@ -1100,7 +1100,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--actions',String(item.profile.rollout_actions),
                 ...(remote_rollouts===true?[...endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
-                    '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
+                    '--remote-rollout-key-file',nativeWindows
+                        ?path.join(remote.keyDirectory,'rollout.key')
+                        :REMOTE_KEY_IN+'/rollout.key']:[]),
                 ...(rollout_action_weights?rollout_action_weights.flatMap(w=>
                     ['--remote-rollout-weight',String(w)]):[]),
                 ...(device==='cpu'?['--device','cpu']:
