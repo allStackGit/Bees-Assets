@@ -1072,6 +1072,8 @@ def main():
     parser.add_argument("--seed-offset-stride", type=int, default=1)
     parser.add_argument("--torch-threads", type=int)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--learner-gpus", type=int, choices=(1, 2), default=1,
+                        help="run coordinated native PPO learner updates on two allocated GPUs")
     parser.add_argument("--stage-diagnostics", action="store_true")
     parser.add_argument("--library-save-root", type=Path,
                         help="opt-in native player save directory for playable training publications")
@@ -1155,6 +1157,10 @@ def main():
             args.hub_dispatch_plan is None or args.distributed_plan is not None or
             not 2 <= args.hub_auto_worlds <= 16384):
         parser.error("--hub-auto-worlds requires a Hub dispatch plan, no separate distributed plan, and 2..16384 total Worlds")
+    if args.learner_gpus > 1 and args.device not in ("cuda", "cuda:0"):
+        parser.error("native multi-GPU optimizer requires CUDA/ROCm learner execution")
+    if args.torch_threads is not None and args.torch_threads < args.learner_gpus:
+        parser.error("optimizer threads must accommodate every leased learner GPU")
     distributed_requested = args.distributed_plan is not None or args.hub_auto_worlds is not None
     if distributed_requested != (args.bundle_inbox is not None):
         parser.error("distributed sessions require a collector plan or --hub-auto-worlds and --bundle-inbox")
@@ -1248,6 +1254,10 @@ def main():
         "device": args.device,
         "stage_diagnostics": args.stage_diagnostics,
     }
+    # Existing single-GPU/CPU session recipes retain their stable identity.
+    # A dual-GPU session pins its real optimizer allocation through resume.
+    if args.learner_gpus > 1:
+        recipe["learner_gpus"] = args.learner_gpus
     # Preserve existing session fingerprints when this new resource
     # selection was not specified; older recipes have no such field.
     if args.physics_workers is not None:
@@ -1485,6 +1495,8 @@ def main():
                 str(next_checkpoint), trainer["path"], str(directory),
                 "--model-manifest", str(next_manifest),
                 "--device", args.device,
+                *([] if args.learner_gpus == 1 else
+                  ["--learner-gpus", str(args.learner_gpus)]),
             ]
             refreshing = scheduled_opponent_slot(self_play, index)
             if refreshing is not None:
