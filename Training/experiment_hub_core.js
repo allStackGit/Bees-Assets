@@ -3735,12 +3735,21 @@ class ExperimentHub {
                 }
                 const machines=[learner.assigned_machine_id,
                     ...workers.map(worker=>worker.assigned_machine_id)];
-                if(!courierGroupMachinesValid(snapshot,learner,workers)||
-                    machines.some(id=>!snapshot.machines.some(machine=>
-                        machine.id===id&&machine.status==='connected'))||
-                    machines.some(id=>this.agentReports.get(id)?.instance_id!==
-                        intent.agent_instances[id])) {
-                    disarm('Courier remote machine or native agent identity changed before learner Start.');
+                if(!courierGroupMachinesValid(snapshot,learner,workers)) {
+                    disarm('Courier native machine and exclusive GPU ownership changed.');
+                    continue;
+                }
+                const offline=machines.some(id=>!snapshot.machines.some(machine=>
+                    machine.id===id&&machine.status==='connected'));
+                if(offline) {
+                    if(!intent.recovery_pending)
+                        disarm('Courier remote machine went offline before learner Start.');
+                    continue;
+                }
+                const changedAgent=machines.some(id=>
+                    this.agentReports.get(id)?.instance_id!==intent.agent_instances[id]);
+                if(changedAgent&&!intent.recovery_pending) {
+                    disarm('Courier native agent identity changed before learner Start.');
                     continue;
                 }
                 const leases=[learner,...workers].map(job=>
@@ -3751,7 +3760,8 @@ class ExperimentHub {
                         lease.issued_by==='experiment-hub'&&
                         lease.status==='acknowledged'&&lease.receipt_fresh===true));
                 if(leases.some(lease=>!lease)) {
-                    disarm('Courier remote CPU/RAM/GPU lease receipt is no longer fresh.');
+                    if(!intent.recovery_pending)
+                        disarm('Courier remote CPU/RAM/GPU lease receipt is no longer fresh.');
                     continue;
                 }
                 const parent=snapshot.machines.find(item=>
