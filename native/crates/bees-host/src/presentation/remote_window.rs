@@ -48,6 +48,7 @@ struct WireCounts {
     frames_rendered: u64,
     orders_sent: u64,
     acknowledgments: u64,
+    campaign_receipts: u64,
     reconnect_attempts: u64,
     reconnect_transports_opened: u64,
     /// Render-only smoothing; no simulation or network side-effects.
@@ -333,6 +334,7 @@ struct PeerClient {
     notice: String,
     held_fire_begin_request: Option<u64>,
     held_fire_rejected: bool,
+    campaign_receipt: Option<String>,
     metrics: WireCounts,
 }
 
@@ -368,7 +370,7 @@ impl PeerClient {
             state: None, visual: RemoteVisual::default(),
             notice: "Authenticating with native host".to_owned(),
             held_fire_begin_request: None, held_fire_rejected: false,
-            metrics: WireCounts::default(),
+            campaign_receipt: None, metrics: WireCounts::default(),
         })
     }
 
@@ -438,6 +440,31 @@ impl PeerClient {
                     self.held_fire_begin_request = None;
                     self.held_fire_rejected = true;
                     self.notice = "Manual fire ended: no surviving held weapons".into();
+                }
+                Some("campaign_receipt") => {
+                    if !self.authenticated ||
+                        message["campaign_outcome"]["player_side"].as_i64() !=
+                            Some(i64::from(self.side)) {
+                        return Err(invalid("campaign receipt belongs to another player").into());
+                    }
+                    let outcome = &message["campaign_outcome"];
+                    let mission = outcome["mission_id"].as_str()
+                        .filter(|mission| !mission.is_empty())
+                        .ok_or_else(|| invalid("invalid campaign receipt mission"))?;
+                    let success = outcome["mission_success"].as_bool()
+                        .unwrap_or_else(|| outcome["winner_side"] == outcome["player_side"]);
+                    let awarded_ships = outcome["awarded_ships"].as_array().map_or(0, Vec::len);
+                    let awarded_squads = outcome["awarded_squads"].as_array().map_or(0, Vec::len);
+                    let banked = message["banked_minerals"].as_u64()
+                        .map(|amount| format!("; {amount} minerals banked"))
+                        .unwrap_or_default();
+                    let receipt = format!(
+                        "Campaign saved: {mission} ({}); {awarded_ships} ships, {awarded_squads} squads awarded{banked}",
+                        if success { "victory" } else { "defeat" },
+                    );
+                    self.campaign_receipt = Some(receipt.clone());
+                    self.notice = receipt;
+                    self.metrics.campaign_receipts += 1;
                 }
                 Some("input_result") => {
                     self.metrics.acknowledgments += 1;
@@ -1863,6 +1890,12 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         peer.metrics.obstacle_hull_draws += hulls;
         peer.metrics.minimap_ship_markers += map_ships;
         peer.metrics.minimap_objective_markers += map_objectives;
+        // The authoritative commit receipt outlives the last world frame and
+        // socket close. A transport status line cannot hide saved progression.
+        if let Some(receipt) = peer.campaign_receipt.as_deref() {
+            text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-43,
+                text::fit(receipt, FIELD-20), 1, [255, 211, 130]);
+        }
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
         peer.metrics.frames_rendered += 1;
     }
@@ -1901,6 +1934,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "audio":audio.measurements(),
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
+        "campaign_receipts":peer.metrics.campaign_receipts,
         "reconnect_attempts":peer.metrics.reconnect_attempts,
         "reconnect_transports_opened":peer.metrics.reconnect_transports_opened,
         "connection_closed":!peer.connected,
