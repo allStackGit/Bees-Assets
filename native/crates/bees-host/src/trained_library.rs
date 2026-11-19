@@ -338,8 +338,14 @@ impl TrainedGame {
             return Err(invalid("trained challenge has no player-controlled squad").into());
         }
         scene["local_player_side"] = json!(human_side);
-        // Source side identity, episode reward denominators, hulls, weapons,
-        // collision objects and original policy coordinate frames stay put.
+        // This is a genuine playable match with a selected model opponent,
+        // not an RL collector. Its real policy routes and authored deadline
+        // stay intact, while terminal/draw rules come from the ordinary
+        // native game and no frozen training rewards enter the encounter.
+        // Match the Python challenge publisher's exact game-scene contract.
+        scene["policy_gameplay"] = Value::Bool(true);
+        // Source side identity, hulls, weapons, collision objects and
+        // original policy coordinate frames stay put.
         let level = &mut run["levels"][0];
         if let Some(queues) = level["scripted_queues"].as_array_mut() {
             queues.retain(|queue| !queue["squad_item_id"].as_i64()
