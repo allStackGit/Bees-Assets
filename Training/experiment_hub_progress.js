@@ -103,6 +103,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_prep_async_h2d_bytes',
             'rollout_gpu_batch_target_pixels',
             'rollout_gpu_batch_next_target','rollout_gpu_batch_settled',
+            'rollout_gpu_unfused_batch_mean',
             'rollout_gpu_batch_proven_target',
             'ppo_gpu_batch_proven_target',
             'rollout_opponent_gpu_stream_seconds',
@@ -419,6 +420,17 @@ class BottleneckEvidence {
                 (unit!=='ratio'||value<=1))
                 derived[name]={value,unit};
         };
+        // Report the mean shape of ACTUAL unfused GPU learner actor
+        // launches, not total observations divided by mixed fused/ordinary
+        // calls. A zero-call vmap-only rollout has no unfused mean.
+        const learnerCalls=metrics.rollout_inference_forward_chunks;
+        const learnerStates=metrics.rollout_inference_forward_states;
+        if(learnerCalls?.unit==='count'&&learnerStates?.unit==='count'&&
+            Number.isSafeInteger(learnerCalls.value)&&learnerCalls.value>0&&
+            Number.isSafeInteger(learnerStates.value)&&
+            learnerStates.value>=learnerCalls.value)
+            add('rollout_gpu_unfused_batch_mean',
+                learnerStates.value/learnerCalls.value,'scalar');
         const history=()=>{
             const version=metrics.training_environment_version;
             const environment=(version?.unit==='count'&&
