@@ -71,6 +71,7 @@ class RemoteConsole:
         self.next_request = 1
         self.alive = True
         self.last_terminal_episode = None
+        self.last_dialogue_cue = None
 
     def receive(self):
         try:
@@ -81,6 +82,16 @@ class RemoteConsole:
                     if kind == "world_state":
                         with self.lock:
                             self.latest = message
+                        dialogue = message.get("campaign_dialogue")
+                        cue = ((message.get("world_id"), message.get("episode_revision"),
+                                dialogue["sequence"]) if dialogue else None)
+                        if cue is not None and cue != self.last_dialogue_cue:
+                            self.last_dialogue_cue = cue
+                            for speaker, line_text in dialogue["lines"]:
+                                notice = f"{speaker}: {line_text}"
+                                self.notifications.put(notice)
+                                if not self.silent:
+                                    print(notice)
                         outcome = message.get("terminal_outcome")
                         episode = (message.get("world_id"), message.get("episode_revision"))
                         if outcome is not None and episode != self.last_terminal_episode:

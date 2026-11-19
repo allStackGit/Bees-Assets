@@ -1109,13 +1109,14 @@ fn current_state(
         // restricted to its campaign player's view, never broadcast to an
         // independently authenticated opposing side.
         "campaign_dialogue": if view.player_authority.player_viewer_side() == Some(side) {
-            // Both compiled clients share the exact authored dialogue
-            // table. Send only the cue and progression identity rather
-            // than retransmitting entire conversations at every tick.
+            // The local and LAN clients read the same source-authored
+            // dialogue table; no Python copy of campaign story text.
+            // The existing side-authority check protects this content.
             view.campaign_dialogue.map(|(sequence, cue)| json!({
                 "sequence": sequence,
                 "cue": cue,
                 "line_count": crate::presentation::campaign_dialogue::lines(cue).len(),
+                "lines": crate::presentation::campaign_dialogue::lines(cue),
             }))
         } else { None },
         // Mission rules and target IDs are public to both authenticated

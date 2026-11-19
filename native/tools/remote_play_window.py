@@ -97,6 +97,8 @@ class RemoteBattleWindow:
         self.mouse_middle = None
         self.selected = []
         self.last_feedback = ""
+        self.dialogue_identity = None
+        self.dialogue_line = 0
         self.view_width = 1
         self.view_height = 1
 
@@ -137,6 +139,8 @@ class RemoteBattleWindow:
         self.canvas.bind("<Configure>", self.refresh)
         self.root.bind("<Escape>", lambda e: self.set_mode(None))
         self.root.bind("<Control-a>", self.select_all)
+        self.root.bind("<KeyPress-l>", self.advance_dialogue)
+        self.root.bind("<KeyPress-k>", self.skip_dialogue)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(50, self.poll)
 
@@ -199,6 +203,24 @@ class RemoteBattleWindow:
         self.mouse_middle = (event.x, event.y)
         self.draw()
 
+    def visible_dialogue(self):
+        dialogue = self.state.get("campaign_dialogue") if self.state else None
+        if dialogue is None:
+            return None
+        lines = dialogue.get("lines", [])
+        return lines[self.dialogue_line] if self.dialogue_line < len(lines) else None
+
+    def advance_dialogue(self, _event=None):
+        if self.visible_dialogue() is not None:
+            self.dialogue_line += 1
+            self.draw()
+
+    def skip_dialogue(self, _event=None):
+        dialogue = self.state.get("campaign_dialogue") if self.state else None
+        if dialogue is not None:
+            self.dialogue_line = len(dialogue.get("lines", []))
+            self.draw()
+
     def poll(self):
         while not self.console.notifications.empty():
             self.notice(self.console.notifications.get_nowait())
@@ -213,6 +235,12 @@ class RemoteBattleWindow:
                     self.selected = []
                 self.state = state
                 self.drawn_scope = key
+                dialogue = state.get("campaign_dialogue")
+                identity = ((key[0], key[1], dialogue["sequence"])
+                            if dialogue is not None else None)
+                if identity != self.dialogue_identity:
+                    self.dialogue_identity = identity
+                    self.dialogue_line = 0
                 self.update_sidebar()
                 bounds = state.get("map_bounds")
                 if self.map_bounds != bounds:
@@ -337,6 +365,9 @@ class RemoteBattleWindow:
     def send(self, kind, body):
         if not self.console.alive or self.state is None:
             self.notice("No connected native battle")
+            return
+        if self.visible_dialogue() is not None:
+            self.notice("Press L to continue or K to dismiss campaign dialogue")
             return
         owners = self.selected_owners()
         if not owners:
@@ -507,6 +538,20 @@ class RemoteBattleWindow:
             self.canvas.create_text(14, 38, text=outcome["reason"], anchor="nw",
                                     fill="#e7efff",
                                     width=max(200, self.canvas.winfo_width() - 28))
+        dialogue = self.visible_dialogue()
+        if dialogue is not None:
+            speaker, line_text = dialogue
+            width, height = self.canvas.winfo_width(), self.canvas.winfo_height()
+            top = max(72, height - 160)
+            self.canvas.create_rectangle(10, top, width - 10, height - 10,
+                                         fill=BACKGROUND, outline=OUTLINE, width=2)
+            self.canvas.create_text(24, top + 13, text=speaker, anchor="nw",
+                                    fill=FRIENDLY, font=("TkDefaultFont", 12, "bold"))
+            self.canvas.create_text(24, top + 43, text=line_text, anchor="nw",
+                                    width=max(100, width - 50), fill="#e7efff",
+                                    font=("TkDefaultFont", 11))
+            self.canvas.create_text(24, height - 26, text="L next line  |  K dismiss",
+                                    anchor="nw", fill=NEUTRAL)
 
     def close(self):
         self.console.alive = False
