@@ -42,6 +42,28 @@ pub(crate) fn battle_outcome_label(result: bees_sim::episode_terminal::EpisodeTe
     else { format!("Side {} wins", result.winner_side) }
 }
 
+/// Result causes are derived from the same authored native Level status
+/// for local rendering and the authenticated multiplayer wire. No client
+/// infers mission completion from hull counts, map visibility or its own clock.
+pub(crate) fn battle_outcome_reason(
+    view: &NativeRenderWorldView<'_>,
+    result: bees_sim::episode_terminal::EpisodeTerminalResult,
+) -> &'static str {
+    if view.escort.is_some() {
+        if result.extraction_victory { "Convoy delivered" } else { "Convoy lost" }
+    } else if result.extraction_victory {
+        "Extraction"
+    } else if view.survival.is_some() {
+        "Defense"
+    } else if let Some(objective) = view.demolition {
+        if result.winner_side == objective.attacking_side {
+            "Demolition"
+        } else { "Objective defended" }
+    } else if result.timed_out {
+        "Time limit"
+    } else { "Elimination" }
+}
+
 /// This view is valid only between fixed steps, and cannot outlive the
 /// NativeHostRuntime's immutable borrow. Presentation event effects are
 /// acknowledged separately through NativeLevelNotificationSink, not here.

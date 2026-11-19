@@ -1110,8 +1110,14 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             .or_else(||(!state["terminal_result"].is_null()).then(||
                 format!("Winner side {}",state["terminal_result"])));
         if let Some(outcome)=outcome {
+            let reason = state["terminal_outcome"]["reason"].as_str()
+                .unwrap_or("Battle finished");
+            let seconds = state["terminal_outcome"]["duration_seconds"]
+                .as_f64().filter(|duration| duration.is_finite() && *duration >= 0.0)
+                .unwrap_or(0.0);
+            let label = format!("Result: {outcome}  /  {reason}  /  {seconds:.1}s");
             text::draw_at(pixels,WIDTH,16,20,
-                &format!("Result: {outcome}"),2,[255,210,129]);
+                text::fit(&label,FIELD-32),2,[255,210,129]);
         } else if let Some(objective)=state["campaign_objective"].as_object() {
             let remaining = objective.get("seconds_remaining")
                 .and_then(Value::as_f64).filter(|v| v.is_finite() && *v >= 0.0);
@@ -1127,10 +1133,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                         let waves = state["reinforcements"]["pending"].as_u64().unwrap_or(0);
                         let protected = objective.get("protected_ship_id")
                             .and_then(Value::as_i64).unwrap_or(0);
-                        let defending = state["ships"].as_array().into_iter().flatten()
-                            .find(|ship| ship["id"].as_i64() == Some(protected))
-                            .and_then(|ship| ship["side"].as_i64())
-                            == Some(i64::from(side));
+                        let defending = objective.get("defending_side")
+                            .and_then(Value::as_i64) == Some(i64::from(side));
                         format!("{} #{} {:02}:{:02}  {:.0}%  Waves {}",
                             if defending { "Protect" } else { "Destroy" },
                             protected, seconds / 60, seconds % 60, percent, waves)
@@ -1214,7 +1218,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         "B beacon D detonate Q charge",
         "E heal W retreat P patrol",
         "M mine Z cease  F6 art F7 mute",
-        "R reset +/- zoom Esc back",
+        "Map drag pan R fit +/- zoom Esc",
     ];
     for (index,label) in instructions.iter().enumerate(){
         text::draw_at(pixels,WIDTH,FIELD+14,455+index*18,label,1,MUTED);

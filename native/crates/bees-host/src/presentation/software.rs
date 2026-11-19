@@ -8,7 +8,8 @@ use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
 use bees_sim::simulation::{RandomStream, WorldId};
-use super::{NativeRenderWorldView, NativeSquadSelection, battle_outcome_label, text};
+use super::{NativeRenderWorldView, NativeSquadSelection,
+    battle_outcome_label, battle_outcome_reason, text};
 use super::minimap::MiniMapLayout;
 use super::tactical_hud;
 
@@ -2731,15 +2732,7 @@ impl NativeSoftwareRenderer {
         &mut self, view: &NativeRenderWorldView<'_>, result: bees_sim::episode_terminal::EpisodeTerminalResult,
     ) {
         let title = battle_outcome_label(result);
-        let reason = if result.extraction_victory { "Extraction" }
-            else if view.survival.is_some() { "Defense" }
-            else if view.escort.is_some() { "Escort" }
-            else if let Some(objective) = view.demolition {
-                if result.winner_side == objective.attacking_side {
-                    "Demolition"
-                } else { "Objective defended" }
-            }
-            else if result.timed_out { "Time limit" } else { "Elimination" };
+        let reason = battle_outcome_reason(view, result);
         let detail = format!("{reason}  /  {:.2} s", result.duration_seconds);
         let context = format!("World {}  /  Episode {}", view.world_id.0, view.episode_revision + 1);
         let title_scale = if self.width >= 400 && self.height >= 176 { 2 } else { 1 };

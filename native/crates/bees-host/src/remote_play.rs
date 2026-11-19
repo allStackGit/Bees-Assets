@@ -1063,6 +1063,7 @@ fn current_state(
             "bee_side_eliminated": result.bee_side_eliminated,
             "human_side_eliminated": result.human_side_eliminated,
             "label": crate::presentation::battle_outcome_label(result),
+            "reason": crate::presentation::battle_outcome_reason(view, result),
         })),
         // Present the SAME authored Level cue as local play. Story text is
         // restricted to its campaign player's view, never broadcast to an
@@ -1085,6 +1086,8 @@ fn current_state(
             Some(json!({
                 "kind": "survival",
                 "protected_ship_id": objective.protected_ship_id,
+                "defending_side": view.combat.ship(objective.protected_ship_id)
+                    .map(|ship| ship.side),
                 "elapsed_seconds": objective.elapsed_seconds,
                 "duration_seconds": objective.duration_seconds,
                 "seconds_remaining": objective.seconds_remaining,
