@@ -70,6 +70,7 @@ class RemoteConsole:
         self.selected = []
         self.next_request = 1
         self.alive = True
+        self.last_terminal_episode = None
 
     def receive(self):
         try:
@@ -80,6 +81,15 @@ class RemoteConsole:
                     if kind == "world_state":
                         with self.lock:
                             self.latest = message
+                        outcome = message.get("terminal_outcome")
+                        episode = (message.get("world_id"), message.get("episode_revision"))
+                        if outcome is not None and episode != self.last_terminal_episode:
+                            self.last_terminal_episode = episode
+                            notice = (f"Battle finished: {outcome.get('label', 'Result')}"
+                                      f" — {outcome.get('reason', 'No reason reported')}")
+                            self.notifications.put(notice)
+                            if not self.silent:
+                                print(notice)
                     elif kind == "welcome":
                         side = message.get("side")
                         if self.expected_side is not None and side != self.expected_side:
@@ -173,6 +183,9 @@ class RemoteConsole:
                   f" tick {state['tick']} side {state['viewer_side']}"
                   f" ships visible {len(state['ships'])}"
                   f" squads selected {self.selected}")
+            outcome = state.get("terminal_outcome")
+            if outcome is not None:
+                print(f"Battle finished: {outcome['label']} — {outcome['reason']}")
             return
         if cmd == "ships":
             for ship in state["ships"]:

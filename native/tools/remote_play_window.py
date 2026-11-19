@@ -225,7 +225,11 @@ class RemoteBattleWindow:
         if self.console.alive:
             self.root.after(50, self.poll)
         else:
-            self.notice("Disconnected from host; battle is no longer interactive")
+            outcome = self.state.get("terminal_outcome") if self.state else None
+            if outcome is not None:
+                self.notice(f"Battle finished: {outcome['label']} (host closed)")
+            else:
+                self.notice("Disconnected from host; battle is no longer interactive")
 
     def refresh(self, _event=None):
         self.draw()
@@ -490,12 +494,19 @@ class RemoteBattleWindow:
         if self.drag_box:
             self.canvas.create_rectangle(*self.drag_box, outline="#bce4ff", dash=(5,3))
         info = f"Tick {state['tick']}  Side {state['viewer_side']}  Friendly squads {len(selected)}"
-        if state["terminal_result"] is not None:
+        outcome = state.get("terminal_outcome")
+        if outcome is not None:
+            info += f"  |  {outcome['label']}"
+        elif state["terminal_result"] is not None:
             info += f"  |  Winner: side {state['terminal_result']}"
-        if self.mode:
+        if self.mode and outcome is None:
             info += f"  |  Targeting: {self.mode}"
         self.canvas.create_text(14, 14, text=info, anchor="nw", fill="#e7efff",
                                 font=("TkDefaultFont", 11, "bold"))
+        if outcome is not None:
+            self.canvas.create_text(14, 38, text=outcome["reason"], anchor="nw",
+                                    fill="#e7efff",
+                                    width=max(200, self.canvas.winfo_width() - 28))
 
     def close(self):
         self.console.alive = False
