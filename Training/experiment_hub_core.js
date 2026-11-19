@@ -2190,6 +2190,7 @@ class ExperimentHub {
         return {...chart,evaluations:evaluations.samples,
             evaluation_regressions:evaluations.regressions,
             evaluation_diagnostics:evaluations.diagnostics,
+            evaluation_open_diagnostics:evaluations.open_diagnostics,
             evaluation_storage_warning:evaluations.storage_warning};
     }
     // These are conservative coordinator-side claims, NOT operating system
