@@ -5052,6 +5052,17 @@ class ExperimentHub {
                 // checkpoint and authorized GPU/CPU resources persist.
                 job.frozen_parameters.native_round_number=
                     approvedRound.completed_rounds+1;
+                // Carry the approved physical source directly into every
+                // immutable job. Its installed adapter checks this SHA
+                // before running; the Hub receipt mirror checks it again
+                // before admitting collected experience to the optimizer.
+                const pinnedSource=approvedRound.collector_source_contracts?.[
+                    approvedRound.completed_rounds];
+                if(pinnedSource!==undefined) {
+                    if(!SHA256.test(String(pinnedSource)))
+                        throw Error('Approved native curriculum stage has no valid source identity.');
+                    job.frozen_parameters.source_run_contract_sha256=pinnedSource;
+                }
                 const originalSeed=approvedRound.collector_seed_offsets?.[index] ??
                     approvedRound.collector_seed_offset;
                 if(originalSeed!==undefined)
