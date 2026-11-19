@@ -810,10 +810,12 @@ function createNativeBeesAdapter({
     if (collectOnly || distributedOptimizer?.role === 'worker') configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
     const configSha256 = sha256(JSON.stringify(configIdentity));
-    // Machine-independent identity for the *actual* MA-POCA inputs. Runtime
-    // paths, CPU allocation and the worker's Hub project ID are intentionally
-    // excluded; a node with different optimizer source bytes or collective
-    // backend must not join an approved distributed model update.
+    // Machine-independent identity for the installed MA-POCA source contract.
+    // The installed baseline checkpoint and manifest establish which native
+    // optimizer configuration the group members share. A successor round
+    // retains this installation identity while the Hub separately pins its
+    // updated predecessor model SHA-256, and all torchrun ranks must agree
+    // on the exact active checkpoint, manifest and physical rollout bytes.
     const optimizerInputIdentity = (checkpointDigest,manifestDigest) =>
         sha256(JSON.stringify([
             checkpointDigest,manifestDigest,pins.get(trainer),
@@ -1287,11 +1289,19 @@ function createNativeBeesAdapter({
                 throw Error('Native Bees execution requires an exclusive one- or two-GPU lease or CPU-only placement.');
             const inputs = roundInputs(context);
             if ((distributedOptimizer !== undefined &&
-                optimizer_inputs_sha256 !== optimizerInputIdentity(
-                    inputs.checkpointDigest,inputs.manifestDigest)) ||
+                optimizer_inputs_sha256 !== optimizerInputsSha256) ||
                 (distributedOptimizer === undefined &&
                     optimizer_inputs_sha256 !== undefined))
-                throw Error('Frozen native optimizer input identity disagrees with its locally verified checkpoint, model manifest, trainer or collective backend.');
+                throw Error('Frozen native optimizer installation identity disagrees with its pinned trainer, baseline model or collective backend.');
+            // A subsequent group intentionally consumes a newer completed
+            // checkpoint. Its actual model identity is enforced by the
+            // authenticated Hub source pin and the optimizer's full-rank
+            // SHA-256 input collective, not by the baseline installation SHA.
+            if (distributedOptimizer !== undefined &&
+                context.model_source_job_id == null &&
+                optimizer_inputs_sha256 !== optimizerInputIdentity(
+                    inputs.checkpointDigest,inputs.manifestDigest))
+                throw Error('Initial native optimizer group input differs from its installed baseline.');
             if (refresh_opponent_slot !== undefined) {
                 if (learnerSlot === undefined || !Number.isSafeInteger(refresh_opponent_slot) ||
                     refresh_opponent_slot < 0 || refresh_opponent_slot > 0xffffffff ||
