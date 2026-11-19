@@ -4258,6 +4258,7 @@ class ExperimentHub {
         this.advancePendingDistributedGroups();
         this.advanceDistributedLaunches();
         this.advancePendingResourceBundles();
+        this.advanceNativeBeesRounds();
         // An agent awaiting a slow native Start/Stop/probe can renew
         // authenticated liveness without receiving a second instruction.
         // This does not close the session or release native ownership.
@@ -4651,7 +4652,9 @@ class ExperimentHub {
                 ...selection,
                 ...(modelSourceId?{
                     model_source_job_id:modelSourceId,
-                    ...(index===0?{continuation_of_job_id:modelSourceId}:{}),
+                    ...(index===0&&next.configurations.find(config=>
+                        config.id===selection.configuration_id)?.project_id==='bees_native'
+                        ?{continuation_of_job_id:modelSourceId}:{}),
                 }:{}),
             });
             if(collectors) {
