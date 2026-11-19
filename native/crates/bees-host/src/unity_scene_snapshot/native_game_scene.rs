@@ -642,9 +642,21 @@ impl NativePhysicalScene {
         ) {
             return Err(invalid("inert native FleetShip templates cannot own live progress, policy or carrier state"));
         }
-        let template_ids = raw.fleet_templates.iter().map(|ship|
-            ship.entity_id).collect::<HashSet<_>>();
-        if template_ids.len() != raw.fleet_templates.len() {
+        // The policy scenario has no campaign economy or player fleet
+        // installer. Reserve templates do not contribute to physics,
+        // observations, episode rewards or controller membership. Avoid
+        // instantiating/validating their heavy hull and turret metadata in
+        // each independent training World, while preserving the authored
+        // input and the identical *live* CombatWorld used in gameplay.
+        let template_ids = if policy_episode.is_some() {
+            HashSet::new()
+        } else {
+            raw.fleet_templates.iter().map(|ship|
+                ship.entity_id).collect::<HashSet<_>>()
+        };
+        if policy_episode.is_none() &&
+            template_ids.len() != raw.fleet_templates.len()
+        {
             return Err(invalid("duplicate native FleetShip source template identity"));
         }
         if has_agents != policy_episode.is_some() {
@@ -729,7 +741,9 @@ impl NativePhysicalScene {
         let mut group_participants = Vec::new();
         let mut team_frames: [Option<u8>; 2] = [None, None];
         let mut source_ships = raw.ships;
-        source_ships.extend(raw.fleet_templates);
+        if policy_episode.is_none() {
+            source_ships.extend(raw.fleet_templates);
+        }
         for ship in source_ships {
             let id = ship.entity_id;
             let pos = Vec2::new(ship.position[0], ship.position[1]);
