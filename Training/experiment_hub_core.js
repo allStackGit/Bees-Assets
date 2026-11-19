@@ -774,7 +774,8 @@ function nativeStartReadiness(snapshot, job) {
             !SHA256.test(String(key||''))||
             workers.length!==endpoints.length)
             return block('The Courier learner needs its exact locally pinned remote PPO population.');
-        const hosts=new Set([machine.id]);
+        if(!courierGroupMachinesValid(snapshot,job,workers))
+            return block('Courier group requires distinct remote machines or one separately leased local GPU collector.');
         const first=courierFirstSlot(job,endpoints.length);
         if(first===null)
             return block('Courier remote PPO workers require a compatible frozen learner.');
@@ -786,9 +787,8 @@ function nativeStartReadiness(snapshot, job) {
                 worker.live_execution?.state!=='running'||
                 worker.live_execution?.dispatch_id!==worker.dispatch_id||
                 !worker.dispatch_id||worker.capacity_released_at||
-                !worker.assigned_machine_id||hosts.has(worker.assigned_machine_id))
+                !worker.assigned_machine_id)
                 return block('Every Courier PPO lineage needs an independently running Hub worker.');
-            hosts.add(worker.assigned_machine_id);
             const host=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
             const owned=snapshot.reservations.find(lease=>
                 lease.id===worker.lease_id&&lease.job_id===worker.id&&
@@ -2972,7 +2972,9 @@ class ExperimentHub {
         if(ordered.some(worker=>!worker)||
             new Set(ordered.map(worker=>worker.id)).size!==ordered.length)
             throw Error('Courier remote policy slot-to-endpoint membership changed.');
-        const seen=new Set(),members=[learner,...ordered].map((job,index)=>{
+        if(!courierGroupMachinesValid(snapshot,learner,ordered))
+            throw Error('Courier group requires distinct endpoints and at most one separately leased local GPU collector.');
+        const members=[learner,...ordered].map((job,index)=>{
             const machine=snapshot.machines.find(item=>item.id===job.assigned_machine_id);
             const lease=snapshot.reservations.find(item=>
                 item.id===job.lease_id&&item.job_id===job.id&&
@@ -2980,10 +2982,8 @@ class ExperimentHub {
                 item.project_id===job.project_id&&
                 item.issued_by==='experiment-hub'&&
                 ['offered','acknowledged'].includes(item.status));
-            if(!machine||!lease||!job.assigned_machine_id||
-                seen.has(machine.id))
-                throw Error('Courier group needs distinct registered machines and original resource leases.');
-            seen.add(machine.id);
+            if(!machine||!lease||!job.assigned_machine_id)
+                throw Error('Courier group needs registered machines and original resource leases.');
             if(index>0&&(machine.courier_lineage_endpoint!==endpoints[index-1]||
                 machine.courier_lineage_key_fingerprint!==
                     host.courier_remote_key_fingerprint||
@@ -3711,7 +3711,7 @@ class ExperimentHub {
                 }
                 const machines=[learner.assigned_machine_id,
                     ...workers.map(worker=>worker.assigned_machine_id)];
-                if(machines.length!==new Set(machines).size||
+                if(!courierGroupMachinesValid(snapshot,learner,workers)||
                     machines.some(id=>!snapshot.machines.some(machine=>
                         machine.id===id&&machine.status==='connected'))||
                     machines.some(id=>this.agentReports.get(id)?.instance_id!==
@@ -5600,15 +5600,14 @@ class ExperimentHub {
             JSON.stringify(pending.learner_shards)!==
                 JSON.stringify(shards)))
             throw Error('Original scheduled Courier leases or endpoint identities changed before native Start.');
-        const owners={},hosts=new Set([host.id]),dispatches={};
+        if(!courierGroupMachinesValid(snapshot,learner,workers))
+            throw Error('Courier group has duplicate machines without a separately leased local GPU collector.');
+        const owners={},dispatches={};
         for(const worker of workers) {
             const readiness=nativeStartReadiness(snapshot,worker);
             if(!readiness.eligible)
                 throw Error('Courier remote lineage '+worker.id+' cannot Start: '+readiness.reason);
             const machine=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
-            if(hosts.has(machine.id))
-                throw Error('Courier group requires a distinct machine for every remote lineage.');
-            hosts.add(machine.id);
             const owner=snapshot.reservations.find(lease=>
                 lease.id===worker.lease_id&&lease.job_id===worker.id&&
                 lease.machine_id===worker.assigned_machine_id&&
