@@ -31,6 +31,8 @@ const POST_ACTIONS={
     '/api/hub/sequences':[201,'queueSequence'],
     '/api/hub/trials':[201,'queueTrials'],
     '/api/hub/resource-bundles':[201,'queueResourceBundle'],
+    '/api/hub/native-bees/rounds':[201,'scheduleNativeBeesRounds'],
+    '/api/hub/native-bees/rounds/cancel':[200,'cancelNativeBeesRounds'],
     '/api/hub/resource-bundles/start':[200,'authorizeResourceBundle'],
     '/api/hub/resource-bundles/schedule-start':[200,'scheduleResourceBundleStart'],
     '/api/hub/resource-bundles/cancel-start-plan':[200,'cancelScheduledResourceBundleStart'],
