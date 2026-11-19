@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bees_sim::collision::Aabb;
 use bees_sim::combat_world::CombatEvent;
@@ -188,6 +188,10 @@ pub struct RemotePlayMeasurements {
     pub state_frames: u64,
     pub state_bytes: u64,
     pub states_superseded: u64,
+    /// Final side-filtered state bytes drained after the last physical tick.
+    pub terminal_drain_wall_seconds: f64,
+    /// Connected peers whose terminal state remained queued at the drain deadline.
+    pub terminal_state_pending_peers: usize,
     pub disconnected_peers: u64,
     pub held_fire_requests: u64,
     pub held_fire_rejected: u64,
@@ -601,6 +605,36 @@ impl NativeRemotePlay {
             }
         }
         self.measurements.state_frames += 1;
+        self.reap();
+    }
+
+    /// After the authoritative Level finishes, the host no longer advances
+    /// ticks. Give its already-queued final world_state a bounded opportunity
+    /// to leave each nonblocking socket before the transport is dropped.
+    /// This does not acknowledge a campaign transaction, replay simulation,
+    /// or hold up the game indefinitely for an unresponsive viewer.
+    pub fn drain_terminal_output(&mut self, deadline: Duration) {
+        let start = Instant::now();
+        let pending = loop {
+            let mut pending = 0_usize;
+            for peer in &mut self.peers {
+                if peer.closed || peer.side.is_none() { continue; }
+                self.measurements.state_bytes += peer.flush();
+                if !peer.closed && (
+                    peer.written < peer.outgoing.len() ||
+                    !peer.reliable.is_empty() ||
+                    peer.newest_state.is_some()
+                ) {
+                    pending += 1;
+                }
+            }
+            if pending == 0 || start.elapsed() >= deadline {
+                break pending;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        };
+        self.measurements.terminal_drain_wall_seconds = start.elapsed().as_secs_f64();
+        self.measurements.terminal_state_pending_peers = pending;
         self.reap();
     }
 

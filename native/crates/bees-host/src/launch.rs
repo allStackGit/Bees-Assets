@@ -4829,6 +4829,20 @@ fn run_battle(
         if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
     }
 
+    // The last physical world_state includes the source winner, objective
+    // result and timeout. A headless multiplayer host stops ticking as soon
+    // as that episode finishes, so explicitly drain the existing socket
+    // queue before finalizing the immutable campaign/battle receipt.
+    if failed_window.is_none() && !user_closed {
+        if let Some(server) = &mut remote {
+            if host.simulation().world(0)
+                .is_some_and(|world| world.state.events.completed())
+            {
+                server.drain_terminal_output(std::time::Duration::from_millis(350));
+            }
+        }
+    }
+
     if failed_window.is_none() && !user_closed && playback.as_ref().is_some_and(|trace|
         rounds != trace.end_round || !trace.inputs.is_empty() ||
         !trace.checkpoints.is_empty()
