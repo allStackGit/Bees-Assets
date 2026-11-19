@@ -368,8 +368,8 @@ function gpuStartBlock(job,lease,machine) {
     }
     if(machine.agent_platform!=='linux')
         return 'Native GPU execution is unavailable on this operating system.';
-    if(!(machine.observed_gpus?.length>=2))
-        return 'Native GPU Start requires at least two observed GPUs for device qualification.';
+    if((machine.observed_gpus?.length??0)<r.gpu_count)
+        return 'Native GPU Start requires enough freshly observed physical devices for its exact GPU lease.';
     if(job.gpu_qualification?.current!==true)
         return 'Current device access and HIP runtime qualification for this exact GPU lease are required.';
     return null;
