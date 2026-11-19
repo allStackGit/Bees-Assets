@@ -204,7 +204,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
     outputs = []
     sources = []
     missions = []
-    previous = None
+    mission_dependencies = dict(args.mission_requires)
+    mission_advances = dict(args.mission_advance)
+    shop_unlocks = dict(args.shop_unlock)
     stable_roster = None
     earned_saved_squads = set()
     shop_catalog = {}
@@ -294,15 +296,21 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
                 {"ship_type": kind, "count": count, "saved_squad_id": saved_id}
                 for _, kind, count, saved_id in grants
             ]
-        if previous is not None:
-            mission["requires"] = [previous]
+        prerequisites = mission_dependencies.get(
+            index, [index - 1] if index > 1 else []
+        )
+        if prerequisites:
+            mission["requires"] = [
+                f"mission-{required:03d}" for required in prerequisites
+            ]
+        if mission_advances.get(index, "victory") == "finished":
+            mission["advance_on"] = "finished"
         missions.append({
             "title": scene["level_name"], "config": run_file,
             "mission": mission,
         })
         outputs.extend(((scene_file, scene), (run_file, run)))
         sources.append({"mission_id": ident, **provenance})
-        previous = ident
     fleet_classes = []
     classes = [*args.shop_types, *args.grant_only_types]
     for ship_type in classes:
@@ -323,7 +331,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
             "player_side": args.player_side, "ship_type": ship_type,
             "price_tsv": next(iter(prices)),
             "purchasable": purchasable,
-            "unlocked_after": ["mission-001"] if purchasable else [],
+            "unlocked_after": [
+                f"mission-{required:03d}" for required in
+                shop_unlocks.get(ship_type, [1] if purchasable else [])
+            ],
         })
     catalog = {
         "campaign_id": slug, "battles": missions,
@@ -344,6 +355,15 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         "missions": sources,
         "shop_types": args.shop_types,
         "grant_only_types": args.grant_only_types,
+        "mission_progression": [{
+            "mission_id": f"mission-{index:03d}",
+            "requires": missions[index - 1]["mission"].get("requires", []),
+            "advance_on": missions[index - 1]["mission"].get("advance_on", "victory"),
+        } for index in range(1, len(missions) + 1)],
+        "shop_unlocked_after": {
+            str(entry["ship_type"]): entry["unlocked_after"]
+            for entry in fleet_classes if entry["purchasable"]
+        },
         "fleet_class_sha256": {
             str(ship_type): next(iter(per_mission_class_contracts[0][ship_type]))
             for ship_type in classes
@@ -409,6 +429,54 @@ def victory_squad(value: str) -> tuple[int, int, int]:
     return mission, new_id, template_id
 
 
+def preceding_missions(value: str) -> tuple[int, list[int]]:
+    """MISSION:PREREQ[,PREREQ] or MISSION:none; 1-based forward-only DAG."""
+    match = re.fullmatch(r"(\d+):(none|\d+(?:,\d+)*)", value)
+    if match is None:
+        raise argparse.ArgumentTypeError(
+            "mission requires MISSION:PREVIOUS[,PREVIOUS] or MISSION:none"
+        )
+    index = int(match.group(1))
+    prerequisites = ([] if match.group(2) == "none" else
+                     [int(part) for part in match.group(2).split(",")])
+    if (not 1 <= index <= 40 or
+            len(prerequisites) != len(set(prerequisites)) or
+            any(not 1 <= prerequisite < index for prerequisite in prerequisites)):
+        raise argparse.ArgumentTypeError(
+            "prerequisite missions must be unique, positive and earlier"
+        )
+    return index, prerequisites
+
+
+def mission_advance(value: str) -> tuple[int, str]:
+    """MISSION:victory or MISSION:finished."""
+    match = re.fullmatch(r"(\d+):(victory|finished)", value)
+    if match is None or not 1 <= int(match.group(1)) <= 40:
+        raise argparse.ArgumentTypeError(
+            "--mission-advance needs MISSION:victory or MISSION:finished"
+        )
+    return int(match.group(1)), match.group(2)
+
+
+def shop_unlock(value: str) -> tuple[int, list[int]]:
+    """SHIP_TYPE:MISSION[,MISSION] or SHIP_TYPE:none for initial availability."""
+    match = re.fullmatch(r"(\d+):(none|\d+(?:,\d+)*)", value)
+    if match is None:
+        raise argparse.ArgumentTypeError(
+            "--shop-unlock needs TYPE:MISSION[,MISSION] or TYPE:none"
+        )
+    ship_type = int(match.group(1))
+    missions = ([] if match.group(2) == "none" else
+                [int(part) for part in match.group(2).split(",")])
+    if (not 0 <= ship_type < 24 or
+            len(missions) != len(set(missions)) or
+            any(not 1 <= mission <= 40 for mission in missions)):
+        raise argparse.ArgumentTypeError(
+            "--shop-unlock requires a ship type 0..23 and unique missions 1..40"
+        )
+    return ship_type, missions
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path,
@@ -421,6 +489,15 @@ def main() -> None:
                         help="optional purchasable hull classes: comma-separated ship types")
     parser.add_argument("--grant-only-types", type=ship_types, default=[],
                         help="source-backed reward classes that can never be purchased")
+    parser.add_argument("--mission-requires", action="append", type=preceding_missions,
+                        default=[], metavar="MISSION:PREVIOUS[,PREVIOUS]",
+                        help="override linear prerequisites; MISSION:none makes a parallel start")
+    parser.add_argument("--mission-advance", action="append", type=mission_advance,
+                        default=[], metavar="MISSION:victory|finished",
+                        help="choose the finished-battle or victorious-battle unlock rule")
+    parser.add_argument("--shop-unlock", action="append", type=shop_unlock,
+                        default=[], metavar="TYPE:MISSION[,MISSION]",
+                        help="unlock a purchasable class after named mission(s); TYPE:none unlocks it initially")
     parser.add_argument("--max-squad-ships", type=int, default=10,
                         help="saved-squad ship cap when a fleet shop or reward is enabled (default: 10)")
     parser.add_argument("--victory-grant", action="append", type=victory_grant,
@@ -441,6 +518,23 @@ def main() -> None:
         parser.error("--grant-only-types must be awarded by at least one --victory-grant")
     if not 1 <= args.max_squad_ships <= 1024:
         parser.error("--max-squad-ships must be within 1..1024")
+    for label, rules in (
+        ("--mission-requires", args.mission_requires),
+        ("--mission-advance", args.mission_advance),
+        ("--shop-unlock", args.shop_unlock),
+    ):
+        ids = [index for index, _ in rules]
+        if len(set(ids)) != len(ids):
+            parser.error(f"{label} may only configure each mission/class once")
+        limit = 23 if label == "--shop-unlock" else len(args.mission)
+        if any(index > limit for index in ids):
+            parser.error(f"{label} refers to an absent mission or hull class")
+    if any(kind not in args.shop_types for kind, _ in args.shop_unlock):
+        parser.error("--shop-unlock requires a purchasable --shop-types class")
+    if any(prerequisite > len(args.mission)
+           for _, prerequisites in args.shop_unlock
+           for prerequisite in prerequisites):
+        parser.error("--shop-unlock refers to an absent mission")
     try:
         catalog, library, outputs, receipt = campaign(args)
         output = args.output_dir.resolve()
