@@ -280,14 +280,85 @@ async function setup(hub) {
         await systemctl(['start',unitFiles(o,id).timer]);
     return {message:'Approved Nano and Micro evaluation timers installed and started.'};
 }
+async function refreshSuite(hub,id) {
+    const o=localOptions(hub);
+    const original=definitions(o)[id];
+    const unit=approvedUnit(o,id,original);
+    const service=await properties(unit.service);
+    if(['active','activating'].includes(service.ActiveState))
+        throw Error('Finish the active evaluation before approving a new suite.');
+    const {stdout}=await run(presentFile(o.launcher),[
+        '-B',path.join(o.hubRoot,'Training/experiment_hub_evaluation_runtime.py'),
+        '--project','tinybrains','--engine-path',o.engine,
+    ],{timeout:90000,maxBuffer:1024*1024});
+    const digest=JSON.parse(stdout).runtime_sha256;
+    if(typeof digest!=='string'||!/^[a-f0-9]{64}$/.test(digest))
+        throw Error('The installed TinyBrains evaluator runtime returned no valid digest.');
+    const oldSuite=JSON.parse(fs.readFileSync(suiteFiles(o)[id],'utf8'));
+    if(oldSuite.runtime_sha256===digest)
+        return {message:id+' suite is already pinned to this runtime.'};
+    const pattern=new RegExp('^tinybrains_'+id+'_tiny_v([3-9][0-9]*)\\.json$');
+    const versions=fs.readdirSync(o.suites).map(name=>pattern.exec(name))
+        .filter(Boolean).map(match=>Number(match[1]));
+    const version=Math.max(3,...versions)+1;
+    if(version>999)throw Error('TinyBrains suite version limit exceeded.');
+    const name='tinybrains_'+id+'_tiny_v'+version;
+    const suiteFile=path.join(o.suites,name+'.json');
+    if(fs.existsSync(suiteFile))
+        throw Error('New frozen TinyBrains suite already exists.');
+    const marker=path.join(o.suites,'hub-approved-latest.json');
+    const beforeMarker=fs.existsSync(marker)?fs.readFileSync(marker,'utf8'):null;
+    const oldService=fs.readFileSync(unit.serviceFile,'utf8');
+    const oldTimer=fs.readFileSync(unit.timerFile,'utf8');
+    await systemctl(['stop',unit.timer]);
+    let installed=false;
+    try {
+        // Frozen suite files are never overwritten; only the approved
+        // schedule changes, after explicit operator confirmation.
+        fs.writeFileSync(suiteFile,JSON.stringify({
+            ...oldSuite,suite_id:name,runtime_sha256:digest,
+        },null,2)+'\n',{flag:'wx',mode:0o600});
+        const next=evaluatorDefinition({
+            project:'tinybrains',machine:o.machine,
+            trainingDir:path.join(o.hubRoot,'Training'),
+            pythonPath:o.launcher,
+            suites:[suiteFile],artifactRoot:o.artifacts,
+            scratch:o.scratch,receiptRoot:o.receipts,
+            enginePath:o.engine,cpus:'2',ramMb:'4096',
+            interval:'180',timeout:'7200',unitId:id,
+        });
+        fs.writeFileSync(unit.serviceFile,next.service,{mode:0o600});
+        fs.writeFileSync(unit.timerFile,next.timer,{mode:0o600});
+        fs.writeFileSync(marker,JSON.stringify({
+            version:1,...suiteNames(o),[id]:name,
+        },null,2)+'\n',{mode:0o600});
+        await systemctl(['daemon-reload']);
+        await systemctl(['start',unit.timer]);
+        installed=true;
+    }finally {
+        if(!installed) {
+            fs.writeFileSync(unit.serviceFile,oldService,{mode:0o600});
+            fs.writeFileSync(unit.timerFile,oldTimer,{mode:0o600});
+            if(beforeMarker===null) {
+                if(fs.existsSync(marker))fs.unlinkSync(marker);
+            }else fs.writeFileSync(marker,beforeMarker,{mode:0o600});
+            try {
+                await systemctl(['daemon-reload']);
+                await systemctl(['start',unit.timer]);
+            }catch { /* Leave the initial service failure visible. */ }
+        }
+    }
+    return {message:name+' approved and scheduled. Restart the local agent from this panel to advertise the new suite.'};
+}
 async function action(hub,value) {
     if(!value||value.confirm_action!==true)
         throw Error('Explicit evaluator action confirmation is required.');
     if(value.action==='setup'&&value.id===undefined)
         return setup(hub);
     if(!Object.hasOwn(SUITES,value.id)||
-        !['start','restart','stop','run'].includes(value.action))
+        !['start','restart','stop','run','refresh'].includes(value.action))
         throw Error('Unknown approved local evaluator action.');
+    if(value.action==='refresh')return refreshSuite(hub,value.id);
     const o=localOptions(hub);
     const defs=definitions(o);
     const unit=approvedUnit(o,value.id,defs[value.id]);
