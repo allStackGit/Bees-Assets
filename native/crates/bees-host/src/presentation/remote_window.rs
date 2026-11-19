@@ -48,6 +48,8 @@ struct WireCounts {
     frames_rendered: u64,
     orders_sent: u64,
     acknowledgments: u64,
+    reconnect_attempts: u64,
+    reconnect_transports_opened: u64,
     /// Render-only smoothing; no simulation or network side-effects.
     snapshot_pairs_interpolated: u64,
     interpolated_draw_frames: u64,
@@ -338,6 +340,12 @@ fn invalid(message: &'static str) -> io::Error {
     io::Error::new(ErrorKind::InvalidInput, message)
 }
 
+fn link_disconnected(error: &io::Error) -> bool {
+    matches!(error.kind(), ErrorKind::ConnectionReset |
+        ErrorKind::ConnectionAborted | ErrorKind::BrokenPipe |
+        ErrorKind::NotConnected | ErrorKind::UnexpectedEof)
+}
+
 impl PeerClient {
     fn connect(address: &str, token: &str, side: i32) -> Result<Self, Box<dyn Error>> {
         let mut connection = None;
@@ -381,6 +389,11 @@ impl PeerClient {
                 }
                 Err(error) if error.kind() == ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                Err(error) if link_disconnected(&error) => {
+                    self.connected = false;
+                    self.notice = "Host disconnected".into();
+                    break;
+                },
                 Err(error) => return Err(error.into()),
             }
         }
@@ -447,7 +460,12 @@ impl PeerClient {
             }
         }
         if start > 0 { self.incoming.drain(..start); }
-        self.flush()?;
+        if let Err(error) = self.flush() {
+            if link_disconnected(&error) {
+                self.connected = false;
+                self.notice = "Host disconnected".into();
+            } else { return Err(error.into()); }
+        }
         Ok(())
     }
 
@@ -1404,7 +1422,47 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 mode=None;patrol_start=None;drag_start=None;
             } else {break;}
         }
+        // Reconnecting is an explicit new authenticated seat, never a
+        // replay of commands or a restoration of unacknowledged gestures.
+        // Dropping the previous socket makes the authoritative host release
+        // the old peer's held-fire weapons at its next fixed-tick boundary.
+        let mut rejoined=false;
+        if window.is_key_pressed(Key::F5, KeyRepeat::No) {
+            peer.metrics.reconnect_attempts+=1;
+            match PeerClient::connect(address,token,expected_side) {
+                Ok(mut replacement) => {
+                    replacement.metrics=std::mem::take(&mut peer.metrics);
+                    replacement.metrics.reconnect_transports_opened+=1;
+                    peer=replacement;
+                    rejoined=true;
+                },
+                Err(error) => {
+                    peer.notice=format!("Reconnect unavailable: {error}");
+                },
+            }
+        }
+        let was_connected=peer.connected;
         peer.poll()?;
+        if rejoined || was_connected && !peer.connected {
+            // A new TCP connection has a new peer ID and no retained squad
+            // authority. No previous snapshot, camera selection, or
+            // manual-fire gesture can cross that authentication boundary.
+            peer.state=None;
+            peer.visual=RemoteVisual::default();
+            selected.clear();
+            mode=None;patrol_start=None;drag_start=None;
+            minimap_dragging=false;
+            camera=None;
+            current_episode=(0,0);
+            last_audio_snapshot=None;
+            held_fire_active=false;held_fire_target=None;
+            peer.held_fire_begin_request=None;
+            peer.held_fire_rejected=false;
+            audio.select_location(None);
+            if !peer.connected {
+                peer.notice="Host disconnected; press F5 to reconnect".into();
+            }
+        }
         if peer.held_fire_rejected {
             held_fire_active = false;
             held_fire_target = None;
@@ -1782,6 +1840,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "audio":audio.measurements(),
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
+        "reconnect_attempts":peer.metrics.reconnect_attempts,
+        "reconnect_transports_opened":peer.metrics.reconnect_transports_opened,
         "connection_closed":!peer.connected,
     }));
     Ok(())
