@@ -550,6 +550,19 @@ function createNativeBeesAdapter({
         '../native/tools/native_gpu_allocation.py'));
     const contractScript = trustedFile(path.resolve(__dirname,
         '../native/tools/native_training_artifacts.py'));
+    // These native Python modules are invoked by the already-pinned round
+    // launcher and its PPO subprocess. They define the physical objective
+    // ABI, durable capture parsing, and distributed collection acceptance.
+    // Pin their installed bytes as one learner implementation; otherwise a
+    // long-lived Hub job could execute different code after assignment.
+    const trainingSources = [
+        'native_mission_contract.py',
+        'native_distributed_collection.py',
+        'train_policy_capture.py',
+        'native_training_outcomes.py',
+        'read_policy_capture.py',
+    ].map(name => trustedFile(path.resolve(__dirname,
+        '../native/tools', name)));
     if (typeof artifactRoot !== 'string' || !path.isAbsolute(artifactRoot))
         throw Error('Native Bees requires an absolute artifact root.');
     const artifacts = fs.realpathSync(artifactRoot);
@@ -628,7 +641,7 @@ function createNativeBeesAdapter({
         ...basePins,
         ...sourcePins,
         ...[runner, contractScript, gpuAllocationScript,
-            ...(binary ? [binary] : []), ...gallerySources]
+            ...trainingSources, ...(binary ? [binary] : []), ...gallerySources]
             .map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
     const initialGpuSupport = verifyModelDependencies(
