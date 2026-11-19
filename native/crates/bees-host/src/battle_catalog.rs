@@ -159,11 +159,19 @@ pub struct BattleCatalog {
 pub struct BuildableShip {
     pub player_side: i32,
     pub ship_type: u8,
+    /// Canonical authored MaxTSV, required for every purchased or
+    /// awarded FleetShip. A victory grant never debits this price.
     pub price_tsv: u64,
-    /// Campaign prerequisites for this class to enter the source shop.
+    /// Some source classes can only be earned in a mission. They still
+    /// use this same class/scene contract, but never appear in the shop.
+    #[serde(default = "default_purchasable")]
+    pub purchasable: bool,
+    /// Campaign prerequisites for purchasing this class.
     #[serde(default)]
     pub unlocked_after: Vec<String>,
 }
+
+fn default_purchasable() -> bool { true }
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -313,7 +321,8 @@ impl CampaignProgress<'_> {
     pub fn is_ship_unlocked(
         &self, shop: &BuildableShip,
     ) -> bool {
-        shop.unlocked_after.iter().all(|mission| self.completed(mission))
+        shop.purchasable &&
+            shop.unlocked_after.iter().all(|mission| self.completed(mission))
     }
 
     pub fn highest_fleet_id(&self) -> i64 {
@@ -476,6 +485,7 @@ impl BattleCatalog {
                 !available.insert((ship.player_side, ship.ship_type)) ||
                 !self.battles.iter().any(|entry| entry.mission.as_ref()
                     .is_some_and(|mission| mission.player_side == ship.player_side)) ||
+                (!ship.purchasable && !ship.unlocked_after.is_empty()) ||
                 ship.unlocked_after.iter().any(|required|
                     !self.battles.iter().any(|entry| entry.mission.as_ref()
                         .is_some_and(|mission| mission.player_side == ship.player_side &&
@@ -545,8 +555,9 @@ impl BattleCatalog {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("ship purchase requires a native campaign"))?;
         let shop = self.buildable_ships.iter().find(|entry|
-            entry.player_side == player_side && entry.ship_type == ship_type
-        ).ok_or_else(|| invalid("requested ship type is not unlocked in this campaign shop"))?;
+            entry.player_side == player_side && entry.ship_type == ship_type &&
+            entry.purchasable
+        ).ok_or_else(|| invalid("requested ship type is not purchasable in this campaign shop"))?;
         if !progress.bank_history_complete ||
             !progress.is_ship_unlocked(shop) ||
             progress.unspent_minerals()? < shop.price_tsv ||
@@ -1130,12 +1141,22 @@ impl BattleCatalog {
             "available_minerals": progress.unspent_minerals().expect("validated account balance"),
             "bank_history_complete": progress.bank_history_complete,
             "max_squad_ships": self.max_squad_ships,
-            "shop": self.buildable_ships.iter().map(|shop| json!({
+            // Only paid stock belongs in the shop. The class registry
+            // below exposes grant-only source templates without making
+            // them accidentally purchasable in any client.
+            "shop": self.buildable_ships.iter().filter(|shop|
+                shop.purchasable).map(|shop| json!({
                 "player_side": shop.player_side,
                 "ship_type": shop.ship_type,
                 "price_tsv": shop.price_tsv,
                 "unlocked": progress.is_ship_unlocked(shop),
                 "unlocked_after": shop.unlocked_after,
+            })).collect::<Vec<_>>(),
+            "fleet_classes": self.buildable_ships.iter().map(|class| json!({
+                "player_side": class.player_side,
+                "ship_type": class.ship_type,
+                "source_max_tsv": class.price_tsv,
+                "purchasable": class.purchasable,
             })).collect::<Vec<_>>(),
             "squad_transfers": progress.transfer_count,
             "created_squads": progress.created_squads.iter().map(|squad| json!({
