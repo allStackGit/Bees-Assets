@@ -81,6 +81,38 @@ def death_reinforcement(value: str) -> tuple[int, int, int, int, int]:
     return trigger_side, trigger_kind, side, kind, count
 
 
+# Names are the source-authored NativeMissionCue serde values. The single
+# native Level subscribes to those real events; Python never simulates cues.
+CAMPAIGN_CUES = {
+    "titania-minesweeper": frozenset((
+        "fire_tank_spotted", "fire_tank_destroyed",
+    )),
+    "titania-beenoculars": frozenset((
+        "upload_ten", "upload_twenty_four", "upload_fifty",
+        "upload_seventy_five", "upload_ninety",
+    )),
+}
+
+
+def cue_reinforcement(value: str) -> tuple[str, int, int, int]:
+    """Native mission cue plus a previously authored deferred fleet group."""
+    pieces = value.split(":")
+    if len(pieces) != 4:
+        raise argparse.ArgumentTypeError(
+            "cue reinforcement requires CUE:SIDE:TYPE:COUNT"
+        )
+    cue = pieces[0]
+    if cue not in set().union(*CAMPAIGN_CUES.values()):
+        raise argparse.ArgumentTypeError("unknown native campaign cue")
+    try:
+        side, kind, count = map(int, pieces[1:])
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("cue reinforcement needs integer side/type/count") from error
+    if side not in (1, 2) or not 0 <= kind < 24 or not 1 <= count <= 1024:
+        raise argparse.ArgumentTypeError("cue reinforcement needs side 1/2, type 0..23 and count 1..1024")
+    return cue, side, kind, count
+
+
 def load_json(path: Path) -> dict:
     content = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(content, dict):
@@ -317,13 +349,22 @@ def author(args) -> tuple[dict, dict, dict]:
         (side, kind): count for side, units in requested.items()
         for kind, count in units
     }
+    cue_waves = getattr(args, "cue_reinforcements", ())
+    dialogue = getattr(args, "campaign_dialogue", None)
+    if cue_waves and dialogue is None:
+        raise ValueError("cue reinforcements need an authored campaign dialogue")
+    if any(cue not in CAMPAIGN_CUES.get(dialogue, ()) for cue, _, _, _ in cue_waves):
+        raise ValueError("reinforcement cue does not belong to the authored campaign dialogue")
     waves = [
         (when, side, kind, count, None)
         for when, side, kind, count in args.reinforcements
     ] + [
-        (None, side, kind, count, (trigger_side, trigger_kind))
+        (None, side, kind, count, ("death", trigger_side, trigger_kind))
         for trigger_side, trigger_kind, side, kind, count
         in args.death_reinforcements
+    ] + [
+        (None, side, kind, count, ("cue", cue))
+        for cue, side, kind, count in cue_waves
     ]
     deferred_counts: dict[tuple[int, int], int] = {}
     prior_time = 0.0
@@ -672,8 +713,10 @@ def author(args) -> tuple[dict, dict, dict]:
         for index, (when, _, _, _, trigger) in enumerate(waves):
             if trigger is None:
                 activation = {"after_seconds": when}
+            elif trigger[0] == "cue":
+                activation = {"on_campaign_cue": trigger[1]}
             else:
-                trigger_side, trigger_kind = trigger
+                _, trigger_side, trigger_kind = trigger
                 eligible = [
                     ship["entity_id"] for ship in by_side[trigger_side]
                     if ship["ship_type"] == trigger_kind and
@@ -857,6 +900,29 @@ def author(args) -> tuple[dict, dict, dict]:
                     continue
                 queue["orders"] = [{"kind": "move_to_point", "destination": center}]
                 queue["repeat"] = False
+    if dialogue is not None:
+        if owner not in controlled:
+            raise ValueError("campaign dialogue requires the real locally controlled objective faction")
+        if dialogue == "titania-minesweeper":
+            if args.objective == "survival":
+                raise ValueError("Minesweeper dialogue cannot accompany a survival objective")
+            if not any(obj.get("kind") == "fire_tank"
+                       for obj in scene.get("map_objects", [])):
+                raise ValueError("Minesweeper needs at least one physical authored Fire Tank map object")
+        elif dialogue == "titania-beenoculars":
+            objective = level.get("survival")
+            if not objective or objective["defending_side"] != owner:
+                raise ValueError("Beenoculars needs a real player-owned survival objective")
+            if not any(ship["entity_id"] == objective["protected_ship_id"] and
+                       ship["ship_type"] == 23 and ship["side"] == owner
+                       for ship in by_side[owner]):
+                raise ValueError("Beenoculars must defend an authentic HumanTarget (ship type 23)")
+        else:
+            raise ValueError("unsupported native campaign dialogue")
+        spec = {"player_side": owner}
+        if dialogue == "titania-beenoculars":
+            spec["under_heavy_fire"] = getattr(args, "under_heavy_fire", False)
+        level["campaign_dialogue"] = {dialogue.replace("-", "_"): spec}
     library = {
         "library_schema": 1,
         "games": [{
@@ -1121,6 +1187,15 @@ def main() -> None:
     parser.add_argument("--reinforcement-on-death", action="append", default=[],
                         type=death_reinforcement, dest="death_reinforcements",
                         help="deploy when an initially active ship dies: TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE:COUNT")
+    parser.add_argument("--reinforcement-on-cue", action="append", default=[],
+                        type=cue_reinforcement, dest="cue_reinforcements",
+                        metavar="CUE:SIDE:TYPE:COUNT",
+                        help="deploy when the authored Level emits an actual Titania mission cue")
+    parser.add_argument("--campaign-dialogue",
+                        choices=tuple(CAMPAIGN_CUES),
+                        help="enable existing Titania mission dialogue and event cues")
+    parser.add_argument("--under-heavy-fire", action="store_true",
+                        help="Beenoculars briefing variant when the base is under heavy fire")
     parser.add_argument("--fog", action="store_true",
                         help="use the authoritative native player fog system")
     parser.add_argument("--empty-map", action="store_true",
@@ -1150,6 +1225,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.policy_reinforcements and not args.trainable:
         parser.error("--policy-reinforcements requires --trainable")
+    if args.under_heavy_fire and args.campaign_dialogue != "titania-beenoculars":
+        parser.error("--under-heavy-fire requires --campaign-dialogue titania-beenoculars")
     if args.lethal_borders and args.arena_size is None:
         parser.error("--lethal-borders requires --arena-size")
     if args.objective != "survival" and (
@@ -1214,6 +1291,8 @@ def main() -> None:
         "physical_map_borders": 4 if args.arena_size is not None else 0,
         "lethal_map_borders": args.lethal_borders,
         "reinforcement_waves": len(run["levels"][0].get("reinforcements", [])),
+        "campaign_dialogue": args.campaign_dialogue,
+        "cue_reinforcements": len(args.cue_reinforcements),
         "reserve_fleet_templates": [
             {"side": ship["side"], "ship_type": ship["ship_type"]}
             for ship in scene.get("fleet_templates", [])
@@ -1223,7 +1302,8 @@ def main() -> None:
         ],
         "reinforcement_ships": (
             sum(wave[3] for wave in args.reinforcements) +
-            sum(wave[4] for wave in args.death_reinforcements)
+            sum(wave[4] for wave in args.death_reinforcements) +
+            sum(wave[3] for wave in args.cue_reinforcements)
         ),
         "native_policy_run": (str(output / "battle.policy.run.json")
                               if args.trainable else None),
