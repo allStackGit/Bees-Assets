@@ -5519,24 +5519,69 @@ class ExperimentHub {
             learnerBudget.gpu_count===1&&learnerBudget.gpu_mode==='exclusive';
         const occupied=new Set(snapshot.jobs.filter(job=>job.project_id==='courier_lineage'&&
             !['cancelled','finished','stopped'].includes(job.status)).map(job=>job.assigned_machine_id));
-        const eligibleLineages=(endpoint,budget)=>{
+        // Multiple native Courier sidecars can now share the learner's
+        // physical host, provided every approved PPO slot has its own
+        // local listener and each job receives a separate exclusive GPU.
+        // The native resource ledger performs actual cumulative admission.
+        const selectedIds=value.worker_machine_ids;
+        const multiLocal=Array.isArray(selectedIds)&&
+            selectedIds.filter(id=>id===machine?.id).length>1;
+        const eligibleLineages=(endpoint,budget,slot=null)=>{
             const maxShards=approved.plan?.find(item=>item.endpoint===endpoint)?.maxShards;
-            return snapshot.machines.filter(host=>host.courier_lineage_endpoint===endpoint&&
-                !occupied.has(host.id)&&
-                (host.id!==machine?.id||
-                    allowLocal&&budget.gpu_count===1&&
-                        budget.gpu_mode==='exclusive')&&
-                host.courier_lineage_max_shards===maxShards&&
-                (!shared||host.courier_shared_policy_collector===true)&&
-                host.courier_lineage_key_fingerprint===machine?.courier_remote_key_fingerprint&&
-                readySidecar(host,'courier_lineage',budget));
+            return snapshot.machines.filter(host=>{
+                const match=slot===null
+                    ?host.courier_lineage_endpoint===endpoint||
+                        host.courier_lineage_slots?.some(item=>item.endpoint===endpoint)
+                    :courierWorkerSlot(host,slot)?.endpoint===endpoint;
+                const bound=slot===null
+                    ?host.courier_lineage_slots?.find(item=>item.endpoint===endpoint)
+                    :courierWorkerSlot(host,slot);
+                return match&&!occupied.has(host.id)&&
+                    (host.id!==machine?.id||
+                        allowLocal&&budget.gpu_count===1&&
+                            budget.gpu_mode==='exclusive')&&
+                    (bound?.max_shards??host.courier_lineage_max_shards)===maxShards&&
+                    (!shared||host.courier_shared_policy_collector===true)&&
+                    host.courier_lineage_key_fingerprint===machine?.courier_remote_key_fingerprint&&
+                    readySidecar(host,'courier_lineage',budget);
+            });
         };
-        const {byMachine,endpoints,selections}=selectDistributedBudgets(snapshot,machine,
-            value.lineages,approved.endpoints,'courier_lineage_subset','courier_lineage_endpoint',
-            value.worker_machine_ids,16,selection=>{
-                const budget=sidecarBudget(selection);
-                return {budget,eligible:host=>eligibleLineages(host.courier_lineage_endpoint,budget)};
-            },allowLocal);
+        let byMachine,endpoints,selections;
+        if(multiLocal) {
+            // Repeated machine IDs are only meaningful for shared PPO:
+            // each row is bound to the SAME ordinal in the immutable,
+            // learner-approved endpoint and map plan. Do not reorder or
+            // auto-match these budgets across identical physical hosts.
+            const plan=approved.plan?.slice(0,value.lineages.length);
+            if(!shared||!allowLocal||!machine?.courier_lineage_subset||
+                !Array.isArray(plan)||plan.length!==value.lineages.length||
+                value.lineages.length<2||value.lineages.length>16||
+                selectedIds.length!==plan.length||
+                selectedIds.some(id=>typeof id!=='string'||!ID.test(id))||
+                new Set(selectedIds.filter(id=>id!==machine.id)).size!==
+                    selectedIds.filter(id=>id!==machine.id).length||
+                value.lineages.some(item=>!object(item)||
+                    Object.hasOwn(item,'machine_id'))||
+                selectedIds.some((id,index)=>{
+                    const host=snapshot.machines.find(item=>item.id===id);
+                    const budget=sidecarBudget(value.lineages[index]);
+                    return !host||!eligibleLineages(plan[index].endpoint,budget,index)
+                        .some(item=>item.id===id);
+                }))
+                throw Error('Courier same-host GPU collectors need distinct approved slot listeners and fixed machine budgets.');
+            byMachine=true;
+            endpoints=plan.map(item=>item.endpoint);
+            selections=value.lineages.map((item,index)=>({
+                ...item,machine_id:selectedIds[index],
+            }));
+        }else {
+            ({byMachine,endpoints,selections}=selectDistributedBudgets(snapshot,machine,
+                value.lineages,approved.endpoints,'courier_lineage_subset','courier_lineage_endpoint',
+                value.worker_machine_ids,16,selection=>{
+                    const budget=sidecarBudget(selection);
+                    return {budget,eligible:host=>eligibleLineages(host.courier_lineage_endpoint,budget)};
+                },allowLocal));
+        }
         const remotePlan=approved.plan?.filter(item=>endpoints.includes(item.endpoint));
         const shards=remotePlan?.map(item=>item.maxShards);
         const ancestorId=value.learner.continuation_of_job_id??null;
@@ -5580,13 +5625,13 @@ class ExperimentHub {
         for(let index=0;index<count;index++) {
             const selection=selections[index];
             const budget=sidecarBudget(selection);
-            const hosts=eligibleLineages(endpoints[index],budget);
+            const hosts=eligibleLineages(endpoints[index],budget,first+index);
             const local=hosts.length===1&&hosts[0].id===machine.id;
             if(hosts.length!==1||
                 (used.has(hosts[0].id)&&
-                    !(local&&allowLocal&&!localUsed))||
+                    !(local&&allowLocal&&(multiLocal||!localUsed)))||
                 (byMachine&&hosts[0].id!==selection.machine_id))
-                throw Error('Courier endpoint needs a uniquely leased worker or one approved local GPU collector.');
+                throw Error('Courier endpoint needs a uniquely leased worker or a distinct approved local GPU collector.');
             const host=hosts[0];
             if(local)localUsed=true;
             used.add(host.id);
