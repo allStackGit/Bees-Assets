@@ -16,7 +16,9 @@ import re
 import shutil
 import tempfile
 
-from native_training_artifacts import atomic_json, file_sha256, sync_directory
+from native_training_artifacts import (
+    atomic_json, file_sha256, normalized_python_source_sha256, sync_directory,
+)
 from challenge_policy import existing_path, selected_run
 
 
@@ -114,13 +116,18 @@ def source_policy_runtime(run_path: Path, run: dict, runtime_files: dict,
         if not path.is_file():
             raise ValueError(f"native policy source file is not regular: {path}")
         digest = file_sha256(path)
+        normalized = normalized_python_source_sha256(path)
         existing = runtime_files.get(name)
-        if existing is not None and existing[1] != digest:
+        # Git may check out LF on Linux and CRLF on Windows. Both are
+        # identical Python source; compare normalized code identities
+        # without changing strict raw-byte SHA-256 publication receipts.
+        if existing is not None and existing[2] != normalized:
             raise ValueError(
                 f"incompatible native opponent policy source versions: {name}"
             )
-        runtime_files[name] = path, digest
-        pinned[name] = digest
+        if existing is None:
+            runtime_files[name] = path, digest, normalized
+        pinned[name] = normalized
     run["policy_worker"] = "native/tools/policy_worker.py"
     # The host resolves a one-component interpreter through PATH on both
     # Windows and Linux. It must have the right runtime dependencies installed.
@@ -597,7 +604,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         for name in sorted(model_files)
     ]
     receipt["packaged_runtime_files"] = [
-        {"file": name, "sha256": runtime_files[name][1]}
+        {"file": name, "sha256": runtime_files[name][1],
+         "normalized_source_sha256": runtime_files[name][2]}
         for name in sorted(runtime_files)
     ]
     return catalog, library, outputs, receipt, model_files, runtime_files
@@ -797,7 +805,7 @@ def main() -> None:
             assets = [(name, path, name.split("/")[-1].removesuffix(".model"))
                       for name, path in model_files.items()]
             assets.extend((name, path, digest)
-                          for name, (path, digest) in runtime_files.items())
+                          for name, (path, digest, _) in runtime_files.items())
             for name, source, expected_sha in assets:
                 destination = staged / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
