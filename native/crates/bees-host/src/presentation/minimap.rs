@@ -21,17 +21,28 @@ pub(super) struct MiniMapLayout {
 
 impl MiniMapLayout {
     pub fn new(width: usize, height: usize, bounds: Aabb) -> Option<Self> {
-        // Do not cover selection or tactical controls in narrow viewports.
-        if width < 360 || height < 280 || !bounds.min.is_finite() ||
+        // Native local game uses bottom-left; remote multiplayer reserves
+        // that space for authenticated mission dialogue and input feedback.
+        Self::at(width, height, bounds, 12, height.checked_sub(154)?)
+    }
+
+    /// Same projection, map bounds and hit-testing, placed above the remote
+    /// command and dialogue strip rather than duplicating minimap math.
+    pub(super) fn top_right(width: usize, height: usize, bounds: Aabb) -> Option<Self> {
+        Self::at(width, height, bounds, width.checked_sub(206)?, 12)
+    }
+
+    fn at(width: usize, height: usize, bounds: Aabb,
+        left: usize, top: usize) -> Option<Self>
+    {
+        if width < 360 || height < 280 || left + 194 > width ||
+            top + 142 > height || !bounds.min.is_finite() ||
             !bounds.max.is_finite() { return None; }
         let extent = bounds.max - bounds.min;
         if extent.x <= 0.0 || extent.y <= 0.0 { return None; }
         const PANEL_W: usize = 194;
         const PANEL_H: usize = 142;
-        const MARGIN: usize = 12;
         const INSET: f32 = 9.0;
-        let left = MARGIN;
-        let top = height - MARGIN - PANEL_H;
         let scale = ((PANEL_W as f32 - 2.0 * INSET) / extent.x)
             .min((PANEL_H as f32 - 2.0 * INSET) / extent.y);
         if !scale.is_finite() || scale <= 0.0 { return None; }

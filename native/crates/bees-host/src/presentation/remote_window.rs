@@ -19,6 +19,7 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use serde_json::{json, Value};
 
 use super::{NativeCamera, NativeSoftwareRenderer, text};
+use super::minimap::MiniMapLayout;
 use crate::game_audio::NativeGameAudio;
 use crate::unity_scene_snapshot::NativeMusicLocation;
 
@@ -65,6 +66,9 @@ struct WireCounts {
     ship_remains_source_frame_draws: u64,
     ship_explosion_visual_draws: u64,
     obstacle_hull_draws: u64,
+    minimap_ship_markers: u64,
+    minimap_objective_markers: u64,
+    minimap_camera_moves: u64,
 }
 
 /// The existing native source-art renderer, reused for authenticated
@@ -726,6 +730,95 @@ fn draw_remote_obstacle_hull(
     Some(true)
 }
 
+/// The authenticated world_state is already filtered by the host's
+/// canonical faction fog. Never query a second enemy registry, infer
+/// hidden objects, or issue commands from presentation-only markers.
+fn draw_remote_minimap(
+    pixels: &mut [u32], state: &Value, camera: NativeCamera,
+    selected: &[i64], visual: &RemoteVisual, fraction: f32,
+) -> (u64, u64) {
+    let Some(bounds) = bounds(state) else { return (0, 0) };
+    let Some(layout) = MiniMapLayout::top_right(FIELD, HEIGHT, bounds)
+        else { return (0, 0) };
+    for y in layout.top..layout.bottom {
+        pixels[y * WIDTH + layout.left..y * WIDTH + layout.right]
+            .fill(0x101c2e);
+    }
+    let edges = [
+        (layout.plot_left, layout.plot_top, layout.plot_right, layout.plot_top),
+        (layout.plot_right, layout.plot_top, layout.plot_right, layout.plot_bottom),
+        (layout.plot_right, layout.plot_bottom, layout.plot_left, layout.plot_bottom),
+        (layout.plot_left, layout.plot_bottom, layout.plot_left, layout.plot_top),
+    ];
+    for (x0, y0, x1, y1) in edges {
+        line(pixels, (x0.round() as i32, y0.round() as i32),
+            (x1.round() as i32, y1.round() as i32), 0x6e829e);
+    }
+    let selected_ship_ids: HashSet<i64> = state["squads"].as_array().into_iter().flatten()
+        .filter(|s| s["owned"] == true && s["owner"]["squad_id"]
+            .as_i64().is_some_and(|id| selected.contains(&id)))
+        .flat_map(|s| s["members"].as_array().into_iter().flatten())
+        .filter_map(Value::as_i64).collect();
+    let target = &state["campaign_objective"];
+    let objective_ship = target["protected_ship_id"].as_i64()
+        .or_else(|| target["escorted_ship_id"].as_i64());
+    let objective_object = target["target_map_object_id"].as_i64();
+    let mut ship_markers = 0_u64;
+    let mut objective_markers = 0_u64;
+    for ship in state["ships"].as_array().into_iter().flatten() {
+        let Some(position) = visual.position(ship, 0, fraction) else { continue };
+        let Some((x, y)) = layout.project(position) else { continue };
+        let id = ship["id"].as_i64().unwrap_or(-1);
+        let objective = objective_ship == Some(id);
+        let selected = selected_ship_ids.contains(&id);
+        let center = (x.round() as i32, y.round() as i32);
+        let color = if objective { GOLD }
+            else if selected { 0xffffff }
+            else if ship["friendly"] == true { GREEN } else { RED };
+        circle(pixels, center, if objective { 4 } else if selected { 3 } else { 1 }, color);
+        ship_markers += 1;
+        objective_markers += u64::from(objective);
+    }
+    if let Some(id) = objective_object {
+        for object in state["obstacles"].as_array().into_iter().flatten() {
+            if object["id"].as_i64() != Some(id) { continue; }
+            if let Some(position) = visual.position(object, 2, fraction) {
+                if let Some((x, y)) = layout.project(position) {
+                    let center = (x.round() as i32, y.round() as i32);
+                    outline(pixels, center.0 - 4, center.1 - 4, 8, 8, GOLD);
+                    objective_markers += 1;
+                }
+            }
+            break;
+        }
+    }
+    // Public objective destination: never pretend the trigger already
+    // activated. The AABB is the same host-authoritative geometry visible
+    // in the native local-player battlefield.
+    if let Some(points) = state["escort_destination"].as_array()
+        .filter(|points| points.len() == 2)
+    {
+        if let (Some(min), Some(max)) =
+            (point_from_wire(&points[0]), point_from_wire(&points[1]))
+        {
+            if let (Some((x0, y0)), Some((x1, y1))) =
+                (layout.project(min), layout.project(max))
+            {
+                outline(pixels, x0.round() as i32, y1.round() as i32,
+                    (x1-x0).round() as i32, (y0-y1).round() as i32, GREEN);
+                objective_markers += 1;
+            }
+        }
+    }
+    let bottom_left = camera.screen_to_world(0.0, HEIGHT as f32, FIELD, HEIGHT);
+    let top_right = camera.screen_to_world(FIELD as f32, 0.0, FIELD, HEIGHT);
+    if let Some((x0, y0, x1, y1)) = layout.camera_rect(bottom_left, top_right) {
+        outline(pixels, x0.round() as i32, y0.round() as i32,
+            (x1-x0).round() as i32, (y1-y0).round() as i32, 0xe2c473);
+    }
+    (ship_markers, objective_markers)
+}
+
 fn first_selected<'a>(state: Option<&'a Value>, selected: &[i64]) -> Option<&'a Value> {
     state?.get("squads")?.as_array()?.iter().find(|squad|
         squad["owned"] == true && squad["owner"]["squad_id"]
@@ -834,7 +927,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
     held_fire_active: bool, visual: &RemoteVisual, fraction: f32,
-    artwork: &RemoteArtwork, show_art: bool, obstacle_hull_draws: &mut u64) {
+    artwork: &RemoteArtwork, show_art: bool, obstacle_hull_draws: &mut u64,
+    minimap_ship_markers: &mut u64, minimap_objective_markers: &mut u64) {
     // F6 avoids allocating or clearing a second per-frame art layer,
     // while normal mode reuses the exact local game sprite raster.
     if show_art {
@@ -987,6 +1081,11 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 }
             }
         }
+        let (ships, objectives) = draw_remote_minimap(
+            pixels, state, camera, selected, visual, fraction,
+        );
+        *minimap_ship_markers += ships;
+        *minimap_objective_markers += objectives;
         text::draw_at(pixels, WIDTH, FIELD+14, 90,
             &format!("World {}  Tick {}",state["world_id"],state["tick"]),1,TEXT);
         let friendly=state["squads"].as_array().into_iter().flatten().filter(|s|s["owned"]==true).count();
@@ -1231,6 +1330,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut patrol_start:Option<Vec2>=None;
     let mut last_left=false;
     let mut last_right=false;
+    let mut minimap_dragging=false;
     let mut drag_start:Option<(i32,i32)>=None;
     let mut last_middle:Option<(f32,f32)>=None;
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
@@ -1299,6 +1399,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     selected.clear();
                     mode=None;
                     patrol_start=None;
+                    minimap_dragging=false;
                     // The server forgets this lease at the same authoritative
                     // episode boundary; the client never aims old ships.
                     held_fire_active=false;
@@ -1430,8 +1531,11 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 cam.constrain_to_map(map,FIELD,HEIGHT);
             }
             let mouse=window.get_mouse_pos(MouseMode::Discard);
+            let minimap = peer.state.as_ref().and_then(bounds)
+                .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map));
             let within=mouse.and_then(|(x,y)| {
-                (x>=0.0 && x<FIELD as f32 && y>=0.0 && y<HEIGHT as f32)
+                (x>=0.0 && x<FIELD as f32 && y>=0.0 && y<HEIGHT as f32 &&
+                    !minimap.is_some_and(|layout| layout.world_at(x, y).is_some()))
                     .then_some((x as i32,y as i32))
             });
             let holding=window.is_active() && window.is_key_down(Key::J)
@@ -1474,6 +1578,25 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             let left=window.get_mouse_down(MouseButton::Left);
             let right=window.get_mouse_down(MouseButton::Right);
             let middle=window.get_mouse_down(MouseButton::Middle);
+            let minimap_point = mouse.and_then(|(x, y)|
+                minimap.and_then(|layout| layout.world_at(x, y)));
+            if left && !last_left {
+                minimap_dragging = minimap_point.is_some();
+            }
+            if left && minimap_dragging {
+                if let Some(point) = minimap_point {
+                    if !cam.center.unity_equal(point) {
+                        cam.center = point;
+                        peer.metrics.minimap_camera_moves += 1;
+                    }
+                    if let Some(map) = peer.state.as_ref().and_then(bounds) {
+                        cam.constrain_to_map(map, FIELD, HEIGHT);
+                    }
+                }
+            }
+            let minimap_release = !left && last_left && minimap_dragging;
+            if !left { minimap_dragging = false; }
+            if minimap_release { drag_start = None; }
             if middle {
                 if let (Some((x,y)),Some((old_x,old_y)))=(mouse,last_middle) {
                     cam.center.x-=(x-old_x)/cam.pixels_per_unit;
@@ -1483,10 +1606,10 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             }else{last_middle=None;}
             if let Some((x,y))=mouse {
                 let (x,y)=(x as i32,y as i32);
-                if left&&!last_left&&x>=0&&x<FIELD as i32 {
+                if left&&!last_left&&!minimap_dragging&&x>=0&&x<FIELD as i32 {
                     drag_start=Some((x,y));
                 }
-                if !left&&last_left {
+                if !left&&last_left&&!minimap_release {
                     if mode.is_some() {
                         drag_start=None;
                         if x>=0 && x<FIELD as i32 && y>=0 && y<HEIGHT as i32 {
@@ -1556,7 +1679,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                         }
                     }
                 }
-                if right&&!last_right {
+                if right&&!last_right&&minimap_point.is_none() {
                     if let Err(error)=order_at(&mut peer,&selected,cam,x,y,None) {
                         peer.notice=error.to_string();
                     }
@@ -1574,11 +1697,15 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 &mut peer.metrics,show_art);
         }
         let mut hulls = 0_u64;
+        let mut map_ships = 0_u64;
+        let mut map_objectives = 0_u64;
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,&peer.visual,visual_fraction,&artwork,show_art,
-            &mut hulls);
+            &mut hulls, &mut map_ships, &mut map_objectives);
         peer.metrics.obstacle_hull_draws += hulls;
+        peer.metrics.minimap_ship_markers += map_ships;
+        peer.metrics.minimap_objective_markers += map_objectives;
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
         peer.metrics.frames_rendered += 1;
     }
@@ -1610,6 +1737,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "sprite_blended_pixels":peer.metrics.sprite_blended_pixels,
         "recolor_cache_peak":peer.metrics.recolor_cache_peak,
         "obstacle_hull_draws":peer.metrics.obstacle_hull_draws,
+        "minimap_ship_markers":peer.metrics.minimap_ship_markers,
+        "minimap_objective_markers":peer.metrics.minimap_objective_markers,
+        "minimap_camera_moves":peer.metrics.minimap_camera_moves,
         "source_art_enabled":show_art,
         "audio":audio.measurements(),
         "orders_sent":peer.metrics.orders_sent,
