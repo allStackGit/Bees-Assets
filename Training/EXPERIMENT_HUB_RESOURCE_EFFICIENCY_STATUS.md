@@ -20,10 +20,18 @@ PPO learners through 512 requests/243 grouped calls with matching actions,
 observations/RNG and numerically matching values/policy/Adam. Atomic rejection,
 cohort reuse, stale-request failure and clean/draining shutdown passed. Hub now
 exposes actual routed/compute/padding work, queue/IPC waits and setup/service
-costs through existing native/neutral metrics. **Coordinator activation remains
-unfinished:** reserve broker RAM/VRAM within the existing job budget, qualify
-physical/platform IPC, persist matching profiles and accept only sustained
-whole-PPO useful-SPS gains before enabling automatic use.
+costs through existing native/neutral metrics. The coordinator now automatically
+admits compatible cohorts within fixed job RAM and the existing 80%-per-card
+allowance (70% policy contexts plus 10% producer). Warm PPO memory peaks and
+simultaneous dispatch capacity are required. An inert two-way GPU-sharing probe
+selects device IPC or packed host transport before policy registration. A bounded
+whole-PPO useful-SPS trial, isolated from other resource trials, retains only
+proven choices in checkpoints. Accepted routes persist during map/allocator
+recalibration. Hub counts actual/next mode, eligibility, resource/start denials,
+startup time and host-wire requests. Local admission/acceptance/rejection checks
+and four live worker handoffs passed; 512 host-wire PPO requests preserved exact
+actions/observations/RNG and numerically matched policy/Adam. Physical GPU
+transport and sustained whole-job speedup remain to qualify.
 
 TinyBrains' multi-GPU path now computes PPO losses on each replica, returning
 six scalars per board instead of spatial logits and values. Global advantages,
