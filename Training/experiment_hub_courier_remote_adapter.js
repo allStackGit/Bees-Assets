@@ -124,7 +124,7 @@ function createCourierRemoteLineageAdapter({
         }:{}),
         args(parameters,context) {
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
-                Object.keys(parameters).some(key=>!['learner_job_id','slot','shared_policy'].includes(key))||
+                Object.keys(parameters).some(key=>!['learner_job_id','slot','listener_slot','shared_policy'].includes(key))||
                 (parameters.shared_policy!==undefined&&
                     (parameters.shared_policy!==true||!sharedPolicy))||
                 !UUID.test(String(parameters.learner_job_id||''))||
@@ -132,11 +132,19 @@ function createCourierRemoteLineageAdapter({
                 context.job_id===parameters.learner_job_id||
                 !Number.isSafeInteger(parameters.slot)||parameters.slot<0||
                 parameters.slot>63||
+                (parameters.listener_slot!==undefined&&
+                    (!slots.length||parameters.shared_policy!==true||
+                        !Number.isSafeInteger(parameters.listener_slot)||
+                        parameters.listener_slot<0||parameters.listener_slot>63))||
                 !Number.isSafeInteger(context.cpu_quota)||context.cpu_quota<1||
                 !Number.isSafeInteger(context.ram_quota_mb)||
                 context.ram_quota_mb<128||context.ram_quota_mb>1000000)
                 throw Error('Courier remote lineage needs frozen learner/slot IDs and its own CPU/RAM lease.');
-            const selected=slots.length?slots.find(item=>item.slot===parameters.slot):null;
+            // The learner's recurrent PPO slot is not necessarily the
+            // native listener index: separate experiments can use different
+            // approved ports on one host without sharing model state.
+            const listener=parameters.listener_slot??parameters.slot;
+            const selected=slots.length?slots.find(item=>item.slot===listener):null;
             if(slots.length&&!selected)
                 throw Error('Courier collector slot has no locally approved private listener.');
             const selectedPort=selected?Number(selected.endpoint.split(':').at(-1)):port;

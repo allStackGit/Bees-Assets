@@ -818,9 +818,9 @@ function nativeStartReadiness(snapshot, job) {
             if(!host||host.status!=='connected'||
                 !host.local_executor_enabled||!host.native_preflight_passed||
                 !host.installed_projects?.includes('courier_lineage')||
-                courierWorkerSlot(host,slot)?.endpoint!==endpoint||
+                courierWorkerListener(host,worker)?.endpoint!==endpoint||
                 host.courier_lineage_key_fingerprint!==key||
-                courierWorkerSlot(host,slot)?.max_shards!==shards[index]||
+                courierWorkerListener(host,worker)?.max_shards!==shards[index]||
                 !owned||!courierLineageHost(snapshot,worker,host)||nativeResourceBlock(worker,owned)||
                 gpuStartBlock(worker,owned,host))
                 return block('Courier PPO remote endpoint, identity, GPU proof or fresh independent lease differs from its learner.');
@@ -1026,6 +1026,45 @@ function courierWorkerSlot(machine,slot) {
         ?{slot,endpoint:machine.courier_lineage_endpoint,
             max_shards:machine.courier_lineage_max_shards}:null;
 }
+// PPO's recurrent worker slot is independent of the native port index.
+// Previously frozen jobs without a distinct listener slot retain parity.
+function courierWorkerListener(machine,job) {
+    if(job?.frozen_parameters?.listener_slot!==undefined&&
+        !machine?.courier_lineage_slots?.length)return null;
+    return courierWorkerSlot(machine,
+        job?.frozen_parameters?.listener_slot??job?.frozen_parameters?.slot);
+}
+// Active native owners must retain the endpoint frozen into their learner's
+// plan. A changed/unknown advertisement is not permission to claim a free
+// port: the old service might still be listening there after agent recovery.
+function courierEndpointOccupied(snapshot,machine,endpoint,exceptJobId=null) {
+    if(!machine||!endpoint)return true;
+    return snapshot.jobs.some(job=>{
+        if(job.id===exceptJobId||job.project_id!=='courier_lineage'||
+            job.assigned_machine_id!==machine.id||
+            ['cancelled','finished','stopped'].includes(job.status))return false;
+        // Failed native jobs retain endpoint ownership until the operator
+        // releases the verified terminal lease. A released failure must
+        // not permanently strand an otherwise reusable private listener.
+        if(job.status==='failed'&&job.capacity_released_at&&
+            snapshot.reservations?.some(lease=>lease.id===job.lease_id&&
+                lease.job_id===job.id&&lease.machine_id===machine.id&&
+                lease.status==='released'&&lease.released_at))return false;
+        const learner=snapshot.jobs.find(parent=>
+            parent.id===job.frozen_parameters?.learner_job_id&&
+            parent.project_id==='courier');
+        const plan=learner?.frozen_parameters?.remote_lineage_plan;
+        const first=Array.isArray(plan)?courierFirstSlot(learner,plan.length):null;
+        const index=first===null?null:job.frozen_parameters?.slot-first;
+        const frozen=Number.isSafeInteger(index)&&index>=0&&
+            index<plan.length?plan[index]?.endpoint:null;
+        const advertised=courierWorkerListener(machine,job)?.endpoint;
+        // Legacy groups without a durable endpoint plan, or a changed
+        // listener mapping, own uncertain native state on the entire host.
+        if(!frozen||!advertised||advertised!==frozen)return true;
+        return frozen===endpoint;
+    });
+}
 function selectDistributedMachines(machines,learner,selections,approved,capability,endpointField,
     allowLearnerMachine=false) {
     const byMachine=selections.some(worker=>object(worker)&&Object.hasOwn(worker,'machine_id'));
@@ -1056,9 +1095,12 @@ function readySidecar(host,project,budget) {
 }
 
 function sidecarBudget(selection,threadOverride=false) {
-    const keys=threadOverride?['resources','machine_id','threads']:['resources','machine_id'];
-    if(!object(selection)||Object.keys(selection).some(key=>!keys.includes(key)))
-        throw Error('Each remote worker needs a CPU/RAM budget and optionally one exclusive GPU.');
+    const keys=threadOverride?['resources','machine_id','threads']:
+        ['resources','machine_id','endpoint'];
+    if(!object(selection)||Object.keys(selection).some(key=>!keys.includes(key))||
+        (selection.endpoint!==undefined&&
+            (threadOverride||!rolloutEndpoint(selection.endpoint))))
+        throw Error('Each remote worker needs a CPU/RAM budget and optionally one approved Courier endpoint and exclusive GPU.');
     const budget=resourceRequest(selection.resources);
     if(budget.gpu_count>1||budget.gpu_count===1&&budget.gpu_mode!=='exclusive')
         throw Error('A remote worker may use CPU only or one exclusively leased CUDA/ROCm GPU.');
@@ -1269,7 +1311,7 @@ function courierGroupMachinesValid(snapshot,learner,workers) {
         const id=worker.assigned_machine_id;
         const machine=snapshot.machines.find(host=>host.id===id);
         const index=worker.frozen_parameters?.slot-first;
-        const slot=courierWorkerSlot(machine,worker.frozen_parameters?.slot);
+        const slot=courierWorkerListener(machine,worker);
         if(!id||!slot||!Number.isSafeInteger(index)||index<0||
             index>=endpoints.length||slot.endpoint!==endpoints[index]||
             slot.max_shards!==shards[index])return false;
@@ -1333,7 +1375,7 @@ function courierLineageHost(snapshot,job,machine) {
         !SHA256.test(String(parent.courier_remote_key_fingerprint||''))||
         machine.courier_lineage_key_fingerprint!==parent.courier_remote_key_fingerprint)
         return false;
-    const slot=courierWorkerSlot(machine,job.frozen_parameters?.slot);
+    const slot=courierWorkerListener(machine,job);
     const index=endpoints.indexOf(slot?.endpoint);
     const first=courierFirstSlot(learner,endpoints.length);
     const shared=learner.frozen_parameters.shared_policy===true;
@@ -1343,13 +1385,12 @@ function courierLineageHost(snapshot,job,machine) {
             job.resources?.cpus!==learner.frozen_parameters.shared_policy_cpus[index]))||
         shards[index]!==slot?.max_shards)
         return false;
-    return !snapshot.jobs.some(other=>other.id!==job.id&&
-        other.project_id==='courier_lineage'&&
-        !['cancelled','finished','stopped'].includes(other.status)&&
-        (other.assigned_machine_id===machine.id&&
-            courierWorkerSlot(machine,other.frozen_parameters?.slot)?.endpoint===slot.endpoint||
+    return !courierEndpointOccupied(snapshot,machine,slot.endpoint,job.id)&&
+        !snapshot.jobs.some(other=>other.id!==job.id&&
+            other.project_id==='courier_lineage'&&
+            !['cancelled','finished','stopped'].includes(other.status)&&
             other.frozen_parameters?.learner_job_id===learner.id&&
-            other.frozen_parameters?.slot===job.frozen_parameters.slot));
+            other.frozen_parameters?.slot===job.frozen_parameters.slot);
 }
 function allocationBlockReason(machines,job,preferredMachineId=null) {
     const candidates=preferredMachineId
@@ -3168,17 +3209,19 @@ class ExperimentHub {
                 ['offered','acknowledged'].includes(item.status));
             if(!machine||!lease||!job.assigned_machine_id)
                 throw Error('Courier group needs registered machines and original resource leases.');
-            if(index>0&&(courierWorkerSlot(machine,job.frozen_parameters.slot)?.endpoint!==endpoints[index-1]||
+            if(index>0&&(courierWorkerListener(machine,job)?.endpoint!==endpoints[index-1]||
                 machine.courier_lineage_key_fingerprint!==
                     host.courier_remote_key_fingerprint||
-                courierWorkerSlot(machine,job.frozen_parameters.slot)?.max_shards!==ceilings[index-1]))
+                courierWorkerListener(machine,job)?.max_shards!==ceilings[index-1]))
                 throw Error('Courier group endpoint/key/process ceiling no longer matches its original slot.');
             const agent=this.agentReports.get(machine.id);
             if(!UUID.test(String(agent?.instance_id||'')))
                 throw Error('Courier group requires a current native agent identity on every original machine.');
             return {job_id:job.id,lease_id:lease.id,machine_id:machine.id,
                 ...(index>0?{endpoint:endpoints[index-1],
-                    slot:job.frozen_parameters.slot,max_shards:ceilings[index-1]}:{})};
+                    slot:job.frozen_parameters.slot,
+                    listener_slot:job.frozen_parameters.listener_slot??job.frozen_parameters.slot,
+                    max_shards:ceilings[index-1]}:{})};
         });
         const plans=copy(this.state.distributed_group_plans||[]);
         if(plans.length>=64) {
@@ -3305,9 +3348,11 @@ class ExperimentHub {
                             item.id===worker.assigned_machine_id);
                         const frozen=plan.frozen_members[index+1];
                         return !machine||worker.frozen_parameters?.slot!==frozen.slot||
-                            courierWorkerSlot(machine,frozen.slot)?.endpoint!==frozen.endpoint||
+                            (worker.frozen_parameters?.listener_slot??worker.frozen_parameters?.slot)!==
+                                (frozen.listener_slot??frozen.slot)||
+                            courierWorkerSlot(machine,frozen.listener_slot??frozen.slot)?.endpoint!==frozen.endpoint||
                             machine.courier_lineage_key_fingerprint!==plan.key_fingerprint||
-                            courierWorkerSlot(machine,frozen.slot)?.max_shards!==frozen.max_shards;
+                            courierWorkerSlot(machine,frozen.listener_slot??frozen.slot)?.max_shards!==frozen.max_shards;
                     })) {
                     halt('needs_review','Courier group private endpoint, slot or key identity changed.');
                     continue;
@@ -3897,6 +3942,8 @@ class ExperimentHub {
                             owner.lease_id!==worker.lease_id||
                             owner.machine_id!==worker.assigned_machine_id||
                             owner.slot!==worker.frozen_parameters?.slot||
+                            (owner.listener_slot??owner.slot)!==
+                                (worker.frozen_parameters?.listener_slot??worker.frozen_parameters?.slot)||
                             !['start_requested','launch_requested','running'].includes(worker.status);
                     })) {
                     disarm('Courier remote lineage population, dispatch or frozen machine ownership changed.');
@@ -3946,9 +3993,9 @@ class ExperimentHub {
                         const host=snapshot.machines.find(item=>
                             item.id===worker.assigned_machine_id);
                         return !host||!owner||
-                            courierWorkerSlot(host,owner.slot)?.endpoint!==owner.endpoint||
+                            courierWorkerSlot(host,owner.listener_slot??owner.slot)?.endpoint!==owner.endpoint||
                             host.courier_lineage_key_fingerprint!==owner.key_fingerprint||
-                            courierWorkerSlot(host,owner.slot)?.max_shards!==owner.max_shards||
+                            courierWorkerSlot(host,owner.listener_slot??owner.slot)?.max_shards!==owner.max_shards||
                             owner.key_fingerprint!==intent.key_fingerprint;
                     })) {
                     disarm('Courier remote private endpoint or shared key identity changed.');
@@ -4535,16 +4582,30 @@ class ExperimentHub {
                 !job.gpu_qualification?.first_offered_at)
                 continue;
             if(action==='start') {
+                // Start authorization and the actual heartbeat offer may be
+                // separated by multiple native observations. Recheck the
+                // complete original learner/collector barrier just before
+                // first delivery, rather than relying on yesterday's slot,
+                // endpoint, live owner or physical GPU evidence. The
+                // readiness contract expects a queued job, so project its
+                // unchanged frozen job as waiting without mutating state.
+                const distributedLearner=
+                    job.project_id==='courier'&&job.distributed_courier_managed===true||
+                    job.project_id==='tinybrains'&&job.distributed_rollout_managed===true;
+                const groupStillReady=!distributedLearner||
+                    nativeStartReadiness(snapshot,{...job,status:'waiting_adapter'}).eligible;
                 const automationValid=!job.automation_start_session_id||
                     (this.automation.enabled&&
                      this.automation.session_id===job.automation_start_session_id&&
                      this.automation.agent_instances[machineId]===
                         this.agentReports.get(machineId)?.instance_id);
-                if(!adapterInstalled||!automationValid||!lease.receipt_fresh||
+                if(!adapterInstalled||!automationValid||!groupStillReady||
+                    !lease.receipt_fresh||
                     machine.native_preflight_passed!==true||
                     !supportsEvaluation(machine.evaluation_suites,job)||
                     !supportsTinyBrainsProfile(machine,job)||
                     !distributedRolloutHost(snapshot,job,machine)||
+                    !courierLineageHost(snapshot,job,machine)||
                     nativeResourceBlock(job,lease)||
                     gpuStartBlock(job,lease,machine)) {
                     // A previously offered Start may already own a process.
@@ -5741,8 +5802,9 @@ class ExperimentHub {
         const allowLocal=shared&&Array.isArray(value.worker_machine_ids)&&
             value.worker_machine_ids.includes(machine?.id)&&
             learnerBudget.gpu_count===1&&learnerBudget.gpu_mode==='exclusive';
-        const occupied=new Set(snapshot.jobs.filter(job=>job.project_id==='courier_lineage'&&
-            !['cancelled','finished','stopped'].includes(job.status)).map(job=>job.assigned_machine_id));
+        // Listener ownership is endpoint-scoped. Other jobs on this same
+        // machine keep their port and GPU leases; only genuinely free
+        // approved slots are eligible for a second experiment.
         // Multiple native Courier sidecars can now share the learner's
         // physical host, provided every approved PPO slot has its own
         // local listener and each job receives a separate exclusive GPU.
@@ -5750,6 +5812,8 @@ class ExperimentHub {
         const selectedIds=value.worker_machine_ids;
         const repeatedHost=Array.isArray(selectedIds)&&
             selectedIds.some((id,index)=>selectedIds.indexOf(id)!==index);
+        const requestedEndpoints=value.lineages.map(item=>item?.endpoint);
+        const selectedEndpointMode=requestedEndpoints.some(endpoint=>endpoint!==undefined);
         const slotBacked=shared&&Array.isArray(selectedIds)&&selectedIds.some(id=>
             snapshot.machines.some(host=>host.id===id&&
                 host.courier_lineage_slots?.length>0));
@@ -5757,18 +5821,19 @@ class ExperimentHub {
         // PPO ordinal to its exact service listener, not an adapter's
         // unrelated legacy base endpoint. Duplicate hosts use this same
         // immutable ordered mapping.
-        const fixedSlotSelection=repeatedHost||slotBacked;
+        const fixedSlotSelection=repeatedHost||slotBacked||selectedEndpointMode;
         const eligibleLineages=(endpoint,budget,slot=null)=>{
             const maxShards=approved.plan?.find(item=>item.endpoint===endpoint)?.maxShards;
             return snapshot.machines.filter(host=>{
-                const match=slot===null
-                    ?host.courier_lineage_endpoint===endpoint||
-                        host.courier_lineage_slots?.some(item=>item.endpoint===endpoint)
-                    :courierWorkerSlot(host,slot)?.endpoint===endpoint;
-                const bound=slot===null
-                    ?host.courier_lineage_slots?.find(item=>item.endpoint===endpoint)
-                    :courierWorkerSlot(host,slot);
-                return match&&!occupied.has(host.id)&&
+                // Native listener slots are local port identities, not PPO
+                // lineage ordinals. Bind by the operator-approved endpoint.
+                const bound=host.courier_lineage_slots?.length
+                    ?host.courier_lineage_slots.find(item=>item.endpoint===endpoint)
+                    // Legacy single-listener adapters do not need a physical
+                    // slot during matching; the PPO slot is frozen at claim.
+                    :courierWorkerSlot(host,slot??0);
+                return bound?.endpoint===endpoint&&
+                    !courierEndpointOccupied(snapshot,host,endpoint)&&
                     (host.id!==machine?.id||
                         allowLocal&&budget.gpu_count===1&&
                             budget.gpu_mode==='exclusive')&&
@@ -5785,15 +5850,21 @@ class ExperimentHub {
             // to the same ordinal in the learner's immutable prefix plan.
             // This includes one selected same-host collector whose port is
             // not the adapter's legacy base port.
-            const plan=approved.plan?.slice(0,value.lineages.length);
+            const plan=selectedEndpointMode
+                ?approved.plan?.filter(item=>requestedEndpoints.includes(item.endpoint))
+                :approved.plan?.slice(0,value.lineages.length);
             if(!shared||!machine?.courier_lineage_subset||
+                !Array.isArray(selectedIds)||
                 selectedIds.includes(machine.id)&&!allowLocal||
                 !Array.isArray(plan)||plan.length!==value.lineages.length||
+                (selectedEndpointMode&&plan.some((item,index)=>
+                    item.endpoint!==requestedEndpoints[index]))||
                 value.lineages.length<1||value.lineages.length>16||
                 selectedIds.length!==plan.length||
                 selectedIds.some(id=>typeof id!=='string'||!ID.test(id))||
                 value.lineages.some(item=>!object(item)||
-                    Object.hasOwn(item,'machine_id'))||
+                    Object.hasOwn(item,'machine_id')||
+                    selectedEndpointMode&&!rolloutEndpoint(item.endpoint))||
                 selectedIds.some((id,index)=>{
                     const host=snapshot.machines.find(item=>item.id===id);
                     const budget=sidecarBudget(value.lineages[index]);
@@ -5802,7 +5873,7 @@ class ExperimentHub {
                     return !host||(duplicated&&(
                         budget.gpu_count!==1||budget.gpu_mode!=='exclusive'||
                         !host.courier_lineage_slots?.some(item=>
-                            item.slot===index&&item.endpoint===plan[index].endpoint)))||
+                            item.endpoint===plan[index].endpoint)))||
                         !eligibleLineages(plan[index].endpoint,budget,index)
                             .some(item=>item.id===id);
                 }))
@@ -5868,7 +5939,7 @@ class ExperimentHub {
             const sharedGpuHost=shared&&fixedSlotSelection&&
                 budget.gpu_count===1&&budget.gpu_mode==='exclusive'&&
                 hosts[0]?.courier_lineage_slots?.some(item=>
-                    item.slot===first+index&&item.endpoint===endpoints[index]);
+                    item.endpoint===endpoints[index]);
             if(hosts.length!==1||
                 (used.has(hosts[0].id)&&
                     !(local&&allowLocal&&(!localUsed||sharedGpuHost))&&
@@ -5879,10 +5950,14 @@ class ExperimentHub {
             if(local)localUsed=true;
             used.add(host.id);
             const timestamp=now();
+            const listener=host.courier_lineage_slots?.find(item=>
+                item.endpoint===endpoints[index]);
+            const nativeSlot=listener?.slot??first+index;
             const workerConfig={
                 id:crypto.randomUUID(),project_id:'courier_lineage',
                 name:'Courier '+(shared?'collector ':'lineage ')+(first+index)+' for '+learner.id.slice(-8),
                 parameters:{learner_job_id:learner.id,slot:first+index,
+                    ...(nativeSlot!==first+index?{listener_slot:nativeSlot}:{}),
                     ...(shared?{shared_policy:true}:{})},
                 revision:1,created_at:timestamp,updated_at:timestamp,
             };
@@ -5969,7 +6044,9 @@ class ExperimentHub {
                 const pinned=pending.frozen_members.find(item=>item.job_id===worker.id);
                 return !pinned||pinned.lease_id!==worker.lease_id||
                     pinned.machine_id!==worker.assigned_machine_id||
-                    pinned.slot!==worker.frozen_parameters?.slot;
+                    pinned.slot!==worker.frozen_parameters?.slot||
+                    (pinned.listener_slot??pinned.slot)!==
+                        (worker.frozen_parameters?.listener_slot??worker.frozen_parameters?.slot);
             })||
             pending.frozen_members[0]?.lease_id!==learner.lease_id||
             pending.frozen_members[0]?.machine_id!==learner.assigned_machine_id||
@@ -6034,10 +6111,11 @@ class ExperimentHub {
                 const machine=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
                 return {job_id:worker.id,dispatch_id:dispatches[worker.id],
                     machine_id:machine.id,lease_id:worker.lease_id,
-                    endpoint:courierWorkerSlot(machine,worker.frozen_parameters.slot)?.endpoint,
+                    endpoint:courierWorkerListener(machine,worker)?.endpoint,
                     key_fingerprint:machine.courier_lineage_key_fingerprint,
-                    max_shards:courierWorkerSlot(machine,worker.frozen_parameters.slot)?.max_shards,
-                    slot:worker.frozen_parameters.slot};
+                    max_shards:courierWorkerListener(machine,worker)?.max_shards,
+                    slot:worker.frozen_parameters.slot,
+                    listener_slot:worker.frozen_parameters.listener_slot??worker.frozen_parameters.slot};
             }),
             key_fingerprint:host.courier_remote_key_fingerprint,
             learner_endpoints:endpoints.slice(),
@@ -6363,8 +6441,11 @@ class ExperimentHub {
         if(project.id==='courier_lineage') {
             const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
             const shared=learner?.frozen_parameters?.shared_policy===true;
-            if(Object.keys(frozen).some(key=>!['learner_job_id','slot','shared_policy'].includes(key))||
+            if(Object.keys(frozen).some(key=>!['learner_job_id','slot','listener_slot','shared_policy'].includes(key))||
                 (shared?frozen.shared_policy!==true:frozen.shared_policy!==undefined)||
+                (frozen.listener_slot!==undefined&&
+                    (!shared||!Number.isSafeInteger(frozen.listener_slot)||
+                        frozen.listener_slot<0||frozen.listener_slot>63))||
                 !UUID.test(String(frozen.learner_job_id||''))||
                 !Number.isSafeInteger(frozen.slot)||frozen.slot<0||frozen.slot>=64||
                 !learner||learner.project_id!=='courier'||

@@ -4785,9 +4785,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw Error('Automatic learner placement requires each budget to stay on its selected machine.');
             if(budgets.some(item=>item.machine_id===courierMachine.value)&&!matching)
                 throw Error('Same-machine Courier GPU collectors require explicitly matched machine budgets.');
+            const slotBound=budgets.some(item=>Object.hasOwn(item,'endpoint'));
+            if(slotBound&&!matching)
+                throw Error('Selected Courier listeners require fixed machine binding.');
             const budgetRequest=distributedBudgetRequest(
-                budgets.map(({machine_id,...resources})=>({resources,machine_id})),
-                matching,'lineages');
+                budgets.map(({machine_id,endpoint,...resources})=>({
+                    resources,machine_id,...(endpoint!==undefined?{endpoint}:{})
+                })),matching,'lineages');
             const predecessor=$('hub-job-predecessor').value;
             if(predecessor) {
                 const parent=state.jobs.find(job=>job.id===predecessor);
@@ -4799,11 +4803,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const role=selected.parameters.shared_policy===true
                 ?' shared-policy collectors':' independent PPO workers';
+            const fixedSlots=matching&&selected.parameters.shared_policy===true&&
+                budgets.some(item=>state.machines.some(machine=>
+                    machine.id===item.machine_id&&machine.courier_lineage_slots?.length>0));
             if(!confirm('Reserve a Courier learner with '+budgets.length+role+
                 '? All machine CPU/RAM/GPU claims are atomic; '+
                 'no process will Start without a separate native approval.'+
                 (automatic?' The learner will be selected from the chosen machines.':'')+
-                (matching?' Budgets may be assigned to a different selected machine than the one on their row.':'')))return;
+                (fixedSlots
+                    ?' Each collector remains bound to its chosen machine and approved listener.'
+                    :matching
+                        ?' Budgets may be matched across the selected machines.'
+                        :'')))return;
             const result=await action('hub/distributed/courier',{
                 confirm_queue:true,
                 ...(automatic?{auto_learner:true}:{}),
@@ -4857,12 +4868,42 @@ document.addEventListener('DOMContentLoaded', () => {
             machine.gpus?.length>=2&&
             ['courier','courier_lineage'].every(project=>
                 machine.gpu_projects?.includes(project));
+        const activeCourierPort=(host,endpoint)=>(state.jobs||[]).some(job=>{
+            if(job.project_id!=='courier_lineage'||job.assigned_machine_id!==host.id||
+                ['cancelled','finished','stopped'].includes(job.status))return false;
+            // A failed collector's private port becomes selectable only
+            // after the native terminal lease is explicitly released.
+            if(job.status==='failed'&&job.capacity_released_at&&
+                state.reservations?.some(lease=>lease.id===job.lease_id&&
+                    lease.job_id===job.id&&lease.machine_id===host.id&&
+                    lease.status==='released'&&lease.released_at))return false;
+            const learner=state.jobs.find(parent=>
+                parent.id===job.frozen_parameters?.learner_job_id&&
+                parent.project_id==='courier');
+            const plan=learner?.frozen_parameters?.remote_lineage_plan;
+            const first=learner?.frozen_parameters?.shared_policy===true?0:
+                Number.isSafeInteger(learner?.frozen_parameters?.workers)&&
+                Array.isArray(plan)&&learner.frozen_parameters.workers>plan.length
+                    ?learner.frozen_parameters.workers-plan.length:null;
+            const index=first===null?null:job.frozen_parameters?.slot-first;
+            const frozen=Array.isArray(plan)&&Number.isSafeInteger(index)&&
+                index>=0&&index<plan.length?plan[index]?.endpoint:null;
+            const listeners=host.courier_lineage_slots||[];
+            const advertised=(listeners.length
+                ?listeners.find(item=>item.slot===
+                    (job.frozen_parameters?.listener_slot??job.frozen_parameters?.slot))?.endpoint
+                :host.courier_lineage_endpoint)||null;
+            // A mapped listener changing while its native job remains
+            // assigned cannot make the original bound port available.
+            return !frozen||!advertised||advertised!==frozen||
+                frozen===endpoint;
+        });
         const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
-            host.status==='connected'&&
+            host.status==='connected'&&!activeCourierPort(host,endpoint)&&
             (host.id!==machine.id||colocated)&&
             (shared&&host.courier_lineage_slots?.length
                 ?host.courier_lineage_slots.some(listener=>
-                    listener.slot===i&&listener.endpoint===endpoint&&
+                    listener.endpoint===endpoint&&
                     listener.max_shards===machine.courier_remote_max_shards?.[i])
                 :host.courier_lineage_endpoint===endpoint&&
                     host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i])&&
@@ -4873,22 +4914,22 @@ document.addEventListener('DOMContentLoaded', () => {
         courierMatch.label.hidden=!subset;
         const population=selected.parameters.workers;
         const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
-        // Slot-backed local collectors must occupy an ordered prefix of
-        // the learner-approved endpoints. A later available endpoint
-        // cannot silently become a different recurrent PPO slot.
+        // PPO slots are logical and contiguous. An explicitly chosen
+        // endpoint can be any still-approved free native listener, so
+        // a second experiment need not wait for listener zero to free.
         const slotPinned=shared&&match.some(hosts=>hosts.some(host=>
             host.courier_lineage_slots?.length>0));
-        const candidates=slotPinned?match.slice(0,capacity):match;
-        const gap=slotPinned?candidates.findIndex(hosts=>hosts.length!==1):-1;
-        const eligible=gap>=0?candidates.slice(0,gap):candidates;
-        const available=eligible.filter(hosts=>hosts.length===1)
-            .map(hosts=>hosts[0]);
+        const entries=match.flatMap((hosts,index)=>
+            hosts.length===1?[{host:hosts[0],endpoint:endpoints[index]}]:[]);
+        // Only the selected map/lineage population is being reserved.
+        // Extra advertised listeners are not additional resource claims.
+        const selectedEntries=entries.slice(0,capacity);
+        const available=selectedEntries.map(entry=>entry.host);
         courierMatch.label.lastChild.textContent=slotPinned
-            ?' Bind each budget to this exact collector slot and machine'
+            ?' Bind each budget to its selected approved endpoint and machine'
             :' Match budgets across the selected machines';
         const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
-            ':'+available.map(host=>host.id+':'+
-                host.courier_lineage_slots?.map(item=>item.slot+'@'+item.endpoint).join('|')).join(';'):null;
+            ':'+selectedEntries.map(entry=>entry.host.id+'@'+entry.endpoint).join(';'):null;
         if(courierBudgetHost!==budgetHost) {
             courierAuto.input.checked=false;
             const local=colocated&&available.some(host=>host.id===machine.id);
@@ -4899,10 +4940,14 @@ document.addEventListener('DOMContentLoaded', () => {
             courierMatch.input.checked=Boolean(local||repeated||slotPinned);
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
-                (subset?available.slice(0,capacity):match).map(worker=>
-                    ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,
+                selectedEntries.map(({host:worker,endpoint})=>
+                    ({...(subset?{machine_id:worker.id}:{}),
+                        ...(slotPinned?{endpoint}:{}),cpus:2,ram_mb:4096,
                         ...(subset&&(worker.id===machine.id||
-                            available.filter(other=>other.id===worker.id).length>1)
+                            available.filter(other=>other.id===worker.id).length>1||
+                            worker.courier_lineage_slots?.length&&
+                                worker.gpu_projects?.includes('courier_lineage')&&
+                                worker.gpus?.length)
                             ?{gpu_count:1,gpu_mode:'exclusive'}
                             :{gpu_count:0})})),
                 null,2);
