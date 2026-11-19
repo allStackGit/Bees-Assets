@@ -54,7 +54,10 @@ function renderPage(html) {
         '<p class="muted">Manage locally approved Nano and Micro timers here. '+
         'Starting a timer schedules evaluations; Run now requests one immediate evaluation. '+
         'Stopping a timer does not stop training or interrupt a running evaluation.</p>'+
-        '<button type="button" id="hub-local-evaluator-setup" disabled>Set up and start Nano/Micro evaluators</button>'+
+        '<div class="hub-controls">'+
+        '<button type="button" id="hub-local-evaluator-setup" disabled>Set up TinyBrains Nano/Micro</button>'+
+        '<button type="button" id="hub-local-courier-evaluator-setup" disabled>Set up Courier survival evaluator</button>'+
+        '</div>'+
         '<div id="hub-local-evaluator-rows" class="hub-standalone"></div>'+
         '<p id="hub-local-evaluator-message" class="hub-notice" role="status"></p>'+
         '</div>';
