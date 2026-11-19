@@ -117,11 +117,19 @@ class NativeHubCollectionBarrier:
                     params.get("collector_id") != collector or
                     params.get("collection_id") != collection_id):
                 raise ValueError(f"Hub native collector {collector} changed its frozen job identity")
-            if job.get("status") in ("failed", "cancelled", "stopped"):
+            # wait_for_collections has already checked the issued receipt
+            # before calling this barrier. A Hub terminal status with no
+            # verified bundle cannot produce a learner update. In particular,
+            # "finished" is Hub's success state, not "completed": a finished
+            # collector missing its transfer must not hang an unlimited wait.
+            status = job.get("status")
+            if status in ("failed", "cancelled", "stopped", "unverified", "finished"):
                 reason = str(job.get("status_reason") or "")[:240]
+                detail = ("finished without a verified collection delivery"
+                          if status == "finished" else f"is {status} in Hub")
                 raise RuntimeError(
                     f"native collector {collector} on {machine} ({job_id}) "
-                    f"is {job['status']} in Hub: {reason}"
+                    f"{detail}: {reason}"
                 )
         # If the coordinated Start becomes review-required, no additional
         # collector can safely be launched under this approval.
