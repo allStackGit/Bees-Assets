@@ -1,6 +1,7 @@
 'use strict';
 
 const fs=require('node:fs');
+const os=require('node:os');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {isDeepStrictEqual}=require('node:util');
@@ -909,6 +910,40 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             throw Error('Installed Courier learner has no authenticated remote lineage transport.');
         remote={keyFile,endpoints,
             fingerprint:crypto.createHash('sha256').update(fs.readFileSync(keyFile)).digest('hex')};
+    }
+    // The local Hub evaluator Setup action creates a private, environment-
+    // pinned approval. Existing trusted adapters with no explicit evaluator
+    // options can discover that approval at agent restart. Its exact paths
+    // are built locally; experiments and HTTP clients cannot supply them.
+    if(evaluationRoot==null&&evaluationSuites==null&&snapshotRoot==null&&
+        process.platform==='linux') {
+        const home=os.homedir(),ai=path.join(home,'ai');
+        const audit=path.join(home,'evaluation-audits/courier');
+        const approvalFile=path.join(audit,'hub-approved-evaluation.json');
+        if(fs.existsSync(approvalFile)) {
+            const fileStat=fs.lstatSync(approvalFile);
+            if(!fileStat.isFile()||fileStat.isSymbolicLink()||
+                fileStat.uid!==process.getuid()||fileStat.mode&0o077||
+                fs.realpathSync(approvalFile)!==approvalFile)
+                throw Error('Courier evaluation approval must be a private regular file.');
+            const approval=JSON.parse(fs.readFileSync(approvalFile,'utf8'));
+            if(approval.schema_version!==1||
+                approval.config_sha256!==configSha256||
+                !/^courier_survival_[a-f0-9]{12}$/.test(approval.suite_id)||
+                approval.suite_id!=='courier_survival_'+configSha256.slice(0,12))
+                throw Error('Courier evaluation approval differs from the installed environment.');
+            const suiteFile=path.join(audit,'suites',approval.suite_id+'.json');
+            if(fs.realpathSync(suiteFile)!==suiteFile||
+                !fs.statSync(suiteFile).isFile())
+                throw Error('Approved Courier evaluation suite file is missing or redirected.');
+            const suite=JSON.parse(fs.readFileSync(suiteFile,'utf8'));
+            if(suite.suite_id!==approval.suite_id||
+                suite.config_sha256!==configSha256)
+                throw Error('Courier evaluation suite configuration differs from its approval.');
+            evaluationRoot=path.join(ai,'experiments/experiment-hub/evaluator-receipts');
+            snapshotRoot=path.join(ai,'experiments/experiment-hub/courier-evaluation-snapshots');
+            evaluationSuites=[approval.suite_id];
+        }
     }
     const evaluator=evaluationReader('courier',evaluationRoot,evaluationSuites,[project,artifacts]);
     let snapshots=null;
