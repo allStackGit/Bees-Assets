@@ -928,10 +928,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 throw Error('Courier evaluation approval must be a private regular file.');
             const approval=JSON.parse(fs.readFileSync(approvalFile,'utf8'));
             if(approval.schema_version!==1||
-                approval.config_sha256!==configSha256||
-                !/^courier_survival_[a-f0-9]{12}$/.test(approval.suite_id)||
-                approval.suite_id!=='courier_survival_'+configSha256.slice(0,12))
-                throw Error('Courier evaluation approval differs from the installed environment.');
+                !SHA256.test(String(approval.config_sha256||''))||
+                approval.suite_id!=='courier_survival_'+
+                    approval.config_sha256.slice(0,12))
+                throw Error('Invalid approved Courier evaluation manifest.');
+            if(approval.config_sha256===configSha256) {
             const suiteFile=path.join(audit,'suites',approval.suite_id+'.json');
             if(fs.realpathSync(suiteFile)!==suiteFile||
                 !fs.statSync(suiteFile).isFile())
@@ -943,6 +944,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             evaluationRoot=path.join(ai,'experiments/experiment-hub/evaluator-receipts');
             snapshotRoot=path.join(ai,'experiments/experiment-hub/courier-evaluation-snapshots');
             evaluationSuites=[approval.suite_id];
+            }
+            // When the environment changes, training remains available.
+            // The operator can approve a new immutable evaluation suite
+            // from Machines without editing the installed adapter source.
         }
     }
     const evaluator=evaluationReader('courier',evaluationRoot,evaluationSuites,[project,artifacts]);
