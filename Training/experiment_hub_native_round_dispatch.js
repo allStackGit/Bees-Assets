@@ -195,12 +195,14 @@ async function dispatch(ordersFile,planFile,port) {
         memberIds.some(id=>!UUID.test(String(id||''))))
         throw Error('Hub did not return the exact reserved native worker identities.');
     state=await api(port,'GET','state');
+    // The Hub appends immutable authorization decisions. Respect the latest
+    // decision, including an explicit operator cancellation: selecting an
+    // older authorized entry would silently re-arm a cancelled bundle.
     const existingPlans=(state.bundle_start_plans||[]).filter(p=>p.bundle_id===bundleId);
-    const planCurrent=existingPlans.find(p=>
-        ['pending','needs_review','authorized','disarmed','expired'].includes(p.status));
-    if(planCurrent?.status==='needs_review'||planCurrent?.status==='disarmed'||
-        planCurrent?.status==='expired')
-        throw Error('Hub requires explicit operator review of an interrupted native Start plan.');
+    const planCurrent=existingPlans.at(-1);
+    if(planCurrent&&!['pending','authorized'].includes(planCurrent.status))
+        throw Error('Native Hub Start is no longer authorized ('+
+            planCurrent.status+'); explicit operator review is required.');
     let launch=planCurrent;
     const active=state.jobs.filter(j=>memberIds.includes(j.id));
     if(!launch&&active.every(j=>j.status==='waiting_adapter')) {

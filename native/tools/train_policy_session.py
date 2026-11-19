@@ -140,7 +140,8 @@ class NativeHubCollectionBarrier:
                 continue
             ids = plan.get("member_job_ids")
             if (isinstance(ids, list) and active_ids.intersection(ids) and
-                    plan.get("status") in ("needs_review", "disarmed", "expired")):
+                    plan.get("status") in (
+                        "needs_review", "disarmed", "expired", "cancelled")):
                 raise RuntimeError(
                     f"native Hub collection Start requires review: "
                     f"{str(plan.get('reason') or plan['status'])[:240]}"
