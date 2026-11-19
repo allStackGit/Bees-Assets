@@ -21,6 +21,15 @@ from native_training_outcomes import accumulate_training_outcome, record_combat_
 # Non-learner controllers need only lifetime/side validation. This
 # packed representation retains named field access without one Python
 # dict (and three boxed integers) per opponent decision.
+# Frozen native v26 feature offset: self/capability/carrier, 64 allies,
+# 64 enemies, 5 mounts, 8 mining rocks, 64 map objects, 48 asteroids.
+# The sixteen reserved channels begin here for both normal and native
+# mission episodes. The learner inspects only their first presence flag.
+NATIVE_MISSION_ACTIVE_INDEX = (
+    25 + 12 + 41 + 64 * 45 + 64 * 41 + 5 * 15 +
+    8 * 7 + 64 * 12 + 48 * 11
+)
+
 OPPONENT_IDENTITY = np.dtype([
     ("ship", "<u8"), ("binding_revision", "<u8"), ("team", "u1"),
 ])
@@ -1170,6 +1179,7 @@ def main():
     terminal_steps = 0
     episode_keys = set()
     opponent_steps = 0
+    mission_learner_decisions = 0
     capture_stats = {}
     capture_read_wall_seconds = 0.0
     trajectory_ingest_wall_seconds = 0.0
@@ -1205,10 +1215,24 @@ def main():
             if key in episode_keys:
                 parser.error("the same completed episode was supplied more than once")
             episode_keys.add(key)
-            opponent_steps += sum(
-                sum(agent not in learning_agents for agent in frame)
-                for _, frame in ticks
-            )
+            # Fuse mission-evidence accounting into the existing
+            # learner/opponent partition walk. This is the *actual*
+            # optimizer's source decision data, not a guessed Level plan
+            # or a separate training-only observation encoder.
+            for _, frame in ticks:
+                for agent, row in frame.items():
+                    if agent not in learning_agents:
+                        opponent_steps += 1
+                    else:
+                        mission_present = row["observations"][
+                            NATIVE_MISSION_ACTIVE_INDEX
+                        ]
+                        if mission_present == 1.0:
+                            mission_learner_decisions += 1
+                        elif mission_present != 0.0:
+                            raise ValueError(
+                                "native mission observation flag is neither zero nor one"
+                            )
             for trajectory in trajectories((rollout,), settings.time_horizon, behavior.behavior_id):
                 trainer._process_trajectory(trajectory)
                 terminal_steps += int(trajectory.done_reached)
@@ -1336,6 +1360,7 @@ def main():
         "optimizer_torch_interop_threads": torch.get_num_interop_threads(),
         **cuda_metrics,
         "optimizer_input_steps": steps,
+        "native_mission_learner_decisions": mission_learner_decisions,
         "trajectory_processing_wall_seconds": processing_wall_seconds,
         "trajectory_processing_cpu_seconds": processing_cpu_seconds,
         "capture_read_and_validation_wall_seconds": capture_read_wall_seconds,

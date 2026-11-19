@@ -372,7 +372,7 @@ def rollout_metrics(summary_path, config, manifest_sha):
     # authored goal through the v26 reserved channels. Refuse a successful
     # physical rollout from an old binary that still emitted blind PPO rows.
     has_native_mission = any(
-        any(key in level for key in ("survival", "demolition", "escort"))
+        any(key in level for key in ("survival", "demolition", "escort", "extraction"))
         for level in config["levels"]
     )
     observation_work = summary.get("policy_observations")
