@@ -25,11 +25,13 @@ const receiptConflict=issue=>typeof issue==='string'&&
 // A new accepted receipt closes a suite's receipt-availability episode.
 // Keep conflict diagnostics permanently disqualifying, and keep older
 // diagnostic rows intact. Replayed heartbeats cannot re-arm an episode.
-function rearmRecoveredIssues(issueKeys,dispatchId,suiteId) {
+function rearmRecoveredIssues(issueKeys,activeIssues,dispatchId,suiteId) {
     const prefix=JSON.stringify([dispatchId,suiteId]).slice(0,-1)+',';
     for(const key of issueKeys)
-        if(key.startsWith(prefix)&&!receiptConflict(JSON.parse(key)[2]))
+        if(key.startsWith(prefix)&&!receiptConflict(JSON.parse(key)[2])) {
             issueKeys.delete(key);
+            activeIssues.delete(key);
+        }
 }
 
 // Read-only regression signals are recomputed from the complete immutable
@@ -164,6 +166,7 @@ class EvaluationHistory {
         }
         const files=this.segmentFiles(jobId);
         const records=[],diagnostics=[],seen=new Map(),issueKeys=new Set(),
+            activeIssues=new Map(),activeFailures=new Map(),
             failureAttempts=new Map();
         let lastEntry=null,conflicted=false,stat=null;
         for(const [index,file] of files.entries()) {
@@ -210,6 +213,7 @@ class EvaluationHistory {
                     if(failureAttempts.has(key))
                         throw Error('Duplicate failed evaluation attempt in archive.');
                     failureAttempts.set(key,JSON.stringify(row));
+                    activeFailures.set(key,row);
                     diagnostics.push(row);
                     lastEntry=row;
                     continue;
@@ -227,7 +231,9 @@ class EvaluationHistory {
                             .some(key=>Object.hasOwn(row,key)))
                         throw Error('Invalid independent evaluation diagnostic.');
                     diagnostics.push(row);
-                    issueKeys.add(JSON.stringify([row.dispatch_id,row.suite_id,row.issue]));
+                    const key=JSON.stringify([row.dispatch_id,row.suite_id,row.issue]);
+                    issueKeys.add(key);
+                    activeIssues.set(key,row);
                     if(receiptConflict(row.issue))conflicted=true;
                     lastEntry=row;
                     continue;
@@ -251,13 +257,20 @@ class EvaluationHistory {
                 const key=row.dispatch_id+':'+row.suite_id+':'+row.checkpoint_sha256;
                 if(seen.has(key))throw Error('Duplicate evaluation history record.');
                 seen.set(key,JSON.stringify(row));
-                rearmRecoveredIssues(issueKeys,row.dispatch_id,row.suite_id);
+                rearmRecoveredIssues(issueKeys,activeIssues,row.dispatch_id,row.suite_id);
+                // One accepted receipt resolves earlier failed attempts at
+                // its exact checkpoint; it does not resolve other checkpoints.
+                for(const [failureKey,failure] of activeFailures)
+                    if(failure.dispatch_id===row.dispatch_id&&
+                        failure.suite_id===row.suite_id&&
+                        failure.checkpoint_sha256===row.checkpoint_sha256)
+                        activeFailures.delete(failureKey);
                 records.push(row);
                 lastEntry=row;
             }
         }
         const loaded={project_id:projectId,records,diagnostics,seen,issueKeys,
-            failureAttempts,conflicted,lastEntry,
+            activeIssues,activeFailures,failureAttempts,conflicted,lastEntry,
             segment:Math.max(0,files.length-1),
             size:stat?.size||0,dev:stat?.dev??null,ino:stat?.ino??null};
         this.loaded.set(jobId,loaded);
@@ -385,7 +398,12 @@ class EvaluationHistory {
             this.appendRow(id,data,row);
             data.records.push(row);
             data.seen.set(key,JSON.stringify(row));
-            rearmRecoveredIssues(data.issueKeys,row.dispatch_id,row.suite_id);
+            rearmRecoveredIssues(data.issueKeys,data.activeIssues,row.dispatch_id,row.suite_id);
+            for(const [failureKey,failure] of data.activeFailures)
+                if(failure.dispatch_id===row.dispatch_id&&
+                    failure.suite_id===row.suite_id&&
+                    failure.checkpoint_sha256===row.checkpoint_sha256)
+                    data.activeFailures.delete(failureKey);
             this.issues.delete(id);
             return true;
         }catch(error) {
@@ -417,6 +435,7 @@ class EvaluationHistory {
                 suite_id:suiteId,issue,observed_at:new Date().toISOString()};
             this.appendRow(id,data,row);
             data.issueKeys.add(issueKey);
+            data.activeIssues.set(issueKey,row);
             data.diagnostics.push(row);
             if(receiptConflict(issue))data.conflicted=true;
             this.issues.delete('diagnostic:'+id);
@@ -460,6 +479,7 @@ class EvaluationHistory {
             const row={...checked,observed_at:new Date().toISOString()};
             this.appendRow(id,data,row);
             data.failureAttempts.set(key,JSON.stringify(row));
+            data.activeFailures.set(key,row);
             data.diagnostics.push(row);
             this.issues.delete('failure:'+id);
             return true;
@@ -843,7 +863,7 @@ class EvaluationHistory {
         }
     }
     snapshot(projectId,jobs) {
-        const samples=[],regressions=[],diagnostics=[];
+        const samples=[],regressions=[],diagnostics=[],openDiagnostics=[];
         for(const job of jobs) {
             if(job.project_id!==projectId)continue;
             try {
@@ -851,6 +871,15 @@ class EvaluationHistory {
                 const records=stored.records;
                 if(stored.diagnostics.length)diagnostics.push({
                     job_id:job.id,events:stored.diagnostics.slice(-32),
+                });
+                // Derive unresolved diagnostics from the full append order,
+                // not the last 32 visible events or sampled chart points.
+                const ongoing=[...stored.activeIssues.values(),
+                    ...stored.activeFailures.values()]
+                    .sort((a,b)=>a.observed_at.localeCompare(b.observed_at));
+                if(ongoing.length)openDiagnostics.push({
+                    job_id:job.id,events:ongoing.slice(-32),
+                    total_open:ongoing.length,
                 });
                 regressions.push(...regressionSignals(job,records));
                 if(!records.length)continue;
@@ -961,7 +990,8 @@ class EvaluationHistory {
                     String(error.message||error).slice(0,160));
             }
         }
-        return {samples,regressions,diagnostics,storage_warning:this.error};
+        return {samples,regressions,diagnostics,open_diagnostics:openDiagnostics,
+            storage_warning:this.error};
     }
 }
 module.exports={EvaluationHistory,regressionSignals};
