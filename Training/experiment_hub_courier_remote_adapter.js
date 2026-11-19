@@ -45,6 +45,7 @@ function secretFile(value) {
 function createCourierRemoteLineageAdapter({
     projectRoot,pythonPath,keyPath,cacheRoot,listenIp,port,
     maxShards=64,enableCuda=false,enableRocm=false,rocrGpuUuids={},
+    slotPorts={},
 }) {
     if(typeof enableCuda!=='boolean'||typeof enableRocm!=='boolean'||
         (enableCuda&&enableRocm)||
@@ -65,6 +66,22 @@ function createCourierRemoteLineageAdapter({
     const secret=secretFile(keyPath);
     const fingerprint=crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex');
     const endpoint=canonicalEndpoint(listenIp,port);
+    // A machine may own several independently leased shared-policy collectors.
+    // Each frozen PPO slot gets a distinct, locally approved listener; no
+    // process may choose a port or reuse a peer's endpoint at Start.
+    if(!slotPorts||typeof slotPorts!=='object'||Array.isArray(slotPorts)||
+        Object.keys(slotPorts).length>16||
+        Object.keys(slotPorts).some(slot=>!/^(?:0|[1-9][0-9]?)$/.test(slot)||
+            Number(slot)>63)||
+        (Object.keys(slotPorts).length>0&&
+            !Object.values(slotPorts).includes(port)))
+        throw Error('Courier multi-collector listeners require up to 16 fixed slots, including the base port.');
+    const slots=Object.entries(slotPorts).map(([slot,listenerPort])=>({
+        slot:Number(slot),endpoint:canonicalEndpoint(listenIp,listenerPort),
+        max_shards:maxShards,
+    })).sort((a,b)=>a.slot-b.slot);
+    if(new Set(slots.map(item=>item.endpoint)).size!==slots.length)
+        throw Error('Every Courier collector slot needs its own private listener port.');
     if(typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
         fs.realpathSync(pythonPath)!==pythonPath||!fs.statSync(pythonPath).isFile())
         throw Error('Courier remote Python must be an installed executable file.');
@@ -84,10 +101,13 @@ function createCourierRemoteLineageAdapter({
             throw Error('Installed Courier remote worker has no approved CUDA/ROCm runtime.');
     }
     const sharedPolicy=probe.stdout.trim()==='1';
+    if(slots.length&&!sharedPolicy)
+        throw Error('Slot-specific Courier listeners require the installed shared-policy collector protocol.');
     const approved=Object.freeze({...rocrGpuUuids});
     return {
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
         courier_lineage_endpoint:endpoint,
+        courier_lineage_slots:slots.map(item=>({...item})),
         courier_lineage_key_fingerprint:fingerprint,
         courier_lineage_max_shards:maxShards,
         courier_shared_policy_collector:sharedPolicy,
@@ -116,6 +136,10 @@ function createCourierRemoteLineageAdapter({
                 !Number.isSafeInteger(context.ram_quota_mb)||
                 context.ram_quota_mb<128||context.ram_quota_mb>1000000)
                 throw Error('Courier remote lineage needs frozen learner/slot IDs and its own CPU/RAM lease.');
+            const selected=slots.length?slots.find(item=>item.slot===parameters.slot):null;
+            if(slots.length&&!selected)
+                throw Error('Courier collector slot has no locally approved private listener.');
+            const selectedPort=selected?Number(selected.endpoint.split(':').at(-1)):port;
             const physical=context.gpu_pci_address;
             const cuda=context.gpu_cuda_uuid;
             if(context.gpu_pci_addresses!==undefined||
@@ -137,7 +161,7 @@ function createCourierRemoteLineageAdapter({
             if(fs.realpathSync(output)!==output||!fs.statSync(output).isDirectory())
                 throw Error('Courier remote scratch directory is not a real directory.');
             return ['-B',path.join(project,'courier_remote_lineage.py'),
-                '--host',listenIp,'--port',String(port),'--key-file',secret,
+                '--host',listenIp,'--port',String(selectedPort),'--key-file',secret,
                 '--job-id',parameters.learner_job_id,'--slot',String(parameters.slot),
                 '--work-dir',output,'--cpu-lease',String(context.cpu_quota),
                 '--ram-lease-mb',String(context.ram_quota_mb),

@@ -42,12 +42,17 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_policy_ram_denied','training_policy_digest_reused',
     'training_shared_last_reply_worker','training_shared_last_copy_worker',
     'training_shared_last_wire_worker',
+    'training_shared_gpu_collectors','training_shared_gpu_policy_retained',
+    'training_shared_gpu_policy_reused',
+    'training_checkpoint_parallel_workers',
     'training_slowest_worker','training_last_reply_worker',
     'training_simulation_slowest_worker',
     'training_simulated_steps','training_useful_steps','training_collected_useful_steps',
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version','training_sim_early_dispatches',
+    'training_sim_group_dispatches','training_sim_grouped_shards',
+    'training_sim_ipc_commands_saved',
     'training_sim_prestaged_actions','training_sim_queue_peak_shards',
     'training_sim_multiplexed_shards','training_sim_child_os_threads',
     'training_sim_vector_groups_total','training_sim_vector_shards_total',
@@ -193,6 +198,15 @@ function courierMetrics(source) {
         'training_sim_shard_moves_total',
         'training_gpu_devices_assigned','training_slowest_worker',
         'training_shared_last_wire_worker',
+        'training_shared_gpu_collectors',
+        'training_shared_gpu_policy_retained',
+        'training_shared_gpu_policy_reused',
+        'training_shared_gpu_snapshot_seconds',
+        'training_shared_gpu_snapshot_bytes',
+        'training_checkpoint_parallel_workers',
+        'training_checkpoint_snapshot_bytes',
+        'training_checkpoint_worker_max_seconds',
+        'training_checkpoint_append_seconds',
     ].includes(name)||name.startsWith('training_live_')||
         name.startsWith('training_ppo_parallel_')||
         name.startsWith('training_broker_')||
@@ -244,7 +258,7 @@ function courierMetrics(source) {
         name.startsWith('training_collector_gpu_')||
         name.startsWith('training_gpu_graph_')||
         /^training_gpu_device_[0-7]_next_lineages$/.test(name)||
-        /^training_sim_(?:multiplexed_shards|child_os_threads)$/.test(name)||
+        /^training_sim_(?:multiplexed_shards|child_os_threads|group_dispatches|grouped_shards|ipc_commands_saved)$/.test(name)||
         /^training_gpu_rollout_input_(?:packs|seconds|owner)$/.test(name)||
         /^training_remote_progress_(?:seen|sent|skipped|bytes|max_seconds|encode_seconds|owner)$/.test(name)||
         /^training_(?:local_gpu_rollout_lineages|gpu_rollout_(?:next_lineages|trial))$/.test(name)||
@@ -268,7 +282,8 @@ function courierMetrics(source) {
     const criticalWorkerFields=[
         'collect_steps_per_second','collection_seconds',
         'optimization_seconds','simulation_seconds',
-        'inference_seconds','sim_physical_processes',
+        'inference_seconds','gpu_policy_snapshot_seconds',
+        'remote_roundtrip_seconds','sim_physical_processes',
         'sim_process_ceiling','gpu_fwd_stream_seconds',
         'observation_seconds','is_remote','sim_trial',
     ];
@@ -302,6 +317,7 @@ function courierMetrics(source) {
             /^worker_[0-9]{1,2}_(?:probe|resume)_maps_(?:before|after)$/.test(name)||
             /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
             /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_group_dispatches|sim_grouped_shards|sim_ipc_saved|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             /_probe_map_steps_per_second$/.test(name)?'rate':
@@ -576,12 +592,19 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             (context.gpu_pci_address===undefined&&context.gpu_cuda_uuid!==undefined)||
             (context.gpu_pci_addresses!==undefined&&(
                 context.gpu_pci_address!==undefined||context.gpu_cuda_uuid!==undefined||
-                !enableGpu||windows||!gpuMulti||context.gpu_mode!=='exclusive'||
+                !enableGpu||!gpuMulti||context.gpu_mode!=='exclusive'||
                 !Array.isArray(context.gpu_pci_addresses)||
                 ![2,3,4,5,6,7,8].includes(context.gpu_pci_addresses.length)||
                 context.gpu_pci_addresses.some(pci=>
-                    !PCI.test(String(pci))||!Object.hasOwn(approvedRocr,pci))||
-                new Set(context.gpu_pci_addresses).size!==context.gpu_pci_addresses.length)))
+                    !PCI.test(String(pci))||
+                    (!windows&&!Object.hasOwn(approvedRocr,pci)))||
+                new Set(context.gpu_pci_addresses).size!==context.gpu_pci_addresses.length||
+                (windows?(!Array.isArray(context.gpu_cuda_uuids)||
+                    context.gpu_cuda_uuids.length!==context.gpu_pci_addresses.length||
+                    context.gpu_cuda_uuids.some(id=>!NVIDIA_UUID.test(String(id)))||
+                    new Set(context.gpu_cuda_uuids.map(id=>id.toLowerCase())).size!==
+                        context.gpu_cuda_uuids.length)
+                    :context.gpu_cuda_uuids!==undefined))))
             throw Error('Invalid Courier job, physical GPU lease or checkpoint lineage.');
         return path.join(artifacts,context.job_id);
     }
@@ -625,7 +648,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             courier_remote_key_fingerprint:remote.fingerprint,
             courier_remote_max_shards:remote.endpoints.map(item=>item.maxShards),
         }:{}),
-        ...(enableGpu&&windows?{gpu_execution:'cuda'}:{}),
+        ...(enableGpu&&windows?{gpu_execution:'cuda',
+            ...(gpuMulti?{gpu_multi_execution:'independent-ppo'}:{})}:{}),
         ...(enableGpu&&!windows?{
             rocr_gpu_uuids:approvedRocr,
             ...(gpuMulti&&Object.keys(approvedRocr).length>=2
@@ -780,7 +804,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(context.gpu_pci_address!==undefined||
                     context.gpu_pci_addresses!==undefined
                     ?['--optimizer-device','cuda',
-                       ...(context.gpu_pci_addresses
+                       ...(!windows&&context.gpu_pci_addresses
                            ?context.gpu_pci_addresses.flatMap(pci=>
                                ['--optimizer-gpu-pci',pci])
                            :gpuPciPin&&!windows

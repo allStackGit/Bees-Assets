@@ -227,14 +227,18 @@ function boundedReport(value) {
     if(!Array.isArray(dualProfiles)||dualProfiles.length>cudaProfiles.length||
         dualProfiles.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(dualProfiles).size!==dualProfiles.length||
-        (dualProfiles.length&&value.platform!=='linux'))
-        throw Error('Dual GPU TinyBrains requires locally qualified Linux ROCm profiles.');
+        (dualProfiles.length&&
+            (!['linux','win32'].includes(value.platform)||
+             !installed.includes('tinybrains'))))
+        throw Error('Dual GPU TinyBrains requires an installed native CUDA/ROCm profile.');
     const multiProfiles=value.tinybrains_multi_gpu_profiles??[];
     if(!Array.isArray(multiProfiles)||multiProfiles.length>dualProfiles.length||
         multiProfiles.some(id=>typeof id!=='string'||!dualProfiles.includes(id))||
         new Set(multiProfiles).size!==multiProfiles.length||
-        (multiProfiles.length&&value.platform!=='linux'))
-        throw Error('Multi-GPU TinyBrains requires a locally qualified persistent ROCm profile.');
+        (multiProfiles.length&&
+            (!['linux','win32'].includes(value.platform)||
+             !installed.includes('tinybrains'))))
+        throw Error('Multi-GPU TinyBrains requires an installed persistent CUDA/ROCm profile.');
     const remoteRollouts=value.tinybrains_remote_rollout_profiles??[];
     const remoteCount=value.tinybrains_remote_rollout_count??0;
     const remoteCpu=value.tinybrains_remote_cpu_learner??false;
@@ -253,6 +257,7 @@ function boundedReport(value) {
     const courierWorkerEndpoint=value.courier_lineage_endpoint??null;
     const courierWorkerKey=value.courier_lineage_key_fingerprint??null;
     const courierWorkerShards=value.courier_lineage_max_shards??0;
+    const courierWorkerSlots=value.courier_lineage_slots??[];
     if(!Array.isArray(courierEndpoints)||courierEndpoints.length>16||
         typeof courierSubset!=='boolean'||(courierSubset&&!courierEndpoints.length)||
         ![0,4,32,64].includes(courierSharedMaps)||(courierSharedMaps>0&&!courierSubset)||
@@ -273,10 +278,23 @@ function boundedReport(value) {
             !Number.isSafeInteger(courierWorkerShards)||
             courierWorkerShards<1||courierWorkerShards>64)))
         throw Error('Courier remote lineages require approved native adapters and private pinned endpoints.');
+    if(!Array.isArray(courierWorkerSlots)||courierWorkerSlots.length>16||
+        (courierWorkerSlots.length>0&&
+            (!courierSharedCollector||courierWorkerEndpoint===null||
+                !courierWorkerSlots.some(item=>item?.endpoint===courierWorkerEndpoint)))||
+        courierWorkerSlots.some(item=>!object(item)||
+            Object.keys(item).sort().join(',')!=='endpoint,max_shards,slot'||
+            !Number.isSafeInteger(item.slot)||item.slot<0||item.slot>63||
+            !rolloutEndpoint(item.endpoint)||
+            item.max_shards!==courierWorkerShards)||
+        new Set(courierWorkerSlots.map(item=>item.slot)).size!==courierWorkerSlots.length||
+        new Set(courierWorkerSlots.map(item=>item.endpoint)).size!==courierWorkerSlots.length)
+        throw Error('Courier shared-policy multi-GPU collectors require unique, approved slot listener endpoints.');
     if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(remoteRollouts).size!==remoteRollouts.length||
-        (remoteRollouts.length&&value.platform!=='linux')||
+        (remoteRollouts.length&&
+            !['linux','win32'].includes(value.platform))||
         !Number.isSafeInteger(remoteCount)||remoteCount<0||remoteCount>8||
         typeof remoteSubset!=='boolean'||(remoteSubset&&!remoteCount)||
         typeof remoteCpu!=='boolean'||(remoteCpu&&
@@ -293,7 +311,7 @@ function boundedReport(value) {
         (installed.includes('tinybrains_rollout')&&workerEndpoint===null)||
         !Number.isSafeInteger(workerThreadLimit)||workerThreadLimit<0||workerThreadLimit>256||
         Boolean(workerThreadLimit)!==Boolean(workerEndpoint))
-        throw Error('Remote rollout requires a compatible Linux TinyBrains learner adapter.');
+        throw Error('Remote rollout requires a compatible native TinyBrains learner adapter.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
         requiredImports.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
@@ -354,6 +372,7 @@ function boundedReport(value) {
         courier_remote_key_fingerprint:courierKey,
         courier_remote_max_shards:courierShards.slice(),
         courier_lineage_endpoint:courierWorkerEndpoint,
+        courier_lineage_slots:courierWorkerSlots.map(item=>({...item})),
         courier_lineage_key_fingerprint:courierWorkerKey,
         courier_lineage_max_shards:courierWorkerShards,
         tinybrains_imports:imports,
@@ -393,17 +412,17 @@ function gpuStartBlock(job,lease,machine) {
         machine.gpu_shared_projects?.includes(job.project_id);
     const single=r.gpu_count===1&&allocated.gpu_count===1&&
         (r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive'||sharedApproved);
-    const dual=machine.agent_platform==='linux'&&
+    const dual=['linux','win32'].includes(machine.agent_platform)&&
         job.project_id==='tinybrains'&&job.frozen_parameters?.device==='dual'&&
         machine.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
         r.gpu_count===2&&allocated.gpu_count===2&&
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
-    const multiTiny=machine.agent_platform==='linux'&&
+    const multiTiny=['linux','win32'].includes(machine.agent_platform)&&
         job.project_id==='tinybrains'&&job.frozen_parameters?.device==='multi'&&
         machine.tinybrains_multi_gpu_profiles?.includes(job.frozen_parameters.profile)&&
         r.gpu_count>=3&&r.gpu_count<=8&&allocated.gpu_count===r.gpu_count&&
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
-    const multi=machine.agent_platform==='linux'&&
+    const multi=['linux','win32'].includes(machine.agent_platform)&&
         job.project_id==='courier'&&r.gpu_count>=2&&r.gpu_count<=8&&
         allocated.gpu_count===r.gpu_count&&
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
@@ -417,7 +436,7 @@ function gpuStartBlock(job,lease,machine) {
             physicalGpuBindings(machine,{
                 gpu_inventory_source:machine.gpu_inventory_source,
                 gpu_devices:machine.observed_gpus||[],
-            },allocated,lease.gpu_bindings)?.length!==1)
+            },allocated,lease.gpu_bindings)?.length!==r.gpu_count)
             return 'Windows CUDA Start requires a fresh PCI/UUID-pinned NVIDIA lease.';
         return null; // Cooperative CUDA visibility, not kernel GPU isolation.
     }
@@ -774,7 +793,8 @@ function nativeStartReadiness(snapshot, job) {
             !SHA256.test(String(key||''))||
             workers.length!==endpoints.length)
             return block('The Courier learner needs its exact locally pinned remote PPO population.');
-        const hosts=new Set([machine.id]);
+        if(!courierGroupMachinesValid(snapshot,job,workers))
+            return block('Courier collectors need their approved slot endpoints and disjoint native machine GPU leases.');
         const first=courierFirstSlot(job,endpoints.length);
         if(first===null)
             return block('Courier remote PPO workers require a compatible frozen learner.');
@@ -786,9 +806,8 @@ function nativeStartReadiness(snapshot, job) {
                 worker.live_execution?.state!=='running'||
                 worker.live_execution?.dispatch_id!==worker.dispatch_id||
                 !worker.dispatch_id||worker.capacity_released_at||
-                !worker.assigned_machine_id||hosts.has(worker.assigned_machine_id))
+                !worker.assigned_machine_id)
                 return block('Every Courier PPO lineage needs an independently running Hub worker.');
-            hosts.add(worker.assigned_machine_id);
             const host=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
             const owned=snapshot.reservations.find(lease=>
                 lease.id===worker.lease_id&&lease.job_id===worker.id&&
@@ -799,9 +818,9 @@ function nativeStartReadiness(snapshot, job) {
             if(!host||host.status!=='connected'||
                 !host.local_executor_enabled||!host.native_preflight_passed||
                 !host.installed_projects?.includes('courier_lineage')||
-                host.courier_lineage_endpoint!==endpoint||
+                courierWorkerSlot(host,slot)?.endpoint!==endpoint||
                 host.courier_lineage_key_fingerprint!==key||
-                host.courier_lineage_max_shards!==shards[index]||
+                courierWorkerSlot(host,slot)?.max_shards!==shards[index]||
                 !owned||!courierLineageHost(snapshot,worker,host)||nativeResourceBlock(worker,owned)||
                 gpuStartBlock(worker,owned,host))
                 return block('Courier PPO remote endpoint, identity, GPU proof or fresh independent lease differs from its learner.');
@@ -997,13 +1016,24 @@ function courierPlanFor(job,machine) {
         shards:plan.map(item=>item.maxShards),plan}:{};
 }
 
-function selectDistributedMachines(machines,learner,selections,approved,capability,endpointField) {
+// Preserve each native service's frozen PPO slot-to-listener mapping.
+function courierWorkerSlot(machine,slot) {
+    if(!machine||!Number.isSafeInteger(slot)||slot<0||slot>63)return null;
+    const slots=machine.courier_lineage_slots;
+    if(Array.isArray(slots)&&slots.length)
+        return slots.find(item=>item.slot===slot)||null;
+    return machine.courier_lineage_endpoint
+        ?{slot,endpoint:machine.courier_lineage_endpoint,
+            max_shards:machine.courier_lineage_max_shards}:null;
+}
+function selectDistributedMachines(machines,learner,selections,approved,capability,endpointField,
+    allowLearnerMachine=false) {
     const byMachine=selections.some(worker=>object(worker)&&Object.hasOwn(worker,'machine_id'));
     if(!byMachine)return {byMachine,endpoints:approved,selections};
     if(learner?.[capability]!==true||selections.some(worker=>!object(worker)||
         typeof worker.machine_id!=='string'||!ID.test(worker.machine_id)||
-        worker.machine_id===learner.id))
-        throw Error('Choose a distinct approved remote machine for each resource budget.');
+        (!allowLearnerMachine&&worker.machine_id===learner.id)))
+        throw Error('Choose an approved remote machine for each resource budget.');
     const byEndpoint=new Map(selections.map(selection=>[
         machines.find(host=>host.id===selection.machine_id)?.[endpointField],selection,
     ]));
@@ -1081,7 +1111,7 @@ function matchDistributedBudgets(snapshot,orderedHosts,selections,lookup) {
 }
 
 function selectDistributedBudgets(snapshot,learner,selections,approved,capability,endpointField,
-    machineIds,limit,lookup) {
+    machineIds,limit,lookup,allowLearnerMachine=false) {
     if(machineIds===undefined)
         return selectDistributedMachines(
             snapshot.machines,learner,selections,approved,capability,endpointField);
@@ -1091,7 +1121,8 @@ function selectDistributedBudgets(snapshot,learner,selections,approved,capabilit
         selections.some(item=>!object(item)||Object.hasOwn(item,'machine_id')))
         throw Error('Select one distinct remote machine per unassigned budget.');
     const {endpoints,selections:ordered}=selectDistributedMachines(snapshot.machines,learner,
-        machineIds.map(machine_id=>({machine_id})),approved,capability,endpointField);
+        machineIds.map(machine_id=>({machine_id})),approved,capability,endpointField,
+        allowLearnerMachine);
     const hosts=new Map(snapshot.machines.map(host=>[host.id,host]));
     return {byMachine:true,endpoints,selections:matchDistributedBudgets(
         snapshot,ordered.map(item=>hosts.get(item.machine_id)),selections,lookup)};
@@ -1184,6 +1215,103 @@ function distributedRolloutHost(snapshot,job,machine) {
 // The same native Start gate is used for individual remote-lineage worker
 // claims, so a generic job cannot start a service for an unrelated learner.
 // The coordinator, not the job payload, pins the original endpoint and slot.
+// The existing shared PPO learner has one optimizer; a separately leased
+// collector can run on another GPU in the SAME native machine/agent. This
+// is never permission to share a device: both native jobs must own distinct
+// exclusive physical GPU IDs, and the ordinary CPU/RAM reservation and
+// native Start checks continue to enforce their budgets.
+function colocatedCourierCollector(snapshot,learner,worker) {
+    if(learner?.project_id!=='courier'||
+        learner.frozen_parameters?.shared_policy!==true||
+        worker?.project_id!=='courier_lineage'||
+        worker.frozen_parameters?.shared_policy!==true||
+        !learner.assigned_machine_id||
+        (worker.assigned_machine_id&&
+            learner.assigned_machine_id!==worker.assigned_machine_id))
+        return false;
+    const reservations=snapshot.reservations||[];
+    const chosen=job=>reservations.find(lease=>
+        lease.id===job.lease_id&&lease.job_id===job.id&&
+        lease.project_id===job.project_id&&
+        lease.machine_id===job.assigned_machine_id&&
+        lease.issued_by==='experiment-hub'&&
+        ['offered','acknowledged'].includes(lease.status));
+    const a=chosen(learner),b=chosen(worker);
+    // The initial claim is checked BEFORE the collector lease is offered.
+    // Admit only its immutable exclusive-GPU budget provisionally; offerIn
+    // then picks a spare physical GPU under the same fixed resource ledger.
+    // Every actual Start/recovery checks BOTH completed, disjoint leases.
+    if(!worker.lease_id&&!worker.assigned_machine_id)
+        return Boolean(a&&a.resources?.gpu_count===1&&
+            a.resources.gpu_mode==='exclusive'&&
+            worker.resources?.gpu_count===1&&
+            worker.resources.gpu_mode==='exclusive');
+    return Boolean(a&&b&&a.id!==b.id&&
+        a.resources?.gpu_mode==='exclusive'&&
+        b.resources?.gpu_mode==='exclusive'&&
+        a.resources.gpu_count===1&&b.resources.gpu_count===1&&
+        Array.isArray(a.resources.gpus)&&a.resources.gpus.length===1&&
+        Array.isArray(b.resources.gpus)&&b.resources.gpus.length===1&&
+        a.resources.gpus[0]!==b.resources.gpus[0]);
+}
+// A learner may share its host with multiple independent native collectors,
+// provided each owns a distinct approved listener and a distinct exclusive
+// physical GPU. Remote hosts remain unique. The ordinary lease ledger still
+// accounts for all CPU, RAM and GPU reservations on the shared machine.
+function courierGroupMachinesValid(snapshot,learner,workers) {
+    const perHost=new Map(),localEndpoints=new Set(),localGpus=new Set();
+    const parent=snapshot.machines.find(host=>host.id===learner.assigned_machine_id);
+    const {endpoints,shards}=courierPlanFor(learner,parent);
+    const first=courierFirstSlot(learner,workers.length);
+    if(!Array.isArray(endpoints)||endpoints.length!==workers.length||
+        first===null)return false;
+    for(const worker of workers) {
+        const id=worker.assigned_machine_id;
+        const machine=snapshot.machines.find(host=>host.id===id);
+        const index=worker.frozen_parameters?.slot-first;
+        const slot=courierWorkerSlot(machine,worker.frozen_parameters?.slot);
+        if(!id||!slot||!Number.isSafeInteger(index)||index<0||
+            index>=endpoints.length||slot.endpoint!==endpoints[index]||
+            slot.max_shards!==shards[index])return false;
+        const lease=(snapshot.reservations||[]).find(item=>
+            item.id===worker.lease_id&&item.job_id===worker.id&&
+            item.machine_id===id&&item.project_id==='courier_lineage'&&
+            item.issued_by==='experiment-hub'&&
+            ['offered','acknowledged'].includes(item.status));
+        if(!lease)return false;
+        if(!perHost.has(id))perHost.set(id,[]);
+        perHost.get(id).push({worker,lease,machine,slot});
+        if(id===learner.assigned_machine_id) {
+            if(!colocatedCourierCollector(snapshot,learner,worker)||
+                localEndpoints.has(slot.endpoint))return false;
+            const gpu=lease.resources?.gpus?.[0];
+            if(!gpu||localGpus.has(gpu))return false;
+            localGpus.add(gpu);
+            localEndpoints.add(slot.endpoint);
+        }
+    }
+    for(const [id,members] of perHost) {
+        if(id===learner.assigned_machine_id||members.length===1)continue;
+        // Several native collectors may occupy a remote multi-GPU machine
+        // only when every PPO slot has its own approved listener and
+        // separately frozen exclusive physical GPU. One ordinary CPU-only
+        // remote collector per host retains the original behavior.
+        const machine=members[0].machine;
+        if(learner.frozen_parameters?.shared_policy!==true||
+            !Array.isArray(machine?.courier_lineage_slots)||
+            machine.courier_lineage_slots.length<members.length||
+            members.some(({worker,lease,slot})=>
+                worker.frozen_parameters?.shared_policy!==true||
+                machine.courier_lineage_slots.every(item=>
+                    item.slot!==slot.slot||item.endpoint!==slot.endpoint)||
+                lease.resources?.gpu_mode!=='exclusive'||
+                lease.resources?.gpu_count!==1||
+                lease.resources?.gpus?.length!==1)||
+            new Set(members.map(({lease})=>lease.resources.gpus[0])).size!==members.length)
+            return false;
+    }
+    return true;
+}
 function courierLineageHost(snapshot,job,machine) {
     if(job.project_id!=='courier_lineage')return true;
     const learner=snapshot.jobs.find(item=>
@@ -1193,7 +1321,8 @@ function courierLineageHost(snapshot,job,machine) {
         learner.distributed_abort_requested_at||
         !['waiting_adapter','start_requested','launch_requested','running'].includes(learner.status)||
         !learner.assigned_machine_id||!machine||
-        machine.id===learner.assigned_machine_id||
+        (machine.id===learner.assigned_machine_id&&
+            !colocatedCourierCollector(snapshot,learner,job))||
         machine.status!=='connected'||
         !machine.installed_projects?.includes('courier_lineage'))
         return false;
@@ -1204,19 +1333,21 @@ function courierLineageHost(snapshot,job,machine) {
         !SHA256.test(String(parent.courier_remote_key_fingerprint||''))||
         machine.courier_lineage_key_fingerprint!==parent.courier_remote_key_fingerprint)
         return false;
-    const index=endpoints.indexOf(machine.courier_lineage_endpoint);
+    const slot=courierWorkerSlot(machine,job.frozen_parameters?.slot);
+    const index=endpoints.indexOf(slot?.endpoint);
     const first=courierFirstSlot(learner,endpoints.length);
     const shared=learner.frozen_parameters.shared_policy===true;
     if(index<0||first===null||job.frozen_parameters?.slot!==first+index||
         (job.frozen_parameters?.shared_policy===true)!==shared||
         (shared&&(machine.courier_shared_policy_collector!==true||
             job.resources?.cpus!==learner.frozen_parameters.shared_policy_cpus[index]))||
-        shards[index]!==machine.courier_lineage_max_shards)
+        shards[index]!==slot?.max_shards)
         return false;
     return !snapshot.jobs.some(other=>other.id!==job.id&&
         other.project_id==='courier_lineage'&&
         !['cancelled','finished','stopped'].includes(other.status)&&
-        (other.assigned_machine_id===machine.id||
+        (other.assigned_machine_id===machine.id&&
+            courierWorkerSlot(machine,other.frozen_parameters?.slot)?.endpoint===slot.endpoint||
             other.frozen_parameters?.learner_job_id===learner.id&&
             other.frozen_parameters?.slot===job.frozen_parameters.slot));
 }
@@ -1263,7 +1394,13 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                     machine.execution_capabilities.cgroup_controllers.includes(controller)))&&
             (cpuOnly||machine.gpu_projects?.includes(selected.project_id)&&
                 (machine.agent_platform==='win32'
-                    ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1&&
+                    ?machine.gpu_inventory_source==='nvidia-smi-v1'&&
+                        machine.observed_gpus?.length>=r.gpu_count&&
+                        (r.gpu_count===1||courierMulti||
+                            dualGpu&&machine.tinybrains_dual_gpu_profiles
+                                ?.includes(selected.frozen_parameters.profile)||
+                            tinyMulti&&machine.tinybrains_multi_gpu_profiles
+                                ?.includes(selected.frozen_parameters.profile))&&
                         (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
                     :(courierMulti||
                         tinyMulti&&machine.tinybrains_multi_gpu_profiles
@@ -1617,6 +1754,7 @@ class ExperimentHub {
                 machine.courier_remote_key_fingerprint=report.courier_remote_key_fingerprint;
                 machine.courier_remote_max_shards=report.courier_remote_max_shards.slice();
                 machine.courier_lineage_endpoint=report.courier_lineage_endpoint;
+                machine.courier_lineage_slots=report.courier_lineage_slots.map(item=>({...item}));
                 machine.courier_lineage_key_fingerprint=report.courier_lineage_key_fingerprint;
                 machine.courier_lineage_max_shards=report.courier_lineage_max_shards;
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
@@ -2141,7 +2279,22 @@ class ExperimentHub {
                             linuxGpuQualificationSupported(machine,job.resources.gpu_count)
                         :machine.agent_platform==='win32'&&
                             machine.gpu_inventory_source==='nvidia-smi-v1'&&
-                            machine.observed_gpus?.length>=1&&
+                            machine.observed_gpus?.length>=job.resources.gpu_count&&
+                            (job.resources.gpu_count===1||
+                                job.project_id==='courier'&&
+                                job.resources.gpu_count<=8&&
+                                job.resources.gpu_mode==='exclusive'||
+                                job.project_id==='tinybrains'&&
+                                job.resources.gpu_count===2&&
+                                job.frozen_parameters?.device==='dual'&&
+                                machine.tinybrains_dual_gpu_profiles
+                                    ?.includes(job.frozen_parameters.profile)||
+                                job.project_id==='tinybrains'&&
+                                job.resources.gpu_count>=3&&
+                                job.resources.gpu_count<=8&&
+                                job.frozen_parameters?.device==='multi'&&
+                                machine.tinybrains_multi_gpu_profiles
+                                    ?.includes(job.frozen_parameters.profile))&&
                             (job.resources.gpu_mode!=='shared'||
                                 machine.gpu_shared_projects?.includes(job.project_id))));
             const eligibleHosts=job=>capable.filter(machine=>
@@ -2587,7 +2740,8 @@ class ExperimentHub {
         if(!distributedRolloutHost({jobs:next.jobs,machines:this.snapshot().machines},job,host))
             throw Error('Remote collector must be placed on its learner-approved endpoint and distinct host.');
         if(job.project_id==='courier_lineage'&&
-            !courierLineageHost({jobs:next.jobs,machines:this.snapshot().machines},job,host))
+            !courierLineageHost({jobs:next.jobs,machines:this.snapshot().machines,
+                reservations:next.reservations},job,host))
             throw Error('Courier lineage must be placed on its learner-approved endpoint and PPO slot.');
         const lease=this.offerIn(next,job.project_id,machineId,
             resourceRequest(job.resources),job.id,host);
@@ -2957,8 +3111,12 @@ class ExperimentHub {
             new Set(value.expected_lineage_job_ids).size!==value.expected_lineage_job_ids.length||
             Object.keys(value).some(key=>![
                 'learner_job_id','expected_lineage_job_ids',
-                'confirm_schedule','confirm_learner_start'].includes(key)))
-            throw Error('Approve the exact reserved Courier learner and remote lineage membership.');
+                'confirm_schedule','confirm_learner_start',
+                'resume_after_restart','confirm_restart_rearm'].includes(key))||
+            (value.resume_after_restart===true
+                ?value.confirm_restart_rearm!==true
+                :value.confirm_restart_rearm!==undefined))
+            throw Error('Approve the exact Courier remote membership and optional coordinator-restart rearm.');
         const snapshot=this.snapshot();
         const learner=snapshot.jobs.find(job=>job.id===value.learner_job_id);
         const host=snapshot.machines.find(machine=>
@@ -2998,7 +3156,9 @@ class ExperimentHub {
         if(ordered.some(worker=>!worker)||
             new Set(ordered.map(worker=>worker.id)).size!==ordered.length)
             throw Error('Courier remote policy slot-to-endpoint membership changed.');
-        const seen=new Set(),members=[learner,...ordered].map((job,index)=>{
+        if(!courierGroupMachinesValid(snapshot,learner,ordered))
+            throw Error('Courier group needs uniquely pinned endpoints and separate exclusive GPUs on reused machines.');
+        const members=[learner,...ordered].map((job,index)=>{
             const machine=snapshot.machines.find(item=>item.id===job.assigned_machine_id);
             const lease=snapshot.reservations.find(item=>
                 item.id===job.lease_id&&item.job_id===job.id&&
@@ -3006,14 +3166,12 @@ class ExperimentHub {
                 item.project_id===job.project_id&&
                 item.issued_by==='experiment-hub'&&
                 ['offered','acknowledged'].includes(item.status));
-            if(!machine||!lease||!job.assigned_machine_id||
-                seen.has(machine.id))
-                throw Error('Courier group needs distinct registered machines and original resource leases.');
-            seen.add(machine.id);
-            if(index>0&&(machine.courier_lineage_endpoint!==endpoints[index-1]||
+            if(!machine||!lease||!job.assigned_machine_id)
+                throw Error('Courier group needs registered machines and original resource leases.');
+            if(index>0&&(courierWorkerSlot(machine,job.frozen_parameters.slot)?.endpoint!==endpoints[index-1]||
                 machine.courier_lineage_key_fingerprint!==
                     host.courier_remote_key_fingerprint||
-                machine.courier_lineage_max_shards!==ceilings[index-1]))
+                courierWorkerSlot(machine,job.frozen_parameters.slot)?.max_shards!==ceilings[index-1]))
                 throw Error('Courier group endpoint/key/process ceiling no longer matches its original slot.');
             const agent=this.agentReports.get(machine.id);
             if(!UUID.test(String(agent?.instance_id||'')))
@@ -3039,7 +3197,8 @@ class ExperimentHub {
             agent_instances:Object.fromEntries(members.map(member=>[
                 member.machine_id,this.agentReports.get(member.machine_id).instance_id,
             ])),
-            resume_after_restart:false,recovery_pending:false,status:'pending',
+            resume_after_restart:value.resume_after_restart===true,
+            recovery_pending:false,status:'pending',
             reason:'Waiting for original Courier native leases and GPU access proof.',
             approved_at:new Date(at).toISOString(),
             expires_at:new Date(at+DISTRIBUTED_LAUNCH_TTL_MS).toISOString(),
@@ -3146,14 +3305,19 @@ class ExperimentHub {
                             item.id===worker.assigned_machine_id);
                         const frozen=plan.frozen_members[index+1];
                         return !machine||worker.frozen_parameters?.slot!==frozen.slot||
-                            machine.courier_lineage_endpoint!==frozen.endpoint||
+                            courierWorkerSlot(machine,frozen.slot)?.endpoint!==frozen.endpoint||
                             machine.courier_lineage_key_fingerprint!==plan.key_fingerprint||
-                            machine.courier_lineage_max_shards!==frozen.max_shards;
+                            courierWorkerSlot(machine,frozen.slot)?.max_shards!==frozen.max_shards;
                     })) {
                     halt('needs_review','Courier group private endpoint, slot or key identity changed.');
                     continue;
                 }
-                if(members.some(job=>
+                // Restart-approved groups must obtain fresh signed native
+                // receipts before Start. A replacement agent alone is not
+                // authorization, but after coordinator restart the original
+                // frozen leases, endpoint/HMAC identity and GPU proof still
+                // determine the same single-use group.
+                if(!plan.recovery_pending&&members.some(job=>
                     this.agentReports.get(job.assigned_machine_id)?.instance_id!==
                         plan.agent_instances[job.assigned_machine_id])) {
                     halt('disarmed','Courier group native agent identity changed before Start.');
@@ -3167,6 +3331,9 @@ class ExperimentHub {
                         learner_job_id:learner.id,
                         expected_lineage_job_ids:plan.collector_job_ids,
                         confirm_start:true,confirm_learner_start:true,
+                        ...(plan.resume_after_restart?{
+                            resume_after_restart:true,confirm_restart_rearm:true,
+                        }:{}),
                     },plan.id);
                 }catch(error) {
                     const message=String(error.message||error).slice(0,180);
@@ -3737,12 +3904,21 @@ class ExperimentHub {
                 }
                 const machines=[learner.assigned_machine_id,
                     ...workers.map(worker=>worker.assigned_machine_id)];
-                if(machines.length!==new Set(machines).size||
-                    machines.some(id=>!snapshot.machines.some(machine=>
-                        machine.id===id&&machine.status==='connected'))||
-                    machines.some(id=>this.agentReports.get(id)?.instance_id!==
-                        intent.agent_instances[id])) {
-                    disarm('Courier remote machine or native agent identity changed before learner Start.');
+                if(!courierGroupMachinesValid(snapshot,learner,workers)) {
+                    disarm('Courier native machine and exclusive GPU ownership changed.');
+                    continue;
+                }
+                const offline=machines.some(id=>!snapshot.machines.some(machine=>
+                    machine.id===id&&machine.status==='connected'));
+                if(offline) {
+                    if(!intent.recovery_pending)
+                        disarm('Courier remote machine went offline before learner Start.');
+                    continue;
+                }
+                const changedAgent=machines.some(id=>
+                    this.agentReports.get(id)?.instance_id!==intent.agent_instances[id]);
+                if(changedAgent&&!intent.recovery_pending) {
+                    disarm('Courier native agent identity changed before learner Start.');
                     continue;
                 }
                 const leases=[learner,...workers].map(job=>
@@ -3753,7 +3929,8 @@ class ExperimentHub {
                         lease.issued_by==='experiment-hub'&&
                         lease.status==='acknowledged'&&lease.receipt_fresh===true));
                 if(leases.some(lease=>!lease)) {
-                    disarm('Courier remote CPU/RAM/GPU lease receipt is no longer fresh.');
+                    if(!intent.recovery_pending)
+                        disarm('Courier remote CPU/RAM/GPU lease receipt is no longer fresh.');
                     continue;
                 }
                 const parent=snapshot.machines.find(item=>
@@ -3769,9 +3946,9 @@ class ExperimentHub {
                         const host=snapshot.machines.find(item=>
                             item.id===worker.assigned_machine_id);
                         return !host||!owner||
-                            host.courier_lineage_endpoint!==owner.endpoint||
+                            courierWorkerSlot(host,owner.slot)?.endpoint!==owner.endpoint||
                             host.courier_lineage_key_fingerprint!==owner.key_fingerprint||
-                            host.courier_lineage_max_shards!==owner.max_shards||
+                            courierWorkerSlot(host,owner.slot)?.max_shards!==owner.max_shards||
                             owner.key_fingerprint!==intent.key_fingerprint;
                     })) {
                     disarm('Courier remote private endpoint or shared key identity changed.');
@@ -4992,11 +5169,11 @@ class ExperimentHub {
                 !supportsTinyBrainsProfile(machine,job))
                 throw Error('Bundle member '+(index+1)+' requires an approved independent project adapter and configuration.');
             const courierMulti=job.project_id==='courier'&&
-                machine.agent_platform==='linux'&&
+                ['linux','win32'].includes(machine.agent_platform)&&
                 job.resources.gpu_count>=2&&job.resources.gpu_count<=8&&
                 job.resources.gpu_mode==='exclusive';
             const tinyMulti=job.project_id==='tinybrains'&&
-                machine.agent_platform==='linux'&&
+                ['linux','win32'].includes(machine.agent_platform)&&
                 job.resources.gpu_count>=3&&job.resources.gpu_count<=8&&
                 job.resources.gpu_mode==='exclusive'&&
                 job.frozen_parameters?.device==='multi'&&
@@ -5010,7 +5187,7 @@ class ExperimentHub {
                      (job.resources.gpu_count===2&&!courierMulti&&
                          (job.project_id!=='tinybrains'||
                           job.frozen_parameters?.device!=='dual'||
-                          machine.agent_platform!=='linux'||
+                          !['linux','win32'].includes(machine.agent_platform)||
                           !machine.tinybrains_dual_gpu_profiles
                               ?.includes(job.frozen_parameters.profile)))||
                      (job.resources.gpu_count>2&&!courierMulti&&!tinyMulti))))
@@ -5470,7 +5647,7 @@ class ExperimentHub {
         const parameters=config?.parameters;
         if(!config||parameters?.remote_rollouts!==true||
             !learnerMachine||learnerMachine.status!=='connected'||
-            learnerMachine.agent_platform!=='linux'||
+            !['linux','win32'].includes(learnerMachine.agent_platform)||
             learnerMachine.local_executor_enabled!==true||
             learnerMachine.native_preflight_passed!==true||
             !learnerMachine.installed_projects?.includes('tinybrains')||
@@ -5485,7 +5662,7 @@ class ExperimentHub {
             !Array.isArray(endpoints)||!endpoints.length||endpoints.length>8||
             value.collectors.length!==endpoints.length||
             !SHA256.test(String(learnerMachine.tinybrains_remote_key_fingerprint||'')))
-            throw Error('The selected Linux learner must approve this profile, device allocation and collector count.');
+            throw Error('The selected native learner must approve this profile, device allocation and collector count.');
         const rolloutProject=snapshot.projects.find(p=>p.id==='tinybrains_rollout');
         if(rolloutProject?.adapter!=='unconfigured')
             throw Error('Register the TinyBrains rollout project before creating a distributed group.');
@@ -5557,22 +5734,92 @@ class ExperimentHub {
         const approved=courierPlanFor(null,machine);
         const shared=config?.parameters?.shared_policy===true;
         const learnerBudget=resourceRequest(value.learner.resources);
+        // One already configured, authenticated endpoint on the learner's
+        // host may act as a separate shared-policy GPU collector only if
+        // explicitly selected by the operator. The Hub must reserve
+        // two distinct exclusive GPU IDs and independent CPU/RAM budgets.
+        const allowLocal=shared&&Array.isArray(value.worker_machine_ids)&&
+            value.worker_machine_ids.includes(machine?.id)&&
+            learnerBudget.gpu_count===1&&learnerBudget.gpu_mode==='exclusive';
         const occupied=new Set(snapshot.jobs.filter(job=>job.project_id==='courier_lineage'&&
             !['cancelled','finished','stopped'].includes(job.status)).map(job=>job.assigned_machine_id));
-        const eligibleLineages=(endpoint,budget)=>{
+        // Multiple native Courier sidecars can now share the learner's
+        // physical host, provided every approved PPO slot has its own
+        // local listener and each job receives a separate exclusive GPU.
+        // The native resource ledger performs actual cumulative admission.
+        const selectedIds=value.worker_machine_ids;
+        const repeatedHost=Array.isArray(selectedIds)&&
+            selectedIds.some((id,index)=>selectedIds.indexOf(id)!==index);
+        const slotBacked=shared&&Array.isArray(selectedIds)&&selectedIds.some(id=>
+            snapshot.machines.some(host=>host.id===id&&
+                host.courier_lineage_slots?.length>0));
+        // Even ONE slot-backed remote collector must bind the approved
+        // PPO ordinal to its exact service listener, not an adapter's
+        // unrelated legacy base endpoint. Duplicate hosts use this same
+        // immutable ordered mapping.
+        const fixedSlotSelection=repeatedHost||slotBacked;
+        const eligibleLineages=(endpoint,budget,slot=null)=>{
             const maxShards=approved.plan?.find(item=>item.endpoint===endpoint)?.maxShards;
-            return snapshot.machines.filter(host=>host.courier_lineage_endpoint===endpoint&&
-                !occupied.has(host.id)&&host.courier_lineage_max_shards===maxShards&&
-                (!shared||host.courier_shared_policy_collector===true)&&
-                host.courier_lineage_key_fingerprint===machine?.courier_remote_key_fingerprint&&
-                readySidecar(host,'courier_lineage',budget));
-        };
-        const {byMachine,endpoints,selections}=selectDistributedBudgets(snapshot,machine,
-            value.lineages,approved.endpoints,'courier_lineage_subset','courier_lineage_endpoint',
-            value.worker_machine_ids,16,selection=>{
-                const budget=sidecarBudget(selection);
-                return {budget,eligible:host=>eligibleLineages(host.courier_lineage_endpoint,budget)};
+            return snapshot.machines.filter(host=>{
+                const match=slot===null
+                    ?host.courier_lineage_endpoint===endpoint||
+                        host.courier_lineage_slots?.some(item=>item.endpoint===endpoint)
+                    :courierWorkerSlot(host,slot)?.endpoint===endpoint;
+                const bound=slot===null
+                    ?host.courier_lineage_slots?.find(item=>item.endpoint===endpoint)
+                    :courierWorkerSlot(host,slot);
+                return match&&!occupied.has(host.id)&&
+                    (host.id!==machine?.id||
+                        allowLocal&&budget.gpu_count===1&&
+                            budget.gpu_mode==='exclusive')&&
+                    (bound?.max_shards??host.courier_lineage_max_shards)===maxShards&&
+                    (!shared||host.courier_shared_policy_collector===true)&&
+                    host.courier_lineage_key_fingerprint===machine?.courier_remote_key_fingerprint&&
+                    readySidecar(host,'courier_lineage',budget);
             });
+        };
+        let byMachine,endpoints,selections;
+        if(fixedSlotSelection) {
+            // Explicit slot-backed services cannot be auto-matched to a
+            // different physical endpoint. Each ordered budget row binds
+            // to the same ordinal in the learner's immutable prefix plan.
+            // This includes one selected same-host collector whose port is
+            // not the adapter's legacy base port.
+            const plan=approved.plan?.slice(0,value.lineages.length);
+            if(!shared||!machine?.courier_lineage_subset||
+                selectedIds.includes(machine.id)&&!allowLocal||
+                !Array.isArray(plan)||plan.length!==value.lineages.length||
+                value.lineages.length<1||value.lineages.length>16||
+                selectedIds.length!==plan.length||
+                selectedIds.some(id=>typeof id!=='string'||!ID.test(id))||
+                value.lineages.some(item=>!object(item)||
+                    Object.hasOwn(item,'machine_id'))||
+                selectedIds.some((id,index)=>{
+                    const host=snapshot.machines.find(item=>item.id===id);
+                    const budget=sidecarBudget(value.lineages[index]);
+                    const duplicated=selectedIds.indexOf(id)!==
+                        selectedIds.lastIndexOf(id);
+                    return !host||(duplicated&&(
+                        budget.gpu_count!==1||budget.gpu_mode!=='exclusive'||
+                        !host.courier_lineage_slots?.some(item=>
+                            item.slot===index&&item.endpoint===plan[index].endpoint)))||
+                        !eligibleLineages(plan[index].endpoint,budget,index)
+                            .some(item=>item.id===id);
+                }))
+                throw Error('Courier same-host GPU collectors need a contiguous approved slot prefix, unique listeners and fixed machine budgets.');
+            byMachine=true;
+            endpoints=plan.map(item=>item.endpoint);
+            selections=value.lineages.map((item,index)=>({
+                ...item,machine_id:selectedIds[index],
+            }));
+        }else {
+            ({byMachine,endpoints,selections}=selectDistributedBudgets(snapshot,machine,
+                value.lineages,approved.endpoints,'courier_lineage_subset','courier_lineage_endpoint',
+                value.worker_machine_ids,16,selection=>{
+                    const budget=sidecarBudget(selection);
+                    return {budget,eligible:host=>eligibleLineages(host.courier_lineage_endpoint,budget)};
+                },allowLocal));
+        }
         const remotePlan=approved.plan?.filter(item=>endpoints.includes(item.endpoint));
         const shards=remotePlan?.map(item=>item.maxShards);
         const ancestorId=value.learner.continuation_of_job_id??null;
@@ -5611,15 +5858,25 @@ class ExperimentHub {
         learner.distributed_courier_managed=true;
         const learnerLease=this.claimJobIn(next,learner,machine.id,machine);
         const workers=[],leases=[learnerLease],used=new Set([machine.id]);
+        let localUsed=false;
         const first=courierFirstSlot(learner,count);
         for(let index=0;index<count;index++) {
             const selection=selections[index];
             const budget=sidecarBudget(selection);
-            const hosts=eligibleLineages(endpoints[index],budget);
-            if(hosts.length!==1||used.has(hosts[0].id)||
+            const hosts=eligibleLineages(endpoints[index],budget,first+index);
+            const local=hosts.length===1&&hosts[0].id===machine.id;
+            const sharedGpuHost=shared&&fixedSlotSelection&&
+                budget.gpu_count===1&&budget.gpu_mode==='exclusive'&&
+                hosts[0]?.courier_lineage_slots?.some(item=>
+                    item.slot===first+index&&item.endpoint===endpoints[index]);
+            if(hosts.length!==1||
+                (used.has(hosts[0].id)&&
+                    !(local&&allowLocal&&(!localUsed||sharedGpuHost))&&
+                    !(!local&&sharedGpuHost))||
                 (byMachine&&hosts[0].id!==selection.machine_id))
-                throw Error('Each Courier endpoint must match one distinct, qualified native worker machine.');
+                throw Error('Courier endpoint needs an independently leased machine or an approved unique GPU/slot listener.');
             const host=hosts[0];
+            if(local)localUsed=true;
             used.add(host.id);
             const timestamp=now();
             const workerConfig={
@@ -5669,8 +5926,13 @@ class ExperimentHub {
             new Set(value.expected_lineage_job_ids).size!==value.expected_lineage_job_ids.length||
             Object.keys(value).some(key=>![
                 'learner_job_id','expected_lineage_job_ids',
-                'confirm_start','confirm_learner_start'].includes(key)))
-            throw Error('Confirm the exact Courier remote group and automatic learner Start.');
+                'confirm_start','confirm_learner_start',
+                'resume_after_restart','confirm_restart_rearm'].includes(key))||
+            (value.resume_after_restart===true
+                ?value.confirm_restart_rearm!==true
+                :value.confirm_restart_rearm!==undefined)||
+            (pending&&pending.resume_after_restart!==Boolean(value.resume_after_restart)))
+            throw Error('Confirm exact Courier workers, learner Start and any preapproved restart rearm.');
         const snapshot=this.snapshot();
         const learner=snapshot.jobs.find(item=>item.id===value.learner_job_id);
         const host=snapshot.machines.find(item=>item.id===learner?.assigned_machine_id);
@@ -5717,15 +5979,14 @@ class ExperimentHub {
             JSON.stringify(pending.learner_shards)!==
                 JSON.stringify(shards)))
             throw Error('Original scheduled Courier leases or endpoint identities changed before native Start.');
-        const owners={},hosts=new Set([host.id]),dispatches={};
+        if(!courierGroupMachinesValid(snapshot,learner,workers))
+            throw Error('Courier group may reuse GPU machines only with distinct native slot listeners and leases.');
+        const owners={},dispatches={};
         for(const worker of workers) {
             const readiness=nativeStartReadiness(snapshot,worker);
             if(!readiness.eligible)
                 throw Error('Courier remote lineage '+worker.id+' cannot Start: '+readiness.reason);
             const machine=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
-            if(hosts.has(machine.id))
-                throw Error('Courier group requires a distinct machine for every remote lineage.');
-            hosts.add(machine.id);
             const owner=snapshot.reservations.find(lease=>
                 lease.id===worker.lease_id&&lease.job_id===worker.id&&
                 lease.machine_id===worker.assigned_machine_id&&
@@ -5773,15 +6034,16 @@ class ExperimentHub {
                 const machine=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
                 return {job_id:worker.id,dispatch_id:dispatches[worker.id],
                     machine_id:machine.id,lease_id:worker.lease_id,
-                    endpoint:machine.courier_lineage_endpoint,
+                    endpoint:courierWorkerSlot(machine,worker.frozen_parameters.slot)?.endpoint,
                     key_fingerprint:machine.courier_lineage_key_fingerprint,
-                    max_shards:machine.courier_lineage_max_shards,
+                    max_shards:courierWorkerSlot(machine,worker.frozen_parameters.slot)?.max_shards,
                     slot:worker.frozen_parameters.slot};
             }),
             key_fingerprint:host.courier_remote_key_fingerprint,
             learner_endpoints:endpoints.slice(),
             learner_shards:shards.slice(),
-            agent_instances:owners,resume_after_restart:false,
+            agent_instances:owners,
+            resume_after_restart:value.resume_after_restart===true,
             recovery_pending:false,status:'pending',
             reason:'Awaiting all verified remote PPO native owners before learner Start.',
             approved_at:new Date(approved).toISOString(),

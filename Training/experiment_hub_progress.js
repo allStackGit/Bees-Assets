@@ -124,7 +124,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'rollout_opponent_readbacks_saved',
             'rollout_opponent_readback_models',
             'rollout_fused_gpu_stream_seconds',
-            'rollout_opponent_joined_learner_readbacks',
+            'rollout_opponent_joined_readbacks',
             'rollout_opponent_readback_slot_reused',
             'rollout_opponent_readback_slot_allocated',
             'rollout_opponent_readback_cached_indices',
@@ -269,6 +269,15 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_gpu_lease_vram_mb',
             'training_shared_gpu_reserved_mb',
             'training_shared_gpu_reserved_share',
+            'training_shared_gpu_collectors',
+            'training_shared_gpu_policy_retained',
+            'training_shared_gpu_policy_reused',
+            'training_shared_gpu_snapshot_bytes',
+            'training_shared_gpu_snapshot_seconds',
+            'training_shared_gpu_reuse_fraction',
+            'training_shared_gpu_policy_retention_gap',
+            'training_shared_gpu_snapshot_work_share',
+            'training_shared_gpu_snapshot_pressure',
             'training_shared_gpu_input_reused',
             'training_shared_gpu_state_reused',
             'training_shared_gpu_output_staged',
@@ -311,6 +320,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_optimizer_peak_allocated_mb',
             'training_cpu_parallelism','training_queue_max_seconds',
             'training_sim_processes',
+            'training_sim_group_dispatches','training_sim_grouped_shards',
+            'training_sim_ipc_commands_saved',
             'training_sim_multiplexed_shards',
             'training_sim_vector_groups_total','training_sim_vector_shards_total',
             'training_sim_receipts_total','training_sim_batch_reuses_total',
@@ -431,6 +442,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_checkpoint_worker_max_seconds',
             'training_checkpoint_append_seconds',
             'training_checkpoint_snapshot_seconds',
+            'training_checkpoint_parallel_workers',
+            'training_checkpoint_snapshot_bytes',
+            'training_checkpoint_worker_max_seconds',
+            'training_checkpoint_append_seconds',
             'training_checkpoint_max_worker_seconds',
             'training_reply_gap_seconds','training_last_reply_worker',
             'training_remote_roundtrip_max_seconds',
@@ -1389,6 +1404,39 @@ class BottleneckEvidence {
                     add('training_shared_gpu_forward_share',sharedForwardShare);
                 }
             }
+            const gpuCollectors=metrics.training_shared_gpu_collectors;
+            const gpuRetained=metrics.training_shared_gpu_policy_retained;
+            const gpuReused=metrics.training_shared_gpu_policy_reused;
+            if(gpuCollectors?.unit==='count'&&gpuRetained?.unit==='count'&&
+                gpuReused?.unit==='count'&&
+                Number.isSafeInteger(gpuCollectors.value)&&gpuCollectors.value>0&&
+                gpuCollectors.value<=metrics.training_collector_workers.value&&
+                Number.isSafeInteger(gpuRetained.value)&&
+                gpuRetained.value>=0&&gpuRetained.value<=gpuCollectors.value&&
+                Number.isSafeInteger(gpuReused.value)&&gpuReused.value>=0&&
+                gpuReused.value<=gpuRetained.value) {
+                add('training_shared_gpu_reuse_fraction',
+                    gpuReused.value/gpuCollectors.value,'ratio');
+                add('training_shared_gpu_policy_retention_gap',
+                    (gpuCollectors.value-gpuReused.value)/gpuCollectors.value,'ratio');
+            }
+            // Only the verified final network/decoded owner can expose a
+            // GPU policy reload on the critical path. Model snapshot time
+            // includes host copies and strict loads, not GPU occupancy.
+            const lastGpuRefresh=(Number.isSafeInteger(gpuForwardOwner)&&
+                gpuForwardOwner===replyOwner&&
+                gpuForwardOwner>=0&&
+                gpuForwardOwner<metrics.training_collector_workers.value)
+                ?seconds('worker_'+gpuForwardOwner+'_gpu_policy_snapshot_seconds'):null;
+            const lastWorkerWall=(Number.isSafeInteger(gpuForwardOwner)&&
+                gpuForwardOwner===replyOwner)
+                ?seconds('worker_'+gpuForwardOwner+'_remote_roundtrip_seconds'):null;
+            const refreshShare=(lastWorkerWall>0&&lastGpuRefresh!==null&&
+                lastGpuRefresh<=lastWorkerWall)
+                ?lastGpuRefresh/lastWorkerWall:null;
+            if(refreshShare!==null)
+                add('training_shared_gpu_snapshot_work_share',
+                    refreshShare,'ratio');
             const exposed=seconds('training_ingestion_exposed_seconds');
             const copied=seconds('training_ingestion_copy_wall_seconds');
             const gap=seconds('training_shared_reply_gap_seconds');
@@ -1411,6 +1459,11 @@ class BottleneckEvidence {
             const sharedForwardHint=sharedForwardShare!==null&&
                 sharedForwardShare>=0.50&&sharedForwardSeconds>=0.25&&
                 sharedForwardSeconds>=0.20*wall&&collection!==null&&
+                collection>=0.50*wall&&wireShare!==null&&
+                wireShare>=0.20&&wireGap>=0.25&&
+                gpuForwardOwner===wireOwner&&wireOwner===decodedOwner;
+            const refreshHint=refreshShare!==null&&refreshShare>=0.25&&
+                lastGpuRefresh>=0.25&&collection!==null&&
                 collection>=0.50*wall&&wireShare!==null&&
                 wireShare>=0.20&&wireGap>=0.25&&
                 gpuForwardOwner===wireOwner&&wireOwner===decodedOwner;
@@ -1475,6 +1528,7 @@ class BottleneckEvidence {
                     sharedCollection:collectionDominant,
                     sharedOptimization:optimizationDominant,
                     sharedGpuForward:sharedForwardHint?gpuForwardOwner:null,
+                    sharedGpuRefresh:refreshHint?gpuForwardOwner:null,
                     remoteResource:slowReply&&collectionDominant?matchedRemote(wireOwner):null});
             add('training_timing_sample_count',recent.length,'count');
             if(recent.length>=5&&
@@ -1509,6 +1563,9 @@ class BottleneckEvidence {
                     add('training_shared_gpu_fwd_pressure',1,'count');
                     add('training_shared_gpu_fwd_owner',forwardOwner,'count');
                 }
+                if(Number.isSafeInteger(gpuForwardOwner)&&
+                    recent.filter(x=>x.sharedGpuRefresh===gpuForwardOwner).length>=5)
+                    add('training_shared_gpu_snapshot_pressure',1,'count');
                 if(sustained(x=>x.sharedImbalance))
                     add('training_collector_imbalance_pressure',1,'count');
                 if(sustained(x=>x.sharedCollection))

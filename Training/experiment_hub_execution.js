@@ -60,6 +60,7 @@ class LocalExecution {
             courier_remote_key_fingerprint:this.supervisor.adapters?.courier?.courier_remote_key_fingerprint||null,
             courier_remote_max_shards:[...(this.supervisor.adapters?.courier?.courier_remote_max_shards||[])],
             courier_lineage_endpoint:this.supervisor.adapters?.courier_lineage?.courier_lineage_endpoint||null,
+            courier_lineage_slots:structuredClone(this.supervisor.adapters?.courier_lineage?.courier_lineage_slots||[]),
             courier_lineage_key_fingerprint:this.supervisor.adapters?.courier_lineage?.courier_lineage_key_fingerprint||null,
             courier_lineage_max_shards:this.supervisor.adapters?.courier_lineage?.courier_lineage_max_shards||0,
             tinybrains_dual_gpu_profiles:this.supervisor.gpuEnabled===true&&

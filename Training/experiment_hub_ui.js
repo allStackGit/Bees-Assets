@@ -154,6 +154,7 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             return {
                 host:member.assigned_machine_id,
                 role:index===0?'learner':'collector',
+                shared_policy:member.frozen_parameters?.shared_policy===true,
                 cpus:member.resources?.cpus,
                 ram_mb:member.resources?.ram_mb,
                 gpus:gpuCount,
@@ -167,10 +168,28 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
         if(members.some(member=>!member.host||
             !Number.isSafeInteger(member.cpus)||member.cpus<1||
             !Number.isSafeInteger(member.ram_mb)||member.ram_mb<1||
-            !Number.isSafeInteger(member.gpus)||member.gpus<0)||
-            new Set(members.map(member=>member.host)).size!==members.length)
+            !Number.isSafeInteger(member.gpus)||member.gpus<0))
             return null;
-        members.sort((a,b)=>a.host.localeCompare(b.host));
+        // The learner and its slot-pinned shared-policy collectors may
+        // share a host, but only with separate acknowledged exclusive
+        // GPU leases. Other distributed members require distinct hosts.
+        const ownersByHost=new Map();
+        for(const member of members) {
+            if(!ownersByHost.has(member.host))ownersByHost.set(member.host,[]);
+            ownersByHost.get(member.host).push(member);
+        }
+        if([...ownersByHost].some(([host,owners])=>owners.length>1&&
+            (!courierGroup||job.frozen_parameters?.shared_policy!==true||
+                owners.filter(owner=>owner.role==='learner').length!==
+                    (host===job.assigned_machine_id?1:0)||
+                owners.some(owner=>owner.shared_policy!==true||
+                    owner.mode!=='exclusive'||owner.gpus!==1||
+                    owner.gpu_ids?.length!==1)||
+                new Set(owners.map(owner=>owner.gpu_ids[0])).size!==owners.length)))
+            return null;
+        members.sort((a,b)=>a.host.localeCompare(b.host)||
+            a.role.localeCompare(b.role)||
+            (a.gpu_ids?.[0]||'').localeCompare(b.gpu_ids?.[0]||''));
         return {
             members,
             cpus:members.reduce((total,m)=>total+m.cpus,0),
@@ -180,7 +199,9 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             gpu_mode:members.map(m=>m.mode).join('|'),
             claims_verified:members.every(m=>m.gpu_ids!==null),
             collector_threads:pinnedThreads?.threads??null,
-            collector_cpus:pinnedThreads?.cpus??null,
+            collector_cpus:courierGroup
+                ?workers.reduce((sum,worker)=>sum+worker.resources.cpus,0)
+                :pinnedThreads?.cpus??null,
         };
     };
     const rows=runs.map(run=>{
@@ -205,7 +226,9 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             members:resources?.members||null,
             lineage:run.job.artifact_lineage_root_id||run.job.id,
             status:run.job.status,
-            distributed:run.job.distributed_rollout_managed===true,
+            distributed:run.job.distributed_rollout_managed===true||
+                run.job.project_id==='courier'&&
+                run.job.distributed_courier_managed===true,
             cpus:resources?.cpus??null,
             gpus:resources?.gpus??null,
             gpu_mode:resources?.gpu_mode||null,
@@ -1491,7 +1514,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains and Courier groups sum only their explicitly reserved learner and collector resources; the remote threads/CPU column shows frozen TinyBrains thread limits or Courier collector CPU leases, not actual CPU occupancy. Same-host Courier collectors are counted only with distinct, verified exclusive GPU leases. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {
@@ -1502,8 +1525,9 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,row.gpus===null?'Unknown':row.gpus.toLocaleString());
             cell(tr,row.host||'Unknown');
             cell(tr,!row.distributed?'—':
-                row.collector_threads===null?'Unknown':
-                    row.collector_threads+' / '+row.collector_cpus);
+                row.collector_threads===null
+                    ?row.collector_cpus===null?'Unknown':'— / '+row.collector_cpus
+                    :row.collector_threads+' / '+row.collector_cpus);
             cell(tr,String(row.sample_count));
             cell(tr,row.median_rate===null?'—':
                 row.median_rate.toLocaleString(undefined,{maximumFractionDigits:2}));
@@ -2038,7 +2062,8 @@ document.addEventListener('DOMContentLoaded', () => {
     tinyBrainsWeights.placeholder='Optional: 2,8,4 (local, then each remote)';
     tinyBrainsDevice.append(new Option('From resource allocation',''),
         new Option('CPU only','cpu'),
-        new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
+        new Option('Dedicated two-GPU split PPO (CUDA/ROCm)','dual'),
+        new Option('Multi-GPU PPO + local collectors (3–8 exclusive)','multi'));
     tinyBrainsThreads.type='number';
     tinyBrainsThreads.min='1';
     tinyBrainsThreads.max='256';
@@ -2056,6 +2081,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
+        const multiGpu=tinyBrainsDevice.value==='multi';
         const remoteRollouts=tinyBrainsRemote.checked;
         const weightText=tinyBrainsWeights.value.trim();
         const weights=weightText?weightText.split(',').map(s=>Number(s.trim())):[];
@@ -2090,16 +2116,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if(dualGpu&&!(state?.machines||[]).some(machine=>
             machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
             machine.tinybrains_dual_gpu_profiles?.includes(profile))) {
-            feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
+            feedback('hub-config-message','No connected CUDA/ROCm worker approves two-GPU split PPO for this profile.');
+            return;
+        }
+        if(multiGpu&&!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_multi_gpu_profiles?.includes(profile))) {
+            feedback('hub-config-message','No connected CUDA/ROCm worker approves 3–8 GPU split PPO collectors for this profile.');
             return;
         }
         if(remoteRollouts&&!(state?.machines||[]).some(machine=>
-            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.status==='connected'&&
+            ['linux','win32'].includes(machine.agent_platform)&&
             machine.tinybrains_profiles?.[profile]===digest&&
             machine.tinybrains_remote_rollout_profiles?.includes(profile)&&
             (!cpuFallback||machine.tinybrains_remote_cpu_learner===true&&
                 machine.tinybrains_cpu_fallback_profiles?.includes(profile)))) {
-            feedback('hub-config-message','Remote rollouts require an approved Linux learner for this device mode and a locally installed Tailnet worker configuration.');
+            feedback('hub-config-message','Remote rollouts require an approved native learner for this device mode and locally installed private-network worker configuration.');
             return;
         }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
@@ -2110,7 +2143,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-config-json').value=JSON.stringify({
             profile,profile_sha256:digest,updates,
             ...(hasThreads?{threads}:{}),
-            ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
+            ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:
+                multiGpu?{device:'multi'}:{}),
             ...(remoteRollouts?{remote_rollouts:true}:{}),
             ...(weights.length?{rollout_action_weights:weights}:{}),
             ...(sourceId&&sourceDigest?{
@@ -2124,8 +2158,10 @@ document.addEventListener('DOMContentLoaded', () => {
             (cpuFallback||!selected?.cudaWorkers
                 ?'When queueing, request CPU/RAM without GPUs. '
                 :dualGpu
-                    ?'When queueing, request two EXCLUSIVE GPUs and sufficient CPU/RAM; a single PPO optimizer runs on one GPU while collection runs on the other. '
-                    :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
+                    ?'When queueing, request two EXCLUSIVE GPUs and sufficient CPU/RAM; one PPO optimizer runs on one GPU, with collection on the other. '
+                    :multiGpu
+                        ?'When queueing, request 3–8 EXCLUSIVE GPUs and sufficient CPU/RAM; one GPU owns PPO optimization and the remaining GPUs collect in parallel. '
+                        :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
             (sourceId
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
@@ -3351,44 +3387,64 @@ document.addEventListener('DOMContentLoaded', () => {
                 groupWorkers.length>0&&
                 groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
                     !worker.dispatch_id&&worker.lease_id&&worker.assigned_machine_id))
-                actions.append(button('Schedule Courier group when ready',async()=>{
-                    if(!confirm('Approve these original Courier PPO machine leases for one future group Start? '+
-                        'When every worker has a fresh lease and GPU proof, the Hub will authorize '+
-                        'all remote services in one transaction, then Start the learner only after '+
-                        'authenticated running receipts. Approval expires after 20 minutes, is '+
-                        'disarmed on coordinator restart, and never retries an uncertain native process.'))return;
-                    try {
-                        const plan=await action('hub/distributed/courier/schedule-start',{
-                            learner_job_id:j.id,
-                            expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
-                            confirm_schedule:true,confirm_learner_start:true,
-                        });
-                        feedback('hub-job-message','Courier distributed group '+plan.status+
-                            '; no native process Starts until original resource proof is complete.');
-                    }catch(error){feedback('hub-job-message',error.message);}
-                    await reload();
-                }));
+                {
+                    const scheduleCourier=async recovery=>{
+                        if(!confirm('Approve these original Courier PPO machine leases for one future group Start? '+
+                            'When every worker has a fresh lease and GPU proof, the Hub will authorize '+
+                            'all remote services in one transaction, then Start the learner only after '+
+                            'authenticated running receipts. Approval expires after 20 minutes. '+
+                            (recovery
+                                ?'The pending approval may survive coordinator restart after fresh native owner, lease, HMAC and GPU proof. '
+                                :'Coordinator restart disarms the approval. ')+
+                            'No uncertain native process or incomplete PPO update will be retried.'))return;
+                        try {
+                            const plan=await action('hub/distributed/courier/schedule-start',{
+                                learner_job_id:j.id,
+                                expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                                confirm_schedule:true,confirm_learner_start:true,
+                                ...(recovery?{
+                                    resume_after_restart:true,confirm_restart_rearm:true,
+                                }:{}),
+                            });
+                            feedback('hub-job-message','Courier distributed group '+plan.status+
+                                '; no native process Starts until original resource proof is complete.');
+                        }catch(error){feedback('hub-job-message',error.message);}
+                        await reload();
+                    };
+                    actions.append(button('Schedule Courier group when ready',()=>scheduleCourier(false)));
+                    actions.append(button('Schedule recoverable Courier group',()=>scheduleCourier(true)));
+                }
             if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
                 !unresolvedScheduledGroup&&!j.distributed_abort_requested_at&&groupWorkers.length>0&&
                 groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
                     !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
-                actions.append(button('Start Courier distributed group',async()=>{
-                    if(!confirm('Authorize '+groupWorkers.length+
-                        ' separately leased Courier PPO services and one subsequent learner Start? '+
-                        'The learner Starts only after every original worker has a verified running native receipt. '+
-                        'The approval expires after 20 minutes; coordinator restart disarms the future Start. '+
-                        'No failed PPO owner is retried automatically.'))return;
-                    try {
-                        const result=await action('hub/distributed/courier/start-lineages',{
-                            learner_job_id:j.id,
-                            expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
-                            confirm_start:true,confirm_learner_start:true,
-                        });
-                        feedback('hub-job-message',result.starts_authorized+
-                            ' remote Courier Starts approved. Waiting for verified native owners.');
-                    }catch(error){feedback('hub-job-message',error.message);}
-                    await reload();
-                }));
+                {
+                    const startCourier=async recovery=>{
+                        if(!confirm('Authorize '+groupWorkers.length+
+                            ' separately leased Courier PPO services and one subsequent learner Start? '+
+                            'The learner Starts only after every original worker has a verified running native receipt. '+
+                            'The approval expires after 20 minutes. '+
+                            (recovery
+                                ?'Coordinator restart retains the pending learner approval after fresh native running, lease and HMAC proof. '
+                                :'Coordinator restart disarms the future learner Start. ')+
+                            'No failed PPO owner or uncertain in-flight update is retried automatically.'))return;
+                        try {
+                            const result=await action('hub/distributed/courier/start-lineages',{
+                                learner_job_id:j.id,
+                                expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                                confirm_start:true,confirm_learner_start:true,
+                                ...(recovery?{
+                                    resume_after_restart:true,confirm_restart_rearm:true,
+                                }:{}),
+                            });
+                            feedback('hub-job-message',result.starts_authorized+
+                                ' remote Courier Starts approved. Waiting for verified native owners.');
+                        }catch(error){feedback('hub-job-message',error.message);}
+                        await reload();
+                    };
+                    actions.append(button('Start Courier distributed group',()=>startCourier(false)));
+                    actions.append(button('Start recoverable Courier group',()=>startCourier(true)));
+                }
             }
             if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
                 !j.distributed_abort_requested_at&&groupWorkers.length>0)
@@ -4727,6 +4783,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const automatic=courierAuto.input.checked&&!courierAuto.label.hidden;
             if(automatic&&matching)
                 throw Error('Automatic learner placement requires each budget to stay on its selected machine.');
+            if(budgets.some(item=>item.machine_id===courierMachine.value)&&!matching)
+                throw Error('Same-machine Courier GPU collectors require explicitly matched machine budgets.');
             const budgetRequest=distributedBudgetRequest(
                 budgets.map(({machine_id,...resources})=>({resources,machine_id})),
                 matching,'lineages');
@@ -4792,39 +4850,93 @@ document.addEventListener('DOMContentLoaded', () => {
         if(machines.some(machine=>machine.id===prior))courierMachine.value=prior;
         const machine=machines.find(item=>item.id===courierMachine.value);
         const endpoints=machine?.courier_remote_lineage_endpoints||[];
+        // Each separately leased shared-policy collector can use its own
+        // private slot listener and exclusive GPU on the learner machine.
+        // The coordinator proves physical identity at native Start.
+        const colocated=shared&&machine?.courier_lineage_subset===true&&
+            machine.gpus?.length>=2&&
+            ['courier','courier_lineage'].every(project=>
+                machine.gpu_projects?.includes(project));
         const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
-            host.status==='connected'&&host.id!==machine.id&&
-            host.courier_lineage_endpoint===endpoint&&
+            host.status==='connected'&&
+            (host.id!==machine.id||colocated)&&
+            (shared&&host.courier_lineage_slots?.length
+                ?host.courier_lineage_slots.some(listener=>
+                    listener.slot===i&&listener.endpoint===endpoint&&
+                    listener.max_shards===machine.courier_remote_max_shards?.[i])
+                :host.courier_lineage_endpoint===endpoint&&
+                    host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i])&&
             host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
-            host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i]&&
             (!shared||host.courier_shared_policy_collector===true)&&
             host.installed_projects?.includes('courier_lineage')));
         const subset=machine?.courier_lineage_subset===true;
         courierMatch.label.hidden=!subset;
-        courierAuto.label.hidden=!shared||!subset||Boolean($('hub-job-predecessor').value);
-        const available=match.filter(hosts=>hosts.length===1).map(hosts=>hosts[0]);
-        const budgetHost=machine?machine.id+':'+subset+':'+shared:null;
         const population=selected.parameters.workers;
         const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
+        // Slot-backed local collectors must occupy an ordered prefix of
+        // the learner-approved endpoints. A later available endpoint
+        // cannot silently become a different recurrent PPO slot.
+        const slotPinned=shared&&match.some(hosts=>hosts.some(host=>
+            host.courier_lineage_slots?.length>0));
+        const candidates=slotPinned?match.slice(0,capacity):match;
+        const gap=slotPinned?candidates.findIndex(hosts=>hosts.length!==1):-1;
+        const eligible=gap>=0?candidates.slice(0,gap):candidates;
+        const available=eligible.filter(hosts=>hosts.length===1)
+            .map(hosts=>hosts[0]);
+        courierMatch.label.lastChild.textContent=slotPinned
+            ?' Bind each budget to this exact collector slot and machine'
+            :' Match budgets across the selected machines';
+        const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
+            ':'+available.map(host=>host.id+':'+
+                host.courier_lineage_slots?.map(item=>item.slot+'@'+item.endpoint).join('|')).join(';'):null;
         if(courierBudgetHost!==budgetHost) {
-            courierMatch.input.checked=false;
             courierAuto.input.checked=false;
+            const local=colocated&&available.some(host=>host.id===machine.id);
+            const repeated=available.some(host=>
+                available.filter(other=>other.id===host.id).length>1);
+            // Selected-machine mode is mandatory for a local collector:
+            // plain remote endpoint budgets cannot authorize self-hosting.
+            courierMatch.input.checked=Boolean(local||repeated||slotPinned);
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
                 (subset?available.slice(0,capacity):match).map(worker=>
-                    ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),
+                    ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,
+                        ...(subset&&(worker.id===machine.id||
+                            available.filter(other=>other.id===worker.id).length>1)
+                            ?{gpu_count:1,gpu_mode:'exclusive'}
+                            :{gpu_count:0})})),
                 null,2);
         }
+        const localCount=available.filter(host=>host.id===machine?.id).length;
+        const remoteIds=available.filter(host=>host.id!==machine?.id)
+            .map(host=>host.id);
+        const localCapacity=localCount<=1||
+            colocated&&machine?.courier_lineage_slots?.length>=localCount&&
+            machine?.gpus?.length>localCount;
+        const remoteCapacity=[...new Set(remoteIds)].every(id=>{
+            const members=available.filter(host=>host.id===id);
+            if(members.length<=1)return true;
+            const host=members[0];
+            return shared&&host.gpu_projects?.includes('courier_lineage')&&
+                host.gpus?.length>=members.length&&
+                host.courier_lineage_slots?.length>=members.length;
+        });
+        courierAuto.label.hidden=!shared||!subset||Boolean($('hub-job-predecessor').value)||
+            slotPinned||localCount>0||new Set(remoteIds).size!==remoteIds.length;
         courierAuto.update();
         const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
-            capacity>0&&available.length>0&&
-            (subset||capacity>=endpoints.length&&available.length===endpoints.length)&&
-            new Set(available.map(host=>host.id)).size===available.length);
+            capacity>0&&available.length>0&&localCapacity&&remoteCapacity&&
+            (subset||capacity>=endpoints.length&&available.length===endpoints.length));
         courierQueue.disabled=!ready;
         courierDetails.textContent=ready
             ?'Available '+(shared?'collectors':'PPO workers')+': '+available.map(host=>host.id).join(', ')+
                 (subset?'. Keep the machines you want to allocate.':'. Supply one budget per worker in the listed order.')+
-                (shared?' Each collector gets at least one whole map.':' Leave at least one PPO lineage on the learner.')
+                (shared
+                    ?' Each collector gets at least one whole map.'+
+                        (slotPinned?' Several collectors may share a GPU-capable host'+
+                            ' only with unique slot listeners and independent exclusive GPUs.'+
+                            ' Keep slot-to-machine binding checked for repeated hosts.':'')
+                    :' Leave at least one PPO lineage on the learner.')
             :'Register the Courier lineage project and connect the approved workers.';
     }
     courierMachine.addEventListener('change',renderCourierDistributedGroup);
@@ -4839,8 +4951,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if(distributedPanel.hidden)return;
         const prior=distributedMachine.value;
         const machines=state.machines.filter(m=>m.status==='connected'&&
-            m.agent_platform==='linux'&&m.local_executor_enabled&&
-            m.native_preflight_passed&&m.tinybrains_profiles?.[selected.parameters.profile]===
+            ['linux','win32'].includes(m.agent_platform)&&
+            m.local_executor_enabled&&m.native_preflight_passed&&
+            m.tinybrains_profiles?.[selected.parameters.profile]===
                 selected.parameters.profile_sha256&&
             m.tinybrains_remote_rollout_profiles?.includes(selected.parameters.profile)&&
             (selected.parameters.device!=='cpu'||m.tinybrains_remote_cpu_learner===true&&
