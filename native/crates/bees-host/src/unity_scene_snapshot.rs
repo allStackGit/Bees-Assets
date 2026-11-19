@@ -2353,7 +2353,9 @@ impl NativePhysicalScene {
         }).collect::<std::collections::HashSet<_>>();
         authored.metadata.stage_scripted_queues(
             &authored.squads, setup.scripted_queues, &deferred_squads,
-            &entry_squads, &known_ships, dt, authored.campaign_dialogue,
+            &entry_squads, &known_ships,
+            setup.demolition.map(|objective| objective.target_map_object_id),
+            dt, authored.campaign_dialogue,
         ).map_err(NativePolicyOnlyLevelError::InvalidScriptedCommands)?;
         authored.stage_reinforcements(setup.reinforcements, dt)
             .map_err(NativePolicyOnlyLevelError::InvalidReinforcements)?;

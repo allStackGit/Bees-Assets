@@ -171,6 +171,7 @@ enum ScriptedOrderConfig {
     Guard { friendly_squad_item_id: i64 },
     Patrol { top_left: [f32; 2], bottom_right: [f32; 2] },
     Hold,
+    BombardMapObject { target_map_object_id: i64 },
     ClosestFriendly,
     Scouting { max_sight: f32, human_side: i32 },
     Mining { asteroid_id: i64 },
@@ -633,6 +634,10 @@ fn make_setup(
                         },
                     ScriptedOrderConfig::Hold =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::Hold,
+                    ScriptedOrderConfig::BombardMapObject { target_map_object_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::BombardMapObject {
+                            target_map_object_id,
+                        },
                     ScriptedOrderConfig::ClosestFriendly =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::ClosestFriendly,
                     ScriptedOrderConfig::Scouting { max_sight, human_side } =>

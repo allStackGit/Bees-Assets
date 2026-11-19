@@ -62,6 +62,10 @@ pub enum NativeScriptedOrder {
     Guard { friendly_squad_item_id: i64 },
     Patrol { top_left: Vec2, bottom_right: Vec2 },
     Hold,
+    /// Hold the normal squad command while physically mounted turrets fire
+    /// at the live MapObject's collider position. Only usable for the
+    /// exact authored demolition objective (not arbitrary invisible props).
+    BombardMapObject { target_map_object_id: i64 },
     ClosestFriendly,
     /// Genuine source Squad.MaxSight and ConfigData.HumanSide.
     Scouting { max_sight: f32, human_side: i32 },
@@ -106,7 +110,7 @@ impl NativeScriptedOrder {
             },
             Self::Patrol { top_left, bottom_right } =>
                 NativeLocalCommandAction::Patrol { top_left, bottom_right },
-            Self::Hold => NativeLocalCommandAction::Hold,
+            Self::Hold | Self::BombardMapObject { .. } => NativeLocalCommandAction::Hold,
             Self::ClosestFriendly => NativeLocalCommandAction::ClosestFriendly,
             Self::Scouting { .. } => NativeLocalCommandAction::Scouting,
             Self::Mining { asteroid_id } =>
@@ -134,6 +138,7 @@ impl NativeScriptedOrder {
             Self::BombingRun { enemy_squad_item_id } |
             Self::Charge { enemy_squad_item_id } => enemy_squad_item_id > 0,
             Self::Guard { friendly_squad_item_id } => friendly_squad_item_id > 0,
+            Self::BombardMapObject { target_map_object_id } => target_map_object_id > 0,
             Self::Patrol { top_left, bottom_right } =>
                 top_left.is_finite() && bottom_right.is_finite(),
             Self::Hold | Self::ClosestFriendly | Self::AggressiveNearest |
@@ -288,6 +293,7 @@ impl NativePolicyOnlyMetadata {
         deferred: &HashSet<i64>,
         with_entry_order: &HashSet<i64>,
         known_ships: &HashSet<i64>,
+        demolition_target: Option<i64>,
         dt_seconds: f32,
         campaign: Option<CampaignDialogueSpec>,
     ) -> Result<(), &'static str> {
@@ -304,7 +310,10 @@ impl NativePolicyOnlyMetadata {
                 plan.orders.is_empty() || plan.orders.len() > 256 ||
                 plan.orders.iter().any(|order| !order.valid() ||
                     matches!(order, NativeScriptedOrder::Scouting { human_side, .. }
-                        if *human_side != self.player.human_side))
+                        if *human_side != self.player.human_side) ||
+                    matches!(order, NativeScriptedOrder::BombardMapObject {
+                        target_map_object_id
+                    } if Some(*target_map_object_id) != demolition_target))
             {
                 return Err("invalid scripted command plan");
             }
@@ -639,6 +648,24 @@ impl NativePolicyOnlyMetadata {
             let order = self.scripted_queues[index].orders[
                 self.scripted_queues[index].cursor
             ].clone();
+            // The target is the current live collider, not a copied scene
+            // waypoint. A stale object never leaves a point-fire order
+            // targeting an unrelated new obstacle ID.
+            let bombard_point = if let NativeScriptedOrder::BombardMapObject {
+                target_map_object_id
+            } = &order {
+                if world.map_object(*target_map_object_id).is_none() {
+                    self.scripted_queues[index].cursor += 1;
+                    self.scripted_counts.orders_skipped_target_gone += 1;
+                    index += 1;
+                    continue;
+                }
+                Some(world.obstacle_body(*target_map_object_id)
+                    .filter(|body| body.active)
+                    .ok_or(NativeLevelEventError::Commands(
+                        GameCommandError::MissingCombatSnapshot,
+                    ))?.pose.position)
+            } else { None };
             let source = *self.player.commands.get(&owner)
                 .ok_or(NativeLevelEventError::Commands(GameCommandError::MissingCombatSnapshot))?;
             // Every prepared target is re-resolved against the current
@@ -776,6 +803,17 @@ impl NativePolicyOnlyMetadata {
                     max_sight: *max_sight, human_side: *human_side,
                 })
             } else { None };
+            if bombard_point.is_some() {
+                // Validate EVERY member before the Hold command claims its
+                // squad. Gameplay's standard point-fire API rejects policy
+                // weapons and dead actors, with no second firing engine.
+                for &ship_id in &squad.members {
+                    world.validate_game_manual_fire(ship_id, bombard_point)
+                        .map_err(|error| NativeLevelEventError::Commands(
+                            GameCommandError::World(error),
+                        ))?;
+                }
+            }
             let order_view = native_squad_order_from_catalog(
                 world, squad, &self.ship_catalog, formation, enemy, scouting,
                 |id| self.player.ships.get(&id).map(|source| source.offset),
@@ -825,6 +863,19 @@ impl NativePolicyOnlyMetadata {
             )?;
             match result {
                 Activation::Applied { .. } => {
+                    if let Some(point) = bombard_point {
+                        // The standard physical turret owner uses the same
+                        // manual target as a human holding J. The scripted
+                        // Hold command keeps the squad in place while
+                        // firing; a real terminal outcome freezes combat.
+                        for &ship_id in &self.scripted_members.iter()
+                            .map(|member| member.ship_id).collect::<Vec<_>>() {
+                            world.set_game_manual_fire(ship_id, Some(point))
+                                .map_err(|error| NativeLevelEventError::Commands(
+                                    GameCommandError::World(error),
+                                ))?;
+                        }
+                    }
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.commands_started += 1;
                     match order {
