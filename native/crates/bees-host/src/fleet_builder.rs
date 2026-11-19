@@ -301,10 +301,23 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
+    let Some(objective) = choose_objective()? else { return Ok(None); };
+    let objective_side = match objective {
+        Objective::Elimination => None,
+        _ => {
+            let Some(side) = choose_objective_side()? else { return Ok(None); };
+            Some(side)
+        },
+    };
     // The same published real-wave scenario can be profiled across many
     // arenas, so dynamic admission costs are measurable rather than guessed.
-    let Some(reinforcements) = choose_reinforcements(fleet_sizes)? else {
-        return Ok(None);
+    let reinforcements = if matches!(objective, Objective::Survival) {
+        ReinforcementPattern::AllAtStart
+    } else {
+        let Some(pattern) = choose_reinforcements(fleet_sizes)? else {
+            return Ok(None);
+        };
+        pattern
     };
     let Some(worlds) = choose_resource("Concurrent physical arenas",
         &[1, 2, 4, 8, 16, 32])? else { return Ok(None); };
@@ -315,7 +328,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, mix, terrain, arena_size, lethal_borders,
         ai_both: true,
-        ai_tactics, objective: Objective::Elimination, objective_side: None,
+        ai_tactics, objective, objective_side,
         reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
     }))
 }
@@ -1145,11 +1158,14 @@ pub(super) fn archive(
         // A repeatable multi-CPU stress case: the runner does no GUI or
         // Python inference here, and writes its normal sampled CPU/SPS
         // measurements in run/rollout-summary.json.
-        run["max_rounds"] = json!(6_000);
-        // Repeat quick 1v1 eliminations rather than publishing a noisy
-        // millisecond-long sample. Large fleet fights naturally consume
-        // more of the shared fixed-round budget per episode.
-        run["episodes_per_world"] = json!(12);
+        // Mission deadlines are 90s. A 6,000-step benchmark with twelve
+        // episodes would time out before physical objective completion and
+        // report arbitrary fast throughput. Leave every authored episode
+        // enough fixed-step budget to execute and measure the same terminal
+        // used in the actual playable mission.
+        let mission = !matches!(selected.objective, Objective::Elimination);
+        run["max_rounds"] = json!(if mission { 12_000 } else { 6_000 });
+        run["episodes_per_world"] = json!(if mission { 2 } else { 12 });
         run["rounds_per_window"] = json!(128);
         run["timing_sample_period"] = json!(32);
         run["status_every_rounds"] = json!(2_000);
@@ -1179,6 +1195,40 @@ pub(super) fn archive(
             // orders rather than inventing combat weapons.
             let orders = if supporting {
                 vec![json!({"kind": "hold"})]
+            } else if selected.ai_both &&
+                selected.objective_side == Some(side as i32 + 1) &&
+                matches!(selected.objective, Objective::Extraction)
+            {
+                // Every mobile unit must physically evacuate. Reuse the
+                // exact Level move command and extraction trigger, rather
+                // than awarding the benchmark an artificial win.
+                vec![json!({"kind": "move_to_point", "destination": [
+                    if side == 0 { 125.0 } else { -125.0 }, 0.0,
+                ]})]
+            } else if selected.ai_both &&
+                selected.objective_side == Some(side as i32 + 1) &&
+                matches!(selected.objective, Objective::Escort) &&
+                position == 0
+            {
+                // The first physical squad owns the escorted commander.
+                // Its remaining allies protect it using the original
+                // squad combat strategies.
+                vec![json!({"kind": "move_to_point", "destination": [
+                    if side == 0 { 125.0 } else { -125.0 }, 0.0,
+                ]})]
+            } else if selected.ai_both &&
+                selected.objective_side == Some(side as i32 + 1) &&
+                matches!(selected.objective, Objective::Demolition) && !scout
+            {
+                // Approach within the actual turret firing range, then
+                // use the source point-fire controller against the live
+                // authored MapObject collider. No custom weapon simulator.
+                vec![
+                    json!({"kind": "move_to_point", "destination": [
+                        if side == 0 { -28.0 } else { 28.0 }, 0.0,
+                    ]}),
+                    json!({"kind": "bombard_map_object", "target_map_object_id": 91}),
+                ]
             } else if scout {
                 vec![json!({
                     "kind": "move_to_point",
@@ -1191,7 +1241,12 @@ pub(super) fn archive(
                 vec![json!({"kind": selected.ai_tactics.source_order(position)})]
             };
             let mut queue = json!({
-                "squad_item_id": owner, "repeat": !supporting,
+                "squad_item_id": owner,
+                "repeat": !supporting &&
+                    !(selected.ai_both &&
+                      selected.objective_side == Some(side as i32 + 1) &&
+                      matches!(selected.objective,
+                          Objective::Extraction | Objective::Escort | Objective::Demolition)),
                 "orders": orders,
             });
             if deferred_squads.contains(&owner) {
