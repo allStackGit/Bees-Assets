@@ -7,6 +7,7 @@ inspect checkpoints or recover a completed round.
 
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 
@@ -130,6 +131,52 @@ def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> str:
     elif slot not in matching:
         raise ValueError("learner slot must identify the supplied input checkpoint")
     return digest
+
+
+# Source scenes are parsed only at worker startup. These counters capture
+# actual avoided episode reconstruction and are portable across Linux/
+# Windows and between single-process, sharded and remote collectors.
+SCENE_CACHE_COUNT_FIELDS = (
+    "distinct_source_documents", "distinct_parsed_layouts",
+    "worlds_initialized", "episodes_recycled", "source_parse_count",
+    "recycle_source_parses_avoided",
+)
+SCENE_CACHE_TIME_FIELDS = (
+    "source_parse_wall_seconds", "initial_template_clone_wall_seconds",
+    "recycled_template_clone_wall_seconds",
+)
+
+
+def verified_source_scene_cache(value, worlds: int, episodes: int):
+    """Retain measured template reuse without fabricating old-run data."""
+    if value is None:
+        return None
+    if (not isinstance(value, dict) or
+            any(type(value.get(key)) is not int or value[key] < 0
+                for key in SCENE_CACHE_COUNT_FIELDS) or
+            any(type(value.get(key)) not in (float, int) or
+                not math.isfinite(value[key]) or value[key] < 0
+                for key in SCENE_CACHE_TIME_FIELDS) or
+            value["worlds_initialized"] != worlds or
+            value["episodes_recycled"] != episodes - worlds or
+            value["recycle_source_parses_avoided"] != value["episodes_recycled"] or
+            not 1 <= value["distinct_source_documents"] <=
+                value["distinct_parsed_layouts"] <= worlds or
+            value["source_parse_count"] != value["distinct_parsed_layouts"]):
+        raise ValueError("native source-scene cache counters contradict completed Worlds")
+    return {key: value[key] for key in
+            (*SCENE_CACHE_COUNT_FIELDS, *SCENE_CACHE_TIME_FIELDS)}
+
+
+def combined_source_scene_cache(rows):
+    """Aggregate per-process CPU work, never claim globally unique scenes."""
+    if not rows or not all("source_scene_template_cache" in row for row in rows):
+        return None
+    return {
+        "scope": "sum_of_process_local_source_work",
+        **{key: sum(row["source_scene_template_cache"][key] for row in rows)
+           for key in (*SCENE_CACHE_COUNT_FIELDS, *SCENE_CACHE_TIME_FIELDS)},
+    }
 
 
 def sync_directory(path: Path) -> None:

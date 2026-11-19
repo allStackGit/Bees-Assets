@@ -25,6 +25,7 @@ import uuid
 from native_training_artifacts import (
     file_sha256, check_learner, sync_directory, normalized_python_source_sha256,
     native_source_contract_sha256,
+    verified_source_scene_cache, combined_source_scene_cache,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 from native_gpu_allocation import (
@@ -225,6 +226,12 @@ def rollout_metrics(summary_path, config, manifest_sha):
         "policy_rows_per_execution_second":
             counts["successful_policy_rows"] / times["execution_wall_seconds"],
     }
+    parsed_scene = verified_source_scene_cache(
+        summary.get("source_scene_template_cache"),
+        len(config["levels"]), expected_episodes,
+    )
+    if parsed_scene is not None:
+        metrics["source_scene_template_cache"] = parsed_scene
     # Actual reinforcement and policy enrollment events are recorded by
     # the shared runtime, never inferred from authored plans or reserved
     # entity IDs. An older runner's missing metric remains genuinely absent.
@@ -457,6 +464,9 @@ def combined_rollout_metrics(shards, wall_seconds):
     dispatch_keys = ("parallel_physics_direct_rounds", "parallel_physics_queued_rounds")
     if all(all(key in shard for key in dispatch_keys) for shard in shards):
         metrics.update({key: sum(shard[key] for shard in shards) for key in dispatch_keys})
+    scene_cache = combined_source_scene_cache(shards)
+    if scene_cache is not None:
+        metrics["source_scene_template_cache"] = scene_cache
     # Retain per-process evidence so a resource scheduler can distinguish
     # an overloaded process, a scene-dependent straggler and accelerator
     # inference time without requiring frame-level logs or guessed CPU use.
@@ -491,6 +501,8 @@ def combined_rollout_metrics(shards, wall_seconds):
             ) if key in shard} if "parallel_physics_rounds" in shard else {}),
             **({"sampled_model_timing": shard["sampled_model_timing"]}
                if "sampled_model_timing" in shard else {}),
+            **({"source_scene_template_cache": shard["source_scene_template_cache"]}
+               if "source_scene_template_cache" in shard else {}),
         }
         for index, shard in enumerate(shards)
     ]

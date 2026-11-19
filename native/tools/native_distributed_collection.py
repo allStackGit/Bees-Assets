@@ -13,7 +13,10 @@ from pathlib import Path
 import re
 import time
 
-from native_training_artifacts import atomic_json, file_sha256, native_source_contract_sha256
+from native_training_artifacts import (
+    atomic_json, file_sha256, native_source_contract_sha256,
+    verified_source_scene_cache, combined_source_scene_cache,
+)
 from native_gpu_allocation import GPU_MASK_ENVIRONMENTS
 
 
@@ -475,6 +478,11 @@ def verify_bundle(path, job, orders):
         not math.isfinite(metrics["wall_seconds"]) or metrics["wall_seconds"] <= 0
     ):
         raise ValueError(f"distributed collector returned invalid work measurements: {path}")
+    if "source_scene_template_cache" in metrics:
+        metrics["source_scene_template_cache"] = verified_source_scene_cache(
+            metrics["source_scene_template_cache"],
+            metrics["worlds"], metrics["episodes"],
+        )
     per_process = receipt.get("physics_workers_per_process", 1)
     if type(per_process) is not int or not 1 <= per_process <= 128:
         raise ValueError(f"distributed collector has invalid physics allocation: {path}")
@@ -671,6 +679,7 @@ def aggregate_collection_metrics(bundles):
                 "queen_minion_controllers": row.get("queen_minion_controllers"),
                 "map_border_ships": row.get("map_border_ships"),
                 "ship_slot_work": row.get("ship_slot_work"),
+                "source_scene_template_cache": row.get("source_scene_template_cache"),
                 "world_steps": row["successful_world_steps"],
                 "policy_rows": row["successful_policy_rows"],
                 "wall_seconds": row["wall_seconds"],
@@ -680,6 +689,9 @@ def aggregate_collection_metrics(bundles):
             } for bundle, row in zip(bundles, rows)
         ],
     }
+    scene_cache = combined_source_scene_cache(rows)
+    if scene_cache is not None:
+        result["source_scene_template_cache"] = scene_cache
     if all("reinforcement_arrivals" in row for row in rows):
         result["reinforcement_arrivals"] = {
             key: sum(row["reinforcement_arrivals"][key] for row in rows)
