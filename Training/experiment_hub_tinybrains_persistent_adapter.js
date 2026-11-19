@@ -1381,13 +1381,15 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
                 ...(stage?['--hub-stage-file',
-                    JOBS_IN+'/'+context.job_id+'/hub-curriculum-stage.json',
+                    path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,
+                        'hub-curriculum-stage.json'),
                     '--hub-stage-sha256',
                     crypto.createHash('sha256').update(JSON.stringify(stage)+'\n')
                         .digest('hex')]:[]),
                 ...(design_overrides===undefined?[]:
                     ['--hub-design-overrides-file',
-                        JOBS_IN+'/'+context.job_id+'/hub-design-overrides.json',
+                        path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,
+                            'hub-design-overrides.json'),
                         '--hub-design-overrides-sha256',
                         crypto.createHash('sha256')
                             .update(JSON.stringify(design_overrides)+'\n')
