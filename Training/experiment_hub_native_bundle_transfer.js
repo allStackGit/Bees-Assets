@@ -105,6 +105,10 @@ function authorizedBundleFile(hub,machineId,token,learnerId,collectorId,relative
     try{receipt=JSON.parse(fs.readFileSync(verified.file,'utf8'));}
     catch{fail('Invalid verified collector receipt JSON.');}
     const files=capturePaths(receipt);
+    if(collector.model_source_job_id&&(
+        !SHA.test(String(collector.expected_parent_model_sha256||''))||
+        receipt.input_checkpoint_sha256!==collector.expected_parent_model_sha256))
+        fail('Collector experience differs from its exact Hub predecessor checkpoint.');
     if(collector.frozen_parameters?.collection_id!==undefined&&
         receipt.collection_id!==collector.frozen_parameters.collection_id)
         fail('Collector bundle differs from its frozen work order.');
@@ -258,6 +262,10 @@ function verifiedNativeCollectorPin(hub,collectorId) {
         !Number.isSafeInteger(receipt.seed_offset)||
         receipt.seed_offset<0)
         fail('Native collector model or physical partition identity is incomplete.');
+    if(collector.model_source_job_id&&(
+        !SHA.test(String(collector.expected_parent_model_sha256||''))||
+        receipt.input_checkpoint_sha256!==collector.expected_parent_model_sha256))
+        fail('Collector experience differs from its exact Hub predecessor checkpoint.');
     if(collector.frozen_parameters?.collection_id!==undefined&&
         receipt.collection_id!==collector.frozen_parameters.collection_id||
         collector.frozen_parameters?.source_run_contract_sha256!==undefined&&
