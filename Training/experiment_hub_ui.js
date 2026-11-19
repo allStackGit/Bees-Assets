@@ -885,6 +885,41 @@ document.addEventListener('DOMContentLoaded', () => {
         return select;
     }
 
+    // Only collector IDs reach Hub. It resolves full mirrored receipt SHA
+    // and capture bytes itself before atomically reserving any optimizer GPU.
+    function nativeCollectorChoice() {
+        let select=$('hub-native-bundle-collectors');
+        if(!select) {
+            const label=document.createElement('label');
+            label.textContent='Completed native physical rollout collectors (select all inputs for this optimizer update): ';
+            select=document.createElement('select');
+            select.id='hub-native-bundle-collectors';
+            select.multiple=true;
+            select.size=5;
+            label.append(select);
+            $('hub-resource-bundle-rows').before(label);
+        }
+        const previous=new Set([...select.selectedOptions].map(option=>option.value));
+        const source=$('hub-native-bundle-model-source')?.value||'';
+        const choices=(state?.jobs||[]).filter(job=>
+            job.project_id==='bees_native_collect'&&
+            job.status==='finished'&&job.capacity_released_at&&
+            (job.model_source_job_id||'')===source);
+        select.replaceChildren(...choices.map(job=>{
+            const option=new Option(job.configuration_name+' · '+
+                job.id.slice(-8)+' · '+job.assigned_machine_id,job.id);
+            option.selected=previous.has(job.id);
+            return option;
+        }));
+        const owner=$('hub-resource-bundle-rows').firstElementChild
+            ?.querySelector('.hub-bundle-config')?.value;
+        const configuration=state?.configurations?.find(item=>item.id===owner);
+        select.parentElement.hidden=!configuration||
+            configuration.project_id!=='bees_native'||
+            configuration.parameters?.optimizer_group!==true;
+        return select;
+    }
+
     // Build capacity bundles from the same saved project configurations and
     // authenticated machine choices used by normal job Start. A bundle never
     // transmits arbitrary executable paths or worker network endpoints.
@@ -974,6 +1009,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(eligible.some(m=>m.id===oldMachine))machine.value=oldMachine;
             row.querySelector('button').disabled=rows.length<=2;
         }
+        nativeCollectorChoice();
         $('hub-resource-bundle-add').disabled=rows.length>=16;
         $('hub-resource-bundle-queue').disabled=rows.length<2||
             !rows.every(row=>row.querySelector('.hub-bundle-machine').value);
@@ -4577,15 +4613,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     resources:JSON.parse(row.querySelector('.hub-bundle-resources').value)};
             });
             const sourceId=$('hub-native-bundle-model-source')?.value||'';
-            const optimizer=state.configurations.find(c=>
-                c.id===members[0].configuration_id)?.parameters?.optimizer_group===true;
+            const firstConfig=state.configurations.find(c=>
+                c.id===members[0].configuration_id);
+            const optimizer=firstConfig?.project_id==='bees_native'&&
+                firstConfig.parameters?.optimizer_group===true;
+            const collectorIds=optimizer
+                ?[...$('hub-native-bundle-collectors').selectedOptions]
+                    .map(option=>option.value):[];
             if(sourceId&&!optimizer)
                 throw Error('Native model succession requires an optimizer group with a bees_native checkpoint publisher first.');
+            if(optimizer&&!collectorIds.length&&
+                !firstConfig.parameters?.rollout_bundles?.length)
+                throw Error('Select completed physical collectors so the native optimizer receives fresh verified training experience.');
             if(!confirm('Atomically reserve fixed resources for '+members.length+
                 (optimizer?' synchronized Bees MA-POCA optimizer nodes':
                     ' independent jobs')+' on the selected machines? '+
                 (sourceId?'Every node is pinned to the completed native checkpoint '+sourceId.slice(-8)+'. ':
                     '')+
+                (collectorIds.length?'Hub will verify and pin '+collectorIds.length+
+                    ' completed physical collector receipts before allocating GPUs. ':'')+
                 (optimizer
                     ?'The first node alone publishes the checkpoint. All ranks use the same verified capture bundles and synchronized gradients. '
                     :'Each job remains independently owned. ')+
@@ -4593,6 +4639,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const result=await action('hub/resource-bundles',{
                 confirm_queue:true,members,
                 ...(sourceId?{model_source_job_id:sourceId}:{}),
+                ...(collectorIds.length?{collector_job_ids:collectorIds}:{}),
             });
             feedback('hub-resource-bundle-message',
                 'Reserved all '+result.members.length+' jobs · bundle '+
