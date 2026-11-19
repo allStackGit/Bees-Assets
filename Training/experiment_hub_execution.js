@@ -308,6 +308,8 @@ class LocalExecution {
                 if(!ownsArtifacts||typeof localAdapter?.checkpoint_ready!=='function'||
                     await localAdapter.checkpoint_ready(Object.freeze({
                         job_id:job.id,project_id:job.project_id,
+                        cpu_quota:job.resources.cpus,
+                        ...(job.resource_bundle?{resource_bundle:structuredClone(job.resource_bundle)}:{}),
                         artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                         continuation_of_job_id:job.continuation_of_job_id||null,
                         frozen_parameters:job.frozen_parameters,
@@ -332,6 +334,8 @@ class LocalExecution {
             try {
                 const digest=await localAdapter.model_checkpoint_sha256(Object.freeze({
                     job_id:job.id,project_id:job.project_id,
+                    cpu_quota:job.resources.cpus,
+                    ...(job.resource_bundle?{resource_bundle:structuredClone(job.resource_bundle)}:{}),
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     frozen_parameters:job.frozen_parameters,
@@ -355,6 +359,8 @@ class LocalExecution {
             try {
                 const result=await localAdapter.readProgress(Object.freeze({
                     job_id:job.id,project_id:job.project_id,
+                    cpu_quota:job.resources.cpus,
+                    ...(job.resource_bundle?{resource_bundle:structuredClone(job.resource_bundle)}:{}),
                     state,
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
