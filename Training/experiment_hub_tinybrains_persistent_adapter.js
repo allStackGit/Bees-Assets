@@ -864,8 +864,10 @@ function createTinyBrainsPersistentDockerAdapter({
         const text=JSON.stringify(p,null,2)+'\n';
         return [id,{profile:p,text,sha256:crypto.createHash('sha256').update(text).digest('hex')}];
     }));
-    if(!nativeWindows&&(typeof sourceWindowsRoot!=='string'||
-        !/^[A-Za-z]:\/[A-Za-z0-9_./-]+$/.test(sourceWindowsRoot)))
+    if(typeof sourceWindowsRoot!=='string'||
+        !/^[A-Za-z]:\/[A-Za-z0-9_./ -]+$/.test(sourceWindowsRoot)||
+        sourceWindowsRoot.split('/').slice(1).some(segment=>
+            !segment||segment==='.'||segment==='..'))
         throw Error('Invalid original Windows project path mapping.');
     const originalSpec=JSON.parse(frozen);
     if(originalSpec?.model_config?.training?.algorithm!=='colony_ppo'||
@@ -1092,7 +1094,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 throw Error('TinyBrains automatic simulation requires a frozen RAM lease.');
             return ['-B',runner,'--run',
                 nativeWindows?out:JOBS_IN+'/'+context.job_id,
-                ...(nativeWindows?['--project-root',project]:[]),
+                ...(nativeWindows?['--project-root',project,
+                    '--source-windows-root',sourceWindowsRoot,
+                    '--source-run-root',source]:[]),
                 '--updates',String(updates),'--threads',String(chosenThreads),
                 '--ram-budget-mb',String(context.ram_quota_mb),
                 '--live-matches',String(item.profile.live_matches),
