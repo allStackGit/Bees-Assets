@@ -1022,6 +1022,32 @@ document.addEventListener('DOMContentLoaded', () => {
             !rows.every(row=>row.querySelector('.hub-bundle-machine').value);
         const container=$('hub-resource-bundle-existing');
         container.replaceChildren();
+        for(const plan of [...(state?.native_round_plans||[])].reverse().slice(0,12)) {
+            const row=document.createElement('div');
+            row.className='hub-pipeline-stage';
+            const details=document.createElement('span');
+            details.textContent='Native Bees multi-round '+plan.id.slice(-8)+
+                ' · '+plan.completed_rounds+'/'+plan.round_count+' rounds'+
+                ' · '+plan.status+
+                (plan.reason?' · '+plan.reason:'');
+            row.append(details);
+            if(['pending_collectors','awaiting_collectors','pending_optimizer',
+                'awaiting_optimizer','needs_review'].includes(plan.status))
+                row.append(button('Disarm future rounds',async()=>{
+                    if(!confirm('Disarm future native collection and optimizer rounds? Already dispatched jobs keep their original process and Stop owners.'))return;
+                    try {
+                        await action('hub/native-bees/rounds/cancel',{
+                            plan_id:plan.id,confirm_cancel:true,
+                        });
+                        feedback('hub-resource-bundle-message',
+                            'Future native training-round progression disarmed; active machine ownership unchanged.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-resource-bundle-message',String(error.message||error));
+                    }
+                }));
+            container.append(row);
+        }
         const groups=new Map();
         for(const job of state?.jobs||[]) {
             const id=job.resource_bundle?.id;
@@ -1070,6 +1096,57 @@ document.addEventListener('DOMContentLoaded', () => {
             const reserved=complete&&members.every(job=>
                 job.status==='waiting_adapter'&&!job.dispatch_id&&
                 Boolean(job.lease_id)&&Boolean(job.assigned_machine_id));
+            const owner=members[0];
+            const approvedSource=synchronized&&complete&&
+                nativeModelSources().some(job=>job.id===owner.id);
+            if(approvedSource) {
+                const optimizerMembers=[...members]
+                    .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+                const collectorJobs=(owner.frozen_parameters?.rollout_bundles||[])
+                    .map(pin=>state.jobs.find(job=>job.id===pin?.job_id));
+                const suitable=collectorJobs.length>=2&&
+                    collectorJobs.length<=16&&collectorJobs.every(job=>
+                        job?.project_id==='bees_native_collect'&&
+                        state.configurations.some(config=>
+                            config.id===job.configuration_id&&
+                            config.revision===job.configuration_revision))&&
+                    optimizerMembers.every(job=>state.configurations.some(config=>
+                        config.id===job.configuration_id&&
+                        config.revision===job.configuration_revision));
+                if(suitable)row.append(button('Continue with fresh native rounds',async()=>{
+                    const raw=prompt('Number of new collection and synchronized optimizer rounds (1–8):','3');
+                    if(raw===null)return;
+                    const count=Number(raw);
+                    if(!Number.isSafeInteger(count)||count<1||count>8) {
+                        feedback('hub-resource-bundle-message',
+                            'Select a whole number of rounds from 1 to 8.');
+                        return;
+                    }
+                    if(!confirm('Authorize '+count+' sequential NEW physical collection and MA-POCA optimizer rounds using the saved collector and optimizer configurations and their fixed machines/resources? Each round uses the most recent verified checkpoint. Future GPU group Starts require fresh authenticated machines and original exclusive GPU leases; approval is disarmed after a coordinator restart or uncertain native state.'))return;
+                    const freeze=job=>({
+                        configuration_id:job.configuration_id,
+                        expected_revision:job.configuration_revision,
+                        machine_id:job.assigned_machine_id,
+                        resources:job.resources,
+                        ...(job.metric_selection?{metric_selection:job.metric_selection}:{}),
+                    });
+                    try {
+                        const plan=await action('hub/native-bees/rounds',{
+                            source_job_id:owner.id,
+                            collector_members:collectorJobs.map(freeze),
+                            optimizer_members:optimizerMembers.map(freeze),
+                            round_count:count,
+                            confirm_schedule:true,confirm_gpu_start:true,
+                        });
+                        feedback('hub-resource-bundle-message',
+                            'Native '+count+'-round progression '+plan.status+
+                            ' · plan '+plan.id.slice(-8)+'.');
+                        await reload();
+                    }catch(error) {
+                        feedback('hub-resource-bundle-message',String(error.message||error));
+                    }
+                }));
+            }
             if(reserved&&!unresolvedLaunch) {
                 const usesGpu=members.some(job=>job.resources?.gpu_count>0);
                 let keepAcrossRestart=false;
