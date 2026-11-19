@@ -3143,7 +3143,12 @@ class ExperimentHub {
                     halt('needs_review','Courier group private endpoint, slot or key identity changed.');
                     continue;
                 }
-                if(members.some(job=>
+                // Restart-approved groups must obtain fresh signed native
+                // receipts before Start. A replacement agent alone is not
+                // authorization, but after coordinator restart the original
+                // frozen leases, endpoint/HMAC identity and GPU proof still
+                // determine the same single-use group.
+                if(!plan.recovery_pending&&members.some(job=>
                     this.agentReports.get(job.assigned_machine_id)?.instance_id!==
                         plan.agent_instances[job.assigned_machine_id])) {
                     halt('disarmed','Courier group native agent identity changed before Start.');
@@ -3157,6 +3162,9 @@ class ExperimentHub {
                         learner_job_id:learner.id,
                         expected_lineage_job_ids:plan.collector_job_ids,
                         confirm_start:true,confirm_learner_start:true,
+                        ...(plan.resume_after_restart?{
+                            resume_after_restart:true,confirm_restart_rearm:true,
+                        }:{}),
                     },plan.id);
                 }catch(error) {
                     const message=String(error.message||error).slice(0,180);
