@@ -3362,23 +3362,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 !unresolvedScheduledGroup&&!j.distributed_abort_requested_at&&groupWorkers.length>0&&
                 groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
                     !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
-                actions.append(button('Start Courier distributed group',async()=>{
-                    if(!confirm('Authorize '+groupWorkers.length+
-                        ' separately leased Courier PPO services and one subsequent learner Start? '+
-                        'The learner Starts only after every original worker has a verified running native receipt. '+
-                        'The approval expires after 20 minutes; coordinator restart disarms the future Start. '+
-                        'No failed PPO owner is retried automatically.'))return;
-                    try {
-                        const result=await action('hub/distributed/courier/start-lineages',{
-                            learner_job_id:j.id,
-                            expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
-                            confirm_start:true,confirm_learner_start:true,
-                        });
-                        feedback('hub-job-message',result.starts_authorized+
-                            ' remote Courier Starts approved. Waiting for verified native owners.');
-                    }catch(error){feedback('hub-job-message',error.message);}
-                    await reload();
-                }));
+                {
+                    const startCourier=async recovery=>{
+                        if(!confirm('Authorize '+groupWorkers.length+
+                            ' separately leased Courier PPO services and one subsequent learner Start? '+
+                            'The learner Starts only after every original worker has a verified running native receipt. '+
+                            'The approval expires after 20 minutes. '+
+                            (recovery
+                                ?'Coordinator restart retains the pending learner approval after fresh native running, lease and HMAC proof. '
+                                :'Coordinator restart disarms the future learner Start. ')+
+                            'No failed PPO owner or uncertain in-flight update is retried automatically.'))return;
+                        try {
+                            const result=await action('hub/distributed/courier/start-lineages',{
+                                learner_job_id:j.id,
+                                expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                                confirm_start:true,confirm_learner_start:true,
+                                ...(recovery?{
+                                    resume_after_restart:true,confirm_restart_rearm:true,
+                                }:{}),
+                            });
+                            feedback('hub-job-message',result.starts_authorized+
+                                ' remote Courier Starts approved. Waiting for verified native owners.');
+                        }catch(error){feedback('hub-job-message',error.message);}
+                        await reload();
+                    };
+                    actions.append(button('Start Courier distributed group',()=>startCourier(false)));
+                    actions.append(button('Start recoverable Courier group',()=>startCourier(true)));
+                }
             }
             if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
                 !j.distributed_abort_requested_at&&groupWorkers.length>0)
