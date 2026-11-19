@@ -4552,6 +4552,22 @@ class ExperimentHub {
                 job.resource_bundle?.size!==ids.length||
                 job.assigned_machine_id!==plan[stage+'_members'][index].machine_id))
                 throw Error('Original native round job and machine ownership changed.');
+            // A restored registry status is not evidence that its native
+            // CPU/RAM/GPU claim is still present. Match every original
+            // bundle member against its durable Hub-issued lease before
+            // allowing any further Start or checkpoint transition.
+            for(const job of jobs) {
+                const lease=this.state.reservations.find(item=>
+                    item.id===job.lease_id&&item.job_id===job.id&&
+                    item.project_id===job.project_id&&
+                    item.machine_id===job.assigned_machine_id&&
+                    item.issued_by==='experiment-hub');
+                const terminal=job.status==='finished'&&job.capacity_released_at;
+                if(!lease||(terminal
+                    ?lease.status!=='released'||!lease.released_at
+                    :!['offered','acknowledged'].includes(lease.status)))
+                    throw Error('Native round member has no matching original resource lease.');
+            }
             const allWaiting=jobs.every(job=>
                 job.status==='waiting_adapter'&&!job.dispatch_id);
             const allFinished=jobs.every(job=>
