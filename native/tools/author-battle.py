@@ -279,9 +279,23 @@ def author(args) -> tuple[dict, dict, dict]:
     # The primary scene remains authoritative for any shared class, so
     # authoring an unrelated class cannot silently alter existing combat.
     blueprints: dict[tuple[int, int], dict] = {}
-    for source_ship in [*scene["ships"], *scene.get("fleet_templates", [])]:
-        key = (source_ship["side"], source_ship["ship_type"])
-        blueprints.setdefault(key, source_ship)
+    def register_archetypes(source: dict) -> None:
+        # Ordinary existing source FleetShips are preferred. A reserve
+        # template is already a fully validated standalone physical hull;
+        # when an author explicitly requests it in an initial fleet, it
+        # becomes a newly allocated persistent FleetShip, not an invisible
+        # or free temporary entity.
+        for source_ship in source.get("ships", []):
+            key = (source_ship["side"], source_ship["ship_type"])
+            blueprints.setdefault(key, source_ship)
+        for reserve in source.get("fleet_templates", []):
+            key = (reserve["side"], reserve["ship_type"])
+            if key not in blueprints:
+                source_ship = copy.deepcopy(reserve)
+                source_ship["persistent_fleet"] = True
+                blueprints[key] = source_ship
+
+    register_archetypes(scene)
     source_archetypes = getattr(args, "archetype_scenes", ())
     for path in source_archetypes:
         supplemental = load_json(path)
@@ -296,10 +310,7 @@ def author(args) -> tuple[dict, dict, dict]:
                 f"supplemental ship source must be a non-policy sides-1/2 "
                 f"native game scene: {path}"
             )
-        for source_ship in [*supplemental.get("ships", []),
-                            *supplemental.get("fleet_templates", [])]:
-            key = (source_ship["side"], source_ship["ship_type"])
-            blueprints.setdefault(key, source_ship)
+        register_archetypes(supplemental)
 
     requested = {1: args.bees, 2: args.humans}
     requested_counts = {
