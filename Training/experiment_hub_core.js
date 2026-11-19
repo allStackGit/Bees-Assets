@@ -4359,6 +4359,11 @@ class ExperimentHub {
             !SHA256.test(String(source.checkpoint_model_sha256||''))||
             nativeOptimizerGroupBlock(this.state,source))
             throw Error('Native training rounds require a fully released, verified checkpoint and synchronized optimizer group.');
+        if(this.state.jobs.some(job=>
+            (job.continuation_of_job_id===source.id||
+             job.after_job_id===source.id)&&
+            occupiesSuccessorSlot(job,this.state.jobs)))
+            throw Error('The selected model already has an unresolved checkpoint successor; do not generate physical experience for a competing continuation.');
         if((this.state.native_round_plans||[]).some(plan=>
             plan.status!=='complete'&&plan.status!=='cancelled'&&
             plan.status!=='disarmed'&&
@@ -4519,7 +4524,12 @@ class ExperimentHub {
                         // owned by the original authenticated publisher.
                         // Never reserve a remote collector against an
                         // incomplete checkpoint, or invent model bytes.
-                        if(error.status===409)continue;
+                        if(error.status===409) {
+                            const reason='Awaiting the complete authenticated model checkpoint, manifest and fixed-opponent mirror before leasing collector CPUs or GPUs.';
+                            if(plan.reason!==reason)
+                                update(plan.status,reason);
+                            continue;
+                        }
                         throw error;
                     }
                 }
@@ -4532,10 +4542,14 @@ class ExperimentHub {
                     throw Error('An approved native training-round machine changed its authenticated agent instance; fresh operator authorization is required.');
                 if(machines.some(([machineId])=>
                     snapshot.machines.find(machine=>machine.id===machineId)
-                        ?.status!=='connected'))
+                        ?.status!=='connected')) {
                     // Offline members keep their original leases and jobs.
                     // No replacement worker is silently approved.
+                    const reason='Awaiting the exact originally approved authenticated native machine sessions.';
+                    if(plan.reason!==reason)
+                        update(plan.status,reason);
                     continue;
+                }
                 const phase=plan.status.endsWith('collectors')?'collectors':'optimizer';
                 if(plan.status.startsWith('pending_')) {
                     const result=this.queueResourceBundle({
