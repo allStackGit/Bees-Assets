@@ -1451,13 +1451,19 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             peer.visual=RemoteVisual::default();
             selected.clear();
             mode=None;patrol_start=None;drag_start=None;
-            minimap_dragging=false;
+            last_left=false;last_right=false;
+            last_middle=None;minimap_dragging=false;
             camera=None;
             current_episode=(0,0);
+            dialogue_key=None;dialogue_line=0;
             last_audio_snapshot=None;
             held_fire_active=false;held_fire_target=None;
             peer.held_fire_begin_request=None;
             peer.held_fire_rejected=false;
+            // The remote scene renderer caches death/explosion frames keyed
+            // by world identity. A new network session cannot inherit even
+            // those cosmetic frames from the previous authoritative host.
+            artwork=RemoteArtwork::new()?;
             audio.select_location(None);
             if !peer.connected {
                 peer.notice="Host disconnected; press F5 to reconnect".into();
