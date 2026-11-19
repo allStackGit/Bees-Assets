@@ -88,6 +88,7 @@ class RemoteConsole:
         self.lock = threading.Lock()
         self.latest = None
         self.selected = []
+        self.selected_scope = None
         self.next_request = 1
         self.held_scope = None
         self.held_begin_request = None
@@ -103,7 +104,19 @@ class RemoteConsole:
                     message = json.loads(line)
                     kind = message.get("kind")
                     if kind == "world_state":
+                        episode = (message.get("world_id"),
+                                   message.get("episode_revision"))
                         with self.lock:
+                            # Squad IDs can be reused when campaign Levels
+                            # or physical episodes turn over. Never carry a
+                            # previous world's command selection into the
+                            # next authoritative roster.
+                            if self.selected_scope != episode:
+                                self.selected.clear()
+                                self.held_scope = None
+                                self.held_begin_request = None
+                                self.last_campaign_receipt = None
+                                self.selected_scope = episode
                             self.latest = message
                         dialogue = message.get("campaign_dialogue")
                         cue = ((message.get("world_id"), message.get("episode_revision"),
@@ -227,7 +240,11 @@ class RemoteConsole:
     def selected_owners(self, state):
         squads = {row["owner"]["squad_id"]: row["owner"]
                   for row in state["squads"] if row["owned"]}
-        return [squads[id] for id in self.selected if id in squads]
+        scope = (state["world_id"], state["episode_revision"])
+        with self.lock:
+            if self.selected_scope != scope:
+                return []
+            return [squads[id] for id in self.selected if id in squads]
 
     def locate_squad(self, state, value, *, owned=None, friendly=None):
         squad_id = int(value)
@@ -380,7 +397,9 @@ class RemoteConsole:
             if not argv:
                 raise ValueError("select requires at least one squad ID")
             owners = [self.locate_squad(state, value, owned=True) for value in argv]
-            self.selected = [owner["squad_id"] for owner in owners]
+            with self.lock:
+                self.selected = [owner["squad_id"] for owner in owners]
+                self.selected_scope = (state["world_id"], state["episode_revision"])
             print(f"Selected: {self.selected}")
             return
         owners = self.selected_owners(state)
