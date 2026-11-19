@@ -894,10 +894,10 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                 file_sha256(manifest) != result["input_manifest_sha256"]):
             raise ValueError("native optimizer worker has no agreed multi-machine model and input identity")
         publish_receipt(output, "round-worker-result.json", {
-            "schema_version": 1,
-            "kind": "native_distributed_optimizer_worker_complete",
             **result,
             **worker,
+            "schema_version": 1,
+            "kind": "native_distributed_optimizer_worker_complete",
         })
         return
     next_checkpoint = learner_dir / "checkpoint.pt"
@@ -943,6 +943,15 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                     metrics["optimizer_gpu_model_consensus_sha256"]) is None or
                 not isinstance(metrics.get("optimizer_gpu_per_device"), list) or
                 len(metrics["optimizer_gpu_per_device"]) != args.learner_gpus * args.learner_nodes
+            )) or
+            (args.learner_nodes > 1 and (
+                not isinstance(metrics.get("optimizer_global_input_sha256"), str) or
+                re.fullmatch(r"[a-f0-9]{64}",
+                    metrics["optimizer_global_input_sha256"]) is None or
+                any(row.get("rank") != rank or
+                    row.get("node_rank") != rank // args.learner_gpus or
+                    row.get("local_rank") != rank % args.learner_gpus
+                    for rank, row in enumerate(metrics["optimizer_gpu_per_device"]))
             ))):
         raise ValueError("native learner completion receipt disagrees with its model artifacts or actual GPU ranks")
     publish_receipt(output, "round-result.json", {
