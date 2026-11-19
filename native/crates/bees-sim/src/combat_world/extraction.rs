@@ -108,17 +108,25 @@ impl CombatWorld {
     }
 
     pub fn step_extraction(&mut self, collisions: &CollisionMatrix) -> Result<(), CombatWorldError> {
-        let Some(state) = self.extraction.as_mut() else { return Ok(()) };
+        let Some(state) = self.extraction.as_ref() else { return Ok(()) };
         let zone = state.zone;
         if !state.active {
             let radius_squared = zone.activation_radius * zone.activation_radius;
-            state.active = self.ships.iter().zip(self.physics.ships()).any(|(ship, body)|
+            let activated = self.ships.iter().zip(self.physics.ships()).any(|(ship, body)|
                 body.active && ship.side == zone.player_side &&
                 (body.motion.position - zone.center).length_squared() < radius_squared);
+            if activated {
+                self.extraction.as_mut().expect("configured zone").active = true;
+            }
             // The source instantiates the trigger from a Level callback.
             // Its first contacts arrive on the next physics step.
             return Ok(());
         }
+        // Snapshot the trigger's immutable identity before asking other
+        // CombatWorld subsystems about reinforcements or collider overlaps.
+        // The extraction state is only mutably borrowed for the immediate
+        // state transition, never throughout the collision/retirement walk.
+        let escort_ship_id = state.escort_ship_id;
         // The final evacuation flag is valid only after the last mobile
         // *including authored future waves* has left. Otherwise a late
         // reserve could be destroyed while an earlier exit remains
@@ -128,7 +136,7 @@ impl CombatWorld {
         let hits = self.physics.ship_ids_overlapping_box(zone.bounds())?
             .filter_map(|id| self.ship_by_id.get(&id).copied())
             .filter(|&index| self.ships[index].side == zone.player_side &&
-                state.escort_ship_id.is_none_or(|id| self.ships[index].entity_id == id) &&
+                escort_ship_id.is_none_or(|id| self.ships[index].entity_id == id) &&
                 collisions.allows(zone.layer, self.physics.ships()[index].layer))
             .collect::<Vec<_>>();
         for index in hits {
