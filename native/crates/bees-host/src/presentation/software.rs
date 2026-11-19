@@ -1470,6 +1470,38 @@ impl NativeSoftwareRenderer {
         }
     }
 
+    /// A demolition objective is a real, destructible MapObject. Interpret
+    /// a right-click on its collider as the standard point-fire action,
+    /// instead of ordering selected attackers to drive into its hitbox.
+    /// Other objects and ground retain existing context-click behavior.
+    pub fn pick_demolition_fire_point(
+        &self, view: &NativeRenderWorldView<'_>, point: Vec2,
+    ) -> Option<Vec2> {
+        let objective = view.demolition?;
+        if !point.is_finite() || self.camera.pixels_per_unit <= 0.0 ||
+            self.selection.squads().is_empty() ||
+            self.selection.squads().iter().any(|&owner|
+                view.roster.get(owner).is_none_or(|squad|
+                    squad.side != objective.attacking_side))
+        {
+            return None;
+        }
+        let id = objective.target_map_object_id;
+        let target = view.combat.map_object(id)?;
+        if target.health <= 0 { return None; }
+        let body = view.combat.obstacle_body(id).filter(|body| body.active)?;
+        let bounds = body.primary_bounds()?;
+        let tolerance = 6.0 / self.camera.pixels_per_unit;
+        if point.x < bounds.min.x - tolerance ||
+            point.x > bounds.max.x + tolerance ||
+            point.y < bounds.min.y - tolerance ||
+            point.y > bounds.max.y + tolerance
+        {
+            return None;
+        }
+        Some((bounds.min + bounds.max) * 0.5)
+    }
+
     /// Right-click uses the same target resolution as the explicit tools.
     /// Ground movement is the caller's fallback when no command target is hit.
     pub fn pick_right_click_action(
