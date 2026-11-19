@@ -2,6 +2,24 @@
 
 Updated 2026-11-19. Hub branch: `feat/hub-resource-efficiency-20261112`. Companion active branches: `allStackGit/TinyBrains:feat/tinybrains-admission-ramp-20261118`; `allStackGit/Basic-Training:feat/courier-overlap-policy-codec-20261118`. Native Bees rewrite is out of scope.
 
+**Local TinyBrains multi-device learner continuation:** Same-shape colony
+boards can now evaluate/backpropagate across the explicitly leased local
+GPUs while ordered outputs preserve the existing global advantages, per-ant
+losses, clipping and one authoritative Adam step. The existing execution-width
+tuner now also supports GPU counts: start at one, wait for other tuners to
+settle, compare sustained completed useful PPO cadence (including collector
+interference), require >=12% improvement, and restore rejected counts. Action
+balancing pauses during count discovery; shared CPU cadence and balancing
+identities include actual learner count. Only checkpoint-aligned proofs under
+matching hardware/lease/workload restore. Existing Hub metrics/charts expose
+selected/next count, accepted adjustments and actual board/device-batch work.
+CPU execution of mixed-shape/empty-ant PPO cases preserved policy/Adam,
+diagnostics and RNG; synthetic cadence checks accepted two devices, rejected
+three and restored the proof. Legacy pixel tuning matched 12,500 observations;
+existing partial board-cache/preparation parity checks and nine neutral Hub
+metric fields passed. Physical multi-GPU execution, joint throughput
+qualification and independent-policy Courier inference remain open.
+
 **Local multi-GPU learner continuation:** Courier's shared learner now accepts
 up to eight assigned GPUs and can split a single PPO minibatch by complete
 padded recurrent sequences. Ordered differentiable output gathering and
