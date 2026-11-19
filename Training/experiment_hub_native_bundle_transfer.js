@@ -201,28 +201,11 @@ function nativeModelPackage(hub,source) {
     let document;
     try{document=JSON.parse(fs.readFileSync(manifest.file,'utf8'));}
     catch{fail('Invalid mirrored native model manifest.');}
-    if(document?.format!=='bees-native-model-v1'||
-        document.abi_version!==26||
-        !Array.isArray(document.models)||!document.models.length||
-        document.models.length>256)
-        fail('Invalid native model-set identity.');
-    const included=new Map([
-        ['learner/checkpoint.pt',source.checkpoint_model_sha256],
-        ['learner/manifest.json',receipt.next_manifest_sha256],
-    ]);
-    for(const model of document.models) {
-        const relative=model?.path,digest=model?.sha256;
-        if(!SHA.test(String(digest||''))||typeof relative!=='string')
-            fail('Invalid native model dependency.');
-        if(relative==='checkpoint.pt') {
-            if(digest!==source.checkpoint_model_sha256)
-                fail('Native model learner slot differs from its committed checkpoint.');
-        }else if(/^opponents\/[a-f0-9]{64}\.model$/.test(relative)) {
-            if(relative!=='opponents/'+digest+'.model')
-                fail('Native model opponent artifact identity differs from its path.');
-            included.set('learner/'+relative,digest);
-        }else fail('Native model dependency is not a portable published artifact.');
-    }
+    // The publisher and receiver must agree on ONE model-set contract.
+    // Reuse the receiver's slot and dependency validator before admitting a
+    // purported completed checkpoint as a transferable Hub model source.
+    const included=modelDependencies(document,source.checkpoint_model_sha256);
+    included.set('learner/manifest.json',receipt.next_manifest_sha256);
     return {root,jobId,included};
 }
 
@@ -522,17 +505,25 @@ async function fileDigest(file) {
 function modelDependencies(document,expectedCheckpoint) {
     if(document?.format!=='bees-native-model-v1'||
         document.abi_version!==26||
+        typeof document.policy_signature!=='string'||
+        !Buffer.byteLength(document.policy_signature,'utf8')||
+        Buffer.byteLength(document.policy_signature,'utf8')>8192||
         !Array.isArray(document.models)||!document.models.length||
         document.models.length>256)
         fail('Invalid native model package manifest.');
     const dependencies=new Map([['learner/checkpoint.pt',expectedCheckpoint]]);
+    const slots=new Set();
     let learnerRefs=0;
     for(const model of document.models) {
         const digest=model?.sha256,relative=model?.path;
-        if(!SHA.test(String(digest||''))||typeof relative!=='string')
-            fail('Invalid native model package dependency.');
+        if(!Number.isSafeInteger(model?.slot)||model.slot<0||
+            model.slot>0xffffffff||slots.has(model.slot)||
+            !['mlagents','onnx','torchscript'].includes(model.backend)||
+            !SHA.test(String(digest||''))||typeof relative!=='string')
+            fail('Invalid native model package dependency or duplicate model slot.');
+        slots.add(model.slot);
         if(relative==='checkpoint.pt') {
-            if(digest!==expectedCheckpoint)
+            if(digest!==expectedCheckpoint||model.backend!=='mlagents')
                 fail('Native package learner checkpoint identity changed.');
             learnerRefs++;
         }else if(/^opponents\/[a-f0-9]{64}\.model$/.test(relative)&&
