@@ -145,7 +145,7 @@ function courierMetrics(source) {
     // simulation/observation stages instead of truncating the second half
     // of the population at the old 253-field adapter limit. Reserve space
     // for the envelope, host data and optional derived diagnoses.
-    let retained=0;
+    let retained=0, metricChars=2; // Exact serialized size of {}.
     // A 64-lineage run can exceed the neutral 512-field/32-KiB report.
     // Preserve the handful of whole-run GPU placement decisions before
     // optional per-lineage details. The append-only Courier event still
@@ -246,11 +246,15 @@ function courierMetrics(source) {
                     value>=0&&value<=1?'ratio':'scalar';
         if(((unit==='seconds'||unit==='rate')&&value<0)||
             (unit==='count'&&(!Number.isSafeInteger(value)||value<0)))continue;
-        metrics[name]={value,unit};
-        if(JSON.stringify(metrics).length>29*1024) {
-            delete metrics[name];
-            continue;
-        }
+        const item={value,unit};
+        // Serializing the entire growing report for each of up to 480
+        // observations is quadratic. Only safe ASCII metric keys and
+        // finite, validated numeric items reach this bounded path.
+        const extra=(retained?1:0)+JSON.stringify(name).length+1+
+            JSON.stringify(item).length;
+        if(metricChars+extra>29*1024)continue;
+        metrics[name]=item;
+        metricChars+=extra;
         retained++;
     }
     return metrics;
