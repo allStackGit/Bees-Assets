@@ -16,7 +16,7 @@ import numpy as np
 from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spec, stream_sha256
 from read_policy_capture import capture_frames
 from native_training_outcomes import accumulate_training_outcome, record_combat_hit
-from native_mission_contract import OBJECTIVE_START as NATIVE_MISSION_ACTIVE_INDEX
+from native_mission_contract import OBJECTIVE_START as NATIVE_MISSION_ACTIVE_INDEX, OBJECTIVE_WIDTH
 
 
 # Non-learner controllers need only lifetime/side validation. This
@@ -242,6 +242,52 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 retirements, rewards, learner_agents_by_episode.pop(key), journal_id,
                 admissions.get(key, {}),
             )
+            # The durable source terminal proves whether a physical
+            # objective was active. Verify the actual optimizer-bound
+            # learner rows *before* they can enter PPO, including when a
+            # capture is ingested directly without a round summary.
+            # Ordinary v26 non-mission rows remain source-compatible.
+            mission = terminals[key]["payload"].get("mission")
+            if mission is not None:
+                kinds = {
+                    "survival": 1, "demolition": 2,
+                    "escort": 3, "extraction": 4,
+                }
+                if (not isinstance(mission, dict) or
+                        mission.get("kind") not in kinds or
+                        type(mission.get("objective_side")) is not int):
+                    raise ValueError("native mission terminal has invalid kind or owner")
+                context = terminals[key]["evaluation_context"]
+                team_side = {
+                    int(team): int(side)
+                    for side, team in context["group_team_by_side"].items()
+                }
+                if mission["objective_side"] not in team_side.values():
+                    raise ValueError("native mission target faction is not in the policy episode")
+                observed = 0
+                learner_agents = rollout[6]
+                for frame in ticks.values():
+                    for agent, row in frame.items():
+                        if agent not in learner_agents:
+                            continue
+                        goal = row["observations"][
+                            NATIVE_MISSION_ACTIVE_INDEX:
+                            NATIVE_MISSION_ACTIVE_INDEX + OBJECTIVE_WIDTH
+                        ]
+                        role = 1.0 if team_side[rollout[1][agent]] == mission["objective_side"] else -1.0
+                        kind_slot = kinds[mission["kind"]]
+                        if (goal[0] != 1.0 or goal[kind_slot] != 1.0 or
+                                np.count_nonzero(goal[1:5]) != 1 or
+                                goal[5] != role or not np.isfinite(goal).all()):
+                            raise ValueError(
+                                "native mission decision does not match its authoritative "
+                                "kind, objective faction or reserved-channel encoding"
+                            )
+                        observed += 1
+                if stats is not None:
+                    stats["native_mission_learner_decision_rows_validated"] = (
+                        stats.get("native_mission_learner_decision_rows_validated", 0) + observed
+                    )
             if stats is not None:
                 if not ticks:
                     stats["episodes_without_policy_decisions"] = (
@@ -1353,6 +1399,8 @@ def main():
         **cuda_metrics,
         "optimizer_input_steps": steps,
         "native_mission_learner_decisions": mission_learner_decisions,
+        "native_mission_learner_decision_rows_validated":
+            capture_stats.get("native_mission_learner_decision_rows_validated", 0),
         "trajectory_processing_wall_seconds": processing_wall_seconds,
         "trajectory_processing_cpu_seconds": processing_cpu_seconds,
         "capture_read_and_validation_wall_seconds": capture_read_wall_seconds,
