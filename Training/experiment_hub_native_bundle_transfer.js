@@ -8,7 +8,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const http=require('node:http');
 const crypto=require('node:crypto');
-const {safeLogPath,safeNativeCollectorPath,MAX_FILE,MAX_CHUNK}=
+const {safeLogPath,safeNativeCollectorPath,safeNativeModelPath,MAX_FILE,MAX_CHUNK}=
     require('./experiment_hub_artifact_sync');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -123,6 +123,112 @@ function authorizedBundleFile(hub,machineId,token,learnerId,collectorId,relative
     const digest=files.get(relative);
     if(!digest)fail('File is not listed in this collector receipt.');
     return mirroredFile(root,collectorId,relative,digest);
+}
+
+// The same signed artifact mirror transports a complete model checkpoint
+// package, but never exposes arbitrary source-machine paths. A destination
+// must already be a Hub job explicitly pinned to the finished source model.
+function mirroredByMetadata(root,jobId,relative) {
+    const key=crypto.createHash('sha256').update(relative).digest('hex');
+    const metaFile=path.join(root,'hub-remote-artifact-staging',jobId,key+'.json');
+    if(regular(metaFile).size>1024)
+        fail('Invalid native model artifact metadata.');
+    let meta;
+    try{meta=JSON.parse(fs.readFileSync(metaFile,'utf8'));}
+    catch{fail('Corrupt native model artifact metadata.');}
+    if(meta?.relative!==relative || meta.complete!==true ||
+        !SHA.test(String(meta.sha||'')))
+        fail('Native source artifact is not a completed mirror.');
+    return mirroredFile(root,jobId,relative,meta.sha);
+}
+
+function nativeModelPackage(hub,source) {
+    if(source?.project_id!=='bees_native'||source.status!=='finished'||
+        source.checkpoint_ready_verified!==true||
+        !SHA.test(String(source.checkpoint_model_sha256||''))||
+        !source.capacity_released_at||!source.dispatch_id||
+        !source.execution_updated_at)
+        fail('A completed, released and checkpoint-verified native Bees model source is required.');
+    if(source.frozen_parameters?.optimizer_group===true) {
+        const bundle=source.resource_bundle;
+        const members=hub.state.jobs.filter(job=>
+            job.resource_bundle?.id===bundle?.id).sort((a,b)=>
+            a.resource_bundle.index-b.resource_bundle.index);
+        if(bundle?.index!==1||!Number.isSafeInteger(bundle.size)||
+            bundle.size<2||bundle.size>8||members.length!==bundle.size||
+            members.some((job,index)=>job.resource_bundle.index!==index+1||
+                job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
+                job.status!=='finished'||!job.capacity_released_at||
+                !job.dispatch_id||!job.execution_updated_at))
+            fail('The original synchronized optimizer group is not terminal and released.');
+    }
+    const root=path.dirname(hub.file),jobId=source.id;
+    const signed=mirroredByMetadata(root,jobId,'round-result.json');
+    if(signed.size>64*1024)fail('Invalid native model completion receipt size.');
+    let receipt;
+    try{receipt=JSON.parse(fs.readFileSync(signed.file,'utf8'));}
+    catch{fail('Invalid native model completion receipt.');}
+    if(receipt?.schema_version!==1||
+        receipt.kind!=='native_training_round_complete'||
+        receipt.next_checkpoint_sha256!==source.checkpoint_model_sha256||
+        !SHA.test(String(receipt.next_manifest_sha256||''))||
+        receipt.learner_metrics?.next_checkpoint_sha256!==
+            source.checkpoint_model_sha256||
+        receipt.learner_metrics?.next_manifest_sha256!==
+            receipt.next_manifest_sha256)
+        fail('Mirrored native model completion disagrees with its Hub checkpoint identity.');
+    const manifest=mirroredFile(root,jobId,'learner/manifest.json',
+        receipt.next_manifest_sha256);
+    if(manifest.size>1024*1024)fail('Native model manifest exceeds its bounded size.');
+    let document;
+    try{document=JSON.parse(fs.readFileSync(manifest.file,'utf8'));}
+    catch{fail('Invalid mirrored native model manifest.');}
+    if(document?.format!=='bees-native-model-v1'||
+        document.abi_version!==26||
+        !Array.isArray(document.models)||!document.models.length||
+        document.models.length>256)
+        fail('Invalid native model-set identity.');
+    const included=new Map([
+        ['learner/checkpoint.pt',source.checkpoint_model_sha256],
+        ['learner/manifest.json',receipt.next_manifest_sha256],
+    ]);
+    for(const model of document.models) {
+        const relative=model?.path,digest=model?.sha256;
+        if(!SHA.test(String(digest||''))||typeof relative!=='string')
+            fail('Invalid native model dependency.');
+        if(relative==='checkpoint.pt') {
+            if(digest!==source.checkpoint_model_sha256)
+                fail('Native model learner slot differs from its committed checkpoint.');
+        }else if(/^opponents\/[a-f0-9]{64}\.model$/.test(relative)) {
+            if(relative!=='opponents/'+digest+'.model')
+                fail('Native model opponent artifact identity differs from its path.');
+            included.set('learner/'+relative,digest);
+        }else fail('Native model dependency is not a portable published artifact.');
+    }
+    return {root,jobId,included};
+}
+
+function authorizedModelFile(hub,machineId,token,recipientId,sourceId,relative) {
+    hub.authenticateAgent(machineId,token);
+    if(!UUID.test(String(recipientId||''))||
+        !UUID.test(String(sourceId||''))||recipientId===sourceId||
+        !safeNativeModelPath(relative))
+        fail('Invalid native model transfer identity.',400);
+    const recipient=hub.state.jobs.find(job=>job.id===recipientId);
+    const source=hub.state.jobs.find(job=>job.id===sourceId);
+    if(!recipient||
+        !['bees_native','bees_native_collect','bees_native_optimizer_worker']
+            .includes(recipient.project_id)||
+        recipient.assigned_machine_id!==machineId||!recipient.lease_id||
+        recipient.model_source_job_id!==sourceId||
+        !['waiting_adapter','start_requested','launch_requested','running']
+            .includes(recipient.status)||
+        recipient.expected_parent_model_sha256!==source?.checkpoint_model_sha256)
+        fail('Native recipient does not hold this exact checkpoint handoff.');
+    const packageFiles=nativeModelPackage(hub,source);
+    const expected=packageFiles.included.get(relative);
+    if(!expected)fail('Requested native model is not part of the original checkpoint manifest.');
+    return mirroredFile(packageFiles.root,sourceId,relative,expected);
 }
 
 function bundleUrl(endpoint,machineId,learnerId,collectorId,relative) {
@@ -274,4 +380,5 @@ async function syncNativeBundles(job,adapter,endpoint,machineId,token) {
     return {bundles:delivered};
 }
 
-module.exports={capturePaths,authorizedBundleFile,syncNativeBundles};
+module.exports={capturePaths,authorizedBundleFile,authorizedModelFile,
+    syncNativeBundles,nativeModelPackage};
