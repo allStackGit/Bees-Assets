@@ -4759,6 +4759,11 @@ class ExperimentHub {
                         world_start:receipt.partition.world_start,
                         world_count:receipt.partition.world_count,
                         seed_offset:receipt.seed_offset,
+                        ...(members[index].frozen_parameters.native_round_number
+                            ?{native_round_number:
+                                members[index].frozen_parameters.native_round_number}
+                            :{}),
+                        source_run_contract_sha256:receipt.source_contract_sha256,
                         ...(members[index].frozen_parameters.collection_id
                             ?{collection_id:members[index].frozen_parameters.collection_id}
                             :{}),
@@ -4971,6 +4976,11 @@ class ExperimentHub {
                 // retains its local CPU/GPU/RAM lease unchanged.
                 job.frozen_parameters.collection_id=nativeCollectionId;
                 job.frozen_parameters.rollout_world_start=index*1024;
+                // Select only the pre-pinned environment stage installed
+                // on each original collector machine. The same MA-POCA
+                // checkpoint and authorized GPU/CPU resources persist.
+                job.frozen_parameters.native_round_number=
+                    approvedRound.completed_rounds+1;
                 const originalSeed=approvedRound.collector_seed_offsets?.[index] ??
                     approvedRound.collector_seed_offset;
                 if(originalSeed!==undefined)
