@@ -153,6 +153,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_opponent_joined_learner_readbacks',
         'rollout_opponent_readback_slot_reused',
         'rollout_opponent_readback_slot_allocated',
         'rollout_opponent_readback_cached_indices',
@@ -399,6 +400,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_shape_groups,'count');
         add('collector_'+i+'_opponent_readbacks',
             worker.rollout_opponent_readbacks,'count');
+        add('collector_'+i+'_opp_learner_joined_readbacks',
+            worker.rollout_opponent_joined_learner_readbacks,'count');
         add('collector_'+i+'_opp_slot_reused',
             worker.rollout_opponent_readback_slot_reused,'count');
         add('collector_'+i+'_opp_slot_allocated',
@@ -639,7 +642,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'inference_forward_chunks','opponent_shape_groups',
                 'board_uploads_saved','board_packed_bytes',
                 'inference_max_group_px','bootstrap_seconds','returns_seconds',
-                'opponent_readbacks','opp_slot_reused',
+                'opponent_readbacks','opp_learner_joined_readbacks',
+                'opp_slot_reused',
                 'opp_slot_allocated','opp_cached_indices',
                 'opp_group_calls','opp_group_models',
                 'opp_group_states','opp_group_input_bytes',
