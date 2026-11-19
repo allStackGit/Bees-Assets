@@ -305,6 +305,22 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
             type(draws) is not int or not 0 <= draws <= expected or wins + draws > expected):
         raise ValueError("native evaluation side outcomes are invalid")
     scenes = per_scene_results(score, learner_side, expected)
+    authored_missions = any(
+        any(key in level for key in ("survival", "demolition", "escort", "extraction"))
+        for level in config["levels"]
+    )
+    observation_work = summary.get("policy_observations")
+    if observation_work is not None:
+        if (not isinstance(observation_work, dict) or
+                type(observation_work.get("rows_encoded")) is not int or
+                type(observation_work.get("native_mission_rows")) is not int or
+                observation_work["rows_encoded"] < 0 or
+                not 0 <= observation_work["native_mission_rows"] <=
+                    observation_work["rows_encoded"]):
+            raise ValueError("native evaluation supplied inconsistent policy feature measurements")
+    if authored_missions and (observation_work is None or
+                             observation_work["native_mission_rows"] == 0):
+        raise ValueError("native mission evaluation used a policy without objective observations")
     mission_totals = {}
     if all("mission_outcomes" in scene for scene in scenes.values()):
         for scene in scenes.values():
@@ -346,6 +362,8 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         "mean_episode_seconds": summary.get("mean_episode_seconds"),
         "world_steps": throughput["successful_world_steps"],
         "policy_rows": throughput["successful_policy_rows"],
+        **({"policy_observations": observation_work}
+           if observation_work is not None else {}),
         "wall_seconds": throughput["wall_seconds"],
         "world_steps_per_wall_second": throughput["world_steps_per_wall_second"],
         "requested_physics_workers": selected_workers,
