@@ -364,6 +364,35 @@ class LocalExecution {
                     String(error.message||error)).slice(0,220);
             }
         }
+        if(ownsArtifacts&&state==='finished'&&
+            job.frozen_parameters?.optimizer_group===true) {
+            try {
+                if(typeof localAdapter?.distributed_completion!=='function')
+                    throw Error('No native synchronized optimizer completion reader installed.');
+                report.optimizer_completion=await localAdapter.distributed_completion(
+                    Object.freeze({
+                        job_id:job.id,project_id:job.project_id,
+                        cpu_quota:job.resources.cpus,
+                        resource_bundle:job.resource_bundle?
+                            structuredClone(job.resource_bundle):null,
+                        continuation_of_job_id:job.continuation_of_job_id||null,
+                        artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                        frozen_parameters:job.frozen_parameters,
+                        ...(job.model_source_job_id?
+                            {model_source_job_id:job.model_source_job_id}:{}),
+                        ...(job.expected_parent_model_sha256?
+                            {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
+                        ...(lease.gpu_bindings?.length===1
+                            ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
+                            :lease.gpu_bindings?.length===2
+                                ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
+                                :{}),
+                    }));
+            }catch(error) {
+                report.diagnostic=('Native optimizer exited without verified synchronized completion: '+
+                    String(error.message||error)).slice(0,220);
+            }
+        }
         if(lease.status!=='released'&&ownsArtifacts&&typeof localAdapter?.readProgress==='function'&&
             ['running','stop_requested','finished','failed','stopped']
                 .includes(state)) {
