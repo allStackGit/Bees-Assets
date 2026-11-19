@@ -156,6 +156,23 @@ mobile ships exist. Those squads navigate toward the real exit while
 combat escorts retain their source attack commands. `--trainable` assigns policy controllers to
 source-backed active ships without inventing another combat engine.
 
+Mission authors can also reuse the native campaign dialogue, tactical
+orders and reinforcement event stream. Add
+`--campaign-dialogue titania-minesweeper` to a native source containing
+a real `fire_tank` MapObject, or use
+`--campaign-dialogue titania-beenoculars --objective survival --protect-type 23`
+with a source-authored player HumanTarget (ship type 23). Beenoculars
+supports `--under-heavy-fire`. For a matching native event, add
+`--reinforcement-on-cue upload_fifty:2:13:4` to reserve four real
+enemy Gunships until the 50% upload cue, or
+`--activate-on-cue fire_tank_destroyed:2:13` to start an already-deployed
+enemy squad's existing scripted orders when a Fire Tank is destroyed.
+`--activate-on-death 1:21:2:13` similarly starts side-2 Gunship orders
+after the first initially deployed side-1 Wasp dies. Activation options
+cannot replace a player command owner or override a deferred squad's
+on-deployment activation. All three event forms use the same native
+Level cue and command director, not a separate mission simulator.
+
 Timed multi-wave battles also use the native Level's existing
 reinforcement scheduler and source command director:
 
