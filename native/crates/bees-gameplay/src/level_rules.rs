@@ -256,6 +256,8 @@ pub struct NativeScriptedQueueMeasurements {
     pub in_and_out_nearest_commands_started: u64,
     /// Real source scouting commands, including Beacon-capable scouts.
     pub scouting_commands_started: u64,
+    /// Exact physical turret point-fire commands aimed at a real objective.
+    pub bombard_map_object_commands_started: u64,
     /// Resource-starved dynamic orders deferred for one source second.
     pub dynamic_order_retries: u64,
     /// Authenticated source command had no current actionable target.
@@ -290,6 +292,7 @@ impl NativeScriptedQueueMeasurements {
         self.swipe_nearest_commands_started += other.swipe_nearest_commands_started;
         self.in_and_out_nearest_commands_started += other.in_and_out_nearest_commands_started;
         self.scouting_commands_started += other.scouting_commands_started;
+        self.bombard_map_object_commands_started += other.bombard_map_object_commands_started;
         self.dynamic_order_retries += other.dynamic_order_retries;
         self.orders_skipped_unavailable += other.orders_skipped_unavailable;
         self.queues_completed += other.queues_completed;

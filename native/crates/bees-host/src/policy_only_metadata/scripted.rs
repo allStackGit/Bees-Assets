@@ -421,7 +421,8 @@ impl NativePolicyOnlyMetadata {
         if plan.squad_item_id <= 0 || plan.orders.is_empty() ||
             plan.orders.len() > 256 || plan.orders.iter().any(|order| !order.valid() ||
                 matches!(order, NativeScriptedOrder::Scouting { human_side, .. }
-                    if *human_side != self.player.human_side)) ||
+                    if *human_side != self.player.human_side) ||
+                matches!(order, NativeScriptedOrder::BombardMapObject { .. })) ||
             !matches!(plan.activation, NativeScriptedActivation::Immediate) {
             return Err("invalid live scripted command plan");
         }
@@ -868,9 +869,8 @@ impl NativePolicyOnlyMetadata {
                         // manual target as a human holding J. The scripted
                         // Hold command keeps the squad in place while
                         // firing; a real terminal outcome freezes combat.
-                        for &ship_id in &self.scripted_members.iter()
-                            .map(|member| member.ship_id).collect::<Vec<_>>() {
-                            world.set_game_manual_fire(ship_id, Some(point))
+                        for member in &self.scripted_members {
+                            world.set_game_manual_fire(member.ship_id, Some(point))
                                 .map_err(|error| NativeLevelEventError::Commands(
                                     GameCommandError::World(error),
                                 ))?;
@@ -889,6 +889,8 @@ impl NativePolicyOnlyMetadata {
                             self.scripted_counts.charge_nearest_commands_started += 1,
                         NativeScriptedOrder::Scouting { .. } =>
                             self.scripted_counts.scouting_commands_started += 1,
+                        NativeScriptedOrder::BombardMapObject { .. } =>
+                            self.scripted_counts.bombard_map_object_commands_started += 1,
                         NativeScriptedOrder::CircleNearest =>
                             self.scripted_counts.circle_nearest_commands_started += 1,
                         NativeScriptedOrder::RightSwipeNearest |

@@ -989,12 +989,6 @@ def author(args) -> tuple[dict, dict, dict]:
                 queue["orders"] = [{"kind": "move_to_point", "destination": center}]
                 queue["repeat"] = False
     elif args.objective == "demolition":
-        if owner not in controlled:
-            raise ValueError(
-                "demolition needs a locally controlled player faction in the "
-                "game scene; scripted weapons cannot automatically select "
-                "MapObjects, even when a separate trainable scene is authored"
-            )
         objects = [obj for obj in scene.get("map_objects", [])
                    if isinstance(obj, dict) and isinstance(obj.get("entity_id"), int)]
         if args.demolition_target is not None:
@@ -1019,6 +1013,70 @@ def author(args) -> tuple[dict, dict, dict]:
             "target_map_object_id": eligible[0]["entity_id"],
             "seconds": seconds,
         }
+        if owner not in controlled:
+            # Autoplay uses the original two ordinary commands, MoveToPoint
+            # then Hold, plus the SAME point-fire state as player turret aim.
+            # No scripting engine drives projectile motion or applies damage.
+            target_pos = eligible[0].get("position")
+            if (not isinstance(target_pos, list) or len(target_pos) != 2 or
+                    any(not isinstance(v, (int, float)) or not math.isfinite(v)
+                        for v in target_pos)):
+                raise ValueError("scripted demolition requires the source MapObject position")
+            attacking_ships = {
+                ship["entity_id"]: ship for ship in by_side[owner]
+            }
+            bombard_squads = 0
+            for squad in by_side_squads[owner]:
+                queue = scripted_by_id.get(squad["item_id"])
+                if (queue is None or squad["item_id"] in deferred_squad_ids or
+                        "activation" in queue):
+                    continue
+                members = [attacking_ships[ship_id] for ship_id in squad["members"]]
+                armed_mobile = [ship for ship in members
+                                if ship.get("base_speed", 0) > 0 and ship.get("turrets")]
+                if not armed_mobile:
+                    continue
+                ranges = [
+                    mount["range_collider"]["radius"]
+                    for ship in armed_mobile for mount in ship["turrets"]
+                    if isinstance(mount.get("range_collider"), dict) and
+                    mount["range_collider"].get("enabled", True) and
+                    isinstance(mount["range_collider"].get("radius"), (int, float)) and
+                    math.isfinite(mount["range_collider"]["radius"]) and
+                    mount["range_collider"]["radius"] > 0
+                ]
+                if not ranges:
+                    continue
+                # Approach from the unit's CURRENT side of the target,
+                # leaving the destructible collider clear. The regular
+                # native pathfinder performs real obstacle avoidance.
+                origin = [sum(ship["position"][axis] for ship in armed_mobile) /
+                          len(armed_mobile) for axis in range(2)]
+                direction = [origin[i] - target_pos[i] for i in range(2)]
+                length = math.hypot(*direction)
+                if length < 0.001:
+                    direction, length = [1.0 if owner == 1 else -1.0, 0.0], 1.0
+                # Preserve enough of the turret's real range to reach
+                # the target without requiring a collision with it.
+                standoff = min(35.0, max(16.0, min(ranges) * 0.55))
+                low, high = scene["bounds"]["min"], scene["bounds"]["max"]
+                position = [
+                    max(low[axis] + 6, min(high[axis] - 6,
+                        target_pos[axis] + direction[axis] / length * standoff))
+                    for axis in range(2)
+                ]
+                queue["orders"] = [
+                    {"kind": "move_to_point", "destination": position},
+                    {"kind": "bombard_map_object",
+                     "target_map_object_id": eligible[0]["entity_id"]},
+                ]
+                queue["repeat"] = False
+                bombard_squads += 1
+            if not bombard_squads:
+                raise ValueError(
+                    "automated demolition requires an initially deployed, "
+                    "mobile, turret-armed scripted squad"
+                )
     if dialogue is not None:
         if owner not in controlled:
             raise ValueError("campaign dialogue requires the real locally controlled objective faction")
