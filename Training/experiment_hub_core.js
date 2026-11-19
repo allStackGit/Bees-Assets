@@ -5545,11 +5545,14 @@ class ExperimentHub {
         const selectedIds=value.worker_machine_ids;
         const repeatedHost=Array.isArray(selectedIds)&&
             selectedIds.some((id,index)=>selectedIds.indexOf(id)!==index);
-        // Repeated hosts and single local slot-backed collectors cannot be
-        // identified by a legacy one-endpoint-per-machine lookup. Freeze
-        // ordered native PPO slot/endpoint pairs instead.
-        const fixedSlotSelection=repeatedHost||shared&&allowLocal&&
-            machine?.courier_lineage_slots?.length>0;
+        const slotBacked=shared&&Array.isArray(selectedIds)&&selectedIds.some(id=>
+            snapshot.machines.some(host=>host.id===id&&
+                host.courier_lineage_slots?.length>0));
+        // Even ONE slot-backed remote collector must bind the approved
+        // PPO ordinal to its exact service listener, not an adapter's
+        // unrelated legacy base endpoint. Duplicate hosts use this same
+        // immutable ordered mapping.
+        const fixedSlotSelection=repeatedHost||slotBacked;
         const eligibleLineages=(endpoint,budget,slot=null)=>{
             const maxShards=approved.plan?.find(item=>item.endpoint===endpoint)?.maxShards;
             return snapshot.machines.filter(host=>{
