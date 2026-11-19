@@ -24,6 +24,17 @@ module.exports={
         // User verified that the Exeter and Halifax files have this same SHA.
         seedCheckpointSha256:'fae407ef8db3fab7620b1407b17380e2eea0f616c8d4d8816d3924cac6e005d7',
         seedPpoUpdates:7199,
+        // Independent PPO update-70 baseline chosen from the frozen Nano/Micro
+        // comparison. Keep the original Exeter seed available alongside it.
+        checkpointImports:{
+            best70_halifax_rocm:{
+                profile:'halifax_rocm',
+                checkpoint:path.join(ai,
+                    'projects/training-efficiency/TinyBrains-latest/Ants-MAPOCA/runs/mini-learning/self-play/update-000070.pt'),
+                sha256:'f11e4d8e9c645379ce827afdec668e436e3ae0bf7778ad358f504b819d3e1780',
+                update:70,
+            },
+        },
         // Derive CPU threads once from the leased cores, without changing
         // the requested CPU allocation or retuning while the job runs.
         // Larger allocations must still be benchmarked for useful scaling.
