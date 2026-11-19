@@ -104,9 +104,22 @@ pub struct Mission {
     pub persist_fleet_losses: bool,
     #[serde(default)]
     pub requires: Vec<String>,
+    /// One-time physical FleetShip rewards for the first verified victory.
+    /// Type/TSV and SavedSquad must be supported by the same authored
+    /// native scenes as ordinary purchases. No currency is spent.
+    #[serde(default)]
+    pub victory_grants: Vec<VictoryShipGrant>,
     #[serde(default)]
     advance_on: AdvanceOn,
     on_victory: Option<VictoryRoute>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VictoryShipGrant {
+    pub ship_type: u8,
+    pub count: u32,
+    pub saved_squad_id: i64,
 }
 
 #[derive(Deserialize)]
@@ -254,6 +267,7 @@ struct SquadProgress {
 struct MissionProgress {
     completed: bool,
     latest_victory: bool,
+    grants_claimed: bool,
 }
 
 impl CampaignProgress<'_> {
@@ -263,6 +277,10 @@ impl CampaignProgress<'_> {
 
     fn latest_victory(&self, id: &str) -> bool {
         self.missions.get(id).is_some_and(|mission| mission.latest_victory)
+    }
+
+    pub fn grants_claimed(&self, id: &str) -> bool {
+        self.missions.get(id).is_some_and(|mission| mission.grants_claimed)
     }
 
     /// Current native menu presentation of the same durable career record
@@ -482,6 +500,23 @@ impl BattleCatalog {
                     mission.id,
                 )));
             }
+            if !mission.victory_grants.is_empty() && (
+                self.max_squad_ships.is_none() ||
+                !mission.record_fleet_stats || !mission.persist_fleet_losses ||
+                mission.victory_grants.iter().any(|grant|
+                    grant.count == 0 || grant.count > 1024 ||
+                    grant.saved_squad_id <= 0 ||
+                    !self.buildable_ships.iter().any(|shop|
+                        shop.player_side == mission.player_side &&
+                        shop.ship_type == grant.ship_type)) ||
+                mission.victory_grants.iter().map(|grant| grant.count as usize)
+                    .sum::<usize>() > 1024
+            ) {
+                return Err(invalid(format!(
+                    "Mission {:?} needs source-priced ship rewards, persistent fleet losses and a SavedSquad cap",
+                    mission.id,
+                )));
+            }
             if mission.on_victory.as_ref().is_some_and(|route|
                 !mission.requires.contains(&route.mission) || route.config.as_os_str().is_empty()
             ) {
@@ -683,6 +718,48 @@ impl BattleCatalog {
                 let state = progress.missions.entry(&mission.id).or_default();
                 state.latest_victory = outcome.winner_side == mission.player_side;
                 state.completed |= matches!(mission.advance_on, AdvanceOn::Finished) || state.latest_victory;
+                // A victory reward is part of this exact durable battle
+                // summary, not a mutable shop edit. Later victories cannot
+                // issue the same reward again.
+                if !outcome.awarded_ships.is_empty() {
+                    if !state.latest_victory || state.grants_claimed {
+                        return Err(invalid("campaign victory ships were granted on an ineligible or repeated result"));
+                    }
+                    let expected: Vec<_> = mission.victory_grants.iter()
+                        .flat_map(|grant| std::iter::repeat((
+                            grant.ship_type, grant.saved_squad_id,
+                        )).take(grant.count as usize))
+                        .collect();
+                    if expected.len() != outcome.awarded_ships.len() {
+                        return Err(invalid("campaign victory ship count differs from authored reward"));
+                    }
+                    let mut unique = HashSet::new();
+                    for (ship, (ship_type, saved_squad_id)) in
+                        outcome.awarded_ships.iter().zip(expected)
+                    {
+                        let shop = self.buildable_ships.iter().find(|item|
+                            item.player_side == mission.player_side &&
+                            item.ship_type == ship_type
+                        ).ok_or_else(|| invalid("campaign grant has no authored ship class"))?;
+                        if ship.fleet_ship_id <= 0 || !unique.insert(ship.fleet_ship_id) ||
+                            progress.fleet.contains_key(&ship.fleet_ship_id) ||
+                            shop.price_tsv != ship.price_tsv ||
+                            ship.ship_type != ship_type ||
+                            ship.saved_squad_id != saved_squad_id
+                        {
+                            return Err(invalid("invalid, duplicated or stale campaign FleetShip reward"));
+                        }
+                    }
+                    for ship in &outcome.awarded_ships {
+                        progress.fleet.insert(ship.fleet_ship_id, FleetProgress {
+                            side: mission.player_side, loss_history_complete: true,
+                            combat_history_complete: true, special_history_complete: true,
+                            ..FleetProgress::default()
+                        });
+                        progress.purchases.push((mission.player_side, *ship));
+                    }
+                    state.grants_claimed = true;
+                }
                 if mission.bank_player_minerals {
                     if let Some(minerals) = campaign_banked_minerals {
                         progress.banked_minerals = progress.banked_minerals
@@ -869,6 +946,8 @@ impl BattleCatalog {
             let purchase: CampaignPurchase = serde_json::from_slice(&bytes)
                 .map_err(|error| invalid(format!("invalid campaign purchase: {error}")))?;
             if purchase.campaign_id != *campaign ||
+                progress.purchases.iter().any(|(_, ship)|
+                    ship.fleet_ship_id == purchase.ship.fleet_ship_id) ||
                 purchase.ship.fleet_ship_id <= 0 ||
                 purchase.ship.saved_squad_id <= 0 ||
                 !purchased_ids.insert(purchase.ship.fleet_ship_id) ||
@@ -976,6 +1055,11 @@ impl BattleCatalog {
                 "unlocked": mission.requires.iter().all(|id| progress.completed(id)),
                 "completed": progress.completed(&mission.id),
                 "latest_victory": progress.latest_victory(&mission.id),
+                "victory_grants_claimed": progress.grants_claimed(&mission.id),
+                "victory_grants": mission.victory_grants.iter().map(|grant| json!({
+                    "ship_type": grant.ship_type, "count": grant.count,
+                    "saved_squad_id": grant.saved_squad_id,
+                })).collect::<Vec<_>>(),
                 "record_fleet_stats": mission.record_fleet_stats,
                 "bank_player_minerals": mission.bank_player_minerals,
                 "persist_fleet_losses": mission.persist_fleet_losses,
