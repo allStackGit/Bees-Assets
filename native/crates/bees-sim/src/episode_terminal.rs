@@ -179,6 +179,7 @@ pub struct SurvivalObjective {
 
 #[derive(Clone, Copy, Debug)]
 pub struct SurvivalStatus {
+    pub defending_side: i32,
     pub protected_ship_id: i64,
     pub seconds_remaining: f32,
     pub duration_seconds: f32,
@@ -354,6 +355,7 @@ impl NativeEpisodeTerminal {
 
     pub fn survival_status(&self) -> Option<SurvivalStatus> {
         self.survival.as_ref().map(|survival| SurvivalStatus {
+            defending_side: survival.objective.defending_side,
             protected_ship_id: survival.objective.protected_ship_id,
             duration_seconds: survival.objective.seconds,
             elapsed_seconds: self.elapsed_seconds,

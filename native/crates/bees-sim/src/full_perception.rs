@@ -13,7 +13,8 @@ use crate::policy_batch::{
 };
 use crate::perception::{
     CapabilitySource, PerceptionError, SelfSource, write_self,
-    write_capability, write_reserved_objectives, write_navigation,
+    write_capability, write_reserved_objectives, write_native_mission_objectives,
+    NativeMissionObservation, write_navigation,
     write_exploration, EXPLORATION_LEN, NAV_LEN,
 };
 use crate::perception_entities::{
@@ -52,6 +53,8 @@ pub struct PolicyPerceptionSnapshot<'a> {
     /// episode coordinator would report no active exploration snapshot.
     pub exploration_last_seen: Option<&'a [f32; EXPLORATION_LEN]>,
     pub self_entity_id: i64,
+    /// None keeps the Unity v26 reserved block exactly zero.
+    pub native_mission: Option<NativeMissionObservation>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -62,6 +65,8 @@ pub struct PerceptionWork {
     pub mining_encoded: u64,
     pub map_objects_encoded: u64,
     pub collision_asteroids_encoded: u64,
+    /// Real native mission-observation rows, distinct from ordinary v26.
+    pub native_mission_rows: u64,
 }
 
 /// Owns reusable candidate-sort scratch and only six cumulative counters.
@@ -132,6 +137,9 @@ impl NativePerceptionWriter {
         let asteroids = self.environment_slots.write_collision_asteroids(
             row, source.visible_collision_asteroids, origin, frame)?;
         write_reserved_objectives(row)?;
+        if let Some(mission) = source.native_mission {
+            write_native_mission_objectives(row, mission, origin, frame)?;
+        }
         write_navigation(row, source.navigation_world_grid, frame)?;
         write_exploration(row, source.exploration_last_seen,
             source.normalized_episode_progress, frame)?;
@@ -148,6 +156,7 @@ impl NativePerceptionWriter {
         self.measurements.mining_encoded += mining as u64;
         self.measurements.map_objects_encoded += objects as u64;
         self.measurements.collision_asteroids_encoded += asteroids as u64;
+        self.measurements.native_mission_rows += u64::from(source.native_mission.is_some());
         Ok(())
     }
 }
@@ -205,7 +214,7 @@ mod tests {
             visible_collision_asteroids: &[],
             navigation_world_grid: &navigation,
             exploration_last_seen: Some(&exploration),
-            self_entity_id: 5,
+            self_entity_id: 5, native_mission: None,
         };
         let world = World::new(WorldId(9), 123, ());
         let key = PolicyAgentKey::from_world(&world, 5);

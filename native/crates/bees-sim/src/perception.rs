@@ -312,11 +312,93 @@ const NAV_MAPS: [[usize; NAV_LEN]; 4] = grid_maps::<NAV_LEN>(NAV_SIZE);
 const EXPLORATION_MAPS: [[usize; EXPLORATION_LEN]; 4] =
     grid_maps::<EXPLORATION_LEN>(EXPLORATION_SIZE);
 
-/// Source-defined permanent objective reservation. This block is currently
-/// ALWAYS zero in Unity; unlike unported features, filling it is valid.
+/// Source-defined reservation: Unity v26 always writes zeros here.
 pub fn write_reserved_objectives(row: &mut [f32]) -> Result<(), PerceptionError> {
     check_row(row)?;
     row[OBJECTIVE_START..NAV_START].fill(0.0);
+    Ok(())
+}
+
+/// Native authored mission extension within v26's sixteen existing reserved
+/// scalars. The actor input width and ordinary Unity observations do not
+/// change. The source Level supplies the goal; no training-only world exists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeMissionKind {
+    Survival,
+    Demolition,
+    Escort,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeMissionObservation {
+    pub kind: NativeMissionKind,
+    pub objective_side: bool,
+    /// None until the *real* HiveMind discovery registry knows an enemy.
+    /// Allies are always known. No target position leaks through fog.
+    pub visible_target: Option<(Vec2, f32)>,
+    /// Explicitly authored goal, not an inferred enemy or hidden ship.
+    pub destination: Option<Vec2>,
+    pub seconds_remaining: f32,
+    pub duration_seconds: f32,
+}
+
+/// Indices: active; one-hot mission [1..4); objective/defender role;
+/// known target; target dx/dy/range/health; destination present/dx/dy/range;
+/// remaining and elapsed fractions. Distances follow the v26 policy frame
+/// and existing squash rules; absent target geometry remains zero.
+pub fn write_native_mission_objectives(
+    row: &mut [f32], mission: NativeMissionObservation,
+    observer: Vec2, frame: PolicyFrame,
+) -> Result<(), PerceptionError> {
+    check_row(row)?;
+    if !observer.is_finite() || !mission.seconds_remaining.is_finite() ||
+        !mission.duration_seconds.is_finite() ||
+        mission.duration_seconds <= 0.0 || mission.seconds_remaining < 0.0 ||
+        mission.seconds_remaining > mission.duration_seconds + 0.01 ||
+        mission.visible_target.is_some_and(|(position, health)|
+            !position.is_finite() || !health.is_finite() ||
+            !(0.0..=1.0).contains(&health)) ||
+        mission.destination.is_some_and(|position| !position.is_finite())
+    {
+        return Err(PerceptionError::InvalidSource);
+    }
+    let out = &mut row[OBJECTIVE_START..NAV_START];
+    out.fill(0.0);
+    out[0] = 1.0;
+    out[match mission.kind {
+        NativeMissionKind::Survival => 1,
+        NativeMissionKind::Demolition => 2,
+        NativeMissionKind::Escort => 3,
+    }] = 1.0;
+    out[4] = if mission.objective_side { 1.0 } else { -1.0 };
+    let relative = |target: Vec2| {
+        let world_delta = target - observer;
+        let policy_delta = frame.world_to_policy(world_delta);
+        [
+            squash_signed_distance(policy_delta.x),
+            squash_signed_distance(policy_delta.y),
+            normalize_positive(world_delta.length_squared().sqrt(), 80.0),
+        ]
+    };
+    if let Some((target, health)) = mission.visible_target {
+        let [x, y, distance] = relative(target);
+        out[5] = 1.0;
+        out[6] = x;
+        out[7] = y;
+        out[8] = distance;
+        out[9] = health;
+    }
+    if let Some(destination) = mission.destination {
+        let [x, y, distance] = relative(destination);
+        out[10] = 1.0;
+        out[11] = x;
+        out[12] = y;
+        out[13] = distance;
+    }
+    let remaining = (mission.seconds_remaining / mission.duration_seconds)
+        .clamp(0.0, 1.0);
+    out[14] = remaining;
+    out[15] = 1.0 - remaining;
     Ok(())
 }
 
