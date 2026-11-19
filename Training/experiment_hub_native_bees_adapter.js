@@ -1257,8 +1257,9 @@ function createNativeBeesAdapter({
                     (!/^[0-9a-f]{64}$/.test(String(collection_id)) ||
                         !Number.isSafeInteger(rollout_world_start) ||
                         rollout_world_start < 0 ||
-                        !Number.isSafeInteger(rollout_worlds) ||
-                        rollout_worlds < 1 || rollout_worlds > 1024)) ||
+                        (rollout_worlds !== undefined &&
+                            (!Number.isSafeInteger(rollout_worlds) ||
+                             rollout_worlds < 1 || rollout_worlds > 1024)))) ||
                 (collection_id === undefined &&
                     (rollout_world_start !== undefined || rollout_worlds !== undefined ||
                         bundle_directory !== undefined)) ||
@@ -1390,7 +1391,8 @@ function createNativeBeesAdapter({
                 ...(collection_id === undefined ? [] : [
                     '--collection-id', collection_id,
                     '--rollout-world-start', String(rollout_world_start),
-                    '--rollout-worlds', String(rollout_worlds),
+                    ...(rollout_worlds === undefined ? [] :
+                        ['--rollout-worlds', String(rollout_worlds)]),
                 ]),
                 ...(bundle_directory === undefined ? [] : [
                     '--bundle-delivery-name', bundle_directory,

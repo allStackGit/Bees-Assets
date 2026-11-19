@@ -269,6 +269,9 @@ function verifiedNativeCollectorPin(hub,collectorId) {
         receipt.partition.world_start<0||
         !Number.isSafeInteger(receipt.partition.world_count)||
         receipt.partition.world_count<1||
+        receipt.partition.world_count>1024||
+        receipt.partition.world_start+receipt.partition.world_count>
+            Number.MAX_SAFE_INTEGER||
         !Number.isSafeInteger(receipt.seed_offset)||
         receipt.seed_offset<0)
         fail('Native collector model or physical partition identity is incomplete.');

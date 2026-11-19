@@ -4772,6 +4772,17 @@ class ExperimentHub {
             :null;
         if(roundPlan&&!approvedRound)
             throw Error('Approved native round changed before issuing a resource bundle.');
+        // A native collector can expand at most 1,024 authentic source
+        // Worlds. Reserve a separate global index domain for each machine,
+        // without imposing an invented world count on its installed Level
+        // recipe. The Hub freezes the start and collection identity; the
+        // native collector reports the exact number of physical Worlds.
+        const nativeCollectionId=approvedRound&&roundPlan.phase==='collectors'
+            ?crypto.createHash('sha256').update(JSON.stringify([
+                approvedRound.id,approvedRound.completed_rounds+1,
+                approvedRound.source_job_id,approvedRound.source_model_sha256,
+            ])).digest('hex')
+            :null;
         const bundleId=crypto.randomUUID(),jobs=[],leases=[];
         for(const [index,selection] of value.members.entries()) {
             if(!object(selection)||
@@ -4801,14 +4812,17 @@ class ExperimentHub {
                         ?{continuation_of_job_id:modelSourceId}:{}),
                 }:{}),
             });
-            if(approvedRound?.collector_seed_offset!==undefined&&
-                roundPlan.phase==='collectors') {
-                // Freeze the exact physical seed for this immutable
-                // collector job, not the saved reusable configuration.
-                // Retries reissue no jobs: queue and bundle IDs are durably
-                // committed together in the original Hub registry.
-                job.frozen_parameters.seed_offset=
-                    approvedRound.collector_seed_offset+approvedRound.completed_rounds;
+            if(nativeCollectionId!==null) {
+                // The native run configuration, not the Hub, knows how
+                // many authored Levels must be preserved and how much
+                // per-machine rollout concurrency was approved. Each
+                // machine gets a distinct 1,024-world address range and
+                // retains its local CPU/GPU/RAM lease unchanged.
+                job.frozen_parameters.collection_id=nativeCollectionId;
+                job.frozen_parameters.rollout_world_start=index*1024;
+                if(approvedRound.collector_seed_offset!==undefined)
+                    job.frozen_parameters.seed_offset=
+                        approvedRound.collector_seed_offset+approvedRound.completed_rounds;
                 job.configuration_sha256=crypto.createHash('sha256')
                     .update(JSON.stringify(job.frozen_parameters)).digest('hex');
             }
