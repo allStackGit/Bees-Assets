@@ -384,6 +384,38 @@ function rolloutGpuMeasurements(rollout) {
     return metrics;
 }
 
+// Aggregate training receipts can span independent CPU-only and GPU hosts.
+// Surface how many collectors actually supplied each instrumented signal;
+// missing data is not evidence of zero accelerator or CPU utilization.
+function distributedRolloutCoverage(rollout) {
+    const total=rollout?.collector_count;
+    if (total === undefined) return {};
+    if (!Number.isSafeInteger(total) || total < 1 ||
+        !Array.isArray(rollout.collectors) ||
+        rollout.collectors.length !== total)
+        throw Error('Native distributed collector count disagrees with verified receipts.');
+    const coverage = {rollout_collector_count:{value:total,unit:'count'}};
+    for (const field of [
+        'collectors_with_physics_worker_measurements',
+        'collectors_with_sampled_model_timing',
+        'collectors_with_gpu_inference',
+    ]) {
+        const count=rollout[field];
+        if (count === undefined) continue; // older completed rounds
+        if (!Number.isSafeInteger(count) || count < 0 || count > total)
+            throw Error('Invalid native distributed instrumentation coverage.');
+        coverage['rollout_' + field] = {value:count,unit:'count'};
+    }
+    const gpuCount=rollout.gpu_inference?.collector_count;
+    if (gpuCount !== undefined &&
+        (!Number.isSafeInteger(gpuCount) || gpuCount < 1 ||
+         gpuCount > total ||
+         (rollout.collectors_with_gpu_inference !== undefined &&
+          gpuCount !== rollout.collectors_with_gpu_inference)))
+        throw Error('Native fleet GPU evidence does not match its collector coverage.');
+    return coverage;
+}
+
 function rolloutPhysicsMeasurements(rollout) {
     const result = {};
     for (const field of [
@@ -1510,6 +1542,7 @@ function createNativeBeesAdapter({
                         },
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
                         ...rolloutPhysicsMeasurements(rollout),
+                        ...distributedRolloutCoverage(rollout),
                         ...rolloutGpuMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),
                         ...rolloutReinforcementWakeupMeasurements(rollout),
@@ -1564,6 +1597,7 @@ function createNativeBeesAdapter({
                 metrics: {
                     ...(rollout ? {
                         ...rolloutPhysicsMeasurements(rollout),
+                        ...distributedRolloutCoverage(rollout),
                         ...rolloutGpuMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),
                         ...rolloutReinforcementWakeupMeasurements(rollout),
