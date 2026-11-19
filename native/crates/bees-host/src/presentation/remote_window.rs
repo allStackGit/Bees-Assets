@@ -835,7 +835,7 @@ fn draw_remote_minimap(
 
 fn first_selected<'a>(state: Option<&'a Value>, selected: &[i64]) -> Option<&'a Value> {
     state?.get("squads")?.as_array()?.iter().find(|squad|
-        squad["owned"] == true && squad["owner"]["squad_id"]
+        squad["controllable"] == true && squad["owner"]["squad_id"]
             .as_i64().is_some_and(|id| selected.contains(&id)))
 }
 
@@ -869,7 +869,7 @@ fn hit<'a>(state: &'a Value, camera: NativeCamera, x:i32,y:i32,
 
 fn source_numbered_squads(state: &Value) -> Vec<(u64, i64)> {
     let mut numbered: Vec<_> = state["squads"].as_array().into_iter().flatten()
-        .filter(|squad| squad["owned"]==true)
+        .filter(|squad| squad["controllable"]==true)
         .filter_map(|squad| Some((
             squad["source_number"].as_u64()?,
             squad["owner"]["squad_id"].as_i64()?,
@@ -901,7 +901,7 @@ fn next_numbered_squad(state: &Value, selected: &[i64]) -> Option<i64> {
 
 fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
     let squad=state["squads"].as_array()?.iter().find(|s|
-        s["owned"]==true && s["owner"]["squad_id"].as_i64()==Some(squad_id))?;
+        s["controllable"]==true && s["owner"]["squad_id"].as_i64()==Some(squad_id))?;
     let ship_id=squad["members"].as_array()?.iter().find_map(Value::as_i64)?;
     state["ships"].as_array()?.iter().find(|ship|
         ship["id"].as_i64()==Some(ship_id)).and_then(position)
@@ -998,7 +998,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         // Build selected ship membership once per rendered snapshot.
         // Avoid an O(ships * squads * members) roster scan on large battles.
         let highlighted: HashSet<i64> = state["squads"].as_array().into_iter().flatten()
-            .filter(|s|s["owned"]==true &&
+            .filter(|s|s["controllable"]==true &&
                 s["owner"]["squad_id"].as_i64().is_some_and(|id|selected.contains(&id)))
             .flat_map(|s|s["members"].as_array().into_iter().flatten())
             .filter_map(Value::as_i64).collect();
@@ -1109,8 +1109,9 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         for (index,squad) in state["squads"].as_array().into_iter().flatten()
             .filter(|s|s["owned"]==true).take(12).enumerate() {
             let id=squad["owner"]["squad_id"].as_i64().unwrap_or(-1);
-            let label=format!("{} ID {}: {} ships",if selected.contains(&id) {">"} else {" "},
-                id,squad["members"].as_array().map_or(0,Vec::len));
+            let label=format!("{} ID {}: {} ships{}",if selected.contains(&id) {">"} else {" "},
+                id,squad["members"].as_array().map_or(0,Vec::len),
+                if squad["controllable"]==true {""} else {" (orders off)"});
             text::draw_at(pixels, WIDTH, FIELD+14, 150+index*22,
                 text::fit(&label,WIDTH-FIELD-24),1,
                 if selected.contains(&id){TEXT}else{MUTED});
@@ -1512,7 +1513,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 }
             }
             selected.retain(|id|state["squads"].as_array().into_iter().flatten()
-                .any(|s|s["owned"]==true &&
+                .any(|s|s["controllable"]==true &&
                     s["owner"]["squad_id"].as_i64()==Some(*id)));
             let key=(episode.0,episode.1,state["tick"].as_u64().unwrap_or(0));
             if last_audio_snapshot != Some(key) {
@@ -1561,7 +1562,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     Key::A => {
                         if let Some(state)=peer.state.as_ref() {
                             selected=state["squads"].as_array().into_iter().flatten()
-                                .filter(|s|s["owned"]==true)
+                                .filter(|s|s["controllable"]==true)
                                 .filter_map(|s|s["owner"]["squad_id"].as_i64()).collect();
                         }
                         None
@@ -1757,7 +1758,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                                         py>=sy.min(y)&&py<=sy.max(y) {
                                         if let Some(squad)=squad_for_ship(state,
                                             ship["id"].as_i64().unwrap_or(-1),
-                                            ship["side"].as_i64().unwrap_or(0)){
+                                            ship["side"].as_i64().unwrap_or(0))
+                                            .filter(|squad| squad["controllable"]==true) {
                                             if let Some(id)=squad["owner"]["squad_id"].as_i64(){
                                                 if !additions.contains(&id){additions.push(id);}
                                             }
@@ -1770,7 +1772,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                                 if ship["owned"]==true {
                                     if let Some(squad)=squad_for_ship(state,
                                         ship["id"].as_i64().unwrap_or(-1),
-                                        ship["side"].as_i64().unwrap_or(0)) {
+                                        ship["side"].as_i64().unwrap_or(0))
+                                        .filter(|squad| squad["controllable"]==true) {
                                         if let Some(id)=squad["owner"]["squad_id"].as_i64() {
                                             additions.push(id);
                                         }
