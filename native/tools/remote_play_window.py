@@ -11,6 +11,7 @@ import math
 import os
 import socket
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -29,6 +30,7 @@ MODES = {
     "In and out": "in-and-out", "Guard": "guard",
     "Mine": "mine", "Heal": "heal", "Retreat": "retreat",
     "Point fire": "fire", "Patrol": "patrol",
+    "Held fire": "held-fire",
 }
 
 
@@ -89,6 +91,8 @@ class RemoteBattleWindow:
 
         self.mode = None
         self.patrol_start = None
+        self.held_drag = False
+        self.last_held_aim_at = 0.0
         self.state = None
         self.drawn_scope = None
         self.map_bounds = None
@@ -107,10 +111,10 @@ class RemoteBattleWindow:
 
         for title in ("Move", "Attack", "Circle", "Right swipe", "Left swipe",
                       "In and out", "Guard", "Mine", "Heal", "Retreat", "Point fire",
-                      "Patrol"):
+                      "Patrol", "Held fire"):
             group = self.toolbar_main if title in (
                 "Move", "Attack", "Guard", "Mine", "Heal", "Retreat", "Point fire",
-                "Patrol",
+                "Patrol", "Held fire",
             ) else self.toolbar_tactics
             ttk.Button(group, text=title,
                        command=lambda t=title: self.set_mode(MODES[t])
@@ -159,10 +163,15 @@ class RemoteBattleWindow:
         self.status.set(message)
 
     def set_mode(self, mode):
+        if self.held_drag:
+            self.finish_held_fire()
         self.mode = mode
         self.patrol_start = None
-        self.notice(f"Select a {'map point' if mode in ('move', 'fire', 'patrol') else 'visible target'}"
-                    f" for {mode}" if mode else "Order mode cancelled")
+        if mode == "held-fire":
+            self.notice("Drag on the map to hold fire; release the mouse to stop")
+        else:
+            self.notice(f"Select a {'map point' if mode in ('move', 'fire', 'patrol') else 'visible target'}"
+                        f" for {mode}" if mode else "Order mode cancelled")
 
     def apply_shooting(self):
         self.send("shooting", {"strategy_id": int(self.strategy.get())})
@@ -245,6 +254,8 @@ class RemoteBattleWindow:
                 ):
                     self.selected = []
                     self.patrol_start = None
+                    self.held_drag = False
+                    self.mode = None
                 self.state = state
                 self.drawn_scope = key
                 dialogue = state.get("campaign_dialogue")
@@ -267,6 +278,7 @@ class RemoteBattleWindow:
         else:
             receipt = self.console.campaign_receipt_snapshot()
             outcome = self.state.get("terminal_outcome") if self.state else None
+            self.held_drag = False
             if receipt is not None:
                 self.notice(self.console.campaign_receipt_summary(receipt))
             elif outcome is not None:
@@ -436,11 +448,46 @@ class RemoteBattleWindow:
             return
         self.mode = None
 
+    def finish_held_fire(self):
+        if not self.held_drag:
+            return
+        self.held_drag = False
+        try:
+            self.console.held_fire("end")
+            self.notice("Held fire released")
+        except (OSError, ValueError) as error:
+            self.notice(f"Held-fire release: {error}")
+
     def left_down(self, event):
         self.drag_origin = (event.x, event.y)
         self.drag_box = None
+        if self.mode == "held-fire":
+            if self.visible_dialogue() is not None:
+                self.notice("Finish campaign dialogue before firing")
+                return
+            try:
+                x, y = self.to_world(event.x, event.y)
+                self.console.held_fire("begin", {"x": x, "y": y})
+                self.held_drag = True
+                self.last_held_aim_at = time.monotonic()
+                self.notice("Holding fire — drag to aim; release to stop")
+            except (OSError, ValueError) as error:
+                self.notice(f"Held fire unavailable: {error}")
 
     def left_drag(self, event):
+        if self.held_drag:
+            moment = time.monotonic()
+            # Keep Aim events below the host's bounded per-peer poll budget.
+            if moment - self.last_held_aim_at >= 0.05:
+                try:
+                    x, y = self.to_world(event.x, event.y)
+                    self.console.held_fire("aim", {"x": x, "y": y})
+                    self.last_held_aim_at = moment
+                except (OSError, ValueError) as error:
+                    self.notice(f"Held-fire aim: {error}")
+                    self.held_drag = False
+                    self.mode = None
+            return
         if self.drag_origin is None or self.mode is not None:
             return
         if max(abs(event.x - self.drag_origin[0]),
@@ -453,6 +500,13 @@ class RemoteBattleWindow:
         if self.drag_origin is None:
             return
         self.drag_origin = None
+        if self.held_drag:
+            self.finish_held_fire()
+            self.mode = None
+            self.draw()
+            return
+        if self.mode == "held-fire":
+            return
         if self.mode:
             self.issue_at(event.x, event.y, self.mode)
             self.draw()
@@ -628,6 +682,8 @@ class RemoteBattleWindow:
                                     anchor="nw", fill=NEUTRAL)
 
     def close(self):
+        if self.held_drag:
+            self.finish_held_fire()
         self.console.alive = False
         try:
             self.connection.shutdown(socket.SHUT_RDWR)
