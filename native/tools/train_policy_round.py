@@ -843,6 +843,9 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
         "--learner-nodes", str(args.learner_nodes),
         "--learner-node-rank", str(args.learner_node_rank),
         "--learner-backend", args.learner_backend,
+        *([] if args.learner_group_id is None else [
+            "--learner-group-id", args.learner_group_id,
+        ]),
         *([] if args.torch_threads is None else [
             "--torch-threads", str(max(1, args.torch_threads // args.learner_gpus))
         ]),
@@ -877,6 +880,7 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                 worker.get("kind") != "native_distributed_optimizer_node_complete" or
                 worker.get("node_rank") != args.learner_node_rank or
                 worker.get("node_count") != args.learner_nodes or
+                worker.get("optimizer_group_id") != args.learner_group_id or
                 worker.get("local_gpu_workers") != args.learner_gpus or
                 worker.get("global_gpu_workers") != args.learner_nodes * args.learner_gpus or
                 worker.get("input_checkpoint_sha256") != result["input_checkpoint_sha256"] or
@@ -945,6 +949,7 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                 len(metrics["optimizer_gpu_per_device"]) != args.learner_gpus * args.learner_nodes
             )) or
             (args.learner_nodes > 1 and (
+                metrics.get("optimizer_group_id") != args.learner_group_id or
                 not isinstance(metrics.get("optimizer_global_input_sha256"), str) or
                 re.fullmatch(r"[a-f0-9]{64}",
                     metrics["optimizer_global_input_sha256"]) is None or
@@ -990,6 +995,8 @@ def main() -> None:
                         help="trusted torchrun rendezvous port for multiple machines")
     parser.add_argument("--learner-backend", choices=("auto", "nccl", "gloo"),
                         default="auto", help="shared GPU gradient collective backend")
+    parser.add_argument("--learner-group-id",
+                        help="immutable Hub resource-bundle identity for the optimizer group")
     parser.add_argument("--torch-threads", type=int,
                         help="fixed optimizer intra-op threads, not rollout parallelism")
     parser.add_argument("--rollout-workers", type=int,
@@ -1051,6 +1058,10 @@ def main() -> None:
             args.collect_only or args.device not in ("cuda", "cuda:0")):
         parser.error("distributed MA-POCA requires optimizer execution on CUDA/ROCm")
     if args.learner_nodes > 1:
+        if (not isinstance(args.learner_group_id, str) or
+                re.fullmatch(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}",
+                             args.learner_group_id) is None):
+            parser.error("multi-machine optimizer requires the immutable Hub bundle identity")
         if (not args.learner_master_addr or
                 re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}",
                              args.learner_master_addr) is None or
@@ -1058,7 +1069,8 @@ def main() -> None:
                 not 1 <= args.learner_master_port <= 65535 or
                 args.learner_backend == "auto"):
             parser.error("multi-machine optimizer requires a trusted rendezvous and an explicit common backend")
-    elif args.learner_master_addr is not None or args.learner_master_port is not None:
+    elif (args.learner_master_addr is not None or args.learner_master_port is not None
+          or args.learner_group_id is not None):
         parser.error("single-machine optimizer uses torchrun standalone rendezvous")
     if args.torch_threads is not None and args.torch_threads < args.learner_gpus:
         parser.error("optimizer CPU threads must accommodate every GPU learner")
@@ -1118,6 +1130,8 @@ def main() -> None:
     output = args.output_dir.resolve()
     result = {
         "seed_offset": args.seed_offset,
+        **({"optimizer_group_id": args.learner_group_id}
+           if args.learner_group_id is not None else {}),
         "source_run_config_sha256": hashlib.sha256(run_bytes).hexdigest(),
         "input_checkpoint_sha256": input_checkpoint_sha,
         "input_manifest_sha256": input_manifest_sha,
