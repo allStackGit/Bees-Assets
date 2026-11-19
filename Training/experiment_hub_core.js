@@ -347,6 +347,20 @@ function config(value) {
     if (serialized.length > 65536) throw Error('Configuration exceeds 64 KiB.');
     return JSON.parse(serialized);
 }
+// The installer pins physical Level sources. Pick the same immutable stage
+// boundary as native_curriculum.selected_curriculum_run; unknown capability
+// is not evidence that a collector can execute the selected environment.
+function nativeBeesStageSource(machine,round) {
+    const sources=machine?.native_bees_curriculum_sources;
+    if(!Array.isArray(sources)||!sources.length||
+        !Number.isSafeInteger(round)||round<1||round>8)return null;
+    let selected=null;
+    for(const stage of sources) {
+        if(stage.start_round>round)break;
+        selected=stage.source_run_contract_sha256;
+    }
+    return selected;
+}
 function dualGpuApproved(job,machine) {
     if(!job||!machine||machine.agent_platform!=='linux'||
         job.resources?.gpu_count!==2||
@@ -4448,6 +4462,22 @@ class ExperimentHub {
         };
         const collectors=validateMembers(value.collector_members,'collector');
         const optimizers=validateMembers(value.optimizer_members,'optimizer');
+        // Every approved physical round has exactly one simulation
+        // contract across its heterogeneous collector machines. This is
+        // already required by the optimizer bundle verifier; reject an
+        // incompatible curriculum before assigning any expensive GPU work.
+        const selectedMachines=this.snapshot().machines;
+        const collectorSources=Array.from({length:value.round_count},(_,index)=>{
+            const hashes=collectors.map(member=>nativeBeesStageSource(
+                selectedMachines.find(machine=>machine.id===member.machine_id),
+                index+1,
+            ));
+            if(hashes.some(hash=>!SHA256.test(String(hash||''))))
+                throw Error('All native collectors must advertise a pinned source for curriculum round '+(index+1)+'.');
+            if(new Set(hashes).size!==1)
+                throw Error('Native collectors have different installed physical Level sources for curriculum round '+(index+1)+'.');
+            return hashes[0];
+        });
         const configurations=new Map(this.state.configurations.map(item=>[item.id,item]));
         // Each approved round consumes fresh reproducible physical seeds.
         // Different collectors may start with different approved offsets:
@@ -4487,7 +4517,8 @@ class ExperimentHub {
             collector_members:collectors,optimizer_members:optimizers,
             agent_instances:instances,
             round_count:value.round_count,completed_rounds:0,
-            collector_seed_offsets:seeds,round_history:[],
+            collector_seed_offsets:seeds,
+            collector_source_contracts:collectorSources,round_history:[],
             approved_at:timestamp,updated_at:timestamp,
             reason:'Approved for exact-source physical collection followed by one synchronized optimizer per round.',
         };
@@ -4557,6 +4588,15 @@ class ExperimentHub {
             new Set([...plan.collector_members,...plan.optimizer_members].map(
                 item=>item.machine_id)).size)
             throw Error('Approved native round machine roster changed.');
+        if(phase.endsWith('collectors')&&plan.collector_source_contracts) {
+            const expected=plan.collector_source_contracts[plan.completed_rounds];
+            if(!SHA256.test(String(expected||''))||
+                plan.collector_members.some(member=>nativeBeesStageSource(
+                    snapshot.machines.find(machine=>machine.id===member.machine_id),
+                    plan.completed_rounds+1,
+                )!==expected))
+                throw Error('Original native curriculum source changed during coordinator recovery.');
+        }
         if(phase.startsWith('awaiting_')) {
             const stage=phase.slice('awaiting_'.length);
             const ids=plan[stage+'_job_ids'],bundleId=plan[stage+'_bundle_id'];
@@ -4711,6 +4751,15 @@ class ExperimentHub {
                     continue;
                 }
                 const phase=plan.status.endsWith('collectors')?'collectors':'optimizer';
+                if(phase==='collectors'&&plan.collector_source_contracts) {
+                    const expected=plan.collector_source_contracts[plan.completed_rounds];
+                    if(!SHA256.test(String(expected||''))||
+                        plan.collector_members.some(member=>nativeBeesStageSource(
+                            snapshot.machines.find(machine=>machine.id===member.machine_id),
+                            plan.completed_rounds+1,
+                        )!==expected))
+                        throw Error('Native curriculum stage differs from the originally approved physical source.');
+                }
                 if(plan.status.startsWith('pending_')) {
                     const result=this.queueResourceBundle({
                         confirm_queue:true,
@@ -4828,6 +4877,10 @@ class ExperimentHub {
                         source_job_id:plan.source_job_id,
                         source_checkpoint_sha256:plan.source_model_sha256,
                         collector_job_ids:plan.collectors_job_ids.slice(),
+                        ...(plan.collector_source_contracts?{
+                            collector_source_contract_sha256:
+                                plan.collector_source_contracts[plan.completed_rounds],
+                        }:{}),
                         ...(plan.collector_world_partitions?{
                             collector_world_partitions:plan.collector_world_partitions,
                         }:{}),
