@@ -10,7 +10,7 @@ const {safeLogPath,safeNativeCollectorPath,safeNativeModelPath,MAX_CHUNK,MAX_FIL
     require('./experiment_hub_artifact_sync');
 const TERMINAL=new Set(['finished','failed','stopped']);
 const MAX_CYCLE=32*1024*1024;
-function filesForJob(folder,projectId,nativeModelsOnly=false) {
+function filesForJob(folder,projectId,nativeTrainingOnly=false) {
     const root=path.resolve(folder);
     const stat=fs.lstatSync(root);
     if(!stat.isDirectory()||stat.isSymbolicLink()||fs.realpathSync(root)!==root)
@@ -26,9 +26,13 @@ function filesForJob(folder,projectId,nativeModelsOnly=false) {
         for(const item of found) {
             const relative=next.prefix+item.name;
             if(item.isSymbolicLink())continue;
-            const allowed=name=>nativeModelsOnly
+            const allowed=name=>nativeTrainingOnly
                 ?projectId==='bees_native'&&
-                    (safeNativeModelPath(name)||name==='round-result.json')
+                    (safeNativeModelPath(name)||name==='round-result.json')||
+                    projectId==='bees_native_collect'&&
+                    (name==='rollout-bundle.json'||
+                     /(?:^|\/)(?:decisions\.bin|events\.jsonl)$/.test(name)&&
+                        safeNativeCollectorPath(name))
                 :projectId==='bees_native_collect'
                     ?safeNativeCollectorPath(name)
                     :safeLogPath(name)||
@@ -36,7 +40,9 @@ function filesForJob(folder,projectId,nativeModelsOnly=false) {
             if(item.isDirectory()&&next.depth<7) {
                 const modelFolder=projectId==='bees_native'&&
                     ['learner','learner/opponents'].includes(relative);
-                if((allowed(relative+'/ignored.log')||modelFolder)&&
+                const rolloutFolder=projectId==='bees_native_collect'&&
+                    safeNativeCollectorPath(relative+'/decisions.bin');
+                if((allowed(relative+'/ignored.log')||modelFolder||rolloutFolder)&&
                     fs.realpathSync(path.join(next.folder,item.name))===
                         path.join(next.folder,item.name))
                     queue.push({folder:path.join(next.folder,item.name),
@@ -125,7 +131,7 @@ function remoteCall(endpoint,machineId,token,jobId,file,snapshot,offset,bytes) {
     });
 }
 async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
-    nativeModelsOnly=false) {
+    nativeTrainingOnly=false) {
     if(!executor?.supervisor?.snapshot)return {bytes:0,files:0};
     let sent=0,completed=0;
     // Native ownership is local and durable. The coordinator cannot give
@@ -133,7 +139,8 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
     for(const record of executor.supervisor.snapshot()) {
         if(!TERMINAL.has(record.state))continue;
         const project=record.project_id,adapter=executor.supervisor.adapters?.[project];
-        if(nativeModelsOnly&&project!=='bees_native')continue;
+        if(nativeTrainingOnly&&
+            !['bees_native','bees_native_collect'].includes(project))continue;
         // Collectors carry binary training experience rather than only
         // diagnostics. Raise their bounded per-cycle delivery allowance
         // without changing general telemetry's smaller background budget.
@@ -144,7 +151,7 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
         const root=adapter.artifact_export_dir(record.job_id);
         if(typeof root!=='string'||!path.isAbsolute(root))continue;
         if(!fs.existsSync(root))continue;
-        for(const relative of filesForJob(root,project,nativeModelsOnly)) {
+        for(const relative of filesForJob(root,project,nativeTrainingOnly)) {
             const file=path.join(root,...relative.split('/'));
             let st;
             try{st=fs.lstatSync(file);}catch{continue;}
