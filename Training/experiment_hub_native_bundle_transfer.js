@@ -222,6 +222,70 @@ function nativeModelPackage(hub,source) {
     return {root,jobId,included};
 }
 
+// Queue-time source of truth for physical experience. Only terminal,
+// machine-owned collector receipts that have been completely mirrored can
+// become immutable optimizer inputs. Reuse the download authorization's
+// capture schema and source work-order checks, never job-supplied file paths.
+function verifiedNativeCollectorPin(hub,collectorId) {
+    if(!UUID.test(String(collectorId||'')))fail('Invalid native collector job ID.',400);
+    const collector=hub.state.jobs.find(job=>job.id===collectorId);
+    if(collector?.project_id!=='bees_native_collect'||
+        collector.status!=='finished'||!collector.assigned_machine_id||
+        !collector.lease_id||!collector.dispatch_id||
+        !collector.execution_updated_at||!collector.capacity_released_at)
+        fail('Optimizer inputs require finished, released and authenticated native collectors.');
+    const root=path.dirname(hub.file);
+    const mirrored=mirroredByMetadata(root,collectorId,'rollout-bundle.json');
+    if(mirrored.size>1024*1024)fail('Native collector receipt exceeds 1 MiB.');
+    let receipt;
+    try{receipt=JSON.parse(fs.readFileSync(mirrored.file,'utf8'));}
+    catch{fail('Native collector receipt is not valid JSON.');}
+    const captures=capturePaths(receipt);
+    if(!SHA.test(String(receipt.input_checkpoint_sha256||''))||
+        !SHA.test(String(receipt.input_manifest_sha256||''))||
+        !SHA.test(String(receipt.source_run_contract_sha256||''))||
+        !SHA.test(String(receipt.policy_worker_sha256||''))||
+        (receipt.learner_slot!==null&&
+            (!Number.isSafeInteger(receipt.learner_slot)||
+             receipt.learner_slot<0||receipt.learner_slot>0xffffffff))||
+        !receipt.partition||
+        typeof receipt.partition.source_run_id!=='string'||
+        !receipt.partition.source_run_id||
+        !Number.isSafeInteger(receipt.partition.world_start)||
+        receipt.partition.world_start<0||
+        !Number.isSafeInteger(receipt.partition.world_count)||
+        receipt.partition.world_count<1||
+        !Number.isSafeInteger(receipt.seed_offset)||
+        receipt.seed_offset<0)
+        fail('Native collector model or physical partition identity is incomplete.');
+    if(collector.frozen_parameters?.collection_id!==undefined&&
+        receipt.collection_id!==collector.frozen_parameters.collection_id||
+        collector.frozen_parameters?.source_run_contract_sha256!==undefined&&
+        receipt.source_run_contract_sha256!==
+            collector.frozen_parameters.source_run_contract_sha256||
+        collector.frozen_parameters?.rollout_world_start!==undefined&&
+        receipt.partition.world_start!==collector.frozen_parameters.rollout_world_start||
+        collector.frozen_parameters?.rollout_worlds!==undefined&&
+        receipt.partition.world_count!==collector.frozen_parameters.rollout_worlds||
+        collector.frozen_parameters?.seed_offset!==receipt.seed_offset)
+        fail('Collector receipt differs from its original frozen physical work order.');
+    // Completed mirror metadata is durable SHA proof. Require every declared
+    // capture and journal to be present, rather than queuing a GPU group that
+    // cannot download its experience later.
+    for(const [relative,digest] of captures)
+        mirroredFile(root,collectorId,relative,digest);
+    return {
+        pin:{job_id:collectorId,sha256:mirrored.sha},
+        model_sha256:receipt.input_checkpoint_sha256,
+        manifest_sha256:receipt.input_manifest_sha256,
+        source_contract_sha256:receipt.source_run_contract_sha256,
+        policy_worker_sha256:receipt.policy_worker_sha256,
+        learner_slot:receipt.learner_slot,
+        seed_offset:receipt.seed_offset,
+        partition:receipt.partition,
+    };
+}
+
 function authorizedModelFile(hub,machineId,token,recipientId,sourceId,relative) {
     hub.authenticateAgent(machineId,token);
     if(!UUID.test(String(recipientId||''))||
@@ -513,4 +577,4 @@ async function syncNativeBundles(job,adapter,endpoint,machineId,token) {
 }
 
 module.exports={capturePaths,authorizedBundleFile,authorizedModelFile,
-    syncNativeBundles,syncNativeModels,nativeModelPackage};
+    verifiedNativeCollectorPin,syncNativeBundles,syncNativeModels,nativeModelPackage};
