@@ -72,6 +72,7 @@ class RemoteConsole:
         self.alive = True
         self.last_terminal_episode = None
         self.last_dialogue_cue = None
+        self.last_campaign_receipt = None
 
     def receive(self):
         try:
@@ -102,6 +103,13 @@ class RemoteConsole:
                             self.notifications.put(notice)
                             if not self.silent:
                                 print(notice)
+                    elif kind == "campaign_receipt":
+                        with self.lock:
+                            self.last_campaign_receipt = message
+                        notice = self.campaign_receipt_summary(message)
+                        self.notifications.put(notice)
+                        if not self.silent:
+                            print(notice)
                     elif kind == "welcome":
                         side = message.get("side")
                         if self.expected_side is not None and side != self.expected_side:
@@ -134,6 +142,22 @@ class RemoteConsole:
     def snapshot(self):
         with self.lock:
             return self.latest
+
+    def campaign_receipt_snapshot(self):
+        with self.lock:
+            return self.last_campaign_receipt
+
+    @staticmethod
+    def campaign_receipt_summary(message):
+        outcome = message["campaign_outcome"]
+        saved = "victory" if outcome.get("mission_success",
+                                      outcome["winner_side"] == outcome["player_side"]) else "defeat"
+        ships = len(outcome.get("awarded_ships", []))
+        squads = len(outcome.get("awarded_squads", []))
+        minerals = message.get("banked_minerals")
+        income = f", {minerals} minerals banked" if minerals is not None else ""
+        return (f"Campaign saved: {outcome['mission_id']} ({saved}); "
+                f"{ships} ships and {squads} squads awarded{income}")
 
     def selected_owners(self, state):
         squads = {row["owner"]["squad_id"]: row["owner"]
@@ -198,6 +222,9 @@ class RemoteConsole:
             outcome = state.get("terminal_outcome")
             if outcome is not None:
                 print(f"Battle finished: {outcome['label']} — {outcome['reason']}")
+            receipt = self.campaign_receipt_snapshot()
+            if receipt is not None:
+                print(self.campaign_receipt_summary(receipt))
             return
         if cmd == "ships":
             for ship in state["ships"]:

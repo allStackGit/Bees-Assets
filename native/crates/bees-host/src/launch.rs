@@ -5494,6 +5494,17 @@ fn run_battle(
             #[cfg(unix)]
             fs::File::open(summary_path.parent().ok_or_else(|| invalid("missing summary directory"))?)?.sync_all()?;
         }
+        // The campaign ledger consumes ONLY this finalized immutable
+        // summary. Tell authenticated multiplayer campaign owners about
+        // their saved progress after the same durable commit, never when
+        // physics merely reports an episode victory.
+        if let (Some(server), Some(outcome)) = (&mut remote, campaign_outcome.as_ref()) {
+            server.publish_campaign_receipt(
+                outcome.player_side, &final_summary["campaign_outcome"],
+                campaign_banked_minerals,
+            );
+            server.drain_terminal_output(Duration::from_millis(350));
+        }
     }
     if play && !user_closed && (playback.is_some() ||
         completed_episodes.iter().all(|&count| count == config.episodes_per_world)) {

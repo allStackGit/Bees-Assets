@@ -253,8 +253,11 @@ class RemoteBattleWindow:
         if self.console.alive:
             self.root.after(50, self.poll)
         else:
+            receipt = self.console.campaign_receipt_snapshot()
             outcome = self.state.get("terminal_outcome") if self.state else None
-            if outcome is not None:
+            if receipt is not None:
+                self.notice(self.console.campaign_receipt_summary(receipt))
+            elif outcome is not None:
                 self.notice(f"Battle finished: {outcome['label']} (host closed)")
             else:
                 self.notice("Disconnected from host; battle is no longer interactive")

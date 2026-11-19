@@ -608,6 +608,29 @@ impl NativeRemotePlay {
         self.reap();
     }
 
+    /// Notify only the authenticated campaign owner after the immutable
+    /// battle receipt has been synced and committed. No pending, defeated,
+    /// or replay-only battle can be presented as saved progress. An opposing
+    /// multiplayer side cannot inspect the player's career rewards.
+    pub fn publish_campaign_receipt(
+        &mut self, player_side: i32, outcome: &Value, banked_minerals: Option<u64>,
+    ) {
+        let receipt = json!({
+            "kind": "campaign_receipt",
+            "campaign_outcome": outcome,
+            "banked_minerals": banked_minerals,
+        });
+        for peer in self.peers.iter_mut().filter(|peer|
+            !peer.closed && peer.side == Some(player_side)
+        ) {
+            let _ = peer.enqueue(&receipt);
+            if !peer.closed {
+                self.measurements.state_bytes += peer.flush();
+            }
+        }
+        self.reap();
+    }
+
     /// After the authoritative Level finishes, the host no longer advances
     /// ticks. Give its already-queued final world_state a bounded opportunity
     /// to leave each nonblocking socket before the transport is dropped.
