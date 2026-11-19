@@ -15,6 +15,7 @@ const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA=/^[0-9a-f]{64}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const CUDA_UUID=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const TAIL=256*1024;
 const MAX_PROGRESS_ROW_TAIL=8*1024*1024;
 const PROJECT_IN='/workspace/projects/tinybrains/Ants-MAPOCA';
@@ -751,8 +752,10 @@ function fullDir(name) {
     if(typeof name!=='string'||!path.isAbsolute(name)||
         fs.realpathSync(name)!==name||!fs.statSync(name).isDirectory())
         throw Error('Local TinyBrains path must be an existing non-symlink directory.');
-    if(!/^[A-Za-z0-9_./-]+$/.test(name))
-        throw Error('Local TinyBrains paths cannot contain whitespace or shell syntax.');
+    if(process.platform==='win32'
+        ?/[\0\r\n]/.test(name)
+        :!/^[A-Za-z0-9_./-]+$/.test(name))
+        throw Error('Invalid local TinyBrains path.');
     return name;
 }
 function runRelative(folder,filename) {
@@ -771,7 +774,7 @@ function createTinyBrainsPersistentDockerAdapter({
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
     enableDualGpu=false,remoteCollectors=null,profilePpo=false,
-    cpuParallelism='allocation',
+    cpuParallelism='allocation',nativeWindows=false,pythonPath=null,
 }) {
     if(!['profile','allocation'].includes(cpuParallelism))
         throw Error('TinyBrains CPU concurrency must be pinned to its profile or allocated CPU budget.');
@@ -779,6 +782,11 @@ function createTinyBrainsPersistentDockerAdapter({
         throw Error('PPO profiling requires an explicit local boolean opt-in.');
     if(typeof enableDualGpu!=='boolean')
         throw Error('Dual GPU enablement requires an explicit local boolean opt-in.');
+    if(typeof nativeWindows!=='boolean'||
+        (nativeWindows?process.platform!=='win32':process.platform!=='linux'))
+        throw Error('TinyBrains execution must match its installed Windows or Linux owner.');
+    if(nativeWindows&&remoteCollectors!==null)
+        throw Error('Windows persistent PPO currently uses local GPU collectors only.');
     let remote=null;
     if(remoteCollectors!==null) {
         if(!remoteCollectors||typeof remoteCollectors!=='object'||
@@ -798,9 +806,9 @@ function createTinyBrainsPersistentDockerAdapter({
         remote={keyDirectory,endpoints:remoteCollectors.endpoints.slice(),
             keyFingerprint:crypto.createHash('sha256').update(fs.readFileSync(keyFile)).digest('hex')};
     }
-    if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||''))||
+    if(!SHA.test(String(seedCheckpointSha256||''))||
         !Number.isSafeInteger(seedPpoUpdates)||seedPpoUpdates<1)
-        throw Error('Persistent TinyBrains Docker import requires Linux and a pinned checkpoint hash.');
+        throw Error('Persistent TinyBrains import requires a pinned checkpoint hash.');
     const project=fullDir(projectRoot),hub=fullDir(hubRoot),
         artifacts=fullDir(artifactRoot),source=fullDir(sourceRunRoot),
         cache=fullDir(engineCacheRoot);
@@ -817,12 +825,18 @@ function createTinyBrainsPersistentDockerAdapter({
     // mounted backend actually contains that native collector mechanism.
     const enableMultiGpu=enableDualGpu&&fs.existsSync(
         path.join(project,'src/ants_mapoca/local_gpu_rollout.py'));
-    const engine=path.join(project,'tools/tinybrains-0.5.0/tinybrains');
+    const engine=path.join(project,'tools/tinybrains-0.5.0',
+        nativeWindows?'tinybrains.exe':'tinybrains');
     const result=spawnSync(engine,['--version'],{
         timeout:5000,encoding:'utf8',windowsHide:true,
     });
-    if(result.status!==0||result.stdout.trim()!=='tinybrains 0.5.0')
-        throw Error('The Linux TinyBrains 0.5.0 engine is unavailable.');
+    if(result.status!==0||result.stdout?.trim()!=='tinybrains 0.5.0')
+        throw Error('The installed TinyBrains 0.5.0 engine is unavailable.');
+    const nativePython=nativeWindows?fs.realpathSync(pythonPath):null;
+    if(nativeWindows&&
+        (typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
+         !fs.statSync(nativePython).isFile()))
+        throw Error('Windows persistent PPO needs an approved local Python executable.');
     const original=path.join(source,'self-play/latest.pt');
     if(modelFileSha256(original)!==seedCheckpointSha256)
         throw Error('Imported Exeter checkpoint differs from operator-pinned SHA-256.');
@@ -850,8 +864,8 @@ function createTinyBrainsPersistentDockerAdapter({
         const text=JSON.stringify(p,null,2)+'\n';
         return [id,{profile:p,text,sha256:crypto.createHash('sha256').update(text).digest('hex')}];
     }));
-    if(typeof sourceWindowsRoot!=='string'||
-        !/^[A-Za-z]:\/[A-Za-z0-9_./-]+$/.test(sourceWindowsRoot))
+    if(!nativeWindows&&(typeof sourceWindowsRoot!=='string'||
+        !/^[A-Za-z]:\/[A-Za-z0-9_./-]+$/.test(sourceWindowsRoot)))
         throw Error('Invalid original Windows project path mapping.');
     const originalSpec=JSON.parse(frozen);
     if(originalSpec?.model_config?.training?.algorithm!=='colony_ppo'||
@@ -895,7 +909,7 @@ function createTinyBrainsPersistentDockerAdapter({
             throw Error('TinyBrains job has no valid checkpoint-boundary status.');
         return latest;
     }
-    const docker={
+    const docker=nativeWindows?null:{
         image,workdir:PROJECT_IN,uid:process.getuid(),gid:process.getgid(),
         remote_host_network:Boolean(remote),
         mounts:[
@@ -921,10 +935,14 @@ function createTinyBrainsPersistentDockerAdapter({
             ...(profilePpo?{TINYBRAINS_PPO_PROFILE:'1'}:{}),
         },
     };
-    const executable='/opt/tinybrains-venv/bin/python';
-    const runner=HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
+    const executable=nativeWindows?nativePython:'/opt/tinybrains-venv/bin/python';
+    const runner=nativeWindows
+        ?path.join(hub,'Training/experiment_hub_tinybrains_persistent.py')
+        :HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
     return {
-        executable,cwd:PROJECT_IN,docker,stop_policy:'interrupt-main',
+        executable,cwd:nativeWindows?project:PROJECT_IN,
+        ...(docker?{docker}:{}),
+        stop_policy:nativeWindows?'terminate-group':'interrupt-main',
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))throw Error('Invalid TinyBrains job identity.');
             return path.join(artifacts,jobId);
