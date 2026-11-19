@@ -12,6 +12,7 @@ const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,su
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
 const {ObservationArchive}=require('./experiment_hub_observations');
+const {verifiedNativeCollectorPin}=require('./experiment_hub_native_bundle_transfer');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -4325,12 +4326,53 @@ class ExperimentHub {
     queueResourceBundle(value) {
         if(!object(value)||value.confirm_queue!==true||
             Object.keys(value).some(key=>
-                !['confirm_queue','members','model_source_job_id'].includes(key))||
+                !['confirm_queue','members','model_source_job_id',
+                    'collector_job_ids'].includes(key))||
             (value.model_source_job_id!==undefined&&
                 !UUID.test(String(value.model_source_job_id)))||
+            (value.collector_job_ids!==undefined&&(
+                !Array.isArray(value.collector_job_ids)||
+                !value.collector_job_ids.length||
+                value.collector_job_ids.length>256||
+                value.collector_job_ids.some(id=>!UUID.test(String(id)))||
+                new Set(value.collector_job_ids).size!==
+                    value.collector_job_ids.length))||
             !Array.isArray(value.members)||value.members.length<2||
             value.members.length>16)
             throw Error('Confirm 2–16 machine-pinned job allocations in one resource bundle.');
+        // Resolve all physical inputs before creating a single reservation.
+        // The completed collector's authenticated mirror, not the UI or a
+        // mutable file path, owns the receipt SHA and the source model proof.
+        const collectors=value.collector_job_ids===undefined?null:
+            value.collector_job_ids.map(id=>verifiedNativeCollectorPin(this,id));
+        if(collectors) {
+            const first=collectors[0],parts=new Map();
+            for(const item of collectors) {
+                if(item.model_sha256!==first.model_sha256||
+                    item.manifest_sha256!==first.manifest_sha256||
+                    item.source_contract_sha256!==first.source_contract_sha256||
+                    item.policy_worker_sha256!==first.policy_worker_sha256||
+                    item.learner_slot!==first.learner_slot||
+                    item.partition.source_run_id!==first.partition.source_run_id)
+                    throw Error('Native PPO collector sources disagree on checkpoint, manifest, policy worker or physical simulation.');
+                const bucket=String(item.seed_offset);
+                if(!parts.has(bucket))parts.set(bucket,[]);
+                const end=item.partition.world_start+item.partition.world_count;
+                if(!Number.isSafeInteger(end)||end<=item.partition.world_start)
+                    throw Error('Native collector World partition exceeds its supported range.');
+                parts.get(bucket).push([item.partition.world_start,end]);
+            }
+            for(const intervals of parts.values()) {
+                intervals.sort((a,b)=>a[0]-b[0]);
+                if(intervals.some((range,index)=>index>0&&
+                    range[0]<intervals[index-1][1]))
+                    throw Error('Native PPO collectors overlap physical Worlds within a seed cohort.');
+            }
+            if(value.model_source_job_id!==undefined&&
+                first.model_sha256!==this.state.jobs.find(job=>
+                    job.id===value.model_source_job_id)?.checkpoint_model_sha256)
+                throw Error('Fresh native rollout collectors did not use the selected predecessor checkpoint.');
+        }
         const machines=this.snapshot().machines;
         const next=copy(this.state);
         const bundleId=crypto.randomUUID(),jobs=[],leases=[];
@@ -4360,6 +4402,17 @@ class ExperimentHub {
                     ...(index===0?{continuation_of_job_id:modelSourceId}:{}),
                 }:{}),
             });
+            if(collectors) {
+                if(!['bees_native','bees_native_optimizer_worker']
+                    .includes(job.project_id)||
+                    job.frozen_parameters.optimizer_group!==true||
+                    !Array.isArray(job.frozen_parameters.rollout_bundles)||
+                    job.frozen_parameters.rollout_bundles.length!==0)
+                    throw Error('Verified native collector IDs require an empty rollout-bundle optimizer template.');
+                job.frozen_parameters.rollout_bundles=collectors.map(item=>item.pin);
+                job.configuration_sha256=crypto.createHash('sha256')
+                    .update(JSON.stringify(job.frozen_parameters)).digest('hex');
+            }
             if(job.project_id==='tinybrains_rollout'||job.project_id==='bees'||
                 job.project_id==='ants'||
                 (job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true)||
@@ -4426,6 +4479,9 @@ class ExperimentHub {
             !(jobs[0]?.project_id==='bees_native'&&
                 jobs[0].frozen_parameters?.optimizer_group===true))
             throw Error('A native checkpoint source can only be attached to a synchronized Bees optimizer bundle.');
+        if(collectors&&!(jobs[0]?.project_id==='bees_native'&&
+            jobs[0].frozen_parameters?.optimizer_group===true))
+            throw Error('Physical native collector pins require an authorized synchronized Bees optimizer group.');
         this.commit(next);
         return {bundle_id:bundleId,members:jobs.map(copy),
             leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
