@@ -70,7 +70,8 @@ function supportsTinyBrainsProfile(machine,job) {
         (job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&
                 machine.gpu_shared_projects?.includes('tinybrains'));
-    const remote=p?.remote_rollouts===true&&machine.agent_platform==='linux'&&
+    const remote=p?.remote_rollouts===true&&
+        ['linux','win32'].includes(machine.agent_platform)&&
         (cpuFallback?machine.tinybrains_remote_cpu_learner===true:
             p.device!=='cpu'&&job.resources?.gpu_count>=1)&&
         machine.tinybrains_remote_rollout_profiles?.includes(p.profile)===true;
