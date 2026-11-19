@@ -229,13 +229,18 @@ class RemoteConsole:
                   for row in state["squads"] if row["owned"]}
         return [squads[id] for id in self.selected if id in squads]
 
-    def locate_squad(self, state, value, *, owned):
+    def locate_squad(self, state, value, *, owned=None, friendly=None):
         squad_id = int(value)
         matches = [row for row in state["squads"]
                    if row["owner"]["squad_id"] == squad_id and
-                   row["owned"] == owned]
+                   (owned is None or row["owned"] == owned) and
+                   (friendly is None or
+                    (row["side"] == state["viewer_side"]) == friendly)]
         if len(matches) != 1:
-            raise ValueError(f"squad {squad_id} is not an available {'friendly' if owned else 'enemy'} target")
+            relation = ("controlled" if owned is True else
+                        "friendly" if friendly is True else
+                        "enemy" if friendly is False else "available")
+            raise ValueError(f"squad {squad_id} is not an available {relation} target")
         return matches[0]["owner"]
 
     def send(self, action, state, owners):
@@ -355,13 +360,13 @@ class RemoteConsole:
                 print(f"  {ship['id']:>8} side {ship['side']} type {ship['ship_type']:>2}"
                       f"  ({ship['x']:8.1f}, {ship['y']:8.1f})"
                       f"  HP {ship['health']}/{ship['max_health']}"
-                      f" {'ours' if ship['owned'] else ''}")
+                      f" {'ours' if ship['owned'] else 'ally' if ship['friendly'] else 'enemy'}")
             return
         if cmd == "squads":
             for squad in state["squads"]:
                 owner = squad["owner"]
                 print(f"  {owner['squad_id']:>8} side {squad['side']}"
-                      f" {'ours' if squad['owned'] else 'target'}"
+                      f" {'ours' if squad['owned'] else 'ally' if squad['side'] == state['viewer_side'] else 'enemy'}"
                       f" ships {squad['members']}")
             return
         if cmd == "obstacles":
@@ -406,12 +411,12 @@ class RemoteConsole:
                 raise ValueError("shooting strategy must be 1-40")
             self.send(("shooting", {"strategy_id": strategy_id}), state, owners)
         elif cmd in ENEMY_MANEUVERS and len(argv) == 1:
-            target = self.locate_squad(state, argv[0], owned=False)
+            target = self.locate_squad(state, argv[0], friendly=False)
             self.send(("support", {"action": {
                 ENEMY_MANEUVERS[cmd]: {"target": target},
             }}), state, owners)
         elif cmd == "guard" and len(argv) == 1:
-            target = self.locate_squad(state, argv[0], owned=True)
+            target = self.locate_squad(state, argv[0], friendly=True)
             self.send(("support", {"action": {"Guard": {"target": target}}}),
                       state, owners)
         elif cmd == "mine" and len(argv) == 1:
@@ -423,7 +428,7 @@ class RemoteConsole:
                       state, owners)
         elif cmd in ("heal", "retreat") and len(argv) == 1:
             ship_id = int(argv[0])
-            if not any(ship["id"] == ship_id and ship["owned"]
+            if not any(ship["id"] == ship_id and ship["friendly"]
                        for ship in state["ships"]):
                 raise ValueError("friendly heal/retreat target is not currently visible")
             action = ({"Heal": {"beehive_ids": [ship_id]}} if cmd == "heal"

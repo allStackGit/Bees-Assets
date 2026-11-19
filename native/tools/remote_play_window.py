@@ -292,11 +292,14 @@ class RemoteBattleWindow:
     def refresh(self, _event=None):
         self.draw()
 
-    def squad_for_ship(self, ship_id, *, owned=None):
+    def squad_for_ship(self, ship_id, *, owned=None, friendly=None):
         if self.state is None:
             return None
         for squad in self.state["squads"]:
-            if ship_id in squad["members"] and (owned is None or squad["owned"] == owned):
+            if (ship_id in squad["members"] and
+                    (owned is None or squad["owned"] == owned) and
+                    (friendly is None or
+                     (squad["side"] == self.state["viewer_side"]) == friendly)):
                 return squad
         return None
 
@@ -433,7 +436,7 @@ class RemoteBattleWindow:
                 self.notice("Select a visible ship to target")
                 return
             target_squad = self.squad_for_ship(target["id"],
-                owned=(mode == "guard"))
+                friendly=(mode == "guard"))
             if target_squad:
                 operation = ("Guard" if mode == "guard" else ENEMY_MANEUVERS[mode])
                 self.send("support", {"action": {operation: {"target": target_squad["owner"]}}})
@@ -442,7 +445,7 @@ class RemoteBattleWindow:
                 return
         elif mode == "mine" and kind == "obstacle" and target["mining"]:
             self.send("support", {"action": {"Mining": {"asteroid_id": target["id"]}}})
-        elif mode in ("heal", "retreat") and kind == "ship" and target["owned"]:
+        elif mode in ("heal", "retreat") and kind == "ship" and target["friendly"]:
             operation = ("Heal", "beehive_ids") if mode == "heal" else ("FullRetreat", "warp_gate_id")
             self.send("support", {"action": {operation[0]:
                       {operation[1]: [target["id"]] if mode == "heal" else target["id"]}}})
@@ -560,11 +563,15 @@ class RemoteBattleWindow:
             return
         kind, target = self.hit(event.x, event.y)
         if kind == "ship":
-            squad = self.squad_for_ship(target["id"], owned=target["owned"])
-            if squad and not target["owned"]:
+            # Ally allegiance is distinct from player control. Allied AI
+            # squads can be guarded but must never be attacked or selected
+            # as though their command permissions belonged to this player.
+            squad = self.squad_for_ship(target["id"],
+                                        friendly=target["friendly"])
+            if squad and not target["friendly"]:
                 self.send("support", {"action": {"Attack": {"target": squad["owner"]}}})
                 return
-            if squad and target["owned"] and squad["owner"] not in self.selected:
+            if squad and target["friendly"] and squad["owner"] not in self.selected:
                 self.send("support", {"action": {"Guard": {"target": squad["owner"]}}})
                 return
         if kind == "obstacle" and target["mining"]:
@@ -633,8 +640,11 @@ class RemoteBattleWindow:
             for local_x, local_y in ((0, 11), (-7, -7), (7, -7)):
                 triangle.extend((x + local_x * cs + local_y * sn,
                                  y + local_x * sn - local_y * cs))
-            color = FRIENDLY if ship["owned"] else ENEMY
-            self.canvas.create_polygon(*triangle, fill=color, outline=OUTLINE if ship["owned"] else "")
+            color = FRIENDLY if ship["friendly"] else ENEMY
+            # Controlled ships retain the strong outline; allied AI hulls
+            # remain visibly friendly without acquiring player selection.
+            self.canvas.create_polygon(*triangle, fill=color,
+                                       outline=OUTLINE if ship["owned"] else "")
             if ship["id"] in selected_ship_ids:
                 self.canvas.create_oval(x-14, y-14, x+14, y+14, outline="#ffffff", width=2)
             if ship["id"] == protected_id:
