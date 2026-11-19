@@ -227,14 +227,18 @@ function boundedReport(value) {
     if(!Array.isArray(dualProfiles)||dualProfiles.length>cudaProfiles.length||
         dualProfiles.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(dualProfiles).size!==dualProfiles.length||
-        (dualProfiles.length&&value.platform!=='linux'))
-        throw Error('Dual GPU TinyBrains requires locally qualified Linux ROCm profiles.');
+        (dualProfiles.length&&
+            (!['linux','win32'].includes(value.platform)||
+             !installed.includes('tinybrains'))))
+        throw Error('Dual GPU TinyBrains requires an installed native CUDA/ROCm profile.');
     const multiProfiles=value.tinybrains_multi_gpu_profiles??[];
     if(!Array.isArray(multiProfiles)||multiProfiles.length>dualProfiles.length||
         multiProfiles.some(id=>typeof id!=='string'||!dualProfiles.includes(id))||
         new Set(multiProfiles).size!==multiProfiles.length||
-        (multiProfiles.length&&value.platform!=='linux'))
-        throw Error('Multi-GPU TinyBrains requires a locally qualified persistent ROCm profile.');
+        (multiProfiles.length&&
+            (!['linux','win32'].includes(value.platform)||
+             !installed.includes('tinybrains'))))
+        throw Error('Multi-GPU TinyBrains requires an installed persistent CUDA/ROCm profile.');
     const remoteRollouts=value.tinybrains_remote_rollout_profiles??[];
     const remoteCount=value.tinybrains_remote_rollout_count??0;
     const remoteCpu=value.tinybrains_remote_cpu_learner??false;
@@ -276,7 +280,8 @@ function boundedReport(value) {
     if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(remoteRollouts).size!==remoteRollouts.length||
-        (remoteRollouts.length&&value.platform!=='linux')||
+        (remoteRollouts.length&&
+            !['linux','win32'].includes(value.platform))||
         !Number.isSafeInteger(remoteCount)||remoteCount<0||remoteCount>8||
         typeof remoteSubset!=='boolean'||(remoteSubset&&!remoteCount)||
         typeof remoteCpu!=='boolean'||(remoteCpu&&
@@ -293,7 +298,7 @@ function boundedReport(value) {
         (installed.includes('tinybrains_rollout')&&workerEndpoint===null)||
         !Number.isSafeInteger(workerThreadLimit)||workerThreadLimit<0||workerThreadLimit>256||
         Boolean(workerThreadLimit)!==Boolean(workerEndpoint))
-        throw Error('Remote rollout requires a compatible Linux TinyBrains learner adapter.');
+        throw Error('Remote rollout requires a compatible native TinyBrains learner adapter.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
         requiredImports.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
