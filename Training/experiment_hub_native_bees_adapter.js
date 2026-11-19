@@ -942,16 +942,24 @@ function createNativeBeesAdapter({
         if (!round) return null;
         verifyRoundGpuLease(context, round.receipt);
         if (!collectOnly) {
-            const leasedGpuCount = gpuLeaseCount(context);
-            if (round.metrics.optimizer_gpu_workers !== leasedGpuCount)
-                throw Error('Native Bees optimizer GPU execution disagrees with the Hub lease.');
-            if (leasedGpuCount === 2) {
-                const {totalThreads, totalInteropThreads} =
-                    synchronizedOptimizerEvidence(round.metrics);
+            const localGpuCount=gpuLeaseCount(context);
+            const bundle=context.resource_bundle;
+            const nodes=distributedOptimizer === undefined ? 1 : bundle?.size;
+            if (distributedOptimizer !== undefined &&
+                (!bundle || !UUID.test(String(bundle.id||'')) ||
+                 bundle.index!==1 || !Number.isSafeInteger(nodes) ||
+                 nodes<2 || nodes>8))
+                throw Error('Native checkpoint publisher does not own the first rank of an authorized Hub bundle.');
+            if (round.metrics.optimizer_gpu_workers!==localGpuCount*nodes ||
+                round.metrics.optimizer_gpu_nodes!==nodes ||
+                round.metrics.optimizer_gpu_local_workers!==localGpuCount)
+                throw Error('Native Bees global optimizer GPU ranks disagree with their Hub group lease.');
+            if (localGpuCount*nodes>1) {
+                const {perNode}=synchronizedOptimizerEvidence(round.metrics);
                 if (!Number.isSafeInteger(context.cpu_quota) ||
-                    totalThreads > context.cpu_quota ||
-                    totalInteropThreads > context.cpu_quota)
-                    throw Error('Native Bees optimizer ranks exceeded their shared Hub CPU quota.');
+                    perNode[0].threads>context.cpu_quota ||
+                    perNode[0].interopThreads>context.cpu_quota)
+                    throw Error('Native Bees publisher ranks exceeded their local Hub CPU quota.');
             }
         }
         const inputs = roundInputs(context);
@@ -964,6 +972,63 @@ function createNativeBeesAdapter({
                 throw Error('Native Bees completed self-play promotion differs from the frozen job parameters.');
         }
         return round;
+    }
+
+    function completedWorker(context) {
+        if (distributedOptimizer?.role!=='worker')
+            throw Error('Only a Hub-owned native optimizer worker may publish a worker receipt.');
+        const output=jobRoot(context);
+        const file=completionReceipt(output,'round-worker-result.json');
+        if(!file)return null;
+        const {receipt,stat}=file;
+        const bundle=context.resource_bundle;
+        const node=bundle?.index-1;
+        const nodes=bundle?.size;
+        const local=gpuLeaseCount(context);
+        const rows=receipt.gpu_per_device;
+        const inputs=roundInputs(context);
+        if (!bundle || !UUID.test(String(bundle.id||'')) ||
+            !Number.isSafeInteger(node) || node<1 ||
+            !Number.isSafeInteger(nodes) || nodes<2 || nodes>8 ||
+            receipt.schema_version!==1 ||
+            receipt.kind!=='native_distributed_optimizer_worker_complete' ||
+            receipt.node_rank!==node || receipt.node_count!==nodes ||
+            receipt.local_gpu_workers!==local ||
+            receipt.global_gpu_workers!==local*nodes ||
+            receipt.input_checkpoint_sha256!==inputs.checkpointDigest ||
+            receipt.input_manifest_sha256!==inputs.manifestDigest ||
+            !SHA256.test(String(receipt.global_input_sha256||'')) ||
+            !SHA256.test(String(receipt.model_consensus_sha256||'')) ||
+            !Array.isArray(rows) || rows.length!==local ||
+            rows.some(row=>!row || typeof row!=='object'))
+            throw Error('Native optimizer worker completion disagrees with its pinned Hub node and model.');
+        let threads=0,interopThreads=0;
+        for(const [index,row] of rows.entries()) {
+            if(row.rank!==node*local+index ||
+                row.local_rank!==index || row.node_rank!==node ||
+                row.device!=='cuda:'+index ||
+                row.gradient_backend!==distributedOptimizer.backend ||
+                !Number.isSafeInteger(row.gradient_syncs) || row.gradient_syncs<1 ||
+                row.masked_loss_syncs!==row.gradient_syncs ||
+                !Number.isSafeInteger(row.torch_intraop_threads) ||
+                row.torch_intraop_threads<1 ||
+                !Number.isSafeInteger(row.torch_interop_threads) ||
+                row.torch_interop_threads<1 ||
+                !Number.isFinite(row.update_wall_seconds) ||
+                row.update_wall_seconds<0 ||
+                !Number.isFinite(row.gradient_submission_wall_seconds) ||
+                row.gradient_submission_wall_seconds<0 ||
+                !Number.isFinite(row.masked_loss_submission_wall_seconds) ||
+                row.masked_loss_submission_wall_seconds<0)
+                throw Error('Native optimizer worker did not provide valid synchronized rank evidence.');
+            threads+=row.torch_intraop_threads;
+            interopThreads+=row.torch_interop_threads;
+        }
+        if(rows.some(row=>row.gradient_syncs!==rows[0].gradient_syncs) ||
+            !Number.isSafeInteger(context.cpu_quota) ||
+            threads>context.cpu_quota || interopThreads>context.cpu_quota)
+            throw Error('Native optimizer worker synchronization or CPU quota disagrees with its Hub lease.');
+        return {receipt,stat,threads,interopThreads};
     }
 
     return {
@@ -1206,6 +1271,7 @@ function createNativeBeesAdapter({
             },
         } : {
             ...(inbox ? {bundle_inbox_dir() { return inbox; }} : {}),
+            ...(distributedOptimizer?.role==='worker'?{}:{
             async checkpoint_ready(context) {
                 const output = jobRoot(context);
                 const verified = verifiedOutput(jobRound(context), output);
@@ -1245,8 +1311,38 @@ function createNativeBeesAdapter({
             model_checkpoint_sha256(context) {
                 return verifiedOutput(jobRound(context), jobRoot(context)).checkpointDigest;
             },
+            }),
         }),
         readProgress(context) {
+            if(distributedOptimizer?.role==='worker') {
+                const worker=completedWorker(context);
+                if(!worker)return null;
+                const rows=worker.receipt.gpu_per_device;
+                const metrics={
+                    optimizer_gpu_nodes:{value:worker.receipt.node_count,unit:'count'},
+                    optimizer_gpu_local_workers:{value:rows.length,unit:'count'},
+                    optimizer_gpu_worker_intraop_threads:{value:worker.threads,unit:'count'},
+                    optimizer_gpu_worker_interop_threads:{value:worker.interopThreads,unit:'count'},
+                    optimizer_synchronized_minibatches:{value:rows[0].gradient_syncs,unit:'count'},
+                };
+                rows.forEach((row,index)=>{
+                    metrics['optimizer_gpu_'+index+'_update_wall_seconds']={
+                        value:row.update_wall_seconds,unit:'seconds',
+                    };
+                    metrics['optimizer_gpu_'+index+'_gradient_submission_seconds']={
+                        value:row.gradient_submission_wall_seconds,unit:'seconds',
+                    };
+                    metrics['optimizer_gpu_'+index+'_masked_loss_submission_seconds']={
+                        value:row.masked_loss_submission_wall_seconds,unit:'seconds',
+                    };
+                });
+                return validateProgress({
+                    schema_version:1,source:'hub-metrics-v1',
+                    experiment_id:context.job_id,segment_id:'optimizer_worker',
+                    source_modified_at:worker.stat.mtime.toISOString(),
+                    steps_completed:rows[0].gradient_syncs,metrics,
+                },project);
+            }
             if (collectOnly) {
                 const bundle = completionReceipt(jobRoot(context), 'rollout-bundle.json');
                 if (!bundle) return null;
