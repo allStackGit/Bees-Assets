@@ -799,6 +799,17 @@ function createNativeBeesAdapter({
     if (collectOnly || distributedOptimizer?.role === 'worker') configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
     const configSha256 = sha256(JSON.stringify(configIdentity));
+    // Machine-independent identity for the *actual* MA-POCA inputs. Runtime
+    // paths, CPU allocation and the worker's Hub project ID are intentionally
+    // excluded; a node with different optimizer source bytes or collective
+    // backend must not join an approved distributed model update.
+    const optimizerInputIdentity = (checkpointDigest,manifestDigest) =>
+        sha256(JSON.stringify([
+            checkpointDigest,manifestDigest,pins.get(trainer),
+            learnerSlot ?? null,distributedOptimizer?.backend ?? null,
+        ]));
+    const optimizerInputsSha256=distributedOptimizer
+        ?optimizerInputIdentity(pins.get(input),pins.get(manifest)):null;
 
     function jobRoot(context) {
         if (context.project_id !== project || !UUID.test(context.job_id))
@@ -1044,6 +1055,7 @@ function createNativeBeesAdapter({
         cwd: path.dirname(runner),
         stop_policy: 'terminate-group',
         config_sha256: configSha256,
+        ...(optimizerInputsSha256?{optimizer_inputs_sha256:optimizerInputsSha256}:{}),
         gpu_execution: 'cuda',
         // The coordinator's native dual-GPU capability tag covers the
         // existing rollout-worker placement and the same MA-POCA learner.
@@ -1067,16 +1079,16 @@ function createNativeBeesAdapter({
         args(parameters, context) {
             const output = jobRoot(context);
             const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
-                optimizer_group,
+                optimizer_group, optimizer_inputs_sha256,
                 physics_workers, collection_id, rollout_world_start, rollout_worlds,
                 bundle_directory, refresh_opponent_slot,
                 source_run_contract_sha256} = parameters;
             const allowed = inboxLearner
                 ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads',
-                    'refresh_opponent_slot', 'optimizer_group']
+                    'refresh_opponent_slot', 'optimizer_group', 'optimizer_inputs_sha256']
                 : bundleRound
                     ? ['config_sha256', 'seed_offset', 'optimizer_threads',
-                        'refresh_opponent_slot', 'optimizer_group']
+                        'refresh_opponent_slot', 'optimizer_group', 'optimizer_inputs_sha256']
                     : collectOnly
                         ? ['config_sha256', 'seed_offset', 'rollout_workers', 'physics_workers',
                             'collection_id', 'rollout_world_start', 'rollout_worlds',
@@ -1191,6 +1203,12 @@ function createNativeBeesAdapter({
                 (!gpu && cudaUuid !== undefined))
                 throw Error('Native Bees execution requires an exclusive one- or two-GPU lease or CPU-only placement.');
             const inputs = roundInputs(context);
+            if ((distributedOptimizer !== undefined &&
+                optimizer_inputs_sha256 !== optimizerInputIdentity(
+                    inputs.checkpointDigest,inputs.manifestDigest)) ||
+                (distributedOptimizer === undefined &&
+                    optimizer_inputs_sha256 !== undefined))
+                throw Error('Frozen native optimizer input identity disagrees with its locally verified checkpoint, model manifest, trainer or collective backend.');
             if (refresh_opponent_slot !== undefined) {
                 if (learnerSlot === undefined || !Number.isSafeInteger(refresh_opponent_slot) ||
                     refresh_opponent_slot < 0 || refresh_opponent_slot > 0xffffffff ||
