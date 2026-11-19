@@ -420,6 +420,15 @@ async function verifyLocalModelPackage(directory,expectedCheckpoint) {
 async function syncNativeModels(job,adapter,endpoint,machineId,token) {
     const sourceId=job?.model_source_job_id;
     if(sourceId==null)return {models:0};
+    // A checkpoint-continuing owner is pinned by Hub to its predecessor's
+    // original machine and artifact lineage. Its installed native adapter
+    // verifies those source bytes locally before Start. Forcing this owner
+    // through the remote-model inbox would fail when the machine has no
+    // inbox installed, and waste disk/network copying its own checkpoint.
+    // Remote worker ranks still require the authenticated mirrored package.
+    if(job.project_id==='bees_native'&&
+        job.continuation_of_job_id===sourceId)
+        return {models:0,local_checkpoint:true};
     if(!['bees_native','bees_native_collect','bees_native_optimizer_worker']
         .includes(job?.project_id)||
         !UUID.test(String(sourceId))||sourceId===job.id||
