@@ -1077,15 +1077,11 @@ fn current_state(
                 "line_count": crate::presentation::campaign_dialogue::lines(cue).len(),
             }))
         } else { None },
-        // The native Level, not the network client, owns objective time,
-        // entity identity and completion. Only authenticated commanders
-        // receive their own convoy/defense target IDs. Demolition is a
-        // public faction objective; the fog-filtered obstacle list remains
-        // the only source of its current location and hit points.
-        "campaign_objective": if let Some(objective) = view.survival.filter(|status|
-            view.combat.ship(status.protected_ship_id)
-                .is_some_and(|ship| ship.side == side)
-        ) {
+        // Mission rules and target IDs are public to both authenticated
+        // sides just as in local play. Positions, health and visibility
+        // still come ONLY from the host's fog-filtered ship/obstacle list.
+        // Mission dialogue remains independently restricted above.
+        "campaign_objective": if let Some(objective) = view.survival {
             Some(json!({
                 "kind": "survival",
                 "protected_ship_id": objective.protected_ship_id,
@@ -1104,9 +1100,7 @@ fn current_state(
                 "duration_seconds": objective.duration_seconds,
                 "seconds_remaining": objective.seconds_remaining,
             }))
-        } else if let Some(objective) = view.escort.filter(|status|
-            status.escorting_side == side
-        ) {
+        } else if let Some(objective) = view.escort {
             Some(json!({
                 "kind": "escort",
                 "escorting_side": objective.escorting_side,
@@ -1115,18 +1109,14 @@ fn current_state(
                 "seconds_remaining": objective.seconds_remaining,
             }))
         } else { None },
-        // Only the convoy's authenticated commander receives its authored
-        // destination before the actual physical exit trigger activates.
-        // This fixed AABB comes from the canonical combat Level, not from
-        // a second client-side extraction controller.
-        "escort_destination": if view.escort.is_some_and(|objective|
-            objective.escorting_side == side
-        ) {
+        // An authored exit is also public to both opponents in the local
+        // native game; it cannot disclose a hidden hull or current position.
+        "escort_destination": view.escort.and_then(|_|
             view.combat.escorted_destination_bounds().map(|bounds| [
                 [bounds.min.x, bounds.min.y],
                 [bounds.max.x, bounds.max.y],
             ])
-        } else { None },
+        ),
         // Every authenticated commander sees Level-owned wave activity,
         // without exposing reserved ship identities or mission story cues.
         "reinforcements": Some(json!({

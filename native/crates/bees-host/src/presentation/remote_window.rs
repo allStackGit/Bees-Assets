@@ -735,7 +735,7 @@ fn draw_remote_obstacle_hull(
 /// hidden objects, or issue commands from presentation-only markers.
 fn draw_remote_minimap(
     pixels: &mut [u32], state: &Value, camera: NativeCamera,
-    selected: &[i64], visual: &RemoteVisual, fraction: f32,
+    highlighted: &HashSet<i64>, visual: &RemoteVisual, fraction: f32,
 ) -> (u64, u64) {
     let Some(bounds) = bounds(state) else { return (0, 0) };
     let Some(layout) = MiniMapLayout::top_right(FIELD, HEIGHT, bounds)
@@ -754,11 +754,6 @@ fn draw_remote_minimap(
         line(pixels, (x0.round() as i32, y0.round() as i32),
             (x1.round() as i32, y1.round() as i32), 0x6e829e);
     }
-    let selected_ship_ids: HashSet<i64> = state["squads"].as_array().into_iter().flatten()
-        .filter(|s| s["owned"] == true && s["owner"]["squad_id"]
-            .as_i64().is_some_and(|id| selected.contains(&id)))
-        .flat_map(|s| s["members"].as_array().into_iter().flatten())
-        .filter_map(Value::as_i64).collect();
     let target = &state["campaign_objective"];
     let objective_ship = target["protected_ship_id"].as_i64()
         .or_else(|| target["escorted_ship_id"].as_i64());
@@ -770,7 +765,7 @@ fn draw_remote_minimap(
         let Some((x, y)) = layout.project(position) else { continue };
         let id = ship["id"].as_i64().unwrap_or(-1);
         let objective = objective_ship == Some(id);
-        let selected = selected_ship_ids.contains(&id);
+        let selected = highlighted.contains(&id);
         let center = (x.round() as i32, y.round() as i32);
         let color = if objective { GOLD }
             else if selected { 0xffffff }
@@ -1082,7 +1077,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             }
         }
         let (ships, objectives) = draw_remote_minimap(
-            pixels, state, camera, selected, visual, fraction,
+            pixels, state, camera, &highlighted, visual, fraction,
         );
         *minimap_ship_markers += ships;
         *minimap_objective_markers += objectives;
@@ -1130,8 +1125,15 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                     "survival" => {
                         let percent = 100.0 * (1.0 - remaining / duration).clamp(0.0, 1.0);
                         let waves = state["reinforcements"]["pending"].as_u64().unwrap_or(0);
-                        format!("Defend {:02}:{:02}  {:.0}%  Waves {}",
-                            seconds / 60, seconds % 60, percent, waves)
+                        let protected = objective.get("protected_ship_id")
+                            .and_then(Value::as_i64).unwrap_or(0);
+                        let defending = state["ships"].as_array().into_iter().flatten()
+                            .find(|ship| ship["id"].as_i64() == Some(protected))
+                            .and_then(|ship| ship["side"].as_i64())
+                            == Some(i64::from(side));
+                        format!("{} #{} {:02}:{:02}  {:.0}%  Waves {}",
+                            if defending { "Protect" } else { "Destroy" },
+                            protected, seconds / 60, seconds % 60, percent, waves)
                     },
                     "demolition" => {
                         let id = objective.get("target_map_object_id")
@@ -1153,7 +1155,10 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                             .find(|item| item["id"].as_i64() == Some(id))
                             .and_then(|item| item["health"].as_i64())
                             .map(|hp| format!("  {hp} HP")).unwrap_or_default();
-                        format!("Escort ship #{}{}  {:02}:{:02}",
+                        let escorting = objective.get("escorting_side")
+                            .and_then(Value::as_i64) == Some(i64::from(side));
+                        format!("{} ship #{}{}  {:02}:{:02}",
+                            if escorting { "Escort" } else { "Intercept" },
                             id, health, seconds / 60, seconds % 60)
                     },
                     _ => String::new(),
