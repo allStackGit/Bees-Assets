@@ -573,10 +573,11 @@ def author(args) -> tuple[dict, dict, dict]:
     # training Worlds until a campaign FleetShip is awarded or purchased.
     # These identities never enter a player squad or active policy pool.
     reserve_templates = []
-    if len(set(args.fleet_templates)) != len(args.fleet_templates):
+    requested_templates = getattr(args, "fleet_templates", ())
+    if len(set(requested_templates)) != len(requested_templates):
         raise ValueError("reserve FleetShip templates must be unique by side and class")
     reserve_id_base = weapon_base + 3 * side_span
-    for index, (side, kind) in enumerate(args.fleet_templates):
+    for index, (side, kind) in enumerate(requested_templates):
         template = blueprints.get((side, kind))
         if template is None:
             raise ValueError(

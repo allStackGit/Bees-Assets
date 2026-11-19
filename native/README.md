@@ -498,10 +498,45 @@ physical authored MaxTSV, not a separate guessed economy; unlocks
 start after the first victory. The shop's source-backed hull types must
 already be in the stable player fleet, and the native campaign editor
 continues validating construction against every destination scene.
-Omit `--shop-types` for a campaign without ship purchases.
-The optional `--victory-grant MISSION:TYPE:COUNT:SQUAD` awards genuine
+For an earned ship class that should **not** be purchasable or deployed
+at the start, add a fully authored inactive template to **each** battle.
+The base native source scene must actually contain that side/class with
+its original collider, weapons and special ability; no ship statistics
+are inferred:
+
+```sh
+python3 native/tools/author-battle.py mission-one \
+  --bees 21:4,18:1,4:1 --humans 13:3 --control bees \
+  --fleet-template 1:20 --seed 11
+python3 native/tools/author-battle.py mission-two \
+  --bees 21:4,18:1,4:1 --humans 13:7 --control bees \
+  --fleet-template 1:20 --seed 12
+python3 native/tools/author_campaign.py my-earned-fleet \
+  --title "Earned Native Fleet" \
+  --mission mission-one/battle.run.json \
+  --mission mission-two/battle.run.json \
+  --shop-types 21,18 --grant-only-types 20 \
+  --victory-grant 1:20:1:20000
+```
+
+Here side 1's authentic type-20 hull becomes owned after the first
+mission's victory but is not an active initial game ship or purchasable
+shop item. `20000` is the first SavedSquad identity in these generated
+scenes; other missions should use their actual authored persistent ID.
+Both mission scenes carry the complete source template. The native
+loader verifies it with the same full ship parser used for gameplay,
+removes it from the active simulation, and only instantiates a live
+physical ship on subsequent battles through the existing FleetShip
+installer. The campaign publisher checks the class's MaxTSV and
+presence across every mission. No inactive template incurs gameplay or
+training physics work.
+
+Omit `--shop-types` for a campaign without ship purchases; for
+reward-only progression use `--grant-only-types` and a corresponding
+`--victory-grant` instead. The optional
+`--victory-grant MISSION:TYPE:COUNT:SQUAD` awards genuine
 persistent FleetShips the first time the specified mission is won.
-`TYPE` must be a source-priced `--shop-types` class and `SQUAD`
+`TYPE` must be a source-priced `--shop-types` or `--grant-only-types` class and `SQUAD`
 must be an existing player SavedSquad ID; the example uses the first
 native-authored side-1 SavedSquad. These ships cost **zero minerals** but
 retain their verified source MaxTSV for scene instantiation. Awarded ships
