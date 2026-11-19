@@ -2587,6 +2587,22 @@ source scene digests, but no extra suite if the primary holdout contains
 multiple authored battles. Only fully evaluated checkpoints qualify, and
 ties retain the earlier checkpoint. Early stopping still observes the primary holdout,
 regardless of the optional best-model ranking.
+
+For missions with a physical objective (survival, demolition, escort, or
+extraction), use `--checkpoint-selection mission` to choose the checkpoint
+with the most **role-adjusted physical goal successes** on the pinned
+primary holdout, rather than the most ordinary faction wins. Escorting
+a ship, destroying a target and defending a target are distinct goals;
+preventing the opponent's goal counts as an interception success.
+`mission-mean-scene` and `mission-worst-scene` instead rank the mean or
+weakest mission success rate across independent authored scenes. All
+episodes of every participating suite must have durable, side-attributed
+physical mission outcomes; older or elimination-only evaluation receipts
+are rejected rather than counted as failed goals. With these modes,
+`--early-stop-patience` measures improvements in primary holdout physical
+goal successes (with `--early-stop-minimum-extra-victories` as the
+existing threshold parameter), while the other ranking modes retain
+victory-based stopping.
 A monitoring suite is pinned for the entire training session and must be
 specified again, unchanged and in the same order, when resuming. Source
 run configurations and all referenced scenes/assets are hash-pinned. This

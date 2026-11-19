@@ -9,6 +9,7 @@
 use crate::collision::Aabb;
 use crate::control::PolicyFrame;
 use crate::geometry::Vec2;
+use crate::episode_terminal::EpisodeMissionKind;
 use crate::policy::{OBSERVATION_FLOATS, PERCEPTION_OBSERVATION_FLOATS};
 
 pub const SELF_LEN: usize = 25;
@@ -322,17 +323,9 @@ pub fn write_reserved_objectives(row: &mut [f32]) -> Result<(), PerceptionError>
 /// Native authored mission extension within v26's sixteen existing reserved
 /// scalars. The actor input width and ordinary Unity observations do not
 /// change. The source Level supplies the goal; no training-only world exists.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NativeMissionKind {
-    Survival,
-    Demolition,
-    Escort,
-    Extraction,
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct NativeMissionObservation {
-    pub kind: NativeMissionKind,
+    pub kind: EpisodeMissionKind,
     pub objective_side: bool,
     /// None until the *real* HiveMind discovery registry knows an enemy.
     /// Allies are always known. No target position leaks through fog.
@@ -367,10 +360,10 @@ pub fn write_native_mission_objectives(
     out.fill(0.0);
     out[0] = 1.0;
     out[match mission.kind {
-        NativeMissionKind::Survival => 1,
-        NativeMissionKind::Demolition => 2,
-        NativeMissionKind::Escort => 3,
-        NativeMissionKind::Extraction => 4,
+        EpisodeMissionKind::Survival => 1,
+        EpisodeMissionKind::Demolition => 2,
+        EpisodeMissionKind::Escort => 3,
+        EpisodeMissionKind::Extraction => 4,
     }] = 1.0;
     out[5] = if mission.objective_side { 1.0 } else { -1.0 };
     let relative = |target: Vec2| {

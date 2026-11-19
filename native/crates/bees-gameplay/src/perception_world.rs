@@ -21,8 +21,9 @@ use bees_sim::combat_world::{CombatWorld, CombatWorldError};
 use bees_sim::episode_ship_identity::EpisodeShipIdentities;
 use bees_sim::full_perception::PolicyPerceptionSnapshot;
 use bees_sim::perception::{
-    CapabilitySource, EXPLORATION_LEN, NativeMissionKind, NativeMissionObservation,
+    CapabilitySource, EXPLORATION_LEN, NativeMissionObservation,
 };
+use bees_sim::episode_terminal::EpisodeMissionKind;
 use bees_sim::level_discovery::DiscoveryKind;
 use bees_sim::local_navigation_observation::LocalNavigationOccupancy;
 use bees_sim::perception_entities::ObservedShip;
@@ -369,7 +370,7 @@ impl NativeWorldPerceptionAssembler {
             owning_world.state.events.survival_status()
         {
             Some(NativeMissionObservation {
-                kind: NativeMissionKind::Survival,
+                kind: EpisodeMissionKind::Survival,
                 objective_side: status.defending_side == side,
                 visible_target: mission_ship(status.protected_ship_id),
                 destination: None,
@@ -392,7 +393,7 @@ impl NativeWorldPerceptionAssembler {
                     ))
             } else { None };
             Some(NativeMissionObservation {
-                kind: NativeMissionKind::Demolition,
+                kind: EpisodeMissionKind::Demolition,
                 objective_side: status.attacking_side == side,
                 visible_target: target,
                 destination: None,
@@ -401,7 +402,7 @@ impl NativeWorldPerceptionAssembler {
             })
         } else if let Some(status) = owning_world.state.events.escort_status() {
             Some(NativeMissionObservation {
-                kind: NativeMissionKind::Escort,
+                kind: EpisodeMissionKind::Escort,
                 objective_side: status.escorting_side == side,
                 visible_target: mission_ship(status.escorted_ship_id),
                 destination: world.escorted_destination_bounds()
@@ -416,7 +417,7 @@ impl NativeWorldPerceptionAssembler {
             // The physical exit stays a real Level collider; no policy
             // worker computes or advances a second zone.
             (!escort).then_some(NativeMissionObservation {
-                kind: NativeMissionKind::Extraction,
+                kind: EpisodeMissionKind::Extraction,
                 objective_side: exiting_side == side,
                 visible_target: None,
                 destination: Some((bounds.min + bounds.max) * 0.5),
