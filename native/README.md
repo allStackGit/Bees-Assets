@@ -443,23 +443,28 @@ play and AI-vs-AI viewing use one complete original episode, reducing
 the source `episode_seeds` list to its first real seed so native episode
 validation, deterministic replay, and stage ownership remain correct.
 The publisher verifies the pinned checkpoint, manifest, selected run,
-and learner model slot before changing only player ownership and policy
-routing. Model,
-worker and optional Stage-asset paths are bound to their original
-verified source directory, so a challenge moved into its own folder
-cannot accidentally resolve a different model; the native campaign
-publisher checks the resolved manifest identity rather than a fragile
-relative path spelling. It retains
-the physical hulls, physics, authored map, special weapons and native
-policy observations. The trained checkpoint is mapped to the *actual*
+and learner model slot before changing player ownership and policy
+routing. The publisher also copies the selected model weights, native
+inference worker, matching actor sources, and any external collision
+matrix/Stage palette into the output, with exact SHA-256 provenance.
+The resulting `challenge-best` directory can be moved between Windows
+and Linux without the original training checkout, then played using
+its `challenge.run.json` or `library.json`. The native game resolves
+`python: "auto"` through PATH (`python3` on Linux, `python` on
+Windows); Python, NumPy and the selected model backend must be installed
+on the target machine. Use `BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE=cpu`
+for CPU-only inference, including ONNX.
+
+The authentic physical hulls, physics, authored map, special weapons,
+policy observation contract and selected opponent weights are unchanged. The trained checkpoint is mapped to the *actual*
 remaining opponent team, rather than assuming the learner always trained
 on the same physical faction. It removes player-owned scripted orders
-and stale two-sided policy participant declarations. The game runs one
-authentic authored episode, not an unattended multi-round training batch.
-The new directory includes `challenge.scene.json`,
-`challenge.run.json`, `library.json`, and a provenance receipt.
-It requires the original verified manifest/checkpoint files to remain
-accessible; this does not copy or silently mutate trained weights.
+and stale two-sided policy participant declarations. The game runs one authored battle using normal victory/draw rules,
+not training rewards or an unattended multi-round PPO batch.
+The directory includes `challenge.scene.json`, `challenge.run.json`,
+`library.json`, a rebased model manifest, content-addressed artifacts,
+and a provenance receipt. The verified source selection is needed to
+*publish* the package, but not to *play* it on a second machine.
 For the most recent checkpoint rather than highest fixed-holdout wins,
 pass `latest-playable.json` instead.
 
@@ -538,6 +543,12 @@ duplicate overrides, and non-shop unlock types.
 `bees status my-branching-campaign/campaign.json --output-dir my-branching-save` exposes each mission's `requires`,
 `waiting_for`, `advance_on`, `selected_config`, the active
 `victory_route`, and the resulting class unlock states.
+
+The campaign publisher accepts native-authored scenes with either inline
+`native_stage` or source-authored external collision-matrix and Stage
+palette files. External Stage assets are copied once by SHA-256 identity,
+including for alternate victory routes. The resulting campaign does not
+need the original Stage-authoring directory to play.
 
 The publisher retains the complete source-authored physical map,
 ships and scripted opponents, while assigning
