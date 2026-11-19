@@ -1088,9 +1088,12 @@ function readySidecar(host,project,budget) {
 }
 
 function sidecarBudget(selection,threadOverride=false) {
-    const keys=threadOverride?['resources','machine_id','threads']:['resources','machine_id'];
-    if(!object(selection)||Object.keys(selection).some(key=>!keys.includes(key)))
-        throw Error('Each remote worker needs a CPU/RAM budget and optionally one exclusive GPU.');
+    const keys=threadOverride?['resources','machine_id','threads']:
+        ['resources','machine_id','endpoint'];
+    if(!object(selection)||Object.keys(selection).some(key=>!keys.includes(key))||
+        (selection.endpoint!==undefined&&
+            (threadOverride||!rolloutEndpoint(selection.endpoint))))
+        throw Error('Each remote worker needs a CPU/RAM budget and optionally one approved Courier endpoint and exclusive GPU.');
     const budget=resourceRequest(selection.resources);
     if(budget.gpu_count>1||budget.gpu_count===1&&budget.gpu_mode!=='exclusive')
         throw Error('A remote worker may use CPU only or one exclusively leased CUDA/ROCm GPU.');
@@ -5597,6 +5600,8 @@ class ExperimentHub {
         const selectedIds=value.worker_machine_ids;
         const repeatedHost=Array.isArray(selectedIds)&&
             selectedIds.some((id,index)=>selectedIds.indexOf(id)!==index);
+        const requestedEndpoints=value.lineages.map(item=>item?.endpoint);
+        const selectedEndpointMode=requestedEndpoints.some(endpoint=>endpoint!==undefined);
         const slotBacked=shared&&Array.isArray(selectedIds)&&selectedIds.some(id=>
             snapshot.machines.some(host=>host.id===id&&
                 host.courier_lineage_slots?.length>0));
@@ -5604,7 +5609,7 @@ class ExperimentHub {
         // PPO ordinal to its exact service listener, not an adapter's
         // unrelated legacy base endpoint. Duplicate hosts use this same
         // immutable ordered mapping.
-        const fixedSlotSelection=repeatedHost||slotBacked;
+        const fixedSlotSelection=repeatedHost||slotBacked||selectedEndpointMode;
         const eligibleLineages=(endpoint,budget,slot=null)=>{
             const maxShards=approved.plan?.find(item=>item.endpoint===endpoint)?.maxShards;
             return snapshot.machines.filter(host=>{
@@ -5631,15 +5636,21 @@ class ExperimentHub {
             // to the same ordinal in the learner's immutable prefix plan.
             // This includes one selected same-host collector whose port is
             // not the adapter's legacy base port.
-            const plan=approved.plan?.slice(0,value.lineages.length);
+            const plan=selectedEndpointMode
+                ?approved.plan?.filter(item=>requestedEndpoints.includes(item.endpoint))
+                :approved.plan?.slice(0,value.lineages.length);
             if(!shared||!machine?.courier_lineage_subset||
+                !Array.isArray(selectedIds)||
                 selectedIds.includes(machine.id)&&!allowLocal||
                 !Array.isArray(plan)||plan.length!==value.lineages.length||
+                (selectedEndpointMode&&plan.some((item,index)=>
+                    item.endpoint!==requestedEndpoints[index]))||
                 value.lineages.length<1||value.lineages.length>16||
                 selectedIds.length!==plan.length||
                 selectedIds.some(id=>typeof id!=='string'||!ID.test(id))||
                 value.lineages.some(item=>!object(item)||
-                    Object.hasOwn(item,'machine_id'))||
+                    Object.hasOwn(item,'machine_id')||
+                    selectedEndpointMode&&!rolloutEndpoint(item.endpoint))||
                 selectedIds.some((id,index)=>{
                     const host=snapshot.machines.find(item=>item.id===id);
                     const budget=sidecarBudget(value.lineages[index]);
