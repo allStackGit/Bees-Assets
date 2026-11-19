@@ -5454,6 +5454,23 @@ document.addEventListener('DOMContentLoaded', () => {
                                 :' · receipt unavailable: '+row.issue)).join(' | ');
                     details.append(historyLine);
                 }
+                const unresolved=comparisonProject===project
+                    ?comparisonData?.evaluation_open_diagnostics?.find(row=>
+                        row.job_id===j.id):null;
+                if(unresolved?.events?.length) {
+                    const notice=document.createElement('p');
+                    notice.textContent='Unresolved evaluator issues (not model scores): '+
+                        unresolved.events.slice(-8).map(row=>
+                            (row.suite_id||'unknown suite')+
+                            (row.evaluation_status==='failed'
+                                ?' · checkpoint '+row.checkpoint_sha256+
+                                    ' failed: '+row.reason
+                                :' · receipt unavailable: '+row.issue)).join(' | ')+
+                        (unresolved.total_open>8
+                            ?' | '+(unresolved.total_open-8)+
+                                ' additional issue(s) in the complete archive':'');
+                    details.append(notice);
+                }
                 if(monitoring&&j.evaluation_monitor.regression_alert) {
                     const info=document.createElement('p');
                     info.textContent=regressionSignals.length
