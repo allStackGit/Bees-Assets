@@ -149,9 +149,10 @@ fleet. For a scene with an authored Fire Tank, use
 battle duration; `--demolition-seconds` overrides it. Actual projectile
 contacts, object retirement, same-tick target destruction, attacker losses
 and future-wave reservations all use the ordinary CombatWorld/episode
-terminal, including in an optional `--trainable` run. A mission needs an
-active player or policy controller to shoot the MapObject; scripted ordinary
-turrets do not invent automatic MapObject targeting.
+terminal, including in an optional `--trainable` run. An authored game needs
+player control to shoot the MapObject. The matching trainable scene can
+instead use its enrolled policy controllers, but neither path invents
+automatic scripted MapObject targeting.
 
 `--objective-side` selects the defending/extracting/demolishing faction, and
 `--extraction-radius` configures the authored activation trigger.

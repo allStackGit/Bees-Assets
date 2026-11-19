@@ -1378,6 +1378,10 @@ impl NativeLevelEventProcessor {
         self.episode.survival_status()
     }
 
+    pub fn demolition_status(&self) -> Option<bees_sim::episode_terminal::DemolitionStatus> {
+        self.episode.demolition_status()
+    }
+
     pub fn normalized_episode_progress(&self) -> f32 {
         self.episode.normalized_episode_progress()
     }

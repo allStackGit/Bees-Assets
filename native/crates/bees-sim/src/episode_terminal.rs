@@ -202,6 +202,16 @@ struct ArmedDemolition {
     deadline_tick: u64,
 }
 
+/// Read-only objective timer for native game presentation. It does not own
+/// or copy target health; that remains on the single CombatMapObject.
+#[derive(Clone, Copy, Debug)]
+pub struct DemolitionStatus {
+    pub attacking_side: i32,
+    pub target_map_object_id: i64,
+    pub seconds_remaining: f32,
+    pub duration_seconds: f32,
+}
+
 pub struct NativeEpisodeTerminal {
     bee_side: i32,
     human_side: i32,
@@ -301,6 +311,15 @@ impl NativeEpisodeTerminal {
             duration_seconds: survival.objective.seconds,
             elapsed_seconds: self.elapsed_seconds,
             seconds_remaining: (survival.objective.seconds - self.elapsed_seconds).max(0.0),
+        })
+    }
+
+    pub fn demolition_status(&self) -> Option<DemolitionStatus> {
+        self.demolition.as_ref().map(|demolition| DemolitionStatus {
+            attacking_side: demolition.objective.attacking_side,
+            target_map_object_id: demolition.objective.target_map_object_id,
+            duration_seconds: demolition.objective.seconds,
+            seconds_remaining: (demolition.objective.seconds - self.elapsed_seconds).max(0.0),
         })
     }
 

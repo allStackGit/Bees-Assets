@@ -1366,6 +1366,7 @@ where
             terminal_result: world.state.events.latest_finalized_episode().map(|episode| episode.result),
             campaign_dialogue: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.current()),
             survival: world.state.events.survival_status(),
+            demolition: world.state.events.demolition_status(),
             reinforcement_waves_pending:
                 world.state.metadata.pending_reinforcement_waves(),
             next_reinforcement_tick:

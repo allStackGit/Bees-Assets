@@ -989,10 +989,11 @@ def author(args) -> tuple[dict, dict, dict]:
                 queue["orders"] = [{"kind": "move_to_point", "destination": center}]
                 queue["repeat"] = False
     elif args.objective == "demolition":
-        if owner not in controlled and not args.trainable:
+        if owner not in controlled:
             raise ValueError(
-                "demolition needs a player or policy controller: scripted ship "
-                "weapons do not automatically select MapObjects"
+                "demolition needs a locally controlled player faction in the "
+                "game scene; scripted weapons cannot automatically select "
+                "MapObjects, even when a separate trainable scene is authored"
             )
         objects = [obj for obj in scene.get("map_objects", [])
                    if isinstance(obj, dict) and isinstance(obj.get("entity_id"), int)]

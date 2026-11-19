@@ -10,7 +10,7 @@ use bees_sim::episode_terminal::{
     EpisodeDeathAttribution, EpisodeEconomicError, EpisodeEconomicRewards,
     EpisodeTerminalError, EpisodeTerminalMeasurements, EpisodeTerminalResult,
     EpisodeTerminalRewards, NativeEpisodeTerminal, SurvivalObjective, SurvivalStatus,
-    DemolitionObjective,
+    DemolitionObjective, DemolitionStatus,
 };
 use bees_sim::rl_economy::{
     EconomicLedgerError, EconomicLedgerMeasurements, EpisodeEconomicLedger,
@@ -223,6 +223,10 @@ impl NativeEpisodeRewardCoordinator {
 
     pub fn survival_status(&self) -> Option<SurvivalStatus> {
         self.terminal.survival_status()
+    }
+
+    pub fn demolition_status(&self) -> Option<DemolitionStatus> {
+        self.terminal.demolition_status()
     }
 
     pub fn normalized_episode_progress(&self) -> f32 {

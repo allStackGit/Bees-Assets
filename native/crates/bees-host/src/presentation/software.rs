@@ -1555,6 +1555,17 @@ impl NativeSoftwareRenderer {
                 let health = (object.health as f32 / object.max_health as f32).clamp(0.0, 1.0);
                 self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
                 self.line(x - 10.0, y - 12.0, x - 10.0 + 20.0 * health, y - 12.0, color);
+                if view.demolition.is_some_and(|objective|
+                    objective.target_map_object_id == object.entity_id
+                ) {
+                    // Use the source's discovered MapObject visibility; no
+                    // objective overlay can leak a fog-hidden collider.
+                    let marker = 0xffd57a;
+                    self.line(x - 16.0, y - 18.0, x - 5.0, y - 18.0, marker);
+                    self.line(x + 5.0, y - 18.0, x + 16.0, y - 18.0, marker);
+                    self.line(x - 16.0, y - 18.0, x - 16.0, y + 9.0, marker);
+                    self.line(x + 16.0, y - 18.0, x + 16.0, y + 9.0, marker);
+                }
             }
         }
         for piece in view.combat.render_asteroid_pieces() {
@@ -1994,13 +2005,32 @@ impl NativeSoftwareRenderer {
                 ),
             };
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
+        } else if let Some(demolition) = view.demolition {
+            let seconds = demolition.seconds_remaining.ceil() as u64;
+            let target = view.combat.map_object(demolition.target_map_object_id);
+            let objective = target.map_or("Target destroyed", |object|
+                if object.kind == bees_sim::map_object::MapObjectKind::FireTank {
+                    "Destroy Fire Tank"
+                } else { "Destroy MapObject" }
+            );
+            let health = target.map_or(String::new(), |object|
+                format!("  {}/{} HP", object.health, object.max_health)
+            );
+            let label = format!(
+                "{} #{}{}  |  Deadline {:02}:{:02}",
+                objective, demolition.target_map_object_id, health,
+                seconds / 60, seconds % 60,
+            );
+            text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         }
         // The durable Level notification records arrivals exactly once.
         // A short visual acknowledgement survives an outbox ACK, but
         // vanishes naturally with the canonical simulation clock; paused
         // games do not consume its time and no frame timer is allocated.
         if view.terminal_result.is_none() {
-            let y = if view.survival.is_some() { 8 + text::HEIGHT + 4 } else { 8 };
+            let y = if view.survival.is_some() || view.demolition.is_some() {
+                8 + text::HEIGHT + 4
+            } else { 8 };
             let recently_arrived = view.last_reinforcement_tick
                 .is_some_and(|tick| view.tick >= tick &&
                     (view.tick - tick) as f64 *
@@ -2641,6 +2671,7 @@ impl NativeSoftwareRenderer {
         let title = battle_outcome_label(result);
         let reason = if result.extraction_victory { "Extraction" }
             else if view.survival.is_some() { "Defense" }
+            else if view.demolition.is_some() { "Demolition" }
             else if result.timed_out { "Time limit" } else { "Elimination" };
         let detail = format!("{reason}  /  {:.2} s", result.duration_seconds);
         let context = format!("World {}  /  Episode {}", view.world_id.0, view.episode_revision + 1);
