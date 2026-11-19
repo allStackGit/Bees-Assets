@@ -1132,6 +1132,53 @@ function distributedRolloutHost(snapshot,job,machine) {
 // The same native Start gate is used for individual remote-lineage worker
 // claims, so a generic job cannot start a service for an unrelated learner.
 // The coordinator, not the job payload, pins the original endpoint and slot.
+// The existing shared PPO learner has one optimizer; a separately leased
+// collector can run on another GPU in the SAME native machine/agent. This
+// is never permission to share a device: both native jobs must own distinct
+// exclusive physical GPU IDs, and the ordinary CPU/RAM reservation and
+// native Start checks continue to enforce their budgets.
+function colocatedCourierCollector(snapshot,learner,worker) {
+    if(learner?.project_id!=='courier'||
+        learner.frozen_parameters?.shared_policy!==true||
+        worker?.project_id!=='courier_lineage'||
+        worker.frozen_parameters?.shared_policy!==true||
+        !learner.assigned_machine_id||
+        learner.assigned_machine_id!==worker.assigned_machine_id)
+        return false;
+    const reservations=snapshot.reservations||[];
+    const chosen=job=>reservations.find(lease=>
+        lease.id===job.lease_id&&lease.job_id===job.id&&
+        lease.project_id===job.project_id&&
+        lease.machine_id===job.assigned_machine_id&&
+        lease.issued_by==='experiment-hub'&&
+        ['offered','acknowledged'].includes(lease.status));
+    const a=chosen(learner),b=chosen(worker);
+    return Boolean(a&&b&&a.id!==b.id&&
+        a.resources?.gpu_mode==='exclusive'&&
+        b.resources?.gpu_mode==='exclusive'&&
+        a.resources.gpu_count===1&&b.resources.gpu_count===1&&
+        Array.isArray(a.resources.gpus)&&a.resources.gpus.length===1&&
+        Array.isArray(b.resources.gpus)&&b.resources.gpus.length===1&&
+        a.resources.gpus[0]!==b.resources.gpus[0]);
+}
+// One co-located collector may use a spare exclusive GPU. Every other
+// collector remains on a distinct machine with its original endpoint.
+function courierGroupMachinesValid(snapshot,learner,workers) {
+    const seen=new Set([learner.assigned_machine_id]);
+    let localUsed=false;
+    for(const worker of workers) {
+        const id=worker.assigned_machine_id;
+        if(!id)return false;
+        if(seen.has(id)) {
+            if(localUsed||id!==learner.assigned_machine_id||
+                !colocatedCourierCollector(snapshot,learner,worker))
+                return false;
+            localUsed=true;
+        }
+        seen.add(id);
+    }
+    return true;
+}
 function courierLineageHost(snapshot,job,machine) {
     if(job.project_id!=='courier_lineage')return true;
     const learner=snapshot.jobs.find(item=>
@@ -1141,7 +1188,8 @@ function courierLineageHost(snapshot,job,machine) {
         learner.distributed_abort_requested_at||
         !['waiting_adapter','start_requested','launch_requested','running'].includes(learner.status)||
         !learner.assigned_machine_id||!machine||
-        machine.id===learner.assigned_machine_id||
+        (machine.id===learner.assigned_machine_id&&
+            !colocatedCourierCollector(snapshot,learner,job))||
         machine.status!=='connected'||
         !machine.installed_projects?.includes('courier_lineage'))
         return false;
