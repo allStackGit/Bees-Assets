@@ -5624,7 +5624,9 @@ class ExperimentHub {
                 // lineage ordinals. Bind by the operator-approved endpoint.
                 const bound=host.courier_lineage_slots?.length
                     ?host.courier_lineage_slots.find(item=>item.endpoint===endpoint)
-                    :courierWorkerSlot(host,slot);
+                    // Legacy single-listener adapters do not need a physical
+                    // slot during matching; the PPO slot is frozen at claim.
+                    :courierWorkerSlot(host,slot??0);
                 return bound?.endpoint===endpoint&&
                     !courierEndpointOccupied(snapshot,host,endpoint)&&
                     (host.id!==machine?.id||
