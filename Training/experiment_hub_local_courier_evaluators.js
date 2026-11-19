@@ -67,7 +67,20 @@ function configuration(hub) {
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
         throw Error('Courier environment must be a JSON object.');
     const hash=crypto.createHash('sha256').update(raw).digest('hex');
-    const suiteId='courier_survival_'+hash.slice(0,12);
+    const approvalFile=path.join(home,'evaluation-audits/courier/hub-approved-evaluation.json');
+    let suiteId='courier_survival_'+hash.slice(0,12);
+    if(fs.existsSync(approvalFile)) {
+        const stat=fs.lstatSync(approvalFile);
+        if(!stat.isFile()||stat.isSymbolicLink()||
+            stat.uid!==process.getuid()||stat.mode&0o077)
+            throw Error('Courier evaluator approval must be a private regular file.');
+        const approved=JSON.parse(fs.readFileSync(approvalFile,'utf8'));
+        if(approved.schema_version!==1||
+            !SHA.test(String(approved.config_sha256||''))||
+            !/^courier_survival_(?:[a-f0-9]{12}|[a-f0-9]{8}_[a-f0-9]{8})$/.test(approved.suite_id))
+            throw Error('Courier evaluation approval manifest is invalid.');
+        if(approved.config_sha256===hash)suiteId=approved.suite_id;
+    }
     return {
         home,ai,machine,project,interpreter,hash,suiteId,
         suiteRoot:path.join(home,'evaluation-audits/courier/suites'),
@@ -78,7 +91,7 @@ function configuration(hub) {
         snapshots:path.join(ai,'experiments/experiment-hub/courier-evaluation-snapshots'),
         receipts:path.join(ai,'experiments/experiment-hub/evaluator-receipts'),
         unitDir:path.join(home,'.config/systemd/user'),
-        unitId:'survival_'+hash.slice(0,8),
+        unitId:'survival_'+suiteId.slice('courier_survival_'.length),
     };
 }
 function frozenSuite(o,create=false) {
@@ -187,6 +200,12 @@ async function setup(hub) {
         '--project','courier','--project-root',o.project,
     ],{timeout:90000,maxBuffer:1024*1024});
     o.runtimeSha=JSON.parse(stdout).runtime_sha256;
+    if(!SHA.test(String(o.runtimeSha||'')))
+        throw Error('Courier evaluator runtime did not return a valid digest.');
+    const version=o.hash.slice(0,8)+'_'+o.runtimeSha.slice(0,8);
+    o.suiteId='courier_survival_'+version;
+    o.unitId='survival_'+version;
+    o.suiteFile=path.join(o.suiteRoot,o.suiteId+'.json');
     frozenSuite(o,true);
     // One explicit operator approval. At the next agent restart, even a
     // private preexisting Courier adapter can recognize these exact,
@@ -202,19 +221,19 @@ async function setup(hub) {
         if(current.schema_version!==1)
             throw Error('Unsupported Courier evaluator approval version.');
         if(!SHA.test(String(current.config_sha256||''))||
-            current.suite_id!=='courier_survival_'+current.config_sha256.slice(0,12))
+            !/^courier_survival_(?:[a-f0-9]{12}|[a-f0-9]{8}_[a-f0-9]{8})$/.test(current.suite_id))
             throw Error('Existing Courier evaluator approval is malformed.');
-        if(current.config_sha256!==o.hash) {
-            // A new environment needs a new immutable suite. Stop the old
-            // schedule without interrupting a running evaluation or training.
+        if(current.suite_id!==o.suiteId) {
+            // Each runtime/configuration pair has an immutable suite and
+            // service identity. Old evidence remains available for history.
             const oldTimer='bees-experiment-hub-courier-'+o.machine+
-                '-evaluator-survival_'+current.config_sha256.slice(0,8)+'.timer';
+                '-evaluator-survival_'+
+                current.suite_id.slice('courier_survival_'.length)+'.timer';
             await systemctl(['stop',oldTimer]);
             const temporary=o.approvalFile+'.new';
             fs.writeFileSync(temporary,approval,{flag:'wx',mode:0o600});
             fs.renameSync(temporary,o.approvalFile);
-        }else if(current.suite_id!==o.suiteId)
-            throw Error('An existing Courier suite approval differs from this environment.');
+        }
     }else fs.writeFileSync(o.approvalFile,approval,{flag:'wx',mode:0o600});
     const def=definition(o),unit=unitPaths(o);
     if(fs.existsSync(unit.serviceFile)||fs.existsSync(unit.timerFile))
