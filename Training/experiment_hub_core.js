@@ -2942,8 +2942,12 @@ class ExperimentHub {
             new Set(value.expected_lineage_job_ids).size!==value.expected_lineage_job_ids.length||
             Object.keys(value).some(key=>![
                 'learner_job_id','expected_lineage_job_ids',
-                'confirm_schedule','confirm_learner_start'].includes(key)))
-            throw Error('Approve the exact reserved Courier learner and remote lineage membership.');
+                'confirm_schedule','confirm_learner_start',
+                'resume_after_restart','confirm_restart_rearm'].includes(key))||
+            (value.resume_after_restart===true
+                ?value.confirm_restart_rearm!==true
+                :value.confirm_restart_rearm!==undefined))
+            throw Error('Approve the exact Courier remote membership and optional coordinator-restart rearm.');
         const snapshot=this.snapshot();
         const learner=snapshot.jobs.find(job=>job.id===value.learner_job_id);
         const host=snapshot.machines.find(machine=>
@@ -3024,7 +3028,8 @@ class ExperimentHub {
             agent_instances:Object.fromEntries(members.map(member=>[
                 member.machine_id,this.agentReports.get(member.machine_id).instance_id,
             ])),
-            resume_after_restart:false,recovery_pending:false,status:'pending',
+            resume_after_restart:value.resume_after_restart===true,
+            recovery_pending:false,status:'pending',
             reason:'Waiting for original Courier native leases and GPU access proof.',
             approved_at:new Date(at).toISOString(),
             expires_at:new Date(at+DISTRIBUTED_LAUNCH_TTL_MS).toISOString(),
