@@ -1119,12 +1119,13 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 throw Error('Courier training overrides require the exact installed training schema digest.');
             const remotePlan=approvedCourierLineages(remote?.endpoints,remote_lineage_plan);
             const shared=parameters.shared_policy===true;
-            // The shared-policy backend does not consume Courier's
-            // --hub-training-config or --reporting-benchmarks arguments.
-            // Refuse those requests before creating an output directory:
-            // accepting them would silently train with different settings.
-            if(shared&&(training!==null||reporting_benchmarks===true))
-                throw Error('Courier shared-policy training does not support the selected PPO overrides or reporting benchmarks; choose an independent-lineage run or remove those settings.');
+            if(shared&&reporting_benchmarks===true)
+                throw Error('Courier shared-policy training does not implement reporting benchmarks.');
+            // A host that has not installed the companion optimized shared
+            // learner must not silently ignore approved PPO hyperparameters.
+            if(shared&&training!==null&&
+                !fs.readFileSync(sharedScript,'utf8').includes("parser.add_argument('--hub-training-config'"))
+                throw Error('Install the Courier shared-policy PPO settings backend before using Design training overrides.');
             const collectorCpus=parameters.shared_policy_cpus;
             if(Object.keys(parameters).some(key=>
                 !['config_sha256','seed','workers','max_rounds','checkpoint_rounds',
@@ -1154,6 +1155,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // Keep population size independent of CPU lease changes.
             let chosenWorkers=workers===undefined?12:workers;
             const useRemote=parameters.remote_lineages===true;
+            if(useRemote&&!shared&&training!==null)
+                throw Error('Independent remote Courier lineages do not yet support distributed PPO setting overrides. Use the shared-policy learner or remove training overrides.');
             if(useRemote&&!shared&&remotePlan.length>=chosenWorkers)
                 throw Error('Courier requires at least one local PPO lineage beside its remote workers.');
             const out=jobRoot(context);
@@ -1256,6 +1259,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     '--optimizer-device','cuda',
                     ...(windows?[]:['--optimizer-gpu-pci',context.gpu_pci_address])]:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
+                ...(training!==null?['--hub-training-config',
+                    path.join(out,'hub-training-overrides.json')]:[]),
                 ...(sharedCapacityProbe&&!predecessor?['--probe-collectors']:[]),
                 ...(predecessor?['--resume']:[])];
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
