@@ -1127,6 +1127,12 @@ impl BattleCatalog {
             Some(json!({
                 "id": mission.id,
                 "title": entry.title,
+                "selected_config": entry.config_for(progress),
+                "victory_route": mission.on_victory.as_ref().map(|route| json!({
+                    "previous_mission": route.mission,
+                    "config": route.config,
+                    "active": progress.latest_victory(&route.mission),
+                })),
                 "requires": mission.requires,
                 "waiting_for": mission.requires.iter().filter(|id|
                     !progress.completed(id)).collect::<Vec<_>>(),

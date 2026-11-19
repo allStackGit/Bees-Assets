@@ -503,10 +503,27 @@ python3 native/tools/author_campaign.py my-branching-campaign \
 Here mission 2 completes after a finished battle even without victory;
 mission 3 requires mission 1, and mission 4 requires missions 2 and 3.
 Ship type 21 can be purchased immediately, while type 18 becomes
-purchasable after mission 3. Authoring rejects cyclic/forward references,
-missing missions, duplicate overrides, and non-shop unlock types.
+purchasable after mission 3. A mission can also change its battle
+configuration after a victory in a required earlier mission, without
+changing its original fleet, squad membership or source-priced ship
+classes. For example, supply an independently authored third-mission
+run and add `--mission-variant 3:1:alternate-third/battle.run.json`;
+the runtime selects that scenario when mission 1's latest result was a
+victory. The publisher checks and copies both complete native scenes.
+
+Verified trained-opponent challenge runs can also be used for ordinary
+and alternate missions. The publisher stages their selected model
+manifests and checkpoint files into the campaign, verifying every
+SHA-256 before the final atomic directory publication. A compatible
+Python policy worker and its dependencies must still be installed on
+the machine running these policy-opponent battles; the native gameplay
+world itself does not change.
+
+Authoring rejects cyclic/forward references, missing missions,
+duplicate overrides, and non-shop unlock types.
 `bees status my-branching-campaign/campaign.json --output-dir my-branching-save` exposes each mission's `requires`,
-`waiting_for`, `advance_on`, and the resulting class unlock states.
+`waiting_for`, `advance_on`, `selected_config`, the active
+`victory_route`, and the resulting class unlock states.
 
 The publisher retains the complete source-authored physical map,
 ships and scripted opponents, while assigning
