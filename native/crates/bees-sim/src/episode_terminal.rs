@@ -620,7 +620,14 @@ impl NativeEpisodeTerminal {
             };
             let target_dead = world.ship(objective.protected_ship_id)
                 .is_none_or(|ship| ship.vitals.is_dead());
-            let winner = if defenders_dead || target_dead {
+            // The target is the mission's durable defense objective. A
+            // scheduled reserve wave can still protect it even while every
+            // *deployed* mobile defender has been killed. Treat reserve
+            // identity as authoritative, exactly as demolition and escort
+            // already do, instead of ending a multi-wave defense early.
+            let defenders_eliminated = defenders_dead &&
+                !world.has_reserved_future_ships_on_side(objective.defending_side);
+            let winner = if target_dead || defenders_eliminated {
                 attacker_side
             } else if self.measurements.ticks_observed >= survival.deadline_tick {
                 objective.defending_side
