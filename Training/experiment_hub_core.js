@@ -818,9 +818,9 @@ function nativeStartReadiness(snapshot, job) {
             if(!host||host.status!=='connected'||
                 !host.local_executor_enabled||!host.native_preflight_passed||
                 !host.installed_projects?.includes('courier_lineage')||
-                host.courier_lineage_endpoint!==endpoint||
+                courierWorkerSlot(host,slot)?.endpoint!==endpoint||
                 host.courier_lineage_key_fingerprint!==key||
-                host.courier_lineage_max_shards!==shards[index]||
+                courierWorkerSlot(host,slot)?.max_shards!==shards[index]||
                 !owned||!courierLineageHost(snapshot,worker,host)||nativeResourceBlock(worker,owned)||
                 gpuStartBlock(worker,owned,host))
                 return block('Courier PPO remote endpoint, identity, GPU proof or fresh independent lease differs from its learner.');
@@ -3052,10 +3052,10 @@ class ExperimentHub {
                 ['offered','acknowledged'].includes(item.status));
             if(!machine||!lease||!job.assigned_machine_id)
                 throw Error('Courier group needs registered machines and original resource leases.');
-            if(index>0&&(machine.courier_lineage_endpoint!==endpoints[index-1]||
+            if(index>0&&(courierWorkerSlot(machine,job.frozen_parameters.slot)?.endpoint!==endpoints[index-1]||
                 machine.courier_lineage_key_fingerprint!==
                     host.courier_remote_key_fingerprint||
-                machine.courier_lineage_max_shards!==ceilings[index-1]))
+                courierWorkerSlot(machine,job.frozen_parameters.slot)?.max_shards!==ceilings[index-1]))
                 throw Error('Courier group endpoint/key/process ceiling no longer matches its original slot.');
             const agent=this.agentReports.get(machine.id);
             if(!UUID.test(String(agent?.instance_id||'')))
@@ -3189,9 +3189,9 @@ class ExperimentHub {
                             item.id===worker.assigned_machine_id);
                         const frozen=plan.frozen_members[index+1];
                         return !machine||worker.frozen_parameters?.slot!==frozen.slot||
-                            machine.courier_lineage_endpoint!==frozen.endpoint||
+                            courierWorkerSlot(machine,frozen.slot)?.endpoint!==frozen.endpoint||
                             machine.courier_lineage_key_fingerprint!==plan.key_fingerprint||
-                            machine.courier_lineage_max_shards!==frozen.max_shards;
+                            courierWorkerSlot(machine,frozen.slot)?.max_shards!==frozen.max_shards;
                     })) {
                     halt('needs_review','Courier group private endpoint, slot or key identity changed.');
                     continue;
@@ -3830,9 +3830,9 @@ class ExperimentHub {
                         const host=snapshot.machines.find(item=>
                             item.id===worker.assigned_machine_id);
                         return !host||!owner||
-                            host.courier_lineage_endpoint!==owner.endpoint||
+                            courierWorkerSlot(host,owner.slot)?.endpoint!==owner.endpoint||
                             host.courier_lineage_key_fingerprint!==owner.key_fingerprint||
-                            host.courier_lineage_max_shards!==owner.max_shards||
+                            courierWorkerSlot(host,owner.slot)?.max_shards!==owner.max_shards||
                             owner.key_fingerprint!==intent.key_fingerprint;
                     })) {
                     disarm('Courier remote private endpoint or shared key identity changed.');
@@ -5747,9 +5747,9 @@ class ExperimentHub {
                 const machine=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
                 return {job_id:worker.id,dispatch_id:dispatches[worker.id],
                     machine_id:machine.id,lease_id:worker.lease_id,
-                    endpoint:machine.courier_lineage_endpoint,
+                    endpoint:courierWorkerSlot(machine,worker.frozen_parameters.slot)?.endpoint,
                     key_fingerprint:machine.courier_lineage_key_fingerprint,
-                    max_shards:machine.courier_lineage_max_shards,
+                    max_shards:courierWorkerSlot(machine,worker.frozen_parameters.slot)?.max_shards,
                     slot:worker.frozen_parameters.slot};
             }),
             key_fingerprint:host.courier_remote_key_fingerprint,
