@@ -199,7 +199,7 @@ async function status(hub) {
     for(const id of Object.keys(SUITES)) {
         const names=unitFiles(options,id);
         const installed=fs.existsSync(names.serviceFile)&&fs.existsSync(names.timerFile);
-        let managed=false,reason=null,active=false,running=false,lastResult=null;
+        let managed=false,reason=null,active=false,running=false,lastResult=null,lastError=null;
         if(installed) {
             try {
                 const defs=definitions(options);
@@ -211,11 +211,21 @@ async function status(hub) {
                 active=timer.ActiveState==='active';
                 running=service.ActiveState==='activating'||service.ActiveState==='active';
                 lastResult=service.Result||null;
+                if(lastResult&&lastResult!=='success') {
+                    try {
+                        const {stdout}=await run('/usr/bin/journalctl',[
+                            '--user','-u',names.service,'-n','24','--no-pager','-o','cat',
+                        ],{timeout:3000,maxBuffer:16384});
+                        lastError=stdout.split(/\r?\n/).reverse().find(line=>
+                            /^Scheduled TinyBrains evaluation failed:/.test(line))||null;
+                        if(lastError)lastError=lastError.slice(0,220);
+                    }catch { /* Leave the systemd failure status visible. */ }
+                }
                 if(!managed)reason='Installed evaluator requires systemd reload.';
             }catch(error){reason=String(error.message||error);}
         }
         entries.push({id,suite_id:SUITES[id],installed,managed,
-            active,running,last_result:lastResult,reason});
+            active,running,last_result:lastResult,last_error:lastError,reason});
     }
     return {available:true,machine:options.machine,entries};
 }
