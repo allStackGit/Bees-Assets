@@ -4309,12 +4309,17 @@ class ExperimentHub {
                 job.frozen_parameters?.optimizer_group===true)) {
             const source=jobs[0]?.frozen_parameters;
             const pins=JSON.stringify(source?.rollout_bundles??null);
+            const inputIdentity=source?.optimizer_inputs_sha256;
             if(jobs.length>8||jobs[0].project_id!=='bees_native'||
                 source?.optimizer_group!==true||
+                !SHA256.test(String(inputIdentity||''))||
+                !Array.isArray(source.rollout_bundles)||
+                source.rollout_bundles.length<1||
                 new Set(jobs.map(job=>job.assigned_machine_id)).size!==jobs.length||
                 jobs.some((job,index)=>
                     job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
                     job.frozen_parameters?.optimizer_group!==true||
+                    job.frozen_parameters.optimizer_inputs_sha256!==inputIdentity||
                     JSON.stringify(job.frozen_parameters.rollout_bundles??null)!==pins||
                     job.frozen_parameters.seed_offset!==0||
                     (job.frozen_parameters.refresh_opponent_slot??null)!==
@@ -4323,7 +4328,7 @@ class ExperimentHub {
                     job.resources.gpu_mode!=='exclusive'||
                     job.resources.cpus<job.resources.gpu_count||
                     job.resources.gpu_count!==jobs[0].resources.gpu_count))
-                throw Error('Native MA-POCA optimizer bundle requires one checkpoint owner followed by 1–7 exclusive GPU worker machines with identical pinned captures.');
+                throw Error('Native MA-POCA optimizer bundle requires one checkpoint owner and 1–7 exclusive GPU worker machines with identical verified model, trainer, backend and pinned rollout inputs.');
         }
         this.commit(next);
         return {bundle_id:bundleId,members:jobs.map(copy),
