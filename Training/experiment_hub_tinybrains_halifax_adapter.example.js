@@ -3,12 +3,21 @@
 // Machine-local, opt-in example for Halifax. Copy to a private configuration
 // path if changing defaults. Requires the exact, verified Exeter checkpoint.
 const os=require('node:os');
+const fs=require('node:fs');
 const path=require('node:path');
 const {createTinyBrainsPersistentDockerAdapter}=
     require('./experiment_hub_tinybrains_persistent_adapter');
 
 const home=os.homedir();
 const ai=path.join(home,'ai');
+// Advertise only installed fixed suites, and only after the evaluator receipt
+// directory exists. The timer/poller must be installed separately.
+const evaluationRoot=path.join(ai,'experiments/experiment-hub/evaluator-receipts');
+const suiteRoot=path.join(home,'evaluation-audits/tinybrains/suites');
+const suiteFiles=['tinybrains_nano_tiny_v3.json','tinybrains_micro_tiny_v3.json']
+    .map(name=>path.join(suiteRoot,name));
+const evaluationReady=fs.existsSync(evaluationRoot)&&
+    suiteFiles.every(file=>fs.existsSync(file));
 module.exports={
     tinybrains:createTinyBrainsPersistentDockerAdapter({
         projectRoot:path.join(ai,'projects/tinybrains/Ants-MAPOCA'),
@@ -16,11 +25,12 @@ module.exports={
         artifactRoot:path.join(ai,'experiments/experiment-hub/tinybrains-jobs'),
         sourceRunRoot:path.join(ai,'experiments/tinybrains/mini-learning'),
         engineCacheRoot:path.join(ai,'experiments/tinybrains-cache'),
-        // Optional, separately installed fixed-opponent evaluator support.
-        // Use the same approved suite IDs as the evaluator timer and a
-        // private receipts directory outside Hub, source and job roots:
-        // evaluationRoot:path.join(ai,'experiments/experiment-hub/evaluator-receipts'),
-        // evaluationSuites:['nano_fixed','micro_fixed'],
+        // The service must write matching receipts into this private
+        // directory. No evaluation is claimed until both frozen suite
+        // definitions and the separate receipt directory are installed.
+        evaluationRoot:evaluationReady?evaluationRoot:undefined,
+        evaluationSuites:evaluationReady?suiteFiles.map(file=>
+            JSON.parse(fs.readFileSync(file,'utf8')).suite_id):undefined,
         // User verified that the Exeter and Halifax files have this same SHA.
         seedCheckpointSha256:'fae407ef8db3fab7620b1407b17380e2eea0f616c8d4d8816d3924cac6e005d7',
         seedPpoUpdates:7199,
