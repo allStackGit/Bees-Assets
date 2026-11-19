@@ -206,6 +206,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
     missions = []
     previous = None
     stable_roster = None
+    earned_saved_squads = set()
     shop_catalog = {}
     per_mission_sources = []
     per_mission_class_contracts = []
@@ -258,16 +259,34 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
             "record_fleet_stats": True, "persist_fleet_losses": True,
             "bank_player_minerals": True,
         }
+        authored_squads = {squad["saved_squad_id"] for squad in scene["squads"]
+                           if squad["side"] == args.player_side}
+        squad_grants = [grant for grant in args.victory_squad if grant[0] == index]
+        if len(squad_grants) > 64:
+            raise ValueError(f"mission {index} awards too many new SavedSquads")
+        for _, new_id, template_id in squad_grants:
+            if (new_id in authored_squads or new_id in earned_saved_squads or
+                    template_id not in authored_squads | earned_saved_squads or
+                    new_id == template_id):
+                raise ValueError(
+                    f"mission {index} needs a new persistent SavedSquad ID and "
+                    "a previously available player command template"
+                )
+            earned_saved_squads.add(new_id)
+        if squad_grants:
+            mission["victory_squads"] = [
+                {"saved_squad_id": new_id, "template_saved_squad_id": template_id}
+                for _, new_id, template_id in squad_grants
+            ]
         grants = [grant for grant in args.victory_grant if grant[0] == index]
         if grants:
-            allowed = {squad["saved_squad_id"] for squad in scene["squads"]
-                       if squad["side"] == args.player_side}
+            allowed = authored_squads | earned_saved_squads
             classes = set(args.shop_types) | set(args.grant_only_types)
             if any(kind not in classes or saved_id not in allowed
                    for _, kind, _, saved_id in grants):
                 raise ValueError(
-                    f"mission {index} rewards require a source-priced fleet class and "
-                    "an authored player SavedSquad"
+                    f"mission {index} ship rewards require a source-priced fleet class and "
+                    "an existing or already-awarded player SavedSquad"
                 )
             if sum(count for _, _, count, _ in grants) > 1024:
                 raise ValueError(f"mission {index} exceeds 1024 awarded ships")
@@ -310,7 +329,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         "campaign_id": slug, "battles": missions,
         "buildable_ships": fleet_classes,
     }
-    if fleet_classes:
+    if fleet_classes or args.victory_squad:
         catalog["max_squad_ships"] = args.max_squad_ships
     library = {
         "library_schema": 1,
@@ -333,6 +352,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
             {"mission_index": index, "ship_type": kind,
              "count": count, "saved_squad_id": saved_id}
             for index, kind, count, saved_id in args.victory_grant
+        ],
+        "victory_squads": [
+            {"mission_index": index, "saved_squad_id": new_id,
+             "template_saved_squad_id": template_id}
+            for index, new_id, template_id in args.victory_squad
         ],
         "mission_count": len(missions),
     }
@@ -371,6 +395,20 @@ def victory_grant(value: str) -> tuple[int, int, int, int]:
     return mission, kind, count, saved_id
 
 
+def victory_squad(value: str) -> tuple[int, int, int]:
+    """MISSION_INDEX:NEW_SAVED_SQUAD_ID:TEMPLATE_SAVED_SQUAD_ID."""
+    if not re.fullmatch(r"\d+:\d+:\d+", value):
+        raise argparse.ArgumentTypeError(
+            "--victory-squad needs MISSION:NEW_SQUAD_ID:TEMPLATE_SQUAD_ID"
+        )
+    mission, new_id, template_id = map(int, value.split(":"))
+    if not 1 <= mission <= 40 or not 1 <= new_id < 2**63 or not 1 <= template_id < 2**63:
+        raise argparse.ArgumentTypeError(
+            "victory squad requires mission 1..40 and positive 64-bit SavedSquad IDs"
+        )
+    return mission, new_id, template_id
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path,
@@ -388,7 +426,12 @@ def main() -> None:
     parser.add_argument("--victory-grant", action="append", type=victory_grant,
                         default=[], metavar="MISSION:TYPE:COUNT:SQUAD",
                         help="one-time victory FleetShip rewards, using a --shop-types or --grant-only-types class")
+    parser.add_argument("--victory-squad", action="append", type=victory_squad,
+                        default=[], metavar="MISSION:NEW_SQUAD:TEMPLATE_SQUAD",
+                        help="one-time victory SavedSquad; ships may be awarded into this ID in the same mission")
     args = parser.parse_args()
+    if any(mission > len(args.mission) for mission, _, _, _ in args.victory_squad):
+        parser.error("--victory-squad refers to a mission not included by --mission")
     if any(mission > len(args.mission) for mission, _, _, _ in args.victory_grant):
         parser.error("--victory-grant refers to a mission not included by --mission")
     if set(args.shop_types) & set(args.grant_only_types):
@@ -431,6 +474,7 @@ def main() -> None:
         "shop_types": receipt["shop_types"],
         "grant_only_types": receipt["grant_only_types"],
         "victory_grants": receipt["victory_grants"],
+        "victory_squads": receipt["victory_squads"],
         "player_side": args.player_side,
     }, sort_keys=True))
 
