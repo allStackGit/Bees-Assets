@@ -113,6 +113,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'rollout_opponent_grouped_models',
             'rollout_opponent_grouped_states',
             'rollout_opponent_grouped_input_bytes',
+            'rollout_learner_grouped_forwards_saved',
+            'rollout_learner_grouped_states',
             'rollout_opponent_grouped_padding',
             'rollout_opponent_grouped_fallbacks',
             'rollout_opponent_grouped_weight_reuses',
