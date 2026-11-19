@@ -4635,15 +4635,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 (optimizer
                     ?'The first node alone publishes the checkpoint. All ranks use the same verified capture bundles and synchronized gradients. '
                     :'Each job remains independently owned. ')+
-                'Execution requires separate native Start authorization; it is not a simultaneous-start guarantee.'))return;
+                (optimizer&&collectorIds.length
+                    ?' After reservation, also approve the existing GPU bundle auto-start once all leases and machines qualify. Approval expires in 20 minutes, does not survive restart, and never restarts an uncertain process. '
+                    :' Execution requires separate native Start authorization. ')+
+                'Machine-local Starts are not simultaneous.'))return;
             const result=await action('hub/resource-bundles',{
                 confirm_queue:true,members,
                 ...(sourceId?{model_source_job_id:sourceId}:{}),
                 ...(collectorIds.length?{collector_job_ids:collectorIds}:{}),
             });
+            let launchMessage='No Starts authorized.';
+            if(optimizer&&collectorIds.length) {
+                try {
+                    const plan=await action('hub/resource-bundles/schedule-start',{
+                        bundle_id:result.bundle_id,
+                        expected_job_ids:result.members.map(job=>job.id),
+                        confirm_schedule:true,confirm_gpu_start:true,
+                    });
+                    launchMessage=plan.status==='authorized'
+                        ?'Synchronized optimizer Starts authorized after native readiness checks.'
+                        :'GPU auto-start '+plan.status+
+                            '; awaiting fresh machine/lease qualification.';
+                }catch(error) {
+                    launchMessage='Reserved, but GPU auto-start was not approved: '+
+                        String(error.message||error)+
+                        '. Use the existing bundle Start controls to retry.';
+                }
+            }
             feedback('hub-resource-bundle-message',
                 'Reserved all '+result.members.length+' jobs · bundle '+
-                result.bundle_id.slice(-8)+'. No Starts authorized.');
+                result.bundle_id.slice(-8)+'. '+launchMessage);
             await reload();
         }catch(error){
             feedback('hub-resource-bundle-message',String(error.message||error));
