@@ -1086,8 +1086,7 @@ fn current_state(
             Some(json!({
                 "kind": "survival",
                 "protected_ship_id": objective.protected_ship_id,
-                "defending_side": view.combat.ship(objective.protected_ship_id)
-                    .map(|ship| ship.side),
+                "defending_side": objective.defending_side,
                 "elapsed_seconds": objective.elapsed_seconds,
                 "duration_seconds": objective.duration_seconds,
                 "seconds_remaining": objective.seconds_remaining,

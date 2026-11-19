@@ -20,7 +20,10 @@ use bees_sim::combat_perception_bridge::{
 use bees_sim::combat_world::{CombatWorld, CombatWorldError};
 use bees_sim::episode_ship_identity::EpisodeShipIdentities;
 use bees_sim::full_perception::PolicyPerceptionSnapshot;
-use bees_sim::perception::{CapabilitySource, EXPLORATION_LEN};
+use bees_sim::perception::{
+    CapabilitySource, EXPLORATION_LEN, NativeMissionKind, NativeMissionObservation,
+};
+use bees_sim::level_discovery::DiscoveryKind;
 use bees_sim::local_navigation_observation::LocalNavigationOccupancy;
 use bees_sim::perception_entities::ObservedShip;
 use bees_sim::perception_environment::{
@@ -344,6 +347,69 @@ impl NativeWorldPerceptionAssembler {
             self.navigation.mark_static_aabb(center, extents)
                 .map_err(CombatPerceptionError::from)?;
         }
+        // Native-authored objective guidance uses the original 16 reserved
+        // v26 channels; a normal Unity export continues to emit zeros.
+        // Enemy positions are exposed only after true HiveMind discovery,
+        // not because the authored Level knows the target identity.
+        let mission_ship = |id: i64| -> Option<(bees_sim::geometry::Vec2, f32)> {
+            let target = world.ship(id)?;
+            if target.side != side &&
+                !world.discovery().has(side, DiscoveryKind::Ship, id) {
+                return None;
+            }
+            let body = world.ship_body(id).filter(|body| body.active)?;
+            if target.vitals.is_dead() { return None; }
+            let max_health = target.vitals.max_health();
+            (max_health > 0).then_some((
+                body.motion.position,
+                (target.vitals.health() as f32 / max_health as f32).clamp(0.0, 1.0),
+            ))
+        };
+        let native_mission = if let Some(status) =
+            owning_world.state.events.survival_status()
+        {
+            Some(NativeMissionObservation {
+                kind: NativeMissionKind::Survival,
+                objective_side: status.defending_side == side,
+                visible_target: mission_ship(status.protected_ship_id),
+                destination: None,
+                seconds_remaining: status.seconds_remaining,
+                duration_seconds: status.duration_seconds,
+            })
+        } else if let Some(status) = owning_world.state.events.demolition_status() {
+            let target = if world.discovery().has(
+                side, DiscoveryKind::MapObject, status.target_map_object_id,
+            ) {
+                world.map_object(status.target_map_object_id)
+                    .zip(world.obstacle_body(status.target_map_object_id))
+                    .filter(|(object, body)| object.health > 0 &&
+                        object.max_health > 0 && body.active)
+                    .map(|(object, body)| (
+                        body.primary_bounds().map_or(body.pose.position, |bounds|
+                            (bounds.min + bounds.max) * 0.5),
+                        (object.health as f32 / object.max_health as f32)
+                            .clamp(0.0, 1.0),
+                    ))
+            } else { None };
+            Some(NativeMissionObservation {
+                kind: NativeMissionKind::Demolition,
+                objective_side: status.attacking_side == side,
+                visible_target: target,
+                destination: None,
+                seconds_remaining: status.seconds_remaining,
+                duration_seconds: status.duration_seconds,
+            })
+        } else if let Some(status) = owning_world.state.events.escort_status() {
+            Some(NativeMissionObservation {
+                kind: NativeMissionKind::Escort,
+                objective_side: status.escorting_side == side,
+                visible_target: mission_ship(status.escorted_ship_id),
+                destination: world.escorted_destination_bounds()
+                    .map(|bounds| (bounds.min + bounds.max) * 0.5),
+                seconds_remaining: status.seconds_remaining,
+                duration_seconds: status.duration_seconds,
+            })
+        } else { None };
         Ok(PolicyPerceptionSnapshot {
             ship,
             capability,
@@ -361,6 +427,7 @@ impl NativeWorldPerceptionAssembler {
             navigation_world_grid: self.navigation.occupancy(),
             exploration_last_seen: inputs.exploration_last_seen,
             self_entity_id: ship_id,
+            native_mission,
         })
     }
 }
