@@ -6694,6 +6694,51 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,'No registered machines.').colSpan=8;
             $('hub-machine-rows').append(tr);
         }
+        const readiness=$('hub-machine-readiness');
+        if(readiness) {
+            readiness.replaceChildren();
+            for(const machine of state.machines) {
+                const installed=new Set(machine.installed_projects||[]);
+                const capabilities=[];
+                if(machine.status!=='connected')
+                    capabilities.push('Agent offline');
+                else if(!machine.local_executor_enabled)
+                    capabilities.push('Observation only — approve a trusted native adapter on this host');
+                else if(!machine.native_preflight_passed)
+                    capabilities.push('Native preflight incomplete');
+                if(installed.has('tinybrains'))
+                    capabilities.push('TinyBrains learner'+
+                        (machine.tinybrains_remote_rollout_count>0
+                            ?' · '+machine.tinybrains_remote_rollout_count+
+                                ' approved remote collector endpoint(s)'
+                            :' · local only; no remote collectors pinned'));
+                if(installed.has('tinybrains_rollout'))
+                    capabilities.push('TinyBrains collector'+
+                        (machine.tinybrains_rollout_endpoint
+                            ?' · '+machine.tinybrains_rollout_endpoint
+                            :' · no approved endpoint'));
+                if(installed.has('courier'))
+                    capabilities.push('Courier learner'+
+                        (machine.courier_remote_lineage_endpoints?.length
+                            ?' · '+machine.courier_remote_lineage_endpoints.length+
+                                ' remote endpoints pinned'
+                            :' · local only; no remote lineage endpoints pinned'));
+                if(installed.has('courier_lineage'))
+                    capabilities.push('Courier collector installed');
+                const suites=machine.evaluation_suites||{};
+                for(const project of ['tinybrains','courier']) {
+                    const count=suites[project]?.length||0;
+                    if(count)capabilities.push(project+' evaluator suites: '+count);
+                }
+                if(!capabilities.length)capabilities.push('No approved training adapters');
+                const row=document.createElement('p');
+                const name=document.createElement('strong');
+                name.textContent=machine.name+' ('+machine.id+'): ';
+                row.append(name,document.createTextNode(capabilities.join(' · ')));
+                readiness.append(row);
+            }
+            if(!state.machines.length)readiness.textContent='No enrolled machines.';
+        }
         const selectedProject=$('hub-lease-project').value;
         $('hub-lease-project').replaceChildren(...state.projects.map(p=>
             new Option(p.name,p.id)));
