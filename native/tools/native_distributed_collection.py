@@ -113,6 +113,12 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
             "world_count": worlds,
             "rollout_workers": processes,
             "physics_workers": physics,
+            # Preserve the EXACT Hub GPU count in the immutable collector
+            # order. Physical device identities remain owned by the Hub's
+            # machine-local exclusive lease; never export PCI IDs as ordinals.
+            "hub_gpu_count": entry["resources"].get(
+                "gpu_count", len(entry["resources"].get("gpus", [])),
+            ),
         })
         current += worlds
     return _validate_collector_plan({"collectors": collectors})
@@ -126,7 +132,7 @@ def _issued_allocations(path, baseline):
             not isinstance(orders.get("jobs"), list)):
         raise ValueError(f"invalid issued native collection order: {path}")
     keys = ("id", "world_start", "world_count", "rollout_workers", "physics_workers",
-            "rollout_gpus", "rollout_gpu_mask")
+            "rollout_gpus", "rollout_gpu_mask", "hub_gpu_count")
     previous = {"collectors": [
         {key: job[key] for key in keys if key in job} for job in orders["jobs"]
     ]}
@@ -137,7 +143,8 @@ def _issued_allocations(path, baseline):
                 item["rollout_workers"] != original[item["id"]]["rollout_workers"] or
                 item.get("physics_workers") != original[item["id"]].get("physics_workers") or
                 item.get("rollout_gpus") != original[item["id"]].get("rollout_gpus") or
-                item.get("rollout_gpu_mask") != original[item["id"]].get("rollout_gpu_mask")
+                item.get("rollout_gpu_mask") != original[item["id"]].get("rollout_gpu_mask") or
+                item.get("hub_gpu_count") != original[item["id"]].get("hub_gpu_count")
                 for item in read_plan_document["collectors"])):
         raise ValueError(f"issued collector resources differ from pinned plan: {path}")
     initial = sorted(baseline["collectors"], key=lambda row: row["world_start"])
@@ -163,7 +170,10 @@ def _validate_collector_plan(plan):
         required = {"id", "world_start", "world_count", "rollout_workers"}
         if (not isinstance(item, dict) or
                 not required.issubset(item) or
-                set(item) - required - {"physics_workers", "rollout_gpus", "rollout_gpu_mask"}):
+                set(item) - required - {
+                    "physics_workers", "rollout_gpus", "rollout_gpu_mask",
+                    "hub_gpu_count",
+                }):
             raise ValueError("collector needs id, world_start, world_count, rollout_workers and optional physics_workers")
         name, start, count, workers = (item[key] for key in (
             "id", "world_start", "world_count", "rollout_workers",
@@ -177,6 +187,14 @@ def _validate_collector_plan(plan):
                  (type(item["physics_workers"]) is not int or
                   not 1 <= item["physics_workers"] <= 128))):
             raise ValueError(f"invalid or duplicate collector allocation: {name!r}")
+        if "hub_gpu_count" in item:
+            leased = item["hub_gpu_count"]
+            if (type(leased) is not int or leased not in (0, 1, 2) or
+                    leased > workers or leased > count or
+                    "rollout_gpus" in item or "rollout_gpu_mask" in item):
+                raise ValueError(
+                    f"Hub GPU lease count conflicts with native collector allocation: {name!r}"
+                )
         if "rollout_gpus" in item:
             gpus = item["rollout_gpus"]
             if (not isinstance(gpus, list) or not 1 <= len(gpus) <= workers or
@@ -431,6 +449,16 @@ def verify_bundle(path, job, orders):
     raw = path.read_bytes()
     receipt = json.loads(raw)
     partition = receipt.get("partition")
+    # A Hub-authorized one/two-GPU lease must produce its exact count of
+    # verified GPU forwards. CPU-only issued work cannot silently claim
+    # accelerator execution. Existing standalone orders retain their
+    # original explicit-ordinal GPU identity.
+    if "hub_gpu_count" in job:
+        leased = job["hub_gpu_count"]
+        actual = receipt.get("leased_gpu_inference") is True
+        if actual != (leased > 0) or (
+                actual and receipt.get("leased_gpu_count", 1) != leased):
+            raise ValueError(f"native collector did not use its pinned Hub GPU lease: {path}")
     if "source_run_contract_sha256" not in orders:
         source_matches = receipt.get("run_config_sha256") == orders["source_run_config_sha256"]
     elif orders.get("source_run_contract_version") == 2:

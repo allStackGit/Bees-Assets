@@ -80,6 +80,8 @@ function checkPlan(plan,orders) {
             allocation.cpus<job.rollout_workers*physics||
             !Number.isSafeInteger(allocation.ram_mb)||allocation.ram_mb<128||
             ![0,1,2].includes(allocation.gpu_count??0)||
+            (job.hub_gpu_count!==undefined&&
+             job.hub_gpu_count!==(allocation.gpu_count??0))||
             (allocation.gpu_count>0&&(
                 allocation.gpu_mode!=='exclusive'||
                 plan.confirm_gpu_start!==true||
