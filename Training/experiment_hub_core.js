@@ -1043,6 +1043,13 @@ function courierEndpointOccupied(snapshot,machine,endpoint,exceptJobId=null) {
         if(job.id===exceptJobId||job.project_id!=='courier_lineage'||
             job.assigned_machine_id!==machine.id||
             ['cancelled','finished','stopped'].includes(job.status))return false;
+        // Failed native jobs retain endpoint ownership until the operator
+        // releases the verified terminal lease. A released failure must
+        // not permanently strand an otherwise reusable private listener.
+        if(job.status==='failed'&&job.capacity_released_at&&
+            snapshot.reservations?.some(lease=>lease.id===job.lease_id&&
+                lease.job_id===job.id&&lease.machine_id===machine.id&&
+                lease.status==='released'&&lease.released_at))return false;
         const learner=snapshot.jobs.find(parent=>
             parent.id===job.frozen_parameters?.learner_job_id&&
             parent.project_id==='courier');
