@@ -1207,12 +1207,16 @@ class BottleneckEvidence {
                 }
             }
             const gpuCollectors=metrics.training_shared_gpu_collectors;
+            const gpuRetained=metrics.training_shared_gpu_policy_retained;
             const gpuReused=metrics.training_shared_gpu_policy_reused;
-            if(gpuCollectors?.unit==='count'&&gpuReused?.unit==='count'&&
+            if(gpuCollectors?.unit==='count'&&gpuRetained?.unit==='count'&&
+                gpuReused?.unit==='count'&&
                 Number.isSafeInteger(gpuCollectors.value)&&gpuCollectors.value>0&&
                 gpuCollectors.value<=metrics.training_collector_workers.value&&
+                Number.isSafeInteger(gpuRetained.value)&&
+                gpuRetained.value>=0&&gpuRetained.value<=gpuCollectors.value&&
                 Number.isSafeInteger(gpuReused.value)&&gpuReused.value>=0&&
-                gpuReused.value<=gpuCollectors.value) {
+                gpuReused.value<=gpuRetained.value) {
                 add('training_shared_gpu_reuse_fraction',
                     gpuReused.value/gpuCollectors.value,'ratio');
                 add('training_shared_gpu_policy_retention_gap',
