@@ -52,16 +52,36 @@ class LocalExecution {
             tinybrains_required_import_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_required_import_profiles||[])],
             tinybrains_remote_rollout_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_profiles||[])],
             tinybrains_remote_rollout_count:this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_count||0,
+            tinybrains_remote_cpu_learner:this.supervisor instanceof DockerSupervisor&&
+                this.supervisor.adapters?.tinybrains?.tinybrains_remote_cpu_learner===true,
+            tinybrains_rollout_subset:this.supervisor.adapters?.tinybrains?.tinybrains_rollout_subset===true,
             tinybrains_remote_rollout_endpoints:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_endpoints||[])],
             tinybrains_remote_key_fingerprint:this.supervisor.adapters?.tinybrains?.tinybrains_remote_key_fingerprint||null,
             tinybrains_rollout_endpoint:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_endpoint||null,
             tinybrains_rollout_key_fingerprint:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_key_fingerprint||null,
             tinybrains_rollout_thread_limit:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_thread_limit||0,
+            courier_remote_lineage_endpoints:[...(this.supervisor.adapters?.courier?.courier_remote_lineage_endpoints||[])],
+            courier_lineage_subset:this.supervisor.adapters?.courier?.courier_lineage_subset===true,
+            courier_shared_policy_maps:this.supervisor.adapters?.courier?.courier_shared_policy_maps||0,
+            courier_shared_policy_collector:this.supervisor.adapters?.courier_lineage?.courier_shared_policy_collector===true,
+            courier_remote_key_fingerprint:this.supervisor.adapters?.courier?.courier_remote_key_fingerprint||null,
+            courier_remote_max_shards:[...(this.supervisor.adapters?.courier?.courier_remote_max_shards||[])],
+            courier_lineage_endpoint:this.supervisor.adapters?.courier_lineage?.courier_lineage_endpoint||null,
+            courier_lineage_slots:structuredClone(this.supervisor.adapters?.courier_lineage?.courier_lineage_slots||[]),
+            courier_lineage_key_fingerprint:this.supervisor.adapters?.courier_lineage?.courier_lineage_key_fingerprint||null,
+            courier_lineage_max_shards:this.supervisor.adapters?.courier_lineage?.courier_lineage_max_shards||0,
             tinybrains_dual_gpu_profiles:this.supervisor.gpuEnabled===true&&
                 dockerCapable(this.supervisor)&&
                 this.supervisor.adapters?.tinybrains?.gpu_dual_execution==='split-ppo'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_dual_gpu_profiles||[])]:[],
+            tinybrains_multi_gpu_profiles:this.supervisor.gpuEnabled===true&&
+                this.supervisor instanceof DockerSupervisor&&
+                this.supervisor.adapters?.tinybrains?.gpu_multi_execution==='split-ppo-collectors'
+                ?[...(this.supervisor.adapters.tinybrains.tinybrains_multi_gpu_profiles||[])]:[],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
+            linux_single_gpu_qualification:this.supervisor.gpuEnabled===true&&
+                (this.supervisor instanceof LinuxSupervisor||
+                    this.supervisor instanceof DockerSupervisor),
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
                 (!this.supervisor.gpuProjects||this.supervisor.gpuProjects.includes(project))&&
@@ -120,11 +140,20 @@ class LocalExecution {
                     localAdapter?.gpu_dual_execution==='split-ppo'&&
                     job.frozen_parameters?.device==='dual'&&
                     job.resources?.gpu_mode==='exclusive';
+                const multi=count>=2&&count<=8&&
+                    job.resources?.gpu_mode==='exclusive'&&
+                    (this.supervisor instanceof LinuxSupervisor&&
+                        job.project_id==='courier'&&
+                        localAdapter?.gpu_multi_execution==='independent-ppo'||
+                     this.supervisor instanceof DockerSupervisor&&
+                        job.project_id==='tinybrains'&&count>=3&&
+                        job.frozen_parameters?.device==='multi'&&
+                        localAdapter?.gpu_multi_execution==='split-ppo-collectors');
                 const single=count===1;
                 if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
                     !this.supervisor.qualifiedAt||
                     job.status!=='waiting_adapter'||
-                    !(dual||single&&(job.resources?.gpu_mode==='exclusive'||
+                    !(dual||multi||single&&(job.resources?.gpu_mode==='exclusive'||
                         job.resources?.gpu_mode==='shared'&&
                         dockerCapable(this.supervisor)&&
                         localAdapter?.gpu_sharing==='cooperative-pytorch'))||
@@ -136,7 +165,7 @@ class LocalExecution {
                     lease.gpu_bindings.some((bound,i)=>
                         bound.id!==lease.resources.gpus?.[i]||
                         (job.resources.gpus?.length>0&&bound.id!==job.resources.gpus[i])))
-                    throw Error('GPU access probe requires a qualified frozen one- or two-GPU Linux lease.');
+                    throw Error('GPU access probe requires a qualified frozen, project-approved Linux GPU lease.');
                 // The bounded device-filter service verifies both allowed /
                 // denied render nodes and the actual installed HIP runtime.
                 // Read-only verifier construction must not create the
@@ -146,7 +175,7 @@ class LocalExecution {
                         job_id:job.id,project_id:job.project_id,
                         artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                         continuation_of_job_id:job.continuation_of_job_id||null,
-                        ...(dual
+                        ...(dual||multi
                             ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                             :{gpu_pci_address:lease.gpu_bindings[0].pci_address}),
                     }));
