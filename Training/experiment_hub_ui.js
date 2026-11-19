@@ -1045,8 +1045,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // The compact main row stays readable. The original immutable
             // collector/optimizer ownership and seed lineage remain
             // inspectable without generating separate Hub status logs.
-            if(completeRounds.length)
-                details.title=completeRounds.map(entry=>
+            if(completeRounds.length||plan.collector_source_contracts?.length)
+                details.title=[
+                    ...(plan.collector_source_contracts||[]).map((source,index)=>
+                        'Approved curriculum round '+(index+1)+
+                        ' · physical source '+source.slice(0,16)),
+                    ...completeRounds.map(entry=>
                     'Round '+entry.round+
                     ' · seeds '+(entry.collector_world_partitions?.length
                         ?entry.collector_world_partitions.map(part=>part.seed_offset).join(', ')
@@ -1072,7 +1076,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ).join(', ')
                         :'')+
                     ' · optimizers '+entry.optimizer_job_ids.join(', ')
-                ).join('\n');
+                    ),
+                ].join('\n');
             row.append(details);
             if(plan.status==='disarmed'&&
                 plan.reason?.startsWith('Coordinator restarted;'))
@@ -1172,13 +1177,44 @@ document.addEventListener('DOMContentLoaded', () => {
                     optimizerMembers.every(job=>state.configurations.some(config=>
                         config.id===job.configuration_id&&
                         config.revision===job.configuration_revision));
-                if(suitable)row.append(button('Continue with fresh native rounds',async()=>{
-                    const raw=prompt('Number of new collection and synchronized optimizer rounds (1–8):','3');
+                if(suitable) {
+                    // Mirror the coordinator's read-only source selection;
+                    // the server still validates the real, live authenticated
+                    // machine reports before issuing any new native claim.
+                    const stageSource=(machine,number)=>{
+                        if(machine?.status!=='connected'||
+                            machine.native_preflight_passed!==true||
+                            !machine.installed_projects?.includes('bees_native_collect'))
+                            return null;
+                        return machine.native_bees_curriculum_sources?.filter(
+                            stage=>stage.start_round<=number,
+                        ).at(-1)?.source_run_contract_sha256||null;
+                    };
+                    const plannedStages=Array.from({length:8},(_,index)=>{
+                        const sources=collectorJobs.map(job=>stageSource(
+                            state.machines.find(machine=>machine.id===job.assigned_machine_id),
+                            index+1,
+                        ));
+                        return sources.length&&sources.every(source=>
+                            /^[a-f0-9]{64}$/.test(String(source||''))&&
+                            source===sources[0])?sources[0]:null;
+                    });
+                    const unavailable=plannedStages.indexOf(null);
+                    const readyRounds=unavailable===-1?8:unavailable;
+                    const status=document.createElement('span');
+                    status.textContent=readyRounds
+                        ?' · Collector curriculum sources match for '+readyRounds+
+                            ' approved rounds'
+                        :' · Collector curriculum is missing or incompatible on one or more machines';
+                    row.append(status);
+                    if(readyRounds)row.append(button('Continue with fresh native rounds',async()=>{
+                    const raw=prompt('Number of new collection and synchronized optimizer rounds (1–'+readyRounds+'):',
+                        String(Math.min(3,readyRounds)));
                     if(raw===null)return;
                     const count=Number(raw);
-                    if(!Number.isSafeInteger(count)||count<1||count>8) {
+                    if(!Number.isSafeInteger(count)||count<1||count>readyRounds) {
                         feedback('hub-resource-bundle-message',
-                            'Select a whole number of rounds from 1 to 8.');
+                            'Select 1–'+readyRounds+' rounds with qualified matching physical sources.');
                         return;
                     }
                     if(!confirm('Authorize '+count+' sequential NEW physical collection and MA-POCA optimizer rounds using the saved collector and optimizer configurations and their fixed machines/resources? Each round uses the most recent verified checkpoint. Future GPU group Starts require fresh authenticated machines and original exclusive GPU leases; approval is disarmed after a coordinator restart or uncertain native state.'))return;
@@ -1204,7 +1240,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error) {
                         feedback('hub-resource-bundle-message',String(error.message||error));
                     }
-                }));
+                    }));
+                }
             }
             if(reserved&&!unresolvedLaunch) {
                 const usesGpu=members.some(job=>job.resources?.gpu_count>0);
