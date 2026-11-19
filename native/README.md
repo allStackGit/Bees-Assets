@@ -149,7 +149,15 @@ fleet. For a scene with an authored Fire Tank, use
 battle duration; `--demolition-seconds` overrides it. Actual projectile
 contacts, object retirement, same-tick target destruction, attacker losses
 and future-wave reservations all use the ordinary CombatWorld/episode
-terminal, including in an optional `--trainable` run. With `--control none`, the battle author now selects actual deployed
+terminal, including in an optional `--trainable` run. For a ready-to-play, Unity-free defense scenario, use
+`bees play native/examples/native-fire-tank-defense.run.json --output-dir native-defense-save`.
+Side 1 commands the original fleet and protects the genuine Fire Tank
+(MapObject 31). Side 2's authored Gunship squad advances and fires its
+physical turrets at the target; destroying every attacking mobile hull or
+surviving the 90-second objective clock defends it. The HUD labels attack
+and defense from the local viewer's actual side.
+
+With `--control none`, the battle author now selects actual deployed
 mobile turret squads, issues ordinary pathfinding approach orders, then
 executes `bombard_map_object` using those same mounted turrets and real
 projectile contacts. This is an explicit demolition-only scripted order,

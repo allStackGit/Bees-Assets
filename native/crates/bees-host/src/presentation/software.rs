@@ -2008,10 +2008,15 @@ impl NativeSoftwareRenderer {
         } else if let Some(demolition) = view.demolition {
             let seconds = demolition.seconds_remaining.ceil() as u64;
             let target = view.combat.map_object(demolition.target_map_object_id);
+            let is_defender = view.player_authority.player_viewer_side()
+                .is_some_and(|side| side != demolition.attacking_side);
             let objective = target.map_or("Target destroyed", |object|
-                if object.kind == bees_sim::map_object::MapObjectKind::FireTank {
-                    "Destroy Fire Tank"
-                } else { "Destroy MapObject" }
+                match (is_defender, object.kind) {
+                    (true, bees_sim::map_object::MapObjectKind::FireTank) => "Protect Fire Tank",
+                    (true, _) => "Protect MapObject",
+                    (false, bees_sim::map_object::MapObjectKind::FireTank) => "Destroy Fire Tank",
+                    (false, _) => "Destroy MapObject",
+                }
             );
             let health = target.map_or(String::new(), |object|
                 format!("  {}/{} HP", object.health, object.max_health)
@@ -2696,7 +2701,11 @@ impl NativeSoftwareRenderer {
         let title = battle_outcome_label(result);
         let reason = if result.extraction_victory { "Extraction" }
             else if view.survival.is_some() { "Defense" }
-            else if view.demolition.is_some() { "Demolition" }
+            else if let Some(objective) = view.demolition {
+                if result.winner_side == objective.attacking_side {
+                    "Demolition"
+                } else { "Objective defended" }
+            }
             else if result.timed_out { "Time limit" } else { "Elimination" };
         let detail = format!("{reason}  /  {:.2} s", result.duration_seconds);
         let context = format!("World {}  /  Episode {}", view.world_id.0, view.episode_revision + 1);
