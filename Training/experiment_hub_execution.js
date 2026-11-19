@@ -443,6 +443,10 @@ class LocalExecution {
                     cpu_quota:job.resources.cpus,
                     ...(job.resource_bundle?{resource_bundle:structuredClone(job.resource_bundle)}:{}),
                     state,
+                    // Metric publication reads the same immutable work order
+                    // as native Start; it cannot relabel a different physical
+                    // collection or curriculum stage as this Hub job.
+                    frozen_parameters:structuredClone(job.frozen_parameters),
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     ...(job.model_source_job_id?

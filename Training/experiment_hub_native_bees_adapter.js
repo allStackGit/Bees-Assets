@@ -1603,6 +1603,29 @@ function createNativeBeesAdapter({
                 const {receipt, stat} = bundle;
                 const rollout = receipt.rollout_metrics;
                 const inputs = roundInputs(context);
+                const frozen = context.frozen_parameters;
+                // The collector receipt is observational, but it must still
+                // describe the exact Hub-authorized source and physical work.
+                // Otherwise an old or unrelated bundle could appear in the
+                // experiment's learning and throughput charts.
+                if (!frozen || !Number.isSafeInteger(frozen.seed_offset) ||
+                    receipt.seed_offset !== frozen.seed_offset ||
+                    (frozen.collection_id !== undefined &&
+                        receipt.collection_id !== frozen.collection_id) ||
+                    (frozen.source_run_contract_sha256 !== undefined &&
+                        receipt.source_run_contract_sha256 !==
+                            frozen.source_run_contract_sha256) ||
+                    (frozen.rollout_world_start !== undefined &&
+                        receipt.partition?.world_start !== frozen.rollout_world_start) ||
+                    (frozen.rollout_worlds !== undefined &&
+                        receipt.partition?.world_count !== frozen.rollout_worlds) ||
+                    (frozen.rollout_workers !== undefined &&
+                        receipt.rollout_processes !== frozen.rollout_workers) ||
+                    (Number.isSafeInteger(frozen.physics_workers) &&
+                        receipt.physics_workers_per_process !== frozen.physics_workers) ||
+                    receipt.partition?.world_count !== receipt.rollout_worlds ||
+                    receipt.captures?.length !== receipt.rollout_processes)
+                    throw Error('Native Bees collector metrics differ from the issued Hub work order.');
                 if (receipt.schema_version !== 1 || receipt.kind !== 'native_rollout_bundle' ||
                     receipt.input_checkpoint_sha256 !== inputs.checkpointDigest ||
                     receipt.input_manifest_sha256 !== inputs.manifestDigest ||
