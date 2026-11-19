@@ -4360,7 +4360,9 @@ class ExperimentHub {
             throw Error('Native training rounds require a fully released, verified checkpoint and synchronized optimizer group.');
         if((this.state.native_round_plans||[]).some(plan=>
             plan.status!=='complete'&&plan.status!=='cancelled'&&
-            plan.status!=='disarmed'&&plan.source_job_id===source.id))
+            plan.status!=='disarmed'&&
+            (plan.source_job_id===source.id||
+             plan.origin_source_job_id===source.id)))
             throw Error('This native model already has an unresolved training-round plan.');
         const validateMembers=(members,kind)=>{
             const lower=kind==='collector'?2:2,upper=kind==='collector'?16:8;
@@ -4426,7 +4428,8 @@ class ExperimentHub {
         const next=copy(this.state),timestamp=now();
         const plan={
             id:crypto.randomUUID(),status:'pending_collectors',
-            source_job_id:source.id,source_model_sha256:source.checkpoint_model_sha256,
+            source_job_id:source.id,origin_source_job_id:source.id,
+            source_model_sha256:source.checkpoint_model_sha256,
             collector_members:collectors,optimizer_members:optimizers,
             agent_instances:instances,
             round_count:value.round_count,completed_rounds:0,
