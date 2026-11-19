@@ -153,6 +153,16 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             // Exposed Python simulation packing is a cross-project CPU
             // throughput clue, not an independent hardware saturation claim.
             'training_info_pack_max_seconds',
+            // A proved live map move changes the physical collector barrier,
+            // not the fixed PPO batch or the operator's machine lease.
+            'training_live_map_moves','training_live_map_pred_gain_ratio',
+            'training_live_move_parallel_workers',
+            'training_live_move_seconds','training_live_move_wait_seconds',
+            'training_live_move_service_seconds',
+            'training_live_move_wire_bytes',
+            'training_live_result_ready','training_live_result_accepted',
+            'training_live_sps_change_pct','training_live_rollbacks',
+            'training_collector_span_ratio',
             'training_collector_probe_moved_maps',
             'training_resume_map_moves',
             'training_resume_gain_ratio',
