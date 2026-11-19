@@ -784,7 +784,24 @@ Docker arguments and unit names cannot be submitted from the dashboard.
 Setup requires the approved suite files, TinyBrains installation, local agent
 enrollment, image and existing noninteractive Docker authorization. Actual
 evaluation results still require the frozen evaluator runtime fingerprint to
-match; a timer being active alone does not qualify any checkpoint.
+match; a timer being active alone does not qualify any checkpoint. **Refresh
+suite** creates a new immutable Nano/Micro suite ID pinned to the installed
+runtime while preserving prior suites/receipts; it replaces only the approved
+idle local schedule. Restart the local agent from this panel when safe to
+advertise the newly approved suite ID. The new frozen suite must be selected
+on future training configurations.
+
+The same Machines service panel provides **Set up / refresh Courier evaluation**.
+When a local trusted Courier adapter is installed, this action creates a private
+fixed-survival suite (100 trials, 1,024-step horizon) versioned by the
+installed environment and evaluator-runtime SHA-256, plus its own CPU/RAM-bounded
+user systemd timer. The installed Courier adapter recognizes the explicit local
+approval on its next agent restart; changing the environment or evaluator
+runtime creates a new immutable suite without mutating earlier evidence.
+This installs no new trainer or remote worker. A disconnected/unprovisioned
+host cannot be made into a trusted execution agent by a dashboard command:
+native host enrollment, service authorization, dependency installation and
+private worker keys must be established on the host first.
 
 The same generator can install a separately budgeted **periodic independent
 evaluator** on a trusted Linux host, without adding any native
