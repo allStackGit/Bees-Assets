@@ -12,7 +12,8 @@ const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,su
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
 const {ObservationArchive}=require('./experiment_hub_observations');
-const {verifiedNativeCollectorPin}=require('./experiment_hub_native_bundle_transfer');
+const {verifiedNativeCollectorPin,verifiedNativeModelMirror}=
+    require('./experiment_hub_native_bundle_transfer');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -4495,6 +4496,18 @@ class ExperimentHub {
                     source.checkpoint_model_sha256!==plan.source_model_sha256||
                     nativeOptimizerGroupBlock(this.state,source))
                     throw Error('Frozen native optimizer source or its original worker group changed.');
+                if(plan.status==='pending_collectors') {
+                    try {
+                        verifiedNativeModelMirror(this,source);
+                    }catch(error) {
+                        // Artifact transport is asynchronous and remains
+                        // owned by the original authenticated publisher.
+                        // Never reserve a remote collector against an
+                        // incomplete checkpoint, or invent model bytes.
+                        if(error.status===409)continue;
+                        throw error;
+                    }
+                }
                 const snapshot=this.snapshot();
                 const machines=Object.entries(plan.agent_instances);
                 if(machines.some(([machineId,instance])=>{
