@@ -187,11 +187,19 @@ async function setup(hub) {
         const current=JSON.parse(fs.readFileSync(o.approvalFile,'utf8'));
         if(current.schema_version!==1)
             throw Error('Unsupported Courier evaluator approval version.');
-        // Changing the local environment requires explicit re-approval,
-        // not reusing a suite pinned to a different checkpoint environment.
-        if(current.config_sha256!==o.hash)
-            throw Error('The Courier environment changed. Select explicit suite refresh before reusing the evaluator.');
-        if(current.suite_id!==o.suiteId)
+        if(!SHA.test(String(current.config_sha256||''))||
+            current.suite_id!=='courier_survival_'+current.config_sha256.slice(0,12))
+            throw Error('Existing Courier evaluator approval is malformed.');
+        if(current.config_sha256!==o.hash) {
+            // A new environment needs a new immutable suite. Stop the old
+            // schedule without interrupting a running evaluation or training.
+            const oldTimer='bees-experiment-hub-courier-'+o.machine+
+                '-evaluator-survival_'+current.config_sha256.slice(0,8)+'.timer';
+            await systemctl(['stop',oldTimer]);
+            const temporary=o.approvalFile+'.new';
+            fs.writeFileSync(temporary,approval,{flag:'wx',mode:0o600});
+            fs.renameSync(temporary,o.approvalFile);
+        }else if(current.suite_id!==o.suiteId)
             throw Error('An existing Courier suite approval differs from this environment.');
     }else fs.writeFileSync(o.approvalFile,approval,{flag:'wx',mode:0o600});
     const def=definition(o),unit=unitPaths(o);
