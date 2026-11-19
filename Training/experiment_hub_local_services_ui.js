@@ -50,7 +50,8 @@
                     (item.active?'Schedule active':'Schedule stopped')+
                     (item.running?' · evaluation running':'')+
                     (item.last_result&&item.last_result!=='success'
-                        ?' · last result: '+item.last_result:'');
+                        ?' · last result: '+item.last_result:'')+
+                    (item.last_error?' · '+item.last_error:'');
             line.append(title,status);
             if(item.managed) {
                 line.append(
