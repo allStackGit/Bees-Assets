@@ -6,6 +6,7 @@ const path=require('node:path');
 const {execFile,spawn}=require('node:child_process');
 const {promisify}=require('node:util');
 const localEvaluators=require('./experiment_hub_local_evaluators');
+const courierEvaluators=require('./experiment_hub_local_courier_evaluators');
 const run=promisify(execFile);
 
 const SYSTEMCTL='/usr/bin/systemctl';
@@ -64,11 +65,21 @@ async function unitStatus(kind,{runCommand=run,platform=process.platform,
     };
 }
 async function status(hub) {
+    const [tinybrains,courier]=await Promise.all([
+        localEvaluators.status(hub),
+        courierEvaluators.status(hub),
+    ]);
     const [coordinator,agent]=await Promise.all([
         unitStatus('coordinator'),unitStatus('agent'),
     ]);
     return {coordinator,agent,active_jobs:activeJobs(hub).length,
-        evaluators:await localEvaluators.status(hub)};
+        evaluators:{available:tinybrains.available||courier.available,
+            tinybrains_available:tinybrains.available,
+            tinybrains_reason:tinybrains.reason||null,
+            courier_available:courier.available,
+            courier_reason:courier.reason||null,
+            entries:[...tinybrains.entries.map(row=>({project:'tinybrains',...row})),
+                ...courier.entries]}};
 }
 async function scheduleRestart(kind,hub,res) {
     if(!Object.hasOwn(UNITS,kind))reject('Unknown local service.',400);
@@ -91,6 +102,9 @@ async function scheduleRestart(kind,hub,res) {
 }
 async function evaluatorAction(hub,value) {
     // Evaluator actions never stop or restart a native trainer or its owner.
-    return localEvaluators.action(hub,value);
+    if(value?.project==='courier')return courierEvaluators.action(hub,value);
+    if(value?.project===undefined||value.project==='tinybrains')
+        return localEvaluators.action(hub,value);
+    throw Error('Unknown local evaluator project.');
 }
 module.exports={status,scheduleRestart,unitStatus,evaluatorAction};
