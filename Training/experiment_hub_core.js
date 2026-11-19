@@ -2211,7 +2211,8 @@ class ExperimentHub {
     hasPendingFinalEvaluations() {
         const snapshot=this.snapshot(),observedAt=Date.now();
         return snapshot.jobs.some(job=>
-            finalEvaluationPending(snapshot,job,observedAt));
+            finalEvaluationPending(snapshot,job,observedAt)||
+            nativeBaselinePlan(snapshot,job,observedAt));
     }
     progressComparison(projectId) {
         this.project(projectId);
