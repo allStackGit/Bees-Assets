@@ -1099,6 +1099,28 @@ def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot,
         yield tuple(files)
 
 
+def synchronized_native_model_digest(modules, torch):
+    """Hash the exact trained model tensor contents, independent of GPU rank.
+
+    A synchronized gradient count alone does not prove Adam produced the
+    same next weights on every device. Hash each source module's named
+    tensors once, after the update, before rank zero is allowed to publish
+    a replayable checkpoint. This is outside the learner hot loop.
+    """
+    digest = hashlib.sha256()
+    for name, module in sorted(modules.items()):
+        for key, value in sorted(module.state_dict().items()):
+            if not isinstance(value, torch.Tensor):
+                raise ValueError("native PPO module state contains a non-tensor entry")
+            cpu = value.detach().to(device="cpu").contiguous().reshape(-1)
+            for field in (name, key, str(value.dtype), str(tuple(value.shape))):
+                encoded = field.encode("utf-8")
+                digest.update(len(encoded).to_bytes(4, "little"))
+                digest.update(encoded)
+            digest.update(cpu.view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
 def main():
     started_at = time.perf_counter()
     process_cpu_started_at = time.process_time()
@@ -1411,12 +1433,22 @@ def main():
             receipt, primary_manifest_sha, input_sha, args.learner_slot, digest,
         ):
             pass
+    modules = {**policy.get_modules(), **optimizer_modules}
+    next_model_consensus_sha = None
     if learner_workers > 1:
+        # Every rank must produce byte-equivalent actor/critic weights.
+        # Check only at the round boundary; the packed gradients remain
+        # the sole synchronization path inside each PPO minibatch.
+        own_digest = synchronized_native_model_digest(modules, torch)
+        model_digests = [None] * learner_workers
+        torch.distributed.all_gather_object(model_digests, own_digest)
+        if len(set(model_digests)) != 1:
+            raise ValueError("native GPU learners disagree on final synchronized policy weights")
+        next_model_consensus_sha = own_digest
         torch.distributed.barrier()
         if rank != 0:
             torch.distributed.destroy_process_group()
             return
-    modules = {**policy.get_modules(), **optimizer_modules}
     next_checkpoint = args.output / "checkpoint.pt"
     with next_checkpoint.open("xb") as output:
         torch.save({name: module.state_dict() for name, module in modules.items()}, output)
@@ -1507,6 +1539,7 @@ def main():
         "optimizer_gpu_workers": learner_workers if device.type == "cuda" else 0,
         **({"optimizer_synchronized_minibatches": gpu_worker_metrics[0]["gradient_syncs"],
             "optimizer_masked_loss_normalizations": gpu_worker_metrics[0]["masked_loss_syncs"],
+            "optimizer_gpu_model_consensus_sha256": next_model_consensus_sha,
             "optimizer_gpu_per_device": gpu_worker_metrics,
             "optimizer_gradient_backend": gpu_worker_metrics[0]["gradient_backend"],
             "optimizer_gradient_submission_wall_seconds_sum": sum(
