@@ -794,7 +794,7 @@ function nativeStartReadiness(snapshot, job) {
             workers.length!==endpoints.length)
             return block('The Courier learner needs its exact locally pinned remote PPO population.');
         if(!courierGroupMachinesValid(snapshot,job,workers))
-            return block('Courier group requires distinct remote machines or one separately leased local GPU collector.');
+            return block('Courier collectors need their approved slot endpoints and disjoint native machine GPU leases.');
         const first=courierFirstSlot(job,endpoints.length);
         if(first===null)
             return block('Courier remote PPO workers require a compatible frozen learner.');
@@ -3060,7 +3060,7 @@ class ExperimentHub {
             new Set(ordered.map(worker=>worker.id)).size!==ordered.length)
             throw Error('Courier remote policy slot-to-endpoint membership changed.');
         if(!courierGroupMachinesValid(snapshot,learner,ordered))
-            throw Error('Courier group requires distinct endpoints and at most one separately leased local GPU collector.');
+            throw Error('Courier group needs uniquely pinned endpoints and separate exclusive GPUs on reused machines.');
         const members=[learner,...ordered].map((job,index)=>{
             const machine=snapshot.machines.find(item=>item.id===job.assigned_machine_id);
             const lease=snapshot.reservations.find(item=>
@@ -5776,7 +5776,7 @@ class ExperimentHub {
                 JSON.stringify(shards)))
             throw Error('Original scheduled Courier leases or endpoint identities changed before native Start.');
         if(!courierGroupMachinesValid(snapshot,learner,workers))
-            throw Error('Courier group has duplicate machines without a separately leased local GPU collector.');
+            throw Error('Courier group may reuse GPU machines only with distinct native slot listeners and leases.');
         const owners={},dispatches={};
         for(const worker of workers) {
             const readiness=nativeStartReadiness(snapshot,worker);
