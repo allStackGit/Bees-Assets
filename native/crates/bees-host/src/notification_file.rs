@@ -51,6 +51,15 @@ fn command_identity(selection: &NativeCommandSelection) -> serde_json::Value {
 pub struct NativeMissionOutcomeCounts {
     pub attempts: u64,
     pub completions: u64,
+    /// Preserve the authored objective faction when the same physical
+    /// scene is reused with a different mission or opposing controller.
+    pub by_objective_side: BTreeMap<i32, NativeMissionSideCounts>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct NativeMissionSideCounts {
+    pub attempts: u64,
+    pub completions: u64,
 }
 
 /// One physical authored scene's completed episode results, keyed by the
@@ -80,6 +89,11 @@ impl NativeSceneOutcomes {
             outcome.attempts = outcome.attempts.saturating_add(1);
             outcome.completions = outcome.completions
                 .saturating_add(u64::from(mission.completed));
+            let by_side = outcome.by_objective_side.entry(mission.objective_side)
+                .or_default();
+            by_side.attempts = by_side.attempts.saturating_add(1);
+            by_side.completions = by_side.completions
+                .saturating_add(u64::from(mission.completed));
         }
         if winner == 0 {
             self.draws = self.draws.saturating_add(1);
@@ -104,11 +118,28 @@ impl NativeSceneOutcomes {
         let mut mission_outcomes = BTreeMap::new();
         for (kind, outcome) in &self.mission_outcomes {
             let prior = previous.mission_outcomes.get(kind);
+            let mut by_objective_side = BTreeMap::new();
+            for (&side, totals) in &outcome.by_objective_side {
+                let earlier = prior.and_then(|prior|
+                    prior.by_objective_side.get(&side));
+                by_objective_side.insert(side, NativeMissionSideCounts {
+                    attempts: totals.attempts.checked_sub(
+                        earlier.map_or(0, |value| value.attempts))?,
+                    completions: totals.completions.checked_sub(
+                        earlier.map_or(0, |value| value.completions))?,
+                });
+            }
+            if prior.is_some_and(|prior|
+                prior.by_objective_side.keys().any(|side|
+                    !outcome.by_objective_side.contains_key(side))) {
+                return None;
+            }
             mission_outcomes.insert(kind.clone(), NativeMissionOutcomeCounts {
                 attempts: outcome.attempts.checked_sub(
                     prior.map_or(0, |value| value.attempts))?,
                 completions: outcome.completions.checked_sub(
                     prior.map_or(0, |value| value.completions))?,
+                by_objective_side,
             });
         }
         if previous.mission_outcomes.keys().any(|kind|
