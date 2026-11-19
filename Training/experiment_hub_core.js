@@ -1194,8 +1194,21 @@ class ExperimentHub {
             plan.status==='pending');
         const resetQueuedDistributed=(s.distributed_group_plans||[]).some(plan=>
             plan.status==='pending');
-        if(resetBundles||resetDistributed||resetQueuedDistributed) {
+        const resetNativeRounds=(s.native_round_plans||[]).some(plan=>
+            ['pending_collectors','awaiting_collectors',
+             'pending_optimizer','awaiting_optimizer'].includes(plan.status));
+        if(resetBundles||resetDistributed||resetQueuedDistributed||resetNativeRounds) {
             const next=copy(s);
+            // A restart cannot silently authorize a new GPU-intensive
+            // collection or learner stage, even when old native jobs remain
+            // supervised on their original machines.
+            for(const plan of next.native_round_plans||[])
+                if(['pending_collectors','awaiting_collectors',
+                    'pending_optimizer','awaiting_optimizer'].includes(plan.status)) {
+                    plan.status='disarmed';
+                    plan.reason='Coordinator restarted; continuing this training sequence requires explicit renewed authorization.';
+                    plan.updated_at=now();
+                }
             for(const plan of next.bundle_start_plans||[])
                 if(plan.status==='pending'&&plan.resume_after_restart!==true) {
                     plan.status='disarmed';
@@ -1241,6 +1254,10 @@ class ExperimentHub {
     snapshot() {
         const snapshot = copy(this.state);
         snapshot.hub_observation_archive_issue=this.observations.error;
+        snapshot.native_round_plans=(snapshot.native_round_plans||[]).map(plan=>{
+            const {agent_instances,...display}=plan;
+            return display;
+        });
         snapshot.bundle_start_plans=(snapshot.bundle_start_plans||[]).map(plan=>{
             if(plan.status!=='pending')return plan;
             const jobs=plan.member_job_ids.map(id=>snapshot.jobs.find(job=>job.id===id));
