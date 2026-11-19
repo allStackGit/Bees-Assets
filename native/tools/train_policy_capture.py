@@ -16,7 +16,10 @@ import numpy as np
 from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spec, stream_sha256
 from read_policy_capture import capture_frames
 from native_training_outcomes import accumulate_training_outcome, record_combat_hit
-from native_mission_contract import OBJECTIVE_START as NATIVE_MISSION_ACTIVE_INDEX, OBJECTIVE_WIDTH
+from native_mission_contract import (
+    OBJECTIVE_START as NATIVE_MISSION_ACTIVE_INDEX,
+    OBJECTIVE_WIDTH, verified_policy_observations,
+)
 
 
 # Non-learner controllers need only lifetime/side validation. This
@@ -1048,6 +1051,14 @@ def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot,
             receipt.get("input_checkpoint_sha256") != checkpoint_sha or
             receipt.get("learner_slot") != learner_slot or not receipt.get("captures")):
         raise ValueError("native rollout bundle does not match the learner inputs")
+    # A bundle's semantic objective tensor is pinned beside its policy
+    # capture. Different machines can compile different binary files, but
+    # cannot combine incompatible policy feature layouts into one PPO update.
+    metrics = receipt.get("rollout_metrics")
+    if metrics is not None:
+        if not isinstance(metrics, dict):
+            raise ValueError("native rollout bundle contains invalid metrics")
+        verified_policy_observations(metrics.get("policy_observations"))
     # Native collectors allocate independent contiguous global world-index
     # windows from the same source run. Never double-train an overlapping
     # window just because the physical collectors generated different
@@ -1276,6 +1287,17 @@ def main():
                 terminal_steps += int(trajectory.done_reached)
             trajectory_ingest_wall_seconds += time.perf_counter() - ingest_started
             trajectory_ingest_cpu_seconds += time.process_time() - ingest_cpu_started
+    # Mission flags and durable physical terminal records must reconcile
+    # exactly. This also catches a goal accidentally encoded in a plain
+    # elimination battle, even without a parent collector summary.
+    verified_goal_rows = capture_stats.get(
+        "native_mission_learner_decision_rows_validated", 0,
+    )
+    if verified_goal_rows != mission_learner_decisions:
+        raise ValueError(
+            "native learner objective features disagree with durable "
+            "per-episode mission identities"
+        )
     steps = trainer.update_buffer.num_experiences
     if steps < settings.hyperparameters.batch_size:
         parser.error("capture contains fewer observed intervals than one optimizer minibatch")
