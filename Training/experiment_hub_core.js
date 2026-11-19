@@ -393,12 +393,12 @@ function gpuStartBlock(job,lease,machine) {
         machine.gpu_shared_projects?.includes(job.project_id);
     const single=r.gpu_count===1&&allocated.gpu_count===1&&
         (r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive'||sharedApproved);
-    const dual=machine.agent_platform==='linux'&&
+    const dual=['linux','win32'].includes(machine.agent_platform)&&
         job.project_id==='tinybrains'&&job.frozen_parameters?.device==='dual'&&
         machine.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
         r.gpu_count===2&&allocated.gpu_count===2&&
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
-    const multiTiny=machine.agent_platform==='linux'&&
+    const multiTiny=['linux','win32'].includes(machine.agent_platform)&&
         job.project_id==='tinybrains'&&job.frozen_parameters?.device==='multi'&&
         machine.tinybrains_multi_gpu_profiles?.includes(job.frozen_parameters.profile)&&
         r.gpu_count>=3&&r.gpu_count<=8&&allocated.gpu_count===r.gpu_count&&
@@ -1213,8 +1213,11 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                 (machine.agent_platform==='win32'
                     ?machine.gpu_inventory_source==='nvidia-smi-v1'&&
                         machine.observed_gpus?.length>=r.gpu_count&&
-                        (r.gpu_count===1||
-                            courierMulti)&&
+                        (r.gpu_count===1||courierMulti||
+                            dualGpu&&machine.tinybrains_dual_gpu_profiles
+                                ?.includes(selected.frozen_parameters.profile)||
+                            tinyMulti&&machine.tinybrains_multi_gpu_profiles
+                                ?.includes(selected.frozen_parameters.profile))&&
                         (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
                     :(courierMulti||
                         tinyMulti&&machine.tinybrains_multi_gpu_profiles
@@ -2096,7 +2099,18 @@ class ExperimentHub {
                             (job.resources.gpu_count===1||
                                 job.project_id==='courier'&&
                                 job.resources.gpu_count<=8&&
-                                job.resources.gpu_mode==='exclusive')&&
+                                job.resources.gpu_mode==='exclusive'||
+                                job.project_id==='tinybrains'&&
+                                job.resources.gpu_count===2&&
+                                job.frozen_parameters?.device==='dual'&&
+                                machine.tinybrains_dual_gpu_profiles
+                                    ?.includes(job.frozen_parameters.profile)||
+                                job.project_id==='tinybrains'&&
+                                job.resources.gpu_count>=3&&
+                                job.resources.gpu_count<=8&&
+                                job.frozen_parameters?.device==='multi'&&
+                                machine.tinybrains_multi_gpu_profiles
+                                    ?.includes(job.frozen_parameters.profile))&&
                             (job.resources.gpu_mode!=='shared'||
                                 machine.gpu_shared_projects?.includes(job.project_id))));
             const eligibleHosts=job=>capable.filter(machine=>
@@ -4904,7 +4918,7 @@ class ExperimentHub {
                 job.resources.gpu_count>=2&&job.resources.gpu_count<=8&&
                 job.resources.gpu_mode==='exclusive';
             const tinyMulti=job.project_id==='tinybrains'&&
-                machine.agent_platform==='linux'&&
+                ['linux','win32'].includes(machine.agent_platform)&&
                 job.resources.gpu_count>=3&&job.resources.gpu_count<=8&&
                 job.resources.gpu_mode==='exclusive'&&
                 job.frozen_parameters?.device==='multi'&&
@@ -4918,7 +4932,7 @@ class ExperimentHub {
                      (job.resources.gpu_count===2&&!courierMulti&&
                          (job.project_id!=='tinybrains'||
                           job.frozen_parameters?.device!=='dual'||
-                          machine.agent_platform!=='linux'||
+                          !['linux','win32'].includes(machine.agent_platform)||
                           !machine.tinybrains_dual_gpu_profiles
                               ?.includes(job.frozen_parameters.profile)))||
                      (job.resources.gpu_count>2&&!courierMulti&&!tinyMulti))))
