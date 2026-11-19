@@ -4823,7 +4823,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 index>=0&&index<plan.length?plan[index]?.endpoint:null;
             const listeners=host.courier_lineage_slots||[];
             const advertised=(listeners.length
-                ?listeners.find(item=>item.slot===job.frozen_parameters?.slot)?.endpoint
+                ?listeners.find(item=>item.slot===
+                    (job.frozen_parameters?.listener_slot??job.frozen_parameters?.slot))?.endpoint
                 :host.courier_lineage_endpoint)||null;
             // A mapped listener changing while its native job remains
             // assigned cannot make the original bound port available.
@@ -4835,7 +4836,7 @@ document.addEventListener('DOMContentLoaded', () => {
             (host.id!==machine.id||colocated)&&
             (shared&&host.courier_lineage_slots?.length
                 ?host.courier_lineage_slots.some(listener=>
-                    listener.slot===i&&listener.endpoint===endpoint&&
+                    listener.endpoint===endpoint&&
                     listener.max_shards===machine.courier_remote_max_shards?.[i])
                 :host.courier_lineage_endpoint===endpoint&&
                     host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i])&&
@@ -4846,9 +4847,9 @@ document.addEventListener('DOMContentLoaded', () => {
         courierMatch.label.hidden=!subset;
         const population=selected.parameters.workers;
         const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
-        // Slot-backed local collectors must occupy an ordered prefix of
-        // the learner-approved endpoints. A later available endpoint
-        // cannot silently become a different recurrent PPO slot.
+        // The learner's selected PPO slots remain a contiguous prefix.
+        // Each corresponding native collector may bind any approved free
+        // listener port on its selected physical machine.
         const slotPinned=shared&&match.some(hosts=>hosts.some(host=>
             host.courier_lineage_slots?.length>0));
         const candidates=slotPinned?match.slice(0,capacity):match;
@@ -4874,7 +4875,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 (subset?available.slice(0,capacity):match).map(worker=>
                     ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,
                         ...(subset&&(worker.id===machine.id||
-                            available.filter(other=>other.id===worker.id).length>1)
+                            available.filter(other=>other.id===worker.id).length>1||
+                            worker.courier_lineage_slots?.length&&
+                                worker.gpu_projects?.includes('courier_lineage')&&
+                                worker.gpus?.length)
                             ?{gpu_count:1,gpu_mode:'exclusive'}
                             :{gpu_count:0})})),
                 null,2);
