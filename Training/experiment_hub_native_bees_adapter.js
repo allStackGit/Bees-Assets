@@ -953,7 +953,7 @@ function createNativeBeesAdapter({
                  round.metrics.optimizer_group_id!==bundle.id))
                 throw Error('Native checkpoint publisher does not own the first rank of an authorized Hub bundle.');
             if (round.metrics.optimizer_gpu_workers!==localGpuCount*nodes ||
-                round.metrics.optimizer_gpu_nodes!==nodes ||
+                round.metrics.optimizer_gpu_nodes!==(localGpuCount?nodes:0) ||
                 round.metrics.optimizer_gpu_local_workers!==localGpuCount)
                 throw Error('Native Bees global optimizer GPU ranks disagree with their Hub group lease.');
             if (localGpuCount*nodes>1) {
