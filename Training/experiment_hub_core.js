@@ -5600,14 +5600,12 @@ class ExperimentHub {
         const eligibleLineages=(endpoint,budget,slot=null)=>{
             const maxShards=approved.plan?.find(item=>item.endpoint===endpoint)?.maxShards;
             return snapshot.machines.filter(host=>{
-                const match=slot===null
-                    ?host.courier_lineage_endpoint===endpoint||
-                        host.courier_lineage_slots?.some(item=>item.endpoint===endpoint)
-                    :courierWorkerSlot(host,slot)?.endpoint===endpoint;
-                const bound=slot===null
-                    ?host.courier_lineage_slots?.find(item=>item.endpoint===endpoint)
+                // Native listener slots are local port identities, not PPO
+                // lineage ordinals. Bind by the operator-approved endpoint.
+                const bound=host.courier_lineage_slots?.length
+                    ?host.courier_lineage_slots.find(item=>item.endpoint===endpoint)
                     :courierWorkerSlot(host,slot);
-                return match&&
+                return bound?.endpoint===endpoint&&
                     !courierEndpointOccupied(snapshot,host,endpoint)&&
                     (host.id!==machine?.id||
                         allowLocal&&budget.gpu_count===1&&
@@ -5642,7 +5640,7 @@ class ExperimentHub {
                     return !host||(duplicated&&(
                         budget.gpu_count!==1||budget.gpu_mode!=='exclusive'||
                         !host.courier_lineage_slots?.some(item=>
-                            item.slot===index&&item.endpoint===plan[index].endpoint)))||
+                            item.endpoint===plan[index].endpoint)))||
                         !eligibleLineages(plan[index].endpoint,budget,index)
                             .some(item=>item.id===id);
                 }))
@@ -5708,7 +5706,7 @@ class ExperimentHub {
             const sharedGpuHost=shared&&fixedSlotSelection&&
                 budget.gpu_count===1&&budget.gpu_mode==='exclusive'&&
                 hosts[0]?.courier_lineage_slots?.some(item=>
-                    item.slot===first+index&&item.endpoint===endpoints[index]);
+                    item.endpoint===endpoints[index]);
             if(hosts.length!==1||
                 (used.has(hosts[0].id)&&
                     !(local&&allowLocal&&(!localUsed||sharedGpuHost))&&
@@ -5719,10 +5717,14 @@ class ExperimentHub {
             if(local)localUsed=true;
             used.add(host.id);
             const timestamp=now();
+            const listener=host.courier_lineage_slots?.find(item=>
+                item.endpoint===endpoints[index]);
+            const nativeSlot=listener?.slot??first+index;
             const workerConfig={
                 id:crypto.randomUUID(),project_id:'courier_lineage',
                 name:'Courier '+(shared?'collector ':'lineage ')+(first+index)+' for '+learner.id.slice(-8),
                 parameters:{learner_job_id:learner.id,slot:first+index,
+                    ...(nativeSlot!==first+index?{listener_slot:nativeSlot}:{}),
                     ...(shared?{shared_policy:true}:{})},
                 revision:1,created_at:timestamp,updated_at:timestamp,
             };
@@ -6204,8 +6206,11 @@ class ExperimentHub {
         if(project.id==='courier_lineage') {
             const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
             const shared=learner?.frozen_parameters?.shared_policy===true;
-            if(Object.keys(frozen).some(key=>!['learner_job_id','slot','shared_policy'].includes(key))||
+            if(Object.keys(frozen).some(key=>!['learner_job_id','slot','listener_slot','shared_policy'].includes(key))||
                 (shared?frozen.shared_policy!==true:frozen.shared_policy!==undefined)||
+                (frozen.listener_slot!==undefined&&
+                    (!shared||!Number.isSafeInteger(frozen.listener_slot)||
+                        frozen.listener_slot<0||frozen.listener_slot>63))||
                 !UUID.test(String(frozen.learner_job_id||''))||
                 !Number.isSafeInteger(frozen.slot)||frozen.slot<0||frozen.slot>=64||
                 !learner||learner.project_id!=='courier'||
