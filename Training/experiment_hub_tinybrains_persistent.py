@@ -22,6 +22,8 @@ def main():
     parser.add_argument("--actions", type=int, required=True)
     parser.add_argument("--device", choices=("cpu", "cuda", "dual", "multi"), default="cuda")
     parser.add_argument("--rocm-pci", action="append")
+    parser.add_argument("--cuda-uuid", action="append")
+    parser.add_argument("--cuda-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
     parser.add_argument("--remote-rollout-endpoint", action="append", default=[])
     parser.add_argument("--remote-rollout-weight", action="append", type=int, default=[])
@@ -32,11 +34,24 @@ def main():
         parser.error("All training limits must be positive.")
     if args.live_matches % args.waves:
         parser.error("Live matches must divide evenly into waves.")
-    expected_count = (len(args.rocm_pci or []) if args.device == "multi"
-                      else {"cpu": 0, "cuda": 1, "dual": 2}[args.device])
-    if (len(args.rocm_pci or []) != expected_count or
-            (args.device == "multi" and not 3 <= expected_count <= 8)):
-        parser.error("The frozen ROCm PCI count must match the execution mode (3–8 for multi).")
+    rocm_pcis = args.rocm_pci or []
+    cuda_uuids = args.cuda_uuid or []
+    cuda_pcis = args.cuda_pci or []
+    if rocm_pcis and (cuda_uuids or cuda_pcis):
+        parser.error("ROCm and CUDA device leases are mutually exclusive.")
+    count = len(rocm_pcis) if rocm_pcis else len(cuda_uuids)
+    expected_count = count if args.device == "multi" else {
+        "cpu": 0, "cuda": 1, "dual": 2}[args.device]
+    if (count != expected_count or
+            (args.device == "multi" and not 3 <= count <= 8) or
+            (cuda_uuids and (os.name != "nt" or
+                len(cuda_pcis) != count or
+                len(set(cuda_uuids)) != count or
+                len(set(cuda_pcis)) != count)) or
+            (cuda_pcis and not cuda_uuids) or
+            (rocm_pcis and os.name == "nt") or
+            (args.device != "cpu" and not (rocm_pcis or cuda_uuids))):
+        parser.error("The pinned GPU lease must match the requested CPU, single, dual or 3–8 GPU mode.")
     if bool(args.remote_rollout_endpoint) != bool(args.remote_rollout_key_file):
         parser.error("Remote rollout requires locally approved worker endpoints and an HMAC key.")
     if args.remote_rollout_weight and (
@@ -47,7 +62,7 @@ def main():
     if args.ram_budget_mb is not None and not 128 <= args.ram_budget_mb <= 1000000:
         parser.error("The approved RAM lease must be 128–1000000 MiB.")
     if args.gpu_vram_mb is not None and (args.device != "cuda" or args.gpu_vram_mb < 1):
-        parser.error("A positive GPU memory ceiling requires the ROCm device.")
+        parser.error("A positive GPU memory ceiling requires one leased CUDA/ROCm device.")
     run = args.run.resolve(strict=True)
     checkpoint = run / "self-play" / "latest.pt"
     spec = run / "run-spec.json"
@@ -68,23 +83,36 @@ def main():
     collection_device = None
     local_gpu_collectors = []
     if expected_count:
-        from experiment_hub_tinybrains_rocm_verify import verify_runtime_devices
-        actual_pcis = verify_runtime_devices(args.rocm_pci)
-        # HIP ordinals are NOT the Hub lease order. Preserve the complete
-        # verified map for per-device throughput evidence and checkpoint-
-        # proven inference-width reuse across correct physical GPUs.
+        if cuda_uuids:
+            # Windows native Job Object owner selects these immutable UUIDs
+            # before starting Python. Verify the exact order and device count
+            # before any checkpoint-backed training or model allocation.
+            if os.environ.get("CUDA_VISIBLE_DEVICES") != ",".join(cuda_uuids):
+                raise SystemExit("Windows CUDA UUID visibility differs from the Hub lease.")
+            if not torch.version.cuda or not torch.cuda.is_available() or (
+                    torch.cuda.device_count() != count):
+                raise SystemExit("The Hub-leased CUDA device set is unavailable.")
+            for ordinal in range(count):
+                if torch.cuda.get_device_properties(ordinal).total_memory <= 0:
+                    raise SystemExit("Invalid leased CUDA GPU memory capacity.")
+            actual_pcis = cuda_pcis
+        else:
+            from experiment_hub_tinybrains_rocm_verify import verify_runtime_devices
+            actual_pcis = verify_runtime_devices(rocm_pcis)
+        # Exact physical lease identity follows CUDA ordinals. HIP ordinals
+        # may differ from approved PCI order; Windows UUID filtering preserves
+        # the selected UUID order, which is authenticated by the owner.
         os.environ["TINYBRAINS_GPU_PHYSICAL_PCI_IDS"] = ",".join(actual_pcis)
+        lease_pcis = cuda_pcis if cuda_uuids else rocm_pcis
         os.environ["TINYBRAINS_GPU_LEASE_ORDINALS"] = ",".join(
-            str(args.rocm_pci.index(pci)) for pci in actual_pcis)
+            str(lease_pcis.index(pci)) for pci in actual_pcis)
         if args.device in ("dual", "multi"):
-            # Prefer measured roles on trainers that support placement.
-            # The ordered physical lease supplies the fallback assignment.
             if find_spec("ants_mapoca.gpu_roles") is not None:
                 os.environ["TINYBRAINS_AUTO_GPU_ROLES"] = "1"
-            optimization_device = f"cuda:{actual_pcis.index(args.rocm_pci[0])}"
-            collection_device = f"cuda:{actual_pcis.index(args.rocm_pci[1])}"
+            optimization_device = f"cuda:{actual_pcis.index(lease_pcis[0])}"
+            collection_device = f"cuda:{actual_pcis.index(lease_pcis[1])}"
             local_gpu_collectors = [
-                f"cuda:{actual_pcis.index(pci)}" for pci in args.rocm_pci[2:]
+                f"cuda:{actual_pcis.index(pci)}" for pci in lease_pcis[2:]
             ]
         if args.gpu_vram_mb is not None:
             # Cooperative allocator limit, not physical GPU memory isolation.
