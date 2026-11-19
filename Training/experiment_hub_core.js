@@ -1145,7 +1145,8 @@ function colocatedCourierCollector(snapshot,learner,worker) {
         worker?.project_id!=='courier_lineage'||
         worker.frozen_parameters?.shared_policy!==true||
         !learner.assigned_machine_id||
-        learner.assigned_machine_id!==worker.assigned_machine_id)
+        (worker.assigned_machine_id&&
+            learner.assigned_machine_id!==worker.assigned_machine_id))
         return false;
     const reservations=snapshot.reservations||[];
     const chosen=job=>reservations.find(lease=>
@@ -1155,6 +1156,15 @@ function colocatedCourierCollector(snapshot,learner,worker) {
         lease.issued_by==='experiment-hub'&&
         ['offered','acknowledged'].includes(lease.status));
     const a=chosen(learner),b=chosen(worker);
+    // The initial claim is checked BEFORE the collector lease is offered.
+    // Admit only its immutable exclusive-GPU budget provisionally; offerIn
+    // then picks a spare physical GPU under the same fixed resource ledger.
+    // Every actual Start/recovery checks BOTH completed, disjoint leases.
+    if(!worker.lease_id&&!worker.assigned_machine_id)
+        return Boolean(a&&a.resources?.gpu_count===1&&
+            a.resources.gpu_mode==='exclusive'&&
+            worker.resources?.gpu_count===1&&
+            worker.resources.gpu_mode==='exclusive');
     return Boolean(a&&b&&a.id!==b.id&&
         a.resources?.gpu_mode==='exclusive'&&
         b.resources?.gpu_mode==='exclusive'&&
@@ -2561,7 +2571,8 @@ class ExperimentHub {
         if(!distributedRolloutHost({jobs:next.jobs,machines:this.snapshot().machines},job,host))
             throw Error('Remote collector must be placed on its learner-approved endpoint and distinct host.');
         if(job.project_id==='courier_lineage'&&
-            !courierLineageHost({jobs:next.jobs,machines:this.snapshot().machines},job,host))
+            !courierLineageHost({jobs:next.jobs,machines:this.snapshot().machines,
+                reservations:next.reservations},job,host))
             throw Error('Courier lineage must be placed on its learner-approved endpoint and PPO slot.');
         const lease=this.offerIn(next,job.project_id,machineId,
             resourceRequest(job.resources),job.id,host);
