@@ -107,14 +107,15 @@ def main():
                 raise ValueError("Use evaluator directories separate from the project and policy directory.")
         suite = read_suite(args.suite)
         with tempfile.TemporaryDirectory(prefix="courier-eval-", dir=scratch) as work:
-            alive = evaluate(project, checkpoint, args.checkpoint_sha256, args.config, suite, Path(work))
+            outcome = evaluate(project, checkpoint, args.checkpoint_sha256, args.config,
+                               suite, Path(work), with_metrics=True)
         receipt = {
             "schema_version": 1, "suite_id": suite["suite_id"], "suite_sha256": suite_digest(suite),
             "dispatch_id": args.dispatch_id, "checkpoint_sha256": args.checkpoint_sha256,
-            "trials": suite["trials"], "successes": alive,
+            "trials": suite["trials"], **outcome,
         }
         print(publish(receipts, receipt))
-        print(f"Courier held-out survival: {alive}/{suite['trials']} at {suite['horizon']} ticks")
+        print(f"Courier held-out survival: {outcome['successes']}/{suite['trials']} at {suite['horizon']} ticks")
         return 0
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
         print(f"Courier evaluation failed: {exc}", file=sys.stderr)
