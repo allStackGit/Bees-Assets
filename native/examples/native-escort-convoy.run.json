@@ -1,0 +1,123 @@
+{
+  "run_id": "native-escort-convoy",
+  "stage_name": "Native Fleet Skirmish",
+  "native_stage": {
+    "collision_matrix_rows": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      528384,
+      790528,
+      527360,
+      0,
+      0,
+      0,
+      0,
+      0,
+      526336,
+      269312,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "asteroid_prefab_numbers": [
+      1
+    ]
+  },
+  "fragment_spawn": {
+    "map_bounds": {
+      "min": [
+        -160,
+        -100
+      ],
+      "max": [
+        160,
+        100
+      ]
+    },
+    "half_map_extents": [
+      160,
+      100
+    ],
+    "asteroid_max_speed_exclusive": 4,
+    "training_health_ratio": null
+  },
+  "connection_checkpoint": "native-escort-connection.json",
+  "notifications": "native-escort-notifications.jsonl",
+  "next_squad_item_id": 2000,
+  "broadphase_cell_size": 20,
+  "decision_period": 1,
+  "max_rounds": 6000,
+  "episodes_per_world": 1,
+  "rounds_per_window": 16,
+  "delivery_every": 16,
+  "levels": [
+    {
+      "scene": "native-skirmish.scene.json",
+      "world_id": 1,
+      "level_id": 1,
+      "seed": 1984,
+      "scripted_queues": [
+        {
+          "squad_item_id": 102,
+          "orders": [
+            {
+              "kind": "move_to_point",
+              "destination": [
+                35,
+                0
+              ]
+            },
+            {
+              "kind": "bombing_run",
+              "enemy_squad_item_id": 101
+            }
+          ]
+        },
+        {
+          "squad_item_id": 104,
+          "orders": [
+            {
+              "kind": "mining",
+              "asteroid_id": 30
+            }
+          ]
+        }
+      ],
+      "extraction": {
+        "player_side": 1,
+        "center": [
+          115,
+          0
+        ],
+        "half_extents": [
+          5,
+          5
+        ],
+        "activation_radius": 15,
+        "layer": 19
+      },
+      "escort": {
+        "escorting_side": 1,
+        "escorted_ship_id": 13,
+        "seconds": 90
+      }
+    }
+  ]
+}

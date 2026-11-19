@@ -915,7 +915,7 @@ def author(args) -> tuple[dict, dict, dict]:
                 else:
                     queue["orders"] = [{"kind": "hold"}]
                     queue["repeat"] = False
-    elif args.objective == "extraction":
+    elif args.objective in ("extraction", "escort"):
         if owner not in controlled and not scripted_controller:
             raise ValueError("extraction needs an initially deployed player or scripted extracting squad")
         if not any(ship["base_speed"] > 0 and
@@ -937,7 +937,68 @@ def author(args) -> tuple[dict, dict, dict]:
             "half_extents": [5.0, 5.0],
             "activation_radius": args.extraction_radius, "layer": 19,
         }
-        if owner not in controlled:
+        if args.objective == "escort":
+            budget = args.minutes * 60 - (10 * dt if args.trainable else 0)
+            seconds = args.escort_seconds if args.escort_seconds is not None else budget
+            if (not math.isfinite(seconds) or seconds <= 0 or
+                    math.ceil(seconds / dt) * dt > budget + 1e-6):
+                raise ValueError("escort deadline must fit the native fixed-step game/policy budget")
+            eligible = []
+            by_id = {ship["entity_id"]: ship for ship in by_side[owner]}
+            for index, squad in enumerate(by_side_squads[owner]):
+                if squad["item_id"] in deferred_squad_ids:
+                    continue
+                for ship_id in squad["members"]:
+                    ship = by_id[ship_id]
+                    if (ship.get("base_speed", 0) <= 0 or
+                            ship.get("drone_carrier_id") is not None or
+                            (isinstance(ship.get("special"), dict) and
+                             ship["special"].get("kind") == "striker") or
+                            (args.escort_type is not None and
+                             ship["ship_type"] != args.escort_type)):
+                        continue
+                    queue = scripted_by_id.get(squad["item_id"])
+                    if owner not in controlled and (
+                            queue is None or "activation" in queue):
+                        continue
+                    eligible.append((
+                        ship["ship_type"] != 18,
+                        ship["ship_type"] in (5, 17),
+                        -ship["base_speed"], index, ship_id, squad["item_id"],
+                    ))
+            if not eligible:
+                raise ValueError("escort requires an initially deployed mobile commandable target ship")
+            eligible.sort()
+            _, _, _, _, ship_id, squad_id = eligible[0]
+            level["escort"] = {
+                "escorting_side": owner,
+                "escorted_ship_id": ship_id,
+                "seconds": seconds,
+            }
+            if owner not in controlled:
+                # The actual target's source squad navigates to the exit.
+                # Other mobile conventional squads use real Guard/weapon
+                # commands to protect it. No parallel convoy movement AI.
+                convoy = scripted_by_id[squad_id]
+                convoy["orders"] = [{"kind": "move_to_point", "destination": center}]
+                convoy["repeat"] = False
+                squad_by_id = {squad["item_id"]: squad for squad in by_side_squads[owner]}
+                for queue in queues:
+                    squad = squad_by_id.get(queue["squad_item_id"])
+                    if (squad is None or squad["item_id"] == squad_id or
+                            squad["item_id"] in deferred_squad_ids or
+                            "activation" in queue or
+                            queue["orders"][-1]["kind"] in (
+                                "hold", "scouting", "mining_nearest",
+                                "bombing_nearest", "charge_nearest")):
+                        continue
+                    if any(by_id[id].get("base_speed", 0) > 0 and
+                           by_id[id].get("turrets") for id in squad["members"]):
+                        queue["orders"] = [{
+                            "kind": "guard", "friendly_squad_item_id": squad_id,
+                        }]
+                        queue["repeat"] = True
+        elif owner not in controlled:
             # A headless AI extraction must actually attempt the authored
             # objective. Use the original native command director (not an
             # extra steering/AI implementation) to send one deployed mobile
@@ -1344,19 +1405,23 @@ def main() -> None:
     parser.add_argument("--title", default="Custom Native Battle")
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--minutes", type=int, default=4)
-    parser.add_argument("--objective", choices=("elimination", "survival", "extraction", "demolition"),
+    parser.add_argument("--objective", choices=("elimination", "survival", "extraction", "escort", "demolition"),
                         default="elimination",
-                        help="native elimination, defense, extraction or destroy-a-MapObject objective")
+                        help="native elimination, defense, extraction, escorted-ship delivery or demolition objective")
     parser.add_argument("--objective-side", type=int, choices=(1, 2),
-                        help="defending, extracting or demolishing faction; defaults to local player side")
+                        help="objective faction; defaults to local player side")
     parser.add_argument("--protect-type", type=int,
                         help="survival only: authored ship type to defend (first instance)")
     parser.add_argument("--survive-seconds", type=float,
                         help="survival only: survival duration (default: battle duration)")
     parser.add_argument("--extraction-center", type=float, nargs=2,
-                        help="extraction only: world X Y (default: enemy home)")
+                        help="extraction or escort: world X Y (default: enemy home)")
     parser.add_argument("--extraction-radius", type=float, default=15,
-                        help="extraction only: activation distance before exit trigger appears")
+                        help="extraction or escort: activation distance before exit trigger appears")
+    parser.add_argument("--escort-type", type=int,
+                        help="escort only: mobile ship type to deliver (otherwise prefers Scout)")
+    parser.add_argument("--escort-seconds", type=float,
+                        help="escort only: delivery deadline (default: battle duration)")
     parser.add_argument("--demolition-target", type=int,
                         help="demolition only: physical MapObject entity ID (required when ambiguous)")
     parser.add_argument("--demolition-seconds", type=float,
@@ -1421,9 +1486,12 @@ def main() -> None:
     if args.objective != "survival" and (
             args.protect_type is not None or args.survive_seconds is not None):
         parser.error("--protect-type and --survive-seconds require --objective survival")
-    if args.objective != "extraction" and (
+    if args.objective not in ("extraction", "escort") and (
             args.extraction_center is not None or args.extraction_radius != 15):
-        parser.error("--extraction-center and --extraction-radius require --objective extraction")
+        parser.error("--extraction-center and --extraction-radius require --objective extraction or escort")
+    if args.objective != "escort" and (
+            args.escort_type is not None or args.escort_seconds is not None):
+        parser.error("--escort-type and --escort-seconds require --objective escort")
     if args.objective != "demolition" and (
             args.demolition_target is not None or args.demolition_seconds is not None):
         parser.error("--demolition-target and --demolition-seconds require --objective demolition")

@@ -54,8 +54,23 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
         for wave in waves
     ):
         raise ValueError("native training reinforcement waves need real source squad IDs")
-    if sum(key in level for key in ("survival", "extraction", "demolition")) > 1:
-        raise ValueError("native training Level can have only one physical objective")
+    if (sum(key in level for key in ("survival", "demolition", "escort")) +
+            int("extraction" in level and "escort" not in level) > 1 or
+            ("escort" in level and "extraction" not in level)):
+        raise ValueError("native training Level has conflicting physical objectives")
+    if "escort" in level:
+        objective = level["escort"]
+        zone = level["extraction"]
+        if (not isinstance(objective, dict) or
+                objective.get("escorting_side") not in (1, 2) or
+                type(objective.get("escorted_ship_id")) is not int or
+                objective["escorted_ship_id"] <= 0 or
+                type(objective.get("seconds")) not in (int, float) or
+                not math.isfinite(objective["seconds"]) or
+                objective["seconds"] <= 0 or
+                not isinstance(zone, dict) or
+                zone.get("player_side") != objective["escorting_side"]):
+            raise ValueError("native escort training requires an authentic ship, exit and deadline")
     if "demolition" in level:
         objective = level["demolition"]
         if (not isinstance(objective, dict) or
@@ -385,9 +400,22 @@ def convert(source: Path, destination: Path, archetypes: Path,
         if not any(obj.get("entity_id") == demolition["target_map_object_id"]
                    for obj in scene.get("map_objects", [])):
             raise ValueError("native demolition target is missing from the shared physical scene")
+    escort = run["levels"][0].get("escort")
+    if escort is not None:
+        deadline_ticks = math.ceil(escort["seconds"] / scene["fixed_dt_seconds"])
+        policy_timeout = round(seconds - 10 * scene["fixed_dt_seconds"], 4)
+        if deadline_ticks * scene["fixed_dt_seconds"] > policy_timeout:
+            raise ValueError("native escort deadline exceeds the policy episode budget")
+        if not any(ship["entity_id"] == escort["escorted_ship_id"] and
+                   ship["side"] == escort["escorting_side"] and
+                   ship.get("base_speed", 0) > 0
+                   for ship in scene["ships"]):
+            raise ValueError("escort needs an authentic same-side mobile hull")
     reserved_ships = deferred_reinforcement_ships(
         scene, run, require_scripted_fallback=not policy_reinforcements,
     )
+    if escort is not None and escort["escorted_ship_id"] in reserved_ships:
+        raise ValueError("escort ship must be initially deployed")
     args = SimpleNamespace(
         policy_archetypes=archetypes, minutes=seconds / 60,
         deferred_reinforcement_ship_ids=reserved_ships,
@@ -435,6 +463,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
         "physical_scene_sha256": physical_identity,
         "physical_objective": (
             "survival" if "survival" in run["levels"][0]
+            else "escort" if "escort" in run["levels"][0]
             else "extraction" if "extraction" in run["levels"][0]
             else "demolition" if "demolition" in run["levels"][0]
             else "elimination"

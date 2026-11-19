@@ -141,6 +141,26 @@ python3 native/tools/author-battle.py escape-route \
   --objective extraction --extraction-center 95 0
 ```
 
+To transport a particular live ship into a real exit collider rather
+than escape with any squad, use `--objective escort`. For example:
+
+```sh
+python3 native/tools/author-battle.py convoy-mission \
+  --bees 21:4,18:1 --humans 13:6 --control bees \
+  --objective escort --escort-type 18 --escort-seconds 90 \
+  --extraction-center 95 0 --trainable
+```
+
+The escorting ship must initially exist and be mobile; the chosen ship
+and deadline are part of the same native Level in gameplay and training.
+Only its physical collider can complete the extraction. Autonomous
+`--control none` missions send the original target squad toward the exit
+using native movement and Guard commands, while specialist squads retain
+their normal actions. The bundled playable example
+`native/examples/native-escort-convoy.run.json` escorts side-1 Scout
+13 to the real exit at (115, 0). Its 90-second objective and exact target
+are visible in the native HUD; a death before delivery fails the mission.
+
 Demolition missions can end immediately when the specified **physical**
 MapObject is destroyed, without waiting for elimination of the entire enemy
 fleet. For a scene with an authored Fire Tank, use
