@@ -512,12 +512,20 @@ the runtime selects that scenario when mission 1's latest result was a
 victory. The publisher checks and copies both complete native scenes.
 
 Verified trained-opponent challenge runs can also be used for ordinary
-and alternate missions. The publisher stages their selected model
-manifests and checkpoint files into the campaign, verifying every
-SHA-256 before the final atomic directory publication. A compatible
-Python policy worker and its dependencies must still be installed on
-the machine running these policy-opponent battles; the native gameplay
-world itself does not change.
+and alternate missions. The publisher packages the selected model weights,
+rebased manifests, inference worker, and matching native actor modules
+together with their SHA-256 provenance; the game no longer depends on the
+training checkout's absolute paths. The published run uses `python` from
+PATH on either Windows or Linux. Install compatible Python, NumPy, and the
+model backend dependencies (PyTorch/ML-Agents for an ML-Agents actor, or the
+appropriate ONNX runtime) on the target machine; no virtual environment
+or interpreter binary is copied.
+
+These battles keep the learned opponent's authentic policy actions and
+authored battle time limit, but use ordinary native game victory/draw rules,
+not frozen training reward denominators. Saved player fleet losses,
+purchases, formations, and tactics therefore carry through even when the
+opponent is controlled by a real model.
 
 Authoring rejects cyclic/forward references, missing missions,
 duplicate overrides, and non-shop unlock types.
