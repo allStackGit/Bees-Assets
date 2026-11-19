@@ -516,13 +516,20 @@ python3 native/tools/author_campaign.py my-earned-fleet \
   --mission mission-one/battle.run.json \
   --mission mission-two/battle.run.json \
   --shop-types 21,18 --grant-only-types 20 \
-  --victory-grant 1:20:1:20000
+  --victory-squad 1:40000:20000 \
+  --victory-grant 1:20:1:40000
 ```
 
 Here side 1's authentic type-20 hull becomes owned after the first
 mission's victory but is not an active initial game ship or purchasable
-shop item. `20000` is the first SavedSquad identity in these generated
-scenes; other missions should use their actual authored persistent ID.
+shop item. `20000` is the first authored SavedSquad identity in the
+generated scenes. The `--victory-squad` option first awards a new
+persistent SavedSquad `40000` using squad `20000` as its source
+command template. The ship is awarded into that new formation in the
+same winning receipt. Later missions instantiate its squad and FleetShip
+through the ordinary native installer; replay and repeat wins cannot
+grant another copy. Different sources should use their actual authored
+persistent IDs.
 Both mission scenes carry the complete source template. The native
 loader verifies it with the same full ship parser used for gameplay,
 removes it from the active simulation, and only instantiates a live
@@ -542,7 +549,11 @@ native-authored side-1 SavedSquad. These ships cost **zero minerals** but
 retain their verified source MaxTSV for scene instantiation. Awarded ships
 follow ordinary loss, squad-transfer, tactics, and future-mission rules.
 The original battle's immutable summary owns the award receipt, so
-rematches and replay cannot pay it twice.
+rematches and replay cannot pay it twice. Native campaign status reports
+`victory_squads`, `victory_grants` and their claimed state, while
+`created_squads[].acquisition` distinguishes earned squads from
+player-created squads. Manual squad creation reserves the IDs already
+assigned to future story rewards, preventing accidental collisions.
 The resulting directory holds a `campaign.json`, a `library.json`,
 independent mission scenes/run files and a source-hash provenance receipt.
 
