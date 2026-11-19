@@ -142,6 +142,26 @@ function learnerMeasurements(metrics) {
     add('optimizer_steps_per_update_second', 'rate');
     add('torch_cuda_process_peak_allocated_bytes', 'bytes');
     add('torch_cuda_process_peak_reserved_bytes', 'bytes');
+    const missionDecisions = metrics.native_mission_learner_decisions;
+    const verifiedDecisions = metrics.native_mission_learner_decision_rows_validated;
+    const missionMix = metrics.native_mission_learner_decisions_by_kind;
+    if (missionDecisions != null || verifiedDecisions != null || missionMix != null) {
+        if (!Number.isSafeInteger(missionDecisions) || missionDecisions < 0 ||
+            !Number.isSafeInteger(verifiedDecisions) ||
+            verifiedDecisions !== missionDecisions ||
+            !missionMix || typeof missionMix !== 'object' || Array.isArray(missionMix) ||
+            Object.keys(missionMix).sort().join(',') !==
+                ['demolition','escort','extraction','survival'].join(',') ||
+            Object.values(missionMix).some(n => !Number.isSafeInteger(n) || n < 0) ||
+            Object.values(missionMix).reduce((a,b)=>a+b,0) !== missionDecisions)
+            throw Error('Native Bees objective-bearing learner decisions disagree with real optimizer inputs.');
+        add('native_mission_learner_decisions', 'count');
+        add('native_mission_learner_decision_rows_validated', 'count');
+        for (const kind of ['survival','demolition','escort','extraction'])
+            report['native_mission_learner_decisions_' + kind] = {
+                value: missionMix[kind], unit: 'count',
+            };
+    }
     if (metrics.refreshed_opponent_slot != null) {
         report.self_play_opponent_promotion = {value: 1, unit: 'count'};
         report.self_play_opponent_slot = {value: metrics.refreshed_opponent_slot, unit: 'count'};
@@ -156,6 +176,35 @@ function learnerMeasurements(metrics) {
         'bee_wins', 'human_wins', 'draws'])
         outcome(name, 'count');
     outcome('mean_episode_seconds', 'seconds');
+    const attempts = outcomes.mission_attempts_by_kind;
+    const completions = outcomes.mission_completions_by_kind;
+    if (attempts != null || completions != null) {
+        if (!attempts || !completions || typeof attempts !== 'object' ||
+            typeof completions !== 'object' || Array.isArray(attempts) ||
+            Array.isArray(completions) ||
+            [...Object.keys(attempts), ...Object.keys(completions)]
+                .some(kind => !['survival','demolition','escort','extraction'].includes(kind)))
+            throw Error('Invalid native Bees physical training mission categories.');
+        for (const kind of ['survival','demolition','escort','extraction']) {
+            const total = attempts[kind] ?? 0;
+            const successful = completions[kind] ?? 0;
+            if (!Number.isSafeInteger(total) || !Number.isSafeInteger(successful) ||
+                total < 0 || successful < 0 || successful > total)
+                throw Error('Invalid native Bees physical training mission outcome totals.');
+            report['training_mission_attempts_' + kind] = {value: total,unit:'count'};
+            report['training_mission_completions_' + kind] = {value: successful,unit:'count'};
+            if (total > 0) report['training_mission_completion_rate_' + kind] = {
+                value:successful / total,unit:'ratio',
+            };
+        }
+        for (const name of ['learner_objective_attempts',
+            'learner_objective_completions', 'learner_interceptions']) outcome(name, 'count');
+        if (outcomes.learner_objective_attempts > 0)
+            report.training_learner_objective_completion_rate = {
+                value:outcomes.learner_objective_completions /
+                    outcomes.learner_objective_attempts,unit:'ratio',
+            };
+    }
     const owners = ['bee', 'human'];
     if (outcomes.head_to_head_episodes > 0) {
         for (const name of ['learner_wins', 'learner_losses', 'learner_draws',
@@ -419,6 +468,61 @@ function rolloutPolicyBoundaryMeasurements(rollout) {
     report.rollout_policy_boundary_observation_build_wall_seconds = {
         value: seconds, unit: 'seconds',
     };
+    return report;
+}
+
+// These are actual feature rows produced by the unified simulation,
+// not a count of authored missions or an estimate from win rates. Keep
+// mission samples and target-discovery coverage comparable across workers
+// and the separate Hub collector/learner process boundaries.
+function rolloutPolicyObservationMeasurements(rollout) {
+    const work = rollout?.policy_observations;
+    if (work == null) return {};
+    const report = {};
+    const counters = ['rows_encoded','native_mission_rows',
+        'allies_encoded','enemies_encoded','map_objects_encoded'];
+    if (typeof work !== 'object' || Array.isArray(work) ||
+        counters.some(key => !Number.isSafeInteger(work[key]) || work[key] < 0) ||
+        work.native_mission_rows > work.rows_encoded)
+        throw Error('Invalid native Bees policy observation work counters.');
+    for (const key of counters)
+        report['rollout_policy_' + key] = {value:work[key], unit:'count'};
+    if (work.rows_encoded > 0)
+        report.rollout_mission_observation_fraction = {
+            value:work.native_mission_rows / work.rows_encoded,unit:'ratio',
+        };
+    const kinds = work.native_mission_rows_by_kind;
+    const targetRows = work.native_mission_visible_target_rows;
+    const destinationRows = work.native_mission_destination_rows;
+    const available = [kinds, targetRows, destinationRows].filter(x=>x!==undefined);
+    if (available.length > 0) {
+        if (available.length !== 3 || !kinds || typeof kinds !== 'object' ||
+            Array.isArray(kinds) || Object.keys(kinds).sort().join(',') !==
+                ['demolition','escort','extraction','survival'].join(',') ||
+            Object.values(kinds).some(x=>!Number.isSafeInteger(x)||x<0) ||
+            Object.values(kinds).reduce((a,b)=>a+b,0) !== work.native_mission_rows ||
+            !Number.isSafeInteger(targetRows) || targetRows < 0 ||
+            targetRows > work.native_mission_rows ||
+            !Number.isSafeInteger(destinationRows) || destinationRows < 0 ||
+            destinationRows > work.native_mission_rows)
+            throw Error('Native Bees source mission coverage counters are incomplete.');
+        for (const kind of ['survival','demolition','escort','extraction'])
+            report['rollout_mission_rows_' + kind] = {value:kinds[kind],unit:'count'};
+        report.rollout_mission_visible_target_rows = {
+            value:targetRows,unit:'count',
+        };
+        report.rollout_mission_destination_rows = {
+            value:destinationRows,unit:'count',
+        };
+        if (work.native_mission_rows > 0) {
+            report.rollout_mission_target_visibility_rate = {
+                value: targetRows / work.native_mission_rows, unit:'ratio',
+            };
+            report.rollout_mission_destination_available_rate = {
+                value: destinationRows / work.native_mission_rows, unit:'ratio',
+            };
+        }
+    }
     return report;
 }
 
@@ -974,6 +1078,7 @@ function createNativeBeesAdapter({
                         ...rolloutLiveShipMeasurements(rollout),
                         ...rolloutSceneCacheMeasurements(rollout),
                         ...rolloutPolicyBoundaryMeasurements(rollout),
+                        ...rolloutPolicyObservationMeasurements(rollout),
                         ...(rollout.sampled_model_timing ? {
                             rollout_sampled_model_calls: {
                                 value: rollout.sampled_model_timing.calls, unit: 'count',
@@ -1027,6 +1132,7 @@ function createNativeBeesAdapter({
                         ...rolloutLiveShipMeasurements(rollout),
                         ...rolloutSceneCacheMeasurements(rollout),
                         ...rolloutPolicyBoundaryMeasurements(rollout),
+                        ...rolloutPolicyObservationMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
