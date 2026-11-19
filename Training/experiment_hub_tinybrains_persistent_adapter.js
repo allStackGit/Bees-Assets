@@ -1197,4 +1197,12 @@ function createTinyBrainsPersistentDockerAdapter({
         },
     };
 }
-module.exports={createTinyBrainsPersistentDockerAdapter};
+// The same checkpoint, training metrics and PPO pipeline are native on
+// Windows; only the trusted process owner and physical CUDA selectors differ.
+function createTinyBrainsPersistentWindowsAdapter(options) {
+    return createTinyBrainsPersistentDockerAdapter({
+        ...options,nativeWindows:true,
+    });
+}
+module.exports={createTinyBrainsPersistentDockerAdapter,
+    createTinyBrainsPersistentWindowsAdapter};
