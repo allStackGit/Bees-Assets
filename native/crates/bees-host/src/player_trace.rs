@@ -145,6 +145,23 @@ impl NativeTraceNetworkEvent {
     }
 }
 
+/// Preserve the real interleaving of multiplayer inputs and server
+/// responses when a paused player window processes several network events
+/// without advancing the physical round.
+pub enum NativeTraceAction {
+    Input(NativeTraceInput),
+    Network(NativeTraceNetworkEvent),
+}
+
+impl NativeTraceAction {
+    pub fn round(&self) -> u64 {
+        match self {
+            Self::Input(value) => value.round,
+            Self::Network(value) => value.round(),
+        }
+    }
+}
+
 /// Source-validation and bounded-memory replay coverage; measured once
 /// per file record, never in the fixed simulation step.
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
@@ -165,9 +182,8 @@ pub struct NativeTraceStreamMeasurements {
 /// most one lookahead record and one round of actions/checkpoints; long
 /// recordings never become an unbounded in-memory input queue.
 pub struct NativePlayerTrace {
-    pub inputs: VecDeque<NativeTraceInput>,
+    pub actions: VecDeque<NativeTraceAction>,
     pub checkpoints: VecDeque<NativeTraceCheckpoint>,
-    pub network_events: VecDeque<NativeTraceNetworkEvent>,
     pub end_round: u64,
     pub policy_actions_sha256: Option<String>,
     pub hivemind_start_checkpoint_sha256: Option<String>,
@@ -301,9 +317,8 @@ impl NativePlayerTrace {
                     }
                     reader.seek(SeekFrom::Start(data_start))?;
                     return Ok(Self {
-                        inputs: VecDeque::new(),
+                        actions: VecDeque::new(),
                         checkpoints: VecDeque::new(),
-                        network_events: VecDeque::new(),
                         end_round: rounds,
                         policy_actions_sha256,
                         hivemind_start_checkpoint_sha256,
@@ -333,9 +348,8 @@ impl NativePlayerTrace {
     /// Reading forward beyond this boundary would pre-allocate huge
     /// traces and lose the precise input/observation ordering.
     pub fn load_round(&mut self, round: u64) -> io::Result<()> {
-        if self.inputs.front().is_some_and(|entry| entry.round < round) ||
-            self.checkpoints.front().is_some_and(|entry| entry.round < round) ||
-            self.network_events.front().is_some_and(|entry| entry.round() < round) {
+        if self.actions.front().is_some_and(|entry| entry.round() < round) ||
+            self.checkpoints.front().is_some_and(|entry| entry.round < round) {
             return Err(trace_error("unconsumed native trace events before round"));
         }
         if self.reached_end { return Ok(()); }
@@ -368,7 +382,9 @@ impl NativePlayerTrace {
             }
             match record {
                 TraceRecord::PlayerInput { round, tick, action, remote_side } => {
-                    self.inputs.push_back(NativeTraceInput { round, tick, action, remote_side });
+                    self.actions.push_back(NativeTraceAction::Input(
+                        NativeTraceInput { round, tick, action, remote_side },
+                    ));
                     self.measurements.loaded_inputs += 1;
                 }
                 TraceRecord::PhysicalStateCheckpoint {
@@ -381,22 +397,22 @@ impl NativePlayerTrace {
                     self.measurements.loaded_checkpoints += 1;
                 }
                 TraceRecord::HivemindSetup { round, request_hash, server_game_id } => {
-                    self.network_events.push_back(NativeTraceNetworkEvent::Setup {
-                        round, request_hash, server_game_id,
-                    });
+                    self.actions.push_back(NativeTraceAction::Network(
+                        NativeTraceNetworkEvent::Setup { round, request_hash, server_game_id },
+                    ));
                     self.measurements.loaded_network_events += 1;
                 }
                 TraceRecord::HivemindFrame { round, request_hash, frame } => {
-                    self.network_events.push_back(NativeTraceNetworkEvent::Frame {
-                        round, request_hash, frame,
-                    });
+                    self.actions.push_back(NativeTraceAction::Network(
+                        NativeTraceNetworkEvent::Frame { round, request_hash, frame },
+                    ));
                     self.measurements.loaded_network_events += 1;
                 }
                 _ => unreachable!("validated trace event"),
             }
             self.measurements.peak_round_events =
                 self.measurements.peak_round_events.max(
-                    self.inputs.len() + self.checkpoints.len() + self.network_events.len(),
+                    self.actions.len() + self.checkpoints.len(),
                 );
         }
         Ok(())

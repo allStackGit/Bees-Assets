@@ -28,6 +28,7 @@ use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
 use bees_host::policy_action_trace::{PolicyActionPlayback, PolicyActionRecorder};
 use bees_host::player_trace::{
     NativePlayerInput, NativePlayerTrace, NativeTraceLevel, NativeTraceNetworkEvent,
+    NativeTraceAction,
 };
 use bees_host::world_fingerprint::{physical_world_sha256, gameplay_world_sha256};
 use bees_host::presentation::NativeSoftwareRenderer;
@@ -4508,45 +4509,43 @@ fn run_battle(
                 ));
                 break 'battle;
             }
-            // Live socket ingress precedes player input at a fixed-tick
-            // boundary. Replay follows precisely that same ordering using
-            // the original checkpoint-owned hashes and game dispatcher.
-            while trace.network_events.front().is_some_and(|entry|
-                match entry {
-                    NativeTraceNetworkEvent::Setup { round, .. } |
-                    NativeTraceNetworkEvent::Frame { round, .. } => *round == rounds,
-                }
-            ) {
-                let event = trace.network_events.pop_front()
-                    .expect("checked next HiveMind event");
-                let Some(replayer) = &mut replay_network else {
-                    failed_window = Some("recorded HiveMind event has no connection".into());
-                    break 'battle;
-                };
-                if let Err(error) = replayer.accept(&mut host, event) {
-                    failed_window = Some(format!("recorded HiveMind input: {error}"));
-                    break 'battle;
-                }
-            }
-            while trace.inputs.front().is_some_and(|entry| entry.round == rounds) {
-                let entry = trace.inputs.pop_front().expect("checked next input");
-                let (id, episode_revision) = entry.action.episode();
-                let matching_world = (0..host.simulation().world_count()).any(|index| {
-                    host.simulation().world(index).is_some_and(|world| world.id == id &&
-                        world.episode_revision() == episode_revision && world.tick() == entry.tick)
-                });
-                if !matching_world {
-                    failed_window = Some(format!("player trace diverged at round {rounds}, world {}", id.0));
-                    break 'battle;
-                }
-                let applied = if let Some(side) = entry.remote_side {
-                    apply_remote_side_input(&mut host, entry.action, side)
-                } else {
-                    apply_player_input(&mut host, entry.action)
-                };
-                if let Err(error) = applied {
-                    failed_window = Some(error);
-                    break 'battle;
+            // Network delivery and player input may interleave several
+            // times without advancing a paused/local window. Replay their
+            // original file order, not two grouped per-round queues.
+            while trace.actions.front().is_some_and(|entry| entry.round() == rounds) {
+                match trace.actions.pop_front().expect("checked next native action") {
+                    NativeTraceAction::Network(event) => {
+                        let Some(replayer) = &mut replay_network else {
+                            failed_window = Some("recorded HiveMind event has no connection".into());
+                            break 'battle;
+                        };
+                        if let Err(error) = replayer.accept(&mut host, event) {
+                            failed_window = Some(format!("recorded HiveMind input: {error}"));
+                            break 'battle;
+                        }
+                    }
+                    NativeTraceAction::Input(entry) => {
+                        let (id, episode_revision) = entry.action.episode();
+                        let matching_world = (0..host.simulation().world_count()).any(|index| {
+                            host.simulation().world(index).is_some_and(|world| world.id == id &&
+                                world.episode_revision() == episode_revision && world.tick() == entry.tick)
+                        });
+                        if !matching_world {
+                            failed_window = Some(format!(
+                                "player trace diverged at round {rounds}, world {}", id.0,
+                            ));
+                            break 'battle;
+                        }
+                        let applied = if let Some(side) = entry.remote_side {
+                            apply_remote_side_input(&mut host, entry.action, side)
+                        } else {
+                            apply_player_input(&mut host, entry.action)
+                        };
+                        if let Err(error) = applied {
+                            failed_window = Some(error);
+                            break 'battle;
+                        }
+                    }
                 }
             }
             if rounds == trace.end_round {
