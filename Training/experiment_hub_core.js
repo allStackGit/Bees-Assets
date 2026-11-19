@@ -625,6 +625,27 @@ function comparableCandidate(job) {
     };
 }
 
+// A distributed Bees checkpoint is suitable for continuation only after
+// every originally leased optimizer machine has returned a verified terminal
+// worker result and released its own native claim. Rank-zero checkpoint
+// consensus alone does not prove that remote worker ownership was settled.
+function nativeOptimizerGroupBlock(snapshot,parent) {
+    if(parent?.project_id!=='bees_native'||
+        parent.frozen_parameters?.optimizer_group!==true)return null;
+    const group=parent.resource_bundle;
+    if(!group||group.index!==1||!UUID.test(String(group.id||''))||
+        !Number.isSafeInteger(group.size)||group.size<2||group.size>8)
+        return 'The distributed optimizer checkpoint has no original Hub owner group.';
+    const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===group.id);
+    if(members.length!==group.size||
+        members.some((job,index)=>job.resource_bundle.index!==index+1||
+            job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
+            job.status!=='finished'||!job.dispatch_id||
+            !job.execution_updated_at||!job.capacity_released_at))
+        return 'Distributed PPO checkpoint continuation requires every original optimizer worker to finish and release its lease.';
+    return null;
+}
+
 // Shared by planning, capacity claims, automation and native Start.
 function predecessorBlock(snapshot,job) {
     if(job.continuation_of_job_id&&job.after_job_id)
@@ -640,6 +661,8 @@ function predecessorBlock(snapshot,job) {
             (job.assigned_machine_id&&
                 job.assigned_machine_id!==parent.assigned_machine_id))
             return 'Continuation lineage, completed parent, or original machine is not verified.';
+        const groupBlock=nativeOptimizerGroupBlock(snapshot,parent);
+        if(groupBlock)return groupBlock;
     }
     if(job.after_job_id) {
         const parent=snapshot.jobs.find(j=>j.id===job.after_job_id);
@@ -653,6 +676,8 @@ function predecessorBlock(snapshot,job) {
             job.artifact_lineage_root_id!==job.id||
             job.continuation_machine_id)
             return 'Independent predecessor has not completed and released verified native capacity.';
+        const groupBlock=nativeOptimizerGroupBlock(snapshot,parent);
+        if(groupBlock)return groupBlock;
     }
     return null;
 }
