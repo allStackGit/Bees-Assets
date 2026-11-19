@@ -644,7 +644,7 @@ function rolloutPolicyObservationMeasurements(rollout) {
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
-    evaluationRoot, evaluationSuites, gameLibrarySaveRoot,
+    evaluationRoot, evaluationSuites, gameLibrarySaveRoot, distributedOptimizer,
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
     // Local operator-owned PCI to ROCr UUID mappings are never job parameters.
@@ -653,7 +653,24 @@ function createNativeBeesAdapter({
             !PCI.test(pci) || typeof uuid !== 'string' || !ROCM_UUID.test(uuid)))
         throw Error('Invalid locally approved native Bees ROCm GPU UUID bindings.');
     const rocr_gpu_uuids = Object.freeze({...rocrGpuUuids});
-    const project = collectOnly ? 'bees_native_collect' : PROJECT;
+    // Rendezvous endpoints are trusted machine-owned installation inputs,
+    // never job-supplied URLs. The Hub alone owns each node's GPU lease,
+    // bundle membership, Start and terminal resource release.
+    if (distributedOptimizer !== undefined && (
+        collectOnly || !distributedOptimizer ||
+        typeof distributedOptimizer !== 'object' || Array.isArray(distributedOptimizer) ||
+        Object.keys(distributedOptimizer).sort().join(',') !==
+            ['backend','masterAddress','masterPort','role'].sort().join(',') ||
+        !['owner','worker'].includes(distributedOptimizer.role) ||
+        !['nccl','gloo'].includes(distributedOptimizer.backend) ||
+        (process.platform === 'win32' && distributedOptimizer.backend !== 'gloo') ||
+        typeof distributedOptimizer.masterAddress !== 'string' ||
+        !/^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(distributedOptimizer.masterAddress) ||
+        !Number.isSafeInteger(distributedOptimizer.masterPort) ||
+        distributedOptimizer.masterPort < 1 || distributedOptimizer.masterPort > 65535))
+        throw Error('Native optimizer nodes require a trusted fixed rendezvous, common backend and explicit owner/worker role.');
+    const project = collectOnly ? 'bees_native_collect' :
+        distributedOptimizer?.role === 'worker' ? 'bees_native_optimizer_worker' : PROJECT;
     if (collectOnly && (evaluationRoot != null || evaluationSuites != null))
         throw Error('Native Bees collection-only jobs cannot own learner evaluations.');
     const executable = trustedFile(pythonPath);
@@ -707,6 +724,12 @@ function createNativeBeesAdapter({
     const config = JSON.parse(runBytes);
     const bundleRound = Object.hasOwn(config, 'rollout_bundles');
     const inboxLearner = !collectOnly && Boolean(inbox);
+    if (distributedOptimizer !== undefined && !bundleRound)
+        throw Error('Multi-machine native PPO only consumes the same pinned physical capture bundles on every node.');
+    if (distributedOptimizer?.role === 'worker' &&
+        (evaluationRoot !== undefined || evaluationSuites !== undefined ||
+         gameLibrarySaveRoot !== undefined))
+        throw Error('Native optimizer workers never publish checkpoints, evaluations or player models.');
     if (inboxLearner && (!Array.isArray(config.rollout_bundles) || config.rollout_bundles.length))
         throw Error('Native Bees inbox learners require an empty rollout_bundles template.');
     if (collectOnly && bundleRound) throw Error('Native Bees collection requires live Levels.');
@@ -773,7 +796,7 @@ function createNativeBeesAdapter({
     // ELF/PE digest. Scene/Stage/worker content is part of the experiment.
     const configIdentity = [...basePins.values(), learnerSlot ?? null,
         ...sourcePins.values()];
-    if (collectOnly) configIdentity.push(project);
+    if (collectOnly || distributedOptimizer?.role === 'worker') configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
     const configSha256 = sha256(JSON.stringify(configIdentity));
 
@@ -972,15 +995,16 @@ function createNativeBeesAdapter({
         args(parameters, context) {
             const output = jobRoot(context);
             const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
+                optimizer_group,
                 physics_workers, collection_id, rollout_world_start, rollout_worlds,
                 bundle_directory, refresh_opponent_slot,
                 source_run_contract_sha256} = parameters;
             const allowed = inboxLearner
                 ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads',
-                    'refresh_opponent_slot']
+                    'refresh_opponent_slot', 'optimizer_group']
                 : bundleRound
                     ? ['config_sha256', 'seed_offset', 'optimizer_threads',
-                        'refresh_opponent_slot']
+                        'refresh_opponent_slot', 'optimizer_group']
                     : collectOnly
                         ? ['config_sha256', 'seed_offset', 'rollout_workers', 'physics_workers',
                             'collection_id', 'rollout_world_start', 'rollout_worlds',
@@ -991,6 +1015,20 @@ function createNativeBeesAdapter({
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
                 (bundleRound && seed_offset !== 0))
                 throw Error('Native Bees requires the approved configuration digest and a seed offset.');
+            if ((distributedOptimizer === undefined && optimizer_group !== undefined) ||
+                (distributedOptimizer !== undefined && optimizer_group !== true))
+                throw Error('Only an installed native PPO distributed adapter may consume a frozen optimizer group.');
+            if (distributedOptimizer !== undefined) {
+                const group=context.resource_bundle;
+                if (!group || !UUID.test(String(group.id||'')) ||
+                    !Number.isSafeInteger(group.index) ||
+                    !Number.isSafeInteger(group.size) ||
+                    group.size<2 || group.size>8 ||
+                    group.index<1 || group.index>group.size ||
+                    (group.index===1)!==(distributedOptimizer.role==='owner') ||
+                    seed_offset!==0 || context.project_id!==project)
+                    throw Error('Native optimizer node has no approved Hub owner/worker bundle rank.');
+            }
             if (optimizer_threads !== undefined &&
                 (collectOnly || !Number.isSafeInteger(optimizer_threads) ||
                     optimizer_threads < 1 || optimizer_threads > 256 ||
@@ -1102,6 +1140,12 @@ function createNativeBeesAdapter({
             // that placement rather than silently wasting the assigned GPU.
             if (collectOnly && gpu && !inputs.supportsGpuInference)
                 throw Error('Native Bees GPU collection needs an accelerator-capable model backend.');
+            if (distributedOptimizer !== undefined &&
+                (!gpu || context.gpu_mode!=='exclusive' ||
+                 context.cpu_quota < (dualGpu?2:1) ||
+                 (optimizer_threads !== undefined &&
+                  optimizer_threads < (dualGpu?2:1))))
+                throw Error('Synchronized native optimizer nodes require exclusively leased GPUs and one CPU thread per rank.');
             if (context.continuation_of_job_id &&
                 context.expected_parent_model_sha256 !== inputs.checkpointDigest)
                 throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
@@ -1127,10 +1171,17 @@ function createNativeBeesAdapter({
                 ...(inboxLearner ? bundleArguments(rollout_bundles) : []),
                 '--device', gpu ? 'cuda' : 'cpu',
                 ...(!collectOnly && dualGpu ? ['--learner-gpus', '2'] : []),
+                ...(distributedOptimizer === undefined ? [] : [
+                    '--learner-nodes', String(context.resource_bundle.size),
+                    '--learner-node-rank', String(context.resource_bundle.index-1),
+                    '--learner-master-addr', distributedOptimizer.masterAddress,
+                    '--learner-master-port', String(distributedOptimizer.masterPort),
+                    '--learner-backend', distributedOptimizer.backend,
+                ]),
                 // Two optimizer ranks are OS processes. Bound the sum
                 // of their intra-op threads by the reserved Hub CPUs,
                 // including when no manual thread selection was made.
-                ...(optimizer_threads === undefined && !dualGpu ? [] :
+                ...(optimizer_threads === undefined && !dualGpu && !distributedOptimizer ? [] :
                     ['--torch-threads', String(optimizer_threads ??
                         Math.min(256, Math.floor(context.cpu_quota)))]),
                 ...((rollout_workers === undefined && !dualGpu) ||
