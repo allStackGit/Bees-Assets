@@ -362,6 +362,46 @@ function rolloutBorderMeasurements(rollout) {
     return metrics;
 }
 
+// These are actual startup/restart costs reported by the native scene
+// source cache and verified by the training receipt. Across distributed
+// collectors they are sums of PROCESS-LOCAL work, not a claim that all
+// machines shared a single parse or that every avoided parse saved the
+// same CPU time. Historical runs without cache measurements stay absent.
+function rolloutSceneCacheMeasurements(rollout) {
+    const cache = rollout?.source_scene_template_cache;
+    if (cache == null) return {};
+    if (cache.scope != null &&
+        cache.scope !== 'sum_of_process_local_source_work')
+        throw Error('Invalid native Bees scene template measurement scope.');
+    const countFields = [
+        'distinct_source_documents', 'distinct_parsed_layouts',
+        'worlds_initialized', 'episodes_recycled', 'source_parse_count',
+        'recycle_source_parses_avoided',
+    ];
+    const timeFields = [
+        'source_parse_wall_seconds', 'initial_template_clone_wall_seconds',
+        'recycled_template_clone_wall_seconds',
+    ];
+    if (countFields.some(name => !Number.isSafeInteger(cache[name]) ||
+            cache[name] < 0) ||
+        timeFields.some(name => !Number.isFinite(cache[name]) ||
+            cache[name] < 0) ||
+        cache.worlds_initialized !== rollout.worlds ||
+        cache.episodes_recycled !== rollout.episodes - rollout.worlds ||
+        cache.recycle_source_parses_avoided !== cache.episodes_recycled ||
+        cache.source_parse_count !== cache.distinct_parsed_layouts ||
+        cache.distinct_source_documents < 1 ||
+        cache.distinct_source_documents > cache.distinct_parsed_layouts ||
+        cache.distinct_parsed_layouts > cache.worlds_initialized)
+        throw Error('Native Bees scene cache data contradicts completed training Worlds.');
+    const result = {};
+    for (const name of countFields)
+        result['rollout_scene_' + name] = {value: cache[name], unit: 'count'};
+    for (const name of timeFields)
+        result['rollout_scene_' + name] = {value: cache[name], unit: 'seconds'};
+    return result;
+}
+
 function rolloutPolicyBoundaryMeasurements(rollout) {
     const capture = rollout?.policy_boundary_capture;
     if (capture == null) return {};
@@ -932,6 +972,7 @@ function createNativeBeesAdapter({
                         ...rolloutQueenControllerMeasurements(rollout),
                         ...rolloutBorderMeasurements(rollout),
                         ...rolloutLiveShipMeasurements(rollout),
+                        ...rolloutSceneCacheMeasurements(rollout),
                         ...rolloutPolicyBoundaryMeasurements(rollout),
                         ...(rollout.sampled_model_timing ? {
                             rollout_sampled_model_calls: {
@@ -984,6 +1025,7 @@ function createNativeBeesAdapter({
                         ...rolloutQueenControllerMeasurements(rollout),
                         ...rolloutBorderMeasurements(rollout),
                         ...rolloutLiveShipMeasurements(rollout),
+                        ...rolloutSceneCacheMeasurements(rollout),
                         ...rolloutPolicyBoundaryMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
