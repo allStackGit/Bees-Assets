@@ -2154,6 +2154,25 @@ impl NativePhysicalScene {
         [self.bee_side, self.human_side]
     }
 
+    /// Route a model using the verified source sides in either the frozen
+    /// MA-POCA episode or an explicitly authored playable model encounter.
+    /// The latter deliberately has no training reward denominators, so
+    /// exported_episode() is invalid there. Never permit an unverified
+    /// policy group to masquerade as a playable game or a training source.
+    pub fn policy_group_sides(&self) -> Result<[i32; 2], NativeSnapshotError> {
+        if self.campaign_policy_opponent_side.is_some() {
+            if self.source_episode.is_some() ||
+                self.source_policy_group.is_none() ||
+                self.policy_game_timeout_seconds.is_none()
+            {
+                return Err(NativeSnapshotError::InvalidEpisodeSource);
+            }
+            Ok(self.gameplay_sides())
+        } else {
+            self.exported_episode().map(|episode| episode.sides())
+        }
+    }
+
     /// Fresh native coordinator with the exact source *starting* TSV and
     /// all four source-defined discovery denominators per faction. This
     /// starts a NEW native episode; it does not replay Unity's consumed

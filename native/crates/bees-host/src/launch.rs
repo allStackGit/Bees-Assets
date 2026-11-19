@@ -405,9 +405,8 @@ fn bind_group_routes(
     verify_source: bool,
     episode_seed: u64,
 ) -> io::Result<[i32; 2]> {
-    let sides = scene.exported_episode()
-        .map_err(|error| contextual("source group sides", error))?
-        .sides();
+    let sides = scene.policy_group_sides()
+        .map_err(|error| contextual("source policy group sides", error))?;
     let number = episode_number(group, offset)?;
     let movement_by_team = scene.source_policy_group.as_ref()
         .map(|source| source.movement_disabled_by_team);
