@@ -156,6 +156,9 @@ class LocalExecution {
                         job_id:job.id,project_id:job.project_id,
                         artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                         continuation_of_job_id:job.continuation_of_job_id||null,
+                        ...(job.model_source_job_id?{model_source_job_id:job.model_source_job_id}:{}),
+                        ...(job.expected_parent_model_sha256?
+                            {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                         ...(dual
                             ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                             :{gpu_pci_address:lease.gpu_bindings[0].pci_address}),
