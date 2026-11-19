@@ -749,7 +749,11 @@ def _trust_region_policy_loss_with_dimension_mask(
     weights = valid_steps * valid_dimensions
     if sample_weights is not None and sample_weights.shape[0] == weights.shape[0]:
         weights = weights * sample_weights.to(element_loss.dtype).unsqueeze(-1)
-    return (element_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
+    denominator = weights.sum()
+    # The distributed optimizer needs the *actual* denominator used by
+    # this weighted masked loss, not an estimate from shard row counts.
+    _POLICY_DIMENSION_MASK_STATE.last_loss_denominator = denominator.detach()
+    return (element_loss * weights).sum() / torch.clamp(denominator, min=1.0)
 
 
 def _structured_training_slot_limits(
@@ -5596,11 +5600,58 @@ def _native_poca_distributed_context():
     return 0, 1
 
 
+def _native_poca_global_loss_scales(poca_optimizer, denominators):
+    """Use the true masked-loss denominators for the global PPO minibatch.
+
+    Each rank computes a separately normalized actor/critic/entropy loss.
+    Their active-action and inverse-group-size weights can differ even
+    when the global minibatch has equally many rows per GPU. Averaging
+    those locally normalized gradients without reweighting changes PPO.
+    The stock reducer divides gradients by world_size, so scale each
+    component by world_size * local_denominator / global_denominator.
+
+    A single tiny packed collective covers all components. Keep these
+    factors as device tensors: no CUDA->CPU synchronization in the PPO
+    minibatch loop. Zero-weight shards contribute zero numerator.
+    """
+    from mlagents.torch_utils import torch
+
+    distributed = torch.distributed
+    world_size = distributed.get_world_size()
+    if any(value is None for value in denominators):
+        raise RuntimeError("Native distributed MA-POCA loss lacks masked normalization evidence")
+    parameters = [p for group in poca_optimizer.optimizer.param_groups
+                  for p in group["params"] if p.requires_grad]
+    if not parameters:
+        raise RuntimeError("Native distributed learner has no trainable PPO parameters")
+    device = parameters[0].device
+    backend = distributed.get_backend()
+    collective_device = torch.device("cpu") if backend == "gloo" else device
+    local = torch.stack([
+        value.detach().to(device=collective_device, dtype=torch.float32)
+        for value in denominators
+    ])
+    global_denominators = local.clone()
+    distributed.all_reduce(global_denominators, op=distributed.ReduceOp.SUM)
+    factors = (
+        world_size * torch.clamp(local, min=1.0) /
+        torch.clamp(global_denominators, min=1.0)
+    )
+    if collective_device != device:
+        factors = factors.to(device)
+    poca_optimizer._bees_distributed_masked_loss_syncs = (
+        getattr(poca_optimizer, "_bees_distributed_masked_loss_syncs", 0) + 1
+    )
+    return factors.unbind()
+
+
 def _native_poca_average_gradients(poca_optimizer):
     """Synchronize the stock actor and critic gradients before their one Adam step.
 
     The native sampler partitions each *global* MA-POCA minibatch across
-    ranks, rather than duplicating the loss. An absent gradient participates
+    ranks, rather than duplicating the loss. Component gradients have
+    already been scaled to the global masked-loss denominator above.
+    An absent gradient participates
     as zero only if another rank actually trained that parameter; parameters
     unused by every rank remain grad=None, retaining original Adam state.
     A contiguous reduction per dtype avoids one NCCL collective per weight
@@ -7640,6 +7691,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             denominator = (
                 torch.ones_like(permuted) * masks
             ).float().sum()
+        _POLICY_DIMENSION_MASK_STATE.last_loss_denominator = denominator.detach()
         return weighted.sum() / torch.clamp(denominator, min=1.0)
 
     def masked_policy_loss(
@@ -8178,6 +8230,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             log_probs = log_probs.flatten()
 
         started = time.perf_counter()
+        distributed_update = _native_poca_distributed_context()[1] > 1
+        if distributed_update:
+            _POLICY_DIMENSION_MASK_STATE.last_loss_denominator = None
         baseline_loss = ModelUtils.trust_region_value_loss(
             baselines,
             old_baseline_values,
@@ -8185,6 +8240,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             decay_eps,
             loss_masks,
         )
+        baseline_denominator = getattr(
+            _POLICY_DIMENSION_MASK_STATE, "last_loss_denominator", None,
+        ) if distributed_update else None
+        if distributed_update:
+            _POLICY_DIMENSION_MASK_STATE.last_loss_denominator = None
         value_loss = ModelUtils.trust_region_value_loss(
             values,
             old_values,
@@ -8192,7 +8252,12 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             decay_eps,
             loss_masks,
         )
+        value_denominator = getattr(
+            _POLICY_DIMENSION_MASK_STATE, "last_loss_denominator", None,
+        ) if distributed_update else None
         if actor_update:
+            if distributed_update:
+                _POLICY_DIMENSION_MASK_STATE.last_loss_denominator = None
             policy_loss = ModelUtils.trust_region_policy_loss(
                 advantages,
                 log_probs,
@@ -8200,13 +8265,34 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 loss_masks,
                 decay_eps,
             )
+            policy_denominator = getattr(
+                _POLICY_DIMENSION_MASK_STATE, "last_loss_denominator", None,
+            ) if distributed_update else None
+            if distributed_update:
+                _POLICY_DIMENSION_MASK_STATE.last_loss_denominator = None
+            entropy_mean = ModelUtils.masked_mean(entropy, loss_masks)
+            entropy_denominator = getattr(
+                _POLICY_DIMENSION_MASK_STATE, "last_loss_denominator", None,
+            ) if distributed_update else None
+        else:
+            policy_loss = value_loss.detach().new_zeros(())
+        if distributed_update:
+            denominators = [baseline_denominator, value_denominator]
+            if actor_update:
+                denominators.extend([policy_denominator, entropy_denominator])
+            factors = _native_poca_global_loss_scales(self, denominators)
+            baseline_loss = baseline_loss * factors[0]
+            value_loss = value_loss * factors[1]
+            if actor_update:
+                policy_loss = policy_loss * factors[2]
+                entropy_mean = entropy_mean * factors[3]
+        if actor_update:
             loss = (
                 policy_loss
                 + 0.5 * (value_loss + 0.5 * baseline_loss)
-                - decay_bet * ModelUtils.masked_mean(entropy, loss_masks)
+                - decay_bet * entropy_mean
             )
         else:
-            policy_loss = value_loss.detach().new_zeros(())
             loss = 0.5 * (value_loss + 0.5 * baseline_loss)
         _poca_record_timing("losses", time.perf_counter() - started)
 
