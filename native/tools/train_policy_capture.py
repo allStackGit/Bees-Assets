@@ -1177,8 +1177,14 @@ def main():
     )
     parser.add_argument(
         "--learner-gpus", type=int, choices=(1, 2), default=1,
-        help="number of synchronized CUDA/ROCm MA-POCA learner ranks",
+        help="number of local CUDA/ROCm MA-POCA optimizer ranks",
     )
+    parser.add_argument("--learner-nodes", type=int, default=1,
+                        help="number of machine-local torchrun process groups in one synchronous update")
+    parser.add_argument("--learner-node-rank", type=int, default=0,
+                        help="zero-based identity of this machine in the optimizer group")
+    parser.add_argument("--learner-backend", choices=("auto", "nccl", "gloo"),
+                        default="auto", help="shared distributed gradient backend")
     parser.add_argument(
         "--rollout", type=Path, nargs=3, action="append", default=[],
         metavar=("CAPTURE", "JOURNAL", "MANIFEST"),
@@ -1222,27 +1228,37 @@ def main():
         (device.index is not None and device.index >= torch.cuda.device_count())
     ):
         parser.error(f"optimizer device {device} is not available")
-    learner_workers = args.learner_gpus
+    if not 1 <= args.learner_nodes <= 8 or not 0 <= args.learner_node_rank < args.learner_nodes:
+        parser.error("optimizer node count and node rank must identify 1–8 participating machines")
+    learner_workers = args.learner_nodes * args.learner_gpus
     rank = 0
+    local_rank = 0
     if learner_workers > 1:
-        # The native round controller starts one PyTorch rank per leased
-        # GPU. Each uses the same captured gameplay experience and optimizer
-        # checkpoint, with disjoint rows in every global MA-POCA minibatch.
-        # torchrun provides the rendezvous; no custom process supervisor.
-        if (device.type != "cuda" or torch.cuda.device_count() < learner_workers
-                or int(os.environ.get("WORLD_SIZE", "0")) != learner_workers
-                or int(os.environ.get("LOCAL_WORLD_SIZE", "0")) != learner_workers):
-            parser.error("multi-GPU learner requires two visible CUDA/ROCm devices and torchrun")
+        # Each torchrun rank consumes the SAME verified physical gameplay
+        # experience and checkpoint; the existing global MA-POCA sampler
+        # assigns disjoint minibatch rows across all machines and GPUs.
+        if (device.type != "cuda" or
+                torch.cuda.device_count() < args.learner_gpus or
+                int(os.environ.get("WORLD_SIZE", "0")) != learner_workers or
+                int(os.environ.get("LOCAL_WORLD_SIZE", "0")) != args.learner_gpus):
+            parser.error("native distributed optimizer needs the complete GPU torchrun world")
         rank = int(os.environ.get("RANK", "-1"))
         local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
-        if rank not in range(learner_workers) or rank != local_rank:
-            parser.error("native learner ranks must each own one local GPU")
+        group_rank = int(os.environ.get("GROUP_RANK", "-1"))
+        if (rank not in range(learner_workers) or
+                local_rank not in range(args.learner_gpus) or
+                rank != args.learner_node_rank * args.learner_gpus + local_rank or
+                group_rank != args.learner_node_rank):
+            parser.error("native learner global rank disagrees with its authorized node and local GPU")
         torch.cuda.set_device(local_rank)
         device = torch.device("cuda", local_rank)
-        backend = ("nccl" if os.name != "nt" and
-                   torch.distributed.is_nccl_available() else "gloo")
-        if backend == "gloo" and not torch.distributed.is_gloo_available():
-            parser.error("native multi-GPU PyTorch requires NCCL/RCCL or Gloo")
+        backend = args.learner_backend
+        if backend == "auto":
+            backend = ("nccl" if os.name != "nt" and
+                       torch.distributed.is_nccl_available() else "gloo")
+        if (backend == "nccl" and not torch.distributed.is_nccl_available() or
+                backend == "gloo" and not torch.distributed.is_gloo_available()):
+            parser.error("native learner distributed collective backend is unavailable")
         torch.distributed.init_process_group(backend, init_method="env://")
     elif int(os.environ.get("WORLD_SIZE", "1")) > 1:
         parser.error("distributed native learner must request the full torchrun world")
@@ -1305,7 +1321,9 @@ def main():
                 partitions=partitions,
             )
         )
-    if rank == 0:
+    # Trainer workspaces are machine-local, including on non-publishing
+    # nodes. Only global rank zero owns the durable checkpoint/manifest.
+    if local_rank == 0:
         args.output.mkdir()
     if learner_workers > 1:
         torch.distributed.barrier()
@@ -1398,6 +1416,31 @@ def main():
     steps = trainer.update_buffer.num_experiences
     if steps < settings.hyperparameters.batch_size:
         parser.error("capture contains fewer observed intervals than one optimizer minibatch")
+    global_input_sha = None
+    if args.learner_nodes > 1:
+        # Across machines paths and local filesystem metadata differ. Agree
+        # on exact source bytes rather than merely equal step counts before
+        # any gradient reduction or Adam update. The scan is one-time per
+        # round, never part of an optimizer minibatch.
+        source_identity = {
+            "checkpoint": input_sha,
+            "manifest": primary_manifest_sha,
+            "trainer": file_sha256(args.config),
+            "learner_slot": args.learner_slot,
+            "captures": [
+                (file_sha256(capture), file_sha256(journal), manifests[path][1])
+                for capture, journal, path in inputs
+            ],
+        }
+        own_source_sha = hashlib.sha256(
+            json.dumps(source_identity, sort_keys=True,
+                       separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        sources = [None] * learner_workers
+        torch.distributed.all_gather_object(sources, own_source_sha)
+        if len(set(sources)) != 1:
+            raise ValueError("native learner machines disagree on pinned gameplay or trainer inputs")
+        global_input_sha = own_source_sha
     if learner_workers > 1:
         # Exactly equal offline source experience is required by the
         # disjoint-global-minibatch sampler. An accidentally different
@@ -1442,7 +1485,8 @@ def main():
         # Publish the existing single checkpoint only after both ranks
         # finished the same number of synchronously reduced PPO minibatches.
         local = {
-            "rank": rank, "device": str(device),
+            "rank": rank, "node_rank": args.learner_node_rank,
+            "local_rank": local_rank, "device": str(device),
             "device_name": torch.cuda.get_device_name(device),
             "torch_intraop_threads": torch.get_num_threads(),
             "torch_interop_threads": torch.get_num_interop_threads(),
@@ -1462,7 +1506,11 @@ def main():
         }
         gpu_worker_metrics = [None] * learner_workers
         torch.distributed.all_gather_object(gpu_worker_metrics, local)
-        if (any(row["rank"] != i or row["gradient_syncs"] < 1 or
+        if (any(row["rank"] != i or
+                row["node_rank"] != i // args.learner_gpus or
+                row["local_rank"] != i % args.learner_gpus or
+                row["device"] != f"cuda:{i % args.learner_gpus}" or
+                row["gradient_syncs"] < 1 or
                 row["masked_loss_syncs"] != row["gradient_syncs"]
                 for i, row in enumerate(gpu_worker_metrics)) or
                 len({row["gradient_syncs"] for row in gpu_worker_metrics}) != 1):
@@ -1581,6 +1629,10 @@ def main():
         "frozen_opponent_snapshot_wall_seconds": frozen_snapshot_wall_seconds,
         "optimizer_device": str(device),
         "optimizer_gpu_workers": learner_workers if device.type == "cuda" else 0,
+        "optimizer_gpu_nodes": args.learner_nodes if device.type == "cuda" else 0,
+        "optimizer_gpu_local_workers": args.learner_gpus if device.type == "cuda" else 0,
+        **({"optimizer_global_input_sha256": global_input_sha}
+           if global_input_sha is not None else {}),
         **({"optimizer_synchronized_minibatches": gpu_worker_metrics[0]["gradient_syncs"],
             "optimizer_masked_loss_normalizations": gpu_worker_metrics[0]["masked_loss_syncs"],
             "optimizer_gpu_model_consensus_sha256": next_model_consensus_sha,
