@@ -1079,6 +1079,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 throw Error('Courier training overrides require the exact installed training schema digest.');
             const remotePlan=approvedCourierLineages(remote?.endpoints,remote_lineage_plan);
             const shared=parameters.shared_policy===true;
+            // The shared-policy backend does not consume Courier's
+            // --hub-training-config or --reporting-benchmarks arguments.
+            // Refuse those requests before creating an output directory:
+            // accepting them would silently train with different settings.
+            if(shared&&(training!==null||reporting_benchmarks===true))
+                throw Error('Courier shared-policy training does not support the selected PPO overrides or reporting benchmarks; choose an independent-lineage run or remove those settings.');
             const collectorCpus=parameters.shared_policy_cpus;
             if(Object.keys(parameters).some(key=>
                 !['config_sha256','seed','workers','max_rounds','checkpoint_rounds',
