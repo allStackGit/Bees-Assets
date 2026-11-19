@@ -4448,6 +4448,7 @@ class ExperimentHub {
                     !supportsEvaluation(machine.evaluation_suites,job)||
                     !supportsTinyBrainsProfile(machine,job)||
                     !distributedRolloutHost(snapshot,job,machine)||
+                    !courierLineageHost(snapshot,job,machine)||
                     nativeResourceBlock(job,lease)||
                     gpuStartBlock(job,lease,machine)) {
                     // A previously offered Start may already own a process.
