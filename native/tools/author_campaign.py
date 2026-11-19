@@ -242,7 +242,7 @@ def native_fleet_class_sha256(ship: dict) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
+def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict]:
     title = args.title.strip()
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     if not 1 <= len(title) <= 80 or not slug:
@@ -717,9 +717,11 @@ def main() -> None:
                     shutil.copyfileobj(reader, writer, length=1024 * 1024)
                     writer.flush()
                     os.fsync(writer.fileno())
-                if file_sha256(source) != expected_sha or
-                    file_sha256(destination) != expected_sha:
-                    raise ValueError(f"checkpoint content changed during native campaign publication: {source}")
+                if (file_sha256(source) != expected_sha or
+                        file_sha256(destination) != expected_sha):
+                    raise ValueError(
+                        f"checkpoint content changed during native campaign publication: {source}"
+                    )
             if model_files:
                 sync_directory(staged / "models")
             receipt["catalog_sha256"] = file_sha256(staged / "campaign.json")
