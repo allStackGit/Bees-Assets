@@ -160,7 +160,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     const dualProject=job.project_id==='tinybrains'
         ?job.frozen_parameters?.device==='dual'&&
             adapter.gpu_dual_execution==='split-ppo'
-        :['bees_native','bees_native_collect'].includes(job.project_id)&&
+        :['bees_native','bees_native_collect','bees_native_optimizer_worker'].includes(job.project_id)&&
             adapter.gpu_dual_execution==='native-rollouts';
     const dual=r.gpu_count===2&&lr.gpu_count===2&&
         r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&dualProject;
