@@ -113,6 +113,22 @@ def cue_reinforcement(value: str) -> tuple[str, int, int, int]:
     return cue, side, kind, count
 
 
+def cue_order(value: str) -> tuple[str, int, int]:
+    """Activate all initially deployed, scripted squads of one source type."""
+    pieces = value.split(":")
+    if len(pieces) != 3 or pieces[0] not in set().union(*CAMPAIGN_CUES.values()):
+        raise argparse.ArgumentTypeError(
+            "cue command activation requires CUE:SIDE:TYPE"
+        )
+    try:
+        side, kind = map(int, pieces[1:])
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("cue command activation needs integer side/type") from error
+    if side not in (1, 2) or not 0 <= kind < 24:
+        raise argparse.ArgumentTypeError("cue command activation needs side 1/2 and type 0..23")
+    return pieces[0], side, kind
+
+
 def load_json(path: Path) -> dict:
     content = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(content, dict):
@@ -351,10 +367,16 @@ def author(args) -> tuple[dict, dict, dict]:
     }
     cue_waves = getattr(args, "cue_reinforcements", ())
     dialogue = getattr(args, "campaign_dialogue", None)
-    if cue_waves and dialogue is None:
-        raise ValueError("cue reinforcements need an authored campaign dialogue")
-    if any(cue not in CAMPAIGN_CUES.get(dialogue, ()) for cue, _, _, _ in cue_waves):
-        raise ValueError("reinforcement cue does not belong to the authored campaign dialogue")
+    cue_commands = getattr(args, "cue_commands", ())
+    if (cue_waves or cue_commands) and dialogue is None:
+        raise ValueError("campaign cue triggers need an authored dialogue")
+    if (any(cue not in CAMPAIGN_CUES.get(dialogue, ())
+            for cue, _, _, _ in cue_waves) or
+            any(cue not in CAMPAIGN_CUES.get(dialogue, ())
+                for cue, _, _ in cue_commands)):
+        raise ValueError("script or reinforcement cue does not belong to the authored campaign dialogue")
+    if len({(side, kind) for _, side, kind in cue_commands}) != len(cue_commands):
+        raise ValueError("one scripted fleet type cannot wait for multiple different campaign cues")
     waves = [
         (when, side, kind, count, None)
         for when, side, kind, count in args.reinforcements
@@ -636,6 +658,31 @@ def author(args) -> tuple[dict, dict, dict]:
             if squad["item_id"] in deferred_squad_ids:
                 plan["activation"] = {"kind": "on_deployment"}
             queues.append(plan)
+
+    # Source Squad.RunCommandQueue already accepts a deferred campaign
+    # event activation. Change only the start signal of its ONE existing
+    # native squad order queue; targeting, movement, timing and repeat all
+    # remain owned by the shared Level command director.
+    scripted_by_id = {queue["squad_item_id"]: queue for queue in queues}
+    for cue, side, kind in cue_commands:
+        if side in controlled:
+            raise ValueError("player squads cannot be controlled by scripted campaign cues")
+        chosen = [
+            squad for squad in by_side_squads[side]
+            if squad["item_id"] not in deferred_squad_ids and
+            any(ship["entity_id"] in squad["members"] and
+                ship["ship_type"] == kind for ship in by_side[side])
+        ]
+        if not chosen:
+            raise ValueError(
+                f"campaign cue {cue} has no initially deployed scripted squad "
+                f"of side {side} ship type {kind}"
+            )
+        for squad in chosen:
+            queue = scripted_by_id.get(squad["item_id"])
+            if queue is None or "activation" in queue:
+                raise ValueError("campaign cue command conflicts with a squad's existing deployment activation")
+            queue["activation"] = {"kind": "on_campaign_cue", "cue": cue}
 
     scene["ships"] = new_ships
     scene["squads"] = new_squads
@@ -1191,6 +1238,10 @@ def main() -> None:
                         type=cue_reinforcement, dest="cue_reinforcements",
                         metavar="CUE:SIDE:TYPE:COUNT",
                         help="deploy when the authored Level emits an actual Titania mission cue")
+    parser.add_argument("--activate-on-cue", action="append", default=[],
+                        type=cue_order, dest="cue_commands",
+                        metavar="CUE:SIDE:TYPE",
+                        help="start the existing scripted orders of deployed AI squads when a mission cue fires")
     parser.add_argument("--campaign-dialogue",
                         choices=tuple(CAMPAIGN_CUES),
                         help="enable existing Titania mission dialogue and event cues")
@@ -1293,6 +1344,7 @@ def main() -> None:
         "reinforcement_waves": len(run["levels"][0].get("reinforcements", [])),
         "campaign_dialogue": args.campaign_dialogue,
         "cue_reinforcements": len(args.cue_reinforcements),
+        "cue_command_activations": len(args.cue_commands),
         "reserve_fleet_templates": [
             {"side": ship["side"], "ship_type": ship["ship_type"]}
             for ship in scene.get("fleet_templates", [])
