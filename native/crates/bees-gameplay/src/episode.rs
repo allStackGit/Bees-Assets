@@ -10,7 +10,7 @@ use bees_sim::episode_terminal::{
     EpisodeDeathAttribution, EpisodeEconomicError, EpisodeEconomicRewards,
     EpisodeTerminalError, EpisodeTerminalMeasurements, EpisodeTerminalResult,
     EpisodeTerminalRewards, NativeEpisodeTerminal, SurvivalObjective, SurvivalStatus,
-    DemolitionObjective, DemolitionStatus,
+    DemolitionObjective, DemolitionStatus, EscortObjective, EscortStatus,
 };
 use bees_sim::rl_economy::{
     EconomicLedgerError, EconomicLedgerMeasurements, EpisodeEconomicLedger,
@@ -193,6 +193,13 @@ impl NativeEpisodeRewardCoordinator {
         Ok(())
     }
 
+    pub fn arm_escort(
+        &mut self, objective: EscortObjective, fixed_dt_seconds: f32,
+    ) -> Result<(), NativeEpisodeRewardError> {
+        self.terminal.arm_escort(objective, fixed_dt_seconds)?;
+        Ok(())
+    }
+
     pub fn measurements(&self) -> NativeEpisodeRewardMeasurements {
         let termination = self.terminal.measurements();
         match &self.mode {
@@ -227,6 +234,10 @@ impl NativeEpisodeRewardCoordinator {
 
     pub fn demolition_status(&self) -> Option<DemolitionStatus> {
         self.terminal.demolition_status()
+    }
+
+    pub fn escort_status(&self) -> Option<EscortStatus> {
+        self.terminal.escort_status()
     }
 
     pub fn normalized_episode_progress(&self) -> f32 {

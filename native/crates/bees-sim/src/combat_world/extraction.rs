@@ -21,6 +21,8 @@ pub(super) struct ExtractionState {
     zone: ExtractionZone,
     active: bool,
     last_mobile_extracted: bool,
+    escort_ship_id: Option<i64>,
+    escort_delivered: bool,
 }
 
 impl CombatWorld {
@@ -34,8 +36,31 @@ impl CombatWorld {
         {
             return Err(CombatWorldError::InvalidExtractionZone);
         }
-        self.extraction = Some(ExtractionState { zone, active: false, last_mobile_extracted: false });
+        self.extraction = Some(ExtractionState {
+            zone, active: false, last_mobile_extracted: false,
+            escort_ship_id: None, escort_delivered: false,
+        });
         Ok(())
+    }
+
+    /// Bind the existing physical trigger to one authored mobile ship.
+    /// The terminal retains only the objective identity and clock.
+    pub fn configure_escort_target(&mut self, ship_id: i64) -> Result<(), CombatWorldError> {
+        let state = self.extraction.as_ref().ok_or(CombatWorldError::InvalidExtractionZone)?;
+        if state.escort_ship_id.is_some() ||
+            self.ship(ship_id).is_none_or(|ship|
+                ship.side != state.zone.player_side || ship.vitals.is_dead()) ||
+            self.ship_body(ship_id).is_none_or(|body| !body.active || !body.motion.mobile)
+        {
+            return Err(CombatWorldError::InvalidExtractionZone);
+        }
+        self.extraction.as_mut().expect("validated exit").escort_ship_id = Some(ship_id);
+        Ok(())
+    }
+
+    pub fn escort_delivery_confirmed(&self, ship_id: i64) -> bool {
+        self.extraction.as_ref().is_some_and(|state|
+            state.escort_ship_id == Some(ship_id) && state.escort_delivered)
     }
 
     pub fn active_extraction_bounds(&self) -> Option<Aabb> {
@@ -44,6 +69,7 @@ impl CombatWorld {
 
     pub(crate) fn extraction_outcome(&self) -> Option<(i32, bool)> {
         let state = self.extraction.as_ref()?;
+        if state.escort_ship_id.is_some() { return None; }
         let player = state.zone.player_side;
         let enemy = 3 - player;
         let player_eliminated = self.living_mobile_ships_on_side(player) == 0;
@@ -68,12 +94,18 @@ impl CombatWorld {
         let hits = self.physics.ship_ids_overlapping_box(zone.bounds())?
             .filter_map(|id| self.ship_by_id.get(&id).copied())
             .filter(|&index| self.ships[index].side == zone.player_side &&
+                state.escort_ship_id.is_none_or(|id| self.ships[index].entity_id == id) &&
                 collisions.allows(zone.layer, self.physics.ships()[index].layer))
             .collect::<Vec<_>>();
         for index in hits {
             let ship = &mut self.ships[index];
             let ship_id = ship.entity_id;
             let preserved_tsv = ship.vitals.tsv().max(0);
+            if self.extraction.as_ref().is_some_and(|state|
+                state.escort_ship_id == Some(ship_id)
+            ) {
+                self.extraction.as_mut().expect("configured exit").escort_delivered = true;
+            }
             ship.vitals.kill_without_hit();
             if self.physics.ships()[index].motion.mobile &&
                 self.living_mobile_ships_on_side(zone.player_side) == 1

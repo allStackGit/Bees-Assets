@@ -437,6 +437,11 @@ impl NativeSceneAssets {
             combat.reserve_future_ship_id(id, side).map_err(NativeSceneBuildError::Combat)?;
         }
         install_ship_attachments(&mut combat, attachments)?;
+        if let Some(escort) = authored.episode.escort_status() {
+            // The physics trigger and episode terminal share one target.
+            combat.configure_escort_target(escort.escorted_ship_id)
+                .map_err(NativeSceneBuildError::Combat)?;
+        }
         if combat.total_living_ships() == 0 {
             return Err(NativeSceneBuildError::EmptyScene);
         }

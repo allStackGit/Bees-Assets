@@ -15,6 +15,7 @@ pub enum EpisodeTerminalError {
     InvalidTimeout,
     InvalidSurvivalObjective,
     InvalidDemolitionObjective,
+    InvalidEscortObjective,
     InvalidStep,
 }
 
@@ -64,6 +65,8 @@ pub struct EpisodeTerminalMeasurements {
     pub draws: u64,
     pub demolition_successes: u64,
     pub demolition_failures: u64,
+    pub escorts_delivered: u64,
+    pub escorts_lost: u64,
 }
 
 /// Per-side RecordShipDeathAttribution from the Unity coordinator.
@@ -212,12 +215,35 @@ pub struct DemolitionStatus {
     pub duration_seconds: f32,
 }
 
+/// Delivery requires one authored mobile ship to reach the canonical
+/// extraction collider, not the first member of its faction to escape.
+#[derive(Clone, Copy, Debug)]
+pub struct EscortObjective {
+    pub escorting_side: i32,
+    pub escorted_ship_id: i64,
+    pub seconds: f32,
+}
+
+struct ArmedEscort {
+    objective: EscortObjective,
+    deadline_tick: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct EscortStatus {
+    pub escorting_side: i32,
+    pub escorted_ship_id: i64,
+    pub seconds_remaining: f32,
+    pub duration_seconds: f32,
+}
+
 pub struct NativeEpisodeTerminal {
     bee_side: i32,
     human_side: i32,
     timeout_seconds: Option<f32>,
     survival: Option<ArmedSurvival>,
     demolition: Option<ArmedDemolition>,
+    escort: Option<ArmedEscort>,
     elapsed_seconds: f32,
     completed: Option<EpisodeTerminalResult>,
     /// A SquadRetired event would have eliminated an active side, but
@@ -249,6 +275,7 @@ impl NativeEpisodeTerminal {
         }
         Ok(Self {
             bee_side, human_side, timeout_seconds, survival: None, demolition: None,
+            escort: None,
             elapsed_seconds: 0.0, completed: None,
             deferred_elimination: false,
             measurements: EpisodeTerminalMeasurements::default(),
@@ -266,7 +293,7 @@ impl NativeEpisodeTerminal {
         if self.timeout_seconds.is_some_and(|timeout|
             (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
         ) || self.survival.is_some() || self.demolition.is_some() ||
-            self.measurements.ticks_observed != 0 ||
+            self.escort.is_some() || self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.defending_side) ||
             objective.protected_ship_id <= 0 ||
             !objective.seconds.is_finite() || objective.seconds <= 0.0 ||
@@ -288,7 +315,7 @@ impl NativeEpisodeTerminal {
         if self.timeout_seconds.is_some_and(|timeout|
             (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
         ) || self.survival.is_some() || self.demolition.is_some() ||
-            self.measurements.ticks_observed != 0 ||
+            self.escort.is_some() || self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.attacking_side) ||
             objective.target_map_object_id <= 0 ||
             !objective.seconds.is_finite() || objective.seconds <= 0.0 ||
@@ -298,6 +325,26 @@ impl NativeEpisodeTerminal {
             return Err(EpisodeTerminalError::InvalidDemolitionObjective);
         }
         self.demolition = Some(ArmedDemolition { objective, deadline_tick: ticks as u64 });
+        Ok(())
+    }
+
+    pub fn arm_escort(
+        &mut self, objective: EscortObjective, fixed_dt_seconds: f32,
+    ) -> Result<(), EpisodeTerminalError> {
+        let ticks = (objective.seconds / fixed_dt_seconds).ceil();
+        if self.timeout_seconds.is_some_and(|timeout|
+            (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
+        ) || self.survival.is_some() || self.demolition.is_some() ||
+            self.escort.is_some() || self.measurements.ticks_observed != 0 ||
+            ![self.bee_side, self.human_side].contains(&objective.escorting_side) ||
+            objective.escorted_ship_id <= 0 ||
+            !objective.seconds.is_finite() || objective.seconds <= 0.0 ||
+            !fixed_dt_seconds.is_finite() || fixed_dt_seconds <= 0.0 ||
+            !ticks.is_finite() || ticks < 1.0 || ticks >= u64::MAX as f32
+        {
+            return Err(EpisodeTerminalError::InvalidEscortObjective);
+        }
+        self.escort = Some(ArmedEscort { objective, deadline_tick: ticks as u64 });
         Ok(())
     }
 
@@ -320,6 +367,15 @@ impl NativeEpisodeTerminal {
             target_map_object_id: demolition.objective.target_map_object_id,
             duration_seconds: demolition.objective.seconds,
             seconds_remaining: (demolition.objective.seconds - self.elapsed_seconds).max(0.0),
+        })
+    }
+
+    pub fn escort_status(&self) -> Option<EscortStatus> {
+        self.escort.as_ref().map(|escort| EscortStatus {
+            escorting_side: escort.objective.escorting_side,
+            escorted_ship_id: escort.objective.escorted_ship_id,
+            duration_seconds: escort.objective.seconds,
+            seconds_remaining: (escort.objective.seconds - self.elapsed_seconds).max(0.0),
         })
     }
 
@@ -478,7 +534,8 @@ impl NativeEpisodeTerminal {
             return Ok(None);
         }
         self.measurements.ticks_observed += 1;
-        self.elapsed_seconds = if self.survival.is_some() || self.demolition.is_some() {
+        self.elapsed_seconds = if self.survival.is_some() || self.demolition.is_some() ||
+            self.escort.is_some() {
             // The authored survival clock starts at tick zero, alongside the waves.
             self.measurements.ticks_observed as f32 * dt_seconds
         } else {
@@ -549,6 +606,37 @@ impl NativeEpisodeTerminal {
             self.completed = Some(outcome);
             self.measurements.demolition_successes += u64::from(target_destroyed);
             self.measurements.demolition_failures += u64::from(!target_destroyed);
+            world.frozen_after_elimination = true;
+            return Ok(Some(outcome));
+        }
+
+        if let Some(escort) = &self.escort {
+            let objective = escort.objective;
+            let (escort_dead, opponent) = if objective.escorting_side == self.bee_side {
+                (bee_dead, self.human_side)
+            } else { (human_dead, self.bee_side) };
+            // An exiting ship retires from the physical roster; delivery
+            // takes precedence over the resulting ordinary death snapshot.
+            let delivered = world.escort_delivery_confirmed(objective.escorted_ship_id);
+            let lost = world.ship(objective.escorted_ship_id)
+                .is_none_or(|ship| ship.vitals.is_dead());
+            let winner = if delivered {
+                objective.escorting_side
+            } else if lost ||
+                (escort_dead &&
+                    !world.has_reserved_future_ships_on_side(objective.escorting_side)) ||
+                self.measurements.ticks_observed >= escort.deadline_tick
+            {
+                opponent
+            } else { return Ok(None) };
+            let outcome = EpisodeTerminalResult {
+                winner_side: winner, timed_out: false,
+                extraction_victory: delivered, duration_seconds: self.elapsed_seconds,
+                bee_side_eliminated: bee_dead, human_side_eliminated: human_dead,
+            };
+            self.completed = Some(outcome);
+            self.measurements.escorts_delivered += u64::from(delivered);
+            self.measurements.escorts_lost += u64::from(!delivered);
             world.frozen_after_elimination = true;
             return Ok(Some(outcome));
         }

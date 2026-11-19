@@ -1382,6 +1382,10 @@ impl NativeLevelEventProcessor {
         self.episode.demolition_status()
     }
 
+    pub fn escort_status(&self) -> Option<bees_sim::episode_terminal::EscortStatus> {
+        self.episode.escort_status()
+    }
+
     pub fn normalized_episode_progress(&self) -> f32 {
         self.episode.normalized_episode_progress()
     }
