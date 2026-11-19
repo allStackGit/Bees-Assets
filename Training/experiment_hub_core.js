@@ -4486,7 +4486,9 @@ class ExperimentHub {
         return {bundle_id:bundleId,members:jobs.map(copy),
             leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
             starts_authorized:0,
-            note:'Every member has a durable machine claim, but no Start was authorized. Jobs are independent until a trusted project-specific transport and learner barrier are installed.'};
+            note:collectors
+                ?'Every rank has the same completed, authenticated physical collector pins and a durable resource claim. No Start has been authorized; the existing Hub GPU group scheduler must approve and qualify all machines.'
+                :'All members have durable resource claims. No Starts are authorized; the project adapter determines whether they form independent jobs or one synchronized learner.'};
     }
     // Grant independent machine-local native Starts for a reserved bundle
     // in one registry commit. Each Start is independently OS-enforced by its
