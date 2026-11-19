@@ -316,6 +316,10 @@ class LocalExecution {
                         artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                         continuation_of_job_id:job.continuation_of_job_id||null,
                         frozen_parameters:job.frozen_parameters,
+                        ...(job.model_source_job_id?
+                            {model_source_job_id:job.model_source_job_id}:{}),
+                        ...(job.expected_parent_model_sha256?
+                            {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                         ...(lease.gpu_bindings?.length===1
                             ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
                             :lease.gpu_bindings?.length===2
@@ -342,6 +346,10 @@ class LocalExecution {
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     frozen_parameters:job.frozen_parameters,
+                    ...(job.model_source_job_id?
+                        {model_source_job_id:job.model_source_job_id}:{}),
+                    ...(job.expected_parent_model_sha256?
+                        {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                     ...(lease.gpu_bindings?.length===1
                         ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
                         :lease.gpu_bindings?.length===2
@@ -367,6 +375,10 @@ class LocalExecution {
                     state,
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    ...(job.model_source_job_id?
+                        {model_source_job_id:job.model_source_job_id}:{}),
+                    ...(job.expected_parent_model_sha256?
+                        {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                     // Carry the acknowledged physical allocation into
                     // observational receipt verification. A completed
                     // multi-GPU bundle must not self-assert a different
