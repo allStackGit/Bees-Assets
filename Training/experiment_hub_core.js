@@ -4335,6 +4335,241 @@ class ExperimentHub {
         this.commit(next);
         return copy(job);
     }
+    // Explicitly approved, bounded native rounds use the same collector,
+    // optimizer and native Start owners as individually scheduled jobs. A
+    // round creates NEW physical experience from the latest verified model,
+    // then updates that same MA-POCA optimizer; no recorded experience is
+    // silently replayed in a later round.
+    scheduleNativeBeesRounds(value) {
+        if(!object(value)||value.confirm_schedule!==true||
+            value.confirm_gpu_start!==true||
+            Object.keys(value).some(key=>![
+                'source_job_id','collector_members','optimizer_members',
+                'round_count','confirm_schedule','confirm_gpu_start',
+            ].includes(key))||
+            !UUID.test(String(value.source_job_id||''))||
+            !Number.isSafeInteger(value.round_count)||
+            value.round_count<1||value.round_count>8)
+            throw Error('Select one verified native model and explicitly approve 1–8 complete GPU training rounds.');
+        const source=this.state.jobs.find(job=>job.id===value.source_job_id);
+        if(source?.project_id!=='bees_native'||source.status!=='finished'||
+            !checkpointContinuationComplete(source)||!source.capacity_released_at||
+            !SHA256.test(String(source.checkpoint_model_sha256||''))||
+            nativeOptimizerGroupBlock(this.state,source))
+            throw Error('Native training rounds require a fully released, verified checkpoint and synchronized optimizer group.');
+        if((this.state.native_round_plans||[]).some(plan=>
+            plan.status!=='complete'&&plan.status!=='cancelled'&&
+            plan.status!=='disarmed'&&plan.source_job_id===source.id))
+            throw Error('This native model already has an unresolved training-round plan.');
+        const validateMembers=(members,kind)=>{
+            const lower=kind==='collector'?2:2,upper=kind==='collector'?16:8;
+            if(!Array.isArray(members)||members.length<lower||members.length>upper)
+                throw Error('Native round '+kind+' stage requires '+lower+'–'+upper+' fixed machine members.');
+            const machines=new Set();
+            const selected=[];
+            for(const [index,item] of members.entries()) {
+                if(!object(item)||Object.keys(item).some(key=>![
+                    'configuration_id','expected_revision','machine_id',
+                    'resources','metric_selection',
+                ].includes(key))||!ID.test(String(item.machine_id||''))||
+                    machines.has(item.machine_id))
+                    throw Error('Native round members require unique fixed machine identities and saved configurations.');
+                machines.add(item.machine_id);
+                const expected=kind==='collector'?'bees_native_collect':
+                    index===0?'bees_native':'bees_native_optimizer_worker';
+                const configuration=this.state.configurations.find(config=>
+                    config.id===item.configuration_id&&
+                    config.revision===item.expected_revision&&
+                    config.project_id===expected);
+                const parameters=configuration?.parameters;
+                if(!configuration||
+                    (kind==='collector'&&(
+                        parameters.optimizer_group===true||
+                        parameters.collection_id!==undefined||
+                        parameters.rollout_bundles!==undefined))||
+                    (kind==='optimizer'&&(
+                        parameters.optimizer_group!==true||
+                        !Array.isArray(parameters.rollout_bundles)||
+                        parameters.rollout_bundles.length!==0)))
+                    throw Error('Native round '+kind+' configuration must be a saved physical collector or empty-bundle MA-POCA optimizer template.');
+                const host=this.snapshot().machines.find(machine=>
+                    machine.id===item.machine_id);
+                if(host?.status!=='connected'||host.local_executor_enabled!==true||
+                    host.native_preflight_passed!==true||
+                    !host.installed_projects?.includes(expected)||
+                    !UUID.test(String(this.agentReports.get(item.machine_id)?.instance_id||'')))
+                    throw Error('Native round members require fresh authenticated machines with their exact installed project.');
+                const resources=resourceRequest(item.resources);
+                if(kind==='optimizer'&&(
+                    resources.gpu_mode!=='exclusive'||![1,2].includes(resources.gpu_count)||
+                    resources.cpus<resources.gpu_count))
+                    throw Error('Synchronized optimizer ranks require exclusive leased GPU and CPU budgets.');
+                selected.push({
+                    configuration_id:item.configuration_id,
+                    expected_revision:item.expected_revision,
+                    machine_id:item.machine_id,
+                    resources:copy(item.resources),
+                    ...(item.metric_selection?{metric_selection:copy(item.metric_selection)}:{}),
+                });
+            }
+            return selected;
+        };
+        const collectors=validateMembers(value.collector_members,'collector');
+        const optimizers=validateMembers(value.optimizer_members,'optimizer');
+        if(optimizers[0].machine_id!==source.assigned_machine_id)
+            throw Error('The new optimizer checkpoint publisher must remain on its verified predecessor machine.');
+        const machines=[...new Set([...collectors,...optimizers].map(item=>item.machine_id))];
+        const instances=Object.fromEntries(machines.map(id=>[
+            id,this.agentReports.get(id).instance_id,
+        ]));
+        const next=copy(this.state),timestamp=now();
+        const plan={
+            id:crypto.randomUUID(),status:'pending_collectors',
+            source_job_id:source.id,source_model_sha256:source.checkpoint_model_sha256,
+            collector_members:collectors,optimizer_members:optimizers,
+            agent_instances:instances,
+            round_count:value.round_count,completed_rounds:0,
+            approved_at:timestamp,updated_at:timestamp,
+            reason:'Approved for exact-source physical collection followed by one synchronized optimizer per round.',
+        };
+        next.native_round_plans=next.native_round_plans||[];
+        if(next.native_round_plans.length>=64)
+            throw Error('Resolve old native training-round plans before scheduling more.');
+        next.native_round_plans.push(plan);
+        this.commit(next);
+        // An eligible stage may reserve and schedule immediately. On capacity
+        // contention it stays pending; the existing agent heartbeat retries.
+        this.advanceNativeBeesRounds();
+        return copy((this.state.native_round_plans||[]).find(item=>item.id===plan.id));
+    }
+    cancelNativeBeesRounds(value) {
+        if(!object(value)||value.confirm_cancel!==true||
+            !UUID.test(String(value.plan_id||''))||
+            Object.keys(value).some(key=>!['plan_id','confirm_cancel'].includes(key)))
+            throw Error('Confirm the exact native training-round plan to disarm.');
+        const next=copy(this.state),plan=(next.native_round_plans||[])
+            .find(item=>item.id===value.plan_id);
+        if(!plan||!['pending_collectors','awaiting_collectors',
+            'pending_optimizer','awaiting_optimizer','needs_review']
+            .includes(plan.status))
+            throw Error('Only an unresolved native training-round plan can be disarmed.');
+        plan.status='cancelled';
+        plan.reason='Future rounds disarmed. Existing native resource bundles and running jobs retain their own Stop owners.';
+        plan.updated_at=now();
+        this.commit(next);
+        return {plan_id:plan.id,status:plan.status,
+            active_bundles:[plan.collectors_bundle_id,plan.optimizer_bundle_id].filter(Boolean)};
+    }
+    // An authenticated agent heartbeat advances at most one stage per plan.
+    // The queue transaction also commits its stage ID, so a crash between
+    // reserving GPUs and the next heartbeat cannot create duplicate jobs.
+    advanceNativeBeesRounds() {
+        const ids=(this.state.native_round_plans||[])
+            .filter(plan=>['pending_collectors','awaiting_collectors',
+                'pending_optimizer','awaiting_optimizer'].includes(plan.status))
+            .map(plan=>plan.id);
+        for(const id of ids) {
+            const plan=(this.state.native_round_plans||[]).find(item=>item.id===id);
+            if(!plan||!['pending_collectors','awaiting_collectors',
+                'pending_optimizer','awaiting_optimizer'].includes(plan.status))
+                continue;
+            const update=(status,reason,extra={})=>{
+                const next=copy(this.state);
+                const current=next.native_round_plans.find(item=>item.id===id);
+                if(current?.status!==plan.status)return;
+                Object.assign(current,extra,{status,reason,updated_at:now()});
+                this.commit(next);
+            };
+            try {
+                const source=this.state.jobs.find(job=>job.id===plan.source_job_id);
+                if(source?.status!=='finished'||!checkpointContinuationComplete(source)||
+                    !source.capacity_released_at||
+                    source.checkpoint_model_sha256!==plan.source_model_sha256||
+                    nativeOptimizerGroupBlock(this.state,source))
+                    throw Error('Frozen native optimizer source or its original worker group changed.');
+                const snapshot=this.snapshot();
+                if(Object.entries(plan.agent_instances).some(([machineId,instance])=>
+                    snapshot.machines.find(machine=>machine.id===machineId)?.status!=='connected'||
+                    this.agentReports.get(machineId)?.instance_id!==instance))
+                    // Never replace an authenticated machine in the same
+                    // approval. A temporarily offline member does not cause
+                    // new work to start before it reconnects.
+                    continue;
+                const phase=plan.status.endsWith('collectors')?'collectors':'optimizer';
+                if(plan.status.startsWith('pending_')) {
+                    const result=this.queueResourceBundle({
+                        confirm_queue:true,
+                        members:phase==='collectors'
+                            ?plan.collector_members:plan.optimizer_members,
+                        model_source_job_id:plan.source_job_id,
+                        ...(phase==='optimizer'?{
+                            collector_job_ids:plan.collectors_job_ids,
+                        }:{}),
+                    },{id,status:plan.status,phase});
+                    if(!result?.bundle_id)
+                        throw Error('Native round resource reservation did not publish a Hub bundle.');
+                    continue;
+                }
+                const members=(plan[phase+'_job_ids']||[]).map(jobId=>
+                    this.state.jobs.find(job=>job.id===jobId));
+                const bundleId=plan[phase+'_bundle_id'];
+                if(!UUID.test(String(bundleId||''))||
+                    !members.length||members.some((job,index)=>
+                        !job||job.resource_bundle?.id!==bundleId||
+                        job.resource_bundle.index!==index+1))
+                    throw Error('Frozen native round resource bundle ownership changed.');
+                const launch=(this.state.bundle_start_plans||[])
+                    .find(item=>item.bundle_id===bundleId);
+                if(!launch) {
+                    this.scheduleResourceBundleStart({
+                        bundle_id:bundleId,expected_job_ids:members.map(job=>job.id),
+                        confirm_schedule:true,confirm_gpu_start:true,
+                    });
+                    continue;
+                }
+                if(['needs_review','expired','cancelled','disarmed'].includes(launch.status))
+                    throw Error('Native group Start is no longer authorized: '+launch.reason);
+                if(members.some(job=>['failed','unverified','stopped','cancelled'].includes(job.status)))
+                    throw Error('A native training-round member did not finish successfully.');
+                if(!members.every(job=>job.status==='finished'&&
+                    job.capacity_released_at))continue;
+                if(phase==='collectors') {
+                    // Queued optimizer ranks are bound to the actual latest
+                    // collector SHA, not a speculative run ID or old replay.
+                    for(const job of members)
+                        verifiedNativeCollectorPin(this,job.id);
+                    update('pending_optimizer','Fresh completed physical experience ready for synchronized MA-POCA.');
+                }else {
+                    const owner=members[0];
+                    if(!checkpointContinuationComplete(owner)||
+                        nativeOptimizerGroupBlock(this.state,owner))
+                        continue;
+                    const nextCount=plan.completed_rounds+1;
+                    update(nextCount===plan.round_count?'complete':'pending_collectors',
+                        nextCount===plan.round_count
+                            ?'All approved native collection and optimizer rounds completed.'
+                            :'Starting fresh physical collection against the newly verified checkpoint.',
+                        {
+                            completed_rounds:nextCount,
+                            source_job_id:owner.id,
+                            source_model_sha256:owner.checkpoint_model_sha256,
+                            collectors_bundle_id:null,collectors_job_ids:null,
+                            optimizer_bundle_id:null,optimizer_job_ids:null,
+                        });
+                }
+            }catch(error) {
+                const reason=String(error.message||error).slice(0,240);
+                // Capacity and fresh GPU qualification are not source or
+                // checkpoint failures. Leave the exact authorized stage
+                // pending rather than fabricating a substitute machine.
+                if(plan.status.startsWith('pending_')&&
+                    /capacity|headroom|budget|available|insufficient|claimed|overcommit/i.test(reason))
+                    continue;
+                update('needs_review',reason);
+            }
+        }
+    }
+
     // Atomically reserve fixed resources for independently executable jobs
     // across projects and machines. This is the common *control-plane*
     // foundation for distributed workloads, not a data-plane protocol or a
