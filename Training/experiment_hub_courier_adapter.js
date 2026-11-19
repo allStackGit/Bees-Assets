@@ -503,12 +503,19 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             (context.gpu_pci_address===undefined&&context.gpu_cuda_uuid!==undefined)||
             (context.gpu_pci_addresses!==undefined&&(
                 context.gpu_pci_address!==undefined||context.gpu_cuda_uuid!==undefined||
-                !enableGpu||windows||!gpuMulti||context.gpu_mode!=='exclusive'||
+                !enableGpu||!gpuMulti||context.gpu_mode!=='exclusive'||
                 !Array.isArray(context.gpu_pci_addresses)||
                 ![2,3,4,5,6,7,8].includes(context.gpu_pci_addresses.length)||
                 context.gpu_pci_addresses.some(pci=>
-                    !PCI.test(String(pci))||!Object.hasOwn(approvedRocr,pci))||
-                new Set(context.gpu_pci_addresses).size!==context.gpu_pci_addresses.length)))
+                    !PCI.test(String(pci))||
+                    (!windows&&!Object.hasOwn(approvedRocr,pci)))||
+                new Set(context.gpu_pci_addresses).size!==context.gpu_pci_addresses.length||
+                (windows?(!Array.isArray(context.gpu_cuda_uuids)||
+                    context.gpu_cuda_uuids.length!==context.gpu_pci_addresses.length||
+                    context.gpu_cuda_uuids.some(id=>!NVIDIA_UUID.test(String(id)))||
+                    new Set(context.gpu_cuda_uuids.map(id=>id.toLowerCase())).size!==
+                        context.gpu_cuda_uuids.length)
+                    :context.gpu_cuda_uuids!==undefined))))
             throw Error('Invalid Courier job, physical GPU lease or checkpoint lineage.');
         return path.join(artifacts,context.job_id);
     }
@@ -552,7 +559,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             courier_remote_key_fingerprint:remote.fingerprint,
             courier_remote_max_shards:remote.endpoints.map(item=>item.maxShards),
         }:{}),
-        ...(enableGpu&&windows?{gpu_execution:'cuda'}:{}),
+        ...(enableGpu&&windows?{gpu_execution:'cuda',
+            ...(gpuMulti?{gpu_multi_execution:'independent-ppo'}:{})}:{}),
         ...(enableGpu&&!windows?{
             rocr_gpu_uuids:approvedRocr,
             ...(gpuMulti&&Object.keys(approvedRocr).length>=2
@@ -701,7 +709,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(context.gpu_pci_address!==undefined||
                     context.gpu_pci_addresses!==undefined
                     ?['--optimizer-device','cuda',
-                       ...(context.gpu_pci_addresses
+                       ...(!windows&&context.gpu_pci_addresses
                            ?context.gpu_pci_addresses.flatMap(pci=>
                                ['--optimizer-gpu-pci',pci])
                            :gpuPciPin&&!windows
