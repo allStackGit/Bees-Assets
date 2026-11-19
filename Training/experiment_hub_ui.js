@@ -4819,7 +4819,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Slot-backed local collectors must occupy an ordered prefix of
         // the learner-approved endpoints. A later available endpoint
         // cannot silently become a different recurrent PPO slot.
-        const slotPinned=colocated&&machine?.courier_lineage_slots?.length>0;
+        const slotPinned=shared&&match.some(hosts=>hosts.some(host=>
+            host.courier_lineage_slots?.length>0));
         const candidates=slotPinned?match.slice(0,capacity):match;
         const gap=slotPinned?candidates.findIndex(hosts=>hosts.length!==1):-1;
         const eligible=gap>=0?candidates.slice(0,gap):candidates;
@@ -4829,17 +4830,21 @@ document.addEventListener('DOMContentLoaded', () => {
             ?' Bind each budget to this exact collector slot and machine'
             :' Match budgets across the selected machines';
         const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
-            ':'+machine.courier_lineage_slots?.map(item=>item.slot+'@'+item.endpoint).join('|'):null;
+            ':'+available.map(host=>host.id+':'+
+                host.courier_lineage_slots?.map(item=>item.slot+'@'+item.endpoint).join('|')).join(';'):null;
         if(courierBudgetHost!==budgetHost) {
             const local=colocated&&available.some(host=>host.id===machine.id);
+            const repeated=available.some(host=>
+                available.filter(other=>other.id===host.id).length>1);
             // Selected-machine mode is mandatory for a local collector:
             // plain remote endpoint budgets cannot authorize self-hosting.
-            courierMatch.input.checked=Boolean(local);
+            courierMatch.input.checked=Boolean(local||repeated);
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
                 (subset?available.slice(0,capacity):match).map(worker=>
                     ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,
-                        ...(subset&&worker.id===machine.id
+                        ...(subset&&(worker.id===machine.id||
+                            available.filter(other=>other.id===worker.id).length>1)
                             ?{gpu_count:1,gpu_mode:'exclusive'}
                             :{gpu_count:0})})),
                 null,2);
@@ -4850,19 +4855,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const localCapacity=localCount<=1||
             colocated&&machine?.courier_lineage_slots?.length>=localCount&&
             machine?.gpus?.length>localCount;
+        const remoteCapacity=[...new Set(remoteIds)].every(id=>{
+            const members=available.filter(host=>host.id===id);
+            if(members.length<=1)return true;
+            const host=members[0];
+            return shared&&host.gpu_projects?.includes('courier_lineage')&&
+                host.gpus?.length>=members.length&&
+                host.courier_lineage_slots?.length>=members.length;
+        });
         const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
-            capacity>0&&available.length>0&&localCapacity&&
-            (subset||capacity>=endpoints.length&&available.length===endpoints.length)&&
-            new Set(remoteIds).size===remoteIds.length);
+            capacity>0&&available.length>0&&localCapacity&&remoteCapacity&&
+            (subset||capacity>=endpoints.length&&available.length===endpoints.length));
         courierQueue.disabled=!ready;
         courierDetails.textContent=ready
             ?'Available '+(shared?'collectors':'PPO workers')+': '+available.map(host=>host.id).join(', ')+
                 (subset?'. Keep the machines you want to allocate.':'. Supply one budget per worker in the listed order.')+
                 (shared
                     ?' Each collector gets at least one whole map.'+
-                        (colocated?' Local collectors each use a distinct exclusive GPU'+
-                            ' in addition to the learner GPU. Configure a unique slot listener'+
-                            ' per collector and leave machine matching checked for local rows.':'')
+                        (slotPinned?' Several collectors may share a GPU-capable host'+
+                            ' only with unique slot listeners and independent exclusive GPUs.'+
+                            ' Keep slot-to-machine binding checked for repeated hosts.':'')
                     :' Leave at least one PPO lineage on the learner.')
             :'Register the Courier lineage project and connect the approved workers.';
     }
