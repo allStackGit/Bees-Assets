@@ -1092,6 +1092,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 throw Error('TinyBrains automatic simulation requires a frozen RAM lease.');
             return ['-B',runner,'--run',
                 nativeWindows?out:JOBS_IN+'/'+context.job_id,
+                ...(nativeWindows?['--project-root',project]:[]),
                 '--updates',String(updates),'--threads',String(chosenThreads),
                 '--ram-budget-mb',String(context.ram_quota_mb),
                 '--live-matches',String(item.profile.live_matches),
