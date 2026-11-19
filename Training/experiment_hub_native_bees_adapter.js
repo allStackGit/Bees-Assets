@@ -115,6 +115,61 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
     return {requiresGpuInference, supportsGpuInference};
 }
 
+// Each torchrun rank is an actual optimizer worker, not an inferred share
+// of the Hub lease. Reconcile its placement, collective work and measured
+// totals before a synchronized checkpoint can be advertised as complete.
+function synchronizedOptimizerEvidence(metrics) {
+    const syncs = metrics.optimizer_synchronized_minibatches;
+    const workers = metrics.optimizer_gpu_per_device;
+    if (metrics.optimizer_gpu_workers !== 2 ||
+        !Number.isSafeInteger(syncs) || syncs < 1 ||
+        metrics.optimizer_masked_loss_normalizations !== syncs ||
+        !SHA256.test(String(metrics.optimizer_gpu_model_consensus_sha256 || '')) ||
+        !['gloo', 'nccl'].includes(metrics.optimizer_gradient_backend) ||
+        !Array.isArray(workers) || workers.length !== 2)
+        throw Error('Native Bees two-GPU checkpoint lacks synchronized optimizer evidence.');
+
+    let totalThreads = 0;
+    let gradientSeconds = 0;
+    let maskedSeconds = 0;
+    let maxUpdateSeconds = 0;
+    workers.forEach((worker, index) => {
+        if (!worker || worker.rank !== index ||
+            worker.device !== 'cuda:' + index ||
+            typeof worker.device_name !== 'string' || !worker.device_name ||
+            worker.gradient_backend !== metrics.optimizer_gradient_backend ||
+            worker.gradient_syncs !== syncs || worker.masked_loss_syncs !== syncs ||
+            !Number.isSafeInteger(worker.torch_intraop_threads) ||
+            worker.torch_intraop_threads < 1 ||
+            !Number.isSafeInteger(worker.torch_interop_threads) ||
+            worker.torch_interop_threads < 1 ||
+            !Number.isFinite(worker.update_wall_seconds) ||
+            worker.update_wall_seconds < 0 ||
+            !Number.isFinite(worker.gradient_submission_wall_seconds) ||
+            worker.gradient_submission_wall_seconds < 0 ||
+            !Number.isFinite(worker.masked_loss_submission_wall_seconds) ||
+            worker.masked_loss_submission_wall_seconds < 0 ||
+            ['torch_cuda_process_peak_allocated_bytes',
+                'torch_cuda_process_peak_reserved_bytes'].some(name =>
+                !Number.isSafeInteger(worker[name]) || worker[name] < 0))
+            throw Error('Invalid native GPU optimizer rank, thread placement or work measurements.');
+        totalThreads += worker.torch_intraop_threads;
+        gradientSeconds += worker.gradient_submission_wall_seconds;
+        maskedSeconds += worker.masked_loss_submission_wall_seconds;
+        maxUpdateSeconds = Math.max(maxUpdateSeconds, worker.update_wall_seconds);
+    });
+    const matches = (actual, expected) =>
+        Number.isFinite(actual) &&
+        Math.abs(actual - expected) <= 1e-9 * Math.max(1, Math.abs(expected));
+    if (!matches(metrics.optimizer_gradient_submission_wall_seconds_sum, gradientSeconds) ||
+        !matches(metrics.optimizer_masked_loss_submission_wall_seconds_sum, maskedSeconds) ||
+        !matches(metrics.optimizer_gpu_update_wall_seconds_max, maxUpdateSeconds) ||
+        metrics.optimizer_torch_intraop_threads !== workers[0].torch_intraop_threads ||
+        metrics.optimizer_torch_interop_threads !== workers[0].torch_interop_threads)
+        throw Error('Native Bees synchronized optimizer totals disagree with individual GPU ranks.');
+    return totalThreads;
+}
+
 function learnerMeasurements(metrics) {
     const report = {};
     const add = (name, unit, value = metrics[name]) => {
@@ -145,54 +200,42 @@ function learnerMeasurements(metrics) {
     add('torch_cuda_process_peak_reserved_bytes', 'bytes');
     if (metrics.optimizer_gpu_workers != null) {
         const count = metrics.optimizer_gpu_workers;
-        if (![0,1,2].includes(count) ||
-            (count === 2 && (
-                !Number.isSafeInteger(metrics.optimizer_synchronized_minibatches) ||
-                metrics.optimizer_synchronized_minibatches < 1 ||
-                metrics.optimizer_masked_loss_normalizations !==
-                    metrics.optimizer_synchronized_minibatches ||
-                typeof metrics.optimizer_gpu_model_consensus_sha256 !== 'string' ||
-                !SHA256.test(metrics.optimizer_gpu_model_consensus_sha256) ||
-                !Array.isArray(metrics.optimizer_gpu_per_device) ||
-                metrics.optimizer_gpu_per_device.length !== 2)))
-            throw Error('Invalid native optimizer GPU worker measurements.');
+        if (![0,1,2].includes(count))
+            throw Error('Invalid native optimizer GPU worker count.');
         add('optimizer_gpu_workers', 'count');
         if (count === 2) {
+            const totalThreads = synchronizedOptimizerEvidence(metrics);
             add('optimizer_synchronized_minibatches', 'count');
             add('optimizer_masked_loss_normalizations', 'count');
             add('optimizer_masked_loss_submission_wall_seconds_sum', 'seconds');
             add('optimizer_gradient_submission_wall_seconds_sum', 'seconds');
             add('optimizer_gpu_update_wall_seconds_max', 'seconds');
+            report.optimizer_gpu_total_intraop_threads = {
+                value: totalThreads, unit: 'count',
+            };
             metrics.optimizer_gpu_per_device.forEach((worker,index) => {
-                if (worker.rank !== index ||
-                    worker.gradient_syncs !== metrics.optimizer_synchronized_minibatches ||
-                    worker.masked_loss_syncs !== metrics.optimizer_masked_loss_normalizations ||
-                    !Number.isFinite(worker.update_wall_seconds) ||
-                    worker.update_wall_seconds < 0)
-                    throw Error('Invalid native synchronized optimizer worker evidence.');
                 report['optimizer_gpu_'+index+'_update_wall_seconds'] = {
                     value:worker.update_wall_seconds,unit:'seconds',
                 };
-                if (!Number.isFinite(worker.gradient_submission_wall_seconds) ||
-                    worker.gradient_submission_wall_seconds < 0)
-                    throw Error('Invalid native GPU gradient synchronization time.');
                 report['optimizer_gpu_'+index+'_gradient_submission_seconds'] = {
                     value:worker.gradient_submission_wall_seconds,unit:'seconds',
                 };
-                if (!Number.isFinite(worker.masked_loss_submission_wall_seconds) ||
-                    worker.masked_loss_submission_wall_seconds < 0)
-                    throw Error('Invalid native GPU loss normalization collective time.');
                 report['optimizer_gpu_'+index+'_masked_loss_submission_seconds'] = {
                     value:worker.masked_loss_submission_wall_seconds,unit:'seconds',
+                };
+                report['optimizer_gpu_'+index+'_intraop_threads'] = {
+                    value:worker.torch_intraop_threads,unit:'count',
+                };
+                report['optimizer_gpu_'+index+'_interop_threads'] = {
+                    value:worker.torch_interop_threads,unit:'count',
                 };
                 for (const [source,target] of [
                     ['torch_cuda_process_peak_allocated_bytes','peak_allocated_bytes'],
                     ['torch_cuda_process_peak_reserved_bytes','peak_reserved_bytes'],
                 ]) {
-                    const value=worker[source];
-                    if(!Number.isSafeInteger(value)||value<0)
-                        throw Error('Invalid native GPU optimizer device memory evidence.');
-                    report['optimizer_gpu_'+index+'_'+target]={value,unit:'bytes'};
+                    report['optimizer_gpu_'+index+'_'+target]={
+                        value:worker[source],unit:'bytes',
+                    };
                 }
             });
         }
@@ -874,23 +917,16 @@ function createNativeBeesAdapter({
         const round = completedRound(output);
         if (!round) return null;
         verifyRoundGpuLease(context, round.receipt);
-        if (!collectOnly && gpuLeaseCount(context) === 2) {
-            const proof = round.metrics;
-            if (proof.optimizer_gpu_workers !== 2 ||
-                !Number.isSafeInteger(proof.optimizer_synchronized_minibatches) ||
-                proof.optimizer_synchronized_minibatches < 1 ||
-                proof.optimizer_masked_loss_normalizations !==
-                    proof.optimizer_synchronized_minibatches ||
-                typeof proof.optimizer_gpu_model_consensus_sha256 !== 'string' ||
-                !SHA256.test(proof.optimizer_gpu_model_consensus_sha256) ||
-                !Array.isArray(proof.optimizer_gpu_per_device) ||
-                proof.optimizer_gpu_per_device.length !== 2 ||
-                proof.optimizer_gpu_per_device.some((row, index) =>
-                    row?.rank !== index || row.gradient_syncs !==
-                        proof.optimizer_synchronized_minibatches ||
-                    row.masked_loss_syncs !==
-                        proof.optimizer_masked_loss_normalizations))
-                throw Error('Native learner claimed two GPUs without verified synchronized policy updates.');
+        if (!collectOnly) {
+            const leasedGpuCount = gpuLeaseCount(context);
+            if (round.metrics.optimizer_gpu_workers !== leasedGpuCount)
+                throw Error('Native Bees optimizer GPU execution disagrees with the Hub lease.');
+            if (leasedGpuCount === 2) {
+                const totalThreads = synchronizedOptimizerEvidence(round.metrics);
+                if (!Number.isSafeInteger(context.cpu_quota) ||
+                    totalThreads > context.cpu_quota)
+                    throw Error('Native Bees optimizer ranks exceeded their shared Hub CPU quota.');
+            }
         }
         const inputs = roundInputs(context);
         if (round.receipt.input_checkpoint_sha256 !== inputs.checkpointDigest ||
@@ -982,6 +1018,8 @@ function createNativeBeesAdapter({
             ))
                 throw Error('Native distributed work order needs an exact ID, bounded World window and safe inbox name.');
             const dualGpu=Array.isArray(context.gpu_pci_addresses);
+            if (dualGpu && optimizer_threads !== undefined && optimizer_threads < 2)
+                throw Error('Two GPU optimizer ranks require at least two CPU threads in the Hub budget.');
             // Each exclusive physical GPU requires its own persistent
             // model worker; expand the default native World pool rather
             // than forcing users to tune counts for every project.
