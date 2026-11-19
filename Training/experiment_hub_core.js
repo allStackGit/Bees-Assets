@@ -1026,6 +1026,19 @@ function courierWorkerSlot(machine,slot) {
         ?{slot,endpoint:machine.courier_lineage_endpoint,
             max_shards:machine.courier_lineage_max_shards}:null;
 }
+// An already assigned service owns its listener until its job is terminal.
+// Missing slot advertisement on a live service is an uncertain native
+// owner, so fail closed rather than silently reusing a possibly active port.
+function courierEndpointOccupied(snapshot,machine,endpoint,exceptJobId=null) {
+    if(!machine||!endpoint)return true;
+    return snapshot.jobs.some(job=>{
+        if(job.id===exceptJobId||job.project_id!=='courier_lineage'||
+            job.assigned_machine_id!==machine.id||
+            ['cancelled','finished','stopped'].includes(job.status))return false;
+        const slot=courierWorkerSlot(machine,job.frozen_parameters?.slot);
+        return !slot||slot.endpoint===endpoint;
+    });
+}
 function selectDistributedMachines(machines,learner,selections,approved,capability,endpointField,
     allowLearnerMachine=false) {
     const byMachine=selections.some(worker=>object(worker)&&Object.hasOwn(worker,'machine_id'));
@@ -1291,13 +1304,12 @@ function courierLineageHost(snapshot,job,machine) {
             job.resources?.cpus!==learner.frozen_parameters.shared_policy_cpus[index]))||
         shards[index]!==slot?.max_shards)
         return false;
-    return !snapshot.jobs.some(other=>other.id!==job.id&&
-        other.project_id==='courier_lineage'&&
-        !['cancelled','finished','stopped'].includes(other.status)&&
-        (other.assigned_machine_id===machine.id&&
-            courierWorkerSlot(machine,other.frozen_parameters?.slot)?.endpoint===slot.endpoint||
+    return !courierEndpointOccupied(snapshot,machine,slot.endpoint,job.id)&&
+        !snapshot.jobs.some(other=>other.id!==job.id&&
+            other.project_id==='courier_lineage'&&
+            !['cancelled','finished','stopped'].includes(other.status)&&
             other.frozen_parameters?.learner_job_id===learner.id&&
-            other.frozen_parameters?.slot===job.frozen_parameters.slot));
+            other.frozen_parameters?.slot===job.frozen_parameters.slot);
 }
 function allocationBlockReason(machines,job,preferredMachineId=null) {
     const candidates=preferredMachineId
@@ -5550,14 +5562,9 @@ class ExperimentHub {
         const allowLocal=shared&&Array.isArray(value.worker_machine_ids)&&
             value.worker_machine_ids.includes(machine?.id)&&
             learnerBudget.gpu_count===1&&learnerBudget.gpu_mode==='exclusive';
-        // A native machine may have several independently leased Courier
-        // services. Occupancy is per fixed listener endpoint, not per host:
-        // a different PPO slot/port can use genuinely spare CPU/RAM/GPU
-        // capacity while the existing service retains exclusive ownership.
-        const occupied=snapshot.jobs.filter(job=>
-            job.project_id==='courier_lineage'&&
-            !['cancelled','finished','stopped'].includes(job.status)&&
-            job.assigned_machine_id);
+        // Listener ownership is endpoint-scoped. Other jobs on this same
+        // machine keep their port and GPU leases; only genuinely free
+        // approved slots are eligible for a second experiment.
         // Multiple native Courier sidecars can now share the learner's
         // physical host, provided every approved PPO slot has its own
         // local listener and each job receives a separate exclusive GPU.
@@ -5583,9 +5590,8 @@ class ExperimentHub {
                 const bound=slot===null
                     ?host.courier_lineage_slots?.find(item=>item.endpoint===endpoint)
                     :courierWorkerSlot(host,slot);
-                return match&&!occupied.some(job=>
-                    job.assigned_machine_id===host.id&&
-                    courierWorkerSlot(host,job.frozen_parameters?.slot)?.endpoint===endpoint)&&
+                return match&&
+                    !courierEndpointOccupied(snapshot,host,endpoint)&&
                     (host.id!==machine?.id||
                         allowLocal&&budget.gpu_count===1&&
                             budget.gpu_mode==='exclusive')&&
