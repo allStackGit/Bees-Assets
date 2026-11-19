@@ -16,20 +16,12 @@ import numpy as np
 from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spec, stream_sha256
 from read_policy_capture import capture_frames
 from native_training_outcomes import accumulate_training_outcome, record_combat_hit
+from native_mission_contract import OBJECTIVE_START as NATIVE_MISSION_ACTIVE_INDEX
 
 
 # Non-learner controllers need only lifetime/side validation. This
 # packed representation retains named field access without one Python
 # dict (and three boxed integers) per opponent decision.
-# Frozen native v26 feature offset: self/capability/carrier, 64 allies,
-# 64 enemies, 5 mounts, 8 mining rocks, 64 map objects, 48 asteroids.
-# The sixteen reserved channels begin here for both normal and native
-# mission episodes. The learner inspects only their first presence flag.
-NATIVE_MISSION_ACTIVE_INDEX = (
-    25 + 12 + 41 + 64 * 45 + 64 * 41 + 5 * 15 +
-    8 * 7 + 64 * 12 + 48 * 11
-)
-
 OPPONENT_IDENTITY = np.dtype([
     ("ship", "<u8"), ("binding_revision", "<u8"), ("team", "u1"),
 ])

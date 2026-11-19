@@ -18,6 +18,7 @@ from native_training_artifacts import (
     verified_source_scene_cache, combined_source_scene_cache,
 )
 from native_gpu_allocation import GPU_MASK_ENVIRONMENTS
+from native_mission_contract import level_has_goal, verified_policy_observations
 
 
 COLLECTOR_ID = re.compile(r"[A-Za-z0-9_-]{1,48}\Z")
@@ -479,14 +480,6 @@ def verify_bundle(path, job, orders):
     ):
         raise ValueError(f"distributed collector returned invalid work measurements: {path}")
     observation_work = metrics.get("policy_observations")
-    if observation_work is not None:
-        keys = ("rows_encoded", "native_mission_rows", "allies_encoded",
-                "enemies_encoded", "map_objects_encoded")
-        if (not isinstance(observation_work, dict) or
-                any(type(observation_work.get(key)) is not int or
-                    observation_work[key] < 0 for key in keys) or
-                observation_work["native_mission_rows"] > observation_work["rows_encoded"]):
-            raise ValueError(f"distributed collector supplied impossible policy observation work: {path}")
     # Mission goals have been encoded by the physical host since native
     # objective support. Reject an old collector that would silently
     # train against a blind policy despite a valid capture file.
@@ -504,13 +497,10 @@ def verify_bundle(path, job, orders):
     # legitimately be allocated from just one authored Level; slicing the
     # template list would reject such perfectly valid high-throughput jobs.
     has_mission = any(
-        any(name in authored[index % len(authored)]
-            for name in ("survival", "demolition", "escort", "extraction"))
+        level_has_goal(authored[index % len(authored)])
         for index in range(start, start + count)
     )
-    if has_mission and (observation_work is None or
-                        observation_work["native_mission_rows"] == 0):
-        raise ValueError(f"distributed mission collector reported no native objective observations: {path}")
+    verified_policy_observations(observation_work, require_goal=has_mission)
     # The selected replica's original scene/goal identity is stable even
     # when its runtime world and seed are derived for this machine.
     if "source_scene_template_cache" in metrics:

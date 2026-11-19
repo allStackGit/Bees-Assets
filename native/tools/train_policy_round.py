@@ -22,6 +22,7 @@ import time
 import traceback
 import uuid
 
+from native_mission_contract import level_has_goal, verified_policy_observations
 from native_training_artifacts import (
     file_sha256, check_learner, sync_directory, normalized_python_source_sha256,
     native_source_contract_sha256,
@@ -371,25 +372,12 @@ def rollout_metrics(summary_path, config, manifest_sha):
     # Native escort/survival/demolition policies must actually receive the
     # authored goal through the v26 reserved channels. Refuse a successful
     # physical rollout from an old binary that still emitted blind PPO rows.
-    has_native_mission = any(
-        any(key in level for key in ("survival", "demolition", "escort", "extraction"))
-        for level in config["levels"]
+    has_native_mission = any(level_has_goal(level) for level in config["levels"])
+    observation_work = verified_policy_observations(
+        summary.get("policy_observations"), require_goal=has_native_mission,
     )
-    observation_work = summary.get("policy_observations")
     if observation_work is not None:
-        rows = observation_work.get("rows_encoded")
-        objective_rows = observation_work.get("native_mission_rows")
-        if (type(rows) is not int or type(objective_rows) is not int or
-                rows < 0 or objective_rows < 0 or objective_rows > rows):
-            raise ValueError("native policy observation work has invalid denominators")
         metrics["policy_observations"] = observation_work
-    if has_native_mission and (
-            observation_work is None or
-            observation_work["native_mission_rows"] == 0):
-        raise ValueError(
-            "native mission rollout supplied no verified objective feature rows; "
-            "the collector cannot produce valid mission learning data"
-        )
     model_timing = summary.get("sampled_model_timing")
     if model_timing is not None:
         calls, rows, seconds = (model_timing[key] for key in ("calls", "rows", "wall_seconds"))

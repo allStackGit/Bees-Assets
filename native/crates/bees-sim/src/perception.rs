@@ -27,6 +27,10 @@ pub const MAP_OBJECT_LEN: usize = 12;
 pub const MAP_OBJECT_SLOTS: usize = 64;
 pub const ASTEROID_LEN: usize = 11;
 pub const ASTEROID_SLOTS: usize = 48;
+/// Increment for any change to the existing native mission reserved-channel
+/// semantics. Windows and Linux collectors must agree before MA-POCA can
+/// combine their captures; the frozen 7743-float tensor width is insufficient.
+pub const NATIVE_MISSION_OBSERVATION_VERSION: u32 = 1;
 pub const OBJECTIVE_LEN: usize = 16;
 pub const NAV_SIZE: usize = 21;
 pub const NAV_LEN: usize = NAV_SIZE * NAV_SIZE;

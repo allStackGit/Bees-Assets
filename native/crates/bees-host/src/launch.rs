@@ -5227,6 +5227,9 @@ fn run_battle(
         "policy_observations": {
             "rows_encoded": status.perception_work.observations,
             "native_mission_rows": status.perception_work.native_mission_rows,
+            "native_mission_encoding_version": bees_sim::perception::NATIVE_MISSION_OBSERVATION_VERSION,
+            "native_mission_objective_start": bees_sim::perception::OBJECTIVE_START,
+            "native_mission_objective_width": bees_sim::perception::OBJECTIVE_LEN,
             "allies_encoded": status.perception_work.allies_encoded,
             "enemies_encoded": status.perception_work.enemies_encoded,
             "map_objects_encoded": status.perception_work.map_objects_encoded,
