@@ -327,7 +327,13 @@ impl NativeRemotePlay {
                 Err(ref error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(_) => break,
             };
-            if self.peers.len() >= MAX_PEERS || socket.set_nonblocking(true).is_err() {
+            // Command acknowledgements and side-filtered state are small
+            // interactive frames. Nagle buffering here would defer replies
+            // despite the client's already-low-latency socket settings.
+            if self.peers.len() >= MAX_PEERS ||
+                socket.set_nonblocking(true).is_err() ||
+                socket.set_nodelay(true).is_err()
+            {
                 self.measurements.rejected_connections += 1;
                 continue;
             }
