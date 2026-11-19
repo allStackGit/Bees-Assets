@@ -818,9 +818,9 @@ function nativeStartReadiness(snapshot, job) {
             if(!host||host.status!=='connected'||
                 !host.local_executor_enabled||!host.native_preflight_passed||
                 !host.installed_projects?.includes('courier_lineage')||
-                courierWorkerSlot(host,slot)?.endpoint!==endpoint||
+                courierWorkerListener(host,worker)?.endpoint!==endpoint||
                 host.courier_lineage_key_fingerprint!==key||
-                courierWorkerSlot(host,slot)?.max_shards!==shards[index]||
+                courierWorkerListener(host,worker)?.max_shards!==shards[index]||
                 !owned||!courierLineageHost(snapshot,worker,host)||nativeResourceBlock(worker,owned)||
                 gpuStartBlock(worker,owned,host))
                 return block('Courier PPO remote endpoint, identity, GPU proof or fresh independent lease differs from its learner.');
@@ -1026,6 +1026,12 @@ function courierWorkerSlot(machine,slot) {
         ?{slot,endpoint:machine.courier_lineage_endpoint,
             max_shards:machine.courier_lineage_max_shards}:null;
 }
+// PPO's recurrent worker slot is independent of the native port index.
+// Previously frozen jobs without a distinct listener slot retain parity.
+function courierWorkerListener(machine,job) {
+    return courierWorkerSlot(machine,
+        job?.frozen_parameters?.listener_slot??job?.frozen_parameters?.slot);
+}
 // Active native owners must retain the endpoint frozen into their learner's
 // plan. A changed/unknown advertisement is not permission to claim a free
 // port: the old service might still be listening there after agent recovery.
@@ -1043,7 +1049,7 @@ function courierEndpointOccupied(snapshot,machine,endpoint,exceptJobId=null) {
         const index=first===null?null:job.frozen_parameters?.slot-first;
         const frozen=Number.isSafeInteger(index)&&index>=0&&
             index<plan.length?plan[index]?.endpoint:null;
-        const advertised=courierWorkerSlot(machine,job.frozen_parameters?.slot)?.endpoint;
+        const advertised=courierWorkerListener(machine,job)?.endpoint;
         // Legacy groups without a durable endpoint plan, or a changed
         // listener mapping, own uncertain native state on the entire host.
         if(!frozen||!advertised||advertised!==frozen)return true;
@@ -1241,7 +1247,7 @@ function courierGroupMachinesValid(snapshot,learner,workers) {
         const id=worker.assigned_machine_id;
         const machine=snapshot.machines.find(host=>host.id===id);
         const index=worker.frozen_parameters?.slot-first;
-        const slot=courierWorkerSlot(machine,worker.frozen_parameters?.slot);
+        const slot=courierWorkerListener(machine,worker);
         if(!id||!slot||!Number.isSafeInteger(index)||index<0||
             index>=endpoints.length||slot.endpoint!==endpoints[index]||
             slot.max_shards!==shards[index])return false;
@@ -1305,7 +1311,7 @@ function courierLineageHost(snapshot,job,machine) {
         !SHA256.test(String(parent.courier_remote_key_fingerprint||''))||
         machine.courier_lineage_key_fingerprint!==parent.courier_remote_key_fingerprint)
         return false;
-    const slot=courierWorkerSlot(machine,job.frozen_parameters?.slot);
+    const slot=courierWorkerListener(machine,job);
     const index=endpoints.indexOf(slot?.endpoint);
     const first=courierFirstSlot(learner,endpoints.length);
     const shared=learner.frozen_parameters.shared_policy===true;
@@ -3094,10 +3100,10 @@ class ExperimentHub {
                 ['offered','acknowledged'].includes(item.status));
             if(!machine||!lease||!job.assigned_machine_id)
                 throw Error('Courier group needs registered machines and original resource leases.');
-            if(index>0&&(courierWorkerSlot(machine,job.frozen_parameters.slot)?.endpoint!==endpoints[index-1]||
+            if(index>0&&(courierWorkerListener(machine,job)?.endpoint!==endpoints[index-1]||
                 machine.courier_lineage_key_fingerprint!==
                     host.courier_remote_key_fingerprint||
-                courierWorkerSlot(machine,job.frozen_parameters.slot)?.max_shards!==ceilings[index-1]))
+                courierWorkerListener(machine,job)?.max_shards!==ceilings[index-1]))
                 throw Error('Courier group endpoint/key/process ceiling no longer matches its original slot.');
             const agent=this.agentReports.get(machine.id);
             if(!UUID.test(String(agent?.instance_id||'')))
@@ -3231,9 +3237,9 @@ class ExperimentHub {
                             item.id===worker.assigned_machine_id);
                         const frozen=plan.frozen_members[index+1];
                         return !machine||worker.frozen_parameters?.slot!==frozen.slot||
-                            courierWorkerSlot(machine,frozen.slot)?.endpoint!==frozen.endpoint||
+                            courierWorkerSlot(machine,frozen.listener_slot??frozen.slot)?.endpoint!==frozen.endpoint||
                             machine.courier_lineage_key_fingerprint!==plan.key_fingerprint||
-                            courierWorkerSlot(machine,frozen.slot)?.max_shards!==frozen.max_shards;
+                            courierWorkerSlot(machine,frozen.listener_slot??frozen.slot)?.max_shards!==frozen.max_shards;
                     })) {
                     halt('needs_review','Courier group private endpoint, slot or key identity changed.');
                     continue;
@@ -3872,9 +3878,9 @@ class ExperimentHub {
                         const host=snapshot.machines.find(item=>
                             item.id===worker.assigned_machine_id);
                         return !host||!owner||
-                            courierWorkerSlot(host,owner.slot)?.endpoint!==owner.endpoint||
+                            courierWorkerSlot(host,owner.listener_slot??owner.slot)?.endpoint!==owner.endpoint||
                             host.courier_lineage_key_fingerprint!==owner.key_fingerprint||
-                            courierWorkerSlot(host,owner.slot)?.max_shards!==owner.max_shards||
+                            courierWorkerSlot(host,owner.listener_slot??owner.slot)?.max_shards!==owner.max_shards||
                             owner.key_fingerprint!==intent.key_fingerprint;
                     })) {
                     disarm('Courier remote private endpoint or shared key identity changed.');
@@ -5869,9 +5875,9 @@ class ExperimentHub {
                 const machine=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
                 return {job_id:worker.id,dispatch_id:dispatches[worker.id],
                     machine_id:machine.id,lease_id:worker.lease_id,
-                    endpoint:courierWorkerSlot(machine,worker.frozen_parameters.slot)?.endpoint,
+                    endpoint:courierWorkerListener(machine,worker)?.endpoint,
                     key_fingerprint:machine.courier_lineage_key_fingerprint,
-                    max_shards:courierWorkerSlot(machine,worker.frozen_parameters.slot)?.max_shards,
+                    max_shards:courierWorkerListener(machine,worker)?.max_shards,
                     slot:worker.frozen_parameters.slot};
             }),
             key_fingerprint:host.courier_remote_key_fingerprint,
