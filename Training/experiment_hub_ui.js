@@ -4747,10 +4747,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const role=selected.parameters.shared_policy===true
                 ?' shared-policy collectors':' independent PPO workers';
+            const fixedSlots=matching&&selected.parameters.shared_policy===true&&
+                budgets.some(item=>state.machines.some(machine=>
+                    machine.id===item.machine_id&&machine.courier_lineage_slots?.length>0));
             if(!confirm('Reserve a Courier learner with '+budgets.length+role+
                 '? All machine CPU/RAM/GPU claims are atomic; '+
                 'no process will Start without a separate native approval.'+
-                (matching?' Budgets may be assigned to a different selected machine than the one on their row.':'')))return;
+                (fixedSlots
+                    ?' Each collector remains bound to its chosen machine and approved PPO slot listener.'
+                    :matching
+                        ?' Budgets may be matched across the selected machines.'
+                        :'')))return;
             const result=await action('hub/distributed/courier',{
                 confirm_queue:true,
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
