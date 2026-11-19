@@ -206,6 +206,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rollout_board_packed_bytes',row.rollout_board_packed_bytes,'bytes');
+    // Bytes actually staged into one grouped frozen-opponent H2D input.
+    // This is neither physical bus throughput nor device utilization.
+    add('rollout_opponent_grouped_input_bytes',
+        row.rollout_opponent_grouped_input_bytes,'bytes');
     for(const name of ['pipeline_collection_exposure_fraction',
         'collector_balance_predicted_gain_ratio',
         'gpu_role_estimated_gain_ratio',
@@ -404,6 +408,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_grouped_models,'count');
         add('collector_'+i+'_opp_group_states',
             worker.rollout_opponent_grouped_states,'count');
+        add('collector_'+i+'_opp_group_input_bytes',
+            worker.rollout_opponent_grouped_input_bytes,'bytes');
         add('collector_'+i+'_opp_group_padding',
             worker.rollout_opponent_grouped_padding,'count');
         add('collector_'+i+'_opp_group_fallbacks',
@@ -625,7 +631,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'opponent_readbacks','opp_slot_reused',
                 'opp_slot_allocated','opp_cached_indices',
                 'opp_group_calls','opp_group_models',
-                'opp_group_states','opp_group_padding','opp_group_fallbacks',
+                'opp_group_states','opp_group_input_bytes',
+                'opp_group_padding','opp_group_fallbacks',
                 'snapshot_cache_files','snapshot_cache_bytes',
                 'policy_upload_groups',
                 'record_packed','record_board_groups',
