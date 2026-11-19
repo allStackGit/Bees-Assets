@@ -22,6 +22,7 @@ const MAX_IMPORT_BYTES=65536;
 const receiptConflict=issue=>typeof issue==='string'&&
     (issue.includes('Conflicting independent result for checkpoint ')||
      issue.startsWith('Conflicting independent evaluation receipt at checkpoint '));
+const checkpointIdentity=row=>row.dispatch_id+':'+row.suite_id+':'+row.checkpoint_sha256;
 // A new accepted receipt closes a suite's receipt-availability episode.
 // Keep conflict diagnostics permanently disqualifying, and keep older
 // diagnostic rows intact. Replayed heartbeats cannot re-arm an episode.
@@ -213,7 +214,8 @@ class EvaluationHistory {
                     if(failureAttempts.has(key))
                         throw Error('Duplicate failed evaluation attempt in archive.');
                     failureAttempts.set(key,JSON.stringify(row));
-                    activeFailures.set(key,row);
+                    if(!seen.has(checkpointIdentity(row)))
+                        activeFailures.set(checkpointIdentity(row),row);
                     diagnostics.push(row);
                     lastEntry=row;
                     continue;
@@ -254,17 +256,13 @@ class EvaluationHistory {
                 evaluationEvidence(row,{
                     suite_id:row.suite_id,suite_sha256:row.suite_sha256,
                 },row.dispatch_id);
-                const key=row.dispatch_id+':'+row.suite_id+':'+row.checkpoint_sha256;
+                const key=checkpointIdentity(row);
                 if(seen.has(key))throw Error('Duplicate evaluation history record.');
                 seen.set(key,JSON.stringify(row));
                 rearmRecoveredIssues(issueKeys,activeIssues,row.dispatch_id,row.suite_id);
-                // One accepted receipt resolves earlier failed attempts at
-                // its exact checkpoint; it does not resolve other checkpoints.
-                for(const [failureKey,failure] of activeFailures)
-                    if(failure.dispatch_id===row.dispatch_id&&
-                        failure.suite_id===row.suite_id&&
-                        failure.checkpoint_sha256===row.checkpoint_sha256)
-                        activeFailures.delete(failureKey);
+                // One accepted receipt resolves failed attempts for the
+                // same immutable checkpoint, never unrelated checkpoints.
+                activeFailures.delete(key);
                 records.push(row);
                 lastEntry=row;
             }
@@ -363,7 +361,7 @@ class EvaluationHistory {
                 !/^[a-f0-9]{64}$/.test(receipt.suite_sha256))
                 throw Error('Invalid independent evaluation identity.');
             const data=this.load(id,job.project_id);
-            const key=receipt.dispatch_id+':'+receipt.suite_id+':'+receipt.checkpoint_sha256;
+            const key=checkpointIdentity(receipt);
             if(data.seen.has(key)) {
                 // An idempotent retry is harmless; a second contradictory
                 // report for the same immutable checkpoint is not. Retain
@@ -399,11 +397,7 @@ class EvaluationHistory {
             data.records.push(row);
             data.seen.set(key,JSON.stringify(row));
             rearmRecoveredIssues(data.issueKeys,data.activeIssues,row.dispatch_id,row.suite_id);
-            for(const [failureKey,failure] of data.activeFailures)
-                if(failure.dispatch_id===row.dispatch_id&&
-                    failure.suite_id===row.suite_id&&
-                    failure.checkpoint_sha256===row.checkpoint_sha256)
-                    data.activeFailures.delete(failureKey);
+            data.activeFailures.delete(key);
             this.issues.delete(id);
             return true;
         }catch(error) {
@@ -479,7 +473,8 @@ class EvaluationHistory {
             const row={...checked,observed_at:new Date().toISOString()};
             this.appendRow(id,data,row);
             data.failureAttempts.set(key,JSON.stringify(row));
-            data.activeFailures.set(key,row);
+            if(!data.seen.has(checkpointIdentity(row)))
+                data.activeFailures.set(checkpointIdentity(row),row);
             data.diagnostics.push(row);
             this.issues.delete('failure:'+id);
             return true;
