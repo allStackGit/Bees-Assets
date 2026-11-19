@@ -4675,6 +4675,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw Error('Provide one CPU/RAM/GPU budget for each selected Courier worker.');
             const resources=JSON.parse($('hub-job-resources').value);
             const matching=courierMatch.input.checked&&!courierMatch.label.hidden;
+            if(budgets.some(item=>item.machine_id===courierMachine.value)&&!matching)
+                throw Error('A same-machine Courier GPU collector requires explicit matched machine budgets.');
             const budgetRequest=distributedBudgetRequest(
                 budgets.map(({machine_id,...resources})=>({resources,machine_id})),
                 matching,'lineages');
@@ -4735,8 +4737,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if(machines.some(machine=>machine.id===prior))courierMachine.value=prior;
         const machine=machines.find(item=>item.id===courierMachine.value);
         const endpoints=machine?.courier_remote_lineage_endpoints||[];
+        // A second GPU may host ONE separately leased shared-policy
+        // collector on the learner machine. The coordinator still proves
+        // distinct GPU identities and leases before any Start.
+        const colocated=shared&&machine?.courier_lineage_subset===true&&
+            machine.gpus?.length>=2&&
+            ['courier','courier_lineage'].every(project=>
+                machine.gpu_projects?.includes(project));
         const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
-            host.status==='connected'&&host.id!==machine.id&&
+            host.status==='connected'&&
+            (host.id!==machine.id||colocated)&&
             host.courier_lineage_endpoint===endpoint&&
             host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
             host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i]&&
@@ -4749,11 +4759,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const population=selected.parameters.workers;
         const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
         if(courierBudgetHost!==budgetHost) {
-            courierMatch.input.checked=false;
+            const local=colocated&&available.some(host=>host.id===machine.id);
+            // Selected-machine mode is mandatory for a local collector:
+            // plain remote endpoint budgets cannot authorize self-hosting.
+            courierMatch.input.checked=Boolean(local);
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
                 (subset?available.slice(0,capacity):match).map(worker=>
-                    ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),
+                    ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,
+                        ...(subset&&worker.id===machine.id
+                            ?{gpu_count:1,gpu_mode:'exclusive'}
+                            :{gpu_count:0})})),
                 null,2);
         }
         const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
@@ -4764,7 +4780,12 @@ document.addEventListener('DOMContentLoaded', () => {
         courierDetails.textContent=ready
             ?'Available '+(shared?'collectors':'PPO workers')+': '+available.map(host=>host.id).join(', ')+
                 (subset?'. Keep the machines you want to allocate.':'. Supply one budget per worker in the listed order.')+
-                (shared?' Each collector gets at least one whole map.':' Leave at least one PPO lineage on the learner.')
+                (shared
+                    ?' Each collector gets at least one whole map.'+
+                        (colocated?' A local collector uses a SECOND exclusive GPU'+
+                            ' and needs the learner budget to reserve one exclusive GPU;'+
+                            ' leave machine matching checked when using that row.':'')
+                    :' Leave at least one PPO lineage on the learner.')
             :'Register the Courier lineage project and connect the approved workers.';
     }
     courierMachine.addEventListener('change',renderCourierDistributedGroup);
