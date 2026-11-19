@@ -1023,6 +1023,16 @@ function createNativeBeesAdapter({
                     perNode[0].threads>context.cpu_quota ||
                     perNode[0].interopThreads>context.cpu_quota)
                     throw Error('Native Bees publisher ranks exceeded their local Hub CPU quota.');
+            } else if (
+                !Number.isSafeInteger(context.cpu_quota) || context.cpu_quota<1 ||
+                !Number.isSafeInteger(round.metrics.optimizer_torch_intraop_threads) ||
+                !Number.isSafeInteger(round.metrics.optimizer_torch_interop_threads) ||
+                round.metrics.optimizer_torch_intraop_threads<1 ||
+                round.metrics.optimizer_torch_interop_threads<1 ||
+                round.metrics.optimizer_torch_intraop_threads>context.cpu_quota ||
+                round.metrics.optimizer_torch_interop_threads>context.cpu_quota
+            ) {
+                throw Error('Native Bees learner CPU threads exceeded its Hub lease.');
             }
         }
         const inputs = roundInputs(context);
@@ -1198,11 +1208,13 @@ function createNativeBeesAdapter({
                     seed_offset!==0 || context.project_id!==project)
                     throw Error('Native optimizer node has no approved Hub owner/worker bundle rank.');
             }
-            if (optimizer_threads !== undefined &&
-                (collectOnly || !Number.isSafeInteger(optimizer_threads) ||
-                    optimizer_threads < 1 || optimizer_threads > 256 ||
-                    !Number.isSafeInteger(context.cpu_quota) ||
-                    optimizer_threads > context.cpu_quota))
+            if ((!collectOnly &&
+                    (!Number.isSafeInteger(context.cpu_quota) ||
+                     context.cpu_quota < 1)) ||
+                (optimizer_threads !== undefined &&
+                    (collectOnly || !Number.isSafeInteger(optimizer_threads) ||
+                     optimizer_threads < 1 || optimizer_threads > 256 ||
+                     optimizer_threads > context.cpu_quota)))
                 throw Error('Optimizer threads must be positive and within the fixed Hub CPU quota.');
             // The coordinator owns machine/CPU/RAM leases. A native
             // collector job may additionally receive an immutable World
@@ -1362,12 +1374,16 @@ function createNativeBeesAdapter({
                     '--learner-master-port', String(distributedOptimizer.masterPort),
                     '--learner-backend', distributedOptimizer.backend,
                 ]),
-                // Two optimizer ranks are OS processes. Bound the sum
-                // of their intra-op threads by the reserved Hub CPUs,
-                // including when no manual thread selection was made.
-                ...(optimizer_threads === undefined && !dualGpu && !distributedOptimizer ? [] :
-                    ['--torch-threads', String(optimizer_threads ??
-                        Math.min(256, Math.floor(context.cpu_quota)))]),
+                // Every native PPO learner, including a single CPU or
+                // single-GPU rank, must use its Hub CPU lease. Previously
+                // those modes inherited PyTorch's unbounded host defaults
+                // unless an operator supplied optimizer_threads manually.
+                // train_policy_round distributes this total across local
+                // GPU ranks; no new scheduler or model configuration exists.
+                ...(collectOnly ? [] : [
+                    '--torch-threads', String(optimizer_threads ??
+                        Math.min(256, context.cpu_quota)),
+                ]),
                 ...((rollout_workers === undefined && !dualGpu) ||
                     inboxLearner || bundleRound ? [] :
                     ['--rollout-workers', String(activeWorkers)]),
