@@ -273,13 +273,33 @@ def author(args) -> tuple[dict, dict, dict]:
     if not 1 <= rounds < 1 << 32:
         raise ValueError("battle duration cannot be represented as native fixed ticks")
 
-    # A ship blueprint is a *real authored example*, not an invented stats
-    # table. Do not quietly reinterpret an authored side's weapon layers as
-    # another side's collision permissions.
+    # Blueprints always come from full, explicit native ship definitions.
+    # Additional source scenes can extend the available classes without
+    # injecting their terrain, command owners, or live physics into this map.
+    # The primary scene remains authoritative for any shared class, so
+    # authoring an unrelated class cannot silently alter existing combat.
     blueprints: dict[tuple[int, int], dict] = {}
-    for ship in scene["ships"]:
-        key = (ship["side"], ship["ship_type"])
-        blueprints.setdefault(key, ship)
+    for source_ship in [*scene["ships"], *scene.get("fleet_templates", [])]:
+        key = (source_ship["side"], source_ship["ship_type"])
+        blueprints.setdefault(key, source_ship)
+    source_archetypes = getattr(args, "archetype_scenes", ())
+    for path in source_archetypes:
+        supplemental = load_json(path)
+        if (supplemental.get("native_game_schema") != 1 or
+                supplemental.get("bee_side") != 1 or
+                supplemental.get("human_side") != 2 or
+                supplemental.get("policy_episode") is not None or
+                any(ship.get("policy") is not None
+                    for ship in [*supplemental.get("ships", []),
+                                 *supplemental.get("fleet_templates", [])])):
+            raise ValueError(
+                f"supplemental ship source must be a non-policy sides-1/2 "
+                f"native game scene: {path}"
+            )
+        for source_ship in [*supplemental.get("ships", []),
+                            *supplemental.get("fleet_templates", [])]:
+            key = (source_ship["side"], source_ship["ship_type"])
+            blueprints.setdefault(key, source_ship)
 
     requested = {1: args.bees, 2: args.humans}
     requested_counts = {
@@ -1110,6 +1130,9 @@ def main() -> None:
     parser.add_argument("--source-scene", type=Path,
                         default=EXAMPLES / "native-queen.scene.json",
                         help="native game scene supplying exact per-side ship archetypes")
+    parser.add_argument("--archetype-scene", type=Path, action="append",
+                        dest="archetype_scenes", default=[],
+                        help="additional complete native source scene for new ship types, without copying its gameplay or terrain")
     parser.add_argument("--source-run", type=Path,
                         default=EXAMPLES / "native-skirmish.run.json",
                         help="paired native run with the same map/physics asset matrix")
@@ -1180,6 +1203,13 @@ def main() -> None:
         "physical_map_borders": 4 if args.arena_size is not None else 0,
         "lethal_map_borders": args.lethal_borders,
         "reinforcement_waves": len(run["levels"][0].get("reinforcements", [])),
+        "reserve_fleet_templates": [
+            {"side": ship["side"], "ship_type": ship["ship_type"]}
+            for ship in scene.get("fleet_templates", [])
+        ],
+        "supplemental_archetype_scenes": [
+            str(path.resolve()) for path in args.archetype_scenes
+        ],
         "reinforcement_ships": (
             sum(wave[3] for wave in args.reinforcements) +
             sum(wave[4] for wave in args.death_reinforcements)
