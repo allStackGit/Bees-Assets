@@ -3769,6 +3769,13 @@ fn run_battle(
         source_levels.push(source);
         source_sides.push(sides);
     }
+    let unique_source_documents = source_documents.len();
+    let unique_source_templates = source_templates.len();
+    // A retained reference per source Level is enough for all episode
+    // resets. Release temporary JSON documents and the lookup table before
+    // training so large jobs do not keep redundant source bytes alive.
+    drop(source_documents);
+    drop(source_templates);
     if config.next_squad_item_id <= highest_squad_item_id {
         return Err(invalid(
             "next_squad_item_id must be the real next Stage pool identity, above all source squads",
@@ -5038,6 +5045,19 @@ fn run_battle(
     }
     let mut final_summary = json!({
         "kind": "run_final",
+        "source_scene_template_cache": {
+            "distinct_source_documents": unique_source_documents,
+            "distinct_parsed_layouts": unique_source_templates,
+            "worlds_initialized": source_template_clone_count,
+            "episodes_recycled": recycled_template_clone_count,
+            "source_parse_count": source_template_parse_count,
+            "source_parse_wall_seconds": source_template_parse_wall.as_secs_f64(),
+            "initial_template_clone_wall_seconds": source_template_clone_wall.as_secs_f64(),
+            "recycled_template_clone_wall_seconds": recycled_template_clone_wall.as_secs_f64(),
+            // A historical reset reparsed the scene and reapplied its full
+            // physical layout. This measures removed work, not claimed SPS.
+            "recycle_source_parses_avoided": recycled_template_clone_count,
+        },
         "reinforcement_arrivals": reinforcement_arrivals,
         "reinforcement_wakeup_work": {
             "idle_ticks_skipped": reinforcement_idle_ticks_skipped,
