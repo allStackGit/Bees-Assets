@@ -166,6 +166,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
     previous = None
     stable_roster = None
     shop_catalog = {}
+    per_mission_sources = []
     for index, source in enumerate(args.mission, 1):
         source_path = source.resolve(strict=True)
         scene, run, provenance = input_mission(source_path, args.player_side)
@@ -176,12 +177,26 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
                 f"mission {index} changes authored player FleetShip or SavedSquad identities; "
                 "use the same player fleet and squad membership in every native mission"
             )
+        class_prices = {}
+        # Live original player hulls and inert authored reserve templates
+        # are both real physical source archetypes. Reward-only classes
+        # need not be deployed before the mission that unlocks them.
         for ship in scene["ships"]:
             if (ship["side"] == args.player_side and
                     ship.get("persistent_fleet") and
                     ship["health"] == ship["max_health"] and
                     ship["max_tsv"] > 0):
-                shop_catalog.setdefault(ship["ship_type"], set()).add(ship["max_tsv"])
+                class_prices.setdefault(ship["ship_type"], set()).add(ship["max_tsv"])
+        for ship in scene.get("fleet_templates", []):
+            if (ship["side"] == args.player_side and
+                    not ship.get("persistent_fleet") and
+                    ship.get("fleet_ship_id") is None and
+                    ship["health"] == ship["max_health"] and
+                    ship["max_tsv"] > 0):
+                class_prices.setdefault(ship["ship_type"], set()).add(ship["max_tsv"])
+        for ship_type, prices in class_prices.items():
+            shop_catalog.setdefault(ship_type, set()).update(prices)
+        per_mission_sources.append(class_prices)
         ident = f"mission-{index:03d}"
         scene_file = f"{ident}.scene.json"
         run_file = f"{ident}.run.json"
@@ -227,10 +242,12 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
     classes = [*args.shop_types, *args.grant_only_types]
     for ship_type in classes:
         prices = shop_catalog.get(ship_type)
-        if prices is None or len(prices) != 1:
+        if prices is None or len(prices) != 1 or any(
+                item.get(ship_type) != prices for item in per_mission_sources):
             raise ValueError(
-                f"native FleetShip class {ship_type} must have one source-authored "
-                "full-health TSV price in the player fleet across missions"
+                f"native FleetShip class {ship_type} must have the same "
+                "source-authored full-health TSV in every campaign mission; "
+                "use --fleet-template on missions without an initially deployed hull"
             )
         purchasable = ship_type in args.shop_types
         fleet_classes.append({
