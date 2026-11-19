@@ -83,7 +83,7 @@ function authorizedBundleFile(hub,machineId,token,learnerId,collectorId,relative
         fail('Invalid native rollout artifact request.',400);
     const learner=hub.state.jobs.find(job=>job.id===learnerId);
     const collector=hub.state.jobs.find(job=>job.id===collectorId);
-    if(!learner||learner.project_id!=='bees_native'||
+    if(!learner||!['bees_native','bees_native_optimizer_worker'].includes(learner.project_id)||
         learner.assigned_machine_id!==machineId||!learner.lease_id||
         !['waiting_adapter','start_requested','launch_requested','running']
             .includes(learner.status)||
@@ -230,7 +230,8 @@ async function verifyLocalBundle(directory,expectedReceiptSha) {
 
 async function syncNativeBundles(job,adapter,endpoint,machineId,token) {
     const pins=job?.frozen_parameters?.rollout_bundles;
-    if(job?.project_id!=='bees_native'||!Array.isArray(pins)||
+    if(!['bees_native','bees_native_optimizer_worker'].includes(job?.project_id)||
+        !Array.isArray(pins)||
         !pins.length)return {bundles:0};
     if(pins.length>256||typeof adapter?.bundle_inbox_dir!=='function')
         fail('A native bundle learner requires its installed private inbox.');
