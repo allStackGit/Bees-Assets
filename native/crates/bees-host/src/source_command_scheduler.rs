@@ -186,11 +186,30 @@ impl NativeSourceCommandScheduler {
         B: NativePolicyInference,
         S: NativeLevelNotificationSink,
     {
+        self.issue_due_with_readiness(host, worker.ready(), setup_complete)
+    }
+
+    /// The original source clock also drives authenticated offline network
+    /// recordings. The replay supplies its recorded setup readiness, while
+    /// request identities and actual commands stay in the same native host.
+    pub fn issue_due_with_readiness<M, A, B, S>(
+        &mut self,
+        host: &mut NativeHostRuntime<M, A, B, S>,
+        transport_ready: bool,
+        setup_complete: bool,
+    ) -> io::Result<()>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelActivationContext +
+            NativeLevelObservationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+        B: NativePolicyInference,
+        S: NativeLevelNotificationSink,
+    {
         if host.simulation().world_count() != self.worlds.len() {
             return Err(invalid("source HiveMind scheduler World count changed"));
         }
         self.due_levels.clear();
-        let ready = setup_complete && worker.ready();
+        let ready = setup_complete && transport_ready;
         for index in 0..self.worlds.len() {
             let world = host.simulation().world(index)
                 .ok_or_else(|| invalid("registered native Level disappeared"))?;
@@ -236,8 +255,8 @@ impl NativeSourceCommandScheduler {
             }
         }
         if self.due_levels.is_empty() { return Ok(()); }
-        let result = host.issue_due_source_targeting(
-            worker, usize::MAX, |id| self.due_levels.contains(&id),
+        let result = host.issue_due_source_targeting_when_ready(
+            transport_ready, usize::MAX, |id| self.due_levels.contains(&id),
         ).map_err(|error| io::Error::other(format!(
             "source HiveMind command pulse: {error:?}",
         )))?;

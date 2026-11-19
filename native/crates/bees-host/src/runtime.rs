@@ -102,6 +102,9 @@ pub enum NativeHostSocketEvent {
         /// Recognized replies are already routed. Other authenticated
         /// features retain their exact bytes for the caller's real owner.
         unhandled_frame: Option<Vec<u8>>,
+        /// Original authenticated server bytes, retained for the same
+        /// authoritative input recorder used by native battle playback.
+        raw_frame: Vec<u8>,
     },
 }
 
@@ -995,10 +998,24 @@ where
         &mut self,
         worker: &crate::socket_worker::NativeSocketWorker,
         max_new_requests: usize,
+        level_is_ready: impl FnMut(i64) -> bool,
+    ) -> Result<NativeSourceCommandPulse, HostSourceCommandError> {
+        self.issue_due_source_targeting_when_ready(
+            worker.ready(), max_new_requests, level_is_ready,
+        )
+    }
+
+    /// The same authoritative request allocator and source squad logic is
+    /// also driven by an authenticated recording's setup boundary. Only the
+    /// readiness predicate changes; replay never creates a shadow command.
+    pub fn issue_due_source_targeting_when_ready(
+        &mut self,
+        ready: bool,
+        max_new_requests: usize,
         mut level_is_ready: impl FnMut(i64) -> bool,
     ) -> Result<NativeSourceCommandPulse, HostSourceCommandError> {
         let mut counts = NativeSourceCommandPulse::default();
-        if !worker.ready() || max_new_requests == 0 {
+        if !ready || max_new_requests == 0 {
             return Ok(counts);
         }
         if self.driver.registered_world_count() != self.simulation.world_count() {
@@ -1191,8 +1208,10 @@ where
                 Ok(Some(NativeHostSocketEvent::SetupAccepted { request_hash, server_game_id })),
             Some(crate::socket::HiveMindSocketEvent::ServerFrame { request_hash, frame }) => {
                 let delivery = self.receive_frame(&frame).map_err(HostNetworkError::Connection)?;
-                let unhandled_frame = delivery.is_none().then_some(frame);
-                Ok(Some(NativeHostSocketEvent::ServerFrame { request_hash, delivery, unhandled_frame }))
+                let unhandled_frame = delivery.is_none().then(|| frame.clone());
+                Ok(Some(NativeHostSocketEvent::ServerFrame {
+                    request_hash, delivery, unhandled_frame, raw_frame: frame,
+                }))
             }
         }
     }
