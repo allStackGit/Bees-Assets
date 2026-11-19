@@ -593,6 +593,61 @@ function nativeBaselinePlan(snapshot,job,at=Date.now()) {
         )
     )||null;
 }
+// Accept only machine-authenticated receipts from the existing native
+// evaluator, identified by a frozen plan and the original checkpoint. A
+// baseline uses a separate dispatch ID: it never mutates the finished
+// source job's independent training/evaluation evidence.
+function retainNativeBaselineEvaluation(next,job,report,evaluationSuites) {
+    const submitted=report.native_baseline_evaluation;
+    if(submitted==null)return false;
+    if(!object(submitted)||!UUID.test(String(submitted.plan_id||''))||
+        !Array.isArray(submitted.receipts)||!submitted.receipts.length||
+        submitted.receipts.length>8||Object.keys(submitted).some(key=>
+            !['plan_id','receipts'].includes(key))||
+        job.project_id!=='bees_native'||job.status!=='finished'||
+        report.state!=='finished'||!checkpointContinuationComplete(job)||
+        !job.capacity_released_at||
+        !SHA256.test(String(job.checkpoint_model_sha256||'')))
+        throw Error('Invalid independent native baseline evaluation report.');
+    const plan=(next.native_round_plans||[]).find(item=>
+        item.id===submitted.plan_id&&item.status==='pending_collectors'&&
+        item.completed_rounds===0&&item.source_job_id===job.id&&
+        item.origin_source_job_id===job.id&&
+        item.source_model_sha256===job.checkpoint_model_sha256&&
+        item.initial_evaluation_stop);
+    if(!plan||!supportsEvaluation(evaluationSuites,{
+        project_id:job.project_id,evaluation_stop:plan.initial_evaluation_stop,
+    }))
+        throw Error('Native baseline evaluator has no original approved plan and suite owner.');
+    const rules=evaluationRules(plan.initial_evaluation_stop);
+    const retained=[...(plan.initial_evaluation_receipts||[])];
+    const seen=new Set();
+    let changed=false;
+    for(const value of submitted.receipts) {
+        const rule=rules.find(item=>item.suite_id===value?.suite_id);
+        if(!rule||seen.has(rule.suite_id))
+            throw Error('Native baseline reported an unapproved or duplicate suite.');
+        seen.add(rule.suite_id);
+        const receipt=evaluationEvidence(value,rule,plan.id);
+        if(receipt.checkpoint_sha256!==job.checkpoint_model_sha256||
+            !SHA256.test(String(receipt.suite_sha256||''))||
+            receipt.trials<rule.min_trials)
+            throw Error('Native baseline result has no complete fixed-reference checkpoint evidence.');
+        const index=retained.findIndex(item=>item.suite_id===rule.suite_id);
+        if(index>=0) {
+            if(JSON.stringify(retained[index])!==JSON.stringify(receipt))
+                throw Error('Previously accepted native baseline evidence changed.');
+        }else {
+            retained.push(receipt);
+            changed=true;
+        }
+    }
+    if(changed) {
+        plan.initial_evaluation_receipts=retained;
+        plan.updated_at=now();
+    }
+    return changed;
+}
 // A missing final receipt cannot justify inspecting a historical terminal
 // job forever. A waiting candidate plan extends the grace period until
 // 24 hours after its last contender releases verified native capacity.
@@ -3504,6 +3559,8 @@ class ExperimentHub {
             if(lease.status==='released'&&lease.released_at&&
                 job.capacity_released_at&&
                 ['finished','failed','stopped'].includes(job.status)) {
+                if(retainNativeBaselineEvaluation(next,job,report,evaluationSuites))
+                    changed=true;
                 if(finishCheckpointReinspection(job,report,observedAt))changed=true;
                 if(report.state===job.status&&supportsEvaluation(evaluationSuites,job)&&
                     retainFinalEvaluations(job,report))changed=true;
@@ -4840,7 +4897,46 @@ class ExperimentHub {
                         throw Error('Approved native optimizer evaluation configuration changed.');
                     const sourcePolicy=evaluationPolicy(source.evaluation_stop);
                     const targetPolicy=evaluationPolicy(target.evaluation_stop);
-                    if(sourcePolicy&&targetPolicy&&
+                    if(plan.initial_evaluation_stop) {
+                        if(JSON.stringify(plan.initial_evaluation_stop)!==
+                            JSON.stringify(targetPolicy))
+                            throw Error('Approved initial native evaluation policy changed.');
+                        const rules=evaluationRules(plan.initial_evaluation_stop);
+                        const receipts=rules.map(rule=>
+                            plan.initial_evaluation_receipts?.find(receipt=>{
+                                if(receipt.suite_id!==rule.suite_id)return false;
+                                try{
+                                    const checked=evaluationEvidence(receipt,rule,plan.id);
+                                    return checked.checkpoint_sha256===
+                                        source.checkpoint_model_sha256&&
+                                        SHA256.test(String(checked.suite_sha256||''))&&
+                                        checked.trials>=rule.min_trials;
+                                }catch{return false;}
+                            })
+                        );
+                        if(receipts.some(receipt=>!receipt)) {
+                            if(Date.now()>=Date.parse(plan.approved_at)+
+                                FINAL_EVALUATION_GRACE_MS)
+                                throw Error('Newly approved native baseline evaluation did not finish before the independent evaluation window closed.');
+                            const reason='Awaiting independent evaluation of the starting checkpoint against the newly approved suite policy.';
+                            if(plan.reason!==reason)update(plan.status,reason);
+                            continue;
+                        }
+                        const passed=evaluationComplete(
+                            plan.initial_evaluation_stop.all_of
+                                ?{all_of:receipts}:receipts[0],
+                            plan.initial_evaluation_stop,plan.id);
+                        if(passed) {
+                            update('complete',
+                                'Starting checkpoint meets the newly approved independent evaluation target; no native collection or PPO Starts required.',
+                                {
+                                    initial_checkpoint_job_id:source.id,
+                                    initial_checkpoint_sha256:source.checkpoint_model_sha256,
+                                    initial_evaluation_receipts:receipts,
+                                });
+                            continue;
+                        }
+                    }else if(sourcePolicy&&targetPolicy&&
                         JSON.stringify(sourcePolicy)===JSON.stringify(targetPolicy)) {
                         const {missing,receipts,passed}=
                             nativeRoundFinalEvaluation(source);
