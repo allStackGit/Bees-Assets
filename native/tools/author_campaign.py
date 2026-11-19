@@ -72,9 +72,65 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
     }
 
 
+# The installed policy worker dynamically loads the shared MA-POCA actor.
+# Keep that exact implementation beside the published model on all hosts,
+# independent of where the original training checkout lived.
+POLICY_WORKER_SOURCES = (
+    "native/tools/policy_worker.py",
+    "native/tools/native_gpu_allocation.py",
+)
+MLAGENTS_ACTOR_SOURCES = (
+    "Training/bees_mlagents_ppo_compat.py",
+    "Training/bees_mlagents_structured_policy.py",
+    "Training/bees_mlagents_factorized_poca.py",
+    "Training/bees_learner_stall_diagnostics.py",
+    "Training/bees_log_categories.py",
+    "Training/bees_process_safety.py",
+)
+
+
+def source_policy_runtime(run_path: Path, run: dict, runtime_files: dict,
+                          uses_mlagents: bool) -> dict:
+    """Pin the real native inference code, not a mutable external checkout.
+
+    The worker imports its sibling native_gpu_allocation module and, only
+    for ML-Agents checkpoints, a handful of native Training actor modules.
+    Python/Torch/ML-Agents are installed platform dependencies; we never
+    copy a machine-specific virtual environment or executable.
+    """
+    worker = existing_path(run_path, run.get("policy_worker"))
+    if (worker.name != "policy_worker.py" or worker.parent.name != "tools" or
+            worker.parent.parent.name != "native"):
+        raise ValueError(
+            "portable native opponent requires the verified native/tools/policy_worker.py"
+        )
+    project_root = worker.parent.parent.parent
+    sources = POLICY_WORKER_SOURCES + (
+        MLAGENTS_ACTOR_SOURCES if uses_mlagents else ()
+    )
+    pinned = {}
+    for name in sources:
+        path = (project_root / name).resolve(strict=True)
+        if not path.is_file():
+            raise ValueError(f"native policy source file is not regular: {path}")
+        digest = file_sha256(path)
+        existing = runtime_files.get(name)
+        if existing is not None and existing[1] != digest:
+            raise ValueError(
+                f"incompatible native opponent policy source versions: {name}"
+            )
+        runtime_files[name] = path, digest
+        pinned[name] = digest
+    run["policy_worker"] = "native/tools/policy_worker.py"
+    # The host resolves a one-component interpreter through PATH on both
+    # Windows and Linux. It must have the right runtime dependencies installed.
+    run["python"] = "python"
+    return pinned
+
+
 def package_model_manifest(
     run_path: Path, run: dict, label: str,
-    outputs: list, model_files: dict, provenance: dict,
+    outputs: list, model_files: dict, runtime_files: dict, provenance: dict,
 ) -> dict:
     """Copy every checkpoint used by the verified opponent into its campaign.
 
@@ -121,11 +177,16 @@ def package_model_manifest(
         raise ValueError(
             "packaged opponent model differs from the authenticated selected training checkpoint"
         )
+    runtime_source_sha256 = source_policy_runtime(
+        run_path, run, runtime_files,
+        any(model.get("backend") == "mlagents" for model in manifest["models"]),
+    )
     manifest_name = f"{label}.model-manifest.json"
     outputs.append((manifest_name, manifest))
     run["model_manifest"] = manifest_name
     return {
         "original_manifest_sha256": original_sha256,
+        "runtime_source_sha256": runtime_source_sha256,
         "packaged_manifest": manifest_name,
         "model_slots": saved_models,
     }
@@ -259,7 +320,7 @@ def native_fleet_class_sha256(ship: dict) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict]:
+def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict]:
     title = args.title.strip()
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     if not 1 <= len(title) <= 80 or not slug:
@@ -270,6 +331,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict]:
         raise ValueError("campaign must not replay the same source run as different missions")
     outputs = []
     model_files = {}
+    runtime_files = {}
     sources = []
     missions = []
     mission_dependencies = dict(args.mission_requires)
@@ -331,7 +393,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict]:
         run = copy.deepcopy(run)
         if run.get("model_manifest") is not None:
             provenance["packaged_model"] = package_model_manifest(
-                source_path, run, ident, outputs, model_files, provenance,
+                source_path, run, ident, outputs, model_files,
+                runtime_files, provenance,
             )
         run["levels"][0]["scene"] = scene_file
         run["run_id"] = f"{slug}-{ident}"
@@ -430,7 +493,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict]:
             if variant_run.get("model_manifest") is not None:
                 variant_provenance["packaged_model"] = package_model_manifest(
                     variant_path.resolve(strict=True), variant_run,
-                    f"{ident}.victory", outputs, model_files, variant_provenance,
+                    f"{ident}.victory", outputs, model_files,
+                    runtime_files, variant_provenance,
                 )
             variant_run["levels"][0]["scene"] = variant_scene_file
             variant_run["run_id"] = f"{slug}-{ident}-victory"
@@ -532,7 +596,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict]:
         {"file": name, "sha256": name.split("/")[-1].removesuffix(".model")}
         for name in sorted(model_files)
     ]
-    return catalog, library, outputs, receipt, model_files
+    receipt["packaged_runtime_files"] = [
+        {"file": name, "sha256": runtime_files[name][1]}
+        for name in sorted(runtime_files)
+    ]
+    return catalog, library, outputs, receipt, model_files, runtime_files
 
 
 def ship_types(value: str) -> list[int]:
@@ -708,7 +776,7 @@ def main() -> None:
            for prerequisite in prerequisites):
         parser.error("--shop-unlock refers to an absent mission")
     try:
-        catalog, library, outputs, receipt, model_files = campaign(args)
+        catalog, library, outputs, receipt, model_files, runtime_files = campaign(args)
         output = args.output_dir.resolve()
         if output.exists():
             raise FileExistsError(f"native campaign destination already exists: {output}")
@@ -723,24 +791,27 @@ def main() -> None:
                                   ("campaign.json", catalog),
                                   ("library.json", library)]:
                 atomic_json(staged / name, payload)
-            for name, source in model_files.items():
+            # Checkpoint bytes and the policy worker's own source tree are
+            # both published atomically. Every file is verified before
+            # writing, after copying, and against its committed digest.
+            assets = [(name, path, name.split("/")[-1].removesuffix(".model"))
+                      for name, path in model_files.items()]
+            assets.extend((name, path, digest)
+                          for name, (path, digest) in runtime_files.items())
+            for name, source, expected_sha in assets:
                 destination = staged / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                expected_sha = destination.stem
-                # Publish only verified checkpoint bytes. Detect source
-                # replacements during the copy, and sync before the single
-                # final atomic campaign directory rename.
+                if file_sha256(source) != expected_sha:
+                    raise ValueError(f"native policy source changed before publication: {source}")
                 with source.open("rb") as reader, destination.open("xb") as writer:
                     shutil.copyfileobj(reader, writer, length=1024 * 1024)
                     writer.flush()
                     os.fsync(writer.fileno())
-                if (file_sha256(source) != expected_sha or
-                        file_sha256(destination) != expected_sha):
-                    raise ValueError(
-                        f"checkpoint content changed during native campaign publication: {source}"
-                    )
-            if model_files:
-                sync_directory(staged / "models")
+                if file_sha256(destination) != expected_sha:
+                    raise ValueError(f"native policy artifact changed while copying: {source}")
+            for folder in sorted({Path(name).parent for name, _, _ in assets},
+                                 key=lambda item: len(item.parts), reverse=True):
+                sync_directory(staged / folder)
             receipt["catalog_sha256"] = file_sha256(staged / "campaign.json")
             receipt["library_sha256"] = file_sha256(staged / "library.json")
             atomic_json(staged / "campaign-receipt.json", receipt)
