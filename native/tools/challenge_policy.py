@@ -16,7 +16,9 @@ import re
 import tempfile
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256, sync_directory
-from portable_policy_bundle import package_model_manifest, write_pinned_policy_assets
+from portable_policy_bundle import (
+    package_model_manifest, package_stage_assets, write_pinned_policy_assets,
+)
 
 
 def document(path: Path) -> dict:
@@ -266,18 +268,12 @@ def main() -> None:
             original_run, run, "challenge", model_json,
             model_files, runtime_files, provenance,
         )
-        # Legacy Stage exports may use external collision/palette JSON.
-        # New native_stage runs already contain all source physics data.
+        # Legacy Stage assets are relocated without changing physics; an
+        # inline native_stage already contains its exact source geometry.
         extra_files = {}
-        for key in ("collision_matrix", "stage_palette"):
-            value = run.get(key)
-            if value is None:
-                continue
-            source = Path(value).resolve(strict=True)
-            digest = file_sha256(source)
-            packaged_name = f"stage-assets/{key}.json"
-            run[key] = packaged_name
-            extra_files[packaged_name] = (source, digest)
+        provenance["stage_assets"] = package_stage_assets(
+            original_run, run, extra_files,
+        )
         output = args.output_dir.resolve()
         if output.exists():
             raise FileExistsError(f"refusing to overwrite existing native challenge: {output}")

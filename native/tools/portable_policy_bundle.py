@@ -159,6 +159,34 @@ def package_model_manifest(
 
 
 
+def package_stage_assets(run_path: Path, run: dict, stage_files: dict) -> dict:
+    """Rebase exact native Stage collision/palette files into a portable game.
+
+    Inline native_stage needs no external dependencies. Legacy Stage files
+    are already consumed by NativeSceneAssets and its one CombatWorld; this
+    simply makes their source bytes travel with the authored battle.
+    Content-addressed filenames deduplicate assets shared by missions.
+    """
+    if run.get("native_stage") is not None:
+        if run.get("collision_matrix") is not None or run.get("stage_palette") is not None:
+            raise ValueError("native Stage cannot mix inline and external physics assets")
+        return {}
+    if not all(isinstance(run.get(key), str) and run[key]
+               for key in ("collision_matrix", "stage_palette")):
+        raise ValueError("external native Stage requires a real collision matrix and palette")
+    staged = {}
+    for key in ("collision_matrix", "stage_palette"):
+        source = existing_artifact(run_path, run[key])
+        if not source.is_file():
+            raise ValueError(f"native Stage source must be a regular file: {source}")
+        digest = file_sha256(source)
+        dest = f"stage-assets/{digest}.json"
+        stage_files.setdefault(dest, (source, digest))
+        run[key] = dest
+        staged[key] = {"file": dest, "sha256": digest}
+    return staged
+
+
 def write_pinned_policy_assets(
     staged: Path, model_files: dict, runtime_files: dict,
     extra_files: dict | None = None,
