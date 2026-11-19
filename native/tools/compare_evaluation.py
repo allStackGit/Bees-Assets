@@ -88,7 +88,22 @@ def completed_episodes(path, focus, manifest):
                 if type(payload["timed_out"]) is not bool:
                     raise ValueError("invalid timeout indicator")
                 outcome = "draw" if winner == 0 else ("win" if winner == side else "loss")
-                episodes[key] = (outcome, payload["timed_out"], duration)
+                mission = payload.get("mission")
+                if mission is not None:
+                    if (not isinstance(mission, dict) or
+                            mission.get("kind") not in
+                                ("survival", "demolition", "escort", "extraction") or
+                            type(mission.get("objective_side")) is not int or
+                            mission["objective_side"] not in (side, other) or
+                            type(mission.get("completed")) is not bool):
+                        raise ValueError("invalid authoritative physical mission outcome")
+                    # The learner focus can be either the party completing
+                    # the authored goal or the one attempting to stop it.
+                    mission = (
+                        mission["kind"], mission["objective_side"],
+                        mission["completed"], mission["objective_side"] == side,
+                    )
+                episodes[key] = (outcome, payload["timed_out"], duration, mission)
             except (KeyError, TypeError, ValueError) as error:
                 raise ValueError(f"{path}:{line_number}: {error}") from error
     return episodes, counts
@@ -145,6 +160,8 @@ def paired_summary(reference, candidate, shared):
     reference_score = candidate_score = 0.0
     timeout_delta = 0
     duration_delta = 0.0
+    mission_transitions = Counter()
+    mission_reference = mission_candidate = mission_paired = mission_missing = 0
     for key in sorted(shared):
         before, after = reference[key], candidate[key]
         transitions[f"{before[0]}_to_{after[0]}"] += 1
@@ -152,6 +169,19 @@ def paired_summary(reference, candidate, shared):
         candidate_score += score[after[0]]
         timeout_delta += int(after[1]) - int(before[1])
         duration_delta += after[2] - before[2]
+        left_goal, right_goal = before[3], after[3]
+        if left_goal is None or right_goal is None:
+            mission_missing += int(left_goal is not None or right_goal is not None)
+            continue
+        if left_goal[:2] != right_goal[:2] or left_goal[3] != right_goal[3]:
+            raise ValueError("matched evaluation episode changed mission kind or objective side")
+        before_success = left_goal[2] if left_goal[3] else not left_goal[2]
+        after_success = right_goal[2] if right_goal[3] else not right_goal[2]
+        mission_reference += int(before_success)
+        mission_candidate += int(after_success)
+        mission_paired += 1
+        transition = f"{'success' if before_success else 'failure'}_to_{'success' if after_success else 'failure'}"
+        mission_transitions[transition] += 1
     count = len(shared)
     return {
         "matched_episodes": count,
@@ -161,6 +191,16 @@ def paired_summary(reference, candidate, shared):
         "mean_score_delta": (candidate_score - reference_score) / count if count else None,
         "timeout_count_delta": timeout_delta if count else None,
         "mean_episode_seconds_delta": duration_delta / count if count else None,
+        "matched_mission_episodes": mission_paired,
+        "mission_episodes_missing_paired_evidence": mission_missing,
+        "mission_role_adjusted_transitions": dict(mission_transitions),
+        "reference_mission_successes": mission_reference,
+        "candidate_mission_successes": mission_candidate,
+        "mission_success_count_delta": mission_candidate - mission_reference,
+        "mission_success_rate_delta": (
+            (mission_candidate - mission_reference) / mission_paired
+            if mission_paired else None
+        ),
     }
 
 
