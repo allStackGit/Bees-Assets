@@ -18,6 +18,14 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_collector_probe_count','training_collector_probe_moved_maps',
     'training_collector_start_parallel',
     'training_collector_probe_layout_changed',
+    'training_live_map_moves','training_live_move_round',
+    'training_live_move_workers','training_live_move_parallel_workers',
+    'training_live_result_ready','training_live_result_accepted',
+    'training_live_rollbacks',
+    'training_gpu_memory_adjustments','training_gpu_memory_accepted',
+    'training_gpu_memory_rejected','training_gpu_memory_trial',
+    'training_gpu_memory_settled','training_gpu_memory_shifted_workers',
+    'training_gpu_memory_peer_contexts',
     'training_collector_resume_restored',
     'training_resume_map_moves','training_resume_proof_ready',
     'training_resume_proof_rounds',
@@ -142,7 +150,9 @@ function courierMetrics(source) {
     // Preserve the handful of whole-run GPU placement decisions before
     // optional per-lineage details. The append-only Courier event still
     // contains every original measurement for full native history.
-    const primary=name=>name.startsWith('training_gpu_placement_')||
+    const primary=name=>name.startsWith('training_live_')||
+        name.startsWith('training_gpu_memory_')||
+        name.startsWith('training_gpu_placement_')||
         name.startsWith('training_gpu_output_')||
         name.startsWith('training_gpu_input_device_')||
         name.startsWith('training_shared_gpu_input_device_')||
@@ -172,8 +182,42 @@ function courierMetrics(source) {
         /^training_remote_progress_(?:seen|sent|skipped|bytes|max_seconds|encode_seconds|owner)$/.test(name)||
         /^training_(?:local_gpu_rollout_lineages|gpu_rollout_(?:next_lineages|trial))$/.test(name)||
         /^training_gpu_snapshot_(?:max_seconds|stream_max_seconds|reused_lineages|owner|work_share)$/.test(name);
-    const entries=Object.entries(stats).sort(
-        ([a],[b])=>Number(primary(b))-Number(primary(a)));
+    // Wide Courier populations may exceed both limits below. Sorting all
+    // worker keys lexically first silently drops workers with larger IDs,
+    // so a bottleneck diagnosis can no longer identify the true last host.
+    // Retain whole-run decisions, then one measured stage across EVERY
+    // present worker before adding less important per-worker columns.
+    const columns=new Map(),global=[];
+    for(const entry of Object.entries(stats)) {
+        const match=/^worker_([0-9]{1,2})_(.+)$/.exec(entry[0]);
+        if(!match) {
+            global.push(entry);
+            continue;
+        }
+        const column=columns.get(match[2])||[];
+        column.push([Number(match[1]),entry]);
+        columns.set(match[2],column);
+    }
+    const criticalWorkerFields=[
+        'collect_steps_per_second','collection_seconds',
+        'optimization_seconds','simulation_seconds',
+        'inference_seconds','sim_physical_processes',
+        'sim_process_ceiling','gpu_fwd_stream_seconds',
+        'observation_seconds','is_remote','sim_trial',
+    ];
+    const workerColumns=[...columns].sort(([a],[b])=>{
+        const ia=criticalWorkerFields.indexOf(a);
+        const ib=criticalWorkerFields.indexOf(b);
+        return (ia<0?criticalWorkerFields.length:ia)-
+               (ib<0?criticalWorkerFields.length:ib)||
+               a.localeCompare(b);
+    }).flatMap(([,column])=>column.sort(([a],[b])=>a-b)
+        .map(([,entry])=>entry));
+    const entries=[
+        ...global.filter(([name])=>primary(name)),
+        ...workerColumns,
+        ...global.filter(([name])=>!primary(name)),
+    ];
     for(const [name,value] of entries) {
         if(retained>=480)break;
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
@@ -181,7 +225,7 @@ function courierMetrics(source) {
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
-            /^worker_[0-9]{1,2}_(?:probe|resume)_maps_(?:before|after)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:probe|resume|live)_maps_(?:before|after)$/.test(name)||
             /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
             /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
