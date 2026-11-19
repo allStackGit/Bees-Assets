@@ -154,6 +154,7 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             return {
                 host:member.assigned_machine_id,
                 role:index===0?'learner':'collector',
+                shared_policy:member.frozen_parameters?.shared_policy===true,
                 cpus:member.resources?.cpus,
                 ram_mb:member.resources?.ram_mb,
                 gpus:gpuCount,
@@ -167,10 +168,28 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
         if(members.some(member=>!member.host||
             !Number.isSafeInteger(member.cpus)||member.cpus<1||
             !Number.isSafeInteger(member.ram_mb)||member.ram_mb<1||
-            !Number.isSafeInteger(member.gpus)||member.gpus<0)||
-            new Set(members.map(member=>member.host)).size!==members.length)
+            !Number.isSafeInteger(member.gpus)||member.gpus<0))
             return null;
-        members.sort((a,b)=>a.host.localeCompare(b.host));
+        // An explicitly approved Courier shared-policy learner and ONE
+        // collector may use the same host, but only with two separate,
+        // acknowledged exclusive physical GPU leases. All other distributed
+        // membership still requires one native machine per participant.
+        const ownersByHost=new Map();
+        for(const member of members) {
+            if(!ownersByHost.has(member.host))ownersByHost.set(member.host,[]);
+            ownersByHost.get(member.host).push(member);
+        }
+        if([...ownersByHost].some(([host,owners])=>owners.length>1&&
+            (!courierGroup||job.frozen_parameters?.shared_policy!==true||
+                host!==job.assigned_machine_id||owners.length!==2||
+                owners[0].role!=='learner'||owners[1].role!=='collector'||
+                owners.some(owner=>owner.shared_policy!==true||
+                    owner.mode!=='exclusive'||owner.gpus!==1||
+                    owner.gpu_ids?.length!==1)||
+                owners[0].gpu_ids[0]===owners[1].gpu_ids[0])))
+            return null;
+        members.sort((a,b)=>a.host.localeCompare(b.host)||
+            a.role.localeCompare(b.role));
         return {
             members,
             cpus:members.reduce((total,m)=>total+m.cpus,0),
@@ -180,7 +199,9 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             gpu_mode:members.map(m=>m.mode).join('|'),
             claims_verified:members.every(m=>m.gpu_ids!==null),
             collector_threads:pinnedThreads?.threads??null,
-            collector_cpus:pinnedThreads?.cpus??null,
+            collector_cpus:courierGroup
+                ?workers.reduce((sum,worker)=>sum+worker.resources.cpus,0)
+                :pinnedThreads?.cpus??null,
         };
     };
     const rows=runs.map(run=>{
@@ -205,7 +226,9 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             members:resources?.members||null,
             lineage:run.job.artifact_lineage_root_id||run.job.id,
             status:run.job.status,
-            distributed:run.job.distributed_rollout_managed===true,
+            distributed:run.job.distributed_rollout_managed===true||
+                run.job.project_id==='courier'&&
+                run.job.distributed_courier_managed===true,
             cpus:resources?.cpus??null,
             gpus:resources?.gpus??null,
             gpu_mode:resources?.gpu_mode||null,
@@ -1490,7 +1513,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains and Courier groups sum only their explicitly reserved learner and collector resources; the remote threads/CPU column shows frozen TinyBrains thread limits or Courier collector CPU leases, not actual CPU occupancy. One same-host Courier collector is counted only with two distinct, verified exclusive GPU leases. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {
@@ -1501,8 +1524,9 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,row.gpus===null?'Unknown':row.gpus.toLocaleString());
             cell(tr,row.host||'Unknown');
             cell(tr,!row.distributed?'—':
-                row.collector_threads===null?'Unknown':
-                    row.collector_threads+' / '+row.collector_cpus);
+                row.collector_threads===null
+                    ?row.collector_cpus===null?'Unknown':'— / '+row.collector_cpus
+                    :row.collector_threads+' / '+row.collector_cpus);
             cell(tr,String(row.sample_count));
             cell(tr,row.median_rate===null?'—':
                 row.median_rate.toLocaleString(undefined,{maximumFractionDigits:2}));
