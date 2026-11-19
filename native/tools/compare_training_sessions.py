@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from native_training_artifacts import file_sha256
+from native_session_selection import verified_mission_holdout
 
 
 def read_json(path):
@@ -118,6 +119,10 @@ def validated_receipt(receipt, scene_sha, side, seed, episodes):
             receipt.get("side_win_rate") != wins / episodes or
             receipt.get("draw_rate") != draws / episodes):
         raise ValueError("training progress contains impossible holdout outcomes")
+    if any(key in receipt for key in (
+            "mission_attempts", "learner_mission_successes",
+            "learner_mission_success_rate")):
+        verified_mission_holdout(receipt)
     return receipt
 
 
@@ -182,6 +187,10 @@ def suites(progress, config):
                 "draws": receipt["draws"],
                 "win_rate": receipt["side_win_rate"],
                 "draw_rate": receipt["draw_rate"],
+                **({
+                    "mission_successes": receipt["learner_mission_successes"],
+                    "mission_success_rate": receipt["learner_mission_success_rate"],
+                } if "learner_mission_successes" in receipt else {}),
                 **({"by_scene_sha256": receipt["by_scene_sha256"]}
                    if "by_scene_sha256" in receipt else {}),
             })
@@ -197,6 +206,10 @@ def suites(progress, config):
                 "draws": baseline["draws"],
                 "win_rate": baseline["side_win_rate"],
                 "draw_rate": baseline["draw_rate"],
+                **({
+                    "mission_successes": baseline["learner_mission_successes"],
+                    "mission_success_rate": baseline["learner_mission_success_rate"],
+                } if "learner_mission_successes" in baseline else {}),
                 **({"by_scene_sha256": baseline["by_scene_sha256"]}
                    if "by_scene_sha256" in baseline else {}),
             },
@@ -246,8 +259,17 @@ def describe(reference, candidate):
                     for kind in sorted(goals_left.keys() | goals_right.keys()):
                         baseline = goals_left.get(kind)
                         observed = goals_right.get(kind)
-                        if baseline is None or observed is None or (
-                                baseline["attempts"] != observed["attempts"]):
+                        if (baseline is None or observed is None or
+                                baseline["attempts"] != observed["attempts"] or
+                                baseline.get("by_objective_side") != observed.get("by_objective_side") and
+                                (
+                                    baseline.get("by_objective_side") is None or
+                                    observed.get("by_objective_side") is None or
+                                    {side: data["attempts"] for side, data in
+                                     baseline["by_objective_side"].items()} !=
+                                    {side: data["attempts"] for side, data in
+                                     observed["by_objective_side"].items()}
+                                )):
                             mission_differences[kind] = {
                                 "comparable": False,
                                 "reason": "mission_episode_cohort_differs",
@@ -261,10 +283,22 @@ def describe(reference, candidate):
                                 "completion_rate_difference":
                                     observed["completion_rate"] - baseline["completion_rate"],
                             }
+                goal_comparable = (
+                    compatible and
+                    "learner_mission_success_rate" in left_scene and
+                    "learner_mission_success_rate" in right_scene and
+                    all(row.get("comparable", False)
+                        for row in mission_differences.values()) and
+                    bool(mission_differences)
+                )
                 scene_report[scene] = {
                     "comparable": compatible,
                     **({"mission_completion_differences": mission_differences}
                        if mission_differences else {}),
+                    **({"role_adjusted_goal_success_rate_difference":
+                            right_scene["learner_mission_success_rate"] -
+                            left_scene["learner_mission_success_rate"]}
+                       if goal_comparable else {}),
                     "episodes": left_scene["episodes"] if compatible else None,
                     "reference": left_scene, "candidate": right_scene,
                     "win_rate_difference": (
@@ -288,6 +322,11 @@ def describe(reference, candidate):
             "matching_source_dependencies_verified": assets_verified,
             "controlled_environment_verified": opponent_verified and assets_verified,
             "reference": left, "candidate": right,
+            **({"reference_latest_mission_success_rate": a["mission_success_rate"],
+                "candidate_latest_mission_success_rate": b["mission_success_rate"],
+                "latest_mission_success_rate_difference":
+                    b["mission_success_rate"] - a["mission_success_rate"]}
+               if "mission_success_rate" in a and "mission_success_rate" in b else {}),
             "reference_latest_win_rate": a["win_rate"],
             "candidate_latest_win_rate": b["win_rate"],
             "latest_win_rate_difference": b["win_rate"] - a["win_rate"],
