@@ -5526,6 +5526,11 @@ class ExperimentHub {
         const selectedIds=value.worker_machine_ids;
         const multiLocal=Array.isArray(selectedIds)&&
             selectedIds.filter(id=>id===machine?.id).length>1;
+        // A slot-pinned native adapter cannot be selected by its one
+        // legacy base endpoint. Freeze the ordered PPO slot/endpoint pair
+        // even when only ONE local collector was selected from that adapter.
+        const fixedSlotSelection=multiLocal||shared&&allowLocal&&
+            machine?.courier_lineage_slots?.length>0;
         const eligibleLineages=(endpoint,budget,slot=null)=>{
             const maxShards=approved.plan?.find(item=>item.endpoint===endpoint)?.maxShards;
             return snapshot.machines.filter(host=>{
@@ -5547,15 +5552,16 @@ class ExperimentHub {
             });
         };
         let byMachine,endpoints,selections;
-        if(multiLocal) {
-            // Repeated machine IDs are only meaningful for shared PPO:
-            // each row is bound to the SAME ordinal in the immutable,
-            // learner-approved endpoint and map plan. Do not reorder or
-            // auto-match these budgets across identical physical hosts.
+        if(fixedSlotSelection) {
+            // Explicit slot-backed services cannot be auto-matched to a
+            // different physical endpoint. Each ordered budget row binds
+            // to the same ordinal in the learner's immutable prefix plan.
+            // This includes one selected same-host collector whose port is
+            // not the adapter's legacy base port.
             const plan=approved.plan?.slice(0,value.lineages.length);
             if(!shared||!allowLocal||!machine?.courier_lineage_subset||
                 !Array.isArray(plan)||plan.length!==value.lineages.length||
-                value.lineages.length<2||value.lineages.length>16||
+                value.lineages.length<1||value.lineages.length>16||
                 selectedIds.length!==plan.length||
                 selectedIds.some(id=>typeof id!=='string'||!ID.test(id))||
                 new Set(selectedIds.filter(id=>id!==machine.id)).size!==
@@ -5568,7 +5574,7 @@ class ExperimentHub {
                     return !host||!eligibleLineages(plan[index].endpoint,budget,index)
                         .some(item=>item.id===id);
                 }))
-                throw Error('Courier same-host GPU collectors need distinct approved slot listeners and fixed machine budgets.');
+                throw Error('Courier same-host GPU collectors need a contiguous approved slot prefix, unique listeners and fixed machine budgets.');
             byMachine=true;
             endpoints=plan.map(item=>item.endpoint);
             selections=value.lineages.map((item,index)=>({
