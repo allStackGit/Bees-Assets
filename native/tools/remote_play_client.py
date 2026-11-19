@@ -87,11 +87,12 @@ class RemoteConsole:
                                 dialogue["sequence"]) if dialogue else None)
                         if cue is not None and cue != self.last_dialogue_cue:
                             self.last_dialogue_cue = cue
-                            for speaker, line_text in dialogue["lines"]:
-                                notice = f"{speaker}: {line_text}"
-                                self.notifications.put(notice)
-                                if not self.silent:
-                                    print(notice)
+                            lines = dialogue.get("lines", [])
+                            if self.silent:
+                                self.notifications.put("Campaign dialogue: L next line, K dismiss")
+                            else:
+                                for speaker, line_text in lines:
+                                    print(f"{speaker}: {line_text}")
                         outcome = message.get("terminal_outcome")
                         episode = (message.get("world_id"), message.get("episode_revision"))
                         if outcome is not None and episode != self.last_terminal_episode:
