@@ -5576,8 +5576,13 @@ class ExperimentHub {
             new Set(value.expected_lineage_job_ids).size!==value.expected_lineage_job_ids.length||
             Object.keys(value).some(key=>![
                 'learner_job_id','expected_lineage_job_ids',
-                'confirm_start','confirm_learner_start'].includes(key)))
-            throw Error('Confirm the exact Courier remote group and automatic learner Start.');
+                'confirm_start','confirm_learner_start',
+                'resume_after_restart','confirm_restart_rearm'].includes(key))||
+            (value.resume_after_restart===true
+                ?value.confirm_restart_rearm!==true
+                :value.confirm_restart_rearm!==undefined)||
+            (pending&&pending.resume_after_restart!==Boolean(value.resume_after_restart)))
+            throw Error('Confirm exact Courier workers, learner Start and any preapproved restart rearm.');
         const snapshot=this.snapshot();
         const learner=snapshot.jobs.find(item=>item.id===value.learner_job_id);
         const host=snapshot.machines.find(item=>item.id===learner?.assigned_machine_id);
@@ -5687,7 +5692,8 @@ class ExperimentHub {
             key_fingerprint:host.courier_remote_key_fingerprint,
             learner_endpoints:endpoints.slice(),
             learner_shards:shards.slice(),
-            agent_instances:owners,resume_after_restart:false,
+            agent_instances:owners,
+            resume_after_restart:value.resume_after_restart===true,
             recovery_pending:false,status:'pending',
             reason:'Awaiting all verified remote PPO native owners before learner Start.',
             approved_at:new Date(approved).toISOString(),
