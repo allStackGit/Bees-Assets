@@ -4755,7 +4755,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const subset=machine?.courier_lineage_subset===true;
         courierMatch.label.hidden=!subset;
         const available=match.filter(hosts=>hosts.length===1).map(hosts=>hosts[0]);
-        const budgetHost=machine?machine.id+':'+subset+':'+shared:null;
+        const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated:null;
         const population=selected.parameters.workers;
         const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
         if(courierBudgetHost!==budgetHost) {
