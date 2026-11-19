@@ -562,6 +562,37 @@ function nativeRoundFinalEvaluation(job) {
     );
     return {rules,missing,receipts,passed};
 }
+// A newly approved native round may use independent evaluation suites
+// different from those frozen on its source's finished training job. Keep
+// this second evaluation *on the plan*, not by rewriting the source job's
+// historical stopping policy. The plan ID is a separate evaluator dispatch
+// identity for the same authenticated checkpoint and machine.
+function nativeBaselinePlan(snapshot,job,at=Date.now()) {
+    if(job?.project_id!=='bees_native'||job.status!=='finished'||
+        !checkpointContinuationComplete(job)||!job.capacity_released_at||
+        !UUID.test(String(job.dispatch_id||''))||
+        !SHA256.test(String(job.checkpoint_model_sha256||'')))return null;
+    return (snapshot.native_round_plans||[]).find(plan=>
+        plan.status==='pending_collectors'&&plan.completed_rounds===0&&
+        plan.origin_source_job_id===job.id&&
+        plan.source_job_id===job.id&&
+        plan.source_model_sha256===job.checkpoint_model_sha256&&
+        plan.initial_evaluation_stop&&
+        Number.isFinite(Date.parse(plan.approved_at))&&
+        at>=Date.parse(plan.approved_at)&&
+        at<Date.parse(plan.approved_at)+FINAL_EVALUATION_GRACE_MS&&
+        evaluationRules(plan.initial_evaluation_stop).some(rule=>
+            !(plan.initial_evaluation_receipts||[]).some(receipt=>{
+                try {
+                    const evidence=evaluationEvidence(receipt,rule,plan.id);
+                    return evidence.checkpoint_sha256===job.checkpoint_model_sha256&&
+                        SHA256.test(String(evidence.suite_sha256||''))&&
+                        evidence.trials>=rule.min_trials;
+                }catch{return false;}
+            })
+        )
+    )||null;
+}
 // A missing final receipt cannot justify inspecting a historical terminal
 // job forever. A waiting candidate plan extends the grace period until
 // 24 hours after its last contender releases verified native capacity.
@@ -2052,7 +2083,7 @@ class ExperimentHub {
             return [];
         const observedAt=Date.now();
         const snapshot=this.snapshot();
-        return snapshot.jobs.filter(job=>{
+        const original=snapshot.jobs.filter(job=>{
             // Native liveness is per dispatch, not inferred from a fresh
             // agent heartbeat. Use the same 45-second observation window as
             // Monitor so a busy but uninspected service cannot remain
@@ -2083,6 +2114,33 @@ class ExperimentHub {
                 required_suite_ids:evaluationRules(job.evaluation_stop)
                     .map(candidate=>candidate.suite_id)};
         });
+        if(projectId!=='bees_native')return original;
+        const initial=snapshot.jobs.flatMap(job=>{
+            if(job.assigned_machine_id!==machineId)return [];
+            const plan=nativeBaselinePlan(snapshot,job,observedAt);
+            if(!plan)return [];
+            const rule=evaluationRules(plan.initial_evaluation_stop)
+                .find(candidate=>candidate.suite_id===suiteId);
+            if(!rule)return [];
+            if((plan.initial_evaluation_receipts||[]).some(receipt=>{
+                try {
+                    const checked=evaluationEvidence(receipt,rule,plan.id);
+                    return checked.checkpoint_sha256===job.checkpoint_model_sha256&&
+                        SHA256.test(String(checked.suite_sha256||''))&&
+                        checked.trials>=rule.min_trials;
+                }catch{return false;}
+            }))return [];
+            return [{
+                job_id:job.id,dispatch_id:plan.id,
+                artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                final_checkpoint_sha256:job.checkpoint_model_sha256,
+                ...(rule.suite_sha256?{suite_sha256:rule.suite_sha256}:{}),
+                min_trials:rule.min_trials,min_success_rate:rule.min_success_rate,
+                required_suite_ids:evaluationRules(plan.initial_evaluation_stop)
+                    .map(candidate=>candidate.suite_id),
+            }];
+        });
+        return original.concat(initial);
     }
     hasPendingFinalEvaluations() {
         const snapshot=this.snapshot(),observedAt=Date.now();
@@ -3747,6 +3805,11 @@ class ExperimentHub {
                 !j.capacity_released_at||
              j.dispatch_id&&supportsEvaluation(machine.evaluation_suites,j)&&
                 finalEvaluationPending(snapshot,j,observedAt)||
+             j.dispatch_id&&nativeBaselinePlan(snapshot,j,observedAt)&&
+                supportsEvaluation(machine.evaluation_suites,{
+                    project_id:j.project_id,
+                    evaluation_stop:nativeBaselinePlan(snapshot,j,observedAt).initial_evaluation_stop,
+                })||
              j.dispatch_id&&j.status==='finished'&&
                 Boolean(j.checkpoint_reinspection_requested_at)||
              j.status==='waiting_adapter'&&
@@ -3790,6 +3853,7 @@ class ExperimentHub {
                 l.machine_id===machineId&&(l.status==='acknowledged'||
                     (l.status==='released'&&l.released_at&&
                         (finalEvaluationPending(snapshot,job,observedAt)||
+                         nativeBaselinePlan(snapshot,job,observedAt)||
                          Boolean(job.checkpoint_reinspection_requested_at)))));
             if(!lease)continue;
             const adapterInstalled=machine.installed_projects.includes(job.project_id);
@@ -3869,6 +3933,13 @@ class ExperimentHub {
                     ...(action==='inspect'&&job.checkpoint_reinspection_requested_at
                         ?{reverify_checkpoint:true}:{}),
                     ...(job.evaluation_stop?{evaluation_stop:copy(job.evaluation_stop)}:{}),
+                    ...(action==='inspect'&&nativeBaselinePlan(snapshot,job,observedAt)
+                        ?{native_baseline_evaluation:{
+                            plan_id:nativeBaselinePlan(snapshot,job,observedAt).id,
+                            policy:copy(nativeBaselinePlan(snapshot,job,observedAt)
+                                .initial_evaluation_stop),
+                            checkpoint_sha256:job.checkpoint_model_sha256,
+                        }}:{}),
                     ...(lease.status==='released'?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
                     ...(job.expected_parent_model_sha256
                         ?{expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
@@ -4509,7 +4580,23 @@ class ExperimentHub {
         if(seeds.some(seed=>!Number.isSafeInteger(seed)||seed<0||
             seed>Number.MAX_SAFE_INTEGER-value.round_count+1))
             throw Error('Native training-round collector seed offsets must be safe across every approved round.');
-        const owner=configurations.get(optimizers[0].configuration_id)?.parameters;
+        const ownerConfiguration=configurations.get(optimizers[0].configuration_id);
+        const owner=ownerConfiguration?.parameters;
+        const targetEvaluation=evaluationPolicy(ownerConfiguration?.evaluation_stop);
+        const sourceEvaluation=evaluationPolicy(source.evaluation_stop);
+        // The source's original evaluation policy is immutable. A new
+        // holdout uses the existing evaluator on its original publisher
+        // machine under a plan-scoped dispatch, with no new native Start.
+        const initialEvaluation=targetEvaluation&&
+            JSON.stringify(targetEvaluation)!==JSON.stringify(sourceEvaluation)
+            ?targetEvaluation:null;
+        if(initialEvaluation) {
+            const host=selectedMachines.find(machine=>machine.id===source.assigned_machine_id);
+            if(host?.status!=='connected'||
+                evaluationRules(initialEvaluation).some(rule=>
+                    !host.evaluation_suites?.bees_native?.includes(rule.suite_id)))
+                throw Error('Starting native checkpoint machine has no qualified independent evaluator for the selected target suites.');
+        }
         const ownerThreads=optimizers[0].resources.gpu_count;
         if(!SHA256.test(String(owner?.optimizer_inputs_sha256||''))||
             owner?.config_sha256!==source.frozen_parameters?.config_sha256||
@@ -4539,6 +4626,7 @@ class ExperimentHub {
             round_count:value.round_count,completed_rounds:0,
             collector_seed_offsets:seeds,
             collector_source_contracts:collectorSources,round_history:[],
+            ...(initialEvaluation?{initial_evaluation_stop:initialEvaluation}:{}),
             approved_at:timestamp,updated_at:timestamp,
             reason:'Approved for exact-source physical collection followed by one synchronized optimizer per round.',
         };
