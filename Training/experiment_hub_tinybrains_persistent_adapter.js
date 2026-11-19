@@ -195,7 +195,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'gpu_role_optimizer_lease_index','gpu_role_primary_lease_index','gpu_role_restored',
         'rollout_model_refresh_groups',
         'gpu_role_probe_valid',
-        'remote_policy_readback_groups',
+        'remote_policy_readback_groups','remote_policy_source_pack_reused',
         'ppo_gpu_max_group_pixels','rollout_inference_max_group_pixels',
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target'])
