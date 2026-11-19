@@ -10,10 +10,20 @@ and continuation checks, >=20% kernel gain and setup repayment gate adoption;
 rejected cohorts retain scalar execution without repeated probes. CPU checks
 matched 90 batches across all policy families and critic variants within
 float32 tolerances, with matching discrete actions/RNG and immutable packs.
-**Not yet integrated into training:** the next substantive step is a bounded
-GPU process broker with fixed RAM/VRAM admission, correct CUDA IPC lifetimes,
-worker-owned sampling and whole-PPO useful-SPS acceptance. No new public Hub
-metrics were added for this not-yet-active path.
+The executor now has a bounded spawn-process broker and optional PPO rollout
+client. Frozen cohort registration is atomic, tensor/process memory is checked,
+requests retain fixed batch geometry without a slow-world step barrier, and
+sampling/optimizers remain in their original workers. Producer buffers live
+until consumer-owned copies are complete and explicitly released; a shutdown
+timeout preserves the same live producer. CPU checks ran four independent
+PPO learners through 512 requests/243 grouped calls with matching actions,
+observations/RNG and numerically matching values/policy/Adam. Atomic rejection,
+cohort reuse, stale-request failure and clean/draining shutdown passed. Hub now
+exposes actual routed/compute/padding work, queue/IPC waits and setup/service
+costs through existing native/neutral metrics. **Coordinator activation remains
+unfinished:** reserve broker RAM/VRAM within the existing job budget, qualify
+physical/platform IPC, persist matching profiles and accept only sustained
+whole-PPO useful-SPS gains before enabling automatic use.
 
 TinyBrains' multi-GPU path now computes PPO losses on each replica, returning
 six scalars per board instead of spatial logits and values. Global advantages,

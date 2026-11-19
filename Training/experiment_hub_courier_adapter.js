@@ -57,6 +57,10 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_ppo_parallel_assigned_devices','training_ppo_parallel_trials',
     'training_ppo_parallel_rejections','training_ppo_parallel_batches',
     'training_ppo_parallel_device_batches','training_ppo_parallel_sequences',
+    'training_broker_requests','training_broker_register_denials',
+    'training_broker_kernel_batches','training_broker_routed_states',
+    'training_broker_compute_states','training_broker_padding_states',
+    'training_broker_pack_attempts','training_broker_pack_rejections',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
     'training_sim_migration_workers','training_collector_sim_trial_workers',
     'training_collector_sim_eligible_workers',
@@ -188,6 +192,7 @@ function courierMetrics(source) {
         'training_shared_last_wire_worker',
     ].includes(name)||name.startsWith('training_live_')||
         name.startsWith('training_ppo_parallel_')||
+        name.startsWith('training_broker_')||
         name.startsWith('training_gpu_memory_')||
         name.startsWith('training_gpu_placement_')||
         name==='training_gpu_peak_reserved_mb'||
@@ -283,6 +288,7 @@ function courierMetrics(source) {
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
+            /^worker_[0-9]{1,2}_broker_(?:requests|register_denials|kernel_batches|routed_states|compute_states|padding_states|pack_attempts|pack_rejections)$/.test(name)||
             /^worker_[0-9]{1,2}_sim_(?:step_receipts|batch_reuses|proc_starts|owner_retains|shard_moves)$/.test(name)||
             /^worker_[0-9]{1,2}_gpu_graph_(?:attempts|rejections|failures|replays)$/.test(name)||
             /^worker_[0-9]{1,2}_sim_vector_(?:groups|shards)$/.test(name)||
