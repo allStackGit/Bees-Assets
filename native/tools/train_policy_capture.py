@@ -1539,6 +1539,31 @@ def main():
         next_model_consensus_sha = own_digest
         torch.distributed.barrier()
         if rank != 0:
+            if args.learner_nodes > 1 and local_rank == 0:
+                # Only one authorized process per non-publishing machine
+                # reports its local ranks. Global rank zero remains the sole
+                # owner of the actual checkpoint and model manifest.
+                node_receipt = {
+                    "schema_version": 1,
+                    "kind": "native_distributed_optimizer_node_complete",
+                    "node_rank": args.learner_node_rank,
+                    "node_count": args.learner_nodes,
+                    "local_gpu_workers": args.learner_gpus,
+                    "global_gpu_workers": learner_workers,
+                    "input_checkpoint_sha256": input_sha,
+                    "input_manifest_sha256": primary_manifest_sha,
+                    "global_input_sha256": global_input_sha,
+                    "model_consensus_sha256": next_model_consensus_sha,
+                    "gpu_per_device": [
+                        worker for worker in gpu_worker_metrics
+                        if worker["node_rank"] == args.learner_node_rank
+                    ],
+                }
+                with (args.output / "node-result.json").open("x", encoding="utf-8") as sink:
+                    json.dump(node_receipt, sink, indent=2)
+                    sink.write("\n")
+                    sink.flush()
+                    os.fsync(sink.fileno())
             torch.distributed.destroy_process_group()
             return
     next_checkpoint = args.output / "checkpoint.pt"
