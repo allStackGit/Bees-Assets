@@ -4430,16 +4430,16 @@ class ExperimentHub {
         const collectors=validateMembers(value.collector_members,'collector');
         const optimizers=validateMembers(value.optimizer_members,'optimizer');
         const configurations=new Map(this.state.configurations.map(item=>[item.id,item]));
-        // Each approved round must consume a new deterministic physical
-        // seed window, not repeat the same arenas against a new checkpoint.
-        // Freeze the common initial seed alongside the machine allocations;
-        // old approved plans without this field retain their original seeds.
+        // Each approved round consumes fresh reproducible physical seeds.
+        // Different collectors may start with different approved offsets:
+        // the native training bundle already checks each seed cohort and
+        // each machine's disjoint global World partition separately.
+        // Freeze the original offsets with the exact machine order.
         const seeds=collectors.map(entry=>
             configurations.get(entry.configuration_id)?.parameters?.seed_offset);
         if(seeds.some(seed=>!Number.isSafeInteger(seed)||seed<0||
-            seed>Number.MAX_SAFE_INTEGER-value.round_count+1||
-            seed!==seeds[0]))
-            throw Error('Native training-round collectors need one common safe seed offset across every allocated machine and approved round.');
+            seed>Number.MAX_SAFE_INTEGER-value.round_count+1))
+            throw Error('Native training-round collector seed offsets must be safe across every approved round.');
         const owner=configurations.get(optimizers[0].configuration_id)?.parameters;
         const ownerThreads=optimizers[0].resources.gpu_count;
         if(!SHA256.test(String(owner?.optimizer_inputs_sha256||''))||
@@ -4468,7 +4468,7 @@ class ExperimentHub {
             collector_members:collectors,optimizer_members:optimizers,
             agent_instances:instances,
             round_count:value.round_count,completed_rounds:0,
-            collector_seed_offset:seeds[0],round_history:[],
+            collector_seed_offsets:seeds,round_history:[],
             approved_at:timestamp,updated_at:timestamp,
             reason:'Approved for exact-source physical collection followed by one synchronized optimizer per round.',
         };
@@ -4836,9 +4836,11 @@ class ExperimentHub {
                 // retains its local CPU/GPU/RAM lease unchanged.
                 job.frozen_parameters.collection_id=nativeCollectionId;
                 job.frozen_parameters.rollout_world_start=index*1024;
-                if(approvedRound.collector_seed_offset!==undefined)
+                const originalSeed=approvedRound.collector_seed_offsets?.[index] ??
+                    approvedRound.collector_seed_offset;
+                if(originalSeed!==undefined)
                     job.frozen_parameters.seed_offset=
-                        approvedRound.collector_seed_offset+approvedRound.completed_rounds;
+                        originalSeed+approvedRound.completed_rounds;
                 job.configuration_sha256=crypto.createHash('sha256')
                     .update(JSON.stringify(job.frozen_parameters)).digest('hex');
             }

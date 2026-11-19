@@ -1044,7 +1044,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if(completeRounds.length)
                 details.title=completeRounds.map(entry=>
                     'Round '+entry.round+
-                    ' · seed '+(entry.collector_seed_offset??'original')+
+                    ' · seeds '+(entry.collector_world_partitions?.length
+                        ?entry.collector_world_partitions.map(part=>part.seed_offset).join(', ')
+                        :(entry.collector_seed_offset??'original'))+
                     ' · '+entry.source_checkpoint_sha256.slice(0,12)+
                     ' -> '+entry.checkpoint_sha256.slice(0,12)+
                     (entry.evaluation_receipts?.length
