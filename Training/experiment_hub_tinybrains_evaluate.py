@@ -164,14 +164,15 @@ def main():
             raise ValueError("Use evaluator directories outside the checkpoint directory.")
         suite = read_suite(args.suite)
         with tempfile.TemporaryDirectory(prefix="tinybrains-eval-", dir=scratch) as work:
-            wins, trials = evaluate(checkpoint, args.checkpoint_sha256, suite, Path(work))
+            outcome = evaluate_with_metrics(checkpoint, args.checkpoint_sha256, suite, Path(work))
+        trials = 2 * len(suite["maps"]) * len(suite["seeds"])
         result = {
             "schema_version": 1, "suite_id": suite["suite_id"], "suite_sha256": suite_digest(suite),
             "dispatch_id": args.dispatch_id, "checkpoint_sha256": args.checkpoint_sha256,
-            "trials": trials, "successes": wins,
+            "trials": trials, **outcome,
         }
         print(publish(receipts, result))
-        print(f"TinyBrains vs {suite.get('opponent', 'nano')} held-out wins: {wins}/{trials}")
+        print(f"TinyBrains vs {suite.get('opponent', 'nano')} held-out wins: {outcome['successes']}/{trials}")
         return 0
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
         print(f"TinyBrains evaluation failed: {exc}", file=sys.stderr)
