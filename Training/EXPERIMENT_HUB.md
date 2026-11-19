@@ -772,6 +772,20 @@ restoring any previously opted-in unattended CPU scheduling. No GPU
 re-arming is authorized by this service setup. This source-only Linux
 integration is **not yet qualified on Halifax**.
 
+The standalone Hub also exposes local evaluator lifecycle controls under
+**Machines → Local service control**, alongside coordinator and agent restart.
+For the approved Halifax Nano/Micro v3 TinyBrains suites, **Set up and start**
+creates separate fixed-budget user-systemd evaluation timers using the existing
+local Docker image, frozen suite files and private receipt/scratch directories.
+**Start**, **Restart** and **Stop** manage each timer; **Run now** requests
+one immediate one-shot evaluation without interrupting an ongoing run.
+Stopping a schedule never stops its training job. Arbitrary executable paths,
+Docker arguments and unit names cannot be submitted from the dashboard.
+Setup requires the approved suite files, TinyBrains installation, local agent
+enrollment, image and existing noninteractive Docker authorization. Actual
+evaluation results still require the frozen evaluator runtime fingerprint to
+match; a timer being active alone does not qualify any checkpoint.
+
 The same generator can install a separately budgeted **periodic independent
 evaluator** on a trusted Linux host, without adding any native
 training authority. Use `evaluator --project courier|tinybrains --machine
