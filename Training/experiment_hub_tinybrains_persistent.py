@@ -16,6 +16,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--project-root", type=Path)
+    parser.add_argument("--source-windows-root")
+    parser.add_argument("--source-run-root", type=Path)
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--threads", type=int, required=True)
     parser.add_argument("--live-matches", type=int, required=True)
@@ -31,6 +33,19 @@ def main():
     parser.add_argument("--remote-rollout-key-file")
     parser.add_argument("--ram-budget-mb", type=int)
     args = parser.parse_args()
+    if args.source_windows_root is not None or args.source_run_root is not None:
+        if os.name != "nt" or not args.source_windows_root or args.source_run_root is None:
+            parser.error("Native Windows checkpoint remapping needs both approved source roots.")
+        saved = args.source_windows_root.replace("\\", "/").rstrip("/")
+        if (len(saved) < 4 or saved[1:3] != ":/" or
+                not saved[0].isalpha() or
+                any(part in ("", ".", "..") for part in saved[3:].split("/"))):
+            parser.error("Invalid original Windows checkpoint source root.")
+        copied = args.source_run_root.resolve(strict=True)
+        if not copied.is_dir():
+            parser.error("The approved original checkpoint run is missing.")
+        os.environ["TINYBRAINS_SOURCE_ROOT"] = saved
+        os.environ["TINYBRAINS_RUNS_ROOT"] = str(copied.parent)
     if args.project_root is not None:
         # Windows native Job Object owners inherit no Docker PYTHONPATH.
         # Resolve only the locally installed source tree supplied by the
