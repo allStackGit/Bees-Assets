@@ -625,6 +625,25 @@ function comparableCandidate(job) {
     };
 }
 
+// Native process exit is not optimizer completion. Accept the machine
+// authenticated, independently verified source receipt as durable group
+// evidence, bound to the exact original Hub lease and dispatch.
+function verifiedOptimizerCompletion(job,raw,state) {
+    if(raw==null)return null;
+    const bundle=job?.resource_bundle;
+    if(state!=='finished'||job?.frozen_parameters?.optimizer_group!==true||
+        !bundle||!object(raw)||
+        Object.keys(raw).sort().join(',')!==
+            ['group_id','node_rank','node_count','input_sha256',
+                'model_consensus_sha256'].sort().join(',')||
+        raw.group_id!==bundle.id||
+        raw.node_rank!==bundle.index-1||raw.node_count!==bundle.size||
+        !SHA256.test(String(raw.input_sha256||''))||
+        !SHA256.test(String(raw.model_consensus_sha256||'')))
+        throw Error('Native optimizer completion differs from its frozen Hub owner and verified collective.');
+    return copy(raw);
+}
+
 // A distributed Bees checkpoint is suitable for continuation only after
 // every originally leased optimizer machine has returned a verified terminal
 // worker result and released its own native claim. Rank-zero checkpoint
@@ -638,12 +657,22 @@ function nativeOptimizerGroupBlock(snapshot,parent) {
         return 'The distributed optimizer checkpoint has no original Hub owner group.';
     const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===group.id)
         .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+    const owner=members[0]?.optimizer_completion;
     if(members.length!==group.size||
+        !owner||!SHA256.test(String(owner.input_sha256||''))||
+        !SHA256.test(String(owner.model_consensus_sha256||''))||
         members.some((job,index)=>job.resource_bundle.index!==index+1||
             job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
             job.status!=='finished'||!job.dispatch_id||
-            !job.execution_updated_at||!job.capacity_released_at))
-        return 'Distributed PPO checkpoint continuation requires every original optimizer worker to finish and release its lease.';
+            !job.execution_updated_at||!job.capacity_released_at||
+            !job.optimizer_completion||
+            job.optimizer_completion.group_id!==group.id||
+            job.optimizer_completion.node_rank!==index||
+            job.optimizer_completion.node_count!==group.size||
+            job.optimizer_completion.input_sha256!==owner.input_sha256||
+            job.optimizer_completion.model_consensus_sha256!==
+                owner.model_consensus_sha256))
+        return 'Distributed PPO checkpoint continuation requires every original optimizer rank to agree on training inputs and learned model state, finish and release its lease.';
     return null;
 }
 
@@ -3327,6 +3356,19 @@ class ExperimentHub {
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
                 lease.project_id!==job.project_id)
                 throw Error('Native execution report does not match its job and machine.');
+            const optimizerCompletion=verifiedOptimizerCompletion(
+                job,report.optimizer_completion,report.state);
+            if(optimizerCompletion) {
+                if(['failed','stopped','cancelled'].includes(job.status)||
+                    job.optimizer_completion&&
+                    JSON.stringify(job.optimizer_completion)!==
+                        JSON.stringify(optimizerCompletion))
+                    throw Error('Native optimizer completion changed after its original terminal proof.');
+                if(!job.optimizer_completion) {
+                    job.optimizer_completion=optimizerCompletion;
+                    changed=true;
+                }
+            }
             // Released capacity stays released. A matching terminal Inspect
             // may add evidence for the exact final checkpoint only.
             if(lease.status==='released'&&lease.released_at&&
@@ -3555,7 +3597,9 @@ class ExperimentHub {
                     job.final_progress=selected;
                     changed=true;
                 }
-                if(job.release_on_terminal&&['finished','stopped'].includes(job.status))
+                if(job.release_on_terminal&&['finished','stopped'].includes(job.status)&&
+                    (job.frozen_parameters?.optimizer_group!==true||
+                        Boolean(job.optimizer_completion)))
                     this.releaseIn(next,lease);
             }
         }
