@@ -1440,6 +1440,8 @@ def main():
         local = {
             "rank": rank, "device": str(device),
             "device_name": torch.cuda.get_device_name(device),
+            "torch_intraop_threads": torch.get_num_threads(),
+            "torch_interop_threads": torch.get_num_interop_threads(),
             "gradient_syncs": getattr(trainer.optimizer, "_bees_distributed_grad_syncs", 0),
             "masked_loss_syncs": getattr(
                 trainer.optimizer, "_bees_distributed_masked_loss_syncs", 0,
