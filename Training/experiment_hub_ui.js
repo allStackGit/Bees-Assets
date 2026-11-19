@@ -1066,8 +1066,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' · optimizers '+entry.optimizer_job_ids.join(', ')
                 ).join('\n');
             row.append(details);
+            if(plan.status==='disarmed'&&
+                plan.reason?.startsWith('Coordinator restarted;'))
+                row.append(button('Reauthorize remaining rounds',async()=>{
+                    if(!confirm('Reauthorize the remaining native Bees rounds after coordinator restart? Original model, machines, resource leases and issued jobs are preserved. Fresh GPU Starts are allowed only for entirely unstarted reserved groups; uncertain running jobs require separate manual review.'))return;
+                    try {
+                        const resumed=await action('hub/native-bees/rounds/resume',{
+                            plan_id:plan.id,confirm_resume:true,confirm_gpu_start:true,
+                        });
+                        feedback('hub-resource-bundle-message',
+                            'Native rounds '+resumed.status+' · original plan '+
+                            plan.id.slice(-8)+' reauthorized.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-resource-bundle-message',String(error.message||error));
+                    }
+                }));
             if(['pending_collectors','awaiting_collectors','pending_optimizer',
-                'awaiting_optimizer','needs_review'].includes(plan.status))
+                'awaiting_optimizer','needs_review','disarmed'].includes(plan.status))
                 row.append(button('Disarm future rounds',async()=>{
                     if(!confirm('Disarm future native collection and optimizer rounds? Already dispatched jobs keep their original process and Stop owners.'))return;
                     try {

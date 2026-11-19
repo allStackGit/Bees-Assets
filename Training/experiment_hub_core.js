@@ -1206,6 +1206,7 @@ class ExperimentHub {
             for(const plan of next.native_round_plans||[])
                 if(['pending_collectors','awaiting_collectors',
                     'pending_optimizer','awaiting_optimizer'].includes(plan.status)) {
+                    plan.restart_phase=plan.status;
                     plan.status='disarmed';
                     plan.reason='Coordinator restarted; continuing this training sequence requires explicit renewed authorization.';
                     plan.updated_at=now();
@@ -4482,6 +4483,115 @@ class ExperimentHub {
         this.advanceNativeBeesRounds();
         return copy((this.state.native_round_plans||[]).find(item=>item.id===plan.id));
     }
+    // An explicit operator approval is the only way to resume a GPU round
+    // plan disarmed by a coordinator restart. Reuse the original frozen
+    // work, reserved jobs, resource bundle and verified checkpoint source;
+    // never replace a machine or recreate an in-flight optimizer.
+    resumeNativeBeesRounds(value) {
+        if(!object(value)||Object.keys(value).some(key=>![
+            'plan_id','confirm_resume','confirm_gpu_start',
+        ].includes(key))||
+            !UUID.test(String(value.plan_id||''))||
+            value.confirm_resume!==true||value.confirm_gpu_start!==true)
+            throw Error('Explicitly reauthorize the exact native round plan and GPU Starts.');
+        const plan=(this.state.native_round_plans||[])
+            .find(item=>item.id===value.plan_id);
+        if(plan?.status!=='disarmed'||
+            !plan.reason?.startsWith('Coordinator restarted;'))
+            throw Error('Only a native training sequence disarmed by coordinator restart can resume.');
+        // Older persisted plans did not retain the suspended stage. Their
+        // durable bundle/job identities identify it without inventing work.
+        let phase=plan.restart_phase;
+        if(!phase) {
+            if(plan.optimizer_bundle_id&&plan.optimizer_job_ids)
+                phase='awaiting_optimizer';
+            else if(plan.collectors_bundle_id&&plan.collectors_job_ids) {
+                const jobs=plan.collectors_job_ids.map(id=>
+                    this.state.jobs.find(job=>job.id===id));
+                phase=jobs.every(job=>job?.status==='finished'&&
+                    job.capacity_released_at)
+                    ?'pending_optimizer':'awaiting_collectors';
+            }else if(!plan.collectors_bundle_id&&!plan.optimizer_bundle_id)
+                phase='pending_collectors';
+        }
+        if(!['pending_collectors','awaiting_collectors',
+            'pending_optimizer','awaiting_optimizer'].includes(phase))
+            throw Error('Original native training phase cannot be recovered safely.');
+        const source=this.state.jobs.find(job=>job.id===plan.source_job_id);
+        if(source?.status!=='finished'||!checkpointContinuationComplete(source)||
+            !source.capacity_released_at||
+            source.checkpoint_model_sha256!==plan.source_model_sha256||
+            nativeOptimizerGroupBlock(this.state,source))
+            throw Error('Original native PPO checkpoint is no longer a verified, released source.');
+        const snapshot=this.snapshot(),instances={};
+        for(const [machineId,originalInstance] of Object.entries(plan.agent_instances||{})) {
+            const machine=snapshot.machines.find(item=>item.id===machineId);
+            const report=this.agentReports.get(machineId);
+            if(machine?.status!=='connected'||machine.local_executor_enabled!==true||
+                machine.native_preflight_passed!==true||
+                !UUID.test(String(report?.instance_id||'')))
+                throw Error('Original native round machines must reconnect and qualify before reauthorization.');
+            instances[machineId]=report.instance_id;
+            if(!UUID.test(String(originalInstance||'')))
+                throw Error('Original native agent identity is missing.');
+        }
+        if(Object.keys(instances).length!==
+            new Set([...plan.collector_members,...plan.optimizer_members].map(
+                item=>item.machine_id)).size)
+            throw Error('Approved native round machine roster changed.');
+        if(phase.startsWith('awaiting_')) {
+            const stage=phase.slice('awaiting_'.length);
+            const ids=plan[stage+'_job_ids'],bundleId=plan[stage+'_bundle_id'];
+            if(!UUID.test(String(bundleId||''))||
+                !Array.isArray(ids)||ids.length<2)
+                throw Error('Original native round has no reserved resource bundle.');
+            const jobs=ids.map(id=>this.state.jobs.find(job=>job.id===id));
+            if(jobs.some((job,index)=>!job||
+                job.resource_bundle?.id!==bundleId||
+                job.resource_bundle?.index!==index+1||
+                job.resource_bundle?.size!==ids.length||
+                job.assigned_machine_id!==plan[stage+'_members'][index].machine_id))
+                throw Error('Original native round job and machine ownership changed.');
+            const allWaiting=jobs.every(job=>
+                job.status==='waiting_adapter'&&!job.dispatch_id);
+            const allFinished=jobs.every(job=>
+                job.status==='finished'&&job.capacity_released_at);
+            const active=jobs.every(job=>[
+                'start_requested','launch_requested','running','stop_requested',
+            ].includes(job.status)&&UUID.test(String(job.dispatch_id||'')));
+            if(!allWaiting&&!allFinished&&!active)
+                throw Error('Mixed or uncertain native resource owners require manual review.');
+            if(!allFinished&&jobs.some(job=>
+                plan.agent_instances[job.assigned_machine_id]!==instances[job.assigned_machine_id]))
+                throw Error('An original reserved native machine agent restarted; its outstanding lease requires manual review.');
+            const plans=(this.state.bundle_start_plans||[])
+                .filter(item=>item.bundle_id===bundleId);
+            const latest=plans.at(-1);
+            if(latest&&['needs_review','expired','cancelled'].includes(latest.status))
+                throw Error('The original native bundle Start requires separate review.');
+            if(active&&latest?.status!=='authorized')
+                throw Error('Native jobs cannot be resumed without their original authorized Start.');
+            if(allWaiting&&latest?.status==='authorized')
+                throw Error('Authorized native Start has unresolved machine execution ownership.');
+            if(allWaiting&&latest&&latest.status!=='disarmed'&&
+                latest.status!=='pending')
+                throw Error('Original native Start cannot be safely reauthorized.');
+        }
+        const next=copy(this.state);
+        const resumed=next.native_round_plans.find(item=>item.id===plan.id);
+        resumed.status=phase;
+        resumed.agent_instances=instances;
+        delete resumed.restart_phase;
+        resumed.updated_at=now();
+        resumed.reason='Native training reauthorized after coordinator restart; original jobs and claims retained.';
+        this.commit(next);
+        // The normal heartbeat workflow owns all further resource decisions.
+        // It will reissue a Start plan only for an entirely unstarted
+        // reserved bundle; this approval never directly launches a process.
+        this.advanceNativeBeesRounds();
+        return copy(this.snapshot().native_round_plans.find(item=>item.id===plan.id));
+    }
+
     cancelNativeBeesRounds(value) {
         if(!object(value)||value.confirm_cancel!==true||
             !UUID.test(String(value.plan_id||''))||
@@ -4490,7 +4600,7 @@ class ExperimentHub {
         const next=copy(this.state),plan=(next.native_round_plans||[])
             .find(item=>item.id===value.plan_id);
         if(!plan||!['pending_collectors','awaiting_collectors',
-            'pending_optimizer','awaiting_optimizer','needs_review']
+            'pending_optimizer','awaiting_optimizer','needs_review','disarmed']
             .includes(plan.status))
             throw Error('Only an unresolved native training-round plan can be disarmed.');
         plan.status='cancelled';
@@ -4585,8 +4695,12 @@ class ExperimentHub {
                         job.resource_bundle.index!==index+1))
                     throw Error('Frozen native round resource bundle ownership changed.');
                 const launch=(this.state.bundle_start_plans||[])
-                    .find(item=>item.bundle_id===bundleId);
-                if(!launch) {
+                    .filter(item=>item.bundle_id===bundleId).at(-1);
+                if(!launch||launch.status==='disarmed'&&
+                    members.every(job=>job.status==='waiting_adapter'&&!job.dispatch_id)) {
+                    // The original pending Start was disarmed on restart.
+                    // Only a separately reauthorized round can reach this
+                    // branch, and it reuses the same reserved member IDs.
                     this.scheduleResourceBundleStart({
                         bundle_id:bundleId,expected_job_ids:members.map(job=>job.id),
                         confirm_schedule:true,confirm_gpu_start:true,
