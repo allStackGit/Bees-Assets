@@ -8,6 +8,7 @@ and simulation. A cross-mission hull identity mismatch fails before publish.
 
 import argparse
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -151,6 +152,32 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     }
 
 
+# Physical class identity is independent of the transient battle entity,
+# starting coordinates, player control and authored SavedSquad preferences.
+# These are the fields cloned by the ONE native FleetShip installer; the
+# source class must not silently become a different weapon/ability on the
+# next mission. The special weapon's contact ID is runtime-allocated.
+FLEET_CLASS_FIELDS = (
+    "ship_type", "max_health", "max_tsv", "original_health",
+    "rotation_speed_degrees_per_second", "base_speed", "height",
+    "turning_radius", "size_class", "path_clearance", "sight",
+    "max_weapon_range", "firepower", "ship_type_letter",
+    "target_max_range", "front_offset", "combat_window_seconds",
+    "is_bomber", "is_carrier_ship", "can_override_bounds",
+    "turrets", "special", "special_weapon", "support_zone",
+)
+
+
+def native_fleet_class_sha256(ship: dict) -> str:
+    """Immutable authored physical source, not a source-scene entity ID."""
+    source = {key: copy.deepcopy(ship.get(key)) for key in FLEET_CLASS_FIELDS}
+    if isinstance(source["special_weapon"], dict):
+        source["special_weapon"].pop("weapon_id", None)
+    payload = json.dumps(source, sort_keys=True, separators=(",", ":"),
+                         allow_nan=False).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
     title = args.title.strip()
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
@@ -167,6 +194,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
     stable_roster = None
     shop_catalog = {}
     per_mission_sources = []
+    per_mission_class_contracts = []
     for index, source in enumerate(args.mission, 1):
         source_path = source.resolve(strict=True)
         scene, run, provenance = input_mission(source_path, args.player_side)
@@ -178,25 +206,25 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
                 "use the same player fleet and squad membership in every native mission"
             )
         class_prices = {}
+        class_contracts = {}
         # Live original player hulls and inert authored reserve templates
         # are both real physical source archetypes. Reward-only classes
         # need not be deployed before the mission that unlocks them.
-        for ship in scene["ships"]:
+        for ship in [*scene["ships"], *scene.get("fleet_templates", [])]:
             if (ship["side"] == args.player_side and
-                    ship.get("persistent_fleet") and
                     ship["health"] == ship["max_health"] and
-                    ship["max_tsv"] > 0):
-                class_prices.setdefault(ship["ship_type"], set()).add(ship["max_tsv"])
-        for ship in scene.get("fleet_templates", []):
-            if (ship["side"] == args.player_side and
-                    not ship.get("persistent_fleet") and
-                    ship.get("fleet_ship_id") is None and
-                    ship["health"] == ship["max_health"] and
-                    ship["max_tsv"] > 0):
-                class_prices.setdefault(ship["ship_type"], set()).add(ship["max_tsv"])
+                    ship["max_tsv"] > 0 and
+                    (ship.get("persistent_fleet") or
+                     ship in scene.get("fleet_templates", []))):
+                ship_type = ship["ship_type"]
+                class_prices.setdefault(ship_type, set()).add(ship["max_tsv"])
+                class_contracts.setdefault(ship_type, set()).add(
+                    native_fleet_class_sha256(ship)
+                )
         for ship_type, prices in class_prices.items():
             shop_catalog.setdefault(ship_type, set()).update(prices)
         per_mission_sources.append(class_prices)
+        per_mission_class_contracts.append(class_contracts)
         ident = f"mission-{index:03d}"
         scene_file = f"{ident}.scene.json"
         run_file = f"{ident}.run.json"
@@ -242,12 +270,16 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
     classes = [*args.shop_types, *args.grant_only_types]
     for ship_type in classes:
         prices = shop_catalog.get(ship_type)
-        if prices is None or len(prices) != 1 or any(
-                item.get(ship_type) != prices for item in per_mission_sources):
+        specs = [items.get(ship_type) for items in per_mission_class_contracts]
+        if (prices is None or len(prices) != 1 or any(
+                item.get(ship_type) != prices for item in per_mission_sources) or
+                any(not spec or len(spec) != 1 for spec in specs) or
+                any(spec != specs[0] for spec in specs[1:])):
             raise ValueError(
-                f"native FleetShip class {ship_type} must have the same "
-                "source-authored full-health TSV in every campaign mission; "
-                "use --fleet-template on missions without an initially deployed hull"
+                f"native FleetShip class {ship_type} must have identical "
+                "source-authored health, weapons, movement, vision and "
+                "special ability across every campaign mission; use "
+                "--fleet-template where the class is not deployed"
             )
         purchasable = ship_type in args.shop_types
         fleet_classes.append({
@@ -275,6 +307,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         "missions": sources,
         "shop_types": args.shop_types,
         "grant_only_types": args.grant_only_types,
+        "fleet_class_sha256": {
+            str(ship_type): next(iter(per_mission_class_contracts[0][ship_type]))
+            for ship_type in classes
+        },
         "victory_grants": [
             {"mission_index": index, "ship_type": kind,
              "count": count, "saved_squad_id": saved_id}
