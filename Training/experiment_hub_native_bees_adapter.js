@@ -948,7 +948,9 @@ function createNativeBeesAdapter({
             if (distributedOptimizer !== undefined &&
                 (!bundle || !UUID.test(String(bundle.id||'')) ||
                  bundle.index!==1 || !Number.isSafeInteger(nodes) ||
-                 nodes<2 || nodes>8))
+                 nodes<2 || nodes>8 ||
+                 round.receipt.optimizer_group_id!==bundle.id ||
+                 round.metrics.optimizer_group_id!==bundle.id))
                 throw Error('Native checkpoint publisher does not own the first rank of an authorized Hub bundle.');
             if (round.metrics.optimizer_gpu_workers!==localGpuCount*nodes ||
                 round.metrics.optimizer_gpu_nodes!==nodes ||
@@ -993,6 +995,7 @@ function createNativeBeesAdapter({
             receipt.schema_version!==1 ||
             receipt.kind!=='native_distributed_optimizer_worker_complete' ||
             receipt.node_rank!==node || receipt.node_count!==nodes ||
+            receipt.optimizer_group_id!==bundle.id ||
             receipt.local_gpu_workers!==local ||
             receipt.global_gpu_workers!==local*nodes ||
             receipt.input_checkpoint_sha256!==inputs.checkpointDigest ||
@@ -1239,6 +1242,7 @@ function createNativeBeesAdapter({
                 ...(distributedOptimizer === undefined ? [] : [
                     '--learner-nodes', String(context.resource_bundle.size),
                     '--learner-node-rank', String(context.resource_bundle.index-1),
+                    '--learner-group-id', context.resource_bundle.id,
                     '--learner-master-addr', distributedOptimizer.masterAddress,
                     '--learner-master-port', String(distributedOptimizer.masterPort),
                     '--learner-backend', distributedOptimizer.backend,
