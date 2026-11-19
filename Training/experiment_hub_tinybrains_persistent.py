@@ -15,6 +15,7 @@ import sys
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True)
+    parser.add_argument("--project-root", type=Path)
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--threads", type=int, required=True)
     parser.add_argument("--live-matches", type=int, required=True)
@@ -30,6 +31,15 @@ def main():
     parser.add_argument("--remote-rollout-key-file")
     parser.add_argument("--ram-budget-mb", type=int)
     args = parser.parse_args()
+    if args.project_root is not None:
+        # Windows native Job Object owners inherit no Docker PYTHONPATH.
+        # Resolve only the locally installed source tree supplied by the
+        # trusted adapter, never a project path from experiment parameters.
+        root = args.project_root.resolve(strict=True)
+        if not root.is_dir() or not (root / "src/ants_mapoca").is_dir():
+            parser.error("TinyBrains native project source is missing.")
+        sys.path.insert(0, str(root / "src"))
+        sys.path.insert(0, str(root / "upstream/ants/baselines/src"))
     if min(args.updates, args.threads, args.live_matches, args.waves, args.actions) < 1:
         parser.error("All training limits must be positive.")
     if args.live_matches % args.waves:
