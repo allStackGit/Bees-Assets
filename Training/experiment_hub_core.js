@@ -4221,6 +4221,30 @@ class ExperimentHub {
             jobs.push(job);
             leases.push(lease);
         }
+        // Synchronized Bees optimizer nodes are one distributed MA-POCA
+        // update, not unrelated native jobs sharing a reservation. Validate
+        // the complete immutable group before committing any of its leases.
+        // The first member publishes the checkpoint; all remaining members
+        // are worker-only and can never claim independent model ownership.
+        if(jobs.some(job=>job.project_id==='bees_native_optimizer_worker'||
+                job.frozen_parameters?.optimizer_group===true)) {
+            const source=jobs[0]?.frozen_parameters;
+            const pins=JSON.stringify(source?.rollout_bundles??null);
+            if(jobs.length>8||jobs[0].project_id!=='bees_native'||
+                source?.optimizer_group!==true||
+                new Set(jobs.map(job=>job.assigned_machine_id)).size!==jobs.length||
+                jobs.some((job,index)=>
+                    job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
+                    job.frozen_parameters?.optimizer_group!==true||
+                    JSON.stringify(job.frozen_parameters.rollout_bundles??null)!==pins||
+                    job.frozen_parameters.seed_offset!==0||
+                    (job.frozen_parameters.refresh_opponent_slot??null)!==
+                        (source.refresh_opponent_slot??null)||
+                    ![1,2].includes(job.resources.gpu_count)||
+                    job.resources.gpu_mode!=='exclusive'||
+                    job.resources.cpus<job.resources.gpu_count))
+                throw Error('Native MA-POCA optimizer bundle requires one checkpoint owner followed by 1–7 exclusive GPU worker machines with identical pinned captures.');
+        }
         this.commit(next);
         return {bundle_id:bundleId,members:jobs.map(copy),
             leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
