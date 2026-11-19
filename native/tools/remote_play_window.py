@@ -144,6 +144,9 @@ class RemoteBattleWindow:
         self.canvas.bind("<ButtonPress-1>", self.left_down)
         self.canvas.bind("<B1-Motion>", self.left_drag)
         self.canvas.bind("<ButtonRelease-1>", self.left_up)
+        # Tk may deliver a gesture release to another widget after the
+        # pointer leaves the map. Always close the host-owned held lease.
+        self.root.bind("<ButtonRelease-1>", self.release_held_on_root, add="+")
         self.canvas.bind("<Button-3>", self.context_click)
         self.canvas.bind("<MouseWheel>", self.wheel)
         self.canvas.bind("<Button-4>", lambda e: self.zoom_at(e, 1.2))
@@ -467,7 +470,8 @@ class RemoteBattleWindow:
                 return
             try:
                 x, y = self.to_world(event.x, event.y)
-                self.console.held_fire("begin", {"x": x, "y": y})
+                self.console.held_fire("begin", {"x": x, "y": y},
+                                       owners=self.selected_owners())
                 self.held_drag = True
                 self.last_held_aim_at = time.monotonic()
                 self.notice("Holding fire — drag to aim; release to stop")
@@ -495,6 +499,12 @@ class RemoteBattleWindow:
             return
         self.drag_box = (self.drag_origin[0], self.drag_origin[1], event.x, event.y)
         self.draw()
+
+    def release_held_on_root(self, _event):
+        if self.held_drag:
+            self.finish_held_fire()
+            self.mode = None
+            self.drag_origin = None
 
     def left_up(self, event):
         if self.drag_origin is None:

@@ -250,7 +250,7 @@ class RemoteConsole:
         self.socket.sendall((json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8"))
         self.next_request += 1
 
-    def held_fire(self, kind, target=None):
+    def held_fire(self, kind, target=None, *, owners=None):
         """Submit native Begin/Aim/End, retaining the original episode."""
         state = self.snapshot()
         if state is None:
@@ -262,7 +262,7 @@ class RemoteConsole:
         if kind == "begin":
             if self.held_scope is not None:
                 raise ValueError("end the existing held-fire gesture first")
-            owners = self.selected_owners(state)
+            owners = self.selected_owners(state) if owners is None else owners
             if not owners or target is None:
                 raise ValueError("held fire needs selected squads and an aim point")
             self.send(("held_fire", {"action": {
