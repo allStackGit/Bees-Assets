@@ -189,17 +189,25 @@ function ensureLocalGpuCapacity(records,gpu) {
     let reservedVram=gpu.mode==='shared'?gpu.vram_mb:gpu.total_vram_mb;
     let reservedCompute=gpu.compute_pct;
     for(const record of records) {
-        if(terminal.has(record.state)||
-            record.gpu_pci_address!==gpu.pci_address)continue;
-        if(gpu.mode!=='shared'||record.gpu_mode!=='shared'||
-            record.gpu_cuda_uuid!==gpu.cuda_uuid||
-            !Number.isSafeInteger(record.gpu_vram_mb)||
-            record.gpu_vram_mb<1||
-            !Number.isSafeInteger(record.gpu_compute_pct)||
-            record.gpu_compute_pct<1)
-            throw Error('Another native job retains exclusive or unverified Windows CUDA ownership.');
-        reservedVram+=record.gpu_vram_mb;
-        reservedCompute+=record.gpu_compute_pct;
+        if(terminal.has(record.state))continue;
+        const allocations=Array.isArray(record.gpu_devices)
+            ?record.gpu_devices
+            :record.gpu_pci_address?[{
+                pci_address:record.gpu_pci_address,
+                cuda_uuid:record.gpu_cuda_uuid,
+                mode:record.gpu_mode,
+                vram_mb:record.gpu_vram_mb,
+                compute_pct:record.gpu_compute_pct}]:[];
+        for(const other of allocations) {
+            if(other.pci_address!==gpu.pci_address)continue;
+            if(gpu.mode!=='shared'||other.mode!=='shared'||
+                other.cuda_uuid!==gpu.cuda_uuid||
+                !Number.isSafeInteger(other.vram_mb)||other.vram_mb<1||
+                !Number.isSafeInteger(other.compute_pct)||other.compute_pct<1)
+                throw Error('Another native job retains exclusive or unverified Windows CUDA ownership.');
+            reservedVram+=other.vram_mb;
+            reservedCompute+=other.compute_pct;
+        }
     }
     if(reservedVram>gpu.total_vram_mb||reservedCompute>100)
         throw Error('Shared native CUDA capacity exceeds the physical device budget.');
@@ -234,7 +242,16 @@ class WindowsSupervisor {
             this.state.records.some(r=>!r||!UUID.test(String(r.job_id))||
                 !UUID.test(String(r.lease_id))||!SHA.test(String(r.token))||
                 (r.checkpoint_stop_file!=null&&(!noControls(r.checkpoint_stop_file)||
-                    !this.path.isAbsolute(r.checkpoint_stop_file))))||
+                    !this.path.isAbsolute(r.checkpoint_stop_file)))||
+                (r.gpu_devices!==undefined&&
+                    (!Array.isArray(r.gpu_devices)||
+                     r.gpu_devices.length<2||r.gpu_devices.length>8||
+                     r.gpu_pci_address!==undefined||
+                     r.gpu_devices.some(g=>!PCI.test(String(g?.pci_address))||
+                         !CUDA_UUID.test(String(g?.cuda_uuid))||
+                         g.mode!=='exclusive')||
+                     new Set(r.gpu_devices.map(g=>g.pci_address)).size!==
+                         r.gpu_devices.length)))||
             new Set(this.state.records.map(r=>r.job_id)).size!==
                 this.state.records.length)
             throw Error('Invalid Windows local ownership journal.');
@@ -281,6 +298,7 @@ class WindowsSupervisor {
             throw Error('Windows Job Object CPU/RAM and suspended-assignment preflight failed.');
         if(this.gpuEnabled&&reply.cuda_uuid_selection_supported!==true)
             throw Error('Installed Windows native owner did not prove CUDA UUID selector propagation; rebuild and re-pin the current helper.');
+        this.multiGpuQualified=reply.cuda_multi_uuid_selection_supported===true;
         // The quota denominator must match the Windows kernel's active
         // processors across all groups. A .NET process-affinity count is
         // not sufficient for a system-wide Job Object CPU percentage.
@@ -485,7 +503,11 @@ class WindowsSupervisor {
         ensureLocalCpuRamCapacity(this.state.records,invocation.cpus,
             invocation.ramMb,cpuSlots,
             Math.floor(this.hostOs.totalmem()/1048576));
-        ensureLocalGpuCapacity(this.state.records,invocation.gpu);
+        if(invocation.multiGpu&&!this.multiGpuQualified)
+            throw Error('Installed Windows owner has not proven ordered multi-GPU CUDA selector propagation.');
+        for(const device of (invocation.multiGpu||
+            (invocation.gpu?[invocation.gpu]:[])))
+            ensureLocalGpuCapacity(this.state.records,device);
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
@@ -513,6 +535,7 @@ class WindowsSupervisor {
             cwd:invocation.cwd,cpus:invocation.cpus,
             hostCpus:invocation.hostCpus,ramMb:invocation.ramMb,
             ...(invocation.gpu?{gpuUuid:invocation.gpu.cuda_uuid}:{}),
+            ...(invocation.multiGpu?{gpuUuid:invocation.multiGpu.map(g=>g.cuda_uuid).join(',')}:{}),
             receiptPath};
         // Persist the exact locally approved job request *before* creating
         // any owner process. A crash leaves an inspectable, non-repeatable job.
@@ -529,6 +552,9 @@ class WindowsSupervisor {
                 gpu_mode:invocation.gpu.mode,
                 gpu_vram_mb:invocation.gpu.vram_mb,
                 gpu_compute_pct:invocation.gpu.compute_pct}:{}),
+            ...(invocation.multiGpu?{gpu_devices:invocation.multiGpu.map(
+                ({pci_address,cuda_uuid,mode,vram_mb,compute_pct})=>
+                    ({pci_address,cuda_uuid,mode,vram_mb,compute_pct}))}:{}),
             state:'launch_requested',
             requested_at:new Date().toISOString(),diagnostic:null};
         this.commit([...this.state.records,record]);
