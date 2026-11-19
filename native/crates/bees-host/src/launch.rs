@@ -1110,7 +1110,6 @@ struct BattleRestart {
 }
 
 #[derive(Clone, Copy)]
-#[derive(Clone, Copy)]
 struct CampaignMission<'a> {
     campaign_id: &'a str,
     mission_id: &'a str,
