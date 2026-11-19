@@ -997,13 +997,14 @@ function courierPlanFor(job,machine) {
         shards:plan.map(item=>item.maxShards),plan}:{};
 }
 
-function selectDistributedMachines(machines,learner,selections,approved,capability,endpointField) {
+function selectDistributedMachines(machines,learner,selections,approved,capability,endpointField,
+    allowLearnerMachine=false) {
     const byMachine=selections.some(worker=>object(worker)&&Object.hasOwn(worker,'machine_id'));
     if(!byMachine)return {byMachine,endpoints:approved,selections};
     if(learner?.[capability]!==true||selections.some(worker=>!object(worker)||
         typeof worker.machine_id!=='string'||!ID.test(worker.machine_id)||
-        worker.machine_id===learner.id))
-        throw Error('Choose a distinct approved remote machine for each resource budget.');
+        (!allowLearnerMachine&&worker.machine_id===learner.id)))
+        throw Error('Choose an approved remote machine for each resource budget.');
     const byEndpoint=new Map(selections.map(selection=>[
         machines.find(host=>host.id===selection.machine_id)?.[endpointField],selection,
     ]));
@@ -1081,7 +1082,7 @@ function matchDistributedBudgets(snapshot,orderedHosts,selections,lookup) {
 }
 
 function selectDistributedBudgets(snapshot,learner,selections,approved,capability,endpointField,
-    machineIds,limit,lookup) {
+    machineIds,limit,lookup,allowLearnerMachine=false) {
     if(machineIds===undefined)
         return selectDistributedMachines(
             snapshot.machines,learner,selections,approved,capability,endpointField);
@@ -1091,7 +1092,8 @@ function selectDistributedBudgets(snapshot,learner,selections,approved,capabilit
         selections.some(item=>!object(item)||Object.hasOwn(item,'machine_id')))
         throw Error('Select one distinct remote machine per unassigned budget.');
     const {endpoints,selections:ordered}=selectDistributedMachines(snapshot.machines,learner,
-        machineIds.map(machine_id=>({machine_id})),approved,capability,endpointField);
+        machineIds.map(machine_id=>({machine_id})),approved,capability,endpointField,
+        allowLearnerMachine);
     const hosts=new Map(snapshot.machines.map(host=>[host.id,host]));
     return {byMachine:true,endpoints,selections:matchDistributedBudgets(
         snapshot,ordered.map(item=>hosts.get(item.machine_id)),selections,lookup)};
@@ -5421,12 +5423,23 @@ class ExperimentHub {
         const approved=courierPlanFor(null,machine);
         const shared=config?.parameters?.shared_policy===true;
         const learnerBudget=resourceRequest(value.learner.resources);
+        // One already configured, authenticated endpoint on the learner's
+        // host may act as a separate shared-policy GPU collector only if
+        // explicitly selected by the operator. The Hub must reserve
+        // two distinct exclusive GPU IDs and independent CPU/RAM budgets.
+        const allowLocal=shared&&Array.isArray(value.worker_machine_ids)&&
+            value.worker_machine_ids.includes(machine?.id)&&
+            learnerBudget.gpu_count===1&&learnerBudget.gpu_mode==='exclusive';
         const occupied=new Set(snapshot.jobs.filter(job=>job.project_id==='courier_lineage'&&
             !['cancelled','finished','stopped'].includes(job.status)).map(job=>job.assigned_machine_id));
         const eligibleLineages=(endpoint,budget)=>{
             const maxShards=approved.plan?.find(item=>item.endpoint===endpoint)?.maxShards;
             return snapshot.machines.filter(host=>host.courier_lineage_endpoint===endpoint&&
-                !occupied.has(host.id)&&host.courier_lineage_max_shards===maxShards&&
+                !occupied.has(host.id)&&
+                (host.id!==machine?.id||
+                    allowLocal&&budget.gpu_count===1&&
+                        budget.gpu_mode==='exclusive')&&
+                host.courier_lineage_max_shards===maxShards&&
                 (!shared||host.courier_shared_policy_collector===true)&&
                 host.courier_lineage_key_fingerprint===machine?.courier_remote_key_fingerprint&&
                 readySidecar(host,'courier_lineage',budget));
@@ -5436,7 +5449,7 @@ class ExperimentHub {
             value.worker_machine_ids,16,selection=>{
                 const budget=sidecarBudget(selection);
                 return {budget,eligible:host=>eligibleLineages(host.courier_lineage_endpoint,budget)};
-            });
+            },allowLocal);
         const remotePlan=approved.plan?.filter(item=>endpoints.includes(item.endpoint));
         const shards=remotePlan?.map(item=>item.maxShards);
         const ancestorId=value.learner.continuation_of_job_id??null;
@@ -5475,15 +5488,20 @@ class ExperimentHub {
         learner.distributed_courier_managed=true;
         const learnerLease=this.claimJobIn(next,learner,machine.id,machine);
         const workers=[],leases=[learnerLease],used=new Set([machine.id]);
+        let localUsed=false;
         const first=courierFirstSlot(learner,count);
         for(let index=0;index<count;index++) {
             const selection=selections[index];
             const budget=sidecarBudget(selection);
             const hosts=eligibleLineages(endpoints[index],budget);
-            if(hosts.length!==1||used.has(hosts[0].id)||
+            const local=hosts.length===1&&hosts[0].id===machine.id;
+            if(hosts.length!==1||
+                (used.has(hosts[0].id)&&
+                    !(local&&allowLocal&&!localUsed))||
                 (byMachine&&hosts[0].id!==selection.machine_id))
-                throw Error('Each Courier endpoint must match one distinct, qualified native worker machine.');
+                throw Error('Courier endpoint needs a uniquely leased worker or one approved local GPU collector.');
             const host=hosts[0];
+            if(local)localUsed=true;
             used.add(host.id);
             const timestamp=now();
             const workerConfig={
