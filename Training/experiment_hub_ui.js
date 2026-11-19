@@ -1032,7 +1032,10 @@ document.addEventListener('DOMContentLoaded', () => {
             details.textContent='Native Bees multi-round '+plan.id.slice(-8)+
                 ' · '+plan.completed_rounds+'/'+plan.round_count+' rounds'+
                 ' · '+plan.status+
-                (lastRound?' · checkpoint '+lastRound.checkpoint_sha256.slice(0,12):'')+
+                (lastRound?' · checkpoint '+lastRound.checkpoint_sha256.slice(0,12)
+                    :plan.initial_checkpoint_sha256
+                        ?' · starting checkpoint '+plan.initial_checkpoint_sha256.slice(0,12)
+                        :'')+
                 (lastRound?.collector_world_partitions
                     ?' · '+lastRound.collector_world_partitions.reduce(
                         (total,part)=>total+part.world_count,0)+' physical Worlds'
@@ -1045,8 +1048,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // The compact main row stays readable. The original immutable
             // collector/optimizer ownership and seed lineage remain
             // inspectable without generating separate Hub status logs.
-            if(completeRounds.length||plan.collector_source_contracts?.length)
+            if(completeRounds.length||plan.collector_source_contracts?.length||
+                plan.initial_evaluation_receipts?.length)
                 details.title=[
+                    ...(plan.initial_evaluation_receipts?.length?[
+                        'Starting checkpoint met independent fixed-reference target: '+
+                        plan.initial_evaluation_receipts.map(receipt=>
+                            receipt.suite_id+' '+receipt.successes+'/'+receipt.trials+
+                            ' · suite '+receipt.suite_sha256.slice(0,12)
+                        ).join(', '),
+                    ]:[]),
                     ...(plan.collector_source_contracts||[]).map((source,index)=>
                         'Approved curriculum round '+(index+1)+
                         ' · physical source '+source.slice(0,16)),
