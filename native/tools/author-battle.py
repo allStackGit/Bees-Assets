@@ -129,6 +129,23 @@ def cue_order(value: str) -> tuple[str, int, int]:
     return pieces[0], side, kind
 
 
+def death_order(value: str) -> tuple[int, int, int, int]:
+    """TRIGGER_SIDE:TRIGGER_TYPE:COMMAND_SIDE:COMMAND_TYPE."""
+    parts = value.split(":")
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError(
+            "ship-death command activation requires TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE"
+        )
+    try:
+        source_side, source_type, side, kind = map(int, parts)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("ship-death command activation needs integer IDs") from error
+    if (source_side not in (1, 2) or side not in (1, 2) or
+            not 0 <= source_type < 24 or not 0 <= kind < 24):
+        raise argparse.ArgumentTypeError("ship-death command activation needs sides 1/2 and types 0..23")
+    return source_side, source_type, side, kind
+
+
 def load_json(path: Path) -> dict:
     content = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(content, dict):
@@ -368,6 +385,7 @@ def author(args) -> tuple[dict, dict, dict]:
     cue_waves = getattr(args, "cue_reinforcements", ())
     dialogue = getattr(args, "campaign_dialogue", None)
     cue_commands = getattr(args, "cue_commands", ())
+    death_commands = getattr(args, "death_commands", ())
     if (cue_waves or cue_commands) and dialogue is None:
         raise ValueError("campaign cue triggers need an authored dialogue")
     if (any(cue not in CAMPAIGN_CUES.get(dialogue, ())
@@ -375,8 +393,12 @@ def author(args) -> tuple[dict, dict, dict]:
             any(cue not in CAMPAIGN_CUES.get(dialogue, ())
                 for cue, _, _ in cue_commands)):
         raise ValueError("script or reinforcement cue does not belong to the authored campaign dialogue")
-    if len({(side, kind) for _, side, kind in cue_commands}) != len(cue_commands):
-        raise ValueError("one scripted fleet type cannot wait for multiple different campaign cues")
+    activation_targets = (
+        [(side, kind) for _, side, kind in cue_commands] +
+        [(side, kind) for _, _, side, kind in death_commands]
+    )
+    if len(set(activation_targets)) != len(activation_targets):
+        raise ValueError("one scripted fleet type cannot have multiple conflicting start conditions")
     waves = [
         (when, side, kind, count, None)
         for when, side, kind, count in args.reinforcements
@@ -664,9 +686,28 @@ def author(args) -> tuple[dict, dict, dict]:
     # native squad order queue; targeting, movement, timing and repeat all
     # remain owned by the shared Level command director.
     scripted_by_id = {queue["squad_item_id"]: queue for queue in queues}
-    for cue, side, kind in cue_commands:
+    activations = [
+        (side, kind, {"kind": "on_campaign_cue", "cue": cue})
+        for cue, side, kind in cue_commands
+    ]
+    for trigger_side, trigger_kind, side, kind in death_commands:
+        eligible = [
+            ship["entity_id"] for ship in by_side[trigger_side]
+            if ship["ship_type"] == trigger_kind and
+            ship["entity_id"] not in deferred_owner
+        ]
+        if not eligible:
+            raise ValueError(
+                f"ship-death script trigger side {trigger_side} "
+                f"type {trigger_kind} has no initially deployed hull"
+            )
+        activations.append((
+            side, kind,
+            {"kind": "on_ship_destroyed", "ship_id": eligible[0]},
+        ))
+    for side, kind, activation in activations:
         if side in controlled:
-            raise ValueError("player squads cannot be controlled by scripted campaign cues")
+            raise ValueError("player squads cannot be controlled by scripted event activations")
         chosen = [
             squad for squad in by_side_squads[side]
             if squad["item_id"] not in deferred_squad_ids and
@@ -675,14 +716,14 @@ def author(args) -> tuple[dict, dict, dict]:
         ]
         if not chosen:
             raise ValueError(
-                f"campaign cue {cue} has no initially deployed scripted squad "
-                f"of side {side} ship type {kind}"
+                f"event activation has no initially deployed scripted "
+                f"side {side} ship type {kind} squad"
             )
         for squad in chosen:
             queue = scripted_by_id.get(squad["item_id"])
             if queue is None or "activation" in queue:
-                raise ValueError("campaign cue command conflicts with a squad's existing deployment activation")
-            queue["activation"] = {"kind": "on_campaign_cue", "cue": cue}
+                raise ValueError("script activation conflicts with an existing squad activation")
+            queue["activation"] = activation
 
     scene["ships"] = new_ships
     scene["squads"] = new_squads
@@ -1242,6 +1283,10 @@ def main() -> None:
                         type=cue_order, dest="cue_commands",
                         metavar="CUE:SIDE:TYPE",
                         help="start the existing scripted orders of deployed AI squads when a mission cue fires")
+    parser.add_argument("--activate-on-death", action="append", default=[],
+                        type=death_order, dest="death_commands",
+                        metavar="TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE",
+                        help="start initially deployed AI squad orders when an authored ship is destroyed")
     parser.add_argument("--campaign-dialogue",
                         choices=tuple(CAMPAIGN_CUES),
                         help="enable existing Titania mission dialogue and event cues")
@@ -1345,6 +1390,7 @@ def main() -> None:
         "campaign_dialogue": args.campaign_dialogue,
         "cue_reinforcements": len(args.cue_reinforcements),
         "cue_command_activations": len(args.cue_commands),
+        "death_command_activations": len(args.death_commands),
         "reserve_fleet_templates": [
             {"side": ship["side"], "ship_type": ship["ship_type"]}
             for ship in scene.get("fleet_templates", [])
