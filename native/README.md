@@ -519,7 +519,12 @@ training checkout's absolute paths. The published run uses `python` from
 PATH on either Windows or Linux. Install compatible Python, NumPy, and the
 model backend dependencies (PyTorch/ML-Agents for an ML-Agents actor, or the
 appropriate ONNX runtime) on the target machine; no virtual environment
-or interpreter binary is copied.
+or interpreter binary is copied. To run a portable trained opponent on a
+CPU-only Windows or Linux machine, set
+`BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE=cpu` before launching the native
+game. This selects CPU for PyTorch and ML-Agents models and
+`CPUExecutionProvider` for ONNX, without rewriting the pinned model
+manifest or silently falling back from a requested GPU.
 
 These battles keep the learned opponent's authentic policy actions and
 authored battle time limit, but use ordinary native game victory/draw rules,

@@ -82,6 +82,14 @@ def source_config(path: Path, manifest: Path, output: Path) -> dict:
         if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
             raise ValueError("each native Level requires a source scene path")
         level["scene"] = resolved(base, level["scene"])
+        # A real playable policy opponent keeps its model-controlled ships
+        # but intentionally uses GAME terminal rules without MA-POCA rewards.
+        # Never turn those encounters into apparently valid training steps.
+        scene = json.loads(Path(level["scene"]).read_text(encoding="utf-8"))
+        if not isinstance(scene, dict) or scene.get("policy_gameplay") is True:
+            raise ValueError(
+                "native training requires a source policy episode, not a playable model-opponent game"
+            )
     for index, previous in enumerate(config.get("recover_notifications", [])):
         config["recover_notifications"][index] = resolved(base, previous)
     for previous in config.get("recover_outcome_journals", []):

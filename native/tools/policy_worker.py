@@ -343,6 +343,13 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
                 raise ValueError("unsupported native inference device override")
             if backend in ("torchscript", "mlagents"):
                 config = {**config, "device": runtime_device}
+            elif backend == "onnx" and runtime_device == "cpu":
+                # Explicit host-local CPU selection is also valid for a
+                # portable ONNX opponent. Preserve the immutable manifest,
+                # checkpoint digest, input/output ABI and source identity.
+                # No implicit accelerator fallback: GPU jobs retain their
+                # approved provider order and report actual GPU forwards.
+                config = {**config, "providers": ["CPUExecutionProvider"]}
         settings = {
             key: value for key, value in config.items()
             if key not in ("slot", "path", "sha256")

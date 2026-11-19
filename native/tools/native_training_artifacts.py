@@ -109,6 +109,16 @@ def native_source_contract_sha256(path: Path, *, include_allocation: bool = Fals
         if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
             raise ValueError("native source contract requires every Level scene")
         row = dict(level)
+        # A source with policy_gameplay=true has no frozen MA-POCA reward
+        # denominators, even though a real opponent model is present.
+        # Distributed collectors must reject it before any work orders
+        # can identify or dispatch apparently trainable experiences.
+        scene_path = Path(level["scene"])
+        if not scene_path.is_absolute():
+            scene_path = path.parent / scene_path
+        scene_data = json.loads(scene_path.read_text(encoding="utf-8"))
+        if not isinstance(scene_data, dict) or scene_data.get("policy_gameplay") is True:
+            raise ValueError("distributed native training requires a frozen policy episode")
         row["scene"] = {"source_sha256": sha_file(level["scene"], json_source=True)}
         portable["levels"].append(row)
     payload = json.dumps(portable, sort_keys=True, separators=(",", ":"))
