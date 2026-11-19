@@ -4596,7 +4596,9 @@ class ExperimentHub {
                             confirm_stop:true,
                         });
                     }
-                    throw Error('A native training-round member did not finish successfully; the remaining collector owners require terminal reconciliation.');
+                    throw Error(phase==='collectors'
+                        ?'A native collector failed; sibling Stop and terminal lease reconciliation are required.'
+                        :'A synchronized native optimizer rank failed; the existing group Stop and checkpoint consensus need review.');
                 }
                 if(!members.every(job=>job.status==='finished'&&
                     job.capacity_released_at))continue;
