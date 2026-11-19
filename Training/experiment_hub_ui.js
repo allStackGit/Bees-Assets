@@ -831,6 +831,58 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-pipeline-queue').disabled=['bees','ants'].includes(project)||
             rows.length<2||!configs.length;
     }
+    // A checkpoint-bearing native Bees result is a valid physical model
+    // source only after its original machine and all synchronized optimizer
+    // workers have completed and released their claims. The Hub repeats the
+    // authoritative proof on every queue and Start; this is only the UI
+    // selection projection.
+    function nativeModelSources() {
+        const jobs=state?.jobs||[];
+        return jobs.filter(job=>{
+            if(job.project_id!=='bees_native'||job.status!=='finished'||
+                job.checkpoint_ready_verified!==true||
+                !/^[a-f0-9]{64}$/.test(String(job.checkpoint_model_sha256||''))||
+                !job.capacity_released_at)return false;
+            if(job.frozen_parameters?.optimizer_group!==true)return true;
+            const group=job.resource_bundle;
+            const members=jobs.filter(member=>member.resource_bundle?.id===group?.id)
+                .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+            const first=members[0]?.optimizer_completion;
+            return group?.index===1&&members.length===group.size&&
+                members[0].id===job.id&&
+                /^[a-f0-9]{64}$/.test(String(first?.input_sha256||''))&&
+                /^[a-f0-9]{64}$/.test(String(first?.model_consensus_sha256||''))&&
+                members.every((member,index)=>member.resource_bundle.index===index+1&&
+                    member.status==='finished'&&member.capacity_released_at&&
+                    member.optimizer_completion?.group_id===group.id&&
+                    member.optimizer_completion?.node_rank===index&&
+                    member.optimizer_completion?.node_count===group.size&&
+                    member.optimizer_completion?.input_sha256===first.input_sha256&&
+                    member.optimizer_completion?.model_consensus_sha256===
+                        first.model_consensus_sha256);
+        });
+    }
+    function nativeModelSourceControl(id,anchor,description) {
+        let select=$(id);
+        if(!select) {
+            const label=document.createElement('label');
+            label.textContent=description+' ';
+            select=document.createElement('select');
+            select.id=id;
+            label.append(select);
+            anchor.before(label);
+        }
+        const previous=select.value;
+        select.replaceChildren(
+            new Option('Use installed baseline checkpoint',''),
+            ...nativeModelSources().map(job=>new Option(
+                job.configuration_name+' · '+job.id.slice(-8)+
+                ' · checkpoint '+job.checkpoint_model_sha256.slice(0,12),job.id)));
+        if([...select.options].some(option=>option.value===previous))
+            select.value=previous;
+        return select;
+    }
+
     // Build capacity bundles from the same saved project configurations and
     // authenticated machine choices used by normal job Start. A bundle never
     // transmits arbitrary executable paths or worker network endpoints.
@@ -872,6 +924,13 @@ document.addEventListener('DOMContentLoaded', () => {
         container.append(row);
     }
     function renderResourceBundleMembers() {
+        nativeModelSourceControl('hub-native-bundle-model-source',
+            $('hub-resource-bundle-rows'),
+            'Verified native Bees checkpoint for a successor optimizer group (optional):');
+        if(project==='bees_native_collect')
+            nativeModelSourceControl('hub-native-collector-model-source',
+                $('hub-job-queue'),
+                'Verified native Bees checkpoint for fresh physical rollout collection (optional):');
         const rows=[...$('hub-resource-bundle-rows').children];
         const configs=(state?.configurations||[]).filter(c=>
             !['bees','ants','tinybrains_rollout'].includes(c.project_id));
