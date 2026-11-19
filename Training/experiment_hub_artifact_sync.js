@@ -40,6 +40,13 @@ function safeNativeCollectorPath(relative) {
     return safeLogPath(relative) ||
         /^(?:rollout-(?:0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\/)?decisions\.bin$/.test(relative);
 }
+// Only the completed native learner's pinned checkpoint and frozen model
+// package may enter the Hub mirror. Never relax diagnostic file traversal.
+function safeNativeModelPath(relative) {
+    return relative==='learner/checkpoint.pt'||
+        relative==='learner/manifest.json'||
+        /^learner\/opponents\/[a-f0-9]{64}\.model$/.test(relative);
+}
 function fail(message,status=400) {
     const error=Error(message);
     error.status=status;
@@ -120,8 +127,11 @@ class ArtifactMirror {
             job.project_id==='bees'||!job.lease_id||
             job.start_first_offered_at==null)
             fail('Artifact job is not owned by this machine.',409);
-        if(!(job.project_id==='bees_native_collect'
-            ?safeNativeCollectorPath(relative):safeLogPath(relative))||
+        const modelArtifact=job.project_id==='bees_native'&&safeNativeModelPath(relative);
+        if(!(modelArtifact
+            ?job.status==='finished'&&job.checkpoint_ready_verified===true
+            :job.project_id==='bees_native_collect'
+                ?safeNativeCollectorPath(relative):safeLogPath(relative))||
             !SHA.test(String(sha||''))||
             !Number.isSafeInteger(size)||size<1||size>MAX_FILE)
             fail('Invalid artifact snapshot.',400);
@@ -264,4 +274,4 @@ class ArtifactMirror {
     }
 }
 module.exports={ArtifactMirror,safeLogPath,safeNativeCollectorPath,
-    MAX_CHUNK,MAX_FILE};
+    safeNativeModelPath,MAX_CHUNK,MAX_FILE};
