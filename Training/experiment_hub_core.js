@@ -4366,11 +4366,12 @@ class ExperimentHub {
              plan.origin_source_job_id===source.id)))
             throw Error('This native model already has an unresolved training-round plan.');
         const validateMembers=(members,kind)=>{
-            const lower=kind==='collector'?2:2,upper=kind==='collector'?16:8;
+            const lower=2,upper=kind==='collector'?16:8;
             if(!Array.isArray(members)||members.length<lower||members.length>upper)
                 throw Error('Native round '+kind+' stage requires '+lower+'–'+upper+' fixed machine members.');
             const machines=new Set();
             const selected=[];
+            const hosts=this.snapshot().machines;
             for(const [index,item] of members.entries()) {
                 if(!object(item)||Object.keys(item).some(key=>![
                     'configuration_id','expected_revision','machine_id',
@@ -4400,8 +4401,7 @@ class ExperimentHub {
                         !Array.isArray(parameters.rollout_bundles)||
                         parameters.rollout_bundles.length!==0)))
                     throw Error('Native round '+kind+' configuration must be a saved physical collector or empty-bundle MA-POCA optimizer template.');
-                const host=this.snapshot().machines.find(machine=>
-                    machine.id===item.machine_id);
+                const host=hosts.find(machine=>machine.id===item.machine_id);
                 if(host?.status!=='connected'||host.local_executor_enabled!==true||
                     host.native_preflight_passed!==true||
                     !host.installed_projects?.includes(expected)||
@@ -4416,7 +4416,7 @@ class ExperimentHub {
                     configuration_id:item.configuration_id,
                     expected_revision:item.expected_revision,
                     machine_id:item.machine_id,
-                    resources:copy(item.resources),
+                    resources:copy(resources),
                     ...(item.metric_selection?{metric_selection:copy(item.metric_selection)}:{}),
                 });
             }
