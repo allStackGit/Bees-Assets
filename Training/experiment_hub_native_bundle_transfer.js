@@ -154,13 +154,22 @@ function nativeModelPackage(hub,source) {
         const members=hub.state.jobs.filter(job=>
             job.resource_bundle?.id===bundle?.id).sort((a,b)=>
             a.resource_bundle.index-b.resource_bundle.index);
+        const proof=source.optimizer_completion;
         if(bundle?.index!==1||!Number.isSafeInteger(bundle.size)||
             bundle.size<2||bundle.size>8||members.length!==bundle.size||
+            !SHA.test(String(proof?.input_sha256||''))||
+            !SHA.test(String(proof?.model_consensus_sha256||''))||
             members.some((job,index)=>job.resource_bundle.index!==index+1||
                 job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
                 job.status!=='finished'||!job.capacity_released_at||
-                !job.dispatch_id||!job.execution_updated_at))
-            fail('The original synchronized optimizer group is not terminal and released.');
+                !job.dispatch_id||!job.execution_updated_at||
+                job.optimizer_completion?.group_id!==bundle.id||
+                job.optimizer_completion?.node_rank!==index||
+                job.optimizer_completion?.node_count!==bundle.size||
+                job.optimizer_completion?.input_sha256!==proof.input_sha256||
+                job.optimizer_completion?.model_consensus_sha256!==
+                    proof.model_consensus_sha256))
+            fail('The original synchronized optimizer group lacks matching verified rank receipts and released native owners.');
     }
     const root=path.dirname(hub.file),jobId=source.id;
     const signed=mirroredByMetadata(root,jobId,'round-result.json');
@@ -170,6 +179,11 @@ function nativeModelPackage(hub,source) {
     catch{fail('Invalid native model completion receipt.');}
     if(receipt?.schema_version!==1||
         receipt.kind!=='native_training_round_complete'||
+        (source.frozen_parameters?.optimizer_group===true&&
+            (receipt.learner_metrics?.optimizer_global_input_sha256!==
+                source.optimizer_completion.input_sha256||
+             receipt.learner_metrics?.optimizer_gpu_model_consensus_sha256!==
+                source.optimizer_completion.model_consensus_sha256))||
         receipt.next_checkpoint_sha256!==source.checkpoint_model_sha256||
         !SHA.test(String(receipt.next_manifest_sha256||''))||
         receipt.learner_metrics?.next_checkpoint_sha256!==
