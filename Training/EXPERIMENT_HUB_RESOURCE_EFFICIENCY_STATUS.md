@@ -18,8 +18,11 @@ Local integration retains authenticated continuation capacity checks, cached
 vectorized Courier world groups and bulk completion replies, plus bounded
 GPU policy graphs with independent sampling and measured adoption. These
 paths retain world RNG/checkpoint ownership and use the existing Hub metrics.
-The contiguous shared-memory transport is being reconciled with the new
-direct packed-info and sparse-terminal observation contracts.
+The contiguous shared-memory transport now supports the new direct packed-info
+and sparse-terminal observation contracts. Integrated checks preserved exact
+world/RNG/checkpoint state through live migration, shared-training continuation,
+and paired PPO/Adam updates. TinyBrains retains bounded PPO CPU lookahead and
+direct staging alongside the new learner/opponent fusion and shared policy pack.
 
 **2026-11-18 integration continuation:** Reconciled the active Hub codec/placement branch with Courier's later checkpoint-safe whole-map redistribution and independently leased CPU-process tuning. Preserved Codex's policy codec/GPU residency metrics, and added retained migration/proof/process-ceiling fields plus five-of-six stable last-wire-worker attribution (headroom is a tuning candidate, not hardware saturation). TinyBrains' integrated grouped-frozen-opponent GPU inference now exports useful grouped models/states separately from padded lanes and fallbacks. The shared-policy Courier backend also scales remote checkpoint snapshot requests from one/two to up to sixteen (the supported collector fleet ceiling) under fixed RAM-headroom admission; the existing sliding window, ordered snapshot archive and checkpoint commit barrier are unchanged. Hub exposes actual snapshot parallelism, bytes, remote wait and ZIP append wall. Synthetic dense Courier (16 workers, 457 fields/26.8 KiB) and TinyBrains (17 collectors) progress passed neutral validation; no physical SPS or restart qualification was performed. Next major gap remains independent-Courier-policy GPU inference batching, adaptive multi-GPU learner work and real across-machine scaling.
 
