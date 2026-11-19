@@ -87,12 +87,21 @@ function frozenSuite(o,create=false) {
         suite_id:o.suiteId,config_sha256:o.hash,
         seed:618437, trials:100,horizon:1024,
     };
-    const serialized=JSON.stringify(data,null,2)+'\n';
-    if(create&&!fs.existsSync(o.suiteFile))
-        fs.writeFileSync(o.suiteFile,serialized,{flag:'wx',mode:0o600});
+    if(create&&!fs.existsSync(o.suiteFile)) {
+        if(!SHA.test(String(o.runtimeSha||'')))
+            throw Error('Courier evaluator runtime fingerprint is missing.');
+        fs.writeFileSync(o.suiteFile,JSON.stringify({
+            ...data,runtime_sha256:o.runtimeSha,
+        },null,2)+'\n',{flag:'wx',mode:0o600});
+    }
     const file=regular(o.suiteFile);
-    if(fs.readFileSync(file,'utf8')!==serialized)
-        throw Error('An existing Courier frozen suite differs from its approved definition.');
+    const saved=JSON.parse(fs.readFileSync(file,'utf8'));
+    if(Object.keys(saved).sort().join(',')!==
+            'config_sha256,horizon,runtime_sha256,seed,suite_id,trials'||
+        Object.entries(data).some(([key,value])=>saved[key]!==value)||
+        !SHA.test(String(saved.runtime_sha256||''))||
+        create&&saved.runtime_sha256!==o.runtimeSha)
+        throw Error('An existing Courier frozen suite differs from its approved runtime and configuration.');
     return file;
 }
 function definition(o) {
@@ -173,6 +182,11 @@ async function setup(hub) {
     privateDirectory(o.snapshots,true);
     privateDirectory(o.scratch,true);
     privateDirectory(o.receipts,true);
+    const {stdout}=await run(o.interpreter,[
+        '-B',path.join(__dirname,'experiment_hub_evaluation_runtime.py'),
+        '--project','courier','--project-root',o.project,
+    ],{timeout:90000,maxBuffer:1024*1024});
+    o.runtimeSha=JSON.parse(stdout).runtime_sha256;
     frozenSuite(o,true);
     // One explicit operator approval. At the next agent restart, even a
     // private preexisting Courier adapter can recognize these exact,
