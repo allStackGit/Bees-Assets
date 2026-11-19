@@ -275,6 +275,32 @@ function verifiedNativeCollectorPin(hub,collectorId) {
         !Number.isSafeInteger(receipt.seed_offset)||
         receipt.seed_offset<0)
         fail('Native collector model or physical partition identity is incomplete.');
+    // These immutable native worker counts and physical GPU placements were
+    // accepted by the machine's Hub lease before Start. The optimizer must
+    // never ingest a different allocation merely because a bundle arrived
+    // through a correctly authenticated artifact mirror.
+    const cpus=collector.resources?.cpus;
+    const gpuCount=collector.resources?.gpu_count??0;
+    const workerCount=receipt.rollout_processes;
+    const physicsCount=receipt.physics_workers_per_process;
+    if(!Number.isSafeInteger(cpus)||cpus<1||
+        !Number.isSafeInteger(workerCount)||workerCount<1||
+        workerCount>256||workerCount>receipt.partition.world_count||
+        !Number.isSafeInteger(physicsCount)||physicsCount<1||
+        physicsCount>128||workerCount*physicsCount>cpus||
+        receipt.rollout_worlds!==receipt.partition.world_count||
+        (collector.frozen_parameters?.rollout_workers!==undefined&&
+            receipt.rollout_processes!==collector.frozen_parameters.rollout_workers)||
+        (Number.isSafeInteger(collector.frozen_parameters?.physics_workers)&&
+            physicsCount!==collector.frozen_parameters.physics_workers)||
+        (gpuCount>0
+            ?(![1,2].includes(gpuCount)||
+                receipt.leased_gpu_inference!==true||
+                (receipt.leased_gpu_count??1)!==gpuCount||
+                workerCount<gpuCount)
+            :(receipt.leased_gpu_inference===true||
+                receipt.leased_gpu_count!==undefined)))
+        fail('Native collector execution evidence exceeds or differs from its Hub CPU/GPU lease.');
     if(collector.model_source_job_id&&(
         !SHA.test(String(collector.expected_parent_model_sha256||''))||
         receipt.input_checkpoint_sha256!==collector.expected_parent_model_sha256))
