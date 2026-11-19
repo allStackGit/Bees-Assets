@@ -129,6 +129,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'local_gpu_collector_count',
             'local_gpu_direct_model_updates',
             'local_gpu_direct_model_tensor_bytes',
+            'local_gpu_policy_source_pack_groups',
+            'local_gpu_policy_packed_consumers',
             'local_gpu_join_wait_seconds',
             'local_gpu_pending_at_local_end',
             'local_lease_native_engines_active',
