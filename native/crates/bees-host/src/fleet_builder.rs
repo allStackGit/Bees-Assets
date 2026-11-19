@@ -1260,6 +1260,30 @@ pub(super) fn archive(
                     if side == 0 { 125.0 } else { -125.0 }, 0.0,
                 ]})]
             } else if mission_owner &&
+                matches!(selected.objective, Objective::Escort)
+            {
+                // The rest of the convoy's mobile squads follow its
+                // real command ship through native Guard lifetime
+                // semantics. Nearest-enemy pursuit would abandon the
+                // moving escort target.
+                vec![json!({
+                    "kind": "guard",
+                    "friendly_squad_item_id": squad_ids[side][0],
+                })]
+            } else if !mission_owner &&
+                matches!(selected.objective, Objective::Demolition) &&
+                position == 0
+            {
+                // One physical defender holds the objective instead of
+                // chasing the first decoy across the arena. Its weapons
+                // remain normal automatically acquired combat turrets.
+                vec![
+                    json!({"kind": "move_to_point", "destination": [
+                        if side == 0 { -16.0 } else { 16.0 }, 0.0,
+                    ]}),
+                    json!({"kind": "hold"}),
+                ]
+            } else if mission_owner &&
                 matches!(selected.objective, Objective::Demolition) && !scout
             {
                 // Approach within the actual turret firing range, then
