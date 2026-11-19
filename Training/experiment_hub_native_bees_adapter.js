@@ -160,6 +160,7 @@ function learnerMeasurements(metrics) {
         if (count === 2) {
             add('optimizer_synchronized_minibatches', 'count');
             add('optimizer_masked_loss_normalizations', 'count');
+            add('optimizer_masked_loss_submission_wall_seconds_sum', 'seconds');
             add('optimizer_gradient_submission_wall_seconds_sum', 'seconds');
             add('optimizer_gpu_update_wall_seconds_max', 'seconds');
             metrics.optimizer_gpu_per_device.forEach((worker,index) => {
@@ -177,6 +178,12 @@ function learnerMeasurements(metrics) {
                     throw Error('Invalid native GPU gradient synchronization time.');
                 report['optimizer_gpu_'+index+'_gradient_submission_seconds'] = {
                     value:worker.gradient_submission_wall_seconds,unit:'seconds',
+                };
+                if (!Number.isFinite(worker.masked_loss_submission_wall_seconds) ||
+                    worker.masked_loss_submission_wall_seconds < 0)
+                    throw Error('Invalid native GPU loss normalization collective time.');
+                report['optimizer_gpu_'+index+'_masked_loss_submission_seconds'] = {
+                    value:worker.masked_loss_submission_wall_seconds,unit:'seconds',
                 };
                 for (const [source,target] of [
                     ['torch_cuda_process_peak_allocated_bytes','peak_allocated_bytes'],

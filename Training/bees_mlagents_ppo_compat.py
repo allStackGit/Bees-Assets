@@ -5616,6 +5616,7 @@ def _native_poca_global_loss_scales(poca_optimizer, denominators):
     """
     from mlagents.torch_utils import torch
 
+    sync_started = time.perf_counter()
     distributed = torch.distributed
     world_size = distributed.get_world_size()
     if any(value is None for value in denominators):
@@ -5641,6 +5642,12 @@ def _native_poca_global_loss_scales(poca_optimizer, denominators):
         factors = factors.to(device)
     poca_optimizer._bees_distributed_masked_loss_syncs = (
         getattr(poca_optimizer, "_bees_distributed_masked_loss_syncs", 0) + 1
+    )
+    # NCCL/RCCL operations are asynchronous. Record CPU submission and
+    # staging time, never mislabel it as GPU synchronization wall time.
+    poca_optimizer._bees_distributed_masked_loss_submission_seconds = (
+        getattr(poca_optimizer, "_bees_distributed_masked_loss_submission_seconds", 0.0)
+        + time.perf_counter() - sync_started
     )
     return factors.unbind()
 

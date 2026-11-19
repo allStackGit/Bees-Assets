@@ -1444,6 +1444,9 @@ def main():
             "masked_loss_syncs": getattr(
                 trainer.optimizer, "_bees_distributed_masked_loss_syncs", 0,
             ),
+            "masked_loss_submission_wall_seconds": getattr(
+                trainer.optimizer, "_bees_distributed_masked_loss_submission_seconds", 0.0,
+            ),
             "gradient_backend": torch.distributed.get_backend(),
             "gradient_submission_wall_seconds": getattr(
                 trainer.optimizer, "_bees_distributed_sync_submission_seconds", 0.0,
@@ -1575,6 +1578,10 @@ def main():
         **({"optimizer_synchronized_minibatches": gpu_worker_metrics[0]["gradient_syncs"],
             "optimizer_masked_loss_normalizations": gpu_worker_metrics[0]["masked_loss_syncs"],
             "optimizer_gpu_model_consensus_sha256": next_model_consensus_sha,
+            "optimizer_masked_loss_submission_wall_seconds_sum": sum(
+                worker["masked_loss_submission_wall_seconds"]
+                for worker in gpu_worker_metrics
+            ),
             "optimizer_gpu_per_device": gpu_worker_metrics,
             "optimizer_gradient_backend": gpu_worker_metrics[0]["gradient_backend"],
             "optimizer_gradient_submission_wall_seconds_sum": sum(
