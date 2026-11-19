@@ -153,13 +153,29 @@ impl NativeEpisodeRewardCoordinator {
     }
 
     pub fn new_game(bee_side: i32, human_side: i32) -> Result<Self, NativeEpisodeRewardError> {
-        Ok(Self {
-            bee_side, human_side,
-            terminal: NativeEpisodeTerminal::new_game(bee_side, human_side)?,
+        Ok(Self::game_with_terminal(bee_side, human_side,
+            NativeEpisodeTerminal::new_game(bee_side, human_side)?))
+    }
+
+    /// Play a genuine model-controlled opponent under its authored timeout.
+    /// The timer determines an ordinary game draw, never emits or scales
+    /// frozen MA-POCA training rewards after a mutable career fleet edit.
+    pub fn new_game_with_timeout(
+        bee_side: i32, human_side: i32, timeout_seconds: f32,
+    ) -> Result<Self, NativeEpisodeRewardError> {
+        Ok(Self::game_with_terminal(bee_side, human_side,
+            NativeEpisodeTerminal::new(bee_side, human_side, timeout_seconds)?))
+    }
+
+    fn game_with_terminal(
+        bee_side: i32, human_side: i32, terminal: NativeEpisodeTerminal,
+    ) -> Self {
+        Self {
+            bee_side, human_side, terminal,
             mode: EpisodeMode::Game(DiscoverySightings::default()),
             failed: false,
             merged_emissions: Vec::new(),
-        })
+        }
     }
 
     pub fn arm_survival(

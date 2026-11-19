@@ -800,6 +800,7 @@ pub struct NativePhysicalScene {
     /// Explicit native gameplay with an authenticated model-controlled
     /// opponent and a mutable player career, not an RL training episode.
     campaign_policy_opponent_side: Option<i32>,
+    policy_game_timeout_seconds: Option<f32>,
     /// Real participating Unity Agent instances and the active episode
     /// number. Schema 15 may legitimately have no group identities.
     pub source_policy_group: Option<NativeSourcePolicyGroup>,
@@ -2198,6 +2199,10 @@ impl NativePhysicalScene {
             // Models in training still require frozen reward normalization;
             // only an explicitly playable opponent uses normal game rules.
             Err(NativeSnapshotError::InvalidEpisodeSource)
+        } else if let Some(timeout) = self.policy_game_timeout_seconds {
+            NativeEpisodeRewardCoordinator::new_game_with_timeout(
+                bee_side, human_side, timeout,
+            ).map_err(NativeSnapshotError::Episode)
         } else {
             NativeEpisodeRewardCoordinator::new_game(bee_side, human_side)
                 .map_err(NativeSnapshotError::Episode)
@@ -3713,6 +3718,7 @@ impl NativePhysicalScene {
             fleet_templates: Vec::new(),
             source_episode,
             campaign_policy_opponent_side: None,
+            policy_game_timeout_seconds: None,
             source_policy_group,
             source_navigation,
             fleet,

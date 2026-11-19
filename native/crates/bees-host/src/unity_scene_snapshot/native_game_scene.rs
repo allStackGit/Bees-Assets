@@ -1484,6 +1484,7 @@ impl NativePhysicalScene {
             // installing immutable reward baselines and PPO membership.
             source_episode: None,
             campaign_policy_opponent_side: None,
+            policy_game_timeout_seconds: None,
             source_policy_group: None,
             source_navigation: NativeSourceNavigation {
                 map_width: span.x, map_height: span.y, frame,
@@ -1587,6 +1588,9 @@ impl NativePhysicalScene {
         } else { episode_source };
         scene.campaign_policy_opponent_side = if raw.policy_gameplay {
             raw.local_player_side
+        } else { None };
+        scene.policy_game_timeout_seconds = if raw.policy_gameplay {
+            policy_episode.map(|episode| episode.timeout_seconds)
         } else { None };
         scene.source_policy_group = group_source;
         Ok(scene)
