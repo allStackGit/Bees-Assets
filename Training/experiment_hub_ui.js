@@ -4800,8 +4800,20 @@ document.addEventListener('DOMContentLoaded', () => {
             machine.gpus?.length>=2&&
             ['courier','courier_lineage'].every(project=>
                 machine.gpu_projects?.includes(project));
+        const activeCourierPort=(host,endpoint)=>(state.jobs||[]).some(job=>{
+            if(job.project_id!=='courier_lineage'||job.assigned_machine_id!==host.id||
+                ['cancelled','finished','stopped'].includes(job.status))return false;
+            const listeners=host.courier_lineage_slots||[];
+            const slot=listeners.length
+                ?listeners.find(item=>item.slot===job.frozen_parameters?.slot)
+                :host.courier_lineage_endpoint
+                    ?{endpoint:host.courier_lineage_endpoint}:null;
+            // A running service with an unrecognized native slot is not
+            // evidence that another listener is free.
+            return !slot||slot.endpoint===endpoint;
+        });
         const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
-            host.status==='connected'&&
+            host.status==='connected'&&!activeCourierPort(host,endpoint)&&
             (host.id!==machine.id||colocated)&&
             (shared&&host.courier_lineage_slots?.length
                 ?host.courier_lineage_slots.some(listener=>
