@@ -348,7 +348,7 @@ function stageFile(source,target) {
 }
 function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
-    seedCheckpointSha256,seedPpoUpdates,profiles,
+    seedCheckpointSha256,seedPpoUpdates,profiles,checkpointImports={},
     evaluationRoot,evaluationSuites,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
     enableDualGpu=false,remoteCollectors=null,profilePpo=false,
@@ -425,6 +425,28 @@ function createTinyBrainsPersistentDockerAdapter({
             throw Error('Invalid approved TinyBrains persistent profile.');
         const text=JSON.stringify(p,null,2)+'\n';
         return [id,{profile:p,text,sha256:crypto.createHash('sha256').update(text).digest('hex')}];
+    }));
+    // Additional, machine-local checkpoint imports do not change the legacy
+    // Exeter seed. Only trusted adapter code can supply paths and hashes.
+    if(!checkpointImports||typeof checkpointImports!=='object'||
+        Array.isArray(checkpointImports)||Object.keys(checkpointImports).length>16)
+        throw Error('TinyBrains checkpoint imports must be a bounded local map.');
+    const extraImports=new Map(Object.entries(checkpointImports).map(([id,entry])=>{
+        if(!PROFILE.test(id)||id.startsWith('exeter_')||
+            !entry||typeof entry!=='object'||Array.isArray(entry)||
+            Object.keys(entry).sort().join(',')!=='checkpoint,profile,sha256,update'||
+            !approved.has(entry.profile)||!SHA.test(entry.sha256)||
+            !Number.isSafeInteger(entry.update)||entry.update<1||
+            typeof entry.checkpoint!=='string'||!path.isAbsolute(entry.checkpoint))
+            throw Error('Invalid operator-approved TinyBrains seed checkpoint.');
+        const checkpoint=fs.realpathSync(entry.checkpoint);
+        const stat=fs.statSync(checkpoint);
+        if(checkpoint!==entry.checkpoint||!stat.isFile()||!stat.size||
+            checkpoint===original||checkpoint.startsWith(artifacts+path.sep)||
+            modelFileSha256(checkpoint)!==entry.sha256)
+            throw Error('TinyBrains seed checkpoint path or SHA-256 changed.');
+        return [id,{checkpoint,profile:entry.profile,sha256:entry.sha256,
+            update:entry.update}];
     }));
     if(typeof sourceWindowsRoot!=='string'||
         !/^[A-Za-z]:\/[A-Za-z0-9_./-]+$/.test(sourceWindowsRoot))
@@ -621,9 +643,14 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
         tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
-        tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
-            'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
-        ])),
+        tinybrains_imports:{
+            ...Object.fromEntries([...approved.keys()].map(id=>[
+                'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
+            ])),
+            ...Object.fromEntries([...extraImports].map(([id,seed])=>[
+                id,{profile:seed.profile,sha256:seed.sha256},
+            ])),
+        },
         checkpoint_stop_file:ctx=>path.join(targetFor(ctx),'STOP'),
         gpu_verify_args(parameters,context){
             const item=approved.get(parameters?.profile);
@@ -685,13 +712,24 @@ function createTinyBrainsPersistentDockerAdapter({
                         context.gpu_compute_pct<1||context.gpu_compute_pct>100)))
                 throw Error('Invalid immutable TinyBrains Hub training request.');
             const parent=context.continuation_of_job_id;
-            if(parent?
-                import_checkpoint!==undefined||import_checkpoint_sha256!==undefined:
-                import_checkpoint!=='exeter_'+profile||
-                    import_checkpoint_sha256!==seedCheckpointSha256)
-                throw Error('A new run must import the pinned Exeter lineage or explicitly continue its parent.');
+            if(parent&&(import_checkpoint!==undefined||
+                import_checkpoint_sha256!==undefined))
+                throw Error('Checkpoint continuations must not import another seed.');
             let sourceCheckpoint=original;
             let startingUpdate=seedPpoUpdates;
+            if(!parent) {
+                const legacy=import_checkpoint==='exeter_'+profile;
+                const additional=extraImports.get(import_checkpoint);
+                if(!legacy&&additional?.profile!==profile)
+                    throw Error('A new run requires a profile-compatible, approved checkpoint import.');
+                const expected=legacy?seedCheckpointSha256:additional.sha256;
+                if(import_checkpoint_sha256!==expected)
+                    throw Error('TinyBrains imported checkpoint SHA-256 does not match the approved seed.');
+                sourceCheckpoint=legacy?original:additional.checkpoint;
+                startingUpdate=legacy?seedPpoUpdates:additional.update;
+                if(modelFileSha256(sourceCheckpoint)!==expected)
+                    throw Error('Approved TinyBrains seed checkpoint changed before launch.');
+            }
             if(parent) {
                 const predecessor=path.join(artifacts,parent);
                 sourceCheckpoint=checkpointReady(predecessor,item.text);
