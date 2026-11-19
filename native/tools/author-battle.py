@@ -567,6 +567,41 @@ def author(args) -> tuple[dict, dict, dict]:
 
     scene["ships"] = new_ships
     scene["squads"] = new_squads
+    # Author additional *inactive* source classes with their complete
+    # original collider, turret and specialist data. The native parser
+    # verifies these normally, then keeps them outside the combat and
+    # training Worlds until a campaign FleetShip is awarded or purchased.
+    # These identities never enter a player squad or active policy pool.
+    reserve_templates = []
+    if len(set(args.fleet_templates)) != len(args.fleet_templates):
+        raise ValueError("reserve FleetShip templates must be unique by side and class")
+    reserve_id_base = weapon_base + 3 * side_span
+    for index, (side, kind) in enumerate(args.fleet_templates):
+        template = blueprints.get((side, kind))
+        if template is None:
+            raise ValueError(
+                f"reserve FleetShip class {kind} for side {side} has no authentic "
+                "native source archetype"
+            )
+        if (template.get("policy") is not None or
+                template.get("drone_carrier_id") is not None or
+                kind in (5, 8, 19)):
+            raise ValueError(
+                "reserve FleetShip template needs a standalone, non-policy source hull"
+            )
+        ship = copy.deepcopy(template)
+        ship["entity_id"] = reserve_id_base + index * 2
+        ship["persistent_fleet"] = False
+        ship.pop("fleet_ship_id", None)
+        ship["user_controlled"] = False
+        ship["position"] = [(scene["bounds"]["min"][axis] +
+                             scene["bounds"]["max"][axis]) / 2
+                            for axis in range(2)]
+        ship["formation_offset"] = [0.0, 0.0]
+        if ship.get("special_weapon") is not None:
+            ship["special_weapon"]["weapon_id"] = ship["entity_id"] + 1
+        reserve_templates.append(ship)
+    scene["fleet_templates"] = reserve_templates
     if args.arena_size is not None:
         # Border IDs must be allocated AFTER all real battle ships and
         # reinforcements. The common native layout installer requires each
@@ -1001,6 +1036,16 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
     return scene, run
 
 
+def fleet_template(value: str) -> tuple[int, int]:
+    """SOURCE_SIDE:SHIP_TYPE, uniquely identifying a complete native source."""
+    if not re.fullmatch(r"[12]:\d+", value):
+        raise argparse.ArgumentTypeError("--fleet-template requires SIDE:TYPE")
+    side, kind = map(int, value.split(":"))
+    if not 0 <= kind < 24:
+        raise argparse.ArgumentTypeError("fleet template type must be in 0..23")
+    return side, kind
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path,
@@ -1013,6 +1058,9 @@ def main() -> None:
                         default="bees", help="which sides have player input authority")
     parser.add_argument("--host-side", type=int, choices=(1, 2),
                         help="local host window side when both sides are controlled")
+    parser.add_argument("--fleet-template", action="append", type=fleet_template,
+                        dest="fleet_templates", default=[], metavar="SIDE:TYPE",
+                        help="full-health authored reserve class for later campaign rewards, not a battle combatant")
     parser.add_argument("--ai-tactics",
                         choices=("aggressive", "circle", "right-swipe",
                                  "left-swipe", "in-and-out", "mixed"),
