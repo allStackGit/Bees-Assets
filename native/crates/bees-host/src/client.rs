@@ -1200,6 +1200,22 @@ impl NativeClient {
                             support_command = self.renderer.selection.support_command(&view, action);
                             return None;
                         }
+                        if let Some(target) = self.renderer.pick_demolition_fire_point(
+                            &view, destination,
+                        ) {
+                            // Submit the exact same authenticated point-fire
+                            // used by the explicit T tool; firing never
+                            // creates a separate mission damage pathway.
+                            manual_fire = Some(NativePlayerSquadFire {
+                                world_id: view.world_id,
+                                episode_revision: view.episode_revision,
+                                squads: self.renderer.selection.squads().to_vec(),
+                                controller_id: 0,
+                                target: Some(target),
+                            });
+                            self.input_feedback = "Bombardment: target selected";
+                            return None;
+                        }
                     }
                 } else {
                     if !right_down || self.paused { return None; }
