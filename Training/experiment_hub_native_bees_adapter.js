@@ -142,6 +142,40 @@ function learnerMeasurements(metrics) {
     add('optimizer_steps_per_update_second', 'rate');
     add('torch_cuda_process_peak_allocated_bytes', 'bytes');
     add('torch_cuda_process_peak_reserved_bytes', 'bytes');
+    if (metrics.optimizer_gpu_workers != null) {
+        const count = metrics.optimizer_gpu_workers;
+        if (![0,1,2].includes(count) ||
+            (count === 2 && (
+                !Number.isSafeInteger(metrics.optimizer_synchronized_minibatches) ||
+                metrics.optimizer_synchronized_minibatches < 1 ||
+                !Array.isArray(metrics.optimizer_gpu_per_device) ||
+                metrics.optimizer_gpu_per_device.length !== 2)))
+            throw Error('Invalid native optimizer GPU worker measurements.');
+        add('optimizer_gpu_workers', 'count');
+        if (count === 2) {
+            add('optimizer_synchronized_minibatches', 'count');
+            add('optimizer_gpu_update_wall_seconds_max', 'seconds');
+            metrics.optimizer_gpu_per_device.forEach((worker,index) => {
+                if (worker.rank !== index ||
+                    worker.gradient_syncs !== metrics.optimizer_synchronized_minibatches ||
+                    !Number.isFinite(worker.update_wall_seconds) ||
+                    worker.update_wall_seconds < 0)
+                    throw Error('Invalid native synchronized optimizer worker evidence.');
+                report['optimizer_gpu_'+index+'_update_wall_seconds'] = {
+                    value:worker.update_wall_seconds,unit:'seconds',
+                };
+                for (const [source,target] of [
+                    ['torch_cuda_process_peak_allocated_bytes','peak_allocated_bytes'],
+                    ['torch_cuda_process_peak_reserved_bytes','peak_reserved_bytes'],
+                ]) {
+                    const value=worker[source];
+                    if(!Number.isSafeInteger(value)||value<0)
+                        throw Error('Invalid native GPU optimizer device memory evidence.');
+                    report['optimizer_gpu_'+index+'_'+target]={value,unit:'bytes'};
+                }
+            });
+        }
+    }
     const missionDecisions = metrics.native_mission_learner_decisions;
     const verifiedDecisions = metrics.native_mission_learner_decision_rows_validated;
     const missionMix = metrics.native_mission_learner_decisions_by_kind;
@@ -814,6 +848,18 @@ function createNativeBeesAdapter({
         const round = completedRound(output);
         if (!round) return null;
         verifyRoundGpuLease(context, round.receipt);
+        if (!collectOnly && gpuLeaseCount(context) === 2) {
+            const proof = round.metrics;
+            if (proof.optimizer_gpu_workers !== 2 ||
+                !Number.isSafeInteger(proof.optimizer_synchronized_minibatches) ||
+                proof.optimizer_synchronized_minibatches < 1 ||
+                !Array.isArray(proof.optimizer_gpu_per_device) ||
+                proof.optimizer_gpu_per_device.length !== 2 ||
+                proof.optimizer_gpu_per_device.some((row, index) =>
+                    row?.rank !== index || row.gradient_syncs !==
+                        proof.optimizer_synchronized_minibatches))
+                throw Error('Native learner claimed two GPUs without verified synchronized policy updates.');
+        }
         const inputs = roundInputs(context);
         if (round.receipt.input_checkpoint_sha256 !== inputs.checkpointDigest ||
             round.receipt.input_manifest_sha256 !== inputs.manifestDigest)
@@ -833,11 +879,11 @@ function createNativeBeesAdapter({
         stop_policy: 'terminate-group',
         config_sha256: configSha256,
         gpu_execution: 'cuda',
-        // Import-only learner jobs do not have native simulation actors
-        // and therefore cannot use a second GPU. Advertise two-GPU
-        // capability only when this installed adapter owns local rollouts.
-        ...(!inboxLearner&&!bundleRound
-            ?{gpu_dual_execution:'native-rollouts'}:{}),
+        // The coordinator's native dual-GPU capability tag covers the
+        // existing rollout-worker placement and the same MA-POCA learner.
+        // Bundle-only jobs need no physical simulation here: both leased
+        // devices perform synchronized native policy updates instead.
+        gpu_dual_execution: 'native-rollouts',
         rocr_gpu_uuids,
         // Collection and optimization both run the same native model
         // inference backend. A collector may require GPU inference even
@@ -948,9 +994,10 @@ function createNativeBeesAdapter({
                 context.gpu_pci_addresses.length !== 2 ||
                 new Set(context.gpu_pci_addresses).size !== 2 ||
                 context.gpu_pci_addresses.some(pci=>!PCI.test(String(pci))) ||
-                inboxLearner || bundleRound || cudaUuid !== undefined
+                cudaUuid !== undefined ||
+                context.cpu_quota < 2
             ))
-                throw Error('Two native GPU leases require physical rollout collection, not a bundle-only learner.');
+                throw Error('Two native GPU leases require exclusive GPUs and at least two CPUs.');
             if ((pci !== undefined && (
                     dualGpu || !PCI.test(String(pci)) ||
                     context.gpu_mode !== 'exclusive' ||
@@ -1003,11 +1050,14 @@ function createNativeBeesAdapter({
                 ]),
                 ...(inboxLearner ? bundleArguments(rollout_bundles) : []),
                 '--device', gpu ? 'cuda' : 'cpu',
+                ...(!collectOnly && dualGpu ? ['--learner-gpus', '2'] : []),
                 ...(optimizer_threads === undefined ? [] :
                     ['--torch-threads', String(optimizer_threads)]),
-                ...(rollout_workers === undefined && !dualGpu ? [] :
+                ...((rollout_workers === undefined && !dualGpu) ||
+                    inboxLearner || bundleRound ? [] :
                     ['--rollout-workers', String(activeWorkers)]),
-                ...(!collectOnly && rollout_worlds !== undefined || dualGpu ?
+                ...((!inboxLearner && !bundleRound) &&
+                    (rollout_worlds !== undefined || dualGpu) ?
                     ['--rollout-worlds', String(activeWorlds)] : []),
                 ...(physics_workers === undefined ? [] :
                     ['--physics-workers', String(activePhysicsWorkers)]),
