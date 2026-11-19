@@ -4810,14 +4810,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeCourierPort=(host,endpoint)=>(state.jobs||[]).some(job=>{
             if(job.project_id!=='courier_lineage'||job.assigned_machine_id!==host.id||
                 ['cancelled','finished','stopped'].includes(job.status))return false;
+            const learner=state.jobs.find(parent=>
+                parent.id===job.frozen_parameters?.learner_job_id&&
+                parent.project_id==='courier');
+            const plan=learner?.frozen_parameters?.remote_lineage_plan;
+            const first=learner?.frozen_parameters?.shared_policy===true?0:
+                Number.isSafeInteger(learner?.frozen_parameters?.workers)&&
+                Array.isArray(plan)&&learner.frozen_parameters.workers>plan.length
+                    ?learner.frozen_parameters.workers-plan.length:null;
+            const index=first===null?null:job.frozen_parameters?.slot-first;
+            const frozen=Array.isArray(plan)&&Number.isSafeInteger(index)&&
+                index>=0&&index<plan.length?plan[index]?.endpoint:null;
             const listeners=host.courier_lineage_slots||[];
-            const slot=listeners.length
-                ?listeners.find(item=>item.slot===job.frozen_parameters?.slot)
-                :host.courier_lineage_endpoint
-                    ?{endpoint:host.courier_lineage_endpoint}:null;
-            // A running service with an unrecognized native slot is not
-            // evidence that another listener is free.
-            return !slot||slot.endpoint===endpoint;
+            const advertised=(listeners.length
+                ?listeners.find(item=>item.slot===job.frozen_parameters?.slot)?.endpoint
+                :host.courier_lineage_endpoint)||null;
+            // A mapped listener changing while its native job remains
+            // assigned cannot make the original bound port available.
+            return !frozen||!advertised||advertised!==frozen||
+                frozen===endpoint;
         });
         const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
             host.status==='connected'&&!activeCourierPort(host,endpoint)&&
