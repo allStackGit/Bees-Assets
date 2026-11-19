@@ -4556,10 +4556,15 @@ class ExperimentHub {
                 job.status==='waiting_adapter'&&!job.dispatch_id);
             const allFinished=jobs.every(job=>
                 job.status==='finished'&&job.capacity_released_at);
-            const active=jobs.every(job=>[
-                'start_requested','launch_requested','running','stop_requested',
-            ].includes(job.status)&&UUID.test(String(job.dispatch_id||'')));
-            if(!allWaiting&&!allFinished&&!active)
+            // Distributed optimizer ranks can finish and release capacity
+            // at different times. Such a mixed terminal/running group still
+            // has one original authorized Start, and the Hub must preserve
+            // all its independent machine-owned processes and leases.
+            const owned=jobs.every(job=>
+                job.status==='finished'&&job.capacity_released_at||
+                ['start_requested','launch_requested','running','stop_requested']
+                    .includes(job.status)&&UUID.test(String(job.dispatch_id||'')));
+            if(!allWaiting&&!owned)
                 throw Error('Mixed or uncertain native resource owners require manual review.');
             if(!allFinished&&jobs.some(job=>
                 plan.agent_instances[job.assigned_machine_id]!==instances[job.assigned_machine_id]))
@@ -4569,7 +4574,7 @@ class ExperimentHub {
             const latest=plans.at(-1);
             if(latest&&['needs_review','expired','cancelled'].includes(latest.status))
                 throw Error('The original native bundle Start requires separate review.');
-            if(active&&latest?.status!=='authorized')
+            if(owned&&!allFinished&&latest?.status!=='authorized')
                 throw Error('Native jobs cannot be resumed without their original authorized Start.');
             if(allWaiting&&latest?.status==='authorized')
                 throw Error('Authorized native Start has unresolved machine execution ownership.');
