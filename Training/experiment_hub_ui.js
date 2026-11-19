@@ -1837,8 +1837,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 cell(row,evidence?.suite_id||rule?.suite_id||'—');
                 cell(row,evidence?.suite_sha256||rule?.suite_sha256||'—')
                     .classList.add('hub-checkpoint-digest');
+                const measure=evidence?.success_metric==='physical_mission_success_or_interception'
+                    ?' · physical goal/interception'
+                    :evidence?.success_metric==='learner_faction_victory'
+                        ?' · faction victory':'';
                 cell(row,evidence?evidence.successes.toLocaleString()+' / '+
-                    evidence.trials.toLocaleString():'—');
+                    evidence.trials.toLocaleString()+measure:'—');
                 cell(row,evidence?(evidence.successes/evidence.trials)
                     .toLocaleString(undefined,{style:'percent',maximumFractionDigits:2}):'—');
                 cell(row,evidence?.checkpoint_sha256||'—')

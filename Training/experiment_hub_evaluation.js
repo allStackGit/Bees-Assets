@@ -70,11 +70,15 @@ function evaluationEvidence(value,policy,dispatchId) {
         (policy.suite_sha256&&value.suite_sha256!==policy.suite_sha256)||
         typeof value.checkpoint_sha256!=='string'||!SHA256.test(value.checkpoint_sha256)||
         !trials(value.trials)||!Number.isSafeInteger(value.successes)||
-        value.successes<0||value.successes>value.trials)
+        value.successes<0||value.successes>value.trials||
+        (value.success_metric!==undefined&&
+            (typeof value.success_metric!=='string'||
+                !/^[a-z][a-z0-9_]{0,63}$/.test(value.success_metric))))
         throw Error('Invalid independent evaluation evidence for this suite and dispatch.');
     return {schema_version:1,suite_id:value.suite_id,dispatch_id:dispatchId,
         checkpoint_sha256:value.checkpoint_sha256,trials:value.trials,
         successes:value.successes,
+        ...(value.success_metric?{success_metric:value.success_metric}:{}),
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
 }
 function evaluationRules(policy) {

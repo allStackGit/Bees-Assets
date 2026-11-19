@@ -177,6 +177,8 @@ def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_d
             and receipt["dispatch_id"] == dispatch
             and receipt["suite_id"] == suite["suite_id"]
             and receipt.get("suite_sha256") == expected_digest
+            and (suite.get("success_metric") is None or
+                 receipt.get("success_metric") == suite["success_metric"])
             and (not job.get("suite_sha256") or receipt.get("suite_sha256") == job["suite_sha256"])
             and SHA256.fullmatch(receipt.get("checkpoint_sha256", ""))
             and type(trials) is int
@@ -208,6 +210,8 @@ def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> Non
         or (job.get("final_checkpoint_sha256") and
             receipt["checkpoint_sha256"] != job["final_checkpoint_sha256"])
         or receipt.get("suite_sha256") != expected_digest
+        or (suite.get("success_metric") is not None and
+            receipt.get("success_metric") != suite["success_metric"])
         or (job.get("suite_sha256") and receipt.get("suite_sha256") != job["suite_sha256"])
     ):
         raise ValueError("invalid pending evaluation receipt identity")
@@ -298,6 +302,8 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             pending = {"target": job, "receipt": {
                 "schema_version": 1, "suite_id": suite_id, "suite_sha256": digest, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
+                **({"success_metric": receipt_suite["success_metric"]}
+                   if receipt_suite.get("success_metric") else {}),
             }}
             save_cursor(state, {**saved, "pending_receipt": pending})
             flush_receipt(args, receipt_suite, pending, digest)
@@ -476,6 +482,8 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                             "checkpoint_sha256": checkpoint_digest,
                             "trials": receipt_suite["trials"],
                             "successes": successes,
+                            **({"success_metric": receipt_suite["success_metric"]}
+                               if receipt_suite.get("success_metric") else {}),
                         }})
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
                 # A bad snapshot cannot consume the cursor or starve other

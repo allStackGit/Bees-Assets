@@ -33,7 +33,10 @@ def read_suite(file: Path) -> dict:
         "policy_worker_sha256", "rollout_binary_sha256",
         "learner_slot", "learner_side", "policy_seed", "trials",
     }
-    if (not isinstance(suite, dict) or set(suite) != keys or
+    if (not isinstance(suite, dict) or
+            set(suite) - {"success_metric"} != keys or
+            ("success_metric" in suite and suite["success_metric"] not in (
+                "physical_mission_success_or_interception", "learner_faction_victory")) or
             not isinstance(suite.get("suite_id"), str) or
             not SUITE_ID.fullmatch(suite["suite_id"]) or
             not all(isinstance(suite.get(key), str) and SHA256.fullmatch(suite[key])
@@ -93,6 +96,12 @@ def source_inputs(suite_file: Path, suite: dict):
             "Native Hub evaluation needs homogeneous goal or elimination "
             "Levels; publish separate fixed suites for different scoring"
         )
+    expected_metric = (
+        "physical_mission_success_or_interception"
+        if all(goal_levels) else "learner_faction_victory"
+    )
+    if suite.get("success_metric", expected_metric) != expected_metric:
+        raise ValueError("Native fixed suite's scoring identity differs from its authored Levels")
     # Holdouts commonly reuse one scene across hundreds of native worlds.
     # Read and parse that physical roster exactly once, then validate only
     # each world's small model routing table. No world-sized JSON copies.
@@ -294,6 +303,11 @@ def create_suite_main(arguments) -> int:
         "learner_side": args.learner_side,
         "policy_seed": args.policy_seed,
         "trials": len(config["levels"]) * episodes,
+        "success_metric": (
+            "physical_mission_success_or_interception"
+            if all(level_has_goal(level) for level in config["levels"])
+            else "learner_faction_victory"
+        ),
     }
     if (output.exists() or not output.parent.is_dir() or
             not 1 <= suite["trials"] <= 10000):
@@ -361,6 +375,15 @@ def main():
             "dispatch_id": args.dispatch_id,
             "checkpoint_sha256": args.checkpoint_sha256,
             "trials": suite["trials"], "successes": successes,
+            "success_metric": suite.get("success_metric",
+                "physical_mission_success_or_interception"
+                if all(level_has_goal(level) for level in
+                       json.loads(read_bounded(
+                           pinned_source(args.suite, suite["run_config"],
+                                         suite["run_config_sha256"]),
+                           8 * 1024 * 1024,
+                       ))["levels"])
+                else "learner_faction_victory"),
         }
         print(publish(receipts, result))
         print(f"Native Bees fixed-reference successes: {successes}/{suite['trials']}")
