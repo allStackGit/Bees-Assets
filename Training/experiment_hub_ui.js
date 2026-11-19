@@ -4732,7 +4732,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const resources=JSON.parse($('hub-job-resources').value);
             const matching=courierMatch.input.checked&&!courierMatch.label.hidden;
             if(budgets.some(item=>item.machine_id===courierMachine.value)&&!matching)
-                throw Error('A same-machine Courier GPU collector requires explicit matched machine budgets.');
+                throw Error('Same-machine Courier GPU collectors require explicitly matched machine budgets.');
             const budgetRequest=distributedBudgetRequest(
                 budgets.map(({machine_id,...resources})=>({resources,machine_id})),
                 matching,'lineages');
@@ -4803,9 +4803,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
             host.status==='connected'&&
             (host.id!==machine.id||colocated)&&
-            host.courier_lineage_endpoint===endpoint&&
+            (shared&&host.courier_lineage_slots?.length
+                ?host.courier_lineage_slots.some(listener=>
+                    listener.slot===i&&listener.endpoint===endpoint&&
+                    listener.max_shards===machine.courier_remote_max_shards?.[i])
+                :host.courier_lineage_endpoint===endpoint&&
+                    host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i])&&
             host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
-            host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i]&&
             (!shared||host.courier_shared_policy_collector===true)&&
             host.installed_projects?.includes('courier_lineage')));
         const subset=machine?.courier_lineage_subset===true;
@@ -4828,19 +4832,25 @@ document.addEventListener('DOMContentLoaded', () => {
                             :{gpu_count:0})})),
                 null,2);
         }
+        const localCount=available.filter(host=>host.id===machine?.id).length;
+        const remoteIds=available.filter(host=>host.id!==machine?.id)
+            .map(host=>host.id);
+        const localCapacity=localCount<=1||
+            colocated&&machine?.courier_lineage_slots?.length>=localCount&&
+            machine?.gpus?.length>localCount;
         const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
-            capacity>0&&available.length>0&&
+            capacity>0&&available.length>0&&localCapacity&&
             (subset||capacity>=endpoints.length&&available.length===endpoints.length)&&
-            new Set(available.map(host=>host.id)).size===available.length);
+            new Set(remoteIds).size===remoteIds.length);
         courierQueue.disabled=!ready;
         courierDetails.textContent=ready
             ?'Available '+(shared?'collectors':'PPO workers')+': '+available.map(host=>host.id).join(', ')+
                 (subset?'. Keep the machines you want to allocate.':'. Supply one budget per worker in the listed order.')+
                 (shared
                     ?' Each collector gets at least one whole map.'+
-                        (colocated?' A local collector uses a SECOND exclusive GPU'+
-                            ' and needs the learner budget to reserve one exclusive GPU;'+
-                            ' leave machine matching checked when using that row.':'')
+                        (colocated?' Local collectors each use a distinct exclusive GPU'+
+                            ' in addition to the learner GPU. Configure a unique slot listener'+
+                            ' per collector and leave machine matching checked for local rows.':'')
                     :' Leave at least one PPO lineage on the learner.')
             :'Register the Courier lineage project and connect the approved workers.';
     }
