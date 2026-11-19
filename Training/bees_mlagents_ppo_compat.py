@@ -5571,6 +5571,81 @@ def _poca_full_cuda_graph_update(
     }
 
 
+
+def _native_poca_distributed_context():
+    """The existing MA-POCA optimizer uses one rank per leased GPU."""
+    from mlagents.torch_utils import torch
+
+    distributed = torch.distributed
+    if distributed.is_available() and distributed.is_initialized():
+        return distributed.get_rank(), distributed.get_world_size()
+    return 0, 1
+
+
+def _native_poca_average_gradients(poca_optimizer):
+    """Synchronize the stock actor and critic gradients before their one Adam step.
+
+    The native sampler partitions each *global* MA-POCA minibatch across
+    ranks, rather than duplicating the loss. An absent gradient participates
+    as zero only if another rank actually trained that parameter; parameters
+    unused by every rank remain grad=None, retaining original Adam state.
+    A contiguous reduction per dtype avoids one NCCL collective per weight
+    matrix. Model weights and checkpoint structure are unchanged.
+    """
+    from mlagents.torch_utils import torch
+
+    distributed = torch.distributed
+    if not distributed.is_available() or not distributed.is_initialized():
+        return
+    world_size = distributed.get_world_size()
+    if world_size <= 1:
+        return
+    optimizer = poca_optimizer.optimizer
+    parameters = [
+        parameter for group in optimizer.param_groups
+        for parameter in group["params"] if parameter.requires_grad
+    ]
+    if not parameters or any(parameter.device.type != "cuda" for parameter in parameters):
+        raise RuntimeError("Native distributed MA-POCA needs CUDA/ROCm actor and critic parameters")
+    device = parameters[0].device
+    if any(parameter.device != device for parameter in parameters):
+        raise RuntimeError("Native distributed optimizer parameters span local devices")
+    # All ranks have the same parameter order. The MAX reduction only
+    # decides which parameters had a real backward contribution.
+    presence = torch.tensor(
+        [int(parameter.grad is not None) for parameter in parameters],
+        device=device, dtype=torch.int32,
+    )
+    distributed.all_reduce(presence, op=distributed.ReduceOp.MAX)
+    groups = {}
+    for index, parameter in enumerate(parameters):
+        groups.setdefault(parameter.dtype, []).append((index, parameter))
+    for dtype, entries in groups.items():
+        # Every rank reduces exactly the same ordered parameter shapes.
+        flattened = torch.cat([
+            (parameter.grad.detach() if parameter.grad is not None
+             else torch.zeros_like(parameter)).reshape(-1)
+            for _, parameter in entries
+        ])
+        distributed.all_reduce(flattened, op=distributed.ReduceOp.SUM)
+        flattened.mul_(1.0 / world_size)
+        offset = 0
+        for index, parameter in entries:
+            count = parameter.numel()
+            if bool(presence[index].item()):
+                value = flattened[offset:offset + count].view_as(parameter)
+                if parameter.grad is None:
+                    parameter.grad = value.clone()
+                else:
+                    parameter.grad.copy_(value)
+            else:
+                parameter.grad = None
+            offset += count
+    poca_optimizer._bees_distributed_grad_syncs = (
+        getattr(poca_optimizer, "_bees_distributed_grad_syncs", 0) + 1
+    )
+
+
 def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
     """Execute Adam eagerly or replay a captured CUDA optimizer step."""
 
@@ -6801,6 +6876,13 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
             - self.hyperparameters.batch_size % self.policy.sequence_length
         )
         batch_size = max(batch_size, self.policy.sequence_length)
+        native_rank, native_workers = _native_poca_distributed_context()
+        if (batch_size % native_workers != 0 or
+                batch_size // native_workers < self.policy.sequence_length):
+            raise ValueError(
+                "Global native PPO minibatch cannot be divided among GPU learners"
+            )
+        shard_batch_size = batch_size // native_workers
         update_started = time.perf_counter()
         diagnostics_enabled = _POCA_OPTIMIZATIONS.diagnostics_enabled
         _POCA_TIMING_STATE.timing_totals = {} if diagnostics_enabled else None
@@ -7001,7 +7083,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         try:
             for _epoch_index in range(num_epoch):
                 _POCA_UPDATE_CACHE_STATE.actor_update = True
-                current_batch_size = batch_size
+                current_batch_size = shard_batch_size
                 current_n_sequences = max(
                     int(
                         current_batch_size
@@ -7021,14 +7103,15 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                     )
                     np.random.shuffle(epoch_order)
 
-                epoch_num_batches = (
-                    buffer_length // current_batch_size
-                )
+                epoch_num_batches = buffer_length // batch_size
+                # Both learners use the same shuffled global row order and
+                # disjoint contiguous slices of each global PPO minibatch.
+                # No sample is trained twice within an epoch.
                 offsets = list(
                     range(
-                        0,
-                        epoch_num_batches * current_batch_size,
-                        current_batch_size,
+                        native_rank * shard_batch_size,
+                        epoch_num_batches * batch_size,
+                        batch_size,
                     )
                 )
                 pending_cpu = {}
@@ -7945,7 +8028,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
 
         if (
-            actor_update
+            _native_poca_distributed_context()[1] == 1
+            and actor_update
             and not getattr(self, "_bees_factorized_poca", False)
             and cached is not None
             and not memories
@@ -8084,7 +8168,8 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _poca_record_timing("losses", time.perf_counter() - started)
 
         graph_eligible = bool(
-            actor_update
+            _native_poca_distributed_context()[1] == 1
+            and actor_update
             and not getattr(self, "_bees_factorized_poca", False)
             and _poca_cuda_graph_minibatch_eligible(cached)
         )
@@ -8114,6 +8199,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 time.perf_counter() - join_started,
             )
         _poca_record_timing("backward", time.perf_counter() - started)
+
+        # Synchronous data-parallel MA-POCA: the shared actor and critic
+        # backpropagate on each GPU's exclusive minibatch shard, then every
+        # rank receives the same mean gradient before advancing Adam.
+        _native_poca_average_gradients(self)
 
         started = time.perf_counter()
         cuda_timing = _poca_cuda_timing_begin("optimizer_step")
