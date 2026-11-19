@@ -643,7 +643,7 @@ function rolloutPolicyObservationMeasurements(rollout) {
 
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
-    learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
+    learnerSlot, collectOnly = false, bundleInbox, modelInbox, rocrGpuUuids = {},
     evaluationRoot, evaluationSuites, gameLibrarySaveRoot, distributedOptimizer,
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
@@ -715,6 +715,17 @@ function createNativeBeesAdapter({
         inbox = fs.realpathSync(bundleInbox);
         if (!fs.statSync(inbox).isDirectory() || inbox === artifacts)
             throw Error('Native Bees bundle inbox must be a separate existing directory.');
+    }
+    let modelsInbox;
+    if (modelInbox !== undefined) {
+        if(typeof modelInbox!=='string'||!path.isAbsolute(modelInbox))
+            throw Error('Native Bees model inbox requires an absolute machine-owned path.');
+        modelsInbox=fs.realpathSync(modelInbox);
+        if(!fs.statSync(modelsInbox).isDirectory()||
+            modelsInbox===artifacts||modelsInbox===inbox||
+            modelsInbox.startsWith(artifacts+path.sep)||
+            artifacts.startsWith(modelsInbox+path.sep))
+            throw Error('Native Bees model packages need a separate existing private inbox.');
     }
     if (learnerSlot !== undefined &&
         (!Number.isSafeInteger(learnerSlot) || learnerSlot < 0 || learnerSlot > 0xffffffff))
@@ -903,6 +914,41 @@ function createNativeBeesAdapter({
     }
 
     function roundInputs(context) {
+        const sourceId=context.model_source_job_id;
+        if(sourceId!==undefined&&sourceId!==null) {
+            if(!UUID.test(String(sourceId))||sourceId===context.job_id||
+                !SHA256.test(String(context.expected_parent_model_sha256||'')))
+                throw Error('Native model handoff requires its pinned Hub predecessor and checkpoint.');
+            // The checkpoint publisher already owns its original local
+            // artifact lineage. Remote nodes use the verified package in
+            // their private machine-owned inbox instead.
+            const localOwner=context.continuation_of_job_id===sourceId&&
+                context.project_id===PROJECT;
+            let source;
+            if(localOwner) {
+                source=verifiedOutput(completedRound(
+                    path.join(artifacts,sourceId)),path.join(artifacts,sourceId));
+            }else {
+                if(!modelsInbox)throw Error('Native model successor has no approved private model inbox.');
+                const directory=path.join(modelsInbox,sourceId,'learner');
+                const checkpoint=path.join(directory,'checkpoint.pt');
+                const sourceManifest=path.join(directory,'manifest.json');
+                if(trustedFile(checkpoint)!==checkpoint||
+                    trustedFile(sourceManifest)!==sourceManifest)
+                    throw Error('Native model inbox source files were redirected.');
+                const checkpointDigest=sha256(fs.readFileSync(checkpoint));
+                const manifestDigest=sha256(fs.readFileSync(sourceManifest));
+                const gpuSupport=verifyModelDependencies(sourceManifest,
+                    new Map([[checkpoint,checkpointDigest]]),checkpoint,learnerSlot);
+                source={checkpoint,manifest:sourceManifest,
+                    checkpointDigest,manifestDigest,...gpuSupport};
+            }
+            if(source.checkpointDigest!==context.expected_parent_model_sha256||
+                (context.continuation_of_job_id&&
+                 context.continuation_of_job_id!==sourceId))
+                throw Error('Native model handoff differs from its exact Hub continuation ancestry.');
+            return source;
+        }
         if (!context.continuation_of_job_id)
             return {checkpoint: input, manifest, checkpointDigest: pins.get(input),
                 manifestDigest: pins.get(manifest), ...initialGpuSupport};
@@ -1061,6 +1107,7 @@ function createNativeBeesAdapter({
             if(!UUID.test(String(jobId)))throw Error('Invalid native Bees artifact job.');
             return path.join(artifacts,jobId);
         },
+        ...(modelsInbox?{model_inbox_dir(){return modelsInbox;}}:{}),
         ...(optimizerInputsSha256?{optimizer_inputs_sha256:optimizerInputsSha256}:{}),
         gpu_execution: 'cuda',
         // The coordinator's native dual-GPU capability tag covers the
