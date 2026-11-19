@@ -3692,6 +3692,7 @@ class ExperimentHub {
                     !supportsEvaluation(machine.evaluation_suites,job)||
                     !supportsTinyBrainsProfile(machine,job)||
                     !distributedRolloutHost(snapshot,job,machine)||
+                    nativeModelSourceBlock(snapshot,job)||
                     nativeResourceBlock(job,lease)||
                     gpuStartBlock(job,lease,machine)) {
                     // A previously offered Start may already own a process.
@@ -3737,6 +3738,8 @@ class ExperimentHub {
                     configuration_sha256:job.configuration_sha256,
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    ...(job.resource_bundle?{resource_bundle:copy(job.resource_bundle)}:{}),
+                    ...(job.model_source_job_id?{model_source_job_id:job.model_source_job_id}:{}),
                     resources:copy(job.resources),
                     ...(action==='inspect'&&job.checkpoint_reinspection_requested_at
                         ?{reverify_checkpoint:true}:{}),
