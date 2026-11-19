@@ -95,7 +95,9 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_prefetch_skipped_batches',
     'training_gpu_devices_assigned','training_gpu_devices_active',
     'training_gpu_memory_adjustments','training_gpu_memory_shifted_workers',
-    'training_gpu_memory_peer_contexts',
+    'training_gpu_memory_peer_contexts','training_gpu_memory_accepted',
+    'training_gpu_memory_rejected','training_gpu_memory_trial',
+    'training_gpu_memory_settled',
     'training_collector_probe_moved_maps','training_collector_start_parallel','training_resume_map_moves','training_resume_proof_ready','training_resume_proof_rounds','training_sim_migration_workers','training_collector_sim_trial_workers','training_collector_sim_eligible_workers','training_sim_process_migrations','training_sim_process_migration_denials','training_gpu_output_staged_batches','training_gpu_output_slots_reused','training_gpu_input_device_copy_batches','training_gpu_input_device_reused_slots','training_gpu_input_device_new_slots','training_gpu_output_slots_allocated','training_gpu_state_pack_reuse_batches','training_shared_gpu_output_staged','training_shared_gpu_output_reused','training_shared_gpu_input_device_copies','training_shared_gpu_input_device_reused','training_shared_gpu_state_pack_reused']);
 const WINDOWS_ENTRY=[
     'import os, runpy, sys',
