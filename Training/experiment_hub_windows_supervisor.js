@@ -76,8 +76,51 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         (adapter.cwd!=null&&
             (!noControls(adapter.cwd)||!pathApi.isAbsolute(adapter.cwd))))
         throw Error('Install a Windows-local adapter explicitly allowing force-stop only.');
-    let gpu=null;
-    if(r.gpu_count!==0) {
+    let gpu=null,multiGpu=null;
+    if(r.gpu_count>=2) {
+        const bindings=lease.gpu_bindings;
+        const courier=job.project_id==='courier'&&
+            adapter.gpu_multi_execution==='independent-ppo';
+        const tinybrains=job.project_id==='tinybrains'&&
+            (r.gpu_count===2
+                ?job.frozen_parameters?.device==='dual'&&
+                    adapter.gpu_dual_execution==='split-ppo'
+                :job.frozen_parameters?.device==='multi'&&
+                    adapter.gpu_multi_execution==='split-ppo-collectors');
+        if(!gpuEnabled||!(courier||tinybrains)||
+            adapter.gpu_execution!=='cuda'||
+            !Number.isSafeInteger(r.gpu_count)||r.gpu_count>8||
+            lr.gpu_count!==r.gpu_count||
+            r.gpu_mode!=='exclusive'||lr.gpu_mode!=='exclusive'||
+            !Array.isArray(bindings)||bindings.length!==r.gpu_count||
+            lr.gpus?.length!==r.gpu_count||
+            (r.gpus?.length>0&&
+                (r.gpus.length!==r.gpu_count||
+                 r.gpus.some((id,i)=>id!==lr.gpus[i])))||
+            bindings.some((bound,i)=>bound?.id!==lr.gpus[i]||
+                !PCI.test(String(bound.pci_address||''))||
+                !CUDA_UUID.test(String(bound.cuda_uuid||'')))||
+            new Set(bindings.map(bound=>bound.pci_address)).size!==bindings.length||
+            new Set(bindings.map(bound=>bound.cuda_uuid.toLowerCase())).size!==
+                bindings.length)
+            throw Error('Windows native multi-GPU training requires 2–8 distinct exclusive pinned CUDA devices.');
+        const current=gpuInventory();
+        if(!Array.isArray(current))
+            throw Error('Windows CUDA device inventory unavailable.');
+        multiGpu=bindings.map(binding=>{
+            const selected=current.find(device=>
+                device.pci_address===binding.pci_address&&
+                device.cuda_uuid===binding.cuda_uuid&&
+                Number.isSafeInteger(device.vram_mb)&&
+                device.vram_mb>=binding.vram_mb);
+            if(!selected)throw Error('A leased CUDA device identity or physical VRAM changed before Start.');
+            const block=startHeadroom(r,availableRam,selected);
+            if(block)throw Error(block);
+            return {pci_address:binding.pci_address,cuda_uuid:binding.cuda_uuid,
+                mode:'exclusive',vram_mb:0,compute_pct:100,
+                total_vram_mb:binding.vram_mb};
+        });
+    }else if(r.gpu_count===1) {
         const binding=lease.gpu_bindings?.[0];
         const cooperative=r.gpu_mode==='shared';
         if(!gpuEnabled||adapter.gpu_execution!=='cuda'||
@@ -125,7 +168,7 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Invalid Windows continuation ancestry.');
     const context=Object.freeze({
         job_id:job.id,project_id:job.project_id,
-        cpu_quota:r.cpus,
+        cpu_quota:r.cpus,ram_quota_mb:r.ram_mb,
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         artifact_lineage_root_id:root,continuation_of_job_id:predecessor,
@@ -136,6 +179,9 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
             gpu_mode:gpu.mode,gpu_vram_mb:gpu.vram_mb,
             gpu_total_vram_mb:gpu.total_vram_mb,
             gpu_compute_pct:gpu.compute_pct}:{}),
+        ...(multiGpu?{gpu_pci_addresses:multiGpu.map(g=>g.pci_address),
+            gpu_cuda_uuids:multiGpu.map(g=>g.cuda_uuid),
+            gpu_mode:'exclusive'}:{}),
     });
     const stopFile=adapter.checkpoint_stop_file?.(context)??null;
     if(stopFile!==null&&(!noControls(stopFile)||!pathApi.isAbsolute(stopFile)))
@@ -146,7 +192,7 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Windows adapter returned unsafe native arguments.');
     return {executable:adapter.executable,args:argv,cwd:adapter.cwd||'',
         cpus:r.cpus,hostCpus:cores,ramMb:r.ram_mb,
-        root,predecessor,stopFile,gpu};
+        root,predecessor,stopFile,gpu,multiGpu};
 }
 // The coordinator and agent both budget shares. Recheck the private
 // Windows native journal before launching so unresolved local owners
@@ -156,17 +202,25 @@ function ensureLocalGpuCapacity(records,gpu) {
     let reservedVram=gpu.mode==='shared'?gpu.vram_mb:gpu.total_vram_mb;
     let reservedCompute=gpu.compute_pct;
     for(const record of records) {
-        if(terminal.has(record.state)||
-            record.gpu_pci_address!==gpu.pci_address)continue;
-        if(gpu.mode!=='shared'||record.gpu_mode!=='shared'||
-            record.gpu_cuda_uuid!==gpu.cuda_uuid||
-            !Number.isSafeInteger(record.gpu_vram_mb)||
-            record.gpu_vram_mb<1||
-            !Number.isSafeInteger(record.gpu_compute_pct)||
-            record.gpu_compute_pct<1)
-            throw Error('Another native job retains exclusive or unverified Windows CUDA ownership.');
-        reservedVram+=record.gpu_vram_mb;
-        reservedCompute+=record.gpu_compute_pct;
+        if(terminal.has(record.state))continue;
+        const allocations=Array.isArray(record.gpu_devices)
+            ?record.gpu_devices
+            :record.gpu_pci_address?[{
+                pci_address:record.gpu_pci_address,
+                cuda_uuid:record.gpu_cuda_uuid,
+                mode:record.gpu_mode,
+                vram_mb:record.gpu_vram_mb,
+                compute_pct:record.gpu_compute_pct}]:[];
+        for(const other of allocations) {
+            if(other.pci_address!==gpu.pci_address)continue;
+            if(gpu.mode!=='shared'||other.mode!=='shared'||
+                other.cuda_uuid!==gpu.cuda_uuid||
+                !Number.isSafeInteger(other.vram_mb)||other.vram_mb<1||
+                !Number.isSafeInteger(other.compute_pct)||other.compute_pct<1)
+                throw Error('Another native job retains exclusive or unverified Windows CUDA ownership.');
+            reservedVram+=other.vram_mb;
+            reservedCompute+=other.compute_pct;
+        }
     }
     if(reservedVram>gpu.total_vram_mb||reservedCompute>100)
         throw Error('Shared native CUDA capacity exceeds the physical device budget.');
@@ -201,7 +255,16 @@ class WindowsSupervisor {
             this.state.records.some(r=>!r||!UUID.test(String(r.job_id))||
                 !UUID.test(String(r.lease_id))||!SHA.test(String(r.token))||
                 (r.checkpoint_stop_file!=null&&(!noControls(r.checkpoint_stop_file)||
-                    !this.path.isAbsolute(r.checkpoint_stop_file))))||
+                    !this.path.isAbsolute(r.checkpoint_stop_file)))||
+                (r.gpu_devices!==undefined&&
+                    (!Array.isArray(r.gpu_devices)||
+                     r.gpu_devices.length<2||r.gpu_devices.length>8||
+                     r.gpu_pci_address!==undefined||
+                     r.gpu_devices.some(g=>!PCI.test(String(g?.pci_address))||
+                         !CUDA_UUID.test(String(g?.cuda_uuid))||
+                         g.mode!=='exclusive')||
+                     new Set(r.gpu_devices.map(g=>g.pci_address)).size!==
+                         r.gpu_devices.length)))||
             new Set(this.state.records.map(r=>r.job_id)).size!==
                 this.state.records.length)
             throw Error('Invalid Windows local ownership journal.');
@@ -248,6 +311,7 @@ class WindowsSupervisor {
             throw Error('Windows Job Object CPU/RAM and suspended-assignment preflight failed.');
         if(this.gpuEnabled&&reply.cuda_uuid_selection_supported!==true)
             throw Error('Installed Windows native owner did not prove CUDA UUID selector propagation; rebuild and re-pin the current helper.');
+        this.multiGpuQualified=reply.cuda_multi_uuid_selection_supported===true;
         // The quota denominator must match the Windows kernel's active
         // processors across all groups. A .NET process-affinity count is
         // not sufficient for a system-wide Job Object CPU percentage.
@@ -452,7 +516,11 @@ class WindowsSupervisor {
         ensureLocalCpuRamCapacity(this.state.records,invocation.cpus,
             invocation.ramMb,cpuSlots,
             Math.floor(this.hostOs.totalmem()/1048576));
-        ensureLocalGpuCapacity(this.state.records,invocation.gpu);
+        if(invocation.multiGpu&&!this.multiGpuQualified)
+            throw Error('Installed Windows owner has not proven ordered multi-GPU CUDA selector propagation.');
+        for(const device of (invocation.multiGpu||
+            (invocation.gpu?[invocation.gpu]:[])))
+            ensureLocalGpuCapacity(this.state.records,device);
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
@@ -480,6 +548,7 @@ class WindowsSupervisor {
             cwd:invocation.cwd,cpus:invocation.cpus,
             hostCpus:invocation.hostCpus,ramMb:invocation.ramMb,
             ...(invocation.gpu?{gpuUuid:invocation.gpu.cuda_uuid}:{}),
+            ...(invocation.multiGpu?{gpuUuid:invocation.multiGpu.map(g=>g.cuda_uuid).join(',')}:{}),
             receiptPath};
         // Persist the exact locally approved job request *before* creating
         // any owner process. A crash leaves an inspectable, non-repeatable job.
@@ -496,6 +565,9 @@ class WindowsSupervisor {
                 gpu_mode:invocation.gpu.mode,
                 gpu_vram_mb:invocation.gpu.vram_mb,
                 gpu_compute_pct:invocation.gpu.compute_pct}:{}),
+            ...(invocation.multiGpu?{gpu_devices:invocation.multiGpu.map(
+                ({pci_address,cuda_uuid,mode,vram_mb,compute_pct})=>
+                    ({pci_address,cuda_uuid,mode,vram_mb,compute_pct}))}:{}),
             state:'launch_requested',
             requested_at:new Date().toISOString(),diagnostic:null};
         this.commit([...this.state.records,record]);
