@@ -4614,11 +4614,23 @@ class ExperimentHub {
                 if(!members.every(job=>job.status==='finished'&&
                     job.capacity_released_at))continue;
                 if(phase==='collectors') {
-                    // Queued optimizer ranks are bound to the actual latest
-                    // collector SHA, not a speculative run ID or old replay.
-                    for(const job of members)
-                        verifiedNativeCollectorPin(this,job.id);
-                    update('pending_optimizer','Fresh completed physical experience ready for synchronized MA-POCA.');
+                    // The optimizer consumes exactly these authenticated
+                    // native physical partitions; freeze their measured
+                    // World counts before starting the next GPU group.
+                    const receipts=members.map(job=>
+                        verifiedNativeCollectorPin(this,job.id));
+                    const partitions=receipts.map((receipt,index)=>({
+                        job_id:members[index].id,
+                        world_start:receipt.partition.world_start,
+                        world_count:receipt.partition.world_count,
+                        seed_offset:receipt.seed_offset,
+                        ...(members[index].frozen_parameters.collection_id
+                            ?{collection_id:members[index].frozen_parameters.collection_id}
+                            :{}),
+                    }));
+                    update('pending_optimizer',
+                        'Fresh completed physical experience ready for synchronized MA-POCA.',
+                        {collector_world_partitions:partitions});
                 }else {
                     const owner=members[0];
                     if(!checkpointContinuationComplete(owner)||
@@ -4658,6 +4670,9 @@ class ExperimentHub {
                         source_job_id:plan.source_job_id,
                         source_checkpoint_sha256:plan.source_model_sha256,
                         collector_job_ids:plan.collectors_job_ids.slice(),
+                        ...(plan.collector_world_partitions?{
+                            collector_world_partitions:plan.collector_world_partitions,
+                        }:{}),
                         optimizer_job_ids:members.map(job=>job.id),
                         collector_bundle_id:plan.collectors_bundle_id,
                         optimizer_bundle_id:bundleId,
@@ -4693,6 +4708,7 @@ class ExperimentHub {
                             source_job_id:owner.id,
                             source_model_sha256:owner.checkpoint_model_sha256,
                             collectors_bundle_id:null,collectors_job_ids:null,
+                            collector_world_partitions:null,
                             optimizer_bundle_id:null,optimizer_job_ids:null,
                         });
                 }

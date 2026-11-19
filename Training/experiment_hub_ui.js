@@ -1033,6 +1033,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+plan.completed_rounds+'/'+plan.round_count+' rounds'+
                 ' · '+plan.status+
                 (lastRound?' · checkpoint '+lastRound.checkpoint_sha256.slice(0,12):'')+
+                (lastRound?.collector_world_partitions
+                    ?' · '+lastRound.collector_world_partitions.reduce(
+                        (total,part)=>total+part.world_count,0)+' physical Worlds'
+                    :'')+
                 (plan.reason?' · '+plan.reason:'');
             // The compact main row stays readable. The original immutable
             // collector/optimizer ownership and seed lineage remain
@@ -1051,6 +1055,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             (entry.evaluation_stop_satisfied?' (target met)':' (below target)')
                         :'')+
                     ' · collectors '+entry.collector_job_ids.join(', ')+
+                    (entry.collector_world_partitions?.length
+                        ?' · physical partitions '+entry.collector_world_partitions.map(part=>
+                            part.job_id.slice(-8)+': ['+part.world_start+','+
+                            (part.world_start+part.world_count)+')'
+                        ).join(', ')
+                        :'')+
                     ' · optimizers '+entry.optimizer_job_ids.join(', ')
                 ).join('\n');
             row.append(details);
