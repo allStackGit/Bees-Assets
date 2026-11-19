@@ -36,7 +36,8 @@ class MixedLinuxSupervisor {
             if(adapters[project])nativeAdapters[project]=adapters[project];
         }
         const nativeGpuEnabled=gpuEnabled===true&&
-            Boolean(adapters.bees_native||adapters.bees_native_collect);
+            Boolean(adapters.bees_native||adapters.bees_native_collect||
+                adapters.bees_native_optimizer_worker);
         this.native=nativeFactory({root,machineId,adapters:nativeAdapters,
             gpuEnabled:nativeGpuEnabled});
         this.docker=dockerFactory({root,machineId,adapters:{tinybrains:adapters.tinybrains},
