@@ -505,7 +505,7 @@ mission 3 requires mission 1, and mission 4 requires missions 2 and 3.
 Ship type 21 can be purchased immediately, while type 18 becomes
 purchasable after mission 3. Authoring rejects cyclic/forward references,
 missing missions, duplicate overrides, and non-shop unlock types.
-`bees campaign-status` exposes each mission's `requires`,
+`bees status my-branching-campaign/campaign.json --output-dir my-branching-save` exposes each mission's `requires`,
 `waiting_for`, `advance_on`, and the resulting class unlock states.
 
 The publisher retains the complete source-authored physical map,
