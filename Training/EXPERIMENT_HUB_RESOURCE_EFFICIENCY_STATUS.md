@@ -1,6 +1,19 @@
 # Resource-efficient training workstream
 
-Updated 2026-11-19. Hub branch: `feat/hub-resource-efficiency-20261112`. Companion active branches: `allStackGit/TinyBrains:feat/tinybrains-admission-ramp-20261118`; `allStackGit/Basic-Training:feat/courier-overlap-policy-codec-20261118`. Native Bees rewrite is out of scope.
+Updated 2026-11-19. Local integration branches: Hub `feat/hub-partial-ppo-staging-20261118`; TinyBrains `feat/training-efficiency-integrated-20261118`; Courier `feat/courier-versioned-policy-delta-20261118`. Native Bees rewrite is out of scope.
+
+Courier now has a checked frozen-policy batch executor for the outstanding
+independent-policy inference work. Distinct LSTM/MLP weights pack once; each
+policy retains its own version, recurrent state, reset mask and sampling head.
+Fixed cohort/vector layouts prevent queue-dependent geometry changes. Output
+and continuation checks, >=20% kernel gain and setup repayment gate adoption;
+rejected cohorts retain scalar execution without repeated probes. CPU checks
+matched 90 batches across all policy families and critic variants within
+float32 tolerances, with matching discrete actions/RNG and immutable packs.
+**Not yet integrated into training:** the next substantive step is a bounded
+GPU process broker with fixed RAM/VRAM admission, correct CUDA IPC lifetimes,
+worker-owned sampling and whole-PPO useful-SPS acceptance. No new public Hub
+metrics were added for this not-yet-active path.
 
 TinyBrains' multi-GPU path now computes PPO losses on each replica, returning
 six scalars per board instead of spatial logits and values. Global advantages,
