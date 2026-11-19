@@ -257,6 +257,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_optimizer_peak_allocated_mb',
             'training_cpu_parallelism','training_queue_max_seconds',
             'training_sim_processes',
+            'training_sim_group_dispatches','training_sim_grouped_shards',
+            'training_sim_ipc_commands_saved',
             'training_sim_multiplexed_shards',
             'training_sim_child_os_threads',
             'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
