@@ -14,15 +14,16 @@ function canOpen(device) {
     }finally{if(fd!==undefined)fs.closeSync(fd);}
 }
 function probe(kfd,allowed,...denied) {
-    if(kfd!=='/dev/kfd'||!RENDER.test(allowed)||denied.length<1||
+    const denySelected=allowed==='--deny-selected';
+    if(kfd!=='/dev/kfd'||(denySelected?denied.length!==1:!RENDER.test(allowed))||
         denied.length>31||new Set(denied).size!==denied.length||
         denied.some(node=>!RENDER.test(node)||node===allowed))
         throw Error('Invalid trusted Linux GPU probe devices.');
     const result={kfd,allowed,denied,
         kfd_access:canOpen(kfd),
-        allowed_access:canOpen(allowed),
+        allowed_access:denySelected?null:canOpen(allowed),
         denied_access:denied.map(canOpen)};
-    if(!result.kfd_access||!result.allowed_access||result.denied_access.some(Boolean))
+    if(!result.kfd_access||(!denySelected&&!result.allowed_access)||result.denied_access.some(Boolean))
         throw Error('Device-policy probe did not establish allowed/blocked access.');
     return result;
 }
@@ -35,4 +36,4 @@ if(require.main===module) {
         process.exitCode=1;
     }
 }
-module.exports={probe};
+module.exports={probe,canOpen};

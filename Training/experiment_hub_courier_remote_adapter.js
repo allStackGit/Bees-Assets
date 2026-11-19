@@ -1,0 +1,183 @@
+'use strict';
+
+// One authenticated Courier PPO lineage per independently leased Hub service.
+// The host operator pins the private endpoint and key; the learner retains
+// population/checkpoint ownership, while this native service owns only its
+// remote CPU/RAM/GPU resources and a per-job scratch directory.
+const fs=require('node:fs');
+const path=require('node:path');
+const crypto=require('node:crypto');
+const {spawnSync}=require('node:child_process');
+const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const CUDA=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
+
+function canonicalEndpoint(ip,port) {
+    if(typeof ip!=='string'||!/^100\.(?:\d{1,3}\.){2}\d{1,3}$/.test(ip)||
+        ip.split('.').some((part,i)=>String(Number(part))!==part||
+            Number(part)>(i===0?100:255))||
+        !Number.isSafeInteger(port)||port<1024||port>65535)
+        throw Error('Courier remote service requires a canonical Tailscale IPv4 and nonprivileged port.');
+    const second=Number(ip.split('.')[1]);
+    if(second<64||second>127)
+        throw Error('Courier remote service must use encrypted Tailnet IPv4.');
+    return ip+':'+port;
+}
+function existingDirectory(value) {
+    if(typeof value!=='string'||!path.isAbsolute(value)||
+        fs.realpathSync(value)!==value||!fs.statSync(value).isDirectory())
+        throw Error('Courier remote installation path must be an existing, real directory.');
+    return value;
+}
+function secretFile(value) {
+    if(typeof value!=='string'||!path.isAbsolute(value)||
+        fs.realpathSync(value)!==value)
+        throw Error('Courier remote secret must be a real absolute file.');
+    const stat=fs.statSync(value);
+    if(!stat.isFile()||stat.size<64||stat.size>128||
+        (process.platform!=='win32'&&(stat.mode&0o077)!==0)||
+        !/^[0-9a-fA-F]{64}$/.test(fs.readFileSync(value,'utf8').trim()))
+        throw Error('Courier remote secret must contain 32 hex bytes in a private file.');
+    return value;
+}
+
+function createCourierRemoteLineageAdapter({
+    projectRoot,pythonPath,keyPath,cacheRoot,listenIp,port,
+    maxShards=64,enableCuda=false,enableRocm=false,rocrGpuUuids={},
+    slotPorts={},
+}) {
+    if(typeof enableCuda!=='boolean'||typeof enableRocm!=='boolean'||
+        (enableCuda&&enableRocm)||
+        (enableCuda&&process.platform!=='win32')||
+        (enableRocm&&process.platform!=='linux'))
+        throw Error('Courier remote GPU acceleration requires an approved local CUDA/ROCm platform.');
+    if(!rocrGpuUuids||typeof rocrGpuUuids!=='object'||
+        Array.isArray(rocrGpuUuids)||Object.keys(rocrGpuUuids).length>32||
+        (!enableRocm&&Object.keys(rocrGpuUuids).length)||
+        Object.entries(rocrGpuUuids).some(([pci,uuid])=>
+            !PCI.test(pci)||typeof uuid!=='string'||!ROCM_UUID.test(uuid))||
+        new Set(Object.values(rocrGpuUuids)).size!==Object.keys(rocrGpuUuids).length)
+        throw Error('Courier remote ROCm UUID map needs unique approved physical PCI devices.');
+    if(!Number.isSafeInteger(maxShards)||maxShards<1||maxShards>64)
+        throw Error('Courier remote simulation shard ceiling must be between 1 and 64.');
+    const project=existingDirectory(projectRoot);
+    const cache=existingDirectory(cacheRoot);
+    const secret=secretFile(keyPath);
+    const fingerprint=crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex');
+    const endpoint=canonicalEndpoint(listenIp,port);
+    // A machine may own several independently leased shared-policy collectors.
+    // Each frozen PPO slot gets a distinct, locally approved listener; no
+    // process may choose a port or reuse a peer's endpoint at Start.
+    if(!slotPorts||typeof slotPorts!=='object'||Array.isArray(slotPorts)||
+        Object.keys(slotPorts).length>16||
+        Object.keys(slotPorts).some(slot=>!/^(?:0|[1-9][0-9]?)$/.test(slot)||
+            Number(slot)>63)||
+        (Object.keys(slotPorts).length>0&&
+            !Object.values(slotPorts).includes(port)))
+        throw Error('Courier multi-collector listeners require up to 16 fixed slots, including the base port.');
+    const slots=Object.entries(slotPorts).map(([slot,listenerPort])=>({
+        slot:Number(slot),endpoint:canonicalEndpoint(listenIp,listenerPort),
+        max_shards:maxShards,
+    })).sort((a,b)=>a.slot-b.slot);
+    if(new Set(slots.map(item=>item.endpoint)).size!==slots.length)
+        throw Error('Every Courier collector slot needs its own private listener port.');
+    if(typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
+        fs.realpathSync(pythonPath)!==pythonPath||!fs.statSync(pythonPath).isFile())
+        throw Error('Courier remote Python must be an installed executable file.');
+    const probe=spawnSync(pythonPath,['-B','-c',
+        'import inspect, courier_remote_lineage as r; print(int("shared_policy" in inspect.signature(r.serve).parameters))'],{
+        cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+    });
+    if(probe.status!==0)
+        throw Error('Installed Courier lacks its authenticated remote-lineage protocol.');
+    if(enableCuda||enableRocm) {
+        const gpuProbe=spawnSync(pythonPath,['-B','-c',enableCuda
+            ?'import torch; assert torch.version.cuda and torch.cuda.is_available()'
+            :'import torch; assert torch.version.hip and torch.cuda.is_available()'],{
+            cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+        });
+        if(gpuProbe.status!==0)
+            throw Error('Installed Courier remote worker has no approved CUDA/ROCm runtime.');
+    }
+    const sharedPolicy=probe.stdout.trim()==='1';
+    if(slots.length&&!sharedPolicy)
+        throw Error('Slot-specific Courier listeners require the installed shared-policy collector protocol.');
+    const approved=Object.freeze({...rocrGpuUuids});
+    return {
+        executable:pythonPath,cwd:project,stop_policy:'terminate-group',
+        courier_lineage_endpoint:endpoint,
+        courier_lineage_slots:slots.map(item=>({...item})),
+        courier_lineage_key_fingerprint:fingerprint,
+        courier_lineage_max_shards:maxShards,
+        courier_shared_policy_collector:sharedPolicy,
+        ...(enableCuda?{gpu_execution:'cuda'}:{}),
+        ...(enableRocm?{
+            rocr_gpu_uuids:approved,
+            gpu_verify_args(_parameters,context) {
+                if(!PCI.test(String(context?.gpu_pci_address||''))||
+                    context.gpu_pci_addresses!==undefined)
+                    throw Error('Courier remote GPU verification requires one physical lease.');
+                return ['-B',path.join(__dirname,'experiment_hub_tinybrains_rocm_verify.py'),
+                    context.gpu_pci_address];
+            },
+        }:{}),
+        args(parameters,context) {
+            if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
+                Object.keys(parameters).some(key=>!['learner_job_id','slot','listener_slot','shared_policy'].includes(key))||
+                (parameters.shared_policy!==undefined&&
+                    (parameters.shared_policy!==true||!sharedPolicy))||
+                !UUID.test(String(parameters.learner_job_id||''))||
+                !UUID.test(String(context?.job_id||''))||
+                context.job_id===parameters.learner_job_id||
+                !Number.isSafeInteger(parameters.slot)||parameters.slot<0||
+                parameters.slot>63||
+                (parameters.listener_slot!==undefined&&
+                    (!slots.length||parameters.shared_policy!==true||
+                        !Number.isSafeInteger(parameters.listener_slot)||
+                        parameters.listener_slot<0||parameters.listener_slot>63))||
+                !Number.isSafeInteger(context.cpu_quota)||context.cpu_quota<1||
+                !Number.isSafeInteger(context.ram_quota_mb)||
+                context.ram_quota_mb<128||context.ram_quota_mb>1000000)
+                throw Error('Courier remote lineage needs frozen learner/slot IDs and its own CPU/RAM lease.');
+            // The learner's recurrent PPO slot is not necessarily the
+            // native listener index: separate experiments can use different
+            // approved ports on one host without sharing model state.
+            const listener=parameters.listener_slot??parameters.slot;
+            const selected=slots.length?slots.find(item=>item.slot===listener):null;
+            if(slots.length&&!selected)
+                throw Error('Courier collector slot has no locally approved private listener.');
+            const selectedPort=selected?Number(selected.endpoint.split(':').at(-1)):port;
+            const physical=context.gpu_pci_address;
+            const cuda=context.gpu_cuda_uuid;
+            if(context.gpu_pci_addresses!==undefined||
+                physical===undefined&&cuda!==undefined||
+                physical!==undefined&&(
+                    context.gpu_mode!=='exclusive'||!PCI.test(physical)||
+                    (process.platform==='win32'
+                        ?!enableCuda||!CUDA.test(String(cuda||''))
+                        :!enableRocm||cuda!==undefined||
+                            !Object.hasOwn(approved,physical))))
+                throw Error('Courier remote GPU requires exactly one approved exclusive physical device.');
+            if(crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex')!==fingerprint)
+                throw Error('Courier remote HMAC key was changed after local adapter approval.');
+            const output=path.join(cache,context.job_id);
+            // The same supervised Start can be prepared more than once. Retain
+            // the job's approved scratch directory across preflight/recovery,
+            // but never follow a redirected path.
+            fs.mkdirSync(output,{recursive:true,mode:0o700});
+            if(fs.realpathSync(output)!==output||!fs.statSync(output).isDirectory())
+                throw Error('Courier remote scratch directory is not a real directory.');
+            return ['-B',path.join(project,'courier_remote_lineage.py'),
+                '--host',listenIp,'--port',String(selectedPort),'--key-file',secret,
+                '--job-id',parameters.learner_job_id,'--slot',String(parameters.slot),
+                '--work-dir',output,'--cpu-lease',String(context.cpu_quota),
+                '--ram-lease-mb',String(context.ram_quota_mb),
+                '--max-shards',String(maxShards),
+                ...(parameters.shared_policy===true?['--shared-policy']:[]),
+                ...(physical?[process.platform==='win32'?'--gpu-cuda-uuid':'--gpu-pci',
+                    process.platform==='win32'?cuda:physical]:[])];
+        },
+    };
+}
+module.exports={createCourierRemoteLineageAdapter};

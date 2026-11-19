@@ -53,9 +53,9 @@ def runtime_pci_bus_id(ordinal=0):
 def verify_runtime_devices(expected):
     # Runtime ordinal order need not match the lease's logical ID order.
     # Every visible GPU must resolve to exactly one frozen physical PCI ID.
-    if not isinstance(expected, (list, tuple)) or not 1 <= len(expected) <= 2 or (
+    if not isinstance(expected, (list, tuple)) or not 1 <= len(expected) <= 8 or (
             len(set(expected)) != len(expected) or any(PCI.fullmatch(pci) is None for pci in expected)):
-        raise SystemExit("Invalid one- or two-GPU ROCm lease.")
+        raise SystemExit("Invalid fixed ROCm GPU lease.")
     import torch
 
     if not torch.version.hip or not torch.cuda.is_available():
@@ -80,8 +80,8 @@ def verify_runtime_device(expected):
 
 def main():
     expected = sys.argv[1:]
-    if not 1 <= len(expected) <= 2 or any(PCI.fullmatch(pci) is None for pci in expected):
-        raise SystemExit("Expected one or two canonical GPU PCI addresses.")
+    if not 1 <= len(expected) <= 8 or any(PCI.fullmatch(pci) is None for pci in expected):
+        raise SystemExit("Expected one to eight canonical GPU PCI addresses.")
     for address in expected:
         found = False
         for name in os.listdir("/sys/class/drm"):
