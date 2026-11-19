@@ -71,6 +71,7 @@ function configuration(hub) {
     return {
         home,ai,machine,project,interpreter,hash,suiteId,
         suiteRoot:path.join(home,'evaluation-audits/courier/suites'),
+        approvalFile:path.join(home,'evaluation-audits/courier/hub-approved-evaluation.json'),
         suiteFile:path.join(home,'evaluation-audits/courier/suites',suiteId+'.json'),
         scratch:path.join(home,'evaluation-audits/courier/live-evaluation-scratch'),
         artifacts:path.join(ai,'experiments/experiment-hub/courier-jobs'),
@@ -173,6 +174,26 @@ async function setup(hub) {
     privateDirectory(o.scratch,true);
     privateDirectory(o.receipts,true);
     frozenSuite(o,true);
+    // One explicit operator approval. At the next agent restart, even a
+    // private preexisting Courier adapter can recognize these exact,
+    // immutable local evaluation paths without editing its source.
+    const approval=JSON.stringify({schema_version:1,
+        config_sha256:o.hash,suite_id:o.suiteId},null,2)+'\n';
+    if(fs.existsSync(o.approvalFile)) {
+        const stat=fs.lstatSync(o.approvalFile);
+        if(!stat.isFile()||stat.isSymbolicLink()||
+            stat.uid!==process.getuid()||stat.mode&0o077)
+            throw Error('Existing Courier evaluation approval is not a private regular file.');
+        const current=JSON.parse(fs.readFileSync(o.approvalFile,'utf8'));
+        if(current.schema_version!==1)
+            throw Error('Unsupported Courier evaluator approval version.');
+        // Changing the local environment requires explicit re-approval,
+        // not reusing a suite pinned to a different checkpoint environment.
+        if(current.config_sha256!==o.hash)
+            throw Error('The Courier environment changed. Select explicit suite refresh before reusing the evaluator.');
+        if(current.suite_id!==o.suiteId)
+            throw Error('An existing Courier suite approval differs from this environment.');
+    }else fs.writeFileSync(o.approvalFile,approval,{flag:'wx',mode:0o600});
     const def=definition(o),unit=unitPaths(o);
     if(fs.existsSync(unit.serviceFile)||fs.existsSync(unit.timerFile))
         approvedUnits(o,def);
