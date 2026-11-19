@@ -1131,6 +1131,34 @@ function createNativeBeesAdapter({
             return ['-B', path.join(__dirname, 'experiment_hub_tinybrains_rocm_verify.py'),
                 ...ids];
         },
+        ...(distributedOptimizer?{
+            distributed_completion(context) {
+                const bundle=context.resource_bundle;
+                if(!bundle||!UUID.test(String(bundle.id||''))||
+                    !Number.isSafeInteger(bundle.index)||
+                    !Number.isSafeInteger(bundle.size)||
+                    bundle.size<2||bundle.size>8||
+                    (bundle.index===1)!==(distributedOptimizer.role==='owner'))
+                    throw Error('Native distributed optimizer receipt has no authorized Hub node identity.');
+                const evidence=distributedOptimizer.role==='worker'
+                    ?completedWorker(context)?.receipt
+                    :jobRound(context)?.metrics;
+                if(!evidence)throw Error('Native distributed optimizer exited without its local synchronized receipt.');
+                const inputSha=distributedOptimizer.role==='worker'
+                    ?evidence.global_input_sha256
+                    :evidence.optimizer_global_input_sha256;
+                const modelSha=distributedOptimizer.role==='worker'
+                    ?evidence.model_consensus_sha256
+                    :evidence.optimizer_gpu_model_consensus_sha256;
+                if(evidence.optimizer_group_id!==bundle.id||
+                    !SHA256.test(String(inputSha||''))||
+                    !SHA256.test(String(modelSha||'')))
+                    throw Error('Native optimizer evidence differs from the exact authorized group.');
+                return {group_id:bundle.id,node_rank:bundle.index-1,
+                    node_count:bundle.size,input_sha256:inputSha,
+                    model_consensus_sha256:modelSha};
+            },
+        }:{}),
         args(parameters, context) {
             const output = jobRoot(context);
             const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
