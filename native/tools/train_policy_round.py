@@ -557,7 +557,11 @@ def combined_rollout_metrics(shards, wall_seconds):
                 for shard in shards
             )
     samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
-    if samples:
+    metrics["shards_with_sampled_model_timing"] = len(samples)
+    # Sum inference timing only when every owned rollout process supplied
+    # the same counter. A partial sample remains visible per shard rather
+    # than masquerading as complete GPU/CPU inference time.
+    if len(samples) == len(shards):
         metrics["sampled_model_timing"] = {
             key: sum(sample[key] for sample in samples) for key in ("calls", "rows", "wall_seconds")
         }

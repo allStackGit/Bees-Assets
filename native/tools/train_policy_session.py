@@ -1377,8 +1377,21 @@ def main():
             )
             allocation_path = root / "hub-derived-collectors.json"
             if args.resume:
-                if not allocation_path.is_file() or read_json(allocation_path) != derived:
-                    raise ValueError("native Hub-derived World allocation changed on resume")
+                if not allocation_path.is_file():
+                    raise ValueError("native Hub-derived World allocation missing on resume")
+                previous_allocation = read_json(allocation_path)
+                if previous_allocation != derived:
+                    # Pre-GPU-pinning Hub sessions issued the same CPU/World
+                    # windows without storing Hub lease counts in native
+                    # orders. Resume their ORIGINAL signed orders verbatim;
+                    # never retrofit a new identity into an active round.
+                    legacy = {"collectors": [
+                        {key: value for key, value in item.items()
+                         if key != "hub_gpu_count"}
+                        for item in derived["collectors"]
+                    ]}
+                    if previous_allocation != legacy:
+                        raise ValueError("native Hub-derived World allocation changed on resume")
             else:
                 if allocation_path.exists():
                     raise ValueError("native Hub allocation file already exists")
