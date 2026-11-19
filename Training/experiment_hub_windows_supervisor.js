@@ -76,8 +76,44 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         (adapter.cwd!=null&&
             (!noControls(adapter.cwd)||!pathApi.isAbsolute(adapter.cwd))))
         throw Error('Install a Windows-local adapter explicitly allowing force-stop only.');
-    let gpu=null;
-    if(r.gpu_count!==0) {
+    let gpu=null,multiGpu=null;
+    if(r.gpu_count>=2) {
+        const bindings=lease.gpu_bindings;
+        if(!gpuEnabled||job.project_id!=='courier'||
+            adapter.gpu_execution!=='cuda'||
+            adapter.gpu_multi_execution!=='independent-ppo'||
+            !Number.isSafeInteger(r.gpu_count)||r.gpu_count>8||
+            lr.gpu_count!==r.gpu_count||
+            r.gpu_mode!=='exclusive'||lr.gpu_mode!=='exclusive'||
+            !Array.isArray(bindings)||bindings.length!==r.gpu_count||
+            lr.gpus?.length!==r.gpu_count||
+            (r.gpus?.length>0&&
+                (r.gpus.length!==r.gpu_count||
+                 r.gpus.some((id,i)=>id!==lr.gpus[i])))||
+            bindings.some((bound,i)=>bound?.id!==lr.gpus[i]||
+                !PCI.test(String(bound.pci_address||''))||
+                !CUDA_UUID.test(String(bound.cuda_uuid||'')))||
+            new Set(bindings.map(bound=>bound.pci_address)).size!==bindings.length||
+            new Set(bindings.map(bound=>bound.cuda_uuid.toLowerCase())).size!==
+                bindings.length)
+            throw Error('Windows multi-GPU Courier requires 2–8 distinct exclusive pinned CUDA devices.');
+        const current=gpuInventory();
+        if(!Array.isArray(current))
+            throw Error('Windows CUDA device inventory unavailable.');
+        multiGpu=bindings.map(binding=>{
+            const selected=current.find(device=>
+                device.pci_address===binding.pci_address&&
+                device.cuda_uuid===binding.cuda_uuid&&
+                Number.isSafeInteger(device.vram_mb)&&
+                device.vram_mb>=binding.vram_mb);
+            if(!selected)throw Error('A leased CUDA device identity or physical VRAM changed before Start.');
+            const block=startHeadroom(r,availableRam,selected);
+            if(block)throw Error(block);
+            return {pci_address:binding.pci_address,cuda_uuid:binding.cuda_uuid,
+                mode:'exclusive',vram_mb:0,compute_pct:100,
+                total_vram_mb:binding.vram_mb};
+        });
+    }else if(r.gpu_count===1) {
         const binding=lease.gpu_bindings?.[0];
         const cooperative=r.gpu_mode==='shared';
         if(!gpuEnabled||adapter.gpu_execution!=='cuda'||
@@ -130,6 +166,9 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
             gpu_mode:gpu.mode,gpu_vram_mb:gpu.vram_mb,
             gpu_total_vram_mb:gpu.total_vram_mb,
             gpu_compute_pct:gpu.compute_pct}:{}),
+        ...(multiGpu?{gpu_pci_addresses:multiGpu.map(g=>g.pci_address),
+            gpu_cuda_uuids:multiGpu.map(g=>g.cuda_uuid),
+            gpu_mode:'exclusive'}:{}),
     });
     const stopFile=adapter.checkpoint_stop_file?.(context)??null;
     if(stopFile!==null&&(!noControls(stopFile)||!pathApi.isAbsolute(stopFile)))
@@ -140,7 +179,7 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Windows adapter returned unsafe native arguments.');
     return {executable:adapter.executable,args:argv,cwd:adapter.cwd||'',
         cpus:r.cpus,hostCpus:cores,ramMb:r.ram_mb,
-        root,predecessor,stopFile,gpu};
+        root,predecessor,stopFile,gpu,multiGpu};
 }
 // The coordinator and agent both budget shares. Recheck the private
 // Windows native journal before launching so unresolved local owners
