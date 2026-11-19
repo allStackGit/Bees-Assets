@@ -1036,9 +1036,10 @@ impl RecordedNetwork {
                 } else { None };
             }
             NativeTraceNetworkEvent::Frame { request_hash, frame, .. } => {
-                if self.pending_setup_hash.is_some() {
-                    return Err(invalid("recorded HiveMind response arrived before Level setup"));
-                }
+                // StoreCommands acknowledgements from a previously
+                // established Level may arrive while another Level is
+                // still setting up. The canonical connection validates
+                // their hashes; do not impose a new transport order.
                 let body: Value = serde_json::from_str(&frame)?;
                 if body["Hash"].as_i64() != Some(request_hash) {
                     return Err(invalid("recorded HiveMind response hash disagrees with its frame"));
@@ -5563,6 +5564,7 @@ fn run_battle(
         "network": network.as_ref().map(|network| json!({
             "measurements": network.worker.measurements(),
             "queue_backpressure": network.worker.queue_backpressure(),
+            "recorded_hivemind_events": network.recorded_network_events,
             "setups_remaining": network.levels.len() - network.next_level,
             "source_commands": {
                 "eligible": network.scheduler.measurements().eligible,
@@ -5593,7 +5595,7 @@ fn run_battle(
         "user_closed": user_closed,
         "player_input_playback": playback.is_some(),
         "player_input_playback_complete": playback.as_ref().map(|trace|
-            rounds == trace.end_round && trace.inputs.is_empty() &&
+            rounds == trace.end_round && trace.actions.is_empty() &&
             trace.checkpoints.is_empty() && failed_window.is_none()),
         "recorded_physical_checkpoints": captured_checkpoints,
         "recorded_player_inputs": recorded_player_inputs,
