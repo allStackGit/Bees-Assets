@@ -2037,7 +2037,8 @@ document.addEventListener('DOMContentLoaded', () => {
     tinyBrainsWeights.placeholder='Optional: 2,8,4 (local, then each remote)';
     tinyBrainsDevice.append(new Option('From resource allocation',''),
         new Option('CPU only','cpu'),
-        new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
+        new Option('Dedicated two-GPU split PPO (CUDA/ROCm)','dual'),
+        new Option('Multi-GPU PPO + local collectors (3–8 exclusive)','multi'));
     tinyBrainsThreads.type='number';
     tinyBrainsThreads.min='1';
     tinyBrainsThreads.max='256';
@@ -2055,6 +2056,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
+        const multiGpu=tinyBrainsDevice.value==='multi';
         const remoteRollouts=tinyBrainsRemote.checked;
         const weightText=tinyBrainsWeights.value.trim();
         const weights=weightText?weightText.split(',').map(s=>Number(s.trim())):[];
@@ -2092,6 +2094,12 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','No connected CUDA/ROCm worker approves two-GPU split PPO for this profile.');
             return;
         }
+        if(multiGpu&&!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_multi_gpu_profiles?.includes(profile))) {
+            feedback('hub-config-message','No connected CUDA/ROCm worker approves 3–8 GPU split PPO collectors for this profile.');
+            return;
+        }
         if(remoteRollouts&&!(state?.machines||[]).some(machine=>
             machine.status==='connected'&&
             ['linux','win32'].includes(machine.agent_platform)&&
@@ -2110,7 +2118,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-config-json').value=JSON.stringify({
             profile,profile_sha256:digest,updates,
             ...(hasThreads?{threads}:{}),
-            ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
+            ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:
+                multiGpu?{device:'multi'}:{}),
             ...(remoteRollouts?{remote_rollouts:true}:{}),
             ...(weights.length?{rollout_action_weights:weights}:{}),
             ...(sourceId&&sourceDigest?{
@@ -2124,8 +2133,10 @@ document.addEventListener('DOMContentLoaded', () => {
             (cpuFallback||!selected?.cudaWorkers
                 ?'When queueing, request CPU/RAM without GPUs. '
                 :dualGpu
-                    ?'When queueing, request two EXCLUSIVE GPUs and sufficient CPU/RAM; a single PPO optimizer runs on one GPU while collection runs on the other. '
-                    :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
+                    ?'When queueing, request two EXCLUSIVE GPUs and sufficient CPU/RAM; one PPO optimizer runs on one GPU, with collection on the other. '
+                    :multiGpu
+                        ?'When queueing, request 3–8 EXCLUSIVE GPUs and sufficient CPU/RAM; one GPU owns PPO optimization and the remaining GPUs collect in parallel. '
+                        :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
             (sourceId
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
