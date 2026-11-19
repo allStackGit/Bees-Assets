@@ -169,8 +169,22 @@ FLEET_CLASS_FIELDS = (
 
 
 def native_fleet_class_sha256(ship: dict) -> str:
-    """Immutable authored physical source, not a source-scene entity ID."""
-    source = {key: copy.deepcopy(ship.get(key)) for key in FLEET_CLASS_FIELDS}
+    """Immutable authored physical source, not a source-scene entity ID.
+
+    Match the native GameShip serde defaults so omitted false/empty
+    authoring options are equivalent to their explicit values.
+    """
+    defaults = {
+        "is_bomber": False, "is_carrier_ship": False,
+        "can_override_bounds": False, "turrets": [],
+    }
+    source = {
+        key: copy.deepcopy(ship.get(key, defaults.get(key)))
+        for key in FLEET_CLASS_FIELDS
+    }
+    if isinstance(source["sight"], dict):
+        source["sight"].setdefault("enabled", True)
+        source["sight"].setdefault("fog_radius", None)
     if isinstance(source["special_weapon"], dict):
         source["special_weapon"].pop("weapon_id", None)
     payload = json.dumps(source, sort_keys=True, separators=(",", ":"),
@@ -210,12 +224,16 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         # Live original player hulls and inert authored reserve templates
         # are both real physical source archetypes. Reward-only classes
         # need not be deployed before the mission that unlocks them.
-        for ship in [*scene["ships"], *scene.get("fleet_templates", [])]:
-            if (ship["side"] == args.player_side and
-                    ship["health"] == ship["max_health"] and
-                    ship["max_tsv"] > 0 and
-                    (ship.get("persistent_fleet") or
-                     ship in scene.get("fleet_templates", []))):
+        candidates = (
+            (ship for ship in scene["ships"] if ship.get("persistent_fleet")),
+            iter(scene.get("fleet_templates", [])),
+        )
+        for group in candidates:
+            for ship in group:
+                if (ship["side"] != args.player_side or
+                        ship["health"] != ship["max_health"] or
+                        ship["max_tsv"] <= 0):
+                    continue
                 ship_type = ship["ship_type"]
                 class_prices.setdefault(ship_type, set()).add(ship["max_tsv"])
                 class_contracts.setdefault(ship_type, set()).add(
