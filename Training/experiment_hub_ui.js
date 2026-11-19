@@ -977,6 +977,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const machines=state?.machines||[];
         const sourceId=$('hub-native-bundle-model-source')?.value||'';
         const source=nativeModelSources().find(job=>job.id===sourceId);
+        const ownerChoice=rows[0]?.querySelector('.hub-bundle-config')?.value;
+        let synchronized=Boolean(source||
+            configs.some(c=>c.id===ownerChoice&&c.project_id==='bees_native'&&
+                c.parameters?.optimizer_group===true));
         for(const [i,row] of rows.entries()) {
             const captions=row.querySelectorAll('.hub-bundle-caption');
             const config=row.querySelector('.hub-bundle-config');
@@ -984,7 +988,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const oldConfig=config.value,oldMachine=machine.value;
             captions[0].textContent='Member '+(i+1)+' saved configuration';
             captions[1].textContent='Machine';
-            const choices=source
+            const choices=synchronized
                 ?configs.filter(c=>
                     c.project_id===(i===0?'bees_native':'bees_native_optimizer_worker')&&
                     c.parameters?.optimizer_group===true)
@@ -997,6 +1001,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(own)config.value=own.id;
             }
             const selected=choices.find(c=>c.id===config.value);
+            if(i===0&&!source)
+                synchronized=selected?.project_id==='bees_native'&&
+                    selected.parameters?.optimizer_group===true;
             const eligible=machines.filter(m=>
                 m.status==='connected'&&m.local_executor_enabled===true&&
                 m.native_preflight_passed===true&&
