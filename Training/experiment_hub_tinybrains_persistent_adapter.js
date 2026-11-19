@@ -73,6 +73,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_learner_inference_seconds','rollout_learner_gpu_stream_seconds',
         'rollout_opponent_processing_seconds',
         'rollout_opponent_gpu_stream_seconds',
+        'rollout_fused_gpu_stream_seconds',
         'rollout_result_processing_seconds','rollout_bootstrap_seconds',
         'rollout_returns_seconds',
         'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
@@ -422,6 +423,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_grouped_fallbacks,'count');
         add('collector_'+i+'_opp_gpu_stream_seconds',
             worker.rollout_opponent_gpu_stream_seconds,'seconds');
+        // A mixed frozen/learner forward cannot be assigned exclusively
+        // to either model. Keep its combined GPU stream timing separate.
+        add('collector_'+i+'_fused_gpu_stream_seconds',
+            worker.rollout_fused_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_opp_budget_pixels',
             worker.rollout_opponent_batch_budget_pixels,'count');
         add('collector_'+i+'_opp_pixel_samples',
@@ -640,6 +645,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'opp_group_states','opp_group_input_bytes',
                 'learner_fused_forwards','learner_fused_states',
                 'opp_group_padding','opp_group_fallbacks',
+                'fused_gpu_stream_seconds',
                 'snapshot_cache_files','snapshot_cache_bytes',
                 'policy_upload_groups',
                 'record_packed','record_board_groups',
