@@ -54,6 +54,9 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_sim_receipts_total','training_sim_batch_reuses_total',
     'training_sim_proc_starts_total','training_sim_owner_retains_total',
     'training_sim_shard_moves_total',
+    'training_ppo_parallel_assigned_devices','training_ppo_parallel_trials',
+    'training_ppo_parallel_rejections','training_ppo_parallel_batches',
+    'training_ppo_parallel_device_batches','training_ppo_parallel_sequences',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
     'training_sim_migration_workers','training_collector_sim_trial_workers',
     'training_collector_sim_eligible_workers',
@@ -184,6 +187,7 @@ function courierMetrics(source) {
         'training_gpu_devices_assigned','training_slowest_worker',
         'training_shared_last_wire_worker',
     ].includes(name)||name.startsWith('training_live_')||
+        name.startsWith('training_ppo_parallel_')||
         name.startsWith('training_gpu_memory_')||
         name.startsWith('training_gpu_placement_')||
         name==='training_gpu_peak_reserved_mb'||
@@ -397,7 +401,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // bounded backend capability manifest allows the same Hub adapter to
     // launch both old and new trainers without interpreting source text.
     const capabilitiesFile=path.join(project,'hub-capabilities.json');
-    let sharedPolicy=false,sharedCapacityProbe=false;
+    let sharedPolicy=false,sharedCapacityProbe=false,sharedMultiOptimizer=false;
     let boundedLearners=false,autoLearners=false,optimizerGpu=false,gpuPciPin=false,gpuMulti=false;
     let gpuSpareRollout=false;
     let persistentWorlds=false,maxSimulationShards=1;
@@ -441,6 +445,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     !Number.isSafeInteger(capabilities.courier_max_simulation_shards)))||
             (capabilities.courier_shared_policy!==undefined&&
                 typeof capabilities.courier_shared_policy!=='boolean')||
+            (capabilities.courier_shared_multi_optimizer!==undefined&&
+                typeof capabilities.courier_shared_multi_optimizer!=='boolean')||
+            (capabilities.courier_shared_multi_optimizer===true&&
+                (capabilities.courier_shared_policy!==true||
+                 capabilities.courier_gpu_multi_optimizer!==true))||
             (capabilities.courier_shared_capacity_probe!==undefined&&
                 typeof capabilities.courier_shared_capacity_probe!=='boolean')||
             (capabilities.courier_shared_capacity_probe===true&&
@@ -449,6 +458,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 typeof capabilities.courier_remote_lineage_transport!=='boolean'))
             throw Error('Unsupported Courier backend capabilities manifest.');
         sharedPolicy=capabilities.courier_shared_policy===true;
+        sharedMultiOptimizer=sharedPolicy&&capabilities.courier_shared_multi_optimizer===true;
         sharedCapacityProbe=sharedPolicy&&capabilities.courier_shared_capacity_probe===true;
         if(sharedPolicy&&(fs.realpathSync(sharedScript)!==sharedScript||
             !fs.statSync(sharedScript).isFile()))
@@ -656,7 +666,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     !Array.isArray(remote_lineage_plan)||!Array.isArray(collectorCpus)||
                     !remotePlan||remotePlan.length>sharedMaps||remotePlan.length!==collectorCpus.length||
                     collectorCpus.some(cpu=>!within(cpu,1,256))||
-                    (workers!==undefined&&workers!==1)||context.gpu_pci_addresses!==undefined||
+                    (workers!==undefined&&workers!==1)||
+                    (context.gpu_pci_addresses!==undefined&&!sharedMultiOptimizer)||
                     !within(context.cpu_quota,1,256)||!within(context.ram_quota_mb,128,1000000)))||
                 config_sha256!==configSha256||!within(seed,0,4294967295)||
                 !(workers===undefined&&(shared||cpuParallelism==='allocation'))&&
@@ -703,7 +714,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     throw Error('Courier promoted checkpoint no longer matches its evaluated model.');
                 if(max_rounds!==0)limit=saved.checkpoint.round+max_rounds;
             }
-            if(!gpuSpareRollout&&context.gpu_pci_addresses&&chosenWorkers<context.gpu_pci_addresses.length)
+            if(!shared&&!gpuSpareRollout&&context.gpu_pci_addresses&&chosenWorkers<context.gpu_pci_addresses.length)
                 throw Error('This Courier installation requires at least one lineage per leased GPU.');
             fs.mkdirSync(out,{mode:0o700});
             for(const file of files)
@@ -736,6 +747,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 ...(context.gpu_pci_address!==undefined?[
                     '--optimizer-device','cuda',
                     ...(windows?[]:['--optimizer-gpu-pci',context.gpu_pci_address])]:[]),
+                ...(context.gpu_pci_addresses!==undefined?[
+                    '--optimizer-device','cuda',
+                    '--optimizer-gpu-pci',context.gpu_pci_addresses[0],
+                    ...context.gpu_pci_addresses.slice(1).flatMap(pci=>
+                        ['--optimizer-extra-gpu-pci',pci])]:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(sharedCapacityProbe&&!predecessor?['--probe-collectors']:[]),
                 ...(predecessor?['--resume']:[])];

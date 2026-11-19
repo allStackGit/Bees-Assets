@@ -2,6 +2,25 @@
 
 Updated 2026-11-19. Hub branch: `feat/hub-resource-efficiency-20261112`. Companion active branches: `allStackGit/TinyBrains:feat/tinybrains-admission-ramp-20261118`; `allStackGit/Basic-Training:feat/courier-overlap-policy-codec-20261118`. Native Bees rewrite is out of scope.
 
+**Local multi-GPU learner continuation:** Courier's shared learner now accepts
+up to eight assigned GPUs and can split a single PPO minibatch by complete
+padded recurrent sequences. Ordered differentiable output gathering and
+replica gradient reduction preserve global masking, advantage normalization,
+KL checks, clipping and one primary Adam step. A bounded, nonmutating
+output/gradient and evaluation/backward timing calibration selects profitable
+device subsets (>=20% improvement); unsupported or unprofitable shapes retain
+single-device execution. Distribution objects are private to replicas.
+Hub gates the new launch on `courier_shared_multi_optimizer`, passes all
+frozen physical pins and exposes calibration/device-batch measurements via
+the existing metrics/charts/exports. CPU execution of 18 partition cases
+matched outputs, masked gradients and clipped Adam updates across the three
+supported policy families. Calibration retained the faster subset without
+changing weights, Adam, existing gradients or RNG; identity/VRAM checks,
+checkpoint exclusions, Hub arguments/units and shared start/resume passed.
+Actual multi-GPU execution and useful-SPS remain to qualify. TinyBrains
+multi-device learning and cross-independent-policy Courier inference remain
+substantive implementation work.
+
 **2026-11-19 companion CPU observation work (merged into active Courier branch):** `allStackGit/Basic-Training:feat/courier-sparse-terminal-observations-20261119` builds pre-respawn terminal observations only for dying fixed PPO slots in basic, competitive, colony/evolution and communication modes; full recurrent observations, frozen peer/message state, and checkpoint/RNG ownership remain unchanged. Basic/competitive 35-column channels and communication channels now fill their float32 result directly; communication reuses the colony neighborhood coordinates. Isolated NumPy reconstruction checks in this session matched old/new communication and 35-channel layouts in 24 empty/sparse/full shape cases; source-level end-to-end runtime validation and useful SPS remain unmeasured. The Hub's existing project-neutral metrics now derive `training_gpu_rollout_states_per_batch` from authenticated Courier counts (without inferring saturation), selectable in charts/compare/exports. Merged as `allStackGit/Basic-Training@a9a6da51` through PR #8. Next: qualify live useful SPS, then tackle missing cross-lineage GPU request coalescing, productive multi-GPU optimization and distributed recovery.
 
 **2026-11-19 learner GPU batch-density measurement:** `allStackGit/TinyBrains:feat/tinybrains-admission-ramp-20261118` merged `79ce05fe` (PR #32): profiled CUDA/ROCm collectors now count exact board rows consumed by *unfused learner* actor forwards, alongside the existing matching forward-chunk count; the persistent pipeline retains aggregate and per-collector counts. Hub exposes the measured `rollout_gpu_unfused_batch_mean` and indexed `collector_N_gpu_fwd_batch_mean` using its existing history/charts/exports. Fused multi-model opponent/learner vmap forwards and CPU-only work are intentionally excluded; no GPU saturation is inferred. The same Hub analyzer derives `training_gpu_rollout_states_per_batch` for Courier from its separately measured rollout counts. The Hub JS source parses, and validated synthetic Hub progress retained both new aggregate metrics and an explicit chart selection. Real GPU useful-SPS and cross-independent-policy Courier batching remain unqualified/not implemented.
