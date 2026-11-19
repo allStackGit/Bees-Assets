@@ -5550,8 +5550,14 @@ class ExperimentHub {
         const allowLocal=shared&&Array.isArray(value.worker_machine_ids)&&
             value.worker_machine_ids.includes(machine?.id)&&
             learnerBudget.gpu_count===1&&learnerBudget.gpu_mode==='exclusive';
-        const occupied=new Set(snapshot.jobs.filter(job=>job.project_id==='courier_lineage'&&
-            !['cancelled','finished','stopped'].includes(job.status)).map(job=>job.assigned_machine_id));
+        // A native machine may have several independently leased Courier
+        // services. Occupancy is per fixed listener endpoint, not per host:
+        // a different PPO slot/port can use genuinely spare CPU/RAM/GPU
+        // capacity while the existing service retains exclusive ownership.
+        const occupied=snapshot.jobs.filter(job=>
+            job.project_id==='courier_lineage'&&
+            !['cancelled','finished','stopped'].includes(job.status)&&
+            job.assigned_machine_id);
         // Multiple native Courier sidecars can now share the learner's
         // physical host, provided every approved PPO slot has its own
         // local listener and each job receives a separate exclusive GPU.
@@ -5577,7 +5583,9 @@ class ExperimentHub {
                 const bound=slot===null
                     ?host.courier_lineage_slots?.find(item=>item.endpoint===endpoint)
                     :courierWorkerSlot(host,slot);
-                return match&&!occupied.has(host.id)&&
+                return match&&!occupied.some(job=>
+                    job.assigned_machine_id===host.id&&
+                    courierWorkerSlot(host,job.frozen_parameters?.slot)?.endpoint===endpoint)&&
                     (host.id!==machine?.id||
                         allowLocal&&budget.gpu_count===1&&
                             budget.gpu_mode==='exclusive')&&
