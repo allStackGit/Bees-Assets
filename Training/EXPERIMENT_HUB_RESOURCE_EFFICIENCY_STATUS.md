@@ -24,6 +24,34 @@ world/RNG/checkpoint state through live migration, shared-training continuation,
 and paired PPO/Adam updates. TinyBrains retains bounded PPO CPU lookahead and
 direct staging alongside the new learner/opponent fusion and shared policy pack.
 
+Fresh automatic Courier runs now expose all approved independent maps (64
+basic, 32 competitive, four colony), without the former four-per-CPU-share
+ceiling. Physical processes still start near the admitted CPU/RAM allocation
+and grow only through sustained useful-SPS trials. Saved collectors preserve
+their existing RNG/shard boundaries. Full-vector action staging, stable batch
+array views and one aggregate completion per process remove per-shard tick
+work. A short one-process dispatch check measured about 8,889 vector steps/s
+with four logical shards and 8,972 with 64, versus 8,532 and 4,569 beforehand.
+A one-CPU authenticated collector exposed all 64 maps, completed PPO collection
+and admitted a live second process. An older four-shard snapshot retained its
+boundaries after continuation under a 64-shard ceiling. Forced-event, reset,
+reordering, live migration, PPO/Adam and RNG checks passed. Execution identities
+recalibrate older throughput proofs. Sustained whole-training fleet scaling
+and independent-policy GPU batching remain open.
+
+Courier CPU handoffs now retain existing process owners: splits start one
+receiver, merges start none, and same-count regrouping reuses both owners.
+Only moved shards are snapshotted; unchanged worlds keep their live objects.
+Preparation rolls back before commit on failure, and acknowledged release
+prevents a following resize racing old ownership. Hub reports cumulative
+process starts (including initial/failed starts), retained owners and moved
+shards (committed changes), globally and per worker. Local checks verified
+PID/object retention, repeated partial-transfer rollback without descriptor
+growth, and authenticated collector continuation. A paired three-update PPO
+run with live split/merge matched fixed ownership exactly in policy/Adam
+state, rollout observations/rewards and Torch RNG. The existing Hub adapter
+preserved 63 global/per-worker lifecycle fields with count units.
+
 **2026-11-18 integration continuation:** Reconciled the active Hub codec/placement branch with Courier's later checkpoint-safe whole-map redistribution and independently leased CPU-process tuning. Preserved Codex's policy codec/GPU residency metrics, and added retained migration/proof/process-ceiling fields plus five-of-six stable last-wire-worker attribution (headroom is a tuning candidate, not hardware saturation). TinyBrains' integrated grouped-frozen-opponent GPU inference now exports useful grouped models/states separately from padded lanes and fallbacks. The shared-policy Courier backend also scales remote checkpoint snapshot requests from one/two to up to sixteen (the supported collector fleet ceiling) under fixed RAM-headroom admission; the existing sliding window, ordered snapshot archive and checkpoint commit barrier are unchanged. Hub exposes actual snapshot parallelism, bytes, remote wait and ZIP append wall. Synthetic dense Courier (16 workers, 457 fields/26.8 KiB) and TinyBrains (17 collectors) progress passed neutral validation; no physical SPS or restart qualification was performed. Next major gap remains independent-Courier-policy GPU inference batching, adaptive multi-GPU learner work and real across-machine scaling.
 
 **2026-11-18 live execution extension:** Courier shared-policy world ownership can now migrate between existing authenticated collector sessions after a complete published PPO checkpoint. A stable 8-round/90-second per-machine and whole-PPO rate proof, unchanged leases, whole saved shard boundaries, preflight RAM/frame capacity, settled CPU process counts and >=15% predicted bottleneck reduction are mandatory. The machine services stay owned by the Hub; only changed native world pools reconstruct their snapshotted episodes. A later sustained useful-SPS comparison accepts/records a genuine improvement or supports an episode-safe checkpoint rollback on a material regression. Failure or uncertain transfer cannot authorize partial PPO data or a new authoritative checkpoint. Independently trained Courier GPU lineages on the same leased card now share its fixed 80% VRAM allocator ceiling using observed peak-reserved memory, with conservative peer floors, sustained stage/whole-PPO measurements and >=8% useful SPS acceptance; failed trials revert to previous fractions, and only proven physical GPU/owner profiles survive checkpoints. Live collector reconfiguration now overlaps up to eight independently leased machine transfers, bounded by conservative peak learner RAM and one archive-reader/serializer, instead of serially waiting on every remote restore. The migration reports physical transfer wall, summed remote service, exposed waits, preparation time, bytes and admitted concurrency through the same Hub chart/export pipeline. Unchanged collectors retain their proven physical CPU-process tuners; reassignment uses a stricter forecast after an accepted SPS trial rather than repeatedly recalibrating every machine. Hub's existing bounded metric, chart and export paths cover migration/rollback cost and VRAM quota/SPS evidence. Synthetic VRAM arithmetic (50,000 cases) and a crowded 64-policy Hub report (465 fields, 29.9 KiB) passed; end-to-end SPS, Windows spawn, GPU hardware and checkpoint continuation remain to qualify. *Still unfinished:* independent-policy cross-lineage GPU inference batching, true multi-device learner gradient optimization and full heterogeneous fleet scaling proof.

@@ -52,6 +52,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_sim_multiplexed_shards','training_sim_child_os_threads',
     'training_sim_vector_groups_total','training_sim_vector_shards_total',
     'training_sim_receipts_total','training_sim_batch_reuses_total',
+    'training_sim_proc_starts_total','training_sim_owner_retains_total',
+    'training_sim_shard_moves_total',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
     'training_sim_migration_workers','training_collector_sim_trial_workers',
     'training_collector_sim_eligible_workers',
@@ -177,6 +179,8 @@ function courierMetrics(source) {
         'training_useful_steps_per_second','training_total_useful_steps',
         'training_collector_workers','training_lineage_workers',
         'training_sim_processes','training_gpu_devices_active',
+        'training_sim_proc_starts_total','training_sim_owner_retains_total',
+        'training_sim_shard_moves_total',
         'training_gpu_devices_assigned','training_slowest_worker',
         'training_shared_last_wire_worker',
     ].includes(name)||name.startsWith('training_live_')||
@@ -275,7 +279,7 @@ function courierMetrics(source) {
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=(COURIER_COUNT_FIELDS.has(name)||
-            /^worker_[0-9]{1,2}_sim_(?:step_receipts|batch_reuses)$/.test(name)||
+            /^worker_[0-9]{1,2}_sim_(?:step_receipts|batch_reuses|proc_starts|owner_retains|shard_moves)$/.test(name)||
             /^worker_[0-9]{1,2}_gpu_graph_(?:attempts|rejections|failures|replays)$/.test(name)||
             /^worker_[0-9]{1,2}_sim_vector_(?:groups|shards)$/.test(name)||
             name.endsWith('_owner')||name.endsWith('_train_seq')||

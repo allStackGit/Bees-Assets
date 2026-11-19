@@ -310,6 +310,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_sim_multiplexed_shards',
             'training_sim_vector_groups_total','training_sim_vector_shards_total',
             'training_sim_receipts_total','training_sim_batch_reuses_total',
+            'training_sim_proc_starts_total','training_sim_owner_retains_total',
+            'training_sim_shard_moves_total',
             'training_sim_child_os_threads',
             'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
             'training_info_pack_max_seconds',
