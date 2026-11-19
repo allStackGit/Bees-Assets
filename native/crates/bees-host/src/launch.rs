@@ -26,7 +26,9 @@ use bees_host::fleet_inventory::NativeFleetCombatStats;
 use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvaluationContext, recover_command_outcomes};
 use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
 use bees_host::policy_action_trace::{PolicyActionPlayback, PolicyActionRecorder};
-use bees_host::player_trace::{NativePlayerInput, NativePlayerTrace, NativeTraceLevel};
+use bees_host::player_trace::{
+    NativePlayerInput, NativePlayerTrace, NativeTraceLevel, NativeTraceNetworkEvent,
+};
 use bees_host::world_fingerprint::{physical_world_sha256, gameplay_world_sha256};
 use bees_host::presentation::NativeSoftwareRenderer;
 use bees_host::scene_assets::NativeSceneAssets;
@@ -859,6 +861,7 @@ struct RunNetwork {
     flush_seconds: u32,
     issue_source_commands: bool,
     scheduler: NativeSourceCommandScheduler,
+    recorded_network_events: u64,
 }
 
 impl RunNetwork {
@@ -881,7 +884,7 @@ impl RunNetwork {
             levels, next_level: 0, user_id: config.user_id, version: config.version,
             auth_ticket, flush_seconds: config.shutdown_flush_seconds,
             issue_source_commands: config.issue_source_commands,
-            scheduler,
+            scheduler, recorded_network_events: 0,
         };
         let (kind, server_game_id) = config.reconnect_game_id
             .map_or((SetupKind::Initial, 0), |game| (SetupKind::Reconnect, game));
@@ -914,7 +917,9 @@ impl RunNetwork {
             self.next_level == self.levels.len())
     }
 
-    fn poll(&mut self, host: &mut RolloutHost) -> io::Result<()> {
+    fn poll(&mut self, host: &mut RolloutHost,
+        mut recording: Option<(&mut fs::File, u64)>,
+    ) -> io::Result<()> {
         for _ in 0..16 {
             let event = if self.issue_source_commands {
                 host.poll_network_and_continue_source_commands(&mut self.worker)
@@ -923,6 +928,26 @@ impl RunNetwork {
             };
             let Some(event) = event
                 .map_err(|error| contextual("HiveMind network", error))? else { break; };
+            // Snapshot the authenticated ingress after the canonical host
+            // accepted it but before consuming this event's setup/command
+            // continuation. No second response decoder or game ledger.
+            let record = if recording.is_some() {
+                Some(match &event {
+                    NativeHostSocketEvent::SetupAccepted {
+                        request_hash, server_game_id,
+                    } => json!({
+                        "kind": "hivemind_setup", "request_hash": request_hash,
+                        "server_game_id": server_game_id,
+                    }),
+                    NativeHostSocketEvent::ServerFrame {
+                        request_hash, raw_frame, ..
+                    } => json!({
+                        "kind": "hivemind_frame", "request_hash": request_hash,
+                        "frame": std::str::from_utf8(raw_frame)
+                            .map_err(|error| contextual("HiveMind frame UTF-8", error))?,
+                    }),
+                })
+            } else { None };
             match event {
                 NativeHostSocketEvent::SetupAccepted { request_hash, server_game_id } => {
                     println!("{}", json!({"kind": "hivemind_setup", "request_hash": request_hash,
@@ -951,8 +976,104 @@ impl RunNetwork {
                 NativeHostSocketEvent::ServerFrame { request_hash, delivery, .. } =>
                     return Err(invalid(format!("unowned HiveMind feature reply {request_hash}: {delivery:?}"))),
             }
+            if let (Some(record), Some((trace, round))) = (record, recording.as_mut()) {
+                let mut record = record;
+                record["round"] = json!(*round);
+                writeln!(*trace, "{record}")?;
+                self.recorded_network_events += 1;
+            }
         }
         Ok(())
+    }
+}
+
+/// Offline playback uses the SAME source timer, connection allocator and
+/// Level-owned server reply dispatcher. A recorded setup event substitutes
+/// only for socket readiness; no live HiveMind session or new command path
+/// is instantiated. Original request hashes are reconstructed from the
+/// battle-start checkpoint before applying any recorded server response.
+struct RecordedNetwork {
+    scheduler: NativeSourceCommandScheduler,
+    levels: usize,
+    next_level: usize,
+    pending_setup_hash: Option<i64>,
+    issue_source_commands: bool,
+}
+
+impl RecordedNetwork {
+    fn start(config: &HiveMindConfig, levels: &[LevelConfig],
+        fixed_dt: &[f32], host: &mut RolloutHost,
+    ) -> io::Result<Self> {
+        let identities = levels.iter().map(|level| i32::try_from(level.level_id)
+            .map_err(|_| invalid("recorded HiveMind LevelId is outside int32")))
+            .collect::<io::Result<Vec<_>>>()?;
+        let scheduler = NativeSourceCommandScheduler::new(&identities, fixed_dt)?;
+        let pending_setup_hash = Some(host.connection_mut().next_hash()
+            .map_err(|error| contextual("recorded HiveMind first setup", error))?);
+        Ok(Self {
+            scheduler, levels: identities.len(), next_level: 0,
+            pending_setup_hash, issue_source_commands: config.issue_source_commands,
+        })
+    }
+
+    fn accept(&mut self, host: &mut RolloutHost,
+        event: NativeTraceNetworkEvent,
+    ) -> io::Result<()> {
+        match event {
+            NativeTraceNetworkEvent::Setup {
+                request_hash, server_game_id, ..
+            } => {
+                if server_game_id <= 0 || self.pending_setup_hash != Some(request_hash) {
+                    return Err(invalid(
+                        "recorded HiveMind setup did not match the original connection identity",
+                    ));
+                }
+                self.next_level += 1;
+                self.pending_setup_hash = if self.next_level < self.levels {
+                    Some(host.connection_mut().next_hash()
+                        .map_err(|error| contextual("recorded HiveMind setup", error))?)
+                } else { None };
+            }
+            NativeTraceNetworkEvent::Frame { request_hash, frame, .. } => {
+                if self.pending_setup_hash.is_some() {
+                    return Err(invalid("recorded HiveMind response arrived before Level setup"));
+                }
+                let body: Value = serde_json::from_str(&frame)?;
+                if body["Hash"].as_i64() != Some(request_hash) {
+                    return Err(invalid("recorded HiveMind response hash disagrees with its frame"));
+                }
+                let delivery = host.receive_frame(frame.as_bytes())
+                    .map_err(|error| contextual("recorded HiveMind delivery", error))?;
+                match delivery {
+                    Some(bees_gameplay::level_host::NativeHiveMindFrameDelivery::Targeting(
+                        targeting,
+                    )) if self.issue_source_commands => {
+                        if let bees_hivemind::session::TargetingReceipt::Accepted {
+                            owner, ..
+                        } = targeting.receipt {
+                            host.request_live_strategy(owner, targeting.opponent_id)
+                                .map_err(|error| contextual(
+                                    "recorded HiveMind strategy continuation", error,
+                                ))?;
+                        }
+                    }
+                    Some(bees_gameplay::level_host::NativeHiveMindFrameDelivery::Strategy(_))
+                        if self.issue_source_commands => {}
+                    Some(bees_gameplay::level_host::NativeHiveMindFrameDelivery::StoreCommands(_)) => {}
+                    _ => return Err(invalid("unowned recorded HiveMind response")),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn issue_due(&mut self, host: &mut RolloutHost) -> io::Result<u64> {
+        if !self.issue_source_commands { return Ok(u64::MAX); }
+        let ready = self.pending_setup_hash.is_none();
+        self.scheduler.issue_due_with_readiness(host, ready, ready)?;
+        if ready {
+            self.scheduler.rounds_until_next_pulse(host, true)
+        } else { Ok(u64::MAX) }
     }
 }
 
@@ -3422,9 +3543,6 @@ fn run_battle(
     {
         return Err(invalid("HiveMind recovery and reconnection require the original configured checkpoint and journal paths").into());
     }
-    if replay_inputs.is_some() && config.hivemind.is_some() {
-        return Err(invalid("Player input playback requires an offline battle").into());
-    }
     let checkpoint = output.as_ref().map_or_else(
         || resolve(root, &config.connection_checkpoint), |dir| dir.join("connection-checkpoint.json"),
     );
@@ -4048,7 +4166,8 @@ fn run_battle(
     ).collect::<Vec<_>>();
     let mut playback = replay_inputs.map(|path|
         NativePlayerTrace::read(path, &config_digest, &gameplay_digest, &trace_levels,
-            model_source.as_ref().map(|(_, _, _, digest)| digest.as_str()))
+            model_source.as_ref().map(|(_, _, _, digest)| digest.as_str()),
+            config.hivemind.is_some())
     ).transpose()?;
     if playback.as_ref().is_some_and(|trace| trace.end_round > config.max_rounds) {
         return Err(invalid("player trace exceeds the configured round budget").into());
@@ -4059,7 +4178,7 @@ fn run_battle(
     // installation ticks.
     let trace_output = output.filter(|_| (play || remote_step_interval.is_some()) &&
         replay_inputs.is_none() && navigation_workers.is_none() &&
-        config.hivemind.is_none() && config.model_updates.is_empty());
+        config.model_updates.is_empty());
 
     let mut model = RolloutModel::default();
     if let (Some(path), Some(trace), Some((_, _, _, manifest_digest))) =
@@ -4071,6 +4190,23 @@ fn run_battle(
     }
     if let Some(directory) = output {
         fs::create_dir(directory)?;
+    }
+    // An offline recording restores only the initial connection allocator
+    // snapshot, never the original live account's current checkpoint.
+    // Every later request hash is then reallocated by the existing owner.
+    if let Some(expected) = playback.as_ref()
+        .and_then(|trace| trace.hivemind_start_checkpoint_sha256.as_ref())
+    {
+        let source = replay_inputs.expect("recorded HiveMind playback input")
+            .with_file_name("hivemind-start-checkpoint.json");
+        let bytes = fs::read(&source)?;
+        if format!("{:x}", Sha256::digest(&bytes)) != *expected {
+            return Err(invalid("recorded HiveMind starting checkpoint changed").into());
+        }
+        let mut file = fs::OpenOptions::new().write(true).create_new(true)
+            .open(&checkpoint)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
     }
     let mut connection = if config.recover_notifications.is_empty() && config.recover_outcome_journals.is_empty() {
         DurableHiveMindConnection::open(&checkpoint)
@@ -4141,12 +4277,26 @@ fn run_battle(
     }
     host.set_timing_sample_period(timing);
     let recorded_inputs = trace_output.map(|directory| directory.join("player-inputs.jsonl"));
+    let hivemind_start_checkpoint_sha256 = if recorded_inputs.is_some() &&
+        config.hivemind.is_some()
+    {
+        let bytes = fs::read(&checkpoint)?;
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let source = output.expect("recorded native battle output")
+            .join("hivemind-start-checkpoint.json");
+        let mut file = fs::OpenOptions::new().write(true).create_new(true)
+            .open(source)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        Some(digest)
+    } else { None };
     let mut input_trace = if let Some(path) = &recorded_inputs {
         let mut trace = fs::OpenOptions::new().write(true).create_new(true)
             .open(path)?;
         writeln!(trace, "{}", json!({
             "kind": "player_input_trace",
-            "schema_version": 4,
+            "schema_version": 5,
+            "hivemind_start_checkpoint_sha256": hivemind_start_checkpoint_sha256,
             "run_id": config.run_id,
             "run_config_sha256": config_digest,
             "gameplay_config_sha256": gameplay_digest,
@@ -4155,8 +4305,16 @@ fn run_battle(
         }))?;
         Some(trace)
     } else { None };
-    let mut network = config.hivemind.as_ref().map(|settings|
-        RunNetwork::start(settings, &config.levels, &source_fixed_dt_by_level, host.connection_mut())).transpose()?;
+    let mut replay_network = config.hivemind.as_ref()
+        .filter(|_| playback.is_some())
+        .map(|settings| RecordedNetwork::start(
+            settings, &config.levels, &source_fixed_dt_by_level, &mut host,
+        )).transpose()?;
+    let mut network = config.hivemind.as_ref()
+        .filter(|_| playback.is_none())
+        .map(|settings| RunNetwork::start(
+            settings, &config.levels, &source_fixed_dt_by_level, host.connection_mut(),
+        )).transpose()?;
     if remote_step_interval.is_some() && (config.levels.len() != 1 || playback.is_some()) {
         return Err(invalid("remote co-op requires one live Level, not multi-world rollout or replay").into());
     }
@@ -4350,6 +4508,26 @@ fn run_battle(
                 ));
                 break 'battle;
             }
+            // Live socket ingress precedes player input at a fixed-tick
+            // boundary. Replay follows precisely that same ordering using
+            // the original checkpoint-owned hashes and game dispatcher.
+            while trace.network_events.front().is_some_and(|entry|
+                match entry {
+                    NativeTraceNetworkEvent::Setup { round, .. } |
+                    NativeTraceNetworkEvent::Frame { round, .. } => *round == rounds,
+                }
+            ) {
+                let event = trace.network_events.pop_front()
+                    .expect("checked next HiveMind event");
+                let Some(replayer) = &mut replay_network else {
+                    failed_window = Some("recorded HiveMind event has no connection".into());
+                    break 'battle;
+                };
+                if let Err(error) = replayer.accept(&mut host, event) {
+                    failed_window = Some(format!("recorded HiveMind input: {error}"));
+                    break 'battle;
+                }
+            }
             while trace.inputs.front().is_some_and(|entry| entry.round == rounds) {
                 let entry = trace.inputs.pop_front().expect("checked next input");
                 let (id, episode_revision) = entry.action.episode();
@@ -4382,7 +4560,9 @@ fn run_battle(
         // Poll before view pacing/input continues, so idle graphical frames
         // cannot starve acknowledgement or setup delivery.
         if let Some(network) = &mut network {
-            if let Err(error) = network.poll(&mut host) {
+            if let Err(error) = network.poll(
+                &mut host, input_trace.as_mut().map(|trace| (trace, rounds)),
+            ) {
                 failed_window = Some(error.to_string());
                 break;
             }
@@ -4519,6 +4699,14 @@ fn run_battle(
                 Ok(limit) => limit,
                 Err(error) => {
                     failed_window = Some(error.to_string());
+                    break;
+                }
+            }
+        } else if let Some(replayer) = &mut replay_network {
+            match replayer.issue_due(&mut host) {
+                Ok(limit) => limit,
+                Err(error) => {
+                    failed_window = Some(format!("recorded HiveMind command timer: {error}"));
                     break;
                 }
             }
@@ -5020,7 +5208,7 @@ fn run_battle(
                 break;
             }
             if std::time::Instant::now() >= deadline { socket_flush_timed_out = true; break; }
-            if let Err(error) = network.poll(&mut host) {
+            if let Err(error) = network.poll(&mut host, None) {
                 cleanup_errors.push(error.to_string());
                 break;
             }
@@ -5032,7 +5220,7 @@ fn run_battle(
             match network.worker.request_close() {
                 Ok(()) => {
                     while !network.worker.closed() && std::time::Instant::now() < deadline {
-                        if let Err(error) = network.poll(&mut host) {
+                        if let Err(error) = network.poll(&mut host, None) {
                             cleanup_errors.push(format!("HiveMind socket close: {error}"));
                             break;
                         }
