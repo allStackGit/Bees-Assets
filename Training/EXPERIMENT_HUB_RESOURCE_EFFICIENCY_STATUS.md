@@ -11,9 +11,13 @@ split/merge PPO parity, 24 speed observation cases, checkpoint root mapping,
 lease/automatic-learner selection and authenticated bottleneck evidence passed.
 A reproduced pre-existing 41-character TinyBrains metric now publishes as
 `rollout_opponent_joined_readbacks`, within the neutral 40-character limit.
-Nine-collector source reports validate; the older maximally populated
-17-collector fixtures still expose envelope/optional-field limitations and need
-focused follow-up rather than being treated as passing qualification.
+Maximum-fanout reports now retain every worker's critical timing, identity and
+tuning-uncertainty columns, shedding optional global detail if required. Exact
+`source_metrics_omitted` counts expose summary loss; native committed history
+remains complete. Previously invalid GPU detail names shorten only when they
+exceed the existing neutral limit, preserving valid historical names. All 34
+1–17 collector / small-and-large numeric fixtures validate within 500 fields
+and the unchanged 32-KiB report envelope, with complete critical worker coverage.
 
 Courier now has a checked frozen-policy batch executor for the outstanding
 independent-policy inference work. Distinct LSTM/MLP weights pack once; each
@@ -45,6 +49,25 @@ startup time and host-wire requests. Local admission/acceptance/rejection checks
 and four live worker handoffs passed; 512 host-wire PPO requests preserved exact
 actions/observations/RNG and numerically matched policy/Adam. Physical GPU
 transport and sustained whole-job speedup remain to qualify.
+
+Courier automatic inference now tunes distinct cohort widths rather than one
+all-or-nothing full cohort. It admits compatible subsets within simultaneous
+lineage capacity, explores coarse widths through the dispatch ceiling, and
+refines beside the best proven choice. Unprofitable or kernel-rejected small
+subsets do not veto larger useful batches. Wider plans favor assigned-GPU
+coverage. Sustained >=12% useful-PPO improvement accepts a choice; failed
+wider-device admission restores the prior proof. Producers/endpoints persist
+across width changes. Checkpoints pin the new plan identity, proven choice and
+completed attempts, allowing interrupted discovery to resume.
+Accepted cohorts remain active while other owners recalibrate. CPU capacity
+proofs include cohort membership and restart calibration from the current live
+process layout, preserving environments. Hub exposes
+actual/next policies and cohorts alongside existing work/padding/wait counters.
+Checks covered 768 layouts, multi-GPU admission/fallback and four persistent
+CPU PPO workers through 2→3→4→2 membership: the same producer handled 389
+requests/193 grouped calls, actions/observations and Torch/NumPy/Python RNG
+matched exactly, and values/policy/Adam matched within numerical tolerance.
+These are execution-contract checks, not a physical GPU speedup claim.
 
 TinyBrains' multi-GPU path now computes PPO losses on each replica, returning
 six scalars per board instead of spatial logits and values. Global advantages,
@@ -128,7 +151,7 @@ Courier preserves independent recurrent PPO lineages, complete-map fixed PPO slo
 
 **Current verification boundary.** Focused synthetic NumPy parity confirmed 80,784 bitwise-identical observation rows across standard/evolution layouts and 2,600 food-timer advances with identical RNG-call order. Additional checks matched 181,477 finite-patch due-map decisions, 4.2 million feeding eligibility entries, 24,000 food RNG candidate groups and 3,600 full food placements including resulting RNG state. Reusing one immutable policy pack for independent CPU destinations matched 18,226 mixed-dtype tensor values; the existing Hub metrics stayed within its envelope for 1–17 simulated collectors. The 1,024-map timer-only check improved from approximately 0.57 s to 0.04 s per 1,000 ticks; 128-map observation assembly improved from roughly 0.74 to 0.48 ms (standard) and 4.21 to 2.30 ms (evolution). These are **isolated synthetic checks**, not live useful-SPS/ROCm measurements or proof of complete runtime parity. No substantial integrated benchmark was run.
 
-**Highest remaining work.** Cross-independent-policy Courier GPU batching (without changing recurrent state, policy RNG/version or optimizer), further productive multi-GPU PPO/collector coordination, durable distributed in-flight recovery beyond the committed checkpoint, and practical CPU/GPU/RAM/network bottleneck attribution qualified on heterogeneous leased hardware. Project-neutral monitoring is already extensive; do not add a second metrics service or restart whole environment pools to tune concurrency.
+**Highest remaining work.** Preserve unchanged live world shards during shared-collector redistribution, distinguish broker device execution from RPC/host-transfer waits in complete pipeline attribution, and qualify joint CPU/GPU tuning and throughput on heterogeneous leased machines. Existing artifact exports and bounded neutral summaries need final end-to-end coverage checks at maximum fanout. The current broker and multi-GPU capabilities are summarized above; older dated entries record intermediate states. Reuse the existing Hub metrics/artifact paths and avoid restarting whole environment pools for tuning.
 
 Local integration retains authenticated continuation capacity checks, cached
 vectorized Courier world groups and bulk completion replies, plus bounded

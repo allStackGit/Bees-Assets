@@ -88,6 +88,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         for(const [name,value] of Object.entries(observed))retain(name,value);
         retain('total_ppo_updates',reported.total_ppo_updates);
         retain('ant_decisions_per_second',reported.ant_decisions_per_second);
+        retain('source_metrics_omitted',reported.source_metrics_omitted);
         for(const name of ['pipeline_remote_resource_owner','pipeline_remote_cpu_lease_pressure',
             'pipeline_remote_cpu_throttle_pressure','pipeline_remote_cpu_underuse_evidence',
             'pipeline_remote_ram_lease_pressure','pipeline_remote_gpu_host_busy_pressure'])
@@ -332,6 +333,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_ppo_parallel_trials','training_ppo_parallel_rejections',
             'training_ppo_parallel_setup_seconds','training_ppo_parallel_baseline_seconds',
             'training_ppo_parallel_candidate_seconds',
+            'training_broker_mode','training_broker_next_mode',
+            'training_broker_policies','training_broker_next_policies',
+            'training_broker_max_policies','training_broker_cohorts',
+            'training_broker_next_cohorts','training_broker_settled',
             'training_broker_requests','training_broker_kernel_batches',
             'training_broker_routed_states','training_broker_compute_states',
             'training_broker_padding_states','training_broker_register_denials',

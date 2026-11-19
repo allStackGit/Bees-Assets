@@ -63,6 +63,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_ppo_parallel_rejections','training_ppo_parallel_batches',
     'training_ppo_parallel_device_batches','training_ppo_parallel_sequences',
     'training_broker_mode','training_broker_next_mode','training_broker_settled',
+    'training_broker_policies','training_broker_next_policies','training_broker_max_policies',
+    'training_broker_cohorts','training_broker_next_cohorts',
     'training_broker_eligible','training_broker_adjustments','training_broker_accepted',
     'training_broker_ram_denials','training_broker_vram_denials','training_broker_start_denials',
     'training_broker_requests','training_broker_host_requests','training_broker_register_denials',

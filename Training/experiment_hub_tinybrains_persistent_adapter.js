@@ -51,12 +51,18 @@ function previousHistoryRow(fd,endExclusive) {
 // Keep exact game events distinct from observation-based food/combat proxies.
 function recordedTinyBrainsMetrics(row,updateWall) {
     const metrics={};
+    // Keep existing valid names, shortening only previously unreportable
+    // GPU detail keys (including two-digit collector ordinals).
+    const metricName=name=>name.length<=40?name:name
+        .replace('_model_copy_gpu_stream_seconds','_model_copy_gpu_seconds')
+        .replace('_sim_prefetch_overlap_seconds','_sim_prefetch_overlap_s')
+        .replace('_opp_learner_joined_readbacks','_opp_joined_readbacks');
     function add(name,value,unit) {
         if(!Number.isFinite(value)||Math.abs(value)>1e12||
             (unit==='count'&&(!Number.isSafeInteger(value)||value<0))||
             (['rate','seconds','mb'].includes(unit)&&value<0)||
             (unit==='ratio'&&(value<0||value>1)))return;
-        metrics[name]={value,unit};
+        metrics[metricName(name)]={value,unit};
     }
     add('total_ppo_updates',row.update,'count');
     // The trainer emits checkpoint-lineage cumulative decisions and a
@@ -625,6 +631,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // fixed project-neutral 512-field / 32-KiB progress contract.
     // Keep the compact previous-reply summary for every worker as long as
     // possible, dropping finer breakdowns across workers before summaries.
+    const sourceMetricCount=Object.keys(metrics).length;
+    // Reserve the largest possible omission counter before bounding.
+    add('source_metrics_omitted',sourceMetricCount,'count');
     const optionalSuffixes=[
         'client_auth_seconds','reply_auth_seconds',
         'reply_decompress_seconds','reply_deserialize_seconds',
@@ -641,7 +650,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             // Delete a detail for all workers before deleting a more
             // valuable stage from just one worker.
             for(let i=collectors-1;i>=0;i--) {
-                delete metrics['collector_'+i+'_'+suffix];
+                delete metrics[metricName('collector_'+i+'_'+suffix)];
                 if(fits())break;
             }
             if(fits())break;
@@ -654,7 +663,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                                  'prev_reply_send_seconds',
                                  'prev_reply_service_seconds',
                                  'prev_reply_update'])
-                delete metrics['collector_'+i+'_'+suffix];
+                delete metrics[metricName('collector_'+i+'_'+suffix)];
             if(fits())break;
         }
         // With 8 local GPUs plus the learner, a fully populated row can
@@ -676,7 +685,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'sim_changes','sim_accepted','sim_settled',
                 'sim_admitted','sim_denied','sim_retired',
                 'sim_restored','sim_proven',
-                'sim_memory_rejections','sim_trial',
+                'sim_memory_rejections',
                 'sim_global_samples','sim_global_gain',
                 'inference_shape_groups','inference_readbacks',
                 'inference_forward_chunks','opponent_shape_groups',
@@ -724,11 +733,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'sim_global_rejections','sim_max','sim_target',
                 'sim_draining',
                 'dispatch_queue_seconds',
-                'sim_workload_reprobes','sim_inconclusive_trials',
+                'sim_workload_reprobes',
             ];
             for(const suffix of deferredDetails) {
                 for(let i=0;i<collectors;i++)
-                    delete metrics['collector_'+i+'_'+suffix];
+                    delete metrics[metricName('collector_'+i+'_'+suffix)];
                 if(fits())break;
             }
         }
@@ -741,7 +750,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             // the principal rollout stage walls, and physical GPU identity.
             const essential=new Set([
                 'ant_decisions','decisions_per_second','elapsed_seconds',
-                'roundtrip_seconds','service_seconds',
+                'roundtrip_seconds','service_seconds','completion_seconds',
+                'sim_trial','sim_inconclusive_trials',
                 'wait_after_local_seconds','learner_inference_seconds',
                 'rollout_engine_step_seconds','observation_prepare_seconds',
                 'opponent_processing_seconds','result_processing_seconds',
@@ -759,11 +769,46 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 a.localeCompare(b));
             for(const suffix of optional) {
                 for(let i=0;i<collectors;i++)
-                    delete metrics['collector_'+i+'_'+suffix];
+                    delete metrics[metricName('collector_'+i+'_'+suffix)];
+                if(fits())break;
+            }
+        }
+        if(!fits()) {
+            // Maximum fanout can leave more global detail than the wire
+            // permits even after every optional worker column is removed.
+            // Keep complete worker stage/identity coverage and root cadence,
+            // constraints and optimizer stages before global detail counters.
+            const required=new Set([
+                'source_metrics_omitted','total_ppo_updates','total_ant_decisions',
+                'training_tracked_active_seconds','elapsed_training_seconds',
+                'ant_decisions','ant_decisions_per_second','engine_steps',
+                'simulation_match_steps','collector_count','action_target',
+                'update_wall_time','collection_seconds','optimization_seconds',
+                'checkpoint_seconds','rss_mb','simulation_total_charged_memory_mb',
+                'simulation_ram_lease_headroom_mb','simulation_active_matches',
+                'simulation_target_matches','simulation_max_matches',
+                'simulation_tuner_trial','simulation_workload_reprobes',
+                'simulation_inconclusive_trials','simulation_global_cadence_gain',
+                'gpu_role_primary_lease_index','gpu_role_optimizer_lease_index',
+                'rollout_model_refresh_groups','local_gpu_pending_at_local_end',
+                'collector_wait_seconds','collector_critical_path_seconds',
+                'collector_balance_drift_reprobes','collector_balance_trial_sps_gain',
+                'local_lease_ram_charged_mb','local_lease_ram_headroom_mb',
+                'local_lease_ram_admission_denials','local_lease_simulation_trial_active',
+                'remote_collector_exposed_wait_owner','remote_collector_exposed_wait_seconds',
+            ]);
+            const optional=Object.keys(metrics).filter(name=>
+                !name.startsWith('collector_')&&!required.has(name)&&
+                !name.startsWith('pipeline_')&&
+                !/^ppo_.*_seconds$/.test(name))
+                .sort((a,b)=>b.length-a.length||a.localeCompare(b));
+            for(const name of optional) {
+                delete metrics[name];
                 if(fits())break;
             }
         }
     }
+    metrics.source_metrics_omitted.value=sourceMetricCount-(Object.keys(metrics).length-1);
     return metrics;
 }
 
