@@ -16,6 +16,7 @@ import re
 import tempfile
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256, sync_directory
+from portable_policy_bundle import package_model_manifest, write_pinned_policy_assets
 
 
 def document(path: Path) -> dict:
@@ -249,6 +250,32 @@ def main() -> None:
         scene, run, library, provenance = challenge(
             receipt, args.player_side, args.level_index,
         )
+        selection, _, slot, original_run = selected_run(receipt)
+        selected = (selection["selected"] if "selected" in selection
+                    else selection)
+        provenance["selected_learner_slot"] = slot
+        provenance["selected_model_manifest_sha256"] = selected["manifest_sha256"]
+        # Rebase the verified model and Python actor to this published
+        # playable game. Nothing in the output run points at the trainer.
+        model_json = []
+        model_files = {}
+        runtime_files = {}
+        provenance["packaged_model"] = package_model_manifest(
+            original_run, run, "challenge", model_json,
+            model_files, runtime_files, provenance,
+        )
+        # Legacy Stage exports may use external collision/palette JSON.
+        # New native_stage runs already contain all source physics data.
+        extra_files = {}
+        for key in ("collision_matrix", "stage_palette"):
+            value = run.get(key)
+            if value is None:
+                continue
+            source = Path(value).resolve(strict=True)
+            digest = file_sha256(source)
+            packaged_name = f"stage-assets/{key}.json"
+            run[key] = packaged_name
+            extra_files[packaged_name] = (source, digest)
         output = args.output_dir.resolve()
         if output.exists():
             raise FileExistsError(f"refusing to overwrite existing native challenge: {output}")
@@ -263,8 +290,28 @@ def main() -> None:
                 ("challenge.scene.json", scene),
                 ("challenge.run.json", run),
                 ("library.json", library),
+                *model_json,
             ):
                 atomic_json(staged / name, payload)
+            write_pinned_policy_assets(
+                staged, model_files, runtime_files, extra_files,
+            )
+            provenance["packaged_model"]["packaged_manifest_sha256"] = (
+                file_sha256(staged / "challenge.model-manifest.json")
+            )
+            provenance["packaged_model_files"] = [
+                {"file": name, "sha256": name.split("/")[-1].removesuffix(".model")}
+                for name in sorted(model_files)
+            ]
+            provenance["packaged_runtime_files"] = [
+                {"file": name, "sha256": runtime_files[name][1],
+                 "normalized_source_sha256": runtime_files[name][2]}
+                for name in sorted(runtime_files)
+            ]
+            provenance["packaged_stage_files"] = [
+                {"file": name, "sha256": digest}
+                for name, (_, digest) in sorted(extra_files.items())
+            ]
             provenance["scene_sha256"] = file_sha256(staged / "challenge.scene.json")
             provenance["run_sha256"] = file_sha256(staged / "challenge.run.json")
             atomic_json(staged / "challenge-receipt.json", provenance)

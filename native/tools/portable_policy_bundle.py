@@ -104,7 +104,10 @@ def package_model_manifest(
     interpreter and compatible worker/dependencies on the target platform.
     """
     manifest_path = existing_artifact(run_path, run.get("model_manifest"))
-    original_sha256 = provenance["selected_model_manifest_sha256"]
+    original_sha256 = provenance.get(
+        "source_model_manifest_sha256",
+        provenance["selected_model_manifest_sha256"],
+    )
     if file_sha256(manifest_path) != original_sha256:
         raise ValueError("selected campaign model manifest changed after verification")
     manifest = read_json_object(manifest_path)
@@ -158,6 +161,7 @@ def package_model_manifest(
 
 def write_pinned_policy_assets(
     staged: Path, model_files: dict, runtime_files: dict,
+    extra_files: dict | None = None,
 ) -> None:
     """Write verified model weights and worker sources under one staged root.
 
@@ -172,6 +176,10 @@ def write_pinned_policy_assets(
     assets.extend(
         (name, source, digest)
         for name, (source, digest, _) in runtime_files.items()
+    )
+    assets.extend(
+        (name, source, digest)
+        for name, (source, digest) in (extra_files or {}).items()
     )
     for name, source, expected_sha in assets:
         destination = staged / name
