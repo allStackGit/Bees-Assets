@@ -48,6 +48,10 @@ HELP = """Commands:
   lock on|off          Lock/unlock selected squad's current enemy
   shoot ID             Choose native shooting strategy ID 1-40
   attack ID            Attack visible enemy squad
+  circle ID            Circle visible enemy squad
+  right-swipe ID       Right-swipe visible enemy squad
+  left-swipe ID        Left-swipe visible enemy squad
+  in-and-out ID        In-and-out attack against visible enemy squad
   guard ID             Guard a visible friendly squad
   mine ID              Mine a visible mining asteroid
   heal ID              Heal from a visible friendly Beehive
@@ -58,6 +62,17 @@ HELP = """Commands:
   help                 Print this command list
   quit                 Disconnect
 """
+
+
+# The host validates all of these against the same source squad command
+# implementation. Keep GUI and terminal choices on one shared mapping.
+ENEMY_MANEUVERS = {
+    "attack": "Attack",
+    "circle": "Circle",
+    "right-swipe": "RightSwipe",
+    "left-swipe": "LeftSwipe",
+    "in-and-out": "InAndOut",
+}
 
 
 class RemoteConsole:
@@ -316,10 +331,11 @@ class RemoteConsole:
             if strategy_id not in range(1, 41):
                 raise ValueError("shooting strategy must be 1-40")
             self.send(("shooting", {"strategy_id": strategy_id}), state, owners)
-        elif cmd == "attack" and len(argv) == 1:
+        elif cmd in ENEMY_MANEUVERS and len(argv) == 1:
             target = self.locate_squad(state, argv[0], owned=False)
-            self.send(("support", {"action": {"Attack": {"target": target}}}),
-                      state, owners)
+            self.send(("support", {"action": {
+                ENEMY_MANEUVERS[cmd]: {"target": target},
+            }}), state, owners)
         elif cmd == "guard" and len(argv) == 1:
             target = self.locate_squad(state, argv[0], owned=True)
             self.send(("support", {"action": {"Guard": {"target": target}}}),

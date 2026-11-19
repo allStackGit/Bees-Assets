@@ -14,7 +14,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from remote_play_client import RemoteConsole, remote_token
+from remote_play_client import ENEMY_MANEUVERS, RemoteConsole, remote_token
 
 
 BACKGROUND = "#101925"
@@ -24,9 +24,11 @@ NEUTRAL = "#8a96a8"
 MINERAL = "#d9c778"
 OUTLINE = "#cad7e6"
 MODES = {
-    "Move": "move", "Attack": "attack", "Guard": "guard",
+    "Move": "move", "Attack": "attack", "Circle": "circle",
+    "Right swipe": "right-swipe", "Left swipe": "left-swipe",
+    "In and out": "in-and-out", "Guard": "guard",
     "Mine": "mine", "Heal": "heal", "Retreat": "retreat",
-    "Point fire": "fire",
+    "Point fire": "fire", "Patrol": "patrol",
 }
 
 
@@ -86,6 +88,7 @@ class RemoteBattleWindow:
         ttk.Label(self.footer, textvariable=self.info).pack(side="right")
 
         self.mode = None
+        self.patrol_start = None
         self.state = None
         self.drawn_scope = None
         self.map_bounds = None
@@ -102,8 +105,15 @@ class RemoteBattleWindow:
         self.view_width = 1
         self.view_height = 1
 
-        for title in ("Move", "Attack", "Guard", "Mine", "Heal", "Retreat", "Point fire"):
-            ttk.Button(self.toolbar_main, text=title, command=lambda t=title: self.set_mode(MODES[t])
+        for title in ("Move", "Attack", "Circle", "Right swipe", "Left swipe",
+                      "In and out", "Guard", "Mine", "Heal", "Retreat", "Point fire",
+                      "Patrol"):
+            group = self.toolbar_main if title in (
+                "Move", "Attack", "Guard", "Mine", "Heal", "Retreat", "Point fire",
+                "Patrol",
+            ) else self.toolbar_tactics
+            ttk.Button(group, text=title,
+                       command=lambda t=title: self.set_mode(MODES[t])
                        ).pack(side="left", padx=2)
         for title, action in [
             ("Stop fire", lambda: self.send("fire", {"target": None})),
@@ -150,7 +160,8 @@ class RemoteBattleWindow:
 
     def set_mode(self, mode):
         self.mode = mode
-        self.notice(f"Select a {'map point' if mode in ('move', 'fire') else 'visible target'}"
+        self.patrol_start = None
+        self.notice(f"Select a {'map point' if mode in ('move', 'fire', 'patrol') else 'visible target'}"
                     f" for {mode}" if mode else "Order mode cancelled")
 
     def apply_shooting(self):
@@ -233,6 +244,7 @@ class RemoteBattleWindow:
                     key[1] != self.drawn_scope[1]
                 ):
                     self.selected = []
+                    self.patrol_start = None
                 self.state = state
                 self.drawn_scope = key
                 dialogue = state.get("campaign_dialogue")
@@ -389,14 +401,30 @@ class RemoteBattleWindow:
             self.send("move" if mode == "move" else "fire",
                       {"destination" if mode == "move" else "target":
                        {"x": wx, "y": wy}})
-        elif mode in ("attack", "guard") and kind == "ship":
+        elif mode == "patrol":
+            x, y = self.to_world(x, y)
+            if self.patrol_start is None:
+                self.patrol_start = (x, y)
+                self.notice("Choose opposite patrol corner")
+                return
+            ax, ay = self.patrol_start
+            self.send("support", {"action": {"Patrol": {
+                "top_left": {"x": min(ax, x), "y": max(ay, y)},
+                "bottom_right": {"x": max(ax, x), "y": min(ay, y)},
+            }}})
+            self.patrol_start = None
+        elif mode in ENEMY_MANEUVERS or mode == "guard":
+            if kind != "ship":
+                self.notice("Select a visible ship to target")
+                return
             target_squad = self.squad_for_ship(target["id"],
                 owned=(mode == "guard"))
             if target_squad:
-                operation = "Attack" if mode == "attack" else "Guard"
+                operation = ("Guard" if mode == "guard" else ENEMY_MANEUVERS[mode])
                 self.send("support", {"action": {operation: {"target": target_squad["owner"]}}})
             else:
                 self.notice("That ship is not a valid target for this order")
+                return
         elif mode == "mine" and kind == "obstacle" and target["mining"]:
             self.send("support", {"action": {"Mining": {"asteroid_id": target["id"]}}})
         elif mode in ("heal", "retreat") and kind == "ship" and target["owned"]:
@@ -558,6 +586,10 @@ class RemoteBattleWindow:
             self.canvas.create_rectangle(x-10, y+15, x-10+20*health, y+18, fill="#75d79c", outline="")
         if self.drag_box:
             self.canvas.create_rectangle(*self.drag_box, outline="#bce4ff", dash=(5,3))
+        if self.patrol_start is not None:
+            x, y = self.to_screen(*self.patrol_start)
+            self.canvas.create_oval(x-8, y-8, x+8, y+8,
+                                    outline=FRIENDLY, dash=(4, 2), width=2)
         info = f"Tick {state['tick']}  Side {state['viewer_side']}  Friendly squads {len(selected)}"
         outcome = state.get("terminal_outcome")
         if outcome is not None:
