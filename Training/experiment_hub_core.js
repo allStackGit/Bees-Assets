@@ -610,7 +610,9 @@ function retainNativeBaselineEvaluation(next,job,report,evaluationSuites) {
         !SHA256.test(String(job.checkpoint_model_sha256||'')))
         throw Error('Invalid independent native baseline evaluation report.');
     const plan=(next.native_round_plans||[]).find(item=>
-        item.id===submitted.plan_id&&item.status==='pending_collectors'&&
+        item.id===submitted.plan_id&&
+        (item.status==='pending_collectors'||item.status==='complete'&&
+            item.initial_checkpoint_sha256===job.checkpoint_model_sha256)&&
         item.completed_rounds===0&&item.source_job_id===job.id&&
         item.origin_source_job_id===job.id&&
         item.source_model_sha256===job.checkpoint_model_sha256&&
@@ -638,6 +640,8 @@ function retainNativeBaselineEvaluation(next,job,report,evaluationSuites) {
             if(JSON.stringify(retained[index])!==JSON.stringify(receipt))
                 throw Error('Previously accepted native baseline evidence changed.');
         }else {
+            if(plan.status!=='pending_collectors')
+                throw Error('A completed native evaluation plan cannot acquire new receipts.');
             retained.push(receipt);
             changed=true;
         }
@@ -2173,7 +2177,8 @@ class ExperimentHub {
         const initial=snapshot.jobs.flatMap(job=>{
             if(job.assigned_machine_id!==machineId)return [];
             const plan=nativeBaselinePlan(snapshot,job,observedAt);
-            if(!plan)return [];
+            if(!plan||plan.agent_instances?.[machineId]!==report.instance_id)
+                return [];
             const rule=evaluationRules(plan.initial_evaluation_stop)
                 .find(candidate=>candidate.suite_id===suiteId);
             if(!rule)return [];
