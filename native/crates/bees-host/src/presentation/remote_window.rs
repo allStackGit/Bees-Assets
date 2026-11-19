@@ -12,7 +12,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use bees_gameplay::campaign_dialogue::CampaignCue;
-use bees_sim::collision::{Aabb, Pose};
+use bees_sim::collision::{Aabb, Pose, circle_overlaps_polygon, circles_overlap};
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
@@ -655,6 +655,104 @@ fn point_from_wire(value: &Value) -> Option<Vec2> {
     (x.is_finite() && y.is_finite()).then_some(Vec2::new(x, y))
 }
 
+/// The host sends the same bounded primary physics collider used for
+/// navigation, weapon collision and map interaction. Parse it once for both
+/// rendered outlines and cursor targeting. No remote simulation state.
+enum RemoteObstacleHull {
+    Circle { center: Vec2, radius: f32 },
+    Polygon { vertices: [Vec2; 64], len: usize },
+}
+
+impl RemoteObstacleHull {
+    fn overlaps_cursor(&self, point: Vec2, radius: f32) -> bool {
+        match self {
+            Self::Circle { center, radius: hull_radius } =>
+                circles_overlap(point, radius, *center, *hull_radius),
+            Self::Polygon { vertices, len } =>
+                circle_overlaps_polygon(point, radius, &vertices[..*len]),
+        }
+    }
+
+    fn draw(&self, pixels: &mut [u32], camera: NativeCamera, color: u32) {
+        match self {
+            Self::Circle { center, radius } => {
+                let diameter = radius * camera.pixels_per_unit * 2.0;
+                let segments = ((diameter * 0.2) as usize).clamp(12, 64);
+                let mut previous = screen(camera, *center + Vec2::new(*radius, 0.0));
+                for index in 1..=segments {
+                    let angle = std::f32::consts::TAU * index as f32 / segments as f32;
+                    let next = screen(camera, *center +
+                        Vec2::new(angle.cos(), angle.sin()) * *radius);
+                    line(pixels, previous, next, color);
+                    previous = next;
+                }
+            }
+            Self::Polygon { vertices, len } => {
+                for index in 0..*len {
+                    line(pixels, screen(camera, vertices[index]),
+                        screen(camera, vertices[(index + 1) % *len]), color);
+                }
+            }
+        }
+    }
+}
+
+fn remote_obstacle_hull(item: &Value, center: Vec2,
+    rotation_degrees: f32) -> Option<RemoteObstacleHull>
+{
+    let pose = Pose { position: center, rotation_degrees };
+    let collider = &item["collider"];
+    match collider["kind"].as_str() {
+        Some("circle") => {
+            let offset = point_from_wire(&collider["offset"])?;
+            let radius = collider["radius"].as_f64().map(|r| r as f32)
+                .filter(|r| r.is_finite() && *r >= 0.0)?;
+            return Some(RemoteObstacleHull::Circle {
+                center: pose.transform_point(offset), radius,
+            });
+        }
+        Some("box") => {
+            let offset = point_from_wire(&collider["offset"])?;
+            let half = point_from_wire(&collider["half_extents"])?;
+            if half.x < 0.0 || half.y < 0.0 { return None; }
+            let mut vertices = [Vec2::ZERO; 64];
+            for (index, corner) in [
+                Vec2::new(-half.x, -half.y), Vec2::new(half.x, -half.y),
+                Vec2::new(half.x, half.y), Vec2::new(-half.x, half.y),
+            ].into_iter().enumerate() {
+                vertices[index] = pose.transform_point(offset + corner);
+            }
+            return Some(RemoteObstacleHull::Polygon { vertices, len: 4 });
+        }
+        Some("polygon") => {
+            let points = collider["vertices"].as_array()
+                .filter(|vertices| (3..=64).contains(&vertices.len()))?;
+            let mut vertices = [Vec2::ZERO; 64];
+            for (index, source) in points.iter().enumerate() {
+                vertices[index] = pose.transform_point(point_from_wire(source)?);
+            }
+            return Some(RemoteObstacleHull::Polygon {
+                vertices, len: points.len(),
+            });
+        }
+        _ => {}
+    }
+    // The authoritative primary AABB is the existing fallback for imported
+    // polygon hulls too large to transmit. It is never an invented radius.
+    let bounds = item["collider_bounds"].as_array().filter(|b| b.len() == 2)?;
+    let min = point_from_wire(&bounds[0])?;
+    let max = point_from_wire(&bounds[1])?;
+    if min.x > max.x || min.y > max.y { return None; }
+    let mut vertices = [Vec2::ZERO; 64];
+    vertices[..4].copy_from_slice(&[
+        Vec2::new(min.x, min.y), Vec2::new(max.x, min.y),
+        Vec2::new(max.x, max.y), Vec2::new(min.x, max.y),
+    ]);
+    Some(RemoteObstacleHull::Polygon { vertices, len: 4 })
+}
+
+/// Draws the same collider the cursor can select. A cheap authoritative AABB
+/// cull avoids rasterizing large hulls outside the player's screen.
 fn draw_remote_obstacle_hull(
     pixels: &mut [u32], item: &Value, camera: NativeCamera,
     center: Vec2, rotation_degrees: f32,
@@ -673,78 +771,9 @@ fn draw_remote_obstacle_hull(
             return Some(false);
         }
     }
-    let color=if item["mining"]==true {GOLD} else {0x7d92aa};
-    let pose = Pose { position: center, rotation_degrees };
-    let draw_polygon = |pixels: &mut [u32], points: &[Vec2]| {
-        for index in 0..points.len() {
-            let a = screen(camera, pose.transform_point(points[index]));
-            let b = screen(camera, pose.transform_point(points[(index + 1) % points.len()]));
-            line(pixels, a, b, color);
-        }
-    };
-    match item["collider"]["kind"].as_str() {
-        Some("box") => {
-            let (Some(offset), Some(half)) = (
-                point_from_wire(&item["collider"]["offset"]),
-                point_from_wire(&item["collider"]["half_extents"]),
-            ) else { return None };
-            if half.x < 0.0 || half.y < 0.0 { return None }
-            let points = [
-                offset + Vec2::new(-half.x, -half.y),
-                offset + Vec2::new(half.x, -half.y),
-                offset + Vec2::new(half.x, half.y),
-                offset + Vec2::new(-half.x, half.y),
-            ];
-            draw_polygon(pixels, &points);
-            return Some(true);
-        },
-        Some("circle") => {
-            let (Some(offset), Some(radius)) = (
-                point_from_wire(&item["collider"]["offset"]),
-                item["collider"]["radius"].as_f64().map(|r| r as f32)
-                    .filter(|r| r.is_finite() && *r >= 0.0),
-            ) else { return None };
-            let center = pose.transform_point(offset);
-            let diameter = radius * camera.pixels_per_unit * 2.0;
-            let segments = ((diameter * 0.2) as usize).clamp(12, 64);
-            let mut previous = screen(camera, center + Vec2::new(radius, 0.0));
-            for index in 1..=segments {
-                let angle = std::f32::consts::TAU * index as f32 / segments as f32;
-                let next = screen(camera, center +
-                    Vec2::new(angle.cos(), angle.sin()) * radius);
-                line(pixels, previous, next, color);
-                previous = next;
-            }
-            return Some(true);
-        },
-        Some("polygon") => {
-            let Some(vertices) = item["collider"]["vertices"].as_array()
-                .filter(|points| (3..=64).contains(&points.len()))
-            else { return None };
-            // Fixed stack space: a fog-visible source polygon never
-            // allocates its vertices again on every rendered frame.
-            let mut points = [Vec2::ZERO; 64];
-            for (index, source) in vertices.iter().enumerate() {
-                let Some(point) = point_from_wire(source) else { return None };
-                points[index] = point;
-            }
-            draw_polygon(pixels, &points[..vertices.len()]);
-            return Some(true);
-        },
-        _ => {},
-    }
-    // Bounded fallback for unusually complex imported polygon colliders.
-    // Its source primary AABB is authoritative, unlike a guessed radius.
-    let Some((min, max)) = bounds else { return None };
-    if min.x > max.x || min.y > max.y { return None }
-    let points = [
-        Vec2::new(min.x, min.y), Vec2::new(max.x, min.y),
-        Vec2::new(max.x, max.y), Vec2::new(min.x, max.y),
-    ];
-    for index in 0..4 {
-        line(pixels, screen(camera, points[index]),
-            screen(camera, points[(index + 1) % 4]), color);
-    }
+    let hull = remote_obstacle_hull(item, center, rotation_degrees)?;
+    let color = if item["mining"] == true { GOLD } else { 0x7d92aa };
+    hull.draw(pixels, camera, color);
     Some(true)
 }
 
@@ -845,27 +874,47 @@ fn squad_for_ship<'a>(state: &'a Value, id: i64, side: i64) -> Option<&'a Value>
         squad["members"].as_array().is_some_and(|members|
             members.iter().any(|member| member.as_i64() == Some(id))))
 }
-fn hit<'a>(state: &'a Value, camera: NativeCamera, x:i32,y:i32,
+fn hit<'a>(state: &'a Value, camera: NativeCamera, x: i32, y: i32,
     visual: &RemoteVisual, fraction: f32)
-    -> Option<(&'static str, &'a Value)> {
-    let mut choice = None;
-    let mut best = 18 * 18;
-    for kind in ["ships", "obstacles"] {
-        for item in state[kind].as_array().into_iter().flatten() {
-            let Some(point) = visual.position(
-                item, if kind == "ships" {0} else {2}, fraction,
-            ) else { continue };
-            let (sx,sy)=screen(camera, point);
-            let distance = (sx-x).pow(2)+(sy-y).pow(2);
-            if distance < best {
-                choice=Some((if kind == "ships" {"ship"} else {"obstacle"}, item));
-                best = distance;
-            }
+    -> Option<(&'static str, &'a Value)>
+{
+    // A foreground ship wins over an obstacle underneath its hull.
+    let mut ship_hit = None;
+    let mut best_ship = 18 * 18;
+    for ship in state["ships"].as_array().into_iter().flatten() {
+        let Some(point) = visual.position(ship, 0, fraction) else { continue };
+        let (sx, sy) = screen(camera, point);
+        let distance = (sx - x).pow(2) + (sy - y).pow(2);
+        if distance < best_ship {
+            best_ship = distance;
+            ship_hit = Some(("ship", ship));
         }
     }
-    choice
-}
+    if ship_hit.is_some() { return ship_hit; }
 
+    let cursor = camera.screen_to_world(x as f32, y as f32, FIELD, HEIGHT);
+    let pick_radius = 10.0 / camera.pixels_per_unit.max(0.001);
+    let mut selected = None;
+    let mut nearest = i32::MAX;
+    for obj in state["obstacles"].as_array().into_iter().flatten() {
+        let Some(point) = visual.position(obj, 2, fraction) else { continue };
+        let overlap = remote_obstacle_hull(obj, point,
+            visual.heading_for(obj, 2, fraction))
+            .map_or_else(|| {
+                // Invalid/missing hull: preserve the existing point picker.
+                let (sx, sy) = screen(camera, point);
+                (sx - x).pow(2) + (sy - y).pow(2) < 18 * 18
+            }, |hull| hull.overlaps_cursor(cursor, pick_radius));
+        if !overlap { continue; }
+        let (sx, sy) = screen(camera, point);
+        let distance = (sx - x).pow(2) + (sy - y).pow(2);
+        if distance < nearest {
+            selected = Some(("obstacle", obj));
+            nearest = distance;
+        }
+    }
+    selected
+}
 
 fn source_numbered_squads(state: &Value) -> Vec<(u64, i64)> {
     let mut numbered: Vec<_> = state["squads"].as_array().into_iter().flatten()
