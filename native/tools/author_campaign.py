@@ -163,6 +163,12 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
         raise ValueError("a native campaign policy scene requires its authentic model manifest")
     model_provenance = (trained_opponent(run_path, run, scene_path, player_side)
                         if has_model else {})
+    if has_model:
+        # Older authenticated challenge receipts did not yet carry the
+        # explicit playable-game switch. Preserve their source hash while
+        # writing the new gameplay scene into the campaign package.
+        scene["policy_gameplay"] = True
+        scene["local_player_side"] = player_side
     ships = {ship["entity_id"]: ship for ship in scene["ships"]
              if ship["side"] == player_side}
     if not ships or not any(ship.get("persistent_fleet") for ship in ships.values()):

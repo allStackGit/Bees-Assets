@@ -42,6 +42,9 @@ struct GameScene {
     /// the native scene owns actual policy-controlled ships.
     #[serde(default)]
     policy_episode: Option<GamePolicyEpisode>,
+    /// Real policy inference in a playable game, not a frozen training run.
+    #[serde(default)]
+    policy_gameplay: bool,
     #[serde(default)]
     layout: NativeLevelLayout,
     #[serde(default)]
@@ -634,6 +637,22 @@ impl NativePhysicalScene {
         }
         let policy_episode = raw.policy_episode;
         let has_agents = raw.ships.iter().any(|ship| ship.policy.is_some());
+        if raw.policy_gameplay && (
+            policy_episode.is_none() ||
+            raw.local_player_side.is_none() ||
+            raw.ships.iter().any(|ship|
+                Some(ship.side) == raw.local_player_side && ship.policy.is_some()) ||
+            !raw.ships.iter().any(|ship|
+                Some(ship.side) != raw.local_player_side && ship.policy.is_some()) ||
+            !raw.squads.iter().any(|squad|
+                Some(squad.side) == raw.local_player_side &&
+                squad.user_controlled && squad.can_accept_input) ||
+            raw.squads.iter().any(|squad|
+                Some(squad.side) == raw.local_player_side &&
+                (!squad.user_controlled || !squad.can_accept_input))
+        ) {
+            return Err(invalid("policy gameplay requires real opponent agents and an exclusively player-controlled non-policy faction"));
+        }
         if raw.fleet_templates.iter().any(|ship|
             ship.persistent_fleet || ship.fleet_ship_id.is_some() ||
             ship.user_controlled || ship.policy.is_some() ||
@@ -648,13 +667,13 @@ impl NativePhysicalScene {
         // instantiating/validating their heavy hull and turret metadata in
         // each independent training World, while preserving the authored
         // input and the identical *live* CombatWorld used in gameplay.
-        let template_ids = if policy_episode.is_some() {
+        let template_ids = if policy_episode.is_some() && !raw.policy_gameplay {
             HashSet::new()
         } else {
             raw.fleet_templates.iter().map(|ship|
                 ship.entity_id).collect::<HashSet<_>>()
         };
-        if policy_episode.is_none() &&
+        if (policy_episode.is_none() || raw.policy_gameplay) &&
             template_ids.len() != raw.fleet_templates.len()
         {
             return Err(invalid("duplicate native FleetShip source template identity"));
@@ -741,7 +760,7 @@ impl NativePhysicalScene {
         let mut group_participants = Vec::new();
         let mut team_frames: [Option<u8>; 2] = [None, None];
         let mut source_ships = raw.ships;
-        if policy_episode.is_none() {
+        if policy_episode.is_none() || raw.policy_gameplay {
             source_ships.extend(raw.fleet_templates);
         }
         for ship in source_ships {
@@ -1464,6 +1483,7 @@ impl NativePhysicalScene {
             // Apply explicitly authored initial static layout before
             // installing immutable reward baselines and PPO membership.
             source_episode: None,
+            campaign_policy_opponent_side: None,
             source_policy_group: None,
             source_navigation: NativeSourceNavigation {
                 map_width: span.x, map_height: span.y, frame,
@@ -1559,7 +1579,15 @@ impl NativePhysicalScene {
         }) {
             return Err(invalid("native Fire Tank linked static obstacle is absent from final Level"));
         }
-        scene.source_episode = episode_source;
+        // Validate the frozen source training contract above, then use
+        // ordinary game terminal rules when a player's saved fleet can
+        // change. The opponent's real model routes remain installed.
+        scene.source_episode = if raw.policy_gameplay {
+            None
+        } else { episode_source };
+        scene.campaign_policy_opponent_side = if raw.policy_gameplay {
+            raw.local_player_side
+        } else { None };
         scene.source_policy_group = group_source;
         Ok(scene)
     }

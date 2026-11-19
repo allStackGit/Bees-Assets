@@ -135,6 +135,7 @@ def challenge(
     rebase_run_sources(run, run_path)
     scene = copy.deepcopy(scene)
     scene["local_player_side"] = player_side
+    scene["policy_gameplay"] = True
     players = set()
     policy_teams = set()
     for ship in scene["ships"]:

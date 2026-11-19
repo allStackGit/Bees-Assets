@@ -797,6 +797,9 @@ pub struct NativePhysicalScene {
     // deliberately excluded from the gameplay and training World.
     fleet_templates: Vec<NativeFleetTemplate>,
     source_episode: Option<NativeSourceEpisode>,
+    /// Explicit native gameplay with an authenticated model-controlled
+    /// opponent and a mutable player career, not an RL training episode.
+    campaign_policy_opponent_side: Option<i32>,
     /// Real participating Unity Agent instances and the active episode
     /// number. Schema 15 may legitimately have no group identities.
     pub source_policy_group: Option<NativeSourcePolicyGroup>,
@@ -1020,6 +1023,16 @@ pub struct NativeSourcePolicyGroup {
 }
 
 impl NativePhysicalScene {
+    /// Training sources remain frozen. A gameplay encounter may edit only
+    /// the real, non-policy human side while keeping opponent model bindings.
+    fn allows_campaign_fleet_edit(&self, side: i32) -> bool {
+        self.campaign_policy_opponent_side == Some(side) ||
+            (self.source_episode.is_none() &&
+             self.source_policy_group.is_none() &&
+             self.source_policy_bindings.is_empty() &&
+             self.active_policy_ship_ids.is_empty())
+    }
+
     /// Materialize newly owned, initially empty SavedSquads before applying
     /// roster edits and purchases. Their runtime Stage ItemIds are
     /// reallocated separately in every Level; SavedSquad IDs remain stable.
@@ -1031,9 +1044,7 @@ impl NativePhysicalScene {
         let invalid = NativeSnapshotError::InvalidNativeLayout;
         if !matches!(side, 1 | 2) ||
             self.starting_positions.is_none() ||
-            self.source_episode.is_some() || self.source_policy_group.is_some() ||
-            !self.source_policy_bindings.is_empty() ||
-            !self.active_policy_ship_ids.is_empty()
+            !self.allows_campaign_fleet_edit(side)
         {
             return Err(invalid("new SavedSquads need an ordinary native game Stage with faction starting positions"));
         }
@@ -1081,9 +1092,7 @@ impl NativePhysicalScene {
         if settings.is_empty() { return Ok(0); }
         let invalid = NativeSnapshotError::InvalidNativeLayout;
         if !matches!(player_side, 1 | 2) ||
-            self.source_episode.is_some() || self.source_policy_group.is_some() ||
-            !self.source_policy_bindings.is_empty() ||
-            !self.active_policy_ship_ids.is_empty()
+            !self.allows_campaign_fleet_edit(player_side)
         {
             return Err(invalid("saved tactics require an ordinary native player Level"));
         }
@@ -1193,9 +1202,7 @@ impl NativePhysicalScene {
         if purchases.is_empty() { return Ok(0); }
         let invalid = NativeSnapshotError::InvalidNativeLayout;
         if !matches!(player_side, 1 | 2) ||
-            self.source_episode.is_some() || self.source_policy_group.is_some() ||
-            !self.source_policy_bindings.is_empty() ||
-            !self.active_policy_ship_ids.is_empty()
+            !self.allows_campaign_fleet_edit(player_side)
         {
             return Err(invalid("purchased ships require an ordinary native game Level"));
         }
@@ -1499,9 +1506,7 @@ impl NativePhysicalScene {
         if assignments.is_empty() { return Ok(0); }
         let invalid = NativeSnapshotError::InvalidNativeLayout;
         if !matches!(side, 1 | 2) ||
-            self.source_episode.is_some() || self.source_policy_group.is_some() ||
-            !self.source_policy_bindings.is_empty() ||
-            !self.active_policy_ship_ids.is_empty()
+            !self.allows_campaign_fleet_edit(side)
         {
             return Err(invalid("saved roster reassignment requires a native gameplay Level"));
         }
@@ -1676,13 +1681,9 @@ impl NativePhysicalScene {
             _ => None,
         }).collect();
         if removed.is_empty() { return Ok(0); }
-        // An imported ML-Agents scenario owns frozen group membership,
-        // initial TSV and discovery baselines. Never turn permanent game
-        // deaths into an altered training episode or fabricated metadata.
-        if self.source_episode.is_some() || self.source_policy_group.is_some() ||
-            !self.source_policy_bindings.is_empty() ||
-            !self.active_policy_ship_ids.is_empty()
-        {
+        // Imported training denominators are immutable. Explicit native
+        // gameplay can retire only the authenticated human-owned fleet.
+        if !self.allows_campaign_fleet_edit(player_side) {
             return Err(invalid("saved campaign casualties cannot alter an authored policy episode"));
         }
         for &ship_id in &removed {
@@ -2191,7 +2192,11 @@ impl NativePhysicalScene {
         let [bee_side, human_side] = self.gameplay_sides();
         let mut episode = if self.source_episode.is_some() {
             self.exported_episode()
-        } else if setup.groups.is_some() {
+        } else if setup.groups.is_some() &&
+            self.campaign_policy_opponent_side.is_none()
+        {
+            // Models in training still require frozen reward normalization;
+            // only an explicitly playable opponent uses normal game rules.
             Err(NativeSnapshotError::InvalidEpisodeSource)
         } else {
             NativeEpisodeRewardCoordinator::new_game(bee_side, human_side)
@@ -3707,6 +3712,7 @@ impl NativePhysicalScene {
             entities,
             fleet_templates: Vec::new(),
             source_episode,
+            campaign_policy_opponent_side: None,
             source_policy_group,
             source_navigation,
             fleet,
