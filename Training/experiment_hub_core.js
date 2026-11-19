@@ -4716,6 +4716,58 @@ class ExperimentHub {
                     source.checkpoint_model_sha256!==plan.source_model_sha256||
                     nativeOptimizerGroupBlock(this.state,source))
                     throw Error('Frozen native optimizer source or its original worker group changed.');
+                if(plan.status==='pending_collectors'&&
+                    plan.completed_rounds===0) {
+                    // The standalone session evaluates its initial model
+                    // before spending any PPO resources. Honor that same
+                    // independent evidence when a Hub continuation uses the
+                    // exact same saved evaluation policy and checkpoint.
+                    // Different evaluation definitions cannot be inferred
+                    // from the source job's unrelated prior holdout.
+                    const selected=plan.optimizer_members[0];
+                    const target=this.state.configurations.find(config=>
+                        config.id===selected.configuration_id&&
+                        config.revision===selected.expected_revision);
+                    if(!target)
+                        throw Error('Approved native optimizer evaluation configuration changed.');
+                    const sourcePolicy=evaluationPolicy(source.evaluation_stop);
+                    const targetPolicy=evaluationPolicy(target.evaluation_stop);
+                    if(sourcePolicy&&targetPolicy&&
+                        JSON.stringify(sourcePolicy)===JSON.stringify(targetPolicy)) {
+                        const missing=missingFinalEvaluationRules(source);
+                        if(missing.length) {
+                            if(!finalEvaluationPending(this.snapshot(),source,Date.now()))
+                                throw Error('Starting native checkpoint has no complete independent evaluation for the approved stopping policy.');
+                            const reason='Awaiting independent baseline evaluation before the first native collection.';
+                            if(plan.reason!==reason)update(plan.status,reason);
+                            continue;
+                        }
+                        const rules=evaluationRules(targetPolicy);
+                        const cohort=source.evaluation_candidates?.find(item=>
+                            item.checkpoint_sha256===source.checkpoint_model_sha256);
+                        const receipts=rules.map(rule=>cohort?.receipts?.[rule.suite_id]);
+                        const passed=evaluationComplete(targetPolicy.all_of
+                            ?{all_of:receipts}:receipts[0],targetPolicy,
+                            source.dispatch_id);
+                        if(passed) {
+                            update('complete',
+                                'Starting checkpoint already meets the approved independent evaluation target; no new collection or PPO Starts required.',
+                                {
+                                    initial_checkpoint_job_id:source.id,
+                                    initial_checkpoint_sha256:source.checkpoint_model_sha256,
+                                    initial_evaluation_receipts:receipts.map(receipt=>({
+                                        suite_id:receipt.suite_id,
+                                        suite_sha256:receipt.suite_sha256,
+                                        successes:receipt.successes,
+                                        trials:receipt.trials,
+                                        checkpoint_sha256:receipt.checkpoint_sha256,
+                                        dispatch_id:receipt.dispatch_id,
+                                    })),
+                                });
+                            continue;
+                        }
+                    }
+                }
                 if(plan.status==='pending_collectors') {
                     try {
                         verifiedNativeModelMirror(this,source);
