@@ -482,8 +482,34 @@ python3 native/tools/author_campaign.py my-native-campaign \
 bees library my-native-campaign/library.json --output-dir my-native-saves
 ```
 
-Mission order controls prerequisites. The publisher retains the complete
-source-authored physical map, ships and scripted opponents, while assigning
+By default, mission order creates a linear campaign: each mission
+requires victory in the previous one. The same publisher also supports
+nonlinear mission graphs using the runtime's existing prerequisites and
+completion rules. For four authored missions, these options create two
+branches after mission 1, then a final mission requiring both:
+
+```sh
+python3 native/tools/author_campaign.py my-branching-campaign \
+  --mission mission-one/battle.run.json \
+  --mission mission-two/battle.run.json \
+  --mission mission-three/battle.run.json \
+  --mission mission-four/battle.run.json \
+  --shop-types 21,18 \
+  --mission-requires 3:1 --mission-requires 4:2,3 \
+  --mission-advance 2:finished \
+  --shop-unlock 21:none --shop-unlock 18:3
+```
+
+Here mission 2 completes after a finished battle even without victory;
+mission 3 requires mission 1, and mission 4 requires missions 2 and 3.
+Ship type 21 can be purchased immediately, while type 18 becomes
+purchasable after mission 3. Authoring rejects cyclic/forward references,
+missing missions, duplicate overrides, and non-shop unlock types.
+`bees campaign-status` exposes each mission's `requires`,
+`waiting_for`, `advance_on`, and the resulting class unlock states.
+
+The publisher retains the complete source-authored physical map,
+ships and scripted opponents, while assigning
 stable persistent SavedSquad identities. Generated battle IDs are
 partitioned by faction, so either side's player fleet and SavedSquads
 stay stable even when the opposing force changes between missions.

@@ -1127,6 +1127,12 @@ impl BattleCatalog {
             Some(json!({
                 "id": mission.id,
                 "title": entry.title,
+                "requires": mission.requires,
+                "waiting_for": mission.requires.iter().filter(|id|
+                    !progress.completed(id)).collect::<Vec<_>>(),
+                "advance_on": if matches!(mission.advance_on, AdvanceOn::Finished) {
+                    "finished"
+                } else { "victory" },
                 "unlocked": mission.requires.iter().all(|id| progress.completed(id)),
                 "completed": progress.completed(&mission.id),
                 "latest_victory": progress.latest_victory(&mission.id),
