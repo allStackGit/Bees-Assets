@@ -85,6 +85,20 @@ class PocaLearnerOptimizationOptions:
 
 
 _POCA_OPTIMIZATIONS = PocaLearnerOptimizationOptions()
+_NATIVE_DISTRIBUTED_SHUFFLE_SEED = None
+
+
+def configure_native_distributed_shuffle(seed: int) -> None:
+    """Pin one independent global minibatch permutation for every GPU rank.
+
+    Each rank trains different rows. Worker-local preprocessing may consume
+    different random numbers during an epoch, so never trust their ambient
+    NumPy state to stay aligned for the next global minibatch permutation.
+    """
+    global _NATIVE_DISTRIBUTED_SHUFFLE_SEED
+    if type(seed) is not int or not 0 <= seed < (1 << 32):
+        raise ValueError("native distributed MA-POCA shuffle seed must be uint32")
+    _NATIVE_DISTRIBUTED_SHUFFLE_SEED = seed
 
 
 def configure_poca_learner_optimizations(
@@ -7098,6 +7112,19 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         hardware_summary = {}
         try:
             for _epoch_index in range(num_epoch):
+                if native_workers > 1:
+                    if _NATIVE_DISTRIBUTED_SHUFFLE_SEED is None:
+                        raise RuntimeError("native GPU learner lacks a pinned global permutation seed")
+                    # Actor/critic work on different data shards may
+                    # advance rank-local RNGs independently. Re-seed the
+                    # stock MA-POCA shuffle at each epoch boundary to
+                    # guarantee a globally disjoint sample partition.
+                    import random
+                    epoch_seed = (
+                        _NATIVE_DISTRIBUTED_SHUFFLE_SEED + _epoch_index
+                    ) & 0xffffffff
+                    np.random.seed(epoch_seed)
+                    random.seed(epoch_seed)
                 _POCA_UPDATE_CACHE_STATE.actor_update = True
                 current_batch_size = shard_batch_size
                 current_n_sequences = max(

@@ -1351,10 +1351,12 @@ def main():
         torch.distributed.all_reduce(high, op=torch.distributed.ReduceOp.MAX)
         if not torch.equal(low, high):
             raise ValueError("native GPU learner ranks ingested different gameplay experience")
-        # The common checkpoint and manifest seed one shuffle stream for
-        # *each* rank. Global permutation stays identical; row windows do not.
-        import numpy as np
-        np.random.seed(int(input_sha[:8], 16) ^ int(primary_manifest_sha[:8], 16))
+        # The shared native MA-POCA trainer pins one global permutation
+        # per epoch, independently of each rank's forward/backward RNG.
+        from bees_mlagents_ppo_compat import configure_native_distributed_shuffle
+        configure_native_distributed_shuffle(
+            int(input_sha[:8], 16) ^ int(primary_manifest_sha[:8], 16)
+        )
     processing_wall_seconds = time.perf_counter() - processing_started
     processing_cpu_seconds = time.process_time() - processing_cpu_started
     update_started = time.perf_counter()
