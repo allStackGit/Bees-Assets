@@ -2222,6 +2222,31 @@ impl NativeSoftwareRenderer {
                 }
             }
         }
+        // The demolition objective is an actual map collider, not a
+        // separately stored waypoint. Draw it only after the same native
+        // fog stencil used for enemy ship markers has been evaluated.
+        if let Some(demolition) = view.demolition {
+            for (obstacle, body) in view.combat.render_obstacles() {
+                if obstacle.entity_id != demolition.target_map_object_id ||
+                    obstacle.kind != bees_sim::obstacle::ObstacleKind::MapObject
+                {
+                    continue;
+                }
+                if let Some((x, y)) = layout.project(body.pose.position) {
+                    let px = x.round() as usize;
+                    let py = y.round() as usize;
+                    if !fog || self.fog_coverage.get(py * self.width + px) == Some(&1) {
+                        let radius = 4.0;
+                        let color = 0xffd57a;
+                        self.line(x - radius, y - radius, x + radius, y - radius, color);
+                        self.line(x + radius, y - radius, x + radius, y + radius, color);
+                        self.line(x + radius, y + radius, x - radius, y + radius, color);
+                        self.line(x - radius, y + radius, x - radius, y - radius, color);
+                    }
+                }
+                break;
+            }
+        }
         let bottom_left = self.camera.screen_to_world(
             0.0, self.height as f32, self.width, self.height);
         let top_right = self.camera.screen_to_world(
