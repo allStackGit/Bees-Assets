@@ -64,6 +64,7 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
         "challenge_receipt": str(provenance_path),
         "challenge_receipt_sha256": file_sha256(provenance_path),
         "selected_checkpoint_sha256": checkpoint_sha,
+        "selected_learner_slot": learner_slot,
         "selected_model_manifest_sha256": (
             receipt["selected"]["manifest_sha256"]
             if "selected" in receipt else receipt["manifest_sha256"]
@@ -73,7 +74,7 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
 
 def package_model_manifest(
     run_path: Path, run: dict, label: str,
-    outputs: list, model_files: dict,
+    outputs: list, model_files: dict, provenance: dict,
 ) -> dict:
     """Copy every checkpoint used by the verified opponent into its campaign.
 
@@ -84,6 +85,9 @@ def package_model_manifest(
     interpreter and compatible worker/dependencies on the target platform.
     """
     manifest_path = existing_path(run_path, run.get("model_manifest"))
+    original_sha256 = provenance["selected_model_manifest_sha256"]
+    if file_sha256(manifest_path) != original_sha256:
+        raise ValueError("selected campaign model manifest changed after verification")
     manifest = read(manifest_path)
     models = manifest.get("models")
     if (manifest.get("format") != "bees-native-model-v1" or
@@ -110,11 +114,18 @@ def package_model_manifest(
         model_files.setdefault(destination, source_model)
         model["path"] = destination
         saved_models.append({"slot": slot, "sha256": digest})
+    if (file_sha256(manifest_path) != original_sha256 or
+            not any(row["slot"] == provenance["selected_learner_slot"] and
+                    row["sha256"] == provenance["selected_checkpoint_sha256"]
+                    for row in saved_models)):
+        raise ValueError(
+            "packaged opponent model differs from the authenticated selected training checkpoint"
+        )
     manifest_name = f"{label}.model-manifest.json"
     outputs.append((manifest_name, manifest))
     run["model_manifest"] = manifest_name
     return {
-        "original_manifest_sha256": file_sha256(manifest_path),
+        "original_manifest_sha256": original_sha256,
         "packaged_manifest": manifest_name,
         "model_slots": saved_models,
     }
@@ -314,7 +325,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict]:
         run = copy.deepcopy(run)
         if run.get("model_manifest") is not None:
             provenance["packaged_model"] = package_model_manifest(
-                source_path, run, ident, outputs, model_files,
+                source_path, run, ident, outputs, model_files, provenance,
             )
         run["levels"][0]["scene"] = scene_file
         run["run_id"] = f"{slug}-{ident}"
@@ -413,7 +424,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict]:
             if variant_run.get("model_manifest") is not None:
                 variant_provenance["packaged_model"] = package_model_manifest(
                     variant_path.resolve(strict=True), variant_run,
-                    f"{ident}.victory", outputs, model_files,
+                    f"{ident}.victory", outputs, model_files, variant_provenance,
                 )
             variant_run["levels"][0]["scene"] = variant_scene_file
             variant_run["run_id"] = f"{slug}-{ident}-victory"
