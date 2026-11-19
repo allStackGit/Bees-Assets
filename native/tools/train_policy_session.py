@@ -706,6 +706,10 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         for _, record in completed
         if isinstance(record["rollout_metrics"].get("policy_observations"), dict)
     ]
+    mission_coverage = [
+        observed for observed in measured_observations
+        if "native_mission_rows_by_kind" in observed
+    ]
     measured_learner_goals = [
         record["learner_metrics"]["native_mission_learner_decisions"]
         for _, record in completed
@@ -846,6 +850,20 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
             "goal_bearing_observation_rows_measured": sum(
                 sample["native_mission_rows"] for sample in measured_observations
             ),
+            **({
+                "rounds_with_mission_coverage": len(mission_coverage),
+                "rows_by_kind": {
+                    kind: sum(row["native_mission_rows_by_kind"][kind]
+                              for row in mission_coverage)
+                    for kind in ("survival", "demolition", "escort", "extraction")
+                },
+                "target_position_known_rows": sum(
+                    row["native_mission_visible_target_rows"] for row in mission_coverage
+                ),
+                "authored_destination_rows": sum(
+                    row["native_mission_destination_rows"] for row in mission_coverage
+                ),
+            } if mission_coverage else {}),
             "rounds_with_learner_goal_counts": len(measured_learner_goals),
             "goal_bearing_learner_decisions_measured": sum(measured_learner_goals),
         }} if measured_observations or measured_learner_goals else {}),

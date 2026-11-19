@@ -21,6 +21,10 @@ CONTRACT_KEYS = (
     "native_mission_encoding_version", "native_mission_objective_start",
     "native_mission_objective_width",
 )
+COVERAGE_KEYS = (
+    "native_mission_rows_by_kind", "native_mission_visible_target_rows",
+    "native_mission_destination_rows",
+)
 
 
 def level_has_goal(level):
@@ -44,8 +48,21 @@ def verified_policy_observations(work, *, require_goal=False):
         for key in COUNT_KEYS
     ):
         raise ValueError("native policy observation work has invalid counters")
-    if work["native_mission_rows"] > work["rows_encoded"]:
+    mission_rows = work["native_mission_rows"]
+    if mission_rows > work["rows_encoded"]:
         raise ValueError("native mission feature count exceeds encoded rows")
+    if any(key in work for key in COVERAGE_KEYS):
+        if not all(key in work for key in COVERAGE_KEYS):
+            raise ValueError("partial native mission feature coverage report")
+        kinds = work["native_mission_rows_by_kind"]
+        if (not isinstance(kinds, dict) or set(kinds) != set(MISSION_KEYS) or
+                any(type(kinds[key]) is not int or kinds[key] < 0
+                    for key in MISSION_KEYS) or
+                sum(kinds.values()) != mission_rows):
+            raise ValueError("native per-mission feature counts do not reconcile")
+        for key in COVERAGE_KEYS[1:]:
+            if type(work[key]) is not int or not 0 <= work[key] <= mission_rows:
+                raise ValueError("native goal target/destination coverage exceeds real policy rows")
     if (require_goal or work["native_mission_rows"] > 0 or
             any(key in work for key in CONTRACT_KEYS)):
         if (work.get(CONTRACT_KEYS[0]) != ENCODING_VERSION or
@@ -80,3 +97,28 @@ def reconciled_mission_contract(work_samples):
     return reference
 
 
+
+def combined_policy_observations(observations):
+    """Aggregate only counts observed by every worker, preserving one ABI.
+
+    A mixed old/new rollout must not turn unavailable historical target
+    discovery statistics into measured zeros. Per-kind evidence is complete
+    only when every collector exposed the same source-owned counters.
+    """
+    for work in observations:
+        verified_policy_observations(work)
+    aggregate = {
+        key: sum(work[key] for work in observations)
+        for key in COUNT_KEYS
+    }
+    aggregate.update(reconciled_mission_contract(observations))
+    if all(all(key in work for key in COVERAGE_KEYS) for work in observations):
+        aggregate["native_mission_rows_by_kind"] = {
+            kind: sum(work["native_mission_rows_by_kind"][kind]
+                      for work in observations)
+            for kind in MISSION_KEYS
+        }
+        for key in COVERAGE_KEYS[1:]:
+            aggregate[key] = sum(work[key] for work in observations)
+    verified_policy_observations(aggregate)
+    return aggregate
