@@ -900,10 +900,13 @@ struct NativeSourcePolicyInputs {
     own_weapons: [Option<SelfWeapon>; 5],
 }
 
-/// A bought native hull is a persistent FleetShip, not an imported
-/// prefab instance. Scene adapters resolve its authored ship type each
-/// battle and use the same physical CombatWorld and source metadata as
-/// every other ship. Only immutable purchase receipts may supply this.
+/// A purchased or earned native hull is a persistent FleetShip, not an
+/// imported prefab instance. The scene adapter resolves its authored
+/// ship type through the same physical CombatWorld and source metadata
+/// as every other ship. Ownership comes only from a verified immutable
+/// purchase receipt or a completed, one-time campaign victory result.
+/// The stored price is the canonical hull MaxTSV, not necessarily money
+/// spent: mission victory grants issue the same hull without a debit.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeCreatedSquad {
