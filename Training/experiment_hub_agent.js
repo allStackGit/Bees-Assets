@@ -286,9 +286,10 @@ async function main() {
     // a private supervisor ledger and the opt-in execution environment flag.
     const executor=fromEnvironment(process.env);
     const syncLogs=process.env.EXPERIMENT_HUB_SYNC_ARTIFACTS==='1';
-    // Checkpoint transport is required by native distributed continuation;
-    // unrelated diagnostics remain optional.
-    const syncNativeModels=executor?.projects.includes('bees_native')===true;
+    // Native rollout captures and checkpoint packages are training data;
+    // optional diagnostic log mirroring remains independently configurable.
+    const syncNativeTraining=executor?.projects.some(project=>
+        ['bees_native','bees_native_collect'].includes(project))===true;
     if(syncLogs&&!executor)
         throw Error('Log sync requires an opted-in native execution adapter.');
     let nativePreflightReason=null;
@@ -312,7 +313,7 @@ async function main() {
     const artifactCache=new Map();
     let artifactSync=null;
     const collectArtifacts=()=>{
-        if((!syncLogs&&!syncNativeModels)||!executor||active||executingNative||artifactSync)
+        if((!syncLogs&&!syncNativeTraining)||!executor||active||executingNative||artifactSync)
             return;
         const work=syncArtifacts(executor,url,id,token,artifactCache,!syncLogs)
             .catch(error=>console.error('[experiment-hub-agent] Artifact mirror: '+
@@ -426,7 +427,7 @@ async function main() {
     const timer=setInterval(()=>poll(true),INTERVAL_MS);
     // Large telemetry transfers run separately from the 15-second agent
     // heartbeat and never block native Stop/Inspect report delivery.
-    const mirrorTimer=!once&&(syncLogs||syncNativeModels)
+    const mirrorTimer=!once&&(syncLogs||syncNativeTraining)
         ?setInterval(collectArtifacts,60000):null;
     await poll(!once);
     if(!once)collectArtifacts();
