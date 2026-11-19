@@ -274,10 +274,10 @@ function boundedReport(value) {
         (gpuShared.length&&!['win32','linux'].includes(value.platform)))
         throw Error('Shared GPU execution requires an opted-in native adapter.');
     const gpuDualNative=value.gpu_dual_native_projects??[];
-    if(!Array.isArray(gpuDualNative)||gpuDualNative.length>2||
+    if(!Array.isArray(gpuDualNative)||gpuDualNative.length>3||
         new Set(gpuDualNative).size!==gpuDualNative.length||
         gpuDualNative.some(project=>
-            !['bees_native','bees_native_collect'].includes(project)||
+            !['bees_native','bees_native_collect','bees_native_optimizer_worker'].includes(project)||
             !gpuProjects.includes(project))||
         (gpuDualNative.length&&value.platform!=='linux'))
         throw Error('Native Bees dual-GPU capability needs a locally approved Linux adapter.');
@@ -338,7 +338,7 @@ function dualGpuApproved(job,machine) {
         return job.frozen_parameters?.device==='dual'&&
             machine.tinybrains_dual_gpu_profiles
                 ?.includes(job.frozen_parameters.profile)===true;
-    return ['bees_native','bees_native_collect'].includes(job.project_id)&&
+    return ['bees_native','bees_native_collect','bees_native_optimizer_worker'].includes(job.project_id)&&
         machine.gpu_dual_native_projects?.includes(job.project_id)===true;
 }
 function gpuStartBlock(job,lease,machine) {
@@ -4242,7 +4242,8 @@ class ExperimentHub {
                         (source.refresh_opponent_slot??null)||
                     ![1,2].includes(job.resources.gpu_count)||
                     job.resources.gpu_mode!=='exclusive'||
-                    job.resources.cpus<job.resources.gpu_count))
+                    job.resources.cpus<job.resources.gpu_count||
+                    job.resources.gpu_count!==jobs[0].resources.gpu_count))
                 throw Error('Native MA-POCA optimizer bundle requires one checkpoint owner followed by 1–7 exclusive GPU worker machines with identical pinned captures.');
         }
         this.commit(next);
