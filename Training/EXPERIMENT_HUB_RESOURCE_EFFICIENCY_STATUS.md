@@ -2,6 +2,19 @@
 
 Updated 2026-11-19. Hub branch: `feat/hub-resource-efficiency-20261112`. Companion active branches: `allStackGit/TinyBrains:feat/tinybrains-admission-ramp-20261118`; `allStackGit/Basic-Training:feat/courier-overlap-policy-codec-20261118`. Native Bees rewrite is out of scope.
 
+TinyBrains' multi-GPU path now computes PPO losses on each replica, returning
+six scalars per board instead of spatial logits and values. Global advantages,
+original record order, minibatch weighting, gradient reduction, clipping and
+Adam remain unchanged. Packed-ant owner/cell offsets are rebased without GPU
+scalar readbacks. Hub exposes logical secondary result bytes, separately from
+model/gradient transfers. Full mixed-shape PPO/Adam and nine packed-ant cases
+matched across all actor architectures, including empty-ant chunks, odd boards
+and instance normalization. A reproduced GPU-count/action-balancing mutual wait
+was removed by allowing reopened action comparisons to finish; transient
+eligibility no longer becomes a false execution-layout change. Both real
+tuners settled and held their result for 100 additional simulated updates.
+Changed execution identity invalidates older multi-device count proofs.
+
 **Local TinyBrains multi-device learner continuation:** Same-shape colony
 boards can now evaluate/backpropagate across the explicitly leased local
 GPUs while ordered outputs preserve the existing global advantages, per-ant

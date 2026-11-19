@@ -116,6 +116,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_parallel_devices','ppo_parallel_next_devices','ppo_parallel_adjustments',
             'ppo_parallel_accepted','ppo_parallel_settled','ppo_parallel_batches',
             'ppo_parallel_device_batches','ppo_parallel_states','ppo_parallel_max_group',
+            'ppo_parallel_result_bytes',
             'rollout_gpu_batch_proven_target',
             'ppo_gpu_batch_proven_target',
             'rollout_opponent_gpu_stream_seconds',

@@ -271,6 +271,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('ppo_board_iterative_h2d_bytes',row.ppo_board_iterative_h2d_bytes,'bytes');
     add('ppo_board_saved_h2d_bytes',row.ppo_board_saved_h2d_bytes,'bytes');
     add('ppo_direct_board_staging_bytes',row.ppo_direct_board_staging_bytes,'bytes');
+    add('ppo_parallel_result_bytes',row.ppo_parallel_result_bytes,'bytes');
     add('ppo_prep_board_bytes',row.ppo_prep_board_bytes,'bytes');
     add('ppo_prep_async_h2d_bytes',row.ppo_prep_async_h2d_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
