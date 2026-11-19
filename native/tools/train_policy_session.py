@@ -698,6 +698,19 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         record["rollout_metrics"] for _, record in completed
         if "parallel_physics_rounds" in record["rollout_metrics"]
     ]
+    # Collector-side policy encoding and learner-side optimizer decisions
+    # are distinct useful-work denominators. Old receipts are unmeasured,
+    # not silently treated as zero mission decisions.
+    measured_observations = [
+        record["rollout_metrics"]["policy_observations"]
+        for _, record in completed
+        if isinstance(record["rollout_metrics"].get("policy_observations"), dict)
+    ]
+    measured_learner_goals = [
+        record["learner_metrics"]["native_mission_learner_decisions"]
+        for _, record in completed
+        if type(record["learner_metrics"].get("native_mission_learner_decisions")) is int
+    ]
     optimizer_steps = sum(record["learner_metrics"]["optimizer_input_steps"]
                           for _, record in completed)
     optimizer_seconds = sum(record["learner_metrics"]["total_wall_seconds"]
@@ -824,6 +837,18 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         **({"curriculum": stage_report} if stage_report is not None else {}),
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
+        **({"native_mission_policy_features": {
+            "rounds_with_collector_observations": len(measured_observations),
+            "total_rounds": len(completed),
+            "total_observation_rows_measured": sum(
+                sample["rows_encoded"] for sample in measured_observations
+            ),
+            "goal_bearing_observation_rows_measured": sum(
+                sample["native_mission_rows"] for sample in measured_observations
+            ),
+            "rounds_with_learner_goal_counts": len(measured_learner_goals),
+            "goal_bearing_learner_decisions_measured": sum(measured_learner_goals),
+        }} if measured_observations or measured_learner_goals else {}),
         **({"sampled_model_inference": {
             "scope": "sum_of_sampled_model_forward_call_wall_seconds",
             "rounds_with_samples": len(inference_samples),
@@ -901,6 +926,11 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
              "refreshed_opponent_slot":
                  record["learner_metrics"].get("refreshed_opponent_slot"),
              "training_outcomes": record["learner_metrics"].get("training_outcomes", {}),
+             **({"policy_observations": record["rollout_metrics"]["policy_observations"]}
+                if "policy_observations" in record["rollout_metrics"] else {}),
+             **({"native_mission_learner_decisions":
+                     record["learner_metrics"]["native_mission_learner_decisions"]}
+                if "native_mission_learner_decisions" in record["learner_metrics"] else {}),
              "holdout": evaluations.get(str(path)),
              **({"monitor_holdouts": monitor_observations[str(path)]}
                 if monitor_observations.get(str(path)) else {})}
