@@ -931,6 +931,9 @@ document.addEventListener('DOMContentLoaded', () => {
             nativeModelSourceControl('hub-native-collector-model-source',
                 $('hub-job-queue'),
                 'Verified native Bees checkpoint for fresh physical rollout collection (optional):');
+        const collectorSelect=$('hub-native-collector-model-source');
+        if(collectorSelect)collectorSelect.parentElement.hidden=
+            project!=='bees_native_collect';
         const rows=[...$('hub-resource-bundle-rows').children];
         const configs=(state?.configurations||[]).filter(c=>
             !['bees','ants','tinybrains_rollout'].includes(c.project_id));
@@ -4551,11 +4554,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     machine_id:machine,
                     resources:JSON.parse(row.querySelector('.hub-bundle-resources').value)};
             });
+            const sourceId=$('hub-native-bundle-model-source')?.value||'';
+            const optimizer=state.configurations.find(c=>
+                c.id===members[0].configuration_id)?.parameters?.optimizer_group===true;
+            if(sourceId&&!optimizer)
+                throw Error('Native model succession requires an optimizer group with a bees_native checkpoint publisher first.');
             if(!confirm('Atomically reserve fixed resources for '+members.length+
-                ' independent jobs on the selected machines? Each job requires its own native Start authorization. '+
-                'This does not enable distributed training, automatic checkpoint sharing or simultaneous worker starts.'))return;
+                (optimizer?' synchronized Bees MA-POCA optimizer nodes':
+                    ' independent jobs')+' on the selected machines? '+
+                (sourceId?'Every node is pinned to the completed native checkpoint '+sourceId.slice(-8)+'. ':
+                    '')+
+                (optimizer
+                    ?'The first node alone publishes the checkpoint. All ranks use the same verified capture bundles and synchronized gradients. '
+                    :'Each job remains independently owned. ')+
+                'Execution requires separate native Start authorization; it is not a simultaneous-start guarantee.'))return;
             const result=await action('hub/resource-bundles',{
                 confirm_queue:true,members,
+                ...(sourceId?{model_source_job_id:sourceId}:{}),
             });
             feedback('hub-resource-bundle-message',
                 'Reserved all '+result.members.length+' jobs · bundle '+
@@ -4810,9 +4825,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }
+        const nativeCollectorSource=project==='bees_native_collect'
+            ?$('hub-native-collector-model-source')?.value||'':'';
+        if(nativeCollectorSource&&predecessor) {
+            feedback('hub-job-message',
+                'Physical native collector model handoffs use a verified source, not a normal predecessor stage.');
+            return;
+        }
         if(!confirm('Freeze '+selected.name+' revision '+selected.revision+
-            (predecessor?' as a continuation of the selected predecessor':
-                ' as a new job')+
+            (nativeCollectorSource
+                ?' with verified native model '+nativeCollectorSource.slice(-8)
+                :predecessor?' as a continuation of the selected predecessor':
+                    ' as a new job')+
             '? '+(prequeue
                 ?'This stage remains blocked until its predecessor FINISHES and capacity is released. Stops and failures do not auto-advance it. '
                 :'')+
@@ -4824,6 +4848,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 resources:JSON.parse($('hub-job-resources').value),
                 ...(metrics.length?{metric_selection:metrics}:{}),
                 ...(predecessor?{continuation_of_job_id:predecessor}:{}),
+                ...(nativeCollectorSource?{model_source_job_id:nativeCollectorSource}:{}),
             });
             feedback('hub-job-message',job.status==='waiting_predecessor'
                 ?'Prequeued stage '+job.id+'. It cannot claim capacity or start until the predecessor finishes and releases capacity.'
