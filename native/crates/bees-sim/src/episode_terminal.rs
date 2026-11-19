@@ -238,6 +238,35 @@ pub struct EscortStatus {
     pub duration_seconds: f32,
 }
 
+/// Finished native authored mission, distinct from ordinary faction victory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EpisodeMissionKind {
+    Survival,
+    Demolition,
+    Escort,
+    Extraction,
+}
+
+impl EpisodeMissionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Survival => "survival",
+            Self::Demolition => "demolition",
+            Self::Escort => "escort",
+            Self::Extraction => "extraction",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EpisodeMissionOutcome {
+    pub kind: EpisodeMissionKind,
+    pub objective_side: i32,
+    /// Completion of the physical goal, not merely the goal side winning
+    /// through an unrelated opponent-elimination path.
+    pub completed: bool,
+}
+
 pub struct NativeEpisodeTerminal {
     bee_side: i32,
     human_side: i32,
@@ -351,6 +380,41 @@ impl NativeEpisodeTerminal {
 
     pub fn result(&self) -> Option<EpisodeTerminalResult> {
         self.completed
+    }
+
+    /// Read the terminal result's cause using the same physical objective
+    /// state that decided the match. A generic extraction faction can win
+    /// through elimination without actually delivering a ship, so its
+    /// physical goal is counted only on extraction_victory.
+    pub fn mission_outcome(
+        &self, world: &CombatWorld, result: EpisodeTerminalResult,
+    ) -> Option<EpisodeMissionOutcome> {
+        if let Some(escort) = &self.escort {
+            return Some(EpisodeMissionOutcome {
+                kind: EpisodeMissionKind::Escort,
+                objective_side: escort.objective.escorting_side,
+                completed: result.extraction_victory,
+            });
+        }
+        if let Some(demolition) = &self.demolition {
+            return Some(EpisodeMissionOutcome {
+                kind: EpisodeMissionKind::Demolition,
+                objective_side: demolition.objective.attacking_side,
+                completed: result.winner_side == demolition.objective.attacking_side,
+            });
+        }
+        if let Some(survival) = &self.survival {
+            return Some(EpisodeMissionOutcome {
+                kind: EpisodeMissionKind::Survival,
+                objective_side: survival.objective.defending_side,
+                completed: result.winner_side == survival.objective.defending_side,
+            });
+        }
+        world.extraction_objective().map(|(objective_side, _, _)| EpisodeMissionOutcome {
+            kind: EpisodeMissionKind::Extraction,
+            objective_side,
+            completed: result.extraction_victory,
+        })
     }
 
     pub fn survival_status(&self) -> Option<SurvivalStatus> {

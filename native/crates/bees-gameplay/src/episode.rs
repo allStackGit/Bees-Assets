@@ -74,6 +74,7 @@ pub struct NativeEpisodeFinal {
     pub result: EpisodeTerminalResult,
     pub terminal_rewards: EpisodeTerminalRewards,
     pub economic_rewards: EpisodeEconomicRewards,
+    pub mission: Option<bees_sim::episode_terminal::EpisodeMissionOutcome>,
 }
 
 /// Returned slices refer to the adapter's reused scratch memory. Consume
@@ -446,6 +447,7 @@ impl NativeEpisodeRewardCoordinator {
                 result,
                 terminal_rewards: EpisodeTerminalRewards::default(),
                 economic_rewards: EpisodeEconomicRewards::default(),
+                mission: self.terminal.mission_outcome(world, result),
             }));
         };
         // Both consumers inspect the same world-owned event store. Scratch
@@ -477,6 +479,7 @@ impl NativeEpisodeRewardCoordinator {
                 result: done.outcome,
                 terminal_rewards: done.rewards,
                 economic_rewards: economic,
+                mission: self.terminal.mission_outcome(world, done.outcome),
             })
         } else {
             None
