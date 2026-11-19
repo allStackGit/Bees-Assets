@@ -1497,7 +1497,10 @@ function createNativeBeesAdapter({
                 ...((rollout_workers === undefined && !dualGpu) ||
                     inboxLearner || bundleRound ? [] :
                     ['--rollout-workers', String(activeWorkers)]),
-                ...((!inboxLearner && !bundleRound) &&
+                // A Hub collector work order already supplied the
+                // effective World count with its global partition start.
+                // Never emit a second conflicting --rollout-worlds flag.
+                ...((!inboxLearner && !bundleRound && collection_id === undefined) &&
                     (rollout_worlds !== undefined || dualGpu) ?
                     ['--rollout-worlds', String(activeWorlds)] : []),
                 ...(physics_workers === undefined ? [] :
