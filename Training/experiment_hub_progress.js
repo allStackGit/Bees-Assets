@@ -125,6 +125,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_gpu_stream_work_share',
             'remote_policy_shared_collectors',
             'remote_policy_shared_encode_seconds',
+            'remote_policy_source_pack_reused',
             'remote_policy_shared_bytes',
             'local_gpu_collector_count',
             'local_gpu_direct_model_updates',
