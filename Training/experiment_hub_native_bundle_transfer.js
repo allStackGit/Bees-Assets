@@ -226,6 +226,16 @@ function nativeModelPackage(hub,source) {
     return {root,jobId,included};
 }
 
+// A completed optimizer model must be fully mirrored before any remote
+// physical collector can be reserved for the next training round. Verify
+// the checkpoint, manifest and every frozen opponent as one bounded package.
+function verifiedNativeModelMirror(hub,source) {
+    const model=nativeModelPackage(hub,source);
+    for(const [relative,digest] of model.included)
+        mirroredFile(model.root,model.jobId,relative,digest);
+    return true;
+}
+
 // Queue-time source of truth for physical experience. Only terminal,
 // machine-owned collector receipts that have been completely mirrored can
 // become immutable optimizer inputs. Reuse the download authorization's
@@ -585,4 +595,5 @@ async function syncNativeBundles(job,adapter,endpoint,machineId,token) {
 }
 
 module.exports={capturePaths,authorizedBundleFile,authorizedModelFile,
-    verifiedNativeCollectorPin,syncNativeBundles,syncNativeModels,nativeModelPackage};
+    verifiedNativeCollectorPin,verifiedNativeModelMirror,
+    syncNativeBundles,syncNativeModels,nativeModelPackage};
