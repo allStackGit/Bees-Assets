@@ -1119,6 +1119,10 @@ def main():
         help="optimizer device: cpu, cuda, or cuda:N (ROCm PyTorch also uses cuda)",
     )
     parser.add_argument(
+        "--learner-gpus", type=int, choices=(1, 2), default=1,
+        help="number of synchronized CUDA/ROCm MA-POCA learner ranks",
+    )
+    parser.add_argument(
         "--rollout", type=Path, nargs=3, action="append", default=[],
         metavar=("CAPTURE", "JOURNAL", "MANIFEST"),
         help="add another completed capture sampled from the same learner checkpoint",
@@ -1157,6 +1161,26 @@ def main():
         (device.index is not None and device.index >= torch.cuda.device_count())
     ):
         parser.error(f"optimizer device {device} is not available")
+    learner_workers = args.learner_gpus
+    rank = 0
+    if learner_workers > 1:
+        # The native round controller starts one PyTorch rank per leased
+        # GPU. Each uses the same captured gameplay experience and optimizer
+        # checkpoint, with disjoint rows in every global MA-POCA minibatch.
+        # torchrun provides the rendezvous; no custom process supervisor.
+        if (device.type != "cuda" or torch.cuda.device_count() < learner_workers
+                or int(os.environ.get("WORLD_SIZE", "0")) != learner_workers
+                or int(os.environ.get("LOCAL_WORLD_SIZE", "0")) != learner_workers):
+            parser.error("multi-GPU learner requires two visible CUDA/ROCm devices and torchrun")
+        rank = int(os.environ.get("RANK", "-1"))
+        local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
+        if rank not in range(learner_workers) or rank != local_rank:
+            parser.error("native learner ranks must each own one local GPU")
+        torch.cuda.set_device(local_rank)
+        device = torch.device("cuda", local_rank)
+        torch.distributed.init_process_group("nccl", init_method="env://")
+    elif int(os.environ.get("WORLD_SIZE", "1")) > 1:
+        parser.error("distributed native learner must request the full torchrun world")
     install_bees_actor()
     from bees_mlagents_ppo_compat import install_value_estimate_key_fix
     install_value_estimate_key_fix()
@@ -1216,7 +1240,10 @@ def main():
                 partitions=partitions,
             )
         )
-    args.output.mkdir()
+    if rank == 0:
+        args.output.mkdir()
+    if learner_workers > 1:
+        torch.distributed.barrier()
     trainer = POCATrainer(behavior.brain_name, 100, settings, True, False, 0, str(args.output))
     policy = trainer.create_policy(behavior, mlagents_behavior_spec())
     for name, module in policy.get_modules().items():
@@ -1306,6 +1333,23 @@ def main():
     steps = trainer.update_buffer.num_experiences
     if steps < settings.hyperparameters.batch_size:
         parser.error("capture contains fewer observed intervals than one optimizer minibatch")
+    if learner_workers > 1:
+        # Exactly equal offline source experience is required by the
+        # disjoint-global-minibatch sampler. An accidentally different
+        # collector input must fail on every rank before any Adam step.
+        evidence = torch.tensor(
+            [steps, mission_learner_decisions, len(episode_keys)],
+            device=device, dtype=torch.int64,
+        )
+        low, high = evidence.clone(), evidence.clone()
+        torch.distributed.all_reduce(low, op=torch.distributed.ReduceOp.MIN)
+        torch.distributed.all_reduce(high, op=torch.distributed.ReduceOp.MAX)
+        if not torch.equal(low, high):
+            raise ValueError("native GPU learner ranks ingested different gameplay experience")
+        # The common checkpoint and manifest seed one shuffle stream for
+        # *each* rank. Global permutation stays identical; row windows do not.
+        import numpy as np
+        np.random.seed(int(input_sha[:8], 16) ^ int(primary_manifest_sha[:8], 16))
     processing_wall_seconds = time.perf_counter() - processing_started
     processing_cpu_seconds = time.process_time() - processing_cpu_started
     update_started = time.perf_counter()
@@ -1325,6 +1369,25 @@ def main():
             "torch_cuda_process_peak_allocated_bytes": torch.cuda.max_memory_allocated(device),
             "torch_cuda_process_peak_reserved_bytes": torch.cuda.max_memory_reserved(device),
         }
+    if learner_workers > 1:
+        # A completed rank is not proof that the other GPU trained.
+        # Publish the existing single checkpoint only after both ranks
+        # finished the same number of synchronously reduced PPO minibatches.
+        local = {
+            "rank": rank, "device": str(device),
+            "device_name": torch.cuda.get_device_name(device),
+            "gradient_syncs": getattr(trainer.optimizer, "_bees_distributed_grad_syncs", 0),
+            "update_wall_seconds": update_wall_seconds,
+            **cuda_metrics,
+        }
+        gpu_worker_metrics = [None] * learner_workers
+        torch.distributed.all_gather_object(gpu_worker_metrics, local)
+        if (any(row["rank"] != i or row["gradient_syncs"] < 1
+                for i, row in enumerate(gpu_worker_metrics)) or
+                len({row["gradient_syncs"] for row in gpu_worker_metrics}) != 1):
+            raise ValueError("native GPUs completed different optimizer minibatch counts")
+    else:
+        gpu_worker_metrics = None
     # Bundle receipts pin the artifact digests, not only their own JSON.
     # Files may change while an update runs on a different worker; refuse
     # to publish learned weights if any input no longer matches its pin.
@@ -1333,6 +1396,11 @@ def main():
             receipt, primary_manifest_sha, input_sha, args.learner_slot, digest,
         ):
             pass
+    if learner_workers > 1:
+        torch.distributed.barrier()
+        if rank != 0:
+            torch.distributed.destroy_process_group()
+            return
     modules = {**policy.get_modules(), **optimizer_modules}
     next_checkpoint = args.output / "checkpoint.pt"
     with next_checkpoint.open("xb") as output:
@@ -1421,6 +1489,13 @@ def main():
         "frozen_opponent_snapshot_copy_bytes": frozen_snapshot_copy_bytes,
         "frozen_opponent_snapshot_wall_seconds": frozen_snapshot_wall_seconds,
         "optimizer_device": str(device),
+        "optimizer_gpu_workers": learner_workers if device.type == "cuda" else 0,
+        **({"optimizer_synchronized_minibatches": gpu_worker_metrics[0]["gradient_syncs"],
+            "optimizer_gpu_per_device": gpu_worker_metrics,
+            "optimizer_gpu_update_wall_seconds_max": max(
+                worker["update_wall_seconds"] for worker in gpu_worker_metrics
+            )}
+           if gpu_worker_metrics is not None else {}),
         "optimizer_torch_intraop_threads": torch.get_num_threads(),
         "optimizer_torch_interop_threads": torch.get_num_interop_threads(),
         **cuda_metrics,
@@ -1494,6 +1569,8 @@ def main():
             os.fsync(directory)
         finally:
             os.close(directory)
+    if learner_workers > 1:
+        torch.distributed.destroy_process_group()
     print(json.dumps(metrics))
 
 
