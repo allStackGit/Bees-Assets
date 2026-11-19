@@ -1340,6 +1340,19 @@ service then applies DevicePolicy=closed and DeviceAllow entries for only
 the selected device and /dev/kfd to remain accessible while every
 baseline-openable excluded GPU is inaccessible.
 
+On a host with only one AMD GPU, a separate control unit allows /dev/kfd
+and withholds that GPU's render node. Qualification requires the control
+to fail to open the node and the regular probe to open it and attest its
+HIP PCI identity. Native Start repeats the denial control before recording
+ownership and checks the allowed node and HIP identity inside the job unit.
+Updated native Linux agents advertise support for this path.
+
+On a single-GPU Docker host, the control mounts the render node without
+granting device access. It verifies the character device's major/minor
+numbers and requires the kernel to reject opening it. The regular probe
+verifies the leased HIP device using the same pinned image, which the
+learner uses at Start. Both probes run without network access.
+
 For a native job, the agent constructs `runtimeProof` solely from the
 installed trusted adapter and the frozen job/lease. The same short-lived
 service also invokes that adapter's fixed ROCm verifier under the pinned
@@ -2823,13 +2836,15 @@ older completed history.
 
 The `feat/hub-resource-experiments-20261110` Hub branch and matching
 `feat/linux-tinybrains-runtime` TinyBrains branch have an **unqualified**
-multi-machine rollout path. A single Halifax trainer owns the PPO optimizer,
-checkpoint, evaluation and STOP marker. Each remote machine owns an independent
-`tinybrains_rollout` native job under its own acknowledged CPU/RAM lease,
+multi-machine rollout path. One approved Linux learner owns the PPO optimizer,
+checkpoint, evaluation and STOP marker. It can use a CPU/RAM-only lease
+when its Docker adapter advertises CPU learner support. Each remote machine
+owns a `tinybrains_rollout` native job under its own acknowledged CPU/RAM lease,
 optionally with **one exclusive Windows CUDA GPU**. The learner sends a frozen
 behavior policy and collects the returned on-policy shards before optimizing.
-By default, each collector receives an equal action target. For heterogeneous
-fixed machines, Design can freeze an optional `rollout_action_weights` array,
+The current backend starts from matching checkpoint measurements when
+available, or equal shares, and tests changes against completed PPO cadence.
+Design can freeze an optional `rollout_action_weights` array,
 for example `[2,8,4]` for the learner and two ordered remote collectors.
 This divides the configured total action target proportionally, assigning at
 least one action to each collector and preserving the total. The chosen
@@ -2845,9 +2860,8 @@ latest uninterrupted chart segment, **Compare** displays advisory
 median delivered decisions/s, reduced to bounded integer weights; they are
 a starting estimate, not a guarantee of faster PPO updates. Rates from
 different action targets may change when their work shares change.
-**Use proposed weights in Design** only fills the input for an approved
-matching profile: review the full draft and save explicitly. Nothing
-rebalances a running job, changes its resource lease, or starts training.
+**Use proposed weights in Design** fills the input for an approved
+matching profile for a future job. Review the draft and save it explicitly.
 Re-measure when worker machines, assigned CPUs/GPUs, network or model change.
 Remote workers never publish or advance learner checkpoints.
 
@@ -2873,13 +2887,17 @@ service to the public Internet.
    and enroll their native agents. Save a TinyBrains configuration with
    `remote_rollouts:true` and the approved profile/checkpoint import.
    In **Train**, choose the saved learner configuration, enter its local
-   CPU/RAM and one- or two-GPU budget, then use **Queue and reserve entire
-   group**. Select Halifax and provide one CPU/RAM resource budget per
-   approved endpoint in the shown order. Each collector may set an independent
+   CPU/RAM and optional GPU budget, then use **Queue and reserve entire
+   group**. Select the learner and keep one CPU/RAM budget for each machine you
+   want to allocate. The Hub resolves the machine IDs through authenticated
+   agent reports and freezes the selected endpoints in the learner's
+   approved order. Optional fixed action weights use that same order.
+   Older learner adapters require all approved endpoints.
+   Each collector may set an independent
    `threads` count no greater than its leased CPUs or its locally approved
    thread limit. A worker budget may also request one exclusive Windows CUDA
    GPU; no shared remote GPU is admitted. Collector slot 0 is the learner's
-   local rollout; slots 1–8 correspond to approved remote endpoints.
+   local rollout. Slots 1–8 follow the frozen selection.
    Updated remote workers report `collector_N_model_prepare_seconds`
    (policy/critic weight loading plus first-use allocation) so that model
    reuse can be measured separately from end-to-end collection time.
@@ -2919,6 +2937,12 @@ service to the public Internet.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
+   **Match budgets across the selected machines** lets the Hub fit the
+   worker budgets to that machine set. The API accepts
+   `worker_machine_ids` alongside collector or Courier lineage budgets
+   without individual `machine_id` fields. The Hub checks current lease
+   capacity and keeps the learner's approved endpoint order, including
+   any fixed rollout weights or Courier lineage slots.
 4. Allow each host's authenticated agent to acknowledge its offered claim,
    and qualify the learner's GPU access before launch. In **Train**, use
    **Start collectors only** to authorize all remote native Starts atomically
