@@ -642,6 +642,39 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
     let nearest_queries = scripted["nearest_enemy_resolutions"].as_u64().unwrap_or(0);
     let nearest_candidates = scripted["nearest_enemy_candidates_scanned"]
         .as_u64().unwrap_or(0);
+    // These outcomes are emitted by the same durable terminal journal as
+    // the playable game. Report physical mission completion alongside SPS,
+    // not just whichever faction happened to eliminate its opponent.
+    let mut objective_results = serde_json::Map::new();
+    if let Some(scenes) = summary["evaluation"]["by_scene_sha256"].as_object() {
+        for source in scenes.values() {
+            if let Some(kinds) = source["mission_outcomes"].as_object() {
+                for (kind, counts) in kinds {
+                    let attempts = counts["attempts"].as_u64().ok_or_else(||
+                        invalid("native mission benchmark has no physical attempt count"))?;
+                    let completions = counts["completions"].as_u64().ok_or_else(||
+                        invalid("native mission benchmark has no physical completion count"))?;
+                    if completions > attempts {
+                        return Err(invalid("native mission benchmark has impossible objective successes").into());
+                    }
+                    let totals = objective_results.entry(kind.clone()).or_insert_with(|| json!({
+                        "attempts": 0_u64, "completions": 0_u64,
+                    }));
+                    let prior_attempts = totals["attempts"].as_u64().unwrap_or(0);
+                    let prior_completions = totals["completions"].as_u64().unwrap_or(0);
+                    totals["attempts"] = json!(prior_attempts + attempts);
+                    totals["completions"] = json!(prior_completions + completions);
+                }
+            }
+        }
+    }
+    for counts in objective_results.values_mut() {
+        let attempts = counts["attempts"].as_u64().unwrap_or(0);
+        let completions = counts["completions"].as_u64().unwrap_or(0);
+        counts["completion_rate"] = json!(if attempts > 0 {
+            completions as f64 / attempts as f64
+        } else { 0.0 });
+    }
     let admissions = &summary["reinforcement_arrivals"];
     let waves_arrived = admissions["waves"].as_u64().unwrap_or(0);
     let squads_arrived = admissions["squads"].as_u64().unwrap_or(0);
@@ -675,6 +708,7 @@ pub(super) fn show_benchmark_result(run_dir: &Path) -> Result<(), Box<dyn Error>
         "reinforcement_waves_arrived": waves_arrived,
         "reinforcement_squads_arrived": squads_arrived,
         "reinforcement_ships_arrived": ships_arrived,
+        "physical_mission_outcomes": objective_results,
         "summary": file,
     }));
     let labels = [
@@ -1240,13 +1274,20 @@ pub(super) fn archive(
             } else {
                 vec![json!({"kind": selected.ai_tactics.source_order(position)})]
             };
+            let mission_owner = selected.ai_both &&
+                selected.objective_side == Some(side as i32 + 1);
+            // Only commands that physically complete a one-shot goal
+            // terminate their script. Escort defenders and ordinary
+            // bombardment interceptors still need repeated live target
+            // selection as opposing squads are killed.
+            let one_shot_goal = mission_owner && match selected.objective {
+                Objective::Extraction => true,
+                Objective::Escort => position == 0,
+                Objective::Demolition => !supporting && !scout,
+                _ => false,
+            };
             let mut queue = json!({
-                "squad_item_id": owner,
-                "repeat": !supporting &&
-                    !(selected.ai_both &&
-                      selected.objective_side == Some(side as i32 + 1) &&
-                      matches!(selected.objective,
-                          Objective::Extraction | Objective::Escort | Objective::Demolition)),
+                "squad_item_id": owner, "repeat": !supporting && !one_shot_goal,
                 "orders": orders,
             });
             if deferred_squads.contains(&owner) {
