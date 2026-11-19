@@ -610,17 +610,23 @@ function retainNativeBaselineEvaluation(next,job,report,evaluationSuites) {
         !SHA256.test(String(job.checkpoint_model_sha256||'')))
         throw Error('Invalid independent native baseline evaluation report.');
     const plan=(next.native_round_plans||[]).find(item=>
-        item.id===submitted.plan_id&&
-        (item.status==='pending_collectors'||item.status==='complete'&&
-            item.initial_checkpoint_sha256===job.checkpoint_model_sha256)&&
-        item.completed_rounds===0&&item.source_job_id===job.id&&
+        item.id===submitted.plan_id&&item.source_job_id===job.id&&
         item.origin_source_job_id===job.id&&
         item.source_model_sha256===job.checkpoint_model_sha256&&
         item.initial_evaluation_stop);
-    if(!plan||!supportsEvaluation(evaluationSuites,{
+    if(!plan)
+        throw Error('Native baseline evaluator has no original approved plan and checkpoint owner.');
+    // An Inspect already issued by the original Hub may report after the
+    // operator disarmed the sequence or a failed baseline triggered normal
+    // collection. Do not rearm it or reject the unrelated valid heartbeat.
+    if(plan.status!=='pending_collectors'&&
+        !(plan.status==='complete'&&plan.completed_rounds===0&&
+          plan.initial_checkpoint_sha256===job.checkpoint_model_sha256))
+        return false;
+    if(!supportsEvaluation(evaluationSuites,{
         project_id:job.project_id,evaluation_stop:plan.initial_evaluation_stop,
     }))
-        throw Error('Native baseline evaluator has no original approved plan and suite owner.');
+        throw Error('Native baseline evaluator lacks the originally approved suite owner.');
     const rules=evaluationRules(plan.initial_evaluation_stop);
     const retained=[...(plan.initial_evaluation_receipts||[])];
     const seen=new Set();
