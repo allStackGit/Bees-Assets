@@ -1227,11 +1227,20 @@ pub(super) fn archive(
             // Do not store O(allies * enemies) scripted target lists
             // for a large battle: after one target dies the nearest live
             // opponent is chosen deterministically from the actual roster.
-            // Passive support has no guns; scouts retain their movement
-            // orders rather than inventing combat weapons.
+            // Passive support has no guns. Only scripted squads reach
+            // this loop; a player's commander never loses input authority.
+            let mission_owner = selected.objective_side == Some(side as i32 + 1);
             let orders = if supporting {
                 vec![json!({"kind": "hold"})]
-            } else if selected.objective_side == Some(side as i32 + 1) &&
+            } else if mission_owner &&
+                matches!(selected.objective, Objective::Survival) &&
+                position == 0
+            {
+                // The protected hull stays alive behind the defense. Its
+                // normal physical turrets can still attack nearby enemies;
+                // sending it on Aggressive pursuit defeats the objective.
+                vec![json!({"kind": "hold"})]
+            } else if mission_owner &&
                 matches!(selected.objective, Objective::Extraction)
             {
                 // Every mobile unit must physically evacuate. Reuse the
@@ -1240,7 +1249,7 @@ pub(super) fn archive(
                 vec![json!({"kind": "move_to_point", "destination": [
                     if side == 0 { 125.0 } else { -125.0 }, 0.0,
                 ]})]
-            } else if selected.objective_side == Some(side as i32 + 1) &&
+            } else if mission_owner &&
                 matches!(selected.objective, Objective::Escort) &&
                 position == 0
             {
@@ -1250,7 +1259,7 @@ pub(super) fn archive(
                 vec![json!({"kind": "move_to_point", "destination": [
                     if side == 0 { 125.0 } else { -125.0 }, 0.0,
                 ]})]
-            } else if selected.objective_side == Some(side as i32 + 1) &&
+            } else if mission_owner &&
                 matches!(selected.objective, Objective::Demolition) && !scout
             {
                 // Approach within the actual turret firing range, then
@@ -1273,17 +1282,13 @@ pub(super) fn archive(
             } else {
                 vec![json!({"kind": selected.ai_tactics.source_order(position)})]
             };
-            // A squad reaches this loop only when it has a scripted
-            // controller, in gameplay or a benchmark. It never steals
-            // control from a player on the mission-owning side.
-            let mission_owner = selected.objective_side == Some(side as i32 + 1);
             // Only commands that physically complete a one-shot goal
             // terminate their script. Escort defenders and ordinary
             // bombardment interceptors still need repeated live target
             // selection as opposing squads are killed.
             let one_shot_goal = mission_owner && match selected.objective {
                 Objective::Extraction => true,
-                Objective::Escort => position == 0,
+                Objective::Escort | Objective::Survival => position == 0,
                 Objective::Demolition => !supporting && !scout,
                 _ => false,
             };
