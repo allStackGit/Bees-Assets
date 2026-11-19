@@ -4838,7 +4838,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 available.filter(other=>other.id===host.id).length>1);
             // Selected-machine mode is mandatory for a local collector:
             // plain remote endpoint budgets cannot authorize self-hosting.
-            courierMatch.input.checked=Boolean(local||repeated);
+            courierMatch.input.checked=Boolean(local||repeated||slotPinned);
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
                 (subset?available.slice(0,capacity):match).map(worker=>
