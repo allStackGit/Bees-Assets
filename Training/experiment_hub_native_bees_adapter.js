@@ -1210,6 +1210,13 @@ function createNativeBeesAdapter({
         cwd: path.dirname(runner),
         stop_policy: 'terminate-group',
         config_sha256: configSha256,
+        // Local capability proof: one canonical source contract per
+        // installed curriculum stage. The Hub only receives these digests,
+        // never machine-local Level/scene paths or executable parameters.
+        ...(collectOnly?{native_bees_curriculum_sources:curriculumRuns.map(stage=>({
+            start_round:stage.start_round,
+            source_run_contract_sha256:sourceContracts.get(stage.run),
+        }))}:{}),
         // The adapter chooses an owned, immutable native output directory.
         // Hub can mirror verified model packages only after checkpoint proof.
         artifact_export_dir(jobId) {

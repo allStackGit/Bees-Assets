@@ -42,6 +42,9 @@ class LocalExecution {
     advertisement(){
         return {local_executor:true,installed_projects:this.projects.slice(),
             evaluation_suites:structuredClone(this.evaluationSuites),
+            native_bees_curriculum_sources:this.projects.includes('bees_native_collect')
+                ?structuredClone(this.supervisor.adapters?.bees_native_collect
+                    ?.native_bees_curriculum_sources||[]):[],
             tinybrains_profiles:{...this.supervisor.adapters?.tinybrains?.tinybrains_profiles},
             tinybrains_cuda_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cuda_profiles||[])],
             tinybrains_thread_overrides:[...(this.supervisor.adapters?.tinybrains?.tinybrains_thread_overrides||[])],

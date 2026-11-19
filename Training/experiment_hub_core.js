@@ -202,6 +202,20 @@ function boundedReport(value) {
     if(!object(evaluators)||Object.keys(evaluators).length>installed.length||
         Object.keys(evaluators).some(project=>!installed.includes(project)))
         throw Error('Evaluation capability requires a corresponding installed adapter.');
+    const curriculumSources=value.native_bees_curriculum_sources??[];
+    if(!Array.isArray(curriculumSources)||curriculumSources.length>8||
+        (curriculumSources.length&&
+            (!localExecutor||!installed.includes('bees_native_collect')||
+             !['win32','linux'].includes(value.platform)))||
+        curriculumSources.some((stage,index)=>!object(stage)||
+            Object.keys(stage).sort().join(',')!==
+                'source_run_contract_sha256,start_round'||
+            !Number.isSafeInteger(stage.start_round)||
+            stage.start_round<1||stage.start_round>8||
+            (index===0?stage.start_round!==1:
+                stage.start_round<=curriculumSources[index-1].start_round)||
+            !SHA256.test(String(stage.source_run_contract_sha256||''))))
+        throw Error('Invalid pinned native Bees collector curriculum capability.');
     const profiles=tinyBrainsProfiles(value.tinybrains_profiles??{});
     if(Object.keys(profiles).length&&(!installed.includes('tinybrains')||!['win32','linux'].includes(value.platform)))
         throw Error('TinyBrains profiles require an installed native adapter.');
@@ -295,6 +309,8 @@ function boundedReport(value) {
             ['linux','win32'].includes(value.platform)&&preflight,
         native_preflight_reason:reason||null,
         evaluation_suites:localExecutor?evaluationSuites:{},
+        native_bees_curriculum_sources:localExecutor
+            ?curriculumSources.map(copy):[],
         tinybrains_profiles:profiles,
         tinybrains_cuda_profiles:cudaProfiles.slice(),
         tinybrains_thread_overrides:threadOverrides.slice(),
@@ -1342,6 +1358,8 @@ class ExperimentHub {
                 machine.native_preflight_reason = report.native_preflight_reason;
                 machine.installed_projects = report.installed_projects.slice();
                 machine.evaluation_suites = copy(report.evaluation_suites);
+                machine.native_bees_curriculum_sources=
+                    copy(report.native_bees_curriculum_sources);
                 machine.tinybrains_profiles = copy(report.tinybrains_profiles||{});
                 machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();
                 machine.tinybrains_thread_overrides=report.tinybrains_thread_overrides.slice();
