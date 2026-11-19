@@ -1,9 +1,9 @@
 'use strict';
 
-// Immutable native MA-POCA rollout receipts and captures transported through
-// the machine-authenticated Hub listener. Only completed collector jobs can
-// supply bytes, and only a learner explicitly pinning that collector's
-// receipt SHA may retrieve them. No executable, checkpoint or model transfer.
+// Authenticated native MA-POCA source transport through the existing Hub
+// agent listener. Completed collectors supply immutable physical captures;
+// verified checkpoint owners supply bounded model packages to exact pinned
+// successors. Neither route admits executables or arbitrary machine paths.
 const fs=require('node:fs');
 const path=require('node:path');
 const http=require('node:http');
