@@ -42,6 +42,9 @@ HELP = """Commands:
   select ID [ID...]    Select one or more friendly squad IDs
   move X Y             Move selected squads to world point
   fire X Y             Manual point fire; fire stop clears target
+  held begin X Y       Begin sustained fire with selected squad weapons
+  held aim X Y         Aim this connection's active held-fire gesture
+  held end             Release sustained fire
   cease on|off         Set cease fire or attack on sight
   chase on|off         Enable/disable selected squad chase preference
   match on|off         Match selected ship speeds
@@ -85,6 +88,7 @@ class RemoteConsole:
         self.latest = None
         self.selected = []
         self.next_request = 1
+        self.held_scope = None
         self.alive = True
         self.last_terminal_episode = None
         self.last_dialogue_cue = None
@@ -138,6 +142,12 @@ class RemoteConsole:
                         self.notifications.put(f"Authenticated; player side {side} ready")
                         if not self.silent:
                             print(f"Authenticated; player side {side} ready")
+                    elif kind == "held_fire_released":
+                        self.held_scope = None
+                        note = "Held fire released by native host"
+                        self.notifications.put(note)
+                        if not self.silent:
+                            print(note)
                     elif kind == "input_result":
                         note = f"Order {message['request_id']}: {message['feedback']}"
                         self.notifications.put(note)
@@ -220,7 +230,11 @@ class RemoteConsole:
         return matches[0]["owner"]
 
     def send(self, action, state, owners):
-        if not owners:
+        # Aim and End belong to the authenticated peer's existing gesture.
+        # Only Begin carries selected squad lifetimes; the native host
+        # authorizes the gesture and owns the live weapon state.
+        is_held = action[0] == "held_fire"
+        if not owners and (not is_held or "Begin" in action[1]["action"]):
             raise ValueError("select at least one live friendly squad first")
         packet = {
             "kind": "input", "request_id": self.next_request,
@@ -228,13 +242,42 @@ class RemoteConsole:
                 "kind": action[0], "input": {
                     "world_id": state["world_id"],
                     "episode_revision": state["episode_revision"],
-                    "squads": owners,
+                    **({} if is_held else {"squads": owners}),
                     **action[1],
                 },
             },
         }
         self.socket.sendall((json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8"))
         self.next_request += 1
+
+    def held_fire(self, kind, target=None):
+        """Submit native Begin/Aim/End, retaining the original episode."""
+        state = self.snapshot()
+        if state is None:
+            raise ValueError("no authoritative world snapshot received yet")
+        scope = (state["world_id"], state["episode_revision"])
+        if self.held_scope is not None and (
+                self.held_scope["world_id"], self.held_scope["episode_revision"]) != scope:
+            self.held_scope = None
+        if kind == "begin":
+            if self.held_scope is not None:
+                raise ValueError("end the existing held-fire gesture first")
+            owners = self.selected_owners(state)
+            if not owners or target is None:
+                raise ValueError("held fire needs selected squads and an aim point")
+            self.send(("held_fire", {"action": {
+                "Begin": {"squads": owners, "target": target},
+            }}), state, owners)
+            self.held_scope = {"world_id": scope[0], "episode_revision": scope[1]}
+        elif kind in ("aim", "end"):
+            if self.held_scope is None:
+                raise ValueError("no held-fire gesture is active")
+            action = {"Aim": {"target": target}} if kind == "aim" else "End"
+            self.send(("held_fire", {"action": action}), self.held_scope, [])
+            if kind == "end":
+                self.held_scope = None
+        else:
+            raise ValueError("unknown held-fire action")
 
     @staticmethod
     def flag(value):
@@ -317,6 +360,10 @@ class RemoteConsole:
                 self.send(("fire", {"target": target}), state, owners)
         elif cmd == "fire" and argv == ["stop"]:
             self.send(("fire", {"target": None}), state, owners)
+        elif cmd == "held" and len(argv) == 3 and argv[0] in ("begin", "aim"):
+            self.held_fire(argv[0], {"x": float(argv[1]), "y": float(argv[2])})
+        elif cmd == "held" and argv == ["end"]:
+            self.held_fire("end")
         elif cmd in ("cease", "chase", "match") and len(argv) == 1:
             kind, field = {
                 "cease": ("cease_fire", "cease_fire"),
