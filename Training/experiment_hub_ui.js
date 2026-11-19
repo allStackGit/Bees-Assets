@@ -4858,12 +4858,15 @@ document.addEventListener('DOMContentLoaded', () => {
             host.courier_lineage_slots?.length>0));
         const entries=match.flatMap((hosts,index)=>
             hosts.length===1?[{host:hosts[0],endpoint:endpoints[index]}]:[]);
-        const available=entries.map(entry=>entry.host);
+        // Only the selected map/lineage population is being reserved.
+        // Extra advertised listeners are not additional resource claims.
+        const selectedEntries=entries.slice(0,capacity);
+        const available=selectedEntries.map(entry=>entry.host);
         courierMatch.label.lastChild.textContent=slotPinned
             ?' Bind each budget to its selected approved endpoint and machine'
             :' Match budgets across the selected machines';
         const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
-            ':'+entries.map(entry=>entry.host.id+'@'+entry.endpoint).join(';'):null;
+            ':'+selectedEntries.map(entry=>entry.host.id+'@'+entry.endpoint).join(';'):null;
         if(courierBudgetHost!==budgetHost) {
             const local=colocated&&available.some(host=>host.id===machine.id);
             const repeated=available.some(host=>
@@ -4873,7 +4876,7 @@ document.addEventListener('DOMContentLoaded', () => {
             courierMatch.input.checked=Boolean(local||repeated||slotPinned);
             courierBudgetHost=subset&&!available.length?null:budgetHost;
             courierBudgets.value=JSON.stringify(
-                entries.slice(0,capacity).map(({host:worker,endpoint})=>
+                selectedEntries.map(({host:worker,endpoint})=>
                     ({...(subset?{machine_id:worker.id}:{}),
                         ...(slotPinned?{endpoint}:{}),cpus:2,ram_mb:4096,
                         ...(subset&&(worker.id===machine.id||
