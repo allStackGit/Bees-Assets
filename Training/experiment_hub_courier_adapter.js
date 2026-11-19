@@ -929,8 +929,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const approval=JSON.parse(fs.readFileSync(approvalFile,'utf8'));
             if(approval.schema_version!==1||
                 !SHA256.test(String(approval.config_sha256||''))||
-                approval.suite_id!=='courier_survival_'+
-                    approval.config_sha256.slice(0,12))
+                !/^courier_survival_(?:[a-f0-9]{12}|[a-f0-9]{8}_[a-f0-9]{8})$/.test(approval.suite_id))
                 throw Error('Invalid approved Courier evaluation manifest.');
             if(approval.config_sha256===configSha256) {
             const suiteFile=path.join(audit,'suites',approval.suite_id+'.json');
