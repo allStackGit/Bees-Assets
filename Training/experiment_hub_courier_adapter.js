@@ -171,7 +171,8 @@ function courierMetrics(source) {
         'training_checkpoint_snapshot_bytes',
         'training_checkpoint_worker_max_seconds',
         'training_checkpoint_append_seconds',
-    ].includes(name)||name.startsWith('training_live_')||
+    ].includes(name)||name.startsWith('training_broker_')||
+        name.startsWith('training_live_')||
         name.startsWith('training_gpu_memory_')||
         name.startsWith('training_gpu_placement_')||
         name.startsWith('training_gpu_output_')||
@@ -226,6 +227,11 @@ function courierMetrics(source) {
         'remote_roundtrip_seconds','sim_physical_processes',
         'sim_process_ceiling','gpu_fwd_stream_seconds',
         'observation_seconds','is_remote','sim_trial',
+        // One representative independent lineage's GPU broker service
+        // and wait exposure survive wide-population metric downselection.
+        'broker_wait_seconds','broker_queue_seconds',
+        'broker_gpu_service_seconds','broker_kernel_batches',
+        'broker_results',
     ];
     const workerColumns=[...columns].sort(([a],[b])=>{
         const ia=criticalWorkerFields.indexOf(a);
@@ -245,7 +251,12 @@ function courierMetrics(source) {
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
-        const unit=(COURIER_COUNT_FIELDS.has(name)||
+        // The newly merged cross-policy broker reports real counts beside
+        // measured waits, byte volume and GPU service intervals. Keep
+        // those unit distinctions in the existing neutral metrics wire.
+        const brokerCount=/^(?:training_broker_|worker_[0-9]{1,2}_broker_)/.test(name)&&
+            /_(?:mode|gpu|device|owner|index|policies|cohorts|settled|eligible|adjustments|accepted|denials|samples|probes|requests|results|batches|states|attempts|rejections|missed|expected)$/.test(name);
+        const unit=(COURIER_COUNT_FIELDS.has(name)||brokerCount||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
             /^worker_[0-9]{1,2}_(?:probe|resume|live)_maps_(?:before|after)$/.test(name)||
             /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
