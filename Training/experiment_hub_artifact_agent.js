@@ -6,11 +6,11 @@ const fs=require('node:fs');
 const path=require('node:path');
 const http=require('node:http');
 const crypto=require('node:crypto');
-const {safeLogPath,safeNativeCollectorPath,MAX_CHUNK,MAX_FILE}=
+const {safeLogPath,safeNativeCollectorPath,safeNativeModelPath,MAX_CHUNK,MAX_FILE}=
     require('./experiment_hub_artifact_sync');
 const TERMINAL=new Set(['finished','failed','stopped']);
 const MAX_CYCLE=32*1024*1024;
-function filesForJob(folder,projectId) {
+function filesForJob(folder,projectId,nativeModelsOnly=false) {
     const root=path.resolve(folder);
     const stat=fs.lstatSync(root);
     if(!stat.isDirectory()||stat.isSymbolicLink()||fs.realpathSync(root)!==root)
@@ -26,10 +26,18 @@ function filesForJob(folder,projectId) {
         for(const item of found) {
             const relative=next.prefix+item.name;
             if(item.isSymbolicLink())continue;
-            const allowed=name=>projectId==='bees_native_collect'
-                ?safeNativeCollectorPath(name):safeLogPath(name);
+            const modelAllowed=projectId==='bees_native'&&
+                safeNativeModelPath(relative);
+            const allowed=name=>nativeModelsOnly
+                ?projectId==='bees_native'&&safeNativeModelPath(name)
+                :projectId==='bees_native_collect'
+                    ?safeNativeCollectorPath(name)
+                    :safeLogPath(name)||
+                        projectId==='bees_native'&&safeNativeModelPath(name);
             if(item.isDirectory()&&next.depth<7) {
-                if(allowed(relative+'/ignored.log')&&
+                const modelFolder=projectId==='bees_native'&&
+                    ['learner','learner/opponents'].includes(relative);
+                if((allowed(relative+'/ignored.log')||modelFolder)&&
                     fs.realpathSync(path.join(next.folder,item.name))===
                         path.join(next.folder,item.name))
                     queue.push({folder:path.join(next.folder,item.name),
@@ -41,7 +49,7 @@ function filesForJob(folder,projectId) {
     }
     return names.sort();
 }
-async function snapshotFile(root,relative) {
+async function snapshotFile(root,relative,allowHardlink=false) {
     const source=path.join(root,...relative.split('/'));
     const real=fs.realpathSync(source);
     if(real!==source||!real.startsWith(path.resolve(root)+path.sep))
@@ -50,7 +58,8 @@ async function snapshotFile(root,relative) {
         (fs.constants.O_NOFOLLOW||0));
     try {
         const before=fs.fstatSync(fd);
-        if(!before.isFile()||before.nlink!==1||before.size<1||
+        if(!before.isFile()||(!allowHardlink&&before.nlink!==1)||
+            before.nlink<1||before.size<1||
             before.size>MAX_FILE)return null;
         const digest=crypto.createHash('sha256'),buffer=Buffer.allocUnsafe(MAX_CHUNK);
         let offset=0;
@@ -116,7 +125,8 @@ function remoteCall(endpoint,machineId,token,jobId,file,snapshot,offset,bytes) {
         request.end(bytes);
     });
 }
-async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) {
+async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
+    nativeModelsOnly=false) {
     if(!executor?.supervisor?.snapshot)return {bytes:0,files:0};
     let sent=0,completed=0;
     // Native ownership is local and durable. The coordinator cannot give
@@ -124,17 +134,18 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) 
     for(const record of executor.supervisor.snapshot()) {
         if(!TERMINAL.has(record.state))continue;
         const project=record.project_id,adapter=executor.supervisor.adapters?.[project];
+        if(nativeModelsOnly&&project!=='bees_native')continue;
         // Collectors carry binary training experience rather than only
         // diagnostics. Raise their bounded per-cycle delivery allowance
         // without changing general telemetry's smaller background budget.
-        const cycleBudget=project==='bees_native_collect'
+        const cycleBudget=['bees_native_collect','bees_native'].includes(project)
             ?128*1024*1024:MAX_CYCLE;
         if(typeof adapter?.artifact_export_dir!=='function')continue;
         if(!executor.projects.includes(project))continue;
         const root=adapter.artifact_export_dir(record.job_id);
         if(typeof root!=='string'||!path.isAbsolute(root))continue;
         if(!fs.existsSync(root))continue;
-        for(const relative of filesForJob(root,project)) {
+        for(const relative of filesForJob(root,project,nativeModelsOnly)) {
             const file=path.join(root,...relative.split('/'));
             let st;
             try{st=fs.lstatSync(file);}catch{continue;}
@@ -144,7 +155,8 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) 
                 st.ino===cached.ino&&st.size===cached.size&&
                 st.mtimeMs===cached.mtimeMs;
             if(unchanged&&cached.complete)continue;
-            const proof=unchanged?cached:await snapshotFile(root,relative);
+            const proof=unchanged?cached:await snapshotFile(
+                root,relative,project==='bees_native'&&safeNativeModelPath(relative));
             if(!proof)continue;
             const snapshot={size:proof.size,sha:proof.sha};
             cache.set(key,{...proof,mtimeMs:st.mtimeMs,complete:false});
