@@ -2354,7 +2354,8 @@ impl NativePhysicalScene {
         authored.metadata.stage_scripted_queues(
             &authored.squads, setup.scripted_queues, &deferred_squads,
             &entry_squads, &known_ships,
-            setup.demolition.map(|objective| objective.target_map_object_id),
+            setup.demolition.map(|objective|
+                (objective.attacking_side, objective.target_map_object_id)),
             dt, authored.campaign_dialogue,
         ).map_err(NativePolicyOnlyLevelError::InvalidScriptedCommands)?;
         authored.stage_reinforcements(setup.reinforcements, dt)

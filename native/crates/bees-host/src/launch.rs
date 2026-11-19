@@ -5206,6 +5206,12 @@ fn run_battle(
             "configured_orders": config.levels.iter()
                 .flat_map(|level| level.scripted_queues.iter())
                 .map(|queue| queue.orders.len()).sum::<usize>(),
+            "configured_demolition_bombard_orders": config.levels.iter()
+                .flat_map(|level| level.scripted_queues.iter())
+                .flat_map(|queue| queue.orders.iter())
+                .filter(|order| matches!(order,
+                    ScriptedOrderConfig::BombardMapObject { .. }))
+                .count(),
             "configured_tactical_maneuvers": config.levels.iter()
                 .flat_map(|level| level.scripted_queues.iter())
                 .flat_map(|queue| queue.orders.iter())

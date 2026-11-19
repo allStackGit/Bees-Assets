@@ -293,7 +293,7 @@ impl NativePolicyOnlyMetadata {
         deferred: &HashSet<i64>,
         with_entry_order: &HashSet<i64>,
         known_ships: &HashSet<i64>,
-        demolition_target: Option<i64>,
+        demolition_target: Option<(i32, i64)>,
         dt_seconds: f32,
         campaign: Option<CampaignDialogueSpec>,
     ) -> Result<(), &'static str> {
@@ -313,7 +313,8 @@ impl NativePolicyOnlyMetadata {
                         if *human_side != self.player.human_side) ||
                     matches!(order, NativeScriptedOrder::BombardMapObject {
                         target_map_object_id
-                    } if Some(*target_map_object_id) != demolition_target))
+                    } if Some(*target_map_object_id) !=
+                        demolition_target.map(|(_, id)| id)))
             {
                 return Err("invalid scripted command plan");
             }
@@ -324,6 +325,11 @@ impl NativePolicyOnlyMetadata {
                 squad.members.iter().any(|id| !self.player.ships.contains_key(id))
             {
                 return Err("scripted command source lacks formation or command settings");
+            }
+            if plan.orders.iter().any(|order|
+                matches!(order, NativeScriptedOrder::BombardMapObject { .. })
+            ) && demolition_target.is_none_or(|(side, _)| squad.side != side) {
+                return Err("only the authored attacking side can bombard the demolition target");
             }
             for order in &plan.orders {
                 if let Some((target_id, enemy)) = order.target_squad() {
@@ -661,11 +667,17 @@ impl NativePolicyOnlyMetadata {
                     index += 1;
                     continue;
                 }
-                Some(world.obstacle_body(*target_map_object_id)
+                let body = world.obstacle_body(*target_map_object_id)
                     .filter(|body| body.active)
                     .ok_or(NativeLevelEventError::Commands(
                         GameCommandError::MissingCombatSnapshot,
-                    ))?.pose.position)
+                    ))?;
+                // Source MapObject colliders may have an authored local
+                // offset. Aim at the actual current collider rather than
+                // at the containing entity's Transform origin.
+                Some(body.primary_bounds().map_or(body.pose.position, |bounds|
+                    (bounds.min + bounds.max) * 0.5
+                ))
             } else { None };
             let source = *self.player.commands.get(&owner)
                 .ok_or(NativeLevelEventError::Commands(GameCommandError::MissingCombatSnapshot))?;
