@@ -496,18 +496,26 @@ def verify_bundle(path, job, orders):
     source = json.loads(source_run.read_text(encoding="utf-8"))
     start = job["world_start"]
     count = job["world_count"]
-    selected = source["levels"][start:start + count]
-    if len(selected) != count:
-        raise ValueError("distributed collector partition is outside the source Level range")
+    authored = source.get("levels")
+    if not isinstance(authored, list) or not authored:
+        raise ValueError("distributed source has no authentic authored Level templates")
+    # Match train_policy_round.expand_rollout_worlds: replicas cycle the
+    # source template list by GLOBAL world index. A 64-world collector can
+    # legitimately be allocated from just one authored Level; slicing the
+    # template list would reject such perfectly valid high-throughput jobs.
     has_mission = any(
-        any(name in level for name in ("survival", "demolition", "escort", "extraction"))
-        for level in selected
+        any(name in authored[index % len(authored)]
+            for name in ("survival", "demolition", "escort", "extraction"))
+        for index in range(start, start + count)
     )
     if has_mission and (observation_work is None or
                         observation_work["native_mission_rows"] == 0):
         raise ValueError(f"distributed mission collector reported no native objective observations: {path}")
+    # The selected replica's original scene/goal identity is stable even
+    # when its runtime world and seed are derived for this machine.
     if "source_scene_template_cache" in metrics:
         metrics["source_scene_template_cache"] = verified_source_scene_cache(
+
             metrics["source_scene_template_cache"],
             metrics["worlds"], metrics["episodes"],
         )
