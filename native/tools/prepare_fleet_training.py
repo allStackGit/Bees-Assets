@@ -54,6 +54,17 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
         for wave in waves
     ):
         raise ValueError("native training reinforcement waves need real source squad IDs")
+    if sum(key in level for key in ("survival", "extraction", "demolition")) > 1:
+        raise ValueError("native training Level can have only one physical objective")
+    if "demolition" in level:
+        objective = level["demolition"]
+        if (not isinstance(objective, dict) or
+                objective.get("attacking_side") not in (1, 2) or
+                type(objective.get("target_map_object_id")) is not int or
+                objective["target_map_object_id"] <= 0 or
+                type(objective.get("seconds")) not in (int, float) or
+                not math.isfinite(objective["seconds"]) or objective["seconds"] <= 0):
+            raise ValueError("native demolition training needs a physical MapObject, side and deadline")
     if "survival" in level:
         objective = level["survival"]
         if ("extraction" in level or not isinstance(objective, dict) or
@@ -365,6 +376,15 @@ def convert(source: Path, destination: Path, archetypes: Path,
                    ship["side"] == survival["defending_side"]
                    for ship in scene["ships"]):
             raise ValueError("survival protected ship must be an authentic same-side source hull")
+    demolition = run["levels"][0].get("demolition")
+    if demolition is not None:
+        deadline_ticks = math.ceil(demolition["seconds"] / scene["fixed_dt_seconds"])
+        policy_timeout = round(seconds - 10 * scene["fixed_dt_seconds"], 4)
+        if deadline_ticks * scene["fixed_dt_seconds"] > policy_timeout:
+            raise ValueError("native demolition deadline exceeds the policy episode budget")
+        if not any(obj.get("entity_id") == demolition["target_map_object_id"]
+                   for obj in scene.get("map_objects", [])):
+            raise ValueError("native demolition target is missing from the shared physical scene")
     reserved_ships = deferred_reinforcement_ships(
         scene, run, require_scripted_fallback=not policy_reinforcements,
     )
@@ -416,6 +436,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
         "physical_objective": (
             "survival" if "survival" in run["levels"][0]
             else "extraction" if "extraction" in run["levels"][0]
+            else "demolition" if "demolition" in run["levels"][0]
             else "elimination"
         ),
         "physical_ship_count": len(scene["ships"]),

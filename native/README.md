@@ -141,7 +141,19 @@ python3 native/tools/author-battle.py escape-route \
   --objective extraction --extraction-center 95 0
 ```
 
-`--objective-side` selects the defending/extracting faction, and
+Demolition missions can end immediately when the specified **physical**
+MapObject is destroyed, without waiting for elimination of the entire enemy
+fleet. For a scene with an authored Fire Tank, use
+`--objective demolition --objective-side 1 --demolition-target 250`
+(where `250` is its actual scene entity ID). The deadline defaults to the
+battle duration; `--demolition-seconds` overrides it. Actual projectile
+contacts, object retirement, same-tick target destruction, attacker losses
+and future-wave reservations all use the ordinary CombatWorld/episode
+terminal, including in an optional `--trainable` run. A mission needs an
+active player or policy controller to shoot the MapObject; scripted ordinary
+turrets do not invent automatic MapObject targeting.
+
+`--objective-side` selects the defending/extracting/demolishing faction, and
 `--extraction-radius` configures the authored activation trigger.
 These write the normal `levels[0].survival` or `levels[0].extraction`
 contracts consumed by the *same* native combat and terminal rules.

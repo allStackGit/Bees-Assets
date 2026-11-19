@@ -111,6 +111,7 @@ struct LevelConfig {
     groups: Option<GroupConfig>,
     extraction: Option<ExtractionConfig>,
     survival: Option<SurvivalConfig>,
+    demolition: Option<DemolitionConfig>,
     campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     #[serde(default)]
     reinforcements: Vec<ReinforcementConfig>,
@@ -213,6 +214,16 @@ struct ExtractionConfig {
 struct SurvivalConfig {
     defending_side: i32,
     protected_ship_id: i64,
+    seconds: f32,
+}
+
+/// End the mission on the canonical MapObject's physical destruction,
+/// or defend it until the deadline. Never derive success from a dialogue cue.
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct DemolitionConfig {
+    attacking_side: i32,
+    target_map_object_id: i64,
     seconds: f32,
 }
 
@@ -498,6 +509,11 @@ fn make_setup(
             protected_ship_id: objective.protected_ship_id,
             seconds: objective.seconds,
         }),
+        demolition: level.demolition.map(|objective| bees_sim::episode_terminal::DemolitionObjective {
+            attacking_side: objective.attacking_side,
+            target_map_object_id: objective.target_map_object_id,
+            seconds: objective.seconds,
+        }),
         campaign_dialogue: level.campaign_dialogue,
         reinforcements: level.reinforcements.iter().map(|wave| {
             let activation = match (
@@ -735,6 +751,10 @@ fn gameplay_config_sha256(
         level.survival.map(|objective| (level.world_id, objective)))
         .collect::<std::collections::BTreeMap<_, _>>();
     if !survival.is_empty() { inputs["survival"] = json!(survival); }
+    let demolition = config.levels.iter().filter_map(|level|
+        level.demolition.map(|objective| (level.world_id, objective)))
+        .collect::<Vec<_>>();
+    if !demolition.is_empty() { inputs["demolition"] = json!(demolition); }
     let extraction = config.levels.iter().filter_map(|level|
         level.extraction.as_ref().map(|zone| (level.world_id, zone)))
         .collect::<std::collections::BTreeMap<_, _>>();
@@ -3711,6 +3731,33 @@ fn run_battle(
                 {
                     return Err(invalid(format!(
                         "Campaign defense requires at least {} rounds at the authored fixed step; max_rounds is {}",
+                        required as u64, config.max_rounds,
+                    )).into());
+                }
+            }
+        }
+        if let Some(objective) = level.demolition {
+            if level.survival.is_some() || level.extraction.is_some() ||
+                !sides.contains(&objective.attacking_side) ||
+                mission.is_some_and(|mission| mission.player_side != objective.attacking_side) ||
+                !objective_has_controller(objective.attacking_side) ||
+                !source.entities.iter().any(|entity| matches!(
+                    entity,
+                    bees_host::scene_builder::NativeAuthoredEntity::MapObject { object, body }
+                        if object.entity_id == objective.target_map_object_id &&
+                        object.health > 0 && body.active
+                ))
+            {
+                return Err(invalid("Demolition requires an existing live MapObject and an active attacking player, policy or scripted controller").into());
+            }
+            if mission.is_some() {
+                let required = (objective.seconds / source.fixed_dt_seconds).ceil();
+                if required.is_finite() && required >= 1.0 &&
+                    required < u64::MAX as f32 &&
+                    required as u64 > config.max_rounds
+                {
+                    return Err(invalid(format!(
+                        "Campaign demolition needs at least {} rounds; max_rounds is {}",
                         required as u64, config.max_rounds,
                     )).into());
                 }

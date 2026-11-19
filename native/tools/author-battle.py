@@ -821,7 +821,7 @@ def author(args) -> tuple[dict, dict, dict]:
                     **activation, "squad_item_ids": [squad_id],
                 })
         run["levels"][0]["reinforcements"] = deployments
-    # These are the native Level's real survival/extraction contracts,
+    # These are the native Level's real survival/extraction/demolition contracts,
     # consumed by the same CombatWorld/terminal as campaign and training.
     # Authoring never installs a second special-objective simulator.
     owner = args.objective_side or (host if host is not None else 1)
@@ -988,6 +988,36 @@ def author(args) -> tuple[dict, dict, dict]:
                     continue
                 queue["orders"] = [{"kind": "move_to_point", "destination": center}]
                 queue["repeat"] = False
+    elif args.objective == "demolition":
+        if owner not in controlled and not args.trainable:
+            raise ValueError(
+                "demolition needs a player or policy controller: scripted ship "
+                "weapons do not automatically select MapObjects"
+            )
+        objects = [obj for obj in scene.get("map_objects", [])
+                   if isinstance(obj, dict) and isinstance(obj.get("entity_id"), int)]
+        if args.demolition_target is not None:
+            eligible = [obj for obj in objects
+                        if obj["entity_id"] == args.demolition_target]
+        else:
+            tanks = [obj for obj in objects if obj.get("kind") == "fire_tank"]
+            eligible = tanks if len(tanks) == 1 else objects
+        if len(eligible) != 1:
+            raise ValueError(
+                "demolition requires exactly one target MapObject; choose "
+                "--demolition-target ID when the source contains multiple objects"
+            )
+        budget = args.minutes * 60 - (10 * dt if args.trainable else 0)
+        seconds = (args.demolition_seconds if args.demolition_seconds is not None
+                   else budget)
+        if (not math.isfinite(seconds) or seconds <= 0 or
+                math.ceil(seconds / dt) * dt > budget + 1e-6):
+            raise ValueError("demolition deadline must fit the native fixed-step game/policy budget")
+        level["demolition"] = {
+            "attacking_side": owner,
+            "target_map_object_id": eligible[0]["entity_id"],
+            "seconds": seconds,
+        }
     if dialogue is not None:
         if owner not in controlled:
             raise ValueError("campaign dialogue requires the real locally controlled objective faction")
@@ -1255,11 +1285,11 @@ def main() -> None:
     parser.add_argument("--title", default="Custom Native Battle")
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--minutes", type=int, default=4)
-    parser.add_argument("--objective", choices=("elimination", "survival", "extraction"),
+    parser.add_argument("--objective", choices=("elimination", "survival", "extraction", "demolition"),
                         default="elimination",
-                        help="native elimination, protect-a-ship or escape-zone terminal condition")
+                        help="native elimination, defense, extraction or destroy-a-MapObject objective")
     parser.add_argument("--objective-side", type=int, choices=(1, 2),
-                        help="defending or extracting faction; defaults to local player side")
+                        help="defending, extracting or demolishing faction; defaults to local player side")
     parser.add_argument("--protect-type", type=int,
                         help="survival only: authored ship type to defend (first instance)")
     parser.add_argument("--survive-seconds", type=float,
@@ -1268,6 +1298,10 @@ def main() -> None:
                         help="extraction only: world X Y (default: enemy home)")
     parser.add_argument("--extraction-radius", type=float, default=15,
                         help="extraction only: activation distance before exit trigger appears")
+    parser.add_argument("--demolition-target", type=int,
+                        help="demolition only: physical MapObject entity ID (required when ambiguous)")
+    parser.add_argument("--demolition-seconds", type=float,
+                        help="demolition only: deadline to destroy target (default: battle duration)")
     parser.add_argument("--spacing", type=float, default=24)
     parser.add_argument("--reinforcement", action="append", default=[],
                         type=reinforcement, dest="reinforcements",
@@ -1331,6 +1365,9 @@ def main() -> None:
     if args.objective != "extraction" and (
             args.extraction_center is not None or args.extraction_radius != 15):
         parser.error("--extraction-center and --extraction-radius require --objective extraction")
+    if args.objective != "demolition" and (
+            args.demolition_target is not None or args.demolition_seconds is not None):
+        parser.error("--demolition-target and --demolition-seconds require --objective demolition")
     try:
         scene, run, library = author(args)
         policy = None

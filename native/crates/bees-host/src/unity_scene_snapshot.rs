@@ -881,6 +881,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     pub model_slots: HashMap<u8, u32>,
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
     pub survival: Option<bees_sim::episode_terminal::SurvivalObjective>,
+    pub demolition: Option<bees_sim::episode_terminal::DemolitionObjective>,
     pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     pub reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
     pub scripted_queues: Vec<crate::policy_only_metadata::NativeScriptedQueuePlan>,
@@ -898,6 +899,7 @@ pub enum NativePolicyOnlyLevelError {
     Metadata(PolicyOnlyMetadataError),
     InvalidControllerBinding(i64),
     InvalidSurvivalObjective,
+    InvalidDemolitionObjective,
     InvalidCampaignDialogue,
 }
 
@@ -2273,6 +2275,22 @@ impl NativePhysicalScene {
                 // preserves the gameplay start without a second spawn.
                 target.motion.position = bees_gameplay::campaign_dialogue::TITANIA_II_CENTER;
             }
+        }
+        if let Some(objective) = setup.demolition {
+            let target_is_live_object = self.entities.iter().any(|entity| matches!(
+                entity,
+                NativeAuthoredEntity::MapObject { object, body }
+                    if object.entity_id == objective.target_map_object_id &&
+                    object.health > 0 && body.active
+            ));
+            if setup.survival.is_some() || setup.extraction.is_some() ||
+                !target_is_live_object
+            {
+                return Err(NativePolicyOnlyLevelError::InvalidDemolitionObjective);
+            }
+            episode.arm_demolition(objective, self.fixed_dt_seconds)
+                .map_err(NativeSnapshotError::Episode)
+                .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         }
         let agents = self.exported_policy_agents(&setup.model_slots)
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;

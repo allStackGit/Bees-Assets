@@ -14,6 +14,7 @@ pub enum EpisodeTerminalError {
     InvalidSides,
     InvalidTimeout,
     InvalidSurvivalObjective,
+    InvalidDemolitionObjective,
     InvalidStep,
 }
 
@@ -61,6 +62,8 @@ pub struct EpisodeTerminalMeasurements {
     pub eliminations: u64,
     pub timeouts: u64,
     pub draws: u64,
+    pub demolition_successes: u64,
+    pub demolition_failures: u64,
 }
 
 /// Per-side RecordShipDeathAttribution from the Unity coordinator.
@@ -184,11 +187,27 @@ struct ArmedSurvival {
     deadline_tick: u64,
 }
 
+/// An authored physical MapObject demolition contract. The attacker wins
+/// only when the canonical combat world retires the exact target object;
+/// the defender wins on the deadline or final attacker elimination.
+#[derive(Clone, Copy, Debug)]
+pub struct DemolitionObjective {
+    pub attacking_side: i32,
+    pub target_map_object_id: i64,
+    pub seconds: f32,
+}
+
+struct ArmedDemolition {
+    objective: DemolitionObjective,
+    deadline_tick: u64,
+}
+
 pub struct NativeEpisodeTerminal {
     bee_side: i32,
     human_side: i32,
     timeout_seconds: Option<f32>,
     survival: Option<ArmedSurvival>,
+    demolition: Option<ArmedDemolition>,
     elapsed_seconds: f32,
     completed: Option<EpisodeTerminalResult>,
     /// A SquadRetired event would have eliminated an active side, but
@@ -219,7 +238,7 @@ impl NativeEpisodeTerminal {
             return Err(EpisodeTerminalError::InvalidSides);
         }
         Ok(Self {
-            bee_side, human_side, timeout_seconds, survival: None,
+            bee_side, human_side, timeout_seconds, survival: None, demolition: None,
             elapsed_seconds: 0.0, completed: None,
             deferred_elimination: false,
             measurements: EpisodeTerminalMeasurements::default(),
@@ -236,7 +255,7 @@ impl NativeEpisodeTerminal {
         // Gameplay with no policy timeout keeps the identical survival rules.
         if self.timeout_seconds.is_some_and(|timeout|
             (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
-        ) || self.survival.is_some() ||
+        ) || self.survival.is_some() || self.demolition.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.defending_side) ||
             objective.protected_ship_id <= 0 ||
@@ -247,6 +266,28 @@ impl NativeEpisodeTerminal {
             return Err(EpisodeTerminalError::InvalidSurvivalObjective);
         }
         self.survival = Some(ArmedSurvival { objective, deadline_tick: ticks as u64 });
+        Ok(())
+    }
+
+    /// Arm before the first tick, sharing the existing physical episode
+    /// budget and termination rules with normal gameplay and MA-POCA.
+    pub fn arm_demolition(
+        &mut self, objective: DemolitionObjective, fixed_dt_seconds: f32,
+    ) -> Result<(), EpisodeTerminalError> {
+        let ticks = (objective.seconds / fixed_dt_seconds).ceil();
+        if self.timeout_seconds.is_some_and(|timeout|
+            (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
+        ) || self.survival.is_some() || self.demolition.is_some() ||
+            self.measurements.ticks_observed != 0 ||
+            ![self.bee_side, self.human_side].contains(&objective.attacking_side) ||
+            objective.target_map_object_id <= 0 ||
+            !objective.seconds.is_finite() || objective.seconds <= 0.0 ||
+            !fixed_dt_seconds.is_finite() || fixed_dt_seconds <= 0.0 ||
+            !ticks.is_finite() || ticks < 1.0 || ticks >= u64::MAX as f32
+        {
+            return Err(EpisodeTerminalError::InvalidDemolitionObjective);
+        }
+        self.demolition = Some(ArmedDemolition { objective, deadline_tick: ticks as u64 });
         Ok(())
     }
 
@@ -418,7 +459,7 @@ impl NativeEpisodeTerminal {
             return Ok(None);
         }
         self.measurements.ticks_observed += 1;
-        self.elapsed_seconds = if self.survival.is_some() {
+        self.elapsed_seconds = if self.survival.is_some() || self.demolition.is_some() {
             // The authored survival clock starts at tick zero, alongside the waves.
             self.measurements.ticks_observed as f32 * dt_seconds
         } else {
@@ -453,6 +494,42 @@ impl NativeEpisodeTerminal {
                 human_side_eliminated: human_dead,
             };
             self.completed = Some(outcome);
+            world.frozen_after_elimination = true;
+            return Ok(Some(outcome));
+        }
+
+        if let Some(demolition) = &self.demolition {
+            let objective = demolition.objective;
+            let attacking_is_bee = objective.attacking_side == self.bee_side;
+            let (attacker_dead, defending_side) = if attacking_is_bee {
+                (bee_dead, self.human_side)
+            } else {
+                (human_dead, self.bee_side)
+            };
+            // A last-ship death cannot deny a same-tick destruction victory,
+            // and reserved reinforcement hulls still belong to the attacker.
+            let target_destroyed = world.map_object(objective.target_map_object_id).is_none();
+            let winner = if target_destroyed {
+                objective.attacking_side
+            } else if (attacker_dead &&
+                !world.has_reserved_future_ships_on_side(objective.attacking_side)) ||
+                self.measurements.ticks_observed >= demolition.deadline_tick
+            {
+                defending_side
+            } else {
+                return Ok(None);
+            };
+            let outcome = EpisodeTerminalResult {
+                winner_side: winner,
+                timed_out: false,
+                extraction_victory: false,
+                duration_seconds: self.elapsed_seconds,
+                bee_side_eliminated: bee_dead,
+                human_side_eliminated: human_dead,
+            };
+            self.completed = Some(outcome);
+            self.measurements.demolition_successes += u64::from(target_destroyed);
+            self.measurements.demolition_failures += u64::from(!target_destroyed);
             world.frozen_after_elimination = true;
             return Ok(Some(outcome));
         }

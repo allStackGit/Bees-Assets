@@ -10,6 +10,7 @@ use bees_sim::episode_terminal::{
     EpisodeDeathAttribution, EpisodeEconomicError, EpisodeEconomicRewards,
     EpisodeTerminalError, EpisodeTerminalMeasurements, EpisodeTerminalResult,
     EpisodeTerminalRewards, NativeEpisodeTerminal, SurvivalObjective, SurvivalStatus,
+    DemolitionObjective,
 };
 use bees_sim::rl_economy::{
     EconomicLedgerError, EconomicLedgerMeasurements, EpisodeEconomicLedger,
@@ -182,6 +183,13 @@ impl NativeEpisodeRewardCoordinator {
         &mut self, objective: SurvivalObjective, fixed_dt_seconds: f32,
     ) -> Result<(), NativeEpisodeRewardError> {
         self.terminal.arm_survival(objective, fixed_dt_seconds)?;
+        Ok(())
+    }
+
+    pub fn arm_demolition(
+        &mut self, objective: DemolitionObjective, fixed_dt_seconds: f32,
+    ) -> Result<(), NativeEpisodeRewardError> {
+        self.terminal.arm_demolition(objective, fixed_dt_seconds)?;
         Ok(())
     }
 
