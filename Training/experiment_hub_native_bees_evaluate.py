@@ -146,12 +146,12 @@ def source_inputs(suite_file: Path, suite: dict):
     worker = (run_file.parent / config["policy_worker"]).resolve(strict=True)
     if normalized_python_source_sha256(worker) != suite["policy_worker_sha256"]:
         raise ValueError("Native policy inference implementation changed.")
-    return run_file, reference, scene, worker
+    return run_file, reference, scene, worker, expected_metric
 
 
 def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
              suite_file: Path, suite: dict, work: Path, rollout_binary: Path) -> int:
-    run_file, reference_path, scene, worker = source_inputs(suite_file, suite)
+    run_file, reference_path, scene, worker, metric = source_inputs(suite_file, suite)
     rollout_binary = rollout_binary.resolve(strict=True)
     if file_sha256(rollout_binary) != suite["rollout_binary_sha256"]:
         raise ValueError("Native evaluation executable changed from the frozen benchmark.")
@@ -219,12 +219,11 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
     # physically deliver or destroy the authored goal. The standard native
     # holdout verifies side attribution from the durable final journals.
     # No scoring option may be altered independently of the frozen suite.
-    source_config = json.loads(read_bounded(run_file, 8 * 1024 * 1024))
-    physical_goal = all(level_has_goal(level) for level in source_config["levels"])
-    successes = (verified_mission_holdout(receipt) if physical_goal
-                 else receipt["side_victories"])
-    metric = ("physical_mission_success_or_interception" if physical_goal
-              else "learner_faction_victory")
+    successes = (
+        verified_mission_holdout(receipt)
+        if metric == "physical_mission_success_or_interception"
+        else receipt["side_victories"]
+    )
     # A running evaluator must not silently switch its scenario, reference
     # actor, or native executable partway through a held-out benchmark.
     source_inputs(suite_file, suite)
@@ -355,7 +354,8 @@ def main():
         scratch = args.scratch.resolve(strict=True)
         receipts = args.receipt_root.resolve(strict=True)
         references = source_inputs(args.suite.resolve(strict=True), suite)
-        protected = [checkpoint.parent, manifest.parent, *[p.parent for p in references]]
+        protected = [checkpoint.parent, manifest.parent,
+                     *[p.parent for p in references[:4]]]
         if (not scratch.is_dir() or not receipts.is_dir() or
                 scratch == receipts or
                 scratch.is_relative_to(receipts) or receipts.is_relative_to(scratch) or
@@ -375,15 +375,7 @@ def main():
             "dispatch_id": args.dispatch_id,
             "checkpoint_sha256": args.checkpoint_sha256,
             "trials": suite["trials"], "successes": successes,
-            "success_metric": suite.get("success_metric",
-                "physical_mission_success_or_interception"
-                if all(level_has_goal(level) for level in
-                       json.loads(read_bounded(
-                           pinned_source(args.suite, suite["run_config"],
-                                         suite["run_config_sha256"]),
-                           8 * 1024 * 1024,
-                       ))["levels"])
-                else "learner_faction_victory"),
+            "success_metric": references[4],
         }
         print(publish(receipts, result))
         print(f"Native Bees fixed-reference successes: {successes}/{suite['trials']}")
