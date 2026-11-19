@@ -18,7 +18,9 @@ from native_training_artifacts import (
     verified_source_scene_cache, combined_source_scene_cache,
 )
 from native_gpu_allocation import GPU_MASK_ENVIRONMENTS
-from native_mission_contract import level_has_goal, verified_policy_observations
+from native_mission_contract import (
+    level_has_goal, verified_policy_observations, reconciled_mission_contract,
+)
 
 
 COLLECTOR_ID = re.compile(r"[A-Za-z0-9_-]{1,48}\Z")
@@ -719,10 +721,14 @@ def aggregate_collection_metrics(bundles):
     if all("policy_observations" in row for row in rows):
         keys = ("rows_encoded", "native_mission_rows", "allies_encoded",
                 "enemies_encoded", "map_objects_encoded")
+        observations = [row["policy_observations"] for row in rows]
         result["policy_observations"] = {
-            key: sum(row["policy_observations"][key] for row in rows)
+            key: sum(row[key] for row in observations)
             for key in keys
         }
+        result["policy_observations"].update(
+            reconciled_mission_contract(observations)
+        )
     scene_cache = combined_source_scene_cache(rows)
     if scene_cache is not None:
         result["source_scene_template_cache"] = scene_cache

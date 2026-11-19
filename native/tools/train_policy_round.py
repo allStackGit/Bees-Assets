@@ -22,7 +22,9 @@ import time
 import traceback
 import uuid
 
-from native_mission_contract import level_has_goal, verified_policy_observations
+from native_mission_contract import (
+    level_has_goal, verified_policy_observations, reconciled_mission_contract,
+)
 from native_training_artifacts import (
     file_sha256, check_learner, sync_directory, normalized_python_source_sha256,
     native_source_contract_sha256,
@@ -434,11 +436,15 @@ def combined_rollout_metrics(shards, wall_seconds):
     if all("policy_observations" in shard for shard in shards):
         keys = ("rows_encoded", "native_mission_rows", "allies_encoded",
                 "enemies_encoded", "map_objects_encoded")
+        observations = [shard["policy_observations"] for shard in shards]
         metrics["policy_observations"] = {
-            key: sum(shard["policy_observations"].get(key, 0) for shard in shards)
+            key: sum(row[key] for row in observations)
             for key in keys
-            if all(key in shard["policy_observations"] for shard in shards)
+            if all(key in row for row in observations)
         }
+        metrics["policy_observations"].update(
+            reconciled_mission_contract(observations)
+        )
     if all("parallel_physics_rounds" in shard for shard in shards):
         metrics.update({
             "parallel_physics_rounds":

@@ -55,3 +55,28 @@ def verified_policy_observations(work, *, require_goal=False):
     if require_goal and work["native_mission_rows"] == 0:
         raise ValueError("native mission collector emitted no goal-bearing observations")
     return work
+
+def reconciled_mission_contract(work_samples):
+    """Keep one verified objective encoding identity across process/machine sums.
+
+    The observations represent overlapping independent collectors, but
+    their reserved tensor channels cannot represent different contracts
+    within one optimizer update. Older non-mission workers may lack the
+    feature signature; they are admissible only when they emitted zero
+    native mission rows and the signed source permits that.
+    """
+    attested = [sample for sample in work_samples
+                if all(field in sample for field in CONTRACT_KEYS)]
+    if not attested:
+        return {}
+    reference = {field: attested[0][field] for field in CONTRACT_KEYS}
+    if any(any(sample[field] != reference[field] for field in CONTRACT_KEYS)
+           for sample in attested):
+        raise ValueError("native rollout workers disagree on mission feature semantics")
+    if any(sample["native_mission_rows"] > 0 and
+           not all(field in sample for field in CONTRACT_KEYS)
+           for sample in work_samples):
+        raise ValueError("unattested mission observations cannot enter a shared rollout")
+    return reference
+
+
