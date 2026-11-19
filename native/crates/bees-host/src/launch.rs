@@ -1124,6 +1124,7 @@ struct CampaignMission<'a> {
     /// Exactly the unclaimed, source-priced hulls to award on the
     /// first winning completed battle, never on recorded playback.
     victory_grants: &'a [NativePurchasedShip],
+    victory_squads: &'a [NativeCreatedSquad],
 }
 
 /// The immutable battle-start career projection required to reproduce a
@@ -1202,6 +1203,7 @@ impl CampaignReplaySetup {
             tactics: self.tactics.as_deref(),
             authored_roster: self.authored_roster.as_deref(),
             victory_grants: &[],
+            victory_squads: &[],
         }
     }
 }
@@ -1216,6 +1218,8 @@ struct CampaignOutcome {
     /// incomplete/defeated mission never mints a FleetShip.
     #[serde(default)]
     awarded_ships: Vec<NativePurchasedShip>,
+    #[serde(default)]
+    awarded_squads: Vec<NativeCreatedSquad>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1600,19 +1604,25 @@ fn run_session(
     let mut grants_awarded = false;
     while let Some(restart) = run_battle(&config_path, play, view, battle_output.as_deref(), battle_capture.as_deref(),
         replay_number, replay_inputs.as_deref(), mission.map(|mut active| {
-            if grants_awarded { active.victory_grants = &[]; }
+            if grants_awarded {
+                active.victory_grants = &[];
+                active.victory_squads = &[];
+            }
             active
         }))? {
         // The result screen may launch a rematch without returning to the
         // campaign menu. The initial career projection is still pinned in
         // this session, so do not issue an already-committed reward twice.
-        if !grants_awarded && mission.is_some_and(|active| !active.victory_grants.is_empty()) {
+        if !grants_awarded && mission.is_some_and(|active|
+            !active.victory_grants.is_empty() || !active.victory_squads.is_empty()
+        ) {
             if let Some(directory) = &battle_output {
                 let receipt: Value = serde_json::from_slice(
                     &fs::read(directory.join("rollout-summary.json"))?,
                 )?;
-                grants_awarded = receipt["campaign_outcome"]["awarded_ships"]
-                    .as_array().is_some_and(|rows| !rows.is_empty());
+                grants_awarded = ["awarded_ships", "awarded_squads"]
+                    .iter().any(|field| receipt["campaign_outcome"][field]
+                        .as_array().is_some_and(|rows| !rows.is_empty()));
             }
         }
         replay_number = replay_number.checked_add(1).ok_or_else(|| invalid("replay count exhausted"))?;
@@ -1667,6 +1677,18 @@ fn launch_catalog_battle(
         // original hull before applying the canonical casualty filter.
         authored.retain(|(fleet_id, _, _)| !lost.contains(fleet_id));
     }
+    // One winning mission can create new persistent player squads and
+    // award hulls directly into those squads. Both use the existing
+    // scene editor at the next Level, not a parallel gameplay roster.
+    let grant_squads = entry.mission.as_ref()
+        .filter(|mission| !progress.grants_claimed(&mission.id))
+        .map(|mission| mission.victory_squads.iter().map(|award|
+            NativeCreatedSquad {
+                saved_squad_id: award.saved_squad_id,
+                template_saved_squad_id: award.template_saved_squad_id,
+                side: mission.player_side,
+            }).collect::<Vec<_>>()
+        ).unwrap_or_default();
     // Check one complete reward batch against every eligible native
     // mission before mutating progress or opening the physical battle.
     let grants = entry.mission.as_ref()
@@ -1675,8 +1697,16 @@ fn launch_catalog_battle(
         .map(|mission| plan_native_victory_grants(
             catalog, catalog_root, &progress, mission,
             purchased.as_deref().unwrap_or(&[]),
-            authored.as_deref().unwrap_or(&[]),
+            authored.as_deref().unwrap_or(&[]), &grant_squads,
         )).transpose()?.unwrap_or_default();
+    if !grant_squads.is_empty() && grants.is_empty() {
+        preflight_native_fleet_edit_with_squads(
+            catalog, catalog_root, &progress, entry.mission.as_ref()
+                .expect("awarded squads require a campaign").player_side,
+            purchased.as_deref().unwrap_or(&[]),
+            authored.as_deref().unwrap_or(&[]), 0, &grant_squads,
+        )?;
+    }
     let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
         .map(|(campaign_id, mission)| CampaignMission {
             campaign_id, mission_id: &mission.id, player_side: mission.player_side,
@@ -1688,6 +1718,7 @@ fn launch_catalog_battle(
             tactics: tactics.as_deref(),
             authored_roster: authored.as_deref(),
             victory_grants: &grants,
+            victory_squads: &grant_squads,
         });
     // Reserve a unique parent before invoking the shared gameplay runtime.
     // Failed/interrupted launches never overwrite an earlier career receipt.
@@ -1728,6 +1759,7 @@ fn plan_native_victory_grants(
     progress: &battle_catalog::CampaignProgress<'_>,
     mission: &battle_catalog::Mission, purchases: &[NativePurchasedShip],
     authored: &[(i64, i64, i64)],
+    earned_squads: &[NativeCreatedSquad],
 ) -> Result<Vec<NativePurchasedShip>, Box<dyn Error>> {
     let mut projected = purchases.to_vec();
     let mut grants = Vec::new();
@@ -1754,9 +1786,9 @@ fn plan_native_victory_grants(
     if grants.len() != reward_count {
         return Err(invalid("incomplete campaign victory ship allocation").into());
     }
-    let highest_authored = preflight_native_fleet_edit(
+    let highest_authored = preflight_native_fleet_edit_with_squads(
         catalog, root, progress, mission.player_side,
-        &projected, authored, 0,
+        &projected, authored, 0, earned_squads,
     )?;
     let first_id = highest_authored.max(progress.highest_fleet_id())
         .checked_add(1).ok_or_else(|| invalid("victory FleetShip identities exhausted"))?;
@@ -1853,6 +1885,19 @@ fn preflight_native_fleet_edit(
     projected: &[NativePurchasedShip],
     authored_roster: &[(i64, i64, i64)], target_saved_squad_id: i64,
 ) -> Result<i64, Box<dyn Error>> {
+    preflight_native_fleet_edit_with_squads(
+        catalog, root, progress, side, projected, authored_roster,
+        target_saved_squad_id, &[],
+    )
+}
+
+fn preflight_native_fleet_edit_with_squads(
+    catalog: &battle_catalog::BattleCatalog, root: &Path,
+    progress: &battle_catalog::CampaignProgress<'_>, side: i32,
+    projected: &[NativePurchasedShip],
+    authored_roster: &[(i64, i64, i64)], target_saved_squad_id: i64,
+    new_squads: &[NativeCreatedSquad],
+) -> Result<i64, Box<dyn Error>> {
     let max_size = catalog.max_squad_ships.ok_or_else(||
         invalid("native shop needs the source's maximum squad size"))? as usize;
     let dead = progress.lost_player_fleet_ids(side)?;
@@ -1886,8 +1931,10 @@ fn preflight_native_fleet_edit(
                     }
                 }
             }
+            let mut projected_squads = progress.created_squads_for_side(side);
+            projected_squads.extend_from_slice(new_squads);
             source.install_created_squads(
-                side, &progress.created_squads_for_side(side),
+                side, &projected_squads,
             ).map_err(|error| contextual("shop created SavedSquads", error))?;
             source.apply_saved_squad_tactics(side, &progress.tactics_for_side(side))
                 .map_err(|error| contextual("shop saved squad tactics", error))?;
@@ -2097,7 +2144,8 @@ fn run_create_saved_squad(
     }
     let root = catalog_path.parent()
         .ok_or_else(|| invalid("missing native campaign root"))?;
-    let mut highest_saved_id = progress.highest_saved_squad_id();
+    let mut highest_saved_id = progress.highest_saved_squad_id()
+        .max(catalog.reserved_saved_squad_id_ceiling());
     let mut sources = Vec::new();
     // A new squad must be usable with the same authenticated player
     // settings on every authored mission variant, not just the first
@@ -4844,6 +4892,9 @@ fn run_battle(
                 player_side: mission.player_side, winner_side: result.winner_side,
                 awarded_ships: if result.winner_side == mission.player_side {
                     mission.victory_grants.to_vec()
+                } else { Vec::new() },
+                awarded_squads: if result.winner_side == mission.player_side {
+                    mission.victory_squads.to_vec()
                 } else { Vec::new() },
             })
         });
