@@ -403,6 +403,10 @@ internal sealed class OwnedJob : IDisposable
 internal static class Program
 {
     private const string ProbeGpuUuid="GPU-00000000-0000-0000-0000-000000000000";
+    private const string ProbeOtherGpuUuid="GPU-11111111-1111-1111-1111-111111111111";
+    private static readonly Regex GpuSelector=new(
+        @"^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
+        RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);
     private static readonly JsonSerializerOptions JsonOptions=
         new(){PropertyNameCaseInsensitive=true};
     private static JobSpec Load(string file)
@@ -425,9 +429,11 @@ internal static class Program
             spec.HostCpus!=Native.SystemLogicalProcessors()||
             spec.RamMb<128||spec.RamMb>100000000||
             spec.GpuUuid is null||
-            (!string.IsNullOrEmpty(spec.GpuUuid)&&!Regex.IsMatch(spec.GpuUuid,
-                @"^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-                RegexOptions.IgnoreCase))||
+            (spec.GpuUuid.Length>0&&
+                (spec.GpuUuid.Split(',').Length>8||
+                 spec.GpuUuid.Split(',').Any(id=>!GpuSelector.IsMatch(id))||
+                 spec.GpuUuid.Split(',').Distinct(StringComparer.OrdinalIgnoreCase).Count()
+                    !=spec.GpuUuid.Split(',').Length))||
             !Path.IsPathFullyQualified(spec.ReceiptPath)||
             !string.Equals(
                 Path.GetDirectoryName(Path.GetFullPath(spec.ReceiptPath)),
@@ -512,10 +518,24 @@ internal static class Program
             Thread.Sleep(100);
         if(owned.IsActive()||!owned.SuccessfulExit())
             throw new InvalidOperationException("Native preflight child did not exit successfully");
+        // A second inert child proves that the native Job Object owner
+        // preserves the exact ordered multi-device CUDA selector, rather
+        // than exposing an unleased device or inheriting host visibility.
+        spec.GpuUuid=ProbeGpuUuid+","+ProbeOtherGpuUuid;
+        spec.Args=new[]{"--probe-multi-child"};
+        using(var multi=new OwnedJob(spec))
+        {
+            deadline=DateTime.UtcNow.AddSeconds(10);
+            while(multi.IsActive()&&DateTime.UtcNow<deadline)
+                Thread.Sleep(100);
+            if(multi.IsActive()||!multi.SuccessfulExit())
+                throw new InvalidOperationException("Multi-GPU selector preflight failed");
+        }
         Console.WriteLine(JsonSerializer.Serialize(new {
             passed=true,cpu_hard_cap_verified=true,memory_limit_verified=true,
             job_process_assignment_verified=true,
             cuda_uuid_selection_supported=true,
+            cuda_multi_uuid_selection_supported=true,
             system_logical_processors=spec.HostCpus
         }));
         return 0;
@@ -529,12 +549,17 @@ internal static class Program
         }
         try
         {
-            if(args.Length==1&&args[0]=="--probe-child")
-                return Environment.GetEnvironmentVariable("CUDA_VISIBLE_DEVICES")==ProbeGpuUuid &&
+            if(args.Length==1&&(args[0]=="--probe-child"||
+                args[0]=="--probe-multi-child"))
+            {
+                var expected=args[0]=="--probe-multi-child"
+                    ?ProbeGpuUuid+","+ProbeOtherGpuUuid:ProbeGpuUuid;
+                return Environment.GetEnvironmentVariable("CUDA_VISIBLE_DEVICES")==expected &&
                     new[]{"HIP_VISIBLE_DEVICES","ROCR_VISIBLE_DEVICES",
                         "GPU_DEVICE_ORDINAL"}.All(key=>
                             string.IsNullOrEmpty(Environment.GetEnvironmentVariable(key)))
                     ?0:3;
+            }
             // Fixed inert workload for an explicitly invoked, isolated
             // Windows native Start/Stop smoke. No arguments, file I/O,
             // network work or project runner are permitted in this mode.

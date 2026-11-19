@@ -403,7 +403,7 @@ function gpuStartBlock(job,lease,machine) {
         machine.tinybrains_multi_gpu_profiles?.includes(job.frozen_parameters.profile)&&
         r.gpu_count>=3&&r.gpu_count<=8&&allocated.gpu_count===r.gpu_count&&
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
-    const multi=machine.agent_platform==='linux'&&
+    const multi=['linux','win32'].includes(machine.agent_platform)&&
         job.project_id==='courier'&&r.gpu_count>=2&&r.gpu_count<=8&&
         allocated.gpu_count===r.gpu_count&&
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
@@ -417,7 +417,7 @@ function gpuStartBlock(job,lease,machine) {
             physicalGpuBindings(machine,{
                 gpu_inventory_source:machine.gpu_inventory_source,
                 gpu_devices:machine.observed_gpus||[],
-            },allocated,lease.gpu_bindings)?.length!==1)
+            },allocated,lease.gpu_bindings)?.length!==r.gpu_count)
             return 'Windows CUDA Start requires a fresh PCI/UUID-pinned NVIDIA lease.';
         return null; // Cooperative CUDA visibility, not kernel GPU isolation.
     }
@@ -1211,7 +1211,10 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                     machine.execution_capabilities.cgroup_controllers.includes(controller)))&&
             (cpuOnly||machine.gpu_projects?.includes(selected.project_id)&&
                 (machine.agent_platform==='win32'
-                    ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1&&
+                    ?machine.gpu_inventory_source==='nvidia-smi-v1'&&
+                        machine.observed_gpus?.length>=r.gpu_count&&
+                        (r.gpu_count===1||
+                            courierMulti)&&
                         (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
                     :(courierMulti||
                         tinyMulti&&machine.tinybrains_multi_gpu_profiles
@@ -2089,7 +2092,11 @@ class ExperimentHub {
                             linuxGpuQualificationSupported(machine,job.resources.gpu_count)
                         :machine.agent_platform==='win32'&&
                             machine.gpu_inventory_source==='nvidia-smi-v1'&&
-                            machine.observed_gpus?.length>=1&&
+                            machine.observed_gpus?.length>=job.resources.gpu_count&&
+                            (job.resources.gpu_count===1||
+                                job.project_id==='courier'&&
+                                job.resources.gpu_count<=8&&
+                                job.resources.gpu_mode==='exclusive')&&
                             (job.resources.gpu_mode!=='shared'||
                                 machine.gpu_shared_projects?.includes(job.project_id))));
             const eligibleHosts=job=>capable.filter(machine=>
@@ -4893,7 +4900,7 @@ class ExperimentHub {
                 !supportsTinyBrainsProfile(machine,job))
                 throw Error('Bundle member '+(index+1)+' requires an approved independent project adapter and configuration.');
             const courierMulti=job.project_id==='courier'&&
-                machine.agent_platform==='linux'&&
+                ['linux','win32'].includes(machine.agent_platform)&&
                 job.resources.gpu_count>=2&&job.resources.gpu_count<=8&&
                 job.resources.gpu_mode==='exclusive';
             const tinyMulti=job.project_id==='tinybrains'&&
