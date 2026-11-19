@@ -154,6 +154,7 @@ function learnerMeasurements(metrics) {
         add('optimizer_gpu_workers', 'count');
         if (count === 2) {
             add('optimizer_synchronized_minibatches', 'count');
+            add('optimizer_gradient_submission_wall_seconds_sum', 'seconds');
             add('optimizer_gpu_update_wall_seconds_max', 'seconds');
             metrics.optimizer_gpu_per_device.forEach((worker,index) => {
                 if (worker.rank !== index ||
@@ -163,6 +164,12 @@ function learnerMeasurements(metrics) {
                     throw Error('Invalid native synchronized optimizer worker evidence.');
                 report['optimizer_gpu_'+index+'_update_wall_seconds'] = {
                     value:worker.update_wall_seconds,unit:'seconds',
+                };
+                if (!Number.isFinite(worker.gradient_submission_wall_seconds) ||
+                    worker.gradient_submission_wall_seconds < 0)
+                    throw Error('Invalid native GPU gradient synchronization time.');
+                report['optimizer_gpu_'+index+'_gradient_submission_seconds'] = {
+                    value:worker.gradient_submission_wall_seconds,unit:'seconds',
                 };
                 for (const [source,target] of [
                     ['torch_cuda_process_peak_allocated_bytes','peak_allocated_bytes'],

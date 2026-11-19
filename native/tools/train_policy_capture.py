@@ -1383,6 +1383,9 @@ def main():
             "device_name": torch.cuda.get_device_name(device),
             "gradient_syncs": getattr(trainer.optimizer, "_bees_distributed_grad_syncs", 0),
             "gradient_backend": torch.distributed.get_backend(),
+            "gradient_submission_wall_seconds": getattr(
+                trainer.optimizer, "_bees_distributed_sync_submission_seconds", 0.0,
+            ),
             "update_wall_seconds": update_wall_seconds,
             **cuda_metrics,
         }
@@ -1499,6 +1502,10 @@ def main():
         **({"optimizer_synchronized_minibatches": gpu_worker_metrics[0]["gradient_syncs"],
             "optimizer_gpu_per_device": gpu_worker_metrics,
             "optimizer_gradient_backend": gpu_worker_metrics[0]["gradient_backend"],
+            "optimizer_gradient_submission_wall_seconds_sum": sum(
+                worker["gradient_submission_wall_seconds"]
+                for worker in gpu_worker_metrics
+            ),
             "optimizer_gpu_update_wall_seconds_max": max(
                 worker["update_wall_seconds"] for worker in gpu_worker_metrics
             )}

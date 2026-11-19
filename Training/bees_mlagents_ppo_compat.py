@@ -5600,6 +5600,7 @@ def _native_poca_average_gradients(poca_optimizer):
     world_size = distributed.get_world_size()
     if world_size <= 1:
         return
+    sync_started = time.perf_counter()
     optimizer = poca_optimizer.optimizer
     parameters = [
         parameter for group in optimizer.param_groups
@@ -5652,6 +5653,12 @@ def _native_poca_average_gradients(poca_optimizer):
             offset += count
     poca_optimizer._bees_distributed_grad_syncs = (
         getattr(poca_optimizer, "_bees_distributed_grad_syncs", 0) + 1
+    )
+    # NCCL/RCCL operations are GPU-asynchronous. This is the host-side
+    # submission/copy time; do not mislabel it as synchronized GPU wall time.
+    poca_optimizer._bees_distributed_sync_submission_seconds = (
+        getattr(poca_optimizer, "_bees_distributed_sync_submission_seconds", 0.0)
+        + time.perf_counter() - sync_started
     )
 
 
