@@ -257,6 +257,7 @@ function boundedReport(value) {
     const courierWorkerEndpoint=value.courier_lineage_endpoint??null;
     const courierWorkerKey=value.courier_lineage_key_fingerprint??null;
     const courierWorkerShards=value.courier_lineage_max_shards??0;
+    const courierWorkerSlots=value.courier_lineage_slots??[];
     if(!Array.isArray(courierEndpoints)||courierEndpoints.length>16||
         typeof courierSubset!=='boolean'||(courierSubset&&!courierEndpoints.length)||
         ![0,4,32,64].includes(courierSharedMaps)||(courierSharedMaps>0&&!courierSubset)||
@@ -277,6 +278,18 @@ function boundedReport(value) {
             !Number.isSafeInteger(courierWorkerShards)||
             courierWorkerShards<1||courierWorkerShards>64)))
         throw Error('Courier remote lineages require approved native adapters and private pinned endpoints.');
+    if(!Array.isArray(courierWorkerSlots)||courierWorkerSlots.length>16||
+        (courierWorkerSlots.length>0&&
+            (!courierSharedCollector||courierWorkerEndpoint===null||
+                !courierWorkerSlots.some(item=>item?.endpoint===courierWorkerEndpoint)))||
+        courierWorkerSlots.some(item=>!object(item)||
+            Object.keys(item).sort().join(',')!=='endpoint,max_shards,slot'||
+            !Number.isSafeInteger(item.slot)||item.slot<0||item.slot>63||
+            !rolloutEndpoint(item.endpoint)||
+            item.max_shards!==courierWorkerShards)||
+        new Set(courierWorkerSlots.map(item=>item.slot)).size!==courierWorkerSlots.length||
+        new Set(courierWorkerSlots.map(item=>item.endpoint)).size!==courierWorkerSlots.length)
+        throw Error('Courier shared-policy multi-GPU collectors require unique, approved slot listener endpoints.');
     if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(remoteRollouts).size!==remoteRollouts.length||
@@ -359,6 +372,7 @@ function boundedReport(value) {
         courier_remote_key_fingerprint:courierKey,
         courier_remote_max_shards:courierShards.slice(),
         courier_lineage_endpoint:courierWorkerEndpoint,
+        courier_lineage_slots:courierWorkerSlots.map(item=>({...item})),
         courier_lineage_key_fingerprint:courierWorkerKey,
         courier_lineage_max_shards:courierWorkerShards,
         tinybrains_imports:imports,
@@ -1002,6 +1016,16 @@ function courierPlanFor(job,machine) {
         shards:plan.map(item=>item.maxShards),plan}:{};
 }
 
+// Preserve each native service's frozen PPO slot-to-listener mapping.
+function courierWorkerSlot(machine,slot) {
+    if(!machine||!Number.isSafeInteger(slot)||slot<0||slot>63)return null;
+    const slots=machine.courier_lineage_slots;
+    if(Array.isArray(slots)&&slots.length)
+        return slots.find(item=>item.slot===slot)||null;
+    return machine.courier_lineage_endpoint
+        ?{slot,endpoint:machine.courier_lineage_endpoint,
+            max_shards:machine.courier_lineage_max_shards}:null;
+}
 function selectDistributedMachines(machines,learner,selections,approved,capability,endpointField,
     allowLearnerMachine=false) {
     const byMachine=selections.some(worker=>object(worker)&&Object.hasOwn(worker,'machine_id'));
@@ -1178,21 +1202,42 @@ function colocatedCourierCollector(snapshot,learner,worker) {
         Array.isArray(b.resources.gpus)&&b.resources.gpus.length===1&&
         a.resources.gpus[0]!==b.resources.gpus[0]);
 }
-// One co-located collector may use a spare exclusive GPU. Every other
-// collector remains on a distinct machine with its original endpoint.
+// A learner may share its host with multiple independent native collectors,
+// provided each owns a distinct approved listener and a distinct exclusive
+// physical GPU. Remote hosts remain unique. The ordinary lease ledger still
+// accounts for all CPU, RAM and GPU reservations on the shared machine.
 function courierGroupMachinesValid(snapshot,learner,workers) {
-    const seen=new Set([learner.assigned_machine_id]);
-    let localUsed=false;
+    const seenRemote=new Set([learner.assigned_machine_id]);
+    const localEndpoints=new Set(),localGpus=new Set();
+    const parent=snapshot.machines.find(host=>host.id===learner.assigned_machine_id);
+    const {endpoints,shards}=courierPlanFor(learner,parent);
+    const first=courierFirstSlot(learner,workers.length);
+    if(!Array.isArray(endpoints)||endpoints.length!==workers.length||
+        first===null)return false;
     for(const worker of workers) {
         const id=worker.assigned_machine_id;
-        if(!id)return false;
-        if(seen.has(id)) {
-            if(localUsed||id!==learner.assigned_machine_id||
-                !colocatedCourierCollector(snapshot,learner,worker))
-                return false;
-            localUsed=true;
+        const machine=snapshot.machines.find(host=>host.id===id);
+        const index=worker.frozen_parameters?.slot-first;
+        const slot=courierWorkerSlot(machine,worker.frozen_parameters?.slot);
+        if(!id||!slot||!Number.isSafeInteger(index)||index<0||
+            index>=endpoints.length||slot.endpoint!==endpoints[index]||
+            slot.max_shards!==shards[index])return false;
+        if(id===learner.assigned_machine_id) {
+            if(!colocatedCourierCollector(snapshot,learner,worker)||
+                localEndpoints.has(slot.endpoint))return false;
+            const lease=(snapshot.reservations||[]).find(item=>
+                item.id===worker.lease_id&&item.job_id===worker.id&&
+                item.machine_id===id&&item.project_id==='courier_lineage'&&
+                item.issued_by==='experiment-hub'&&
+                ['offered','acknowledged'].includes(item.status));
+            const gpu=lease?.resources?.gpus?.[0];
+            if(!gpu||localGpus.has(gpu))return false;
+            localGpus.add(gpu);
+            localEndpoints.add(slot.endpoint);
+        }else {
+            if(seenRemote.has(id))return false;
+            seenRemote.add(id);
         }
-        seen.add(id);
     }
     return true;
 }
@@ -1217,19 +1262,21 @@ function courierLineageHost(snapshot,job,machine) {
         !SHA256.test(String(parent.courier_remote_key_fingerprint||''))||
         machine.courier_lineage_key_fingerprint!==parent.courier_remote_key_fingerprint)
         return false;
-    const index=endpoints.indexOf(machine.courier_lineage_endpoint);
+    const slot=courierWorkerSlot(machine,job.frozen_parameters?.slot);
+    const index=endpoints.indexOf(slot?.endpoint);
     const first=courierFirstSlot(learner,endpoints.length);
     const shared=learner.frozen_parameters.shared_policy===true;
     if(index<0||first===null||job.frozen_parameters?.slot!==first+index||
         (job.frozen_parameters?.shared_policy===true)!==shared||
         (shared&&(machine.courier_shared_policy_collector!==true||
             job.resources?.cpus!==learner.frozen_parameters.shared_policy_cpus[index]))||
-        shards[index]!==machine.courier_lineage_max_shards)
+        shards[index]!==slot?.max_shards)
         return false;
     return !snapshot.jobs.some(other=>other.id!==job.id&&
         other.project_id==='courier_lineage'&&
         !['cancelled','finished','stopped'].includes(other.status)&&
-        (other.assigned_machine_id===machine.id||
+        (other.assigned_machine_id===machine.id&&
+            courierWorkerSlot(machine,other.frozen_parameters?.slot)?.endpoint===slot.endpoint||
             other.frozen_parameters?.learner_job_id===learner.id&&
             other.frozen_parameters?.slot===job.frozen_parameters.slot));
 }
@@ -1636,6 +1683,7 @@ class ExperimentHub {
                 machine.courier_remote_key_fingerprint=report.courier_remote_key_fingerprint;
                 machine.courier_remote_max_shards=report.courier_remote_max_shards.slice();
                 machine.courier_lineage_endpoint=report.courier_lineage_endpoint;
+                machine.courier_lineage_slots=report.courier_lineage_slots.map(item=>({...item}));
                 machine.courier_lineage_key_fingerprint=report.courier_lineage_key_fingerprint;
                 machine.courier_lineage_max_shards=report.courier_lineage_max_shards;
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
