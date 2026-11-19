@@ -86,6 +86,8 @@ def source_inputs(suite_file: Path, suite: dict):
             type(config.get("episodes_per_world", 1)) is not int or
             len(config["levels"]) * config.get("episodes_per_world", 1) != suite["trials"]):
         raise ValueError("Evaluation suite must use a native-authored fixed trial count.")
+    if any(not isinstance(level, dict) for level in config["levels"]):
+        raise ValueError("Native evaluation Level must be a physical authored object")
     # The Hub's generic successes/trials contract has one meaning for a
     # pinned suite. Mixed elimination and physical-goal Levels cannot be
     # represented by a single objective rate without silently changing

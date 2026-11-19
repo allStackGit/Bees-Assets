@@ -197,12 +197,28 @@ function learnerMeasurements(metrics) {
                 value:successful / total,unit:'ratio',
             };
         }
-        for (const name of ['learner_objective_attempts',
-            'learner_objective_completions', 'learner_interceptions']) outcome(name, 'count');
+        for (const [attemptsKey,successKey] of [
+            ['learner_objective_attempts','learner_objective_completions'],
+            ['learner_interception_attempts','learner_interceptions'],
+        ]) {
+            const attempts = outcomes[attemptsKey];
+            const successes = outcomes[successKey];
+            if (!Number.isSafeInteger(attempts) || attempts < 0 ||
+                !Number.isSafeInteger(successes) ||
+                successes < 0 || successes > attempts)
+                throw Error('Invalid native Bees physical mission learner result.');
+            outcome(attemptsKey, 'count');
+            outcome(successKey, 'count');
+        }
         if (outcomes.learner_objective_attempts > 0)
             report.training_learner_objective_completion_rate = {
                 value:outcomes.learner_objective_completions /
                     outcomes.learner_objective_attempts,unit:'ratio',
+            };
+        if (outcomes.learner_interception_attempts > 0)
+            report.training_learner_interception_success_rate = {
+                value:outcomes.learner_interceptions /
+                    outcomes.learner_interception_attempts,unit:'ratio',
             };
     }
     const owners = ['bee', 'human'];

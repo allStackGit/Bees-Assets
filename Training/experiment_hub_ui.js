@@ -1817,8 +1817,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderComparisonEvaluations(runs) {
         const table=$('hub-compare-evaluation-rows');
         table.replaceChildren();
-        const suites=new Set(),digestBySuite=new Map(),trialsBySuite=new Map();
-        let missingDigest=false,differentDigests=false,differentTrialCounts=false;
+        const suites=new Set(),digestBySuite=new Map(),trialsBySuite=new Map(),
+            metricBySuite=new Map();
+        let missingDigest=false,differentDigests=false,differentTrialCounts=false,
+            differentScoring=false;
         for(const {job,slot} of runs) {
             const rules=job.evaluation_stop?.all_of||[job.evaluation_stop].filter(Boolean);
             const passed=job.evaluation_stop_evidence?.all_of||null;
@@ -1864,6 +1866,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         trialsBySuite.get(evidence.suite_id)!==evidence.trials)
                         differentTrialCounts=true;
                     trialsBySuite.set(evidence.suite_id,evidence.trials);
+                    if(evidence.success_metric) {
+                        if(metricBySuite.has(evidence.suite_id)&&
+                            metricBySuite.get(evidence.suite_id)!==evidence.success_metric)
+                            differentScoring=true;
+                        metricBySuite.set(evidence.suite_id,evidence.success_metric);
+                    }
                     if(evidence.suite_sha256) {
                         if(digestBySuite.has(evidence.suite_id)&&
                             digestBySuite.get(evidence.suite_id)!==evidence.suite_sha256)
@@ -1882,6 +1890,7 @@ document.addEventListener('DOMContentLoaded', () => {
             suites.size>1?'Selected receipts use different suites. Compare rates within the same suite.':'',
             differentDigests?'Selected receipts for the same suite use different definitions.':'',
             differentTrialCounts?'Selected receipts for the same suite have different trial counts.':'',
+            differentScoring?'Selected receipts for the same suite use different measures of success.':'',
             missingDigest?'Some receipts lack a suite fingerprint. A shared suite ID cannot verify matching scenarios.':'',
         ].filter(Boolean).join(' '));
     }
