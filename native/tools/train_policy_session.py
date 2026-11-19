@@ -29,7 +29,9 @@ from native_distributed_collection import (
     read_plan, make_orders, wait_for_collections, balanced_round_plan,
     derive_hub_resource_plan,
 )
-from native_session_selection import publish_best_evaluated, publish_latest_playable
+from native_session_selection import (
+    publish_best_evaluated, publish_latest_playable, verified_mission_holdout,
+)
 from native_game_registration import register_playable
 from native_curriculum import (load_curriculum, selected_curriculum_run,
                                curriculum_stage_metrics)
@@ -346,6 +348,16 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_
             raise ValueError(f"holdout scene outcomes differ from durable summary: {directory}")
     elif result.get("by_scene_sha256") is not None:
         raise ValueError(f"holdout scene outcomes lack source terminal evidence: {directory}")
+    if all("mission_attempts" in scene and
+           scene["mission_attempts"] == scene["episodes"]
+           for scene in result.get("by_scene_sha256", {}).values()) and (
+               result.get("by_scene_sha256")
+           ):
+        verified_mission_holdout(result)
+    elif any(key in result for key in (
+            "mission_attempts", "learner_mission_successes",
+            "learner_mission_success_rate")):
+        raise ValueError(f"partial native goal results cannot authenticate a holdout: {directory}")
     return result
 
 
@@ -564,7 +576,9 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
     if baseline_holdout is None:
         raise ValueError("early stopping requires a verified baseline holdout")
     episodes = baseline_holdout["episodes"]
-    anchor_wins = baseline_holdout["side_victories"]
+    mission_based = recipe.get("checkpoint_selection", "").startswith("mission")
+    anchor_wins = (verified_mission_holdout(baseline_holdout) if mission_based
+                   else baseline_holdout["side_victories"])
     best_wins = anchor_wins
     last_meaningful_round = 0
     last_meaningful_evaluation = 0
@@ -589,7 +603,8 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
                 result["learner_side"] != baseline_holdout["learner_side"]):
             raise ValueError("early stopping cannot compare different holdout conditions")
         evaluated += 1
-        wins = result["side_victories"]
+        wins = (verified_mission_holdout(result) if mission_based
+                else result["side_victories"])
         best_wins = max(best_wins, wins)
         if wins >= anchor_wins + policy["minimum_extra_victories"]:
             anchor_wins = wins
@@ -610,8 +625,14 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
         **({"curriculum_final_stage_start_round": final_stage_start}
            if curriculum is not None else {}),
         "patience_rounds": policy["patience_rounds"],
-        "minimum_extra_victories": policy["minimum_extra_victories"],
-        "best_holdout_victories": best_wins,
+        "metric": ("role_adjusted_physical_mission_successes" if mission_based
+                   else "fixed_reference_side_victories"),
+        "minimum_extra_victories": (policy["minimum_extra_victories"]
+                                    if not mission_based else None),
+        "minimum_extra_goal_successes": (policy["minimum_extra_victories"]
+                                         if mission_based else None),
+        "best_holdout_victories": best_wins if not mission_based else None,
+        "best_holdout_goal_successes": best_wins if mission_based else None,
         "holdout_episodes": episodes,
         "last_meaningful_gain_round": last_meaningful_round,
         "evaluations_without_meaningful_gain": no_gain,
@@ -750,6 +771,14 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         if latest_holdout is not None and baseline_holdout is not None
         else None
     )
+    holdout_mission_success_gain = (
+        latest_holdout["learner_mission_success_rate"] -
+        baseline_holdout["learner_mission_success_rate"]
+        if latest_holdout is not None and baseline_holdout is not None and
+           "learner_mission_success_rate" in latest_holdout and
+           "learner_mission_success_rate" in baseline_holdout
+        else None
+    )
     return {
         "schema_version": 1, "kind": "native_training_session_progress",
         "evaluated_rounds": len(evaluations),
@@ -768,11 +797,15 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
                 holdout_steps / holdout_wall if holdout_wall > 0 else None,
         }} if all_holdouts else {}),
         "latest_holdout_win_rate_gain": holdout_win_rate_gain,
+        **({"latest_holdout_mission_success_rate_gain": holdout_mission_success_gain}
+           if holdout_mission_success_gain is not None else {}),
         **({"monitoring_suites": monitor_report} if monitor_report else {}),
         **({"holdout_stopping": stopping} if stopping is not None else {}),
         **({"best_evaluated": {
             "round": best_evaluated["selected"]["round"],
             "side_win_rate": best_evaluated["selected"]["win_rate"],
+            **({"mission_success_rate": best_evaluated["selected"]["mission_success_rate"]}
+               if "mission_success_rate" in best_evaluated["selected"] else {}),
             **({"selection_score": best_evaluated["selected"]["selection_score"],
                 "selection": best_evaluated["selection"]}
                if "selection_score" in best_evaluated["selected"] else {}),
@@ -916,9 +949,11 @@ def main():
                         help="primary fixed-seed Levels used for checkpoint selection and stopping")
     parser.add_argument("--monitor-evaluation-run-config", type=Path, action="append", default=[],
                         help="additional fixed-seed suite monitored against every evaluated checkpoint; repeatable")
-    parser.add_argument("--checkpoint-selection", choices=("primary", "mean", "worst", "mean-scene", "worst-scene"),
-                        default="primary",
-                        help="choose the best model by primary victories, mean suite win rate, or weakest suite win rate")
+    parser.add_argument("--checkpoint-selection", choices=(
+                            "primary", "mean", "worst", "mean-scene", "worst-scene",
+                            "mission", "mission-mean-scene", "mission-worst-scene",
+                        ), default="primary",
+                        help="rank on faction wins, or verified side-adjusted physical mission completions")
     parser.add_argument("--evaluation-side", type=int,
                         help="source side 1 or 2 whose victories are measured")
     parser.add_argument("--evaluation-policy-seed", type=int, default=0,
@@ -930,11 +965,11 @@ def main():
     parser.add_argument("--evaluation-inference-device", choices=("cpu", "cuda:0"),
                         help="fixed PyTorch inference placement for identical evaluation suites")
     parser.add_argument("--early-stop-patience", type=int,
-                        help="stop after this many evaluated rounds without meaningful fixed-reference victories")
+                        help="stop after this many evaluated rounds without significant wins or goal successes")
     parser.add_argument("--early-stop-minimum-rounds", type=int, default=3,
                         help="never stop before this many completed optimizer rounds (default: 3)")
     parser.add_argument("--early-stop-minimum-extra-victories", type=int, default=1,
-                        help="minimum additional holdout wins for meaningful progress (default: 1)")
+                        help="minimum extra holdout wins or physical goal successes for progress (default: 1)")
     parser.add_argument("--learner-slot", type=int)
     parser.add_argument("--self-play-opponent-slot", type=int,
                         help="existing MA-POCA slot to refresh from the completed learner checkpoint")
@@ -1019,6 +1054,8 @@ def main():
         parser.error("--evaluation-policy-seed requires a holdout and a nonnegative int63 seed")
     if args.monitor_evaluation_run_config and args.evaluation_run_config is None:
         parser.error("additional monitoring suites require a primary --evaluation-run-config")
+    if args.checkpoint_selection.startswith("mission") and args.evaluation_run_config is None:
+        parser.error("physical mission ranking requires a pinned primary evaluation suite")
     if len(args.monitor_evaluation_run_config) > 16:
         parser.error("no more than 16 independent monitoring suites per session")
     if args.checkpoint_selection in ("mean", "worst") and not args.monitor_evaluation_run_config:
