@@ -24,7 +24,12 @@ const DIRECTORY_KINDS=new Set([
 function localPath(input,kind) {
     if(typeof input!=='string'||!path.isAbsolute(input))
         throw Error(kind+' must be an absolute path.');
-    const canonical=fs.realpathSync(input);
+    // Python virtual environments commonly use bin/python symlinks.
+    // Preserve the explicitly approved invocation path so pyvenv.cfg and
+    // site-packages are used; validate the resolved file separately.
+    // Other unit-file paths retain their canonical no-redirection policy.
+    const canonical=kind==='Python executable'
+        ?path.resolve(input):fs.realpathSync(input);
     if(!UNIT_PATH.test(canonical)||canonical.split('/').includes('..'))
         throw Error(kind+' contains characters that are unsafe in systemd units.');
     const stat=fs.statSync(canonical);
