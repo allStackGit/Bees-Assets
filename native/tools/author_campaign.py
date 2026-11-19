@@ -16,7 +16,9 @@ import re
 import tempfile
 
 from native_training_artifacts import atomic_json, file_sha256, sync_directory
-from portable_policy_bundle import package_model_manifest, write_pinned_policy_assets
+from portable_policy_bundle import (
+    package_model_manifest, package_stage_assets, write_pinned_policy_assets,
+)
 from challenge_policy import existing_path, selected_run
 
 
@@ -99,10 +101,20 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
 def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     run = read(run_path)
     levels = run.get("levels")
+    inline_stage = (
+        isinstance(run.get("native_stage"), dict) and
+        run.get("collision_matrix") is None and
+        run.get("stage_palette") is None
+    )
+    legacy_stage = (
+        run.get("native_stage") is None and
+        all(isinstance(run.get(key), str) and run[key]
+            for key in ("collision_matrix", "stage_palette"))
+    )
     if (not isinstance(levels, list) or len(levels) != 1 or
             not isinstance(levels[0], dict) or
             run.get("episodes_per_world") != 1 or
-            not isinstance(run.get("native_stage"), dict) or
+            not (inline_stage or legacy_stage) or
             run.get("hivemind") is not None or
             run.get("model_updates") or
             run.get("recover_notifications") or
@@ -224,7 +236,7 @@ def native_fleet_class_sha256(ship: dict) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict]:
+def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict, dict]:
     title = args.title.strip()
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     if not 1 <= len(title) <= 80 or not slug:
@@ -236,6 +248,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     outputs = []
     model_files = {}
     runtime_files = {}
+    stage_files = {}
     sources = []
     missions = []
     mission_dependencies = dict(args.mission_requires)
@@ -295,6 +308,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         scene_file = f"{ident}.scene.json"
         run_file = f"{ident}.run.json"
         run = copy.deepcopy(run)
+        provenance["stage_assets"] = package_stage_assets(
+            source_path, run, stage_files,
+        )
         if run.get("model_manifest") is not None:
             provenance["packaged_model"] = package_model_manifest(
                 source_path, run, ident, outputs, model_files,
@@ -394,6 +410,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             variant_scene_file = f"{ident}.victory.scene.json"
             variant_run_file = f"{ident}.victory.run.json"
             variant_run = copy.deepcopy(variant_run)
+            variant_provenance["stage_assets"] = package_stage_assets(
+                variant_path.resolve(strict=True), variant_run, stage_files,
+            )
             if variant_run.get("model_manifest") is not None:
                 variant_provenance["packaged_model"] = package_model_manifest(
                     variant_path.resolve(strict=True), variant_run,
@@ -505,7 +524,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
          "normalized_source_sha256": runtime_files[name][2]}
         for name in sorted(runtime_files)
     ]
-    return catalog, library, outputs, receipt, model_files, runtime_files
+    receipt["packaged_stage_files"] = [
+        {"file": name, "sha256": stage_files[name][1]}
+        for name in sorted(stage_files)
+    ]
+    return catalog, library, outputs, receipt, model_files, runtime_files, stage_files
 
 
 def ship_types(value: str) -> list[int]:
@@ -681,7 +704,7 @@ def main() -> None:
            for prerequisite in prerequisites):
         parser.error("--shop-unlock refers to an absent mission")
     try:
-        catalog, library, outputs, receipt, model_files, runtime_files = campaign(args)
+        catalog, library, outputs, receipt, model_files, runtime_files, stage_files = campaign(args)
         output = args.output_dir.resolve()
         if output.exists():
             raise FileExistsError(f"native campaign destination already exists: {output}")
@@ -696,7 +719,9 @@ def main() -> None:
                                   ("campaign.json", catalog),
                                   ("library.json", library)]:
                 atomic_json(staged / name, payload)
-            write_pinned_policy_assets(staged, model_files, runtime_files)
+            write_pinned_policy_assets(
+                staged, model_files, runtime_files, stage_files,
+            )
             receipt["catalog_sha256"] = file_sha256(staged / "campaign.json")
             receipt["library_sha256"] = file_sha256(staged / "library.json")
             atomic_json(staged / "campaign-receipt.json", receipt)
