@@ -4584,8 +4584,20 @@ class ExperimentHub {
                 }
                 if(['needs_review','expired','cancelled','disarmed'].includes(launch.status))
                     throw Error('Native group Start is no longer authorized: '+launch.reason);
-                if(members.some(job=>['failed','unverified','stopped','cancelled'].includes(job.status)))
-                    throw Error('A native training-round member did not finish successfully.');
+                if(members.some(job=>['failed','unverified','stopped','cancelled'].includes(job.status))) {
+                    if(phase==='collectors') {
+                        // The first failed physical collector invalidates the
+                        // round's experience barrier. Stop its remaining
+                        // workers through their existing native owners,
+                        // retaining any uncertain claim until terminal proof.
+                        this.stopResourceBundle({
+                            bundle_id:bundleId,
+                            expected_job_ids:members.map(job=>job.id),
+                            confirm_stop:true,
+                        });
+                    }
+                    throw Error('A native training-round member did not finish successfully; the remaining collector owners require terminal reconciliation.');
+                }
                 if(!members.every(job=>job.status==='finished'&&
                     job.capacity_released_at))continue;
                 if(phase==='collectors') {
