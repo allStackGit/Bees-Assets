@@ -11,7 +11,8 @@ const {inspectHost,availableMemoryMb}=require('./experiment_hub_host');
 const {discoverAmdGpus,discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const {fromEnvironment}=require('./experiment_hub_execution');
 const {syncArtifacts}=require('./experiment_hub_artifact_agent');
-const {syncNativeBundles}=require('./experiment_hub_native_bundle_transfer');
+const {syncNativeBundles,syncNativeModels}=
+    require('./experiment_hub_native_bundle_transfer');
 const {MAX_BODY_BYTES}=require('./experiment_hub_agent_listener');
 const {request: resourceRequest}=require('./experiment_hub_resources');
 
@@ -369,11 +370,15 @@ async function main() {
                         // Transfer failures leave this Start unreported and
                         // ownerless; the Hub can safely retry the same order
                         // after collectors finish mirroring their files.
-                        if(orders[0].action==='start'&&
-                            ['bees_native','bees_native_optimizer_worker'].includes(orders[0].job?.project_id)) {
-                            await syncNativeBundles(orders[0].job,
-                                executor.supervisor.adapters?.[orders[0].job.project_id],
-                                url,id,token);
+                        if(['start','qualify_gpu'].includes(orders[0].action)&&
+                            ['bees_native','bees_native_optimizer_worker',
+                                'bees_native_collect'].includes(orders[0].job?.project_id)) {
+                            const adapter=executor.supervisor.adapters?.[
+                                orders[0].job.project_id];
+                            await syncNativeModels(orders[0].job,adapter,url,id,token);
+                            if(orders[0].action==='start'||
+                                orders[0].job?.frozen_parameters?.rollout_bundles)
+                                await syncNativeBundles(orders[0].job,adapter,url,id,token);
                         }
                         result=await executor.handle(orders[0]);
                     }finally {
