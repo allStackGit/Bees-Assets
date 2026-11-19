@@ -36,9 +36,9 @@
         evaluatorSetup.disabled=busy||!info?.tinybrains_available||
             info.entries?.filter(item=>item.project==='tinybrains')
                 .every(item=>item.managed&&item.installed);
-        if(courierSetup)courierSetup.disabled=busy||!info?.courier_available||
-            info.entries?.filter(item=>item.project==='courier')
-                .every(item=>item.managed&&item.installed);
+        // Setup also reapproves a new immutable suite when Courier's
+        // environment or evaluator runtime changes; keep it available.
+        if(courierSetup)courierSetup.disabled=busy||!info?.courier_available;
         if(!info?.available) {
             evaluatorMessage.textContent=[info?.tinybrains_reason,info?.courier_reason]
                 .filter(Boolean).join('; ')||'Local evaluation services are unavailable.';
