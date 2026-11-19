@@ -2186,12 +2186,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     run.evaluation_total_records+
                     ' archived independent evaluation observations. The chart is sampled by frozen suite and runtime; Export complete job diagnostics to retrieve the original unsampled native-job history.');
             const recentIssue=run.evaluation_diagnostics?.at(-1);
-            const resolved=recentIssue?.evaluation_status==='failed'&&
-                (run.evaluation_points||[]).some(receipt=>
-                    receipt.suite_id===recentIssue.suite_id&&
-                    receipt.checkpoint_sha256===recentIssue.checkpoint_sha256&&
-                    Number.isFinite(Date.parse(receipt.evaluated_at))&&
-                    Date.parse(receipt.evaluated_at)>=Date.parse(recentIssue.attempted_at));
+            // A later accepted receipt for the affected suite closes an
+            // availability warning, without erasing its archived diagnostic.
+            // Checkpoint failures require a later success for that checkpoint.
+            // Contradictory receipt evidence remains disqualifying forever.
+            const laterAccepted=receipt=>
+                receipt.suite_id===recentIssue?.suite_id&&
+                Number.isFinite(Date.parse(receipt.observed_at))&&
+                Date.parse(receipt.observed_at)>Date.parse(recentIssue.observed_at);
+            const conflict=recentIssue?.evaluation_status==='unavailable'&&
+                (recentIssue.issue?.includes(
+                    'Conflicting independent result for checkpoint ')||
+                 recentIssue.issue?.startsWith(
+                    'Conflicting independent evaluation receipt at checkpoint '));
+            const resolved=recentIssue?.evaluation_status==='failed'
+                ?(run.evaluation_points||[]).some(receipt=>
+                    laterAccepted(receipt)&&
+                    receipt.checkpoint_sha256===recentIssue.checkpoint_sha256)
+                :recentIssue?.evaluation_status==='unavailable'&&
+                    recentIssue.suite_id&&!conflict&&
+                    (run.evaluation_points||[]).some(laterAccepted);
             if(recentIssue&&!resolved)warnings.push('Run '+run.slot+
                 (recentIssue.evaluation_status==='failed'
                     ?' independently evaluated checkpoint '+recentIssue.checkpoint_sha256+
