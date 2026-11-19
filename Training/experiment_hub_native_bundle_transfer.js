@@ -351,6 +351,98 @@ async function verifyLocalBundle(directory,expectedReceiptSha) {
     return true;
 }
 
+async function fileDigest(file) {
+    const digest=crypto.createHash('sha256');
+    for await(const part of fs.createReadStream(file,{highWaterMark:MAX_CHUNK}))
+        digest.update(part);
+    return digest.digest('hex');
+}
+
+// Every next-round native actor, collector and optimizer rank consumes the
+// full portable model set. The checkpoint alone would silently discard fixed
+// opponents, and a manifest alone could refer to another machine's paths.
+function modelDependencies(document,expectedCheckpoint) {
+    if(document?.format!=='bees-native-model-v1'||
+        document.abi_version!==26||
+        !Array.isArray(document.models)||!document.models.length||
+        document.models.length>256)
+        fail('Invalid native model package manifest.');
+    const dependencies=new Map([['learner/checkpoint.pt',expectedCheckpoint]]);
+    let learnerRefs=0;
+    for(const model of document.models) {
+        const digest=model?.sha256,relative=model?.path;
+        if(!SHA.test(String(digest||''))||typeof relative!=='string')
+            fail('Invalid native model package dependency.');
+        if(relative==='checkpoint.pt') {
+            if(digest!==expectedCheckpoint)
+                fail('Native package learner checkpoint identity changed.');
+            learnerRefs++;
+        }else if(/^opponents\/[a-f0-9]{64}\.model$/.test(relative)&&
+                relative==='opponents/'+digest+'.model') {
+            dependencies.set('learner/'+relative,digest);
+        }else fail('Native model package contains an unapproved artifact path.');
+    }
+    if(!learnerRefs)fail('Native model package has no committed learner checkpoint.');
+    return dependencies;
+}
+
+async function verifyLocalModelPackage(directory,expectedCheckpoint) {
+    const folder=path.join(directory,'learner');
+    const manifest=path.join(folder,'manifest.json');
+    if(!fs.existsSync(manifest)||regular(manifest).size>1024*1024)
+        return false;
+    const document=JSON.parse(fs.readFileSync(manifest,'utf8'));
+    const dependencies=modelDependencies(document,expectedCheckpoint);
+    dependencies.set('learner/manifest.json',null);
+    for(const [relative,digest] of dependencies) {
+        const file=path.join(directory,...relative.split('/'));
+        if(!fs.existsSync(file)||regular(file).size>MAX_FILE)
+            return false;
+        if(digest!==null&&await fileDigest(file)!==digest)return false;
+    }
+    return true;
+}
+
+async function syncNativeModels(job,adapter,endpoint,machineId,token) {
+    const sourceId=job?.model_source_job_id;
+    if(sourceId==null)return {models:0};
+    if(!['bees_native','bees_native_collect','bees_native_optimizer_worker']
+        .includes(job?.project_id)||
+        !UUID.test(String(sourceId))||sourceId===job.id||
+        !SHA.test(String(job.expected_parent_model_sha256||''))||
+        typeof adapter?.model_inbox_dir!=='function')
+        fail('A pinned native model successor requires its locally approved model inbox.');
+    const inbox=adapter.model_inbox_dir();
+    if(typeof inbox!=='string'||!path.isAbsolute(inbox)||
+        fs.realpathSync(inbox)!==inbox||!fs.lstatSync(inbox).isDirectory())
+        fail('Native model inbox directory was redirected.');
+    const destination=path.join(inbox,sourceId);
+    if(fs.existsSync(destination)) {
+        if(!await verifyLocalModelPackage(destination,job.expected_parent_model_sha256))
+            fail('Existing native model package differs from its original source checkpoint.');
+        return {models:1};
+    }
+    const stage=fs.mkdtempSync(path.join(inbox,'.native-model-'));
+    try {
+        await downloadFile(endpoint,machineId,token,job.id,sourceId,
+            'learner/manifest.json',null,stage,'model');
+        const document=JSON.parse(fs.readFileSync(
+            path.join(stage,'learner','manifest.json'),'utf8'));
+        const dependencies=modelDependencies(document,job.expected_parent_model_sha256);
+        for(const [relative,digest] of dependencies)
+            await downloadFile(endpoint,machineId,token,job.id,sourceId,
+                relative,digest,stage,'model');
+        if(!await verifyLocalModelPackage(stage,job.expected_parent_model_sha256))
+            fail('Transferred native model package is incomplete or differs from its SHA-256 manifest.');
+        if(fs.existsSync(destination))
+            fail('Native model package was published concurrently; refusing overwrite.');
+        fs.renameSync(stage,destination);
+    }finally {
+        if(fs.existsSync(stage))fs.rmSync(stage,{recursive:true,force:true});
+    }
+    return {models:1};
+}
+
 async function syncNativeBundles(job,adapter,endpoint,machineId,token) {
     const pins=job?.frozen_parameters?.rollout_bundles;
     if(!['bees_native','bees_native_optimizer_worker'].includes(job?.project_id)||
@@ -398,4 +490,4 @@ async function syncNativeBundles(job,adapter,endpoint,machineId,token) {
 }
 
 module.exports={capturePaths,authorizedBundleFile,authorizedModelFile,
-    syncNativeBundles,nativeModelPackage};
+    syncNativeBundles,syncNativeModels,nativeModelPackage};
