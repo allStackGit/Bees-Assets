@@ -4323,7 +4323,7 @@ class ExperimentHub {
     // foundation for distributed workloads, not a data-plane protocol or a
     // simultaneous-Start guarantee. Every member retains its own native
     // owner, checkpoint, Stop policy, and explicit Start authorization.
-    queueResourceBundle(value) {
+    queueResourceBundle(value,roundPlan=null) {
         if(!object(value)||value.confirm_queue!==true||
             Object.keys(value).some(key=>
                 !['confirm_queue','members','model_source_job_id',
@@ -4491,6 +4491,17 @@ class ExperimentHub {
         if(collectors&&!(jobs[0]?.project_id==='bees_native'&&
             jobs[0].frozen_parameters?.optimizer_group===true))
             throw Error('Physical native collector pins require an authorized synchronized Bees optimizer group.');
+        if(roundPlan) {
+            const plan=(next.native_round_plans||[]).find(item=>
+                item.id===roundPlan.id&&item.status===roundPlan.status);
+            if(!plan||!['collectors','optimizer'].includes(roundPlan.phase)||
+                roundPlan.status!=='pending_'+roundPlan.phase)
+                throw Error('Native training round changed before atomically reserving its next stage.');
+            plan[roundPlan.phase+'_bundle_id']=bundleId;
+            plan[roundPlan.phase+'_job_ids']=jobs.map(job=>job.id);
+            plan.status='awaiting_'+roundPlan.phase;
+            plan.updated_at=now();
+        }
         this.commit(next);
         return {bundle_id:bundleId,members:jobs.map(copy),
             leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
