@@ -4438,12 +4438,25 @@ class ExperimentHub {
                 !job.gpu_qualification?.first_offered_at)
                 continue;
             if(action==='start') {
+                // Start authorization and the actual heartbeat offer may be
+                // separated by multiple native observations. Recheck the
+                // complete original learner/collector barrier just before
+                // first delivery, rather than relying on yesterday's slot,
+                // endpoint, live owner or physical GPU evidence. The
+                // readiness contract expects a queued job, so project its
+                // unchanged frozen job as waiting without mutating state.
+                const distributedLearner=
+                    job.project_id==='courier'&&job.distributed_courier_managed===true||
+                    job.project_id==='tinybrains'&&job.distributed_rollout_managed===true;
+                const groupStillReady=!distributedLearner||
+                    nativeStartReadiness(snapshot,{...job,status:'waiting_adapter'}).eligible;
                 const automationValid=!job.automation_start_session_id||
                     (this.automation.enabled&&
                      this.automation.session_id===job.automation_start_session_id&&
                      this.automation.agent_instances[machineId]===
                         this.agentReports.get(machineId)?.instance_id);
-                if(!adapterInstalled||!automationValid||!lease.receipt_fresh||
+                if(!adapterInstalled||!automationValid||!groupStillReady||
+                    !lease.receipt_fresh||
                     machine.native_preflight_passed!==true||
                     !supportsEvaluation(machine.evaluation_suites,job)||
                     !supportsTinyBrainsProfile(machine,job)||
