@@ -478,6 +478,34 @@ def verify_bundle(path, job, orders):
         not math.isfinite(metrics["wall_seconds"]) or metrics["wall_seconds"] <= 0
     ):
         raise ValueError(f"distributed collector returned invalid work measurements: {path}")
+    observation_work = metrics.get("policy_observations")
+    if observation_work is not None:
+        keys = ("rows_encoded", "native_mission_rows", "allies_encoded",
+                "enemies_encoded", "map_objects_encoded")
+        if (not isinstance(observation_work, dict) or
+                any(type(observation_work.get(key)) is not int or
+                    observation_work[key] < 0 for key in keys) or
+                observation_work["native_mission_rows"] > observation_work["rows_encoded"]):
+            raise ValueError(f"distributed collector supplied impossible policy observation work: {path}")
+    # Mission goals have been encoded by the physical host since native
+    # objective support. Reject an old collector that would silently
+    # train against a blind policy despite a valid capture file.
+    source_run = Path(orders["source_run_config"])
+    if file_sha256(source_run) != orders["source_run_config_sha256"]:
+        raise ValueError("distributed source run changed after work-order issuance")
+    source = json.loads(source_run.read_text(encoding="utf-8"))
+    start = job["world_start"]
+    count = job["world_count"]
+    selected = source["levels"][start:start + count]
+    if len(selected) != count:
+        raise ValueError("distributed collector partition is outside the source Level range")
+    has_mission = any(
+        any(name in level for name in ("survival", "demolition", "escort", "extraction"))
+        for level in selected
+    )
+    if has_mission and (observation_work is None or
+                        observation_work["native_mission_rows"] == 0):
+        raise ValueError(f"distributed mission collector reported no native objective observations: {path}")
     if "source_scene_template_cache" in metrics:
         metrics["source_scene_template_cache"] = verified_source_scene_cache(
             metrics["source_scene_template_cache"],
@@ -680,6 +708,7 @@ def aggregate_collection_metrics(bundles):
                 "map_border_ships": row.get("map_border_ships"),
                 "ship_slot_work": row.get("ship_slot_work"),
                 "source_scene_template_cache": row.get("source_scene_template_cache"),
+                "policy_observations": row.get("policy_observations"),
                 "world_steps": row["successful_world_steps"],
                 "policy_rows": row["successful_policy_rows"],
                 "wall_seconds": row["wall_seconds"],
@@ -689,6 +718,13 @@ def aggregate_collection_metrics(bundles):
             } for bundle, row in zip(bundles, rows)
         ],
     }
+    if all("policy_observations" in row for row in rows):
+        keys = ("rows_encoded", "native_mission_rows", "allies_encoded",
+                "enemies_encoded", "map_objects_encoded")
+        result["policy_observations"] = {
+            key: sum(row["policy_observations"][key] for row in rows)
+            for key in keys
+        }
     scene_cache = combined_source_scene_cache(rows)
     if scene_cache is not None:
         result["source_scene_template_cache"] = scene_cache
