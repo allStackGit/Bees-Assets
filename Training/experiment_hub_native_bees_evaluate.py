@@ -20,6 +20,8 @@ from experiment_hub_eval_io import SHA256, SUITE_ID, UUID, publish, read_bounded
 _NATIVE_TOOLS = Path(__file__).resolve().parents[1] / "native" / "tools"
 sys.path.insert(0, str(_NATIVE_TOOLS))
 from native_training_artifacts import file_sha256, normalized_python_source_sha256
+from native_mission_contract import level_has_goal
+from native_session_selection import verified_mission_holdout
 from evaluate_policy import evaluate as evaluate_native_policy
 
 
@@ -81,6 +83,16 @@ def source_inputs(suite_file: Path, suite: dict):
             type(config.get("episodes_per_world", 1)) is not int or
             len(config["levels"]) * config.get("episodes_per_world", 1) != suite["trials"]):
         raise ValueError("Evaluation suite must use a native-authored fixed trial count.")
+    # The Hub's generic successes/trials contract has one meaning for a
+    # pinned suite. Mixed elimination and physical-goal Levels cannot be
+    # represented by a single objective rate without silently changing
+    # what early stopping measures. Author separate immutable suites.
+    goal_levels = [level_has_goal(level) for level in config["levels"]]
+    if any(goal_levels) and not all(goal_levels):
+        raise ValueError(
+            "Native Hub evaluation needs homogeneous goal or elimination "
+            "Levels; publish separate fixed suites for different scoring"
+        )
     # Holdouts commonly reuse one scene across hundreds of native worlds.
     # Read and parse that physical roster exactly once, then validate only
     # each world's small model routing table. No world-sized JSON copies.
@@ -193,6 +205,17 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
             file_sha256(checkpoint) != checkpoint_digest or
             file_sha256(source_manifest) != manifest_digest):
         raise ValueError("Native evaluation did not complete the verified candidate trials.")
+    # Mission objectives are not equivalent to ordinary faction wins.
+    # A defender can win by preventing delivery, while an attacker must
+    # physically deliver or destroy the authored goal. The standard native
+    # holdout verifies side attribution from the durable final journals.
+    # No scoring option may be altered independently of the frozen suite.
+    source_config = json.loads(read_bounded(run_file, 8 * 1024 * 1024))
+    physical_goal = all(level_has_goal(level) for level in source_config["levels"])
+    successes = (verified_mission_holdout(receipt) if physical_goal
+                 else receipt["side_victories"])
+    metric = ("physical_mission_success_or_interception" if physical_goal
+              else "learner_faction_victory")
     # A running evaluator must not silently switch its scenario, reference
     # actor, or native executable partway through a held-out benchmark.
     source_inputs(suite_file, suite)
@@ -203,13 +226,15 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
         "candidate_checkpoint_sha256": checkpoint_digest,
         "suite_id": suite["suite_id"],
         "victories": receipt["side_victories"],
+        "successes": successes,
+        "success_metric": metric,
         "trials": receipt["episodes"],
         "world_steps": receipt["world_steps"],
         "policy_rows": receipt["policy_rows"],
         "wall_seconds": receipt["wall_seconds"],
         "world_steps_per_wall_second": receipt["world_steps_per_wall_second"],
     }, sort_keys=True), flush=True)
-    return receipt["side_victories"]
+    return successes
 
 
 def create_suite_main(arguments) -> int:
@@ -325,7 +350,7 @@ def main():
                     for root in protected)):
             raise ValueError("Independent evaluation scratch and receipts must be outside training and scenario artifacts.")
         with tempfile.TemporaryDirectory(prefix="native-bees-eval-", dir=scratch) as directory:
-            wins = evaluate(
+            successes = evaluate(
                 checkpoint, args.checkpoint_sha256, manifest,
                 args.suite.resolve(strict=True), suite, Path(directory),
                 args.rollout_binary,
@@ -335,10 +360,10 @@ def main():
             "suite_sha256": suite_digest(suite),
             "dispatch_id": args.dispatch_id,
             "checkpoint_sha256": args.checkpoint_sha256,
-            "trials": suite["trials"], "successes": wins,
+            "trials": suite["trials"], "successes": successes,
         }
         print(publish(receipts, result))
-        print(f"Native Bees fixed-reference victories: {wins}/{suite['trials']}")
+        print(f"Native Bees fixed-reference successes: {successes}/{suite['trials']}")
         return 0
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
         print(f"Independent native Bees evaluation failed: {exc}", file=sys.stderr)
