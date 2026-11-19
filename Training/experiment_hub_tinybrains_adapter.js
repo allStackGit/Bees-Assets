@@ -59,12 +59,12 @@ function supportsTinyBrainsProfile(machine,job) {
         job.resources?.gpu_count===0;
     const dual=p?.device==='dual'&&
         job.resources?.gpu_count===2&&job.resources?.gpu_mode==='exclusive'&&
-        machine.agent_platform==='linux'&&
+        ['linux','win32'].includes(machine.agent_platform)&&
         machine.tinybrains_dual_gpu_profiles?.includes(p.profile)===true;
     const multi=p?.device==='multi'&&
         job.resources?.gpu_count>=3&&job.resources?.gpu_count<=8&&
         job.resources?.gpu_mode==='exclusive'&&
-        machine.agent_platform==='linux'&&
+        ['linux','win32'].includes(machine.agent_platform)&&
         machine.tinybrains_multi_gpu_profiles?.includes(p.profile)===true;
     const gpu=job.resources?.gpu_count===1&&
         (job.resources.gpu_mode==='exclusive'||
