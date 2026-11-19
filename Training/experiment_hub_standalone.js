@@ -50,6 +50,13 @@ function renderPage(html) {
         '<button type="button" id="hub-local-service-refresh">Refresh service status</button>'+
         '</div>'+
         '<p id="hub-local-service-message" class="hub-notice" role="status"></p>'+
+        '<h4>Independent evaluation services</h4>'+
+        '<p class="muted">Manage locally approved Nano and Micro timers here. '+
+        'Starting a timer schedules evaluations; Run now requests one immediate evaluation. '+
+        'Stopping a timer does not stop training or interrupt a running evaluation.</p>'+
+        '<button type="button" id="hub-local-evaluator-setup" disabled>Set up and start Nano/Micro evaluators</button>'+
+        '<div id="hub-local-evaluator-rows" class="hub-standalone"></div>'+
+        '<p id="hub-local-evaluator-message" class="hub-notice" role="status"></p>'+
         '</div>';
     return normalized.slice(0,at+script.length)
         .replace('<html lang="en">',
@@ -137,6 +144,12 @@ function createAdminServer(hub,{html,ui,dataRoot}={}) {
                     return json(res,400,{error:'Explicit restart confirmation required.'});
                 const request=await localServices.scheduleRestart(body.service,hub,res);
                 return json(res,202,request);
+            }
+            if(req.method==='POST'&&route==='/api/hub/local-services/evaluators') {
+                const body=await readJson(req);
+                if(body.confirm_action!==true)
+                    return json(res,400,{error:'Explicit evaluator confirmation required.'});
+                return json(res,200,await localServices.evaluatorAction(hub,body));
             }
             if(req.method==='POST'&&route==='/api/hub/exports')
                 return json(res,202,exporter.start(await readJson(req)));
