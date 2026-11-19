@@ -74,6 +74,9 @@ def accumulate_training_outcome(
             "learner_as_bee_episodes": 0, "learner_as_human_episodes": 0,
             "bee_wins": 0, "human_wins": 0, "draws": 0,
             "timed_out_episodes": 0, "total_episode_seconds": 0.0,
+            "mission_attempts_by_kind": {}, "mission_completions_by_kind": {},
+            "learner_objective_attempts": 0, "learner_objective_completions": 0,
+            "learner_interception_attempts": 0, "learner_interceptions": 0,
             "bee_retained_mined_tsv": 0.0, "human_retained_mined_tsv": 0.0,
             "bee_retained_reward": 0.0, "human_retained_reward": 0.0,
             "bee_ppo_reward_sum": 0.0, "human_ppo_reward_sum": 0.0,
@@ -97,6 +100,27 @@ def accumulate_training_outcome(
     counts["bee_wins"] += int(winner == bee_side)
     counts["human_wins"] += int(winner == human_side)
     counts["draws"] += int(winner == 0)
+    mission = payload.get("mission")
+    if mission is not None:
+        if (not isinstance(mission, dict) or
+                mission.get("kind") not in ("survival", "demolition", "escort", "extraction") or
+                type(mission.get("objective_side")) is not int or
+                mission["objective_side"] not in (bee_side, human_side) or
+                type(mission.get("completed")) is not bool):
+            raise ValueError("native mission outcome lacks authoritative kind, side or completion")
+        kind = mission["kind"]
+        attempts = counts["mission_attempts_by_kind"]
+        completions = counts["mission_completions_by_kind"]
+        attempts[kind] = attempts.get(kind, 0) + 1
+        completions[kind] = completions.get(kind, 0) + int(mission["completed"])
+        if bee_learner != human_learner:
+            learner_side = bee_side if bee_learner else human_side
+            if mission["objective_side"] == learner_side:
+                counts["learner_objective_attempts"] += 1
+                counts["learner_objective_completions"] += int(mission["completed"])
+            else:
+                counts["learner_interception_attempts"] += 1
+                counts["learner_interceptions"] += int(not mission["completed"])
     for name, value in values.items():
         counts[name] += value
     # Side totals remain meaningful even in self-play, when "opponent"

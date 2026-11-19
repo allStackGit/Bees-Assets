@@ -126,6 +126,29 @@ def per_scene_results(score, learner_side, episodes):
         totals["draws"] += d
         totals["timed_out"] += t
         wins = victories.get(str(learner_side), 0)
+        mission_counts = row.get("mission_outcomes")
+        mission_outcomes = None
+        if mission_counts is not None:
+            if not isinstance(mission_counts, dict):
+                raise ValueError("native scene has invalid physical mission totals")
+            mission_outcomes = {}
+            attempts = 0
+            for kind, counts in mission_counts.items():
+                if (kind not in ("survival", "demolition", "escort", "extraction") or
+                        not isinstance(counts, dict)):
+                    raise ValueError("native scene has unknown mission outcome category")
+                total, completed = counts.get("attempts"), counts.get("completions")
+                if (type(total) is not int or type(completed) is not int or
+                        total < 1 or not 0 <= completed <= total):
+                    raise ValueError("native scene has invalid mission completion counts")
+                attempts += total
+                mission_outcomes[kind] = {
+                    "attempts": total,
+                    "completions": completed,
+                    "completion_rate": completed / total,
+                }
+            if attempts > n:
+                raise ValueError("physical mission attempts exceed completed episodes")
         results[digest] = {
             "episodes": n,
             "side_victories": wins,
@@ -135,6 +158,8 @@ def per_scene_results(score, learner_side, episodes):
             "draw_rate": d / n,
             "timeout_rate": t / n,
             "mean_episode_seconds": seconds / n,
+            **({"mission_outcomes": mission_outcomes}
+               if mission_outcomes is not None else {}),
         }
     global_wins = score.get("victories_by_side")
     if (totals["episodes"] != episodes or
@@ -238,6 +263,15 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
             type(draws) is not int or not 0 <= draws <= expected or wins + draws > expected):
         raise ValueError("native evaluation side outcomes are invalid")
     scenes = per_scene_results(score, learner_side, expected)
+    mission_totals = {}
+    if all("mission_outcomes" in scene for scene in scenes.values()):
+        for scene in scenes.values():
+            for kind, counts in scene["mission_outcomes"].items():
+                total = mission_totals.setdefault(kind, {"attempts": 0, "completions": 0})
+                total["attempts"] += counts["attempts"]
+                total["completions"] += counts["completions"]
+        for totals in mission_totals.values():
+            totals["completion_rate"] = totals["completions"] / totals["attempts"]
     selected_workers = config.get("physics_workers", 1)
     if (throughput.get("requested_physics_workers") != selected_workers or
             type(throughput.get("peak_parallel_physics_workers")) is not int or
@@ -266,6 +300,8 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         "parallel_physics_rounds": throughput.get("parallel_physics_rounds", 0),
         "evaluation": score,
         "by_scene_sha256": scenes,
+        **({"mission_outcomes": mission_totals}
+           if all("mission_outcomes" in scene for scene in scenes.values()) else {}),
         "rollout_summary_sha256": file_sha256(summary_path),
     }
     atomic_json(output / "evaluation-result.json", receipt)

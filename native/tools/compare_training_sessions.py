@@ -239,8 +239,32 @@ def describe(reference, candidate):
                     }
                     continue
                 compatible = left_scene["episodes"] == right_scene["episodes"]
+                goals_left = left_scene.get("mission_outcomes")
+                goals_right = right_scene.get("mission_outcomes")
+                mission_differences = {}
+                if compatible and isinstance(goals_left, dict) and isinstance(goals_right, dict):
+                    for kind in sorted(goals_left.keys() | goals_right.keys()):
+                        baseline = goals_left.get(kind)
+                        observed = goals_right.get(kind)
+                        if baseline is None or observed is None or (
+                                baseline["attempts"] != observed["attempts"]):
+                            mission_differences[kind] = {
+                                "comparable": False,
+                                "reason": "mission_episode_cohort_differs",
+                            }
+                        else:
+                            mission_differences[kind] = {
+                                "comparable": True,
+                                "attempts": baseline["attempts"],
+                                "completion_difference":
+                                    observed["completions"] - baseline["completions"],
+                                "completion_rate_difference":
+                                    observed["completion_rate"] - baseline["completion_rate"],
+                            }
                 scene_report[scene] = {
                     "comparable": compatible,
+                    **({"mission_completion_differences": mission_differences}
+                       if mission_differences else {}),
                     "episodes": left_scene["episodes"] if compatible else None,
                     "reference": left_scene, "candidate": right_scene,
                     "win_rate_difference": (
