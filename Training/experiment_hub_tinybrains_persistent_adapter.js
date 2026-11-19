@@ -178,6 +178,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'remote_snapshot_cache_hits',
         'local_gpu_collector_count',
         'local_gpu_direct_model_updates',
+        'local_gpu_policy_source_pack_groups',
+        'local_gpu_policy_packed_consumers',
         'local_lease_native_engines_active',
         'local_lease_simulation_trial_active',
         'local_gpu_collectors_ready_at_local_end',
