@@ -3412,6 +3412,12 @@ class ExperimentHub {
                     }
                     accepted.set(report.job_id,{progress:null,evaluation:null,
                         evaluationIssue:null,resources:null});
+                    if(job.release_on_terminal&&job.status==='finished'&&
+                        job.frozen_parameters?.optimizer_group===true&&
+                        job.optimizer_completion) {
+                        this.releaseIn(next,lease);
+                        changed=true;
+                    }
                 }
                 continue;
             }
@@ -3664,6 +3670,9 @@ class ExperimentHub {
              j.dispatch_id&&j.automation_start_session_id&&
                 !j.capacity_released_at&&
                 ['finished','stopped'].includes(j.status)||
+             j.dispatch_id&&j.frozen_parameters?.optimizer_group===true&&
+                j.status==='finished'&&!j.optimizer_completion&&
+                !j.capacity_released_at||
              j.dispatch_id&&supportsEvaluation(machine.evaluation_suites,j)&&
                 finalEvaluationPending(snapshot,j,observedAt)||
              j.dispatch_id&&j.status==='finished'&&
