@@ -1199,7 +1199,11 @@ def main():
         parser.error("--torch-threads must be between 1 and 256")
     import torch
     if args.torch_threads is not None:
+        # Each torchrun rank receives its share of the Hub CPU lease.
+        # Bound both Torch's intra-op and inter-op pools before importing
+        # the ML-Agents trainer or launching any parallel optimizer work.
         torch.set_num_threads(args.torch_threads)
+        torch.set_num_interop_threads(args.torch_threads)
     import yaml
     from mlagents.plugins.trainer_type import register_trainer_plugins
     from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
