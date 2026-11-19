@@ -12,6 +12,7 @@
     const refresh=$('hub-local-service-refresh');
     const evaluatorRows=$('hub-local-evaluator-rows');
     const evaluatorSetup=$('hub-local-evaluator-setup');
+    const courierSetup=$('hub-local-courier-evaluator-setup');
     const evaluatorMessage=$('hub-local-evaluator-message');
     let state=null,busy=false;
 
@@ -21,29 +22,34 @@
         return name+': '+(service.active?'running':'stopped')+
             (service.pid?' (PID '+service.pid+')':'');
     };
-    function evaluatorButton(title,action,id,disabled) {
+    function evaluatorButton(title,action,id,disabled,project) {
         const control=document.createElement('button');
         control.type='button';
         control.textContent=title;
         control.disabled=disabled;
-        control.addEventListener('click',()=>manageEvaluator(action,id));
+        control.addEventListener('click',()=>manageEvaluator(action,id,project));
         return control;
     }
     function renderEvaluators(info) {
         if(!evaluatorRows||!evaluatorSetup)return;
         evaluatorRows.replaceChildren();
-        evaluatorSetup.disabled=busy||!info?.available||
-            info.entries?.every(item=>item.managed&&item.installed);
+        evaluatorSetup.disabled=busy||!info?.tinybrains_available||
+            info.entries?.filter(item=>item.project==='tinybrains')
+                .every(item=>item.managed&&item.installed);
+        if(courierSetup)courierSetup.disabled=busy||!info?.courier_available||
+            info.entries?.filter(item=>item.project==='courier')
+                .every(item=>item.managed&&item.installed);
         if(!info?.available) {
-            evaluatorMessage.textContent=info?.reason||
-                'Local evaluation services are unavailable.';
+            evaluatorMessage.textContent=[info?.tinybrains_reason,info?.courier_reason]
+                .filter(Boolean).join('; ')||'Local evaluation services are unavailable.';
             return;
         }
         for(const item of info.entries||[]) {
             const line=document.createElement('div');
             line.className='hub-controls';
             const title=document.createElement('strong');
-            title.textContent=item.id==='nano'?'Nano':'Micro';
+            title.textContent=item.project==='courier'?'Courier survival':
+                item.id==='nano'?'TinyBrains Nano':'TinyBrains Micro';
             const status=document.createElement('span');
             status.textContent=!item.installed?'Not installed':
                 !item.managed?'Not ready: '+(item.reason||'unmanaged service'):
@@ -55,21 +61,21 @@
             line.append(title,status);
             if(item.managed) {
                 line.append(
-                    evaluatorButton('Start','start',item.id,busy||item.active),
-                    evaluatorButton('Restart','restart',item.id,busy),
-                    evaluatorButton('Run now','run',item.id,busy||item.running),
-                    evaluatorButton('Stop','stop',item.id,busy||!item.active)
+                    evaluatorButton('Start','start',item.id,busy||item.active,item.project),
+                    evaluatorButton('Restart','restart',item.id,busy,item.project),
+                    evaluatorButton('Run now','run',item.id,busy||item.running,item.project),
+                    evaluatorButton('Stop','stop',item.id,busy||!item.active,item.project)
                 );
             }
             evaluatorRows.append(line);
         }
     }
-    async function manageEvaluator(action,id) {
+    async function manageEvaluator(action,id,project='tinybrains') {
         if(busy)return;
         const message=action==='setup'
-            ?'Set up and start the two approved TinyBrains Nano/Micro evaluation timers? '+
-                'Each evaluator uses a fixed Docker image and its own CPU/RAM limits. '+
-                'This does not start or stop training.'
+            ?(project==='courier'
+                ?'Set up the approved Courier survival evaluator using the installed local environment? The suite is pinned to the current environment file. A local agent restart is needed to advertise it.'
+                :'Set up and start the two approved TinyBrains Nano/Micro evaluation timers? Each evaluator uses a fixed Docker image and its own CPU/RAM limits. This does not start or stop training.')
             :action==='stop'
                 ?'Stop the '+id+' evaluation schedule? An evaluation already running may finish.'
                 :action==='run'
@@ -79,12 +85,13 @@
         if(!confirm(message))return;
         busy=true;
         if(evaluatorSetup)evaluatorSetup.disabled=true;
+        if(courierSetup)courierSetup.disabled=true;
         try {
             const response=await fetch('/api/hub/local-services/evaluators',{
                 method:'POST',
                 headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({
-                    action,...(id?{id}:{}),confirm_action:true,
+                    action,project,...(id?{id}:{}),confirm_action:true,
                 }),
             });
             const result=await response.json();
@@ -114,6 +121,7 @@
         }catch(error){
             state=null;
             if(evaluatorSetup)evaluatorSetup.disabled=true;
+        if(courierSetup)courierSetup.disabled=true;
             coordinator.disabled=true;
             agent.disabled=true;
             message.textContent='Could not reach coordinator: '+error.message;
@@ -146,6 +154,7 @@
         }
     }
     if(evaluatorSetup)evaluatorSetup.addEventListener('click',()=>manageEvaluator('setup'));
+    if(courierSetup)courierSetup.addEventListener('click',()=>manageEvaluator('setup',undefined,'courier'));
     refresh.addEventListener('click',update);
     coordinator.addEventListener('click',()=>restart('coordinator'));
     agent.addEventListener('click',()=>restart('agent'));
