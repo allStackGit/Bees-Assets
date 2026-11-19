@@ -5612,12 +5612,20 @@ def _native_poca_average_gradients(poca_optimizer):
         raise RuntimeError("Native distributed optimizer parameters span local devices")
     # All ranks have the same parameter order. The MAX reduction only
     # decides which parameters had a real backward contribution.
+    backend = distributed.get_backend()
+    # PyTorch's Windows distributed backend is Gloo. Reduce CPU tensors
+    # there, while NCCL/RCCL keeps the same packed reductions entirely on
+    # the selected GPU under Linux. The policy and Adam remain GPU-resident.
+    collective_device = torch.device("cpu") if backend == "gloo" else device
     presence = torch.tensor(
         [int(parameter.grad is not None) for parameter in parameters],
-        device=device, dtype=torch.int32,
+        device=collective_device, dtype=torch.int32,
     )
     distributed.all_reduce(presence, op=distributed.ReduceOp.MAX)
-    groups = {}
+    # Transfer presence to the host only once rather than triggering one
+    # synchronization per weight matrix during GPU gradient scattering.
+    active = presence.tolist()
+    groups = {
     for index, parameter in enumerate(parameters):
         groups.setdefault(parameter.dtype, []).append((index, parameter))
     for dtype, entries in groups.items():
@@ -5627,13 +5635,16 @@ def _native_poca_average_gradients(poca_optimizer):
              else torch.zeros_like(parameter)).reshape(-1)
             for _, parameter in entries
         ])
-        distributed.all_reduce(flattened, op=distributed.ReduceOp.SUM)
-        flattened.mul_(1.0 / world_size)
+        reduced = flattened.to(collective_device)
+        distributed.all_reduce(reduced, op=distributed.ReduceOp.SUM)
+        if collective_device != device:
+            reduced = reduced.to(device)
+        reduced.mul_(1.0 / world_size)
         offset = 0
         for index, parameter in entries:
             count = parameter.numel()
-            if bool(presence[index].item()):
-                value = flattened[offset:offset + count].view_as(parameter)
+            if active[index]:
+                value = reduced[offset:offset + count].view_as(parameter)
                 if parameter.grad is None:
                     parameter.grad = value.clone()
                 else:

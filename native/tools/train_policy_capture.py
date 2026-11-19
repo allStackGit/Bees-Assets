@@ -1178,7 +1178,11 @@ def main():
             parser.error("native learner ranks must each own one local GPU")
         torch.cuda.set_device(local_rank)
         device = torch.device("cuda", local_rank)
-        torch.distributed.init_process_group("nccl", init_method="env://")
+        backend = ("nccl" if os.name != "nt" and
+                   torch.distributed.is_nccl_available() else "gloo")
+        if backend == "gloo" and not torch.distributed.is_gloo_available():
+            parser.error("native multi-GPU PyTorch requires NCCL/RCCL or Gloo")
+        torch.distributed.init_process_group(backend, init_method="env://")
     elif int(os.environ.get("WORLD_SIZE", "1")) > 1:
         parser.error("distributed native learner must request the full torchrun world")
     install_bees_actor()
@@ -1339,7 +1343,8 @@ def main():
         # collector input must fail on every rank before any Adam step.
         evidence = torch.tensor(
             [steps, mission_learner_decisions, len(episode_keys)],
-            device=device, dtype=torch.int64,
+            device=("cpu" if torch.distributed.get_backend() == "gloo" else device),
+            dtype=torch.int64,
         )
         low, high = evidence.clone(), evidence.clone()
         torch.distributed.all_reduce(low, op=torch.distributed.ReduceOp.MIN)
@@ -1377,6 +1382,7 @@ def main():
             "rank": rank, "device": str(device),
             "device_name": torch.cuda.get_device_name(device),
             "gradient_syncs": getattr(trainer.optimizer, "_bees_distributed_grad_syncs", 0),
+            "gradient_backend": torch.distributed.get_backend(),
             "update_wall_seconds": update_wall_seconds,
             **cuda_metrics,
         }
@@ -1492,6 +1498,7 @@ def main():
         "optimizer_gpu_workers": learner_workers if device.type == "cuda" else 0,
         **({"optimizer_synchronized_minibatches": gpu_worker_metrics[0]["gradient_syncs"],
             "optimizer_gpu_per_device": gpu_worker_metrics,
+            "optimizer_gradient_backend": gpu_worker_metrics[0]["gradient_backend"],
             "optimizer_gpu_update_wall_seconds_max": max(
                 worker["update_wall_seconds"] for worker in gpu_worker_metrics
             )}
