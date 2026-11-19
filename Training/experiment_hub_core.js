@@ -636,7 +636,8 @@ function nativeOptimizerGroupBlock(snapshot,parent) {
     if(!group||group.index!==1||!UUID.test(String(group.id||''))||
         !Number.isSafeInteger(group.size)||group.size<2||group.size>8)
         return 'The distributed optimizer checkpoint has no original Hub owner group.';
-    const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===group.id);
+    const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===group.id)
+        .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
     if(members.length!==group.size||
         members.some((job,index)=>job.resource_bundle.index!==index+1||
             job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
@@ -2841,6 +2842,56 @@ class ExperimentHub {
     // A never-started learner may abandon its already-dispatched sidecars
     // without inventing a second process owner. Stops remain native orders;
     // no claim is released while a process/probe is active or unverified.
+    // An optimizer rank that fails or is stopped cannot leave other leased
+    // torchrun nodes waiting indefinitely. Use the existing native Stop
+    // ownership states; never assume the OS process is gone or free a lease
+    // without the machine's terminal receipt.
+    reconcileNativeOptimizerFailures(next) {
+        const groups=new Map();
+        for(const job of next.jobs) {
+            const id=job.resource_bundle?.id;
+            if(id && job.frozen_parameters?.optimizer_group===true) {
+                if(!groups.has(id))groups.set(id,[]);
+                groups.get(id).push(job);
+            }
+        }
+        let changed=false;
+        for(const members of groups.values()) {
+            if(!members.some(job=>['failed','stopped'].includes(job.status)))
+                continue;
+            const at=now();
+            for(const job of members) {
+                if(job.status==='start_requested'&&job.start_first_offered_at===null) {
+                    // The coordinator never offered this Start. Revoke only
+                    // its undelivered dispatch; capacity stays reserved for
+                    // explicit operator review of the failed group.
+                    job.status='waiting_adapter';
+                    delete job.dispatch_id;
+                    delete job.start_requested_at;
+                    delete job.start_first_offered_at;
+                    delete job.automation_start_session_id;
+                    job.status_reason='Native optimizer peer failed before this Start was delivered.';
+                    changed=true;
+                }else if(['start_requested','launch_requested','running','unverified']
+                    .includes(job.status)) {
+                    const lease=next.reservations.find(item=>
+                        item.id===job.lease_id&&item.job_id===job.id&&
+                        item.project_id===job.project_id&&
+                        item.machine_id===job.assigned_machine_id&&
+                        item.issued_by==='experiment-hub'&&
+                        item.status==='acknowledged');
+                    if(!lease||!job.dispatch_id)continue;
+                    job.status='stop_requested';
+                    job.stop_requested_at=at;
+                    job.release_on_terminal=true;
+                    job.status_reason='Synchronized native optimizer peer terminated; awaiting this machine\'s native Stop receipt.';
+                    changed=true;
+                }
+            }
+        }
+        return changed;
+    }
+
     reconcileDistributedAborts(next) {
         let changed=false;
         for(const learner of next.jobs.filter(job=>
@@ -3534,6 +3585,7 @@ class ExperimentHub {
                 }
             }
         }
+        if(this.reconcileNativeOptimizerFailures(next))changed=true;
         if(this.reconcileDistributedAborts(next))changed=true;
         return changed;
     }
