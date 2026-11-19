@@ -121,22 +121,32 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
 function synchronizedOptimizerEvidence(metrics) {
     const syncs = metrics.optimizer_synchronized_minibatches;
     const workers = metrics.optimizer_gpu_per_device;
-    if (metrics.optimizer_gpu_workers !== 2 ||
+    const nodes = metrics.optimizer_gpu_nodes;
+    const local = metrics.optimizer_gpu_local_workers;
+    const count = nodes * local;
+    if (!Number.isSafeInteger(nodes) || nodes < 1 || nodes > 8 ||
+        ![1,2].includes(local) || count < 2 || count > 16 ||
+        metrics.optimizer_gpu_workers !== count ||
         !Number.isSafeInteger(syncs) || syncs < 1 ||
         metrics.optimizer_masked_loss_normalizations !== syncs ||
         !SHA256.test(String(metrics.optimizer_gpu_model_consensus_sha256 || '')) ||
+        (nodes > 1 && !SHA256.test(String(metrics.optimizer_global_input_sha256 || ''))) ||
         !['gloo', 'nccl'].includes(metrics.optimizer_gradient_backend) ||
-        !Array.isArray(workers) || workers.length !== 2)
-        throw Error('Native Bees two-GPU checkpoint lacks synchronized optimizer evidence.');
+        !Array.isArray(workers) || workers.length !== count)
+        throw Error('Native Bees distributed checkpoint lacks complete synchronized optimizer evidence.');
 
     let totalThreads = 0;
     let totalInteropThreads = 0;
     let gradientSeconds = 0;
     let maskedSeconds = 0;
     let maxUpdateSeconds = 0;
-    workers.forEach((worker, index) => {
+    const perNode = Array.from({length:nodes},()=>({threads:0,interopThreads:0}));
+    workers.forEach((worker,index) => {
+        const nodeRank = Math.floor(index / local);
+        const localRank = index % local;
         if (!worker || worker.rank !== index ||
-            worker.device !== 'cuda:' + index ||
+            worker.node_rank !== nodeRank || worker.local_rank !== localRank ||
+            worker.device !== 'cuda:' + localRank ||
             typeof worker.device_name !== 'string' || !worker.device_name ||
             worker.gradient_backend !== metrics.optimizer_gradient_backend ||
             worker.gradient_syncs !== syncs || worker.masked_loss_syncs !== syncs ||
@@ -153,23 +163,25 @@ function synchronizedOptimizerEvidence(metrics) {
             ['torch_cuda_process_peak_allocated_bytes',
                 'torch_cuda_process_peak_reserved_bytes'].some(name =>
                 !Number.isSafeInteger(worker[name]) || worker[name] < 0))
-            throw Error('Invalid native GPU optimizer rank, thread placement or work measurements.');
+            throw Error('Invalid native GPU optimizer rank, node placement or work measurements.');
         totalThreads += worker.torch_intraop_threads;
         totalInteropThreads += worker.torch_interop_threads;
+        perNode[nodeRank].threads += worker.torch_intraop_threads;
+        perNode[nodeRank].interopThreads += worker.torch_interop_threads;
         gradientSeconds += worker.gradient_submission_wall_seconds;
         maskedSeconds += worker.masked_loss_submission_wall_seconds;
-        maxUpdateSeconds = Math.max(maxUpdateSeconds, worker.update_wall_seconds);
+        maxUpdateSeconds = Math.max(maxUpdateSeconds,worker.update_wall_seconds);
     });
-    const matches = (actual, expected) =>
+    const matches = (actual,expected) =>
         Number.isFinite(actual) &&
-        Math.abs(actual - expected) <= 1e-9 * Math.max(1, Math.abs(expected));
-    if (!matches(metrics.optimizer_gradient_submission_wall_seconds_sum, gradientSeconds) ||
-        !matches(metrics.optimizer_masked_loss_submission_wall_seconds_sum, maskedSeconds) ||
-        !matches(metrics.optimizer_gpu_update_wall_seconds_max, maxUpdateSeconds) ||
+        Math.abs(actual-expected) <= 1e-9 * Math.max(1,Math.abs(expected));
+    if (!matches(metrics.optimizer_gradient_submission_wall_seconds_sum,gradientSeconds) ||
+        !matches(metrics.optimizer_masked_loss_submission_wall_seconds_sum,maskedSeconds) ||
+        !matches(metrics.optimizer_gpu_update_wall_seconds_max,maxUpdateSeconds) ||
         metrics.optimizer_torch_intraop_threads !== workers[0].torch_intraop_threads ||
         metrics.optimizer_torch_interop_threads !== workers[0].torch_interop_threads)
         throw Error('Native Bees synchronized optimizer totals disagree with individual GPU ranks.');
-    return {totalThreads, totalInteropThreads};
+    return {totalThreads,totalInteropThreads,perNode};
 }
 
 function learnerMeasurements(metrics) {
@@ -201,47 +213,31 @@ function learnerMeasurements(metrics) {
     add('torch_cuda_process_peak_allocated_bytes', 'bytes');
     add('torch_cuda_process_peak_reserved_bytes', 'bytes');
     if (metrics.optimizer_gpu_workers != null) {
-        const count = metrics.optimizer_gpu_workers;
-        if (![0,1,2].includes(count))
+        const count=metrics.optimizer_gpu_workers;
+        if (!Number.isSafeInteger(count) || count<0 || count>16)
             throw Error('Invalid native optimizer GPU worker count.');
-        add('optimizer_gpu_workers', 'count');
-        if (count === 2) {
-            const {totalThreads, totalInteropThreads} = synchronizedOptimizerEvidence(metrics);
-            add('optimizer_synchronized_minibatches', 'count');
-            add('optimizer_masked_loss_normalizations', 'count');
-            add('optimizer_masked_loss_submission_wall_seconds_sum', 'seconds');
-            add('optimizer_gradient_submission_wall_seconds_sum', 'seconds');
-            add('optimizer_gpu_update_wall_seconds_max', 'seconds');
-            report.optimizer_gpu_total_intraop_threads = {
-                value: totalThreads, unit: 'count',
-            };
-            report.optimizer_gpu_total_interop_threads = {
-                value: totalInteropThreads, unit: 'count',
-            };
-            metrics.optimizer_gpu_per_device.forEach((worker,index) => {
-                report['optimizer_gpu_'+index+'_update_wall_seconds'] = {
-                    value:worker.update_wall_seconds,unit:'seconds',
-                };
-                report['optimizer_gpu_'+index+'_gradient_submission_seconds'] = {
-                    value:worker.gradient_submission_wall_seconds,unit:'seconds',
-                };
-                report['optimizer_gpu_'+index+'_masked_loss_submission_seconds'] = {
-                    value:worker.masked_loss_submission_wall_seconds,unit:'seconds',
-                };
-                report['optimizer_gpu_'+index+'_intraop_threads'] = {
-                    value:worker.torch_intraop_threads,unit:'count',
-                };
-                report['optimizer_gpu_'+index+'_interop_threads'] = {
-                    value:worker.torch_interop_threads,unit:'count',
-                };
-                for (const [source,target] of [
-                    ['torch_cuda_process_peak_allocated_bytes','peak_allocated_bytes'],
-                    ['torch_cuda_process_peak_reserved_bytes','peak_reserved_bytes'],
-                ]) {
-                    report['optimizer_gpu_'+index+'_'+target]={
-                        value:worker[source],unit:'bytes',
-                    };
-                }
+        add('optimizer_gpu_workers','count');
+        add('optimizer_gpu_nodes','count');
+        add('optimizer_gpu_local_workers','count');
+        if (count>1) {
+            const {totalThreads,totalInteropThreads} = synchronizedOptimizerEvidence(metrics);
+            add('optimizer_synchronized_minibatches','count');
+            add('optimizer_masked_loss_normalizations','count');
+            add('optimizer_masked_loss_submission_wall_seconds_sum','seconds');
+            add('optimizer_gradient_submission_wall_seconds_sum','seconds');
+            add('optimizer_gpu_update_wall_seconds_max','seconds');
+            report.optimizer_gpu_total_intraop_threads={value:totalThreads,unit:'count'};
+            report.optimizer_gpu_total_interop_threads={value:totalInteropThreads,unit:'count'};
+            metrics.optimizer_gpu_per_device.forEach((worker,index)=>{
+                for(const [name,value,unit] of [
+                    ['update_wall_seconds',worker.update_wall_seconds,'seconds'],
+                    ['gradient_submission_seconds',worker.gradient_submission_wall_seconds,'seconds'],
+                    ['masked_loss_submission_seconds',worker.masked_loss_submission_wall_seconds,'seconds'],
+                    ['intraop_threads',worker.torch_intraop_threads,'count'],
+                    ['interop_threads',worker.torch_interop_threads,'count'],
+                    ['peak_allocated_bytes',worker.torch_cuda_process_peak_allocated_bytes,'bytes'],
+                    ['peak_reserved_bytes',worker.torch_cuda_process_peak_reserved_bytes,'bytes'],
+                ]) report['optimizer_gpu_'+index+'_'+name]={value,unit};
             });
         }
     }
