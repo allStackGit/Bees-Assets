@@ -251,6 +251,8 @@ def main() -> None:
             receipt, args.player_side, args.level_index,
         )
         selection, _, slot, original_run = selected_run(receipt)
+        if file_sha256(receipt) != provenance["selection_receipt_sha256"]:
+            raise ValueError("native selection receipt changed during challenge publication")
         selected = (selection["selected"] if "selected" in selection
                     else selection)
         provenance["selected_learner_slot"] = slot
@@ -314,6 +316,8 @@ def main() -> None:
             ]
             provenance["scene_sha256"] = file_sha256(staged / "challenge.scene.json")
             provenance["run_sha256"] = file_sha256(staged / "challenge.run.json")
+            if file_sha256(receipt) != provenance["selection_receipt_sha256"]:
+                raise ValueError("native model selection changed before challenge publication")
             atomic_json(staged / "challenge-receipt.json", provenance)
             if output.exists():
                 raise FileExistsError("challenge destination appeared before publication")
