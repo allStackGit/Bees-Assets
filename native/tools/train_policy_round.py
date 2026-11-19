@@ -840,6 +840,9 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
         python, str(Path(__file__).with_name("train_policy_capture.py")),
         *primary, str(manifest), str(checkpoint), str(trainer_config), str(learner_dir),
         "--device", args.device, "--learner-gpus", str(args.learner_gpus),
+        "--learner-nodes", str(args.learner_nodes),
+        "--learner-node-rank", str(args.learner_node_rank),
+        "--learner-backend", args.learner_backend,
         *([] if args.torch_threads is None else [
             "--torch-threads", str(max(1, args.torch_threads // args.learner_gpus))
         ]),
@@ -849,17 +852,54 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
         train_command += ["--learner-slot", str(args.learner_slot)]
     if args.refresh_opponent_slot is not None:
         train_command += ["--refresh-opponent-slot", str(args.refresh_opponent_slot)]
-    if args.learner_gpus > 1:
-        # Run the existing MA-POCA optimizer on one rank per visible leased
-        # GPU. torchrun owns process failure and NCCL rendezvous; the rank-0
-        # worker alone publishes the normal checkpoint and manifest.
+    if args.learner_gpus * args.learner_nodes > 1:
+        # Static node ranks preserve checkpoint ownership across restarts.
+        # The caller owns network reachability and supervises one torchrun
+        # process per machine; no rank launches another machine's process.
+        launcher = (["--standalone", "--nnodes=1"]
+                    if args.learner_nodes == 1 else [
+                        "--nnodes", str(args.learner_nodes),
+                        "--node-rank", str(args.learner_node_rank),
+                        "--master-addr", args.learner_master_addr,
+                        "--master-port", str(args.learner_master_port),
+                    ])
         train_command = [
             python, "-m", "torch.distributed.run",
-            "--standalone", "--nnodes=1",
-            "--nproc-per-node", str(args.learner_gpus),
+            *launcher, "--nproc-per-node", str(args.learner_gpus),
             *train_command[1:],
         ]
     run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
+    if args.learner_node_rank != 0:
+        worker_file = learner_dir / "node-result.json"
+        worker = json.loads(worker_file.read_text(encoding="utf-8"))
+        rows = worker.get("gpu_per_device")
+        if (worker.get("schema_version") != 1 or
+                worker.get("kind") != "native_distributed_optimizer_node_complete" or
+                worker.get("node_rank") != args.learner_node_rank or
+                worker.get("node_count") != args.learner_nodes or
+                worker.get("local_gpu_workers") != args.learner_gpus or
+                worker.get("global_gpu_workers") != args.learner_nodes * args.learner_gpus or
+                worker.get("input_checkpoint_sha256") != result["input_checkpoint_sha256"] or
+                worker.get("input_manifest_sha256") != result["input_manifest_sha256"] or
+                not isinstance(worker.get("global_input_sha256"), str) or
+                re.fullmatch(r"[a-f0-9]{64}", worker["global_input_sha256"]) is None or
+                not isinstance(worker.get("model_consensus_sha256"), str) or
+                re.fullmatch(r"[a-f0-9]{64}", worker["model_consensus_sha256"]) is None or
+                not isinstance(rows, list) or len(rows) != args.learner_gpus or
+                any(row.get("rank") != args.learner_node_rank * args.learner_gpus + index or
+                    row.get("local_rank") != index or
+                    row.get("node_rank") != args.learner_node_rank
+                    for index, row in enumerate(rows)) or
+                file_sha256(checkpoint) != result["input_checkpoint_sha256"] or
+                file_sha256(manifest) != result["input_manifest_sha256"]):
+            raise ValueError("native optimizer worker has no agreed multi-machine model and input identity")
+        publish_receipt(output, "round-worker-result.json", {
+            "schema_version": 1,
+            "kind": "native_distributed_optimizer_worker_complete",
+            **result,
+            **worker,
+        })
+        return
     next_checkpoint = learner_dir / "checkpoint.pt"
     next_manifest = learner_dir / "manifest.json"
     metrics = json.loads((learner_dir / "metrics.json").read_text(encoding="utf-8"))
@@ -885,9 +925,15 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
             metrics["optimizer_input_steps"] < 1 or
             type(metrics.get("episodes")) is not int or metrics["episodes"] < 1 or
             metrics.get("optimizer_gpu_workers") != (
+                args.learner_gpus * args.learner_nodes if args.device.startswith("cuda") else 0
+            ) or
+            metrics.get("optimizer_gpu_nodes") != (
+                args.learner_nodes if args.device.startswith("cuda") else 0
+            ) or
+            metrics.get("optimizer_gpu_local_workers") != (
                 args.learner_gpus if args.device.startswith("cuda") else 0
             ) or
-            (args.learner_gpus > 1 and (
+            (args.learner_gpus * args.learner_nodes > 1 and (
                 type(metrics.get("optimizer_synchronized_minibatches")) is not int or
                 metrics["optimizer_synchronized_minibatches"] < 1 or
                 metrics.get("optimizer_masked_loss_normalizations") !=
@@ -896,7 +942,7 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                 re.fullmatch(r"[a-f0-9]{64}",
                     metrics["optimizer_gpu_model_consensus_sha256"]) is None or
                 not isinstance(metrics.get("optimizer_gpu_per_device"), list) or
-                len(metrics["optimizer_gpu_per_device"]) != args.learner_gpus
+                len(metrics["optimizer_gpu_per_device"]) != args.learner_gpus * args.learner_nodes
             ))):
         raise ValueError("native learner completion receipt disagrees with its model artifacts or actual GPU ranks")
     publish_receipt(output, "round-result.json", {
@@ -924,7 +970,17 @@ def main() -> None:
                         help="also publish this opponent slot using the successful learner checkpoint")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--learner-gpus", type=int, choices=(1, 2), default=1,
-                        help="synchronous MA-POCA optimizer GPU workers (one per visible CUDA/ROCm GPU)")
+                        help="synchronous MA-POCA optimizer GPU workers on this machine")
+    parser.add_argument("--learner-nodes", type=int, default=1,
+                        help="number of machines in the synchronous native learner")
+    parser.add_argument("--learner-node-rank", type=int, default=0,
+                        help="this machine's fixed zero-based rank in the learner")
+    parser.add_argument("--learner-master-addr",
+                        help="trusted reachable torchrun rendezvous host for multiple machines")
+    parser.add_argument("--learner-master-port", type=int,
+                        help="trusted torchrun rendezvous port for multiple machines")
+    parser.add_argument("--learner-backend", choices=("auto", "nccl", "gloo"),
+                        default="auto", help="shared GPU gradient collective backend")
     parser.add_argument("--torch-threads", type=int,
                         help="fixed optimizer intra-op threads, not rollout parallelism")
     parser.add_argument("--rollout-workers", type=int,
@@ -980,9 +1036,21 @@ def main() -> None:
         parser.error("--bundle-delivery-name requires a pinned collection, inbox and safe name")
     if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
         parser.error("--torch-threads must be between 1 and 256")
-    if args.learner_gpus > 1 and (
+    if not 1 <= args.learner_nodes <= 8 or not 0 <= args.learner_node_rank < args.learner_nodes:
+        parser.error("native optimizer requires 1–8 machines and a valid fixed node rank")
+    if args.learner_gpus * args.learner_nodes > 1 and (
             args.collect_only or args.device not in ("cuda", "cuda:0")):
-        parser.error("multi-GPU MA-POCA requires optimizer execution on CUDA/ROCm")
+        parser.error("distributed MA-POCA requires optimizer execution on CUDA/ROCm")
+    if args.learner_nodes > 1:
+        if (not args.learner_master_addr or
+                re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}",
+                             args.learner_master_addr) is None or
+                args.learner_master_port is None or
+                not 1 <= args.learner_master_port <= 65535 or
+                args.learner_backend == "auto"):
+            parser.error("multi-machine optimizer requires a trusted rendezvous and an explicit common backend")
+    elif args.learner_master_addr is not None or args.learner_master_port is not None:
+        parser.error("single-machine optimizer uses torchrun standalone rendezvous")
     if args.torch_threads is not None and args.torch_threads < args.learner_gpus:
         parser.error("optimizer CPU threads must accommodate every GPU learner")
     if args.rollout_workers is not None and not 1 <= args.rollout_workers <= 256:
@@ -1012,6 +1080,8 @@ def main() -> None:
     run_document = json.loads(run_bytes)
     if not isinstance(run_document, dict):
         parser.error("run configuration must be an object")
+    if args.learner_nodes > 1 and "rollout_bundles" not in run_document:
+        parser.error("multi-machine optimizer requires replicated, digest-pinned native rollout bundles")
     if args.pinned_rollout_bundle and run_document.get("rollout_bundles") != []:
         parser.error("--pinned-rollout-bundle requires an empty rollout_bundles template")
     if args.collection_orders is not None and run_document.get("rollout_bundles") != []:
