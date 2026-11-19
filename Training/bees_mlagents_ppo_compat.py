@@ -5625,9 +5625,10 @@ def _native_poca_average_gradients(poca_optimizer):
     # Transfer presence to the host only once rather than triggering one
     # synchronization per weight matrix during GPU gradient scattering.
     active = presence.tolist()
-    groups = {
+    groups = {}
     for index, parameter in enumerate(parameters):
-        groups.setdefault(parameter.dtype, []).append((index, parameter))
+        if active[index]:
+            groups.setdefault(parameter.dtype, []).append((index, parameter))
     for dtype, entries in groups.items():
         # Every rank reduces exactly the same ordered parameter shapes.
         flattened = torch.cat([
@@ -5643,14 +5644,11 @@ def _native_poca_average_gradients(poca_optimizer):
         offset = 0
         for index, parameter in entries:
             count = parameter.numel()
-            if active[index]:
-                value = reduced[offset:offset + count].view_as(parameter)
-                if parameter.grad is None:
-                    parameter.grad = value.clone()
-                else:
-                    parameter.grad.copy_(value)
+            value = reduced[offset:offset + count].view_as(parameter)
+            if parameter.grad is None:
+                parameter.grad = value.clone()
             else:
-                parameter.grad = None
+                parameter.grad.copy_(value)
             offset += count
     poca_optimizer._bees_distributed_grad_syncs = (
         getattr(poca_optimizer, "_bees_distributed_grad_syncs", 0) + 1

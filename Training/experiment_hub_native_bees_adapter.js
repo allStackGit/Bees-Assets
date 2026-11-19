@@ -1051,8 +1051,12 @@ function createNativeBeesAdapter({
                 ...(inboxLearner ? bundleArguments(rollout_bundles) : []),
                 '--device', gpu ? 'cuda' : 'cpu',
                 ...(!collectOnly && dualGpu ? ['--learner-gpus', '2'] : []),
-                ...(optimizer_threads === undefined ? [] :
-                    ['--torch-threads', String(optimizer_threads)]),
+                // Two optimizer ranks are OS processes. Bound the sum
+                // of their intra-op threads by the reserved Hub CPUs,
+                // including when no manual thread selection was made.
+                ...(optimizer_threads === undefined && !dualGpu ? [] :
+                    ['--torch-threads', String(optimizer_threads ??
+                        Math.min(256, Math.floor(context.cpu_quota)))]),
                 ...((rollout_workers === undefined && !dualGpu) ||
                     inboxLearner || bundleRound ? [] :
                     ['--rollout-workers', String(activeWorkers)]),
