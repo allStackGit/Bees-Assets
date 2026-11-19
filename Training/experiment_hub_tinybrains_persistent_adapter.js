@@ -157,6 +157,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_opponent_readback_cached_indices',
         'rollout_opponent_grouped_calls','rollout_opponent_grouped_models',
         'rollout_opponent_grouped_states','rollout_opponent_grouped_padding',
+        'rollout_learner_grouped_forwards_saved',
+        'rollout_learner_grouped_states',
         'rollout_opponent_grouped_fallbacks',
         'rollout_opponent_grouped_weight_reuses',
         'rollout_opponent_pixel_samples',
@@ -410,6 +412,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_grouped_states,'count');
         add('collector_'+i+'_opp_group_input_bytes',
             worker.rollout_opponent_grouped_input_bytes,'bytes');
+        add('collector_'+i+'_learner_fused_forwards',
+            worker.rollout_learner_grouped_forwards_saved,'count');
+        add('collector_'+i+'_learner_fused_states',
+            worker.rollout_learner_grouped_states,'count');
         add('collector_'+i+'_opp_group_padding',
             worker.rollout_opponent_grouped_padding,'count');
         add('collector_'+i+'_opp_group_fallbacks',
@@ -632,6 +638,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'opp_slot_allocated','opp_cached_indices',
                 'opp_group_calls','opp_group_models',
                 'opp_group_states','opp_group_input_bytes',
+                'learner_fused_forwards','learner_fused_states',
                 'opp_group_padding','opp_group_fallbacks',
                 'snapshot_cache_files','snapshot_cache_bytes',
                 'policy_upload_groups',
