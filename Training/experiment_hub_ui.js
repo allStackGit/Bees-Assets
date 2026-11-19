@@ -170,10 +170,9 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             !Number.isSafeInteger(member.ram_mb)||member.ram_mb<1||
             !Number.isSafeInteger(member.gpus)||member.gpus<0))
             return null;
-        // An explicitly approved Courier shared-policy learner and ONE
-        // collector may use the same host, but only with two separate,
-        // acknowledged exclusive physical GPU leases. All other distributed
-        // membership still requires one native machine per participant.
+        // The learner and its slot-pinned shared-policy collectors may
+        // share a host, but only with separate acknowledged exclusive
+        // GPU leases. Other distributed members require distinct hosts.
         const ownersByHost=new Map();
         for(const member of members) {
             if(!ownersByHost.has(member.host))ownersByHost.set(member.host,[]);
@@ -4794,9 +4793,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if(machines.some(machine=>machine.id===prior))courierMachine.value=prior;
         const machine=machines.find(item=>item.id===courierMachine.value);
         const endpoints=machine?.courier_remote_lineage_endpoints||[];
-        // A second GPU may host ONE separately leased shared-policy
-        // collector on the learner machine. The coordinator still proves
-        // distinct GPU identities and leases before any Start.
+        // Each separately leased shared-policy collector can use its own
+        // private slot listener and exclusive GPU on the learner machine.
+        // The coordinator proves physical identity at native Start.
         const colocated=shared&&machine?.courier_lineage_subset===true&&
             machine.gpus?.length>=2&&
             ['courier','courier_lineage'].every(project=>
@@ -4815,11 +4814,22 @@ document.addEventListener('DOMContentLoaded', () => {
             host.installed_projects?.includes('courier_lineage')));
         const subset=machine?.courier_lineage_subset===true;
         courierMatch.label.hidden=!subset;
-        const available=match.filter(hosts=>hosts.length===1).map(hosts=>hosts[0]);
-        const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
-            ':'+machine.courier_lineage_slots?.map(item=>item.slot+'@'+item.endpoint).join('|'):null;
         const population=selected.parameters.workers;
         const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
+        // Slot-backed local collectors must occupy an ordered prefix of
+        // the learner-approved endpoints. A later available endpoint
+        // cannot silently become a different recurrent PPO slot.
+        const slotPinned=colocated&&machine?.courier_lineage_slots?.length>0;
+        const candidates=slotPinned?match.slice(0,capacity):match;
+        const gap=slotPinned?candidates.findIndex(hosts=>hosts.length!==1):-1;
+        const eligible=gap>=0?candidates.slice(0,gap):candidates;
+        const available=eligible.filter(hosts=>hosts.length===1)
+            .map(hosts=>hosts[0]);
+        courierMatch.label.lastChild.textContent=slotPinned
+            ?' Bind each budget to this exact collector slot and machine'
+            :' Match budgets across the selected machines';
+        const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
+            ':'+machine.courier_lineage_slots?.map(item=>item.slot+'@'+item.endpoint).join('|'):null;
         if(courierBudgetHost!==budgetHost) {
             const local=colocated&&available.some(host=>host.id===machine.id);
             // Selected-machine mode is mandatory for a local collector:
