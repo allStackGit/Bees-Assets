@@ -303,6 +303,70 @@ class RemoteBattleWindow:
                 return squad
         return None
 
+    def obstacle_screen_shape(self, obj):
+        """Project the authoritative physics collider, including local offsets."""
+        collider = obj.get("collider") or {}
+        kind = collider.get("kind")
+        scale, cx, cy = self.transform()
+        if kind in ("circle", "box", "polygon"):
+            angle = math.radians(obj["rotation"])
+            sn, cs = math.sin(angle), math.cos(angle)
+
+            def project(px, py):
+                wx = obj["x"] + px * cs - py * sn
+                wy = obj["y"] + px * sn + py * cs
+                return wx * scale + cx, -wy * scale + cy
+
+            if kind == "circle":
+                x, y = project(*collider["offset"])
+                radius = collider["radius"] * scale
+                return "oval", (x-radius, y-radius, x+radius, y+radius)
+            if kind == "box":
+                ox, oy = collider["offset"]
+                hx, hy = collider["half_extents"]
+                vertices = ((ox-hx, oy-hy), (ox+hx, oy-hy),
+                            (ox+hx, oy+hy), (ox-hx, oy+hy))
+            else:
+                vertices = collider["vertices"]
+            if len(vertices) >= 3:
+                points = []
+                for px, py in vertices:
+                    points.extend(project(px, py))
+                return "polygon", points
+
+        # Large or unsupported hulls already carry the host's physics AABB.
+        bounds = obj.get("collider_bounds")
+        if bounds is not None:
+            ax, ay = self.to_screen(*bounds[0])
+            bx, by = self.to_screen(*bounds[1])
+            return "bounds", (min(ax, bx), min(ay, by),
+                              max(ax, bx), max(ay, by))
+        return "point", self.to_screen(obj["x"], obj["y"])
+
+    @staticmethod
+    def obstacle_distance(shape, points, x, y):
+        """Screen-space distance to a collider, zero when inside its hull."""
+        if shape == "point":
+            return math.hypot(x-points[0], y-points[1])
+        if shape == "oval":
+            ax, ay, bx, by = points
+            return max(0.0, math.hypot(x-(ax+bx)/2, y-(ay+by)/2) - (bx-ax)/2)
+        if shape == "bounds":
+            ax, ay, bx, by = points
+            vertices = ((ax, ay), (bx, ay), (bx, by), (ax, by))
+        else:
+            vertices = list(zip(points[::2], points[1::2]))
+        inside, nearest = False, math.inf
+        for i, (ax, ay) in enumerate(vertices):
+            bx, by = vertices[(i+1) % len(vertices)]
+            dx, dy = bx-ax, by-ay
+            length_sq = dx*dx + dy*dy
+            t = max(0.0, min(1.0, ((x-ax)*dx + (y-ay)*dy) / length_sq)) if length_sq else 0.0
+            nearest = min(nearest, math.hypot(x-(ax+t*dx), y-(ay+t*dy)))
+            if (ay > y) != (by > y) and x < (bx-ax)*(y-ay)/(by-ay) + ax:
+                inside = not inside
+        return 0.0 if inside else nearest
+
     def hit(self, x, y):
         if self.state is None:
             return None, None
@@ -313,9 +377,13 @@ class RemoteBattleWindow:
             d = (sx - x) ** 2 + (sy - y) ** 2
             if d < distance:
                 closest, distance = ("ship", ship), d
+        # Ships drawn over an obstacle retain selection priority.
+        if closest is not None:
+            return closest
+        distance = 17.0
         for obj in self.state.get("obstacles", []):
-            sx, sy = self.to_screen(obj["x"], obj["y"])
-            d = (sx - x) ** 2 + (sy - y) ** 2
+            shape, points = self.obstacle_screen_shape(obj)
+            d = self.obstacle_distance(shape, points, x, y)
             if d < distance:
                 closest, distance = ("obstacle", obj), d
         return closest if closest else (None, None)
@@ -613,12 +681,27 @@ class RemoteBattleWindow:
         demolition_target = (objective.get("target_map_object_id")
                              if objective.get("kind") == "demolition" else None)
         for obj in state.get("obstacles", []):
-            x, y = self.to_screen(obj["x"], obj["y"])
+            shape, points = self.obstacle_screen_shape(obj)
             color = MINERAL if obj["mining"] else NEUTRAL
-            self.canvas.create_oval(x-5, y-5, x+5, y+5, outline=color, width=2)
+            if shape == "polygon":
+                self.canvas.create_polygon(*points, outline=color, fill="", width=2)
+                xs, ys = points[::2], points[1::2]
+                extent = (min(xs), min(ys), max(xs), max(ys))
+            elif shape == "oval":
+                self.canvas.create_oval(*points, outline=color, width=2)
+                extent = points
+            elif shape == "bounds":
+                self.canvas.create_rectangle(*points, outline=color,
+                                             dash=(4, 3), width=2)
+                extent = points
+            else:
+                x, y = points
+                self.canvas.create_oval(x-5, y-5, x+5, y+5, outline=color, width=2)
+                extent = (x-5, y-5, x+5, y+5)
             if obj["id"] == demolition_target:
-                self.canvas.create_oval(x-16, y-16, x+16, y+16,
-                                        outline=ENEMY, dash=(4, 3), width=2)
+                ax, ay, bx, by = extent
+                self.canvas.create_rectangle(ax-8, ay-8, bx+8, by+8,
+                                             outline=ENEMY, dash=(4, 3), width=2)
         for shot in state.get("projectiles", []):
             x, y = self.to_screen(shot["x"], shot["y"])
             self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="#ffe4a2", outline="")
