@@ -4430,6 +4430,16 @@ class ExperimentHub {
         const collectors=validateMembers(value.collector_members,'collector');
         const optimizers=validateMembers(value.optimizer_members,'optimizer');
         const configurations=new Map(this.state.configurations.map(item=>[item.id,item]));
+        // Each approved round must consume a new deterministic physical
+        // seed window, not repeat the same arenas against a new checkpoint.
+        // Freeze the common initial seed alongside the machine allocations;
+        // old approved plans without this field retain their original seeds.
+        const seeds=collectors.map(entry=>
+            configurations.get(entry.configuration_id)?.parameters?.seed_offset);
+        if(seeds.some(seed=>!Number.isSafeInteger(seed)||seed<0||
+            seed>Number.MAX_SAFE_INTEGER-value.round_count+1||
+            seed!==seeds[0]))
+            throw Error('Native training-round collectors need one common safe seed offset across every allocated machine and approved round.');
         const owner=configurations.get(optimizers[0].configuration_id)?.parameters;
         const ownerThreads=optimizers[0].resources.gpu_count;
         if(!SHA256.test(String(owner?.optimizer_inputs_sha256||''))||
@@ -4458,6 +4468,7 @@ class ExperimentHub {
             collector_members:collectors,optimizer_members:optimizers,
             agent_instances:instances,
             round_count:value.round_count,completed_rounds:0,
+            collector_seed_offset:seeds[0],round_history:[],
             approved_at:timestamp,updated_at:timestamp,
             reason:'Approved for exact-source physical collection followed by one synchronized optimizer per round.',
         };
@@ -4614,12 +4625,34 @@ class ExperimentHub {
                         nativeOptimizerGroupBlock(this.state,owner))
                         continue;
                     const nextCount=plan.completed_rounds+1;
+                    // The source and output checkpoints were verified by
+                    // the exact collector/optimizer group owners above.
+                    // Retain their identities before advancing the same
+                    // bounded plan; otherwise the original round's model,
+                    // experience and resource provenance disappears from
+                    // the plan after the next reservation is issued.
+                    const history=[...(plan.round_history||[]),{
+                        round:nextCount,
+                        source_job_id:plan.source_job_id,
+                        source_checkpoint_sha256:plan.source_model_sha256,
+                        collector_job_ids:plan.collectors_job_ids.slice(),
+                        optimizer_job_ids:members.map(job=>job.id),
+                        collector_bundle_id:plan.collectors_bundle_id,
+                        optimizer_bundle_id:bundleId,
+                        checkpoint_job_id:owner.id,
+                        checkpoint_sha256:owner.checkpoint_model_sha256,
+                        ...(plan.collector_seed_offset===undefined?{}:{
+                            collector_seed_offset:
+                                plan.collector_seed_offset+plan.completed_rounds,
+                        }),
+                    }];
                     update(nextCount===plan.round_count?'complete':'pending_collectors',
                         nextCount===plan.round_count
                             ?'All approved native collection and optimizer rounds completed.'
                             :'Starting fresh physical collection against the newly verified checkpoint.',
                         {
                             completed_rounds:nextCount,
+                            round_history:history,
                             source_job_id:owner.id,
                             source_model_sha256:owner.checkpoint_model_sha256,
                             collectors_bundle_id:null,collectors_job_ids:null,
@@ -4696,6 +4729,12 @@ class ExperimentHub {
         }
         const machines=this.snapshot().machines;
         const next=copy(this.state);
+        const approvedRound=roundPlan
+            ?(next.native_round_plans||[]).find(item=>
+                item.id===roundPlan.id&&item.status===roundPlan.status)
+            :null;
+        if(roundPlan&&!approvedRound)
+            throw Error('Approved native round changed before issuing a resource bundle.');
         const bundleId=crypto.randomUUID(),jobs=[],leases=[];
         for(const [index,selection] of value.members.entries()) {
             if(!object(selection)||
@@ -4725,6 +4764,17 @@ class ExperimentHub {
                         ?{continuation_of_job_id:modelSourceId}:{}),
                 }:{}),
             });
+            if(approvedRound?.collector_seed_offset!==undefined&&
+                roundPlan.phase==='collectors') {
+                // Freeze the exact physical seed for this immutable
+                // collector job, not the saved reusable configuration.
+                // Retries reissue no jobs: queue and bundle IDs are durably
+                // committed together in the original Hub registry.
+                job.frozen_parameters.seed_offset=
+                    approvedRound.collector_seed_offset+approvedRound.completed_rounds;
+                job.configuration_sha256=crypto.createHash('sha256')
+                    .update(JSON.stringify(job.frozen_parameters)).digest('hex');
+            }
             if(collectors) {
                 if(!['bees_native','bees_native_optimizer_worker']
                     .includes(job.project_id)||
