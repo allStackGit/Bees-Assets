@@ -348,8 +348,16 @@ fn resolve(root: &Path, path: &Path) -> PathBuf {
 }
 
 fn resolve_interpreter(root: &Path, path: &Path) -> PathBuf {
-    // A bare python/python3/py executable resolves through PATH on
-    // Windows and Linux; explicit relative script paths use the config dir.
+    // One portable authored run can move between Windows and Linux
+    // without retaining the source machine's absolute venv executable.
+    // The explicit "auto" selection always resolves through the
+    // platform's conventional PATH command. Never rewrite model assets
+    // or silently change the selected inference device.
+    if path == Path::new("auto") {
+        return PathBuf::from(if cfg!(windows) { "python" } else { "python3" });
+    }
+    // Other bare executables also resolve through PATH; explicit relative
+    // script paths continue to use the owning run configuration directory.
     if !path.is_absolute() && path.components().count() == 1 {
         path.to_owned()
     } else {

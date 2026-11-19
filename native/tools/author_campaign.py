@@ -129,9 +129,9 @@ def source_policy_runtime(run_path: Path, run: dict, runtime_files: dict,
             runtime_files[name] = path, digest, normalized
         pinned[name] = normalized
     run["policy_worker"] = "native/tools/policy_worker.py"
-    # The host resolves a one-component interpreter through PATH on both
-    # Windows and Linux. It must have the right runtime dependencies installed.
-    run["python"] = "python"
+    # Portable native host resolves auto to python3 on Linux and python
+    # on Windows through PATH. No machine-specific virtualenv is copied.
+    run["python"] = "auto"
     return pinned
 
 

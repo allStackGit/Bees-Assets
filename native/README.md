@@ -515,8 +515,9 @@ Verified trained-opponent challenge runs can also be used for ordinary
 and alternate missions. The publisher packages the selected model weights,
 rebased manifests, inference worker, and matching native actor modules
 together with their SHA-256 provenance; the game no longer depends on the
-training checkout's absolute paths. The published run uses `python` from
-PATH on either Windows or Linux. Install compatible Python, NumPy, and the
+training checkout's absolute paths. The published run uses a portable
+`python: "auto"` setting, resolving to `python3` through PATH on Linux
+and `python` through PATH on Windows. Install compatible Python, NumPy, and the
 model backend dependencies (PyTorch/ML-Agents for an ML-Agents actor, or the
 appropriate ONNX runtime) on the target machine; no virtual environment
 or interpreter binary is copied. To run a portable trained opponent on a

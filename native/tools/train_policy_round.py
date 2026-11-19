@@ -73,7 +73,9 @@ def source_config(path: Path, manifest: Path, output: Path) -> dict:
     interpreter = config.get("python")
     if not isinstance(interpreter, str) or not interpreter:
         raise ValueError("run configuration requires its native policy Python interpreter")
-    if Path(interpreter).is_absolute() or len(Path(interpreter).parts) > 1:
+    if interpreter == "auto":
+        config["python"] = "python" if os.name == "nt" else "python3"
+    elif Path(interpreter).is_absolute() or len(Path(interpreter).parts) > 1:
         config["python"] = resolved(base, interpreter)
     levels = config.get("levels")
     if not isinstance(levels, list) or not levels:
