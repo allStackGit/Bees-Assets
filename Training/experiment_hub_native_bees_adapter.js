@@ -150,6 +150,8 @@ function learnerMeasurements(metrics) {
                 metrics.optimizer_synchronized_minibatches < 1 ||
                 metrics.optimizer_masked_loss_normalizations !==
                     metrics.optimizer_synchronized_minibatches ||
+                typeof metrics.optimizer_gpu_model_consensus_sha256 !== 'string' ||
+                !SHA256.test(metrics.optimizer_gpu_model_consensus_sha256) ||
                 !Array.isArray(metrics.optimizer_gpu_per_device) ||
                 metrics.optimizer_gpu_per_device.length !== 2)))
             throw Error('Invalid native optimizer GPU worker measurements.');
@@ -871,6 +873,8 @@ function createNativeBeesAdapter({
                 proof.optimizer_synchronized_minibatches < 1 ||
                 proof.optimizer_masked_loss_normalizations !==
                     proof.optimizer_synchronized_minibatches ||
+                typeof proof.optimizer_gpu_model_consensus_sha256 !== 'string' ||
+                !SHA256.test(proof.optimizer_gpu_model_consensus_sha256) ||
                 !Array.isArray(proof.optimizer_gpu_per_device) ||
                 proof.optimizer_gpu_per_device.length !== 2 ||
                 proof.optimizer_gpu_per_device.some((row, index) =>
