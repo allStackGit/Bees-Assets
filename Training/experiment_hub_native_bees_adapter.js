@@ -130,6 +130,7 @@ function synchronizedOptimizerEvidence(metrics) {
         throw Error('Native Bees two-GPU checkpoint lacks synchronized optimizer evidence.');
 
     let totalThreads = 0;
+    let totalInteropThreads = 0;
     let gradientSeconds = 0;
     let maskedSeconds = 0;
     let maxUpdateSeconds = 0;
@@ -154,6 +155,7 @@ function synchronizedOptimizerEvidence(metrics) {
                 !Number.isSafeInteger(worker[name]) || worker[name] < 0))
             throw Error('Invalid native GPU optimizer rank, thread placement or work measurements.');
         totalThreads += worker.torch_intraop_threads;
+        totalInteropThreads += worker.torch_interop_threads;
         gradientSeconds += worker.gradient_submission_wall_seconds;
         maskedSeconds += worker.masked_loss_submission_wall_seconds;
         maxUpdateSeconds = Math.max(maxUpdateSeconds, worker.update_wall_seconds);
@@ -167,7 +169,7 @@ function synchronizedOptimizerEvidence(metrics) {
         metrics.optimizer_torch_intraop_threads !== workers[0].torch_intraop_threads ||
         metrics.optimizer_torch_interop_threads !== workers[0].torch_interop_threads)
         throw Error('Native Bees synchronized optimizer totals disagree with individual GPU ranks.');
-    return totalThreads;
+    return {totalThreads, totalInteropThreads};
 }
 
 function learnerMeasurements(metrics) {
@@ -204,7 +206,7 @@ function learnerMeasurements(metrics) {
             throw Error('Invalid native optimizer GPU worker count.');
         add('optimizer_gpu_workers', 'count');
         if (count === 2) {
-            const totalThreads = synchronizedOptimizerEvidence(metrics);
+            const {totalThreads, totalInteropThreads} = synchronizedOptimizerEvidence(metrics);
             add('optimizer_synchronized_minibatches', 'count');
             add('optimizer_masked_loss_normalizations', 'count');
             add('optimizer_masked_loss_submission_wall_seconds_sum', 'seconds');
@@ -212,6 +214,9 @@ function learnerMeasurements(metrics) {
             add('optimizer_gpu_update_wall_seconds_max', 'seconds');
             report.optimizer_gpu_total_intraop_threads = {
                 value: totalThreads, unit: 'count',
+            };
+            report.optimizer_gpu_total_interop_threads = {
+                value: totalInteropThreads, unit: 'count',
             };
             metrics.optimizer_gpu_per_device.forEach((worker,index) => {
                 report['optimizer_gpu_'+index+'_update_wall_seconds'] = {
@@ -922,9 +927,11 @@ function createNativeBeesAdapter({
             if (round.metrics.optimizer_gpu_workers !== leasedGpuCount)
                 throw Error('Native Bees optimizer GPU execution disagrees with the Hub lease.');
             if (leasedGpuCount === 2) {
-                const totalThreads = synchronizedOptimizerEvidence(round.metrics);
+                const {totalThreads, totalInteropThreads} =
+                    synchronizedOptimizerEvidence(round.metrics);
                 if (!Number.isSafeInteger(context.cpu_quota) ||
-                    totalThreads > context.cpu_quota)
+                    totalThreads > context.cpu_quota ||
+                    totalInteropThreads > context.cpu_quota)
                     throw Error('Native Bees optimizer ranks exceeded their shared Hub CPU quota.');
             }
         }
