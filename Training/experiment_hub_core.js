@@ -4496,12 +4496,17 @@ class ExperimentHub {
                     nativeOptimizerGroupBlock(this.state,source))
                     throw Error('Frozen native optimizer source or its original worker group changed.');
                 const snapshot=this.snapshot();
-                if(Object.entries(plan.agent_instances).some(([machineId,instance])=>
-                    snapshot.machines.find(machine=>machine.id===machineId)?.status!=='connected'||
-                    this.agentReports.get(machineId)?.instance_id!==instance))
-                    // Never replace an authenticated machine in the same
-                    // approval. A temporarily offline member does not cause
-                    // new work to start before it reconnects.
+                const machines=Object.entries(plan.agent_instances);
+                if(machines.some(([machineId,instance])=>{
+                    const live=this.agentReports.get(machineId);
+                    return live?.instance_id&&live.instance_id!==instance;
+                }))
+                    throw Error('An approved native training-round machine changed its authenticated agent instance; fresh operator authorization is required.');
+                if(machines.some(([machineId])=>
+                    snapshot.machines.find(machine=>machine.id===machineId)
+                        ?.status!=='connected'))
+                    // Offline members keep their original leases and jobs.
+                    // No replacement worker is silently approved.
                     continue;
                 const phase=plan.status.endsWith('collectors')?'collectors':'optimizer';
                 if(plan.status.startsWith('pending_')) {
