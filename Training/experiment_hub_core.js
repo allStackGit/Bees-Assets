@@ -3110,7 +3110,9 @@ class ExperimentHub {
                 throw Error('Courier group requires a current native agent identity on every original machine.');
             return {job_id:job.id,lease_id:lease.id,machine_id:machine.id,
                 ...(index>0?{endpoint:endpoints[index-1],
-                    slot:job.frozen_parameters.slot,max_shards:ceilings[index-1]}:{})};
+                    slot:job.frozen_parameters.slot,
+                    listener_slot:job.frozen_parameters.listener_slot??job.frozen_parameters.slot,
+                    max_shards:ceilings[index-1]}:{})};
         });
         const plans=copy(this.state.distributed_group_plans||[]);
         if(plans.length>=64) {
@@ -3237,6 +3239,8 @@ class ExperimentHub {
                             item.id===worker.assigned_machine_id);
                         const frozen=plan.frozen_members[index+1];
                         return !machine||worker.frozen_parameters?.slot!==frozen.slot||
+                            (worker.frozen_parameters?.listener_slot??worker.frozen_parameters?.slot)!==
+                                (frozen.listener_slot??frozen.slot)||
                             courierWorkerSlot(machine,frozen.listener_slot??frozen.slot)?.endpoint!==frozen.endpoint||
                             machine.courier_lineage_key_fingerprint!==plan.key_fingerprint||
                             courierWorkerSlot(machine,frozen.listener_slot??frozen.slot)?.max_shards!==frozen.max_shards;
@@ -3829,6 +3833,8 @@ class ExperimentHub {
                             owner.lease_id!==worker.lease_id||
                             owner.machine_id!==worker.assigned_machine_id||
                             owner.slot!==worker.frozen_parameters?.slot||
+                            (owner.listener_slot??owner.slot)!==
+                                (worker.frozen_parameters?.listener_slot??worker.frozen_parameters?.slot)||
                             !['start_requested','launch_requested','running'].includes(worker.status);
                     })) {
                     disarm('Courier remote lineage population, dispatch or frozen machine ownership changed.');
@@ -5812,7 +5818,9 @@ class ExperimentHub {
                 const pinned=pending.frozen_members.find(item=>item.job_id===worker.id);
                 return !pinned||pinned.lease_id!==worker.lease_id||
                     pinned.machine_id!==worker.assigned_machine_id||
-                    pinned.slot!==worker.frozen_parameters?.slot;
+                    pinned.slot!==worker.frozen_parameters?.slot||
+                    (pinned.listener_slot??pinned.slot)!==
+                        (worker.frozen_parameters?.listener_slot??worker.frozen_parameters?.slot);
             })||
             pending.frozen_members[0]?.lease_id!==learner.lease_id||
             pending.frozen_members[0]?.machine_id!==learner.assigned_machine_id||
@@ -5880,7 +5888,8 @@ class ExperimentHub {
                     endpoint:courierWorkerListener(machine,worker)?.endpoint,
                     key_fingerprint:machine.courier_lineage_key_fingerprint,
                     max_shards:courierWorkerListener(machine,worker)?.max_shards,
-                    slot:worker.frozen_parameters.slot};
+                    slot:worker.frozen_parameters.slot,
+                    listener_slot:worker.frozen_parameters.listener_slot??worker.frozen_parameters.slot};
             }),
             key_fingerprint:host.courier_remote_key_fingerprint,
             learner_endpoints:endpoints.slice(),
