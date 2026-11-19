@@ -401,7 +401,7 @@ class RemoteBattleWindow:
 
     def select_all(self, _event=None):
         if self.state:
-            self.selected = [squad["owner"] for squad in self.state["squads"] if squad["owned"]]
+            self.selected = [squad["owner"] for squad in self.state["squads"] if squad["controllable"]]
             self.draw()
             self.update_sidebar()
 
@@ -420,7 +420,8 @@ class RemoteBattleWindow:
                 label = f"#{number}" if number is not None else f"ID {owner['squad_id']}"
                 active = squad.get("command") or "Idle"
                 self.squad_list.insert(tk.END,
-                    f"{label:>6}  {len(squad['members']):>2} ships  {active}")
+                    f"{label:>6}  {len(squad['members']):>2} ships  {active}"
+                    f"{' (orders disabled)' if not squad['controllable'] else ''}")
             for idx, squad in enumerate(self.sidebar_owners):
                 if squad["owner"] in self.selected:
                     self.squad_list.selection_set(idx)
@@ -450,7 +451,8 @@ class RemoteBattleWindow:
         self.selected = [
             self.sidebar_owners[index]["owner"]
             for index in self.squad_list.curselection()
-            if index < len(self.sidebar_owners)
+            if index < len(self.sidebar_owners) and
+            self.sidebar_owners[index]["controllable"]
         ]
         self.update_sidebar()
         self.draw()
@@ -459,7 +461,7 @@ class RemoteBattleWindow:
         if self.state is None:
             return []
         live = {tuple(sorted(squad["owner"].items())): squad["owner"]
-                for squad in self.state["squads"] if squad["owned"]}
+                for squad in self.state["squads"] if squad["controllable"]}
         self.selected = [s for s in self.selected if tuple(sorted(s.items())) in live]
         return self.selected
 
@@ -604,7 +606,7 @@ class RemoteBattleWindow:
                 sx, sy = self.to_screen(ship["x"], ship["y"])
                 if x0 <= sx <= x1 and y0 <= sy <= y1:
                     squad = self.squad_for_ship(ship["id"], owned=True)
-                    if squad and squad["owner"] not in owners:
+                    if squad and squad["controllable"] and squad["owner"] not in owners:
                         owners.append(squad["owner"])
             if not additive:
                 self.selected = owners
@@ -619,7 +621,7 @@ class RemoteBattleWindow:
         kind, target = self.hit(event.x, event.y)
         if kind == "ship" and target["owned"]:
             squad = self.squad_for_ship(target["id"], owned=True)
-            self.select(squad["owner"] if squad else None, additive)
+            self.select(squad["owner"] if squad and squad["controllable"] else None, additive)
         elif not additive:
             self.select(None, False)
 

@@ -239,7 +239,7 @@ class RemoteConsole:
 
     def selected_owners(self, state):
         squads = {row["owner"]["squad_id"]: row["owner"]
-                  for row in state["squads"] if row["owned"]}
+                  for row in state["squads"] if row["controllable"]
         scope = (state["world_id"], state["episode_revision"])
         with self.lock:
             if self.selected_scope != scope:
@@ -251,10 +251,11 @@ class RemoteConsole:
         matches = [row for row in state["squads"]
                    if row["owner"]["squad_id"] == squad_id and
                    (owned is None or row["owned"] == owned) and
+                   (owned is not True or row["controllable"]) and
                    (friendly is None or
                     (row["side"] == state["viewer_side"]) == friendly)]
         if len(matches) != 1:
-            relation = ("controlled" if owned is True else
+            relation = ("controllable" if owned is True else
                         "friendly" if friendly is True else
                         "enemy" if friendly is False else "available")
             raise ValueError(f"squad {squad_id} is not an available {relation} target")
@@ -384,6 +385,7 @@ class RemoteConsole:
                 owner = squad["owner"]
                 print(f"  {owner['squad_id']:>8} side {squad['side']}"
                       f" {'ours' if squad['owned'] else 'ally' if squad['side'] == state['viewer_side'] else 'enemy'}"
+                      f"{' (orders disabled)' if squad['owned'] and not squad['controllable'] else ''}"
                       f" ships {squad['members']}")
             return
         if cmd == "obstacles":
