@@ -919,12 +919,15 @@ function createNativeBeesAdapter({
             const allowed = inboxLearner
                 ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads',
                     'refresh_opponent_slot']
-                : collectOnly
-                    ? ['config_sha256', 'seed_offset', 'rollout_workers', 'physics_workers',
-                        'collection_id', 'rollout_world_start', 'rollout_worlds',
-                        'bundle_directory', 'source_run_contract_sha256']
-                    : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers',
-                        'physics_workers', 'rollout_worlds', 'refresh_opponent_slot'];
+                : bundleRound
+                    ? ['config_sha256', 'seed_offset', 'optimizer_threads',
+                        'refresh_opponent_slot']
+                    : collectOnly
+                        ? ['config_sha256', 'seed_offset', 'rollout_workers', 'physics_workers',
+                            'collection_id', 'rollout_world_start', 'rollout_worlds',
+                            'bundle_directory', 'source_run_contract_sha256']
+                        : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers',
+                            'physics_workers', 'rollout_worlds', 'refresh_opponent_slot'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
                 (bundleRound && seed_offset !== 0))
