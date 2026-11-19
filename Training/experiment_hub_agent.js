@@ -367,9 +367,9 @@ async function main() {
                         // ownerless; the Hub can safely retry the same order
                         // after collectors finish mirroring their files.
                         if(orders[0].action==='start'&&
-                            orders[0].job?.project_id==='bees_native') {
+                            ['bees_native','bees_native_optimizer_worker'].includes(orders[0].job?.project_id)) {
                             await syncNativeBundles(orders[0].job,
-                                executor.supervisor.adapters?.bees_native,
+                                executor.supervisor.adapters?.[orders[0].job.project_id],
                                 url,id,token);
                         }
                         result=await executor.handle(orders[0]);
