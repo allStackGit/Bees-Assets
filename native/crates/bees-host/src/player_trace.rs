@@ -87,7 +87,14 @@ enum TraceRecord {
         gameplay_config_sha256: String,
         policy_manifest_sha256: Option<String>,
         levels: Vec<NativeTraceLevel>,
+        #[serde(default)]
+        hivemind_start_checkpoint_sha256: Option<String>,
     },
+    /// Exact side-effecting authenticated ingress at the same physical
+    /// boundary as player input. The initial connection checkpoint and
+    /// source scheduler reconstruct the outgoing request identities.
+    HivemindSetup { round: u64, request_hash: i64, server_game_id: i64 },
+    HivemindFrame { round: u64, request_hash: i64, frame: String },
     PlayerInput {
         round: u64, tick: u64, action: NativePlayerInput,
         /// Absent in old/local traces. Replayed remote orders use the
@@ -124,14 +131,30 @@ pub struct NativeTraceCheckpoint {
     pub gameplay_sha256: Option<String>,
 }
 
+#[derive(Debug)]
+pub enum NativeTraceNetworkEvent {
+    Setup { round: u64, request_hash: i64, server_game_id: i64 },
+    Frame { round: u64, request_hash: i64, frame: String },
+}
+
+impl NativeTraceNetworkEvent {
+    fn round(&self) -> u64 {
+        match self {
+            Self::Setup { round, .. } | Self::Frame { round, .. } => *round,
+        }
+    }
+}
+
 /// Source-validation and bounded-memory replay coverage; measured once
 /// per file record, never in the fixed simulation step.
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct NativeTraceStreamMeasurements {
     pub validated_inputs: u64,
     pub validated_checkpoints: u64,
+    pub validated_network_events: u64,
     pub loaded_inputs: u64,
     pub loaded_checkpoints: u64,
+    pub loaded_network_events: u64,
     pub peak_round_events: usize,
     pub largest_record_bytes: usize,
 }
@@ -144,8 +167,10 @@ pub struct NativeTraceStreamMeasurements {
 pub struct NativePlayerTrace {
     pub inputs: VecDeque<NativeTraceInput>,
     pub checkpoints: VecDeque<NativeTraceCheckpoint>,
+    pub network_events: VecDeque<NativeTraceNetworkEvent>,
     pub end_round: u64,
     pub policy_actions_sha256: Option<String>,
+    pub hivemind_start_checkpoint_sha256: Option<String>,
     reader: BufReader<File>,
     line: String,
     next: Option<TraceRecord>,
@@ -175,20 +200,28 @@ impl NativePlayerTrace {
     /// Backward-compatible schema1 traces have no physical checkpoints.
     /// Schema2 requires sampled physical checkpoints; schema3 adds final
     /// per-World coverage; schema4 includes the authoritative gameplay
-    /// fingerprint in each physical checkpoint.
+    /// fingerprint in each physical checkpoint. Schema5 also captures
+    /// canonical HiveMind ingress from an original connection checkpoint;
+    /// it never infers server replies from recorded player movements.
     pub fn read(
         path: &Path, config_sha256: &str, gameplay_sha256: &str, expected_levels: &[NativeTraceLevel],
-        expected_model: Option<&str>,
+        expected_model: Option<&str>, expected_hivemind: bool,
     ) -> io::Result<Self> {
         let mut reader = BufReader::new(File::open(path)?);
         let mut line = String::new();
-        let schema_version = match read_record(&mut reader, &mut line)? {
+        let (schema_version, hivemind_start_checkpoint_sha256) =
+            match read_record(&mut reader, &mut line)? {
             Some(TraceRecord::PlayerInputTrace { schema_version, run_config_sha256,
-                gameplay_config_sha256, policy_manifest_sha256, levels })
-                if (1..=4).contains(&schema_version) &&
+                gameplay_config_sha256, policy_manifest_sha256, levels,
+                hivemind_start_checkpoint_sha256 })
+                if (1..=5).contains(&schema_version) &&
                     run_config_sha256 == config_sha256 &&
                     gameplay_config_sha256 == gameplay_sha256 && levels == expected_levels &&
-                    policy_manifest_sha256.as_deref() == expected_model => schema_version,
+                    policy_manifest_sha256.as_deref() == expected_model &&
+                    hivemind_start_checkpoint_sha256.is_some() == expected_hivemind &&
+                    hivemind_start_checkpoint_sha256.as_deref().is_none_or(valid_sha256) &&
+                    (!expected_hivemind || schema_version == 5) =>
+                    (schema_version, hivemind_start_checkpoint_sha256),
             _ => return Err(trace_error(
                 "player trace does not match the offline battle configuration",
             )),
@@ -231,6 +264,20 @@ impl NativePlayerTrace {
                     measurements.validated_checkpoints += 1;
                     last_checkpoint_round.insert(world_id, round);
                 }
+                Some(TraceRecord::HivemindSetup { round, request_hash, server_game_id })
+                    if schema_version >= 5 && expected_hivemind &&
+                        round >= previous_round && request_hash > 0 && server_game_id > 0 => {
+                    previous_round = round;
+                    measurements.validated_network_events += 1;
+                }
+                Some(TraceRecord::HivemindFrame { round, request_hash, frame })
+                    if schema_version >= 5 && expected_hivemind &&
+                        round >= previous_round && request_hash > 0 &&
+                        frame.len() <= 8 * 1024 * 1024 &&
+                        serde_json::from_str::<serde_json::Value>(&frame).is_ok() => {
+                    previous_round = round;
+                    measurements.validated_network_events += 1;
+                }
                 Some(TraceRecord::PlayerInputTraceEnd {
                     rounds, failed_window: None, policy_actions_sha256,
                 }) if rounds >= previous_round &&
@@ -256,8 +303,10 @@ impl NativePlayerTrace {
                     return Ok(Self {
                         inputs: VecDeque::new(),
                         checkpoints: VecDeque::new(),
+                        network_events: VecDeque::new(),
                         end_round: rounds,
                         policy_actions_sha256,
+                        hivemind_start_checkpoint_sha256,
                         reader,
                         line: String::new(),
                         next: None,
@@ -285,7 +334,8 @@ impl NativePlayerTrace {
     /// traces and lose the precise input/observation ordering.
     pub fn load_round(&mut self, round: u64) -> io::Result<()> {
         if self.inputs.front().is_some_and(|entry| entry.round < round) ||
-            self.checkpoints.front().is_some_and(|entry| entry.round < round) {
+            self.checkpoints.front().is_some_and(|entry| entry.round < round) ||
+            self.network_events.front().is_some_and(|entry| entry.round() < round) {
             return Err(trace_error("unconsumed native trace events before round"));
         }
         if self.reached_end { return Ok(()); }
@@ -299,7 +349,9 @@ impl NativePlayerTrace {
             };
             let event_round = match &record {
                 TraceRecord::PlayerInput { round, .. } |
-                TraceRecord::PhysicalStateCheckpoint { round, .. } => *round,
+                TraceRecord::PhysicalStateCheckpoint { round, .. } |
+                TraceRecord::HivemindSetup { round, .. } |
+                TraceRecord::HivemindFrame { round, .. } => *round,
                 TraceRecord::PlayerInputTraceEnd { .. } => {
                     self.reached_end = true;
                     break;
@@ -328,11 +380,23 @@ impl NativePlayerTrace {
                     });
                     self.measurements.loaded_checkpoints += 1;
                 }
+                TraceRecord::HivemindSetup { round, request_hash, server_game_id } => {
+                    self.network_events.push_back(NativeTraceNetworkEvent::Setup {
+                        round, request_hash, server_game_id,
+                    });
+                    self.measurements.loaded_network_events += 1;
+                }
+                TraceRecord::HivemindFrame { round, request_hash, frame } => {
+                    self.network_events.push_back(NativeTraceNetworkEvent::Frame {
+                        round, request_hash, frame,
+                    });
+                    self.measurements.loaded_network_events += 1;
+                }
                 _ => unreachable!("validated trace event"),
             }
             self.measurements.peak_round_events =
                 self.measurements.peak_round_events.max(
-                    self.inputs.len() + self.checkpoints.len(),
+                    self.inputs.len() + self.checkpoints.len() + self.network_events.len(),
                 );
         }
         Ok(())
