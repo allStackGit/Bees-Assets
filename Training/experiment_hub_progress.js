@@ -107,6 +107,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_gpu_batch_proven_target',
             'rollout_opponent_gpu_stream_seconds',
             'rollout_fused_gpu_stream_seconds',
+            'rollout_opponent_joined_learner_readbacks',
             'rollout_opponent_readback_slot_reused',
             'rollout_opponent_readback_slot_allocated',
             'rollout_opponent_readback_cached_indices',
