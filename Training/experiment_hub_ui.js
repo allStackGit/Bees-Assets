@@ -4814,6 +4814,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeCourierPort=(host,endpoint)=>(state.jobs||[]).some(job=>{
             if(job.project_id!=='courier_lineage'||job.assigned_machine_id!==host.id||
                 ['cancelled','finished','stopped'].includes(job.status))return false;
+            // A failed collector's private port becomes selectable only
+            // after the native terminal lease is explicitly released.
+            if(job.status==='failed'&&job.capacity_released_at&&
+                state.reservations?.some(lease=>lease.id===job.lease_id&&
+                    lease.job_id===job.id&&lease.machine_id===host.id&&
+                    lease.status==='released'&&lease.released_at))return false;
             const learner=state.jobs.find(parent=>
                 parent.id===job.frozen_parameters?.learner_job_id&&
                 parent.project_id==='courier');
