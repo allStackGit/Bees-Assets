@@ -477,7 +477,8 @@ python3 native/tools/author_campaign.py my-native-campaign \
   --title "Native Fleet Campaign" \
   --mission mission-one/battle.run.json \
   --mission mission-two/battle.run.json \
-  --shop-types 21,18 --player-side 1
+  --shop-types 21,18 --player-side 1 \
+  --victory-grant 1:21:1:20000
 bees library my-native-campaign/library.json --output-dir my-native-saves
 ```
 
@@ -498,6 +499,15 @@ start after the first victory. The shop's source-backed hull types must
 already be in the stable player fleet, and the native campaign editor
 continues validating construction against every destination scene.
 Omit `--shop-types` for a campaign without ship purchases.
+The optional `--victory-grant MISSION:TYPE:COUNT:SQUAD` awards genuine
+persistent FleetShips the first time the specified mission is won.
+`TYPE` must be a source-priced `--shop-types` class and `SQUAD`
+must be an existing player SavedSquad ID; the example uses the first
+native-authored side-1 SavedSquad. These ships cost **zero minerals** but
+retain their verified source MaxTSV for scene instantiation. Awarded ships
+follow ordinary loss, squad-transfer, tactics, and future-mission rules.
+The original battle's immutable summary owns the award receipt, so
+rematches and replay cannot pay it twice.
 The resulting directory holds a `campaign.json`, a `library.json`,
 independent mission scenes/run files and a source-hash provenance receipt.
 
@@ -1513,7 +1523,10 @@ surviving player-fleet mining at their winning ending, following the
 source campaign's explicit CollectMinedMineralsForPlayer action. Failed
 attempts bank zero. The shared Level owns the mining tally and removes
 unbanked cargo on lethal death. `bees status` shows banked, spent and
-available TSV. The bundled example exposes hull types 21
+available TSV. The bundled example awards one type-21 ship to SavedSquad 1 and one
+type-2 ship to SavedSquad 2 on Frontier's first verified victory;
+`bees status` distinguishes these one-time grants from paid purchases.
+The bundled example exposes hull types 21
 (TSV 100), 2 (TSV 250), and the real source-authored Scout special
 (type 18, TSV 100) after source verification. After winning and
 earning enough mined TSV, build into a saved squad with **B** in the
