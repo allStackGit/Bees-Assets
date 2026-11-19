@@ -283,11 +283,28 @@ function verifiedNativeCollectorPin(hub,collectorId) {
     const gpuCount=collector.resources?.gpu_count??0;
     const workerCount=receipt.rollout_processes;
     const physicsCount=receipt.physics_workers_per_process;
-    if(!Number.isSafeInteger(cpus)||cpus<1||
+    const rollout=receipt.rollout_metrics;
+    const proof=rollout?.gpu_inference;
+    const lease=hub.state.reservations.find(item=>
+        item.id===collector.lease_id&&item.job_id===collector.id&&
+        item.machine_id===collector.assigned_machine_id&&
+        item.project_id===collector.project_id&&
+        item.issued_by==='experiment-hub');
+    const bindings=lease?.gpu_bindings||[];
+    const pci=proof?.gpu_pci_addresses;
+    if(!lease||lease.status!=='released'||!lease.released_at||
+        !Number.isSafeInteger(cpus)||cpus<1||
         !Number.isSafeInteger(workerCount)||workerCount<1||
         workerCount>256||workerCount>receipt.partition.world_count||
+        captures.size!==2*workerCount||
         !Number.isSafeInteger(physicsCount)||physicsCount<1||
         physicsCount>128||workerCount*physicsCount>cpus||
+        !Number.isSafeInteger(rollout?.successful_world_steps)||
+        rollout.successful_world_steps<1||
+        !Number.isSafeInteger(rollout.successful_policy_rows)||
+        rollout.successful_policy_rows<1||
+        typeof rollout.wall_seconds!=='number'||
+        !Number.isFinite(rollout.wall_seconds)||rollout.wall_seconds<=0||
         receipt.rollout_worlds!==receipt.partition.world_count||
         (collector.frozen_parameters?.rollout_workers!==undefined&&
             receipt.rollout_processes!==collector.frozen_parameters.rollout_workers)||
@@ -295,9 +312,25 @@ function verifiedNativeCollectorPin(hub,collectorId) {
             physicsCount!==collector.frozen_parameters.physics_workers)||
         (gpuCount>0
             ?(![1,2].includes(gpuCount)||
+                collector.resources?.gpu_mode!=='exclusive'||
+                !Array.isArray(bindings)||bindings.length!==gpuCount||
                 receipt.leased_gpu_inference!==true||
                 (receipt.leased_gpu_count??1)!==gpuCount||
-                workerCount<gpuCount)
+                workerCount<gpuCount||
+                proof?.verified_workers!==workerCount||
+                !Number.isSafeInteger(proof?.model_forwards)||
+                proof.model_forwards<workerCount||
+                !Number.isSafeInteger(proof?.agent_rows)||
+                proof.agent_rows<proof.model_forwards||
+                proof.agent_rows>rollout.successful_policy_rows||
+                (pci!==undefined&&(
+                    !Array.isArray(pci)||new Set(pci).size!==pci.length||
+                    pci.some(address=>!bindings.some(bound=>bound.pci_address===address))
+                ))||
+                (gpuCount===2&&(
+                    !Array.isArray(pci)||pci.length!==2||
+                    bindings.some(bound=>!pci.includes(bound.pci_address))
+                )))
             :(receipt.leased_gpu_inference===true||
                 receipt.leased_gpu_count!==undefined)))
         fail('Native collector execution evidence exceeds or differs from its Hub CPU/GPU lease.');
