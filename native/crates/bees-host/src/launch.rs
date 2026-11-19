@@ -2724,14 +2724,16 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         return Err(invalid("native multiplayer host requires a private-network listen address").into());
     }
     let custom_fleet = settings.game_id == fleet_builder::GAME_ID;
-    let game_source = if custom_fleet {
+    let campaign_index = library.games.iter().position(|entry|
+        entry.id == settings.game_id && entry.kind == "campaign");
+    let game_source = if custom_fleet || campaign_index.is_some() {
         None
     } else if let Some(index)=library.games.iter().position(|entry|
         entry.id==settings.game_id && entry.kind=="battle") {
         Some(games[index].clone())
     } else {
         Some(trained.iter().find(|model| model.id==settings.game_id)
-            .ok_or_else(|| invalid("multiplayer host game ID is neither a native battle nor a registered trained checkpoint"))?
+            .ok_or_else(|| invalid("multiplayer host game ID is not a native campaign, battle or registered checkpoint"))?
             .verified_run()?)
     };
     let token_file=if settings.tokens_file.is_absolute(){
@@ -2759,6 +2761,39 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         tokens.values().collect::<HashSet<_>>().len()!=tokens.len() {
         return Err(invalid("host must provide unique side 1/2 native multiplayer tokens").into());
     }
+    // A saved campaign game ID opens its original mission catalog and
+    // career ledger. The same mission command used by headless multiplayer
+    // applies unlocks, persistent fleet edits and durable battle receipts.
+    // Do not turn a campaign into a stateless quick battle.
+    let campaign = if let Some(index) = campaign_index {
+        use bees_host::presentation::{BattleMenuRow, select_library};
+        let catalog: battle_catalog::BattleCatalog =
+            serde_json::from_slice(&fs::read(&games[index])?)?;
+        catalog.validate()?;
+        let career_root = save_root.join("campaigns").join(&settings.game_id);
+        let progress = catalog.load_progress(&career_root)?;
+        let available = catalog.battles.iter().filter_map(|entry| {
+            let mission = entry.mission.as_ref()?;
+            mission.requires.iter().all(|id| progress.completed(id))
+                .then_some((entry, mission))
+        }).collect::<Vec<_>>();
+        if available.is_empty() {
+            return Err(invalid("no unlocked native campaign mission can be hosted").into());
+        }
+        let rows = available.iter().map(|(entry, mission)| BattleMenuRow {
+            title: entry.title.trim(),
+            status: if progress.completed(&mission.id) { "  [Complete]" } else { "" },
+            unlocked: true,
+        }).collect::<Vec<_>>();
+        let mut selected = 0_usize;
+        let Some(choice) = select_library(&rows, &mut selected, false)?
+            else { return Ok(()) };
+        let mission = available[choice].1;
+        if !tokens.contains_key(&mission.player_side.to_string()) {
+            return Err(invalid("multiplayer host has no token for the campaign player side").into());
+        }
+        Some((games[index].clone(), career_root, mission.id.clone()))
+    } else { None };
     // The authoritative host reads its existing protected environment
     // configuration. A child avoids process-global env mutations in the
     // parent UI and keeps one battle runtime / one source physics engine.
@@ -2769,17 +2804,25 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         fleet_builder::choose_multiplayer()?
     } else { None };
     if custom_fleet && fleet.is_none() { return Ok(()); }
-    let output=new_library_battle_output(save_root,&settings.game_id)?;
-    let source = if let Some(choice) = fleet {
-        let parent = output.parent().ok_or_else(||
-            invalid("custom multiplayer fleet has no archive directory"))?;
-        fleet_builder::archive(parent, choice)?
+    let mut launch = std::process::Command::new(env::current_exe()?);
+    if let Some((catalog, career_root, mission_id)) = campaign {
+        // campaign --serve enforces its own single-Level/model requirements,
+        // reloads the ledger under the writer lease and publishes receipts.
+        launch.arg("campaign").arg(catalog)
+            .arg("--output-dir").arg(career_root)
+            .arg("--mission").arg(mission_id).arg("--serve");
     } else {
-        game_source.expect("validated static or trained multiplayer source")
-    };
-    let outcome=std::process::Command::new(env::current_exe()?)
-        .arg("play").arg(&source)
-        .arg("--output-dir").arg(output)
+        let output = new_library_battle_output(save_root, &settings.game_id)?;
+        let source = if let Some(choice) = fleet {
+            let parent = output.parent().ok_or_else(||
+                invalid("custom multiplayer fleet has no archive directory"))?;
+            fleet_builder::archive(parent, choice)?
+        } else {
+            game_source.expect("validated static or trained multiplayer source")
+        };
+        launch.arg("play").arg(source).arg("--output-dir").arg(output);
+    }
+    let outcome = launch
         .env("BEES_NATIVE_REMOTE_LISTEN",&settings.listen)
         .env("BEES_NATIVE_REMOTE_SIDE_TOKENS",&token_map)
         .env_remove("BEES_NATIVE_REMOTE_TOKEN")
