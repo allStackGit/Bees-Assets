@@ -1110,6 +1110,11 @@ fn current_state(
                 "duration_seconds": objective.duration_seconds,
                 "seconds_remaining": objective.seconds_remaining,
             }))
+        } else if let Some((exiting_side, _, escort)) = view.combat.extraction_objective() {
+            (!escort).then(|| json!({
+                "kind": "extraction",
+                "exiting_side": exiting_side,
+            }))
         } else { None },
         // An authored exit is also public to both opponents in the local
         // native game; it cannot disclose a hidden hull or current position.
@@ -1119,6 +1124,12 @@ fn current_state(
                 [bounds.max.x, bounds.max.y],
             ])
         ),
+        "extraction_destination": view.combat.extraction_objective()
+            .filter(|(_, _, escort)| !*escort)
+            .map(|(_, bounds, _)| [
+                [bounds.min.x, bounds.min.y],
+                [bounds.max.x, bounds.max.y],
+            ]),
         // Every authenticated commander sees Level-owned wave activity,
         // without exposing reserved ship identities or mission story cues.
         "reinforcements": Some(json!({

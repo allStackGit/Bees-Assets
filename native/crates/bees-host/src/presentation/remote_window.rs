@@ -791,6 +791,7 @@ fn draw_remote_minimap(
     // activated. The AABB is the same host-authoritative geometry visible
     // in the native local-player battlefield.
     if let Some(points) = state["escort_destination"].as_array()
+            .or_else(|| state["extraction_destination"].as_array())
         .filter(|points| points.len() == 2)
     {
         if let (Some(min), Some(max)) =
@@ -1064,6 +1065,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         // Render its exact physical AABB even before host activation,
         // never a locally invented pathfinding or trigger position.
         if let Some(points) = state["escort_destination"].as_array()
+            .or_else(|| state["extraction_destination"].as_array())
             .filter(|points| points.len() == 2)
         {
             if let (Some(min), Some(max)) =
@@ -1119,6 +1121,15 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             text::draw_at(pixels,WIDTH,16,20,
                 text::fit(&label,FIELD-32),2,[255,210,129]);
         } else if let Some(objective)=state["campaign_objective"].as_object() {
+            if objective.get("kind").and_then(Value::as_str) == Some("extraction") {
+                let escaping = objective.get("exiting_side")
+                    .and_then(Value::as_i64) == Some(i64::from(side));
+                let label = if escaping {
+                    "Extract your fleet to the marked exit"
+                } else { "Intercept enemy fleet before extraction" };
+                text::draw_at(pixels,WIDTH,16,23,
+                    text::fit(label,FIELD-32),1,[255,211,130]);
+            }
             let remaining = objective.get("seconds_remaining")
                 .and_then(Value::as_f64).filter(|v| v.is_finite() && *v >= 0.0);
             let duration = objective.get("duration_seconds")

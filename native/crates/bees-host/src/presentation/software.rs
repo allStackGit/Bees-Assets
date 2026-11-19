@@ -155,7 +155,7 @@ pub struct NativeRenderCounts {
     pub missing_range_data: usize,
     pub minimap_ship_markers: usize,
     pub minimap_visible_enemy_markers: usize,
-    pub minimap_escort_exit_markers: usize,
+    pub minimap_extraction_exit_markers: usize,
     pub numbered_squad_rows: usize,
     pub special_ready_ships: usize,
     /// Real game/policy Striker loaded indicators drawn for visible hulls.
@@ -1512,7 +1512,7 @@ impl NativeSoftwareRenderer {
             half_extents: (bounds.max - bounds.min) * 0.5 },
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);
         if let Some(zone) = view.combat.active_extraction_bounds()
-            .or_else(|| view.combat.escorted_destination_bounds())
+            .or_else(|| view.combat.extraction_objective().map(|(_, bounds, _)| bounds))
         {
             self.shape(&ShipShape::Box { offset: (zone.min + zone.max) * 0.5,
                 half_extents: (zone.max - zone.min) * 0.5 },
@@ -2042,6 +2042,14 @@ impl NativeSoftwareRenderer {
                 seconds / 60, seconds % 60,
             );
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
+        } else if let Some((exiting_side, _, escort)) = view.combat.extraction_objective() {
+            if !escort {
+                let label = if view.player_authority.player_viewer_side()
+                    == Some(exiting_side) {
+                    "Extract your mobile fleet to the marked exit"
+                } else { "Intercept enemy fleet before it extracts" };
+                text::draw_centered(&mut self.pixels, self.width, 8, label, 1, [239, 247, 255]);
+            }
         }
         // The durable Level notification records arrivals exactly once.
         // A short visual acknowledgement survives an outbox ACK, but
@@ -2049,7 +2057,7 @@ impl NativeSoftwareRenderer {
         // games do not consume its time and no frame timer is allocated.
         if view.terminal_result.is_none() {
             let y = if view.survival.is_some() || view.demolition.is_some() ||
-                view.escort.is_some() {
+                view.escort.is_some() || view.combat.extraction_objective().is_some() {
                 8 + text::HEIGHT + 4
             } else { 8 };
             let recently_arrived = view.last_reinforcement_tick
@@ -2088,7 +2096,7 @@ impl NativeSoftwareRenderer {
             let (ships, enemies, escort_exits) = self.draw_minimap(view, bounds);
             counts.minimap_ship_markers = ships;
             counts.minimap_visible_enemy_markers = enemies;
-            counts.minimap_escort_exit_markers = escort_exits;
+            counts.minimap_extraction_exit_markers = escort_exits;
         }
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts.special_ready_ships = self.draw_special_readiness(view);
@@ -2273,7 +2281,7 @@ impl NativeSoftwareRenderer {
         // hidden enemy unit. Show it before physics activates its trigger
         // so the player can actually command the convoy across the map.
         let mut escort_exits = 0usize;
-        if let Some(exit) = view.combat.escorted_destination_bounds() {
+        if let Some((_, exit, _)) = view.combat.extraction_objective() {
             if let (Some((x0, y0)), Some((x1, y1))) = (
                 layout.project(exit.min), layout.project(exit.max),
             ) {
