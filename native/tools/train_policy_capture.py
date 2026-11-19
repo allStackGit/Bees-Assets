@@ -1100,24 +1100,59 @@ def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot,
 
 
 def synchronized_native_model_digest(modules, torch):
-    """Hash the exact trained model tensor contents, independent of GPU rank.
+    """Fingerprint the complete source-owned PPO checkpoint on every rank.
 
-    A synchronized gradient count alone does not prove Adam produced the
-    same next weights on every device. Hash each source module's named
-    tensors once, after the update, before rank zero is allowed to publish
-    a replayable checkpoint. This is outside the learner hot loop.
+    ML-Agents get_modules() may include an Adam optimizer: its state_dict
+    contains nested parameter-index maps and non-tensor hyperparameters.
+    Do not mistake this for an all-tensor neural-network module. Hash its
+    full canonical state alongside actor, critic and running statistics,
+    using type/length delimiters and stable key ordering. This runs once
+    after training, never during a hot minibatch.
     """
     digest = hashlib.sha256()
-    for name, module in sorted(modules.items()):
-        for key, value in sorted(module.state_dict().items()):
-            if not isinstance(value, torch.Tensor):
-                raise ValueError("native PPO module state contains a non-tensor entry")
+
+    def tagged(tag, value=b""):
+        digest.update(tag)
+        digest.update(len(value).to_bytes(8, "little"))
+        digest.update(value)
+
+    def feed(value):
+        if isinstance(value, torch.Tensor):
+            tagged(b"T", str(value.dtype).encode())
+            tagged(b"S", repr(tuple(value.shape)).encode())
             cpu = value.detach().to(device="cpu").contiguous().reshape(-1)
-            for field in (name, key, str(value.dtype), str(tuple(value.shape))):
-                encoded = field.encode("utf-8")
-                digest.update(len(encoded).to_bytes(4, "little"))
-                digest.update(encoded)
-            digest.update(cpu.view(torch.uint8).numpy().tobytes())
+            tagged(b"V", cpu.view(torch.uint8).numpy().tobytes())
+        elif isinstance(value, dict):
+            tagged(b"D", str(len(value)).encode())
+            for key in sorted(value, key=lambda k: (type(k).__name__, repr(k))):
+                feed(key)
+                feed(value[key])
+        elif isinstance(value, (list, tuple)):
+            tagged(b"L" if isinstance(value, list) else b"Q",
+                   str(len(value)).encode())
+            for item in value:
+                feed(item)
+        elif value is None:
+            tagged(b"N")
+        elif isinstance(value, bool):
+            tagged(b"B", b"1" if value else b"0")
+        elif isinstance(value, int):
+            tagged(b"I", str(value).encode())
+        elif isinstance(value, float):
+            tagged(b"F", value.hex().encode())
+        elif isinstance(value, str):
+            tagged(b"U", value.encode("utf-8"))
+        elif isinstance(value, (torch.dtype, torch.device)):
+            tagged(b"P", str(value).encode())
+        else:
+            raise ValueError(
+                "native PPO state has an unsupported checkpoint value: "
+                + type(value).__name__
+            )
+
+    for name, module in sorted(modules.items()):
+        tagged(b"M", name.encode("utf-8"))
+        feed(module.state_dict())
     return digest.hexdigest()
 
 
@@ -1436,14 +1471,14 @@ def main():
     modules = {**policy.get_modules(), **optimizer_modules}
     next_model_consensus_sha = None
     if learner_workers > 1:
-        # Every rank must produce byte-equivalent actor/critic weights.
+        # Every rank must produce identical model and Adam checkpoint state.
         # Check only at the round boundary; the packed gradients remain
         # the sole synchronization path inside each PPO minibatch.
         own_digest = synchronized_native_model_digest(modules, torch)
         model_digests = [None] * learner_workers
         torch.distributed.all_gather_object(model_digests, own_digest)
         if len(set(model_digests)) != 1:
-            raise ValueError("native GPU learners disagree on final synchronized policy weights")
+            raise ValueError("native GPU learners disagree on final synchronized checkpoint state")
         next_model_consensus_sha = own_digest
         torch.distributed.barrier()
         if rank != 0:
