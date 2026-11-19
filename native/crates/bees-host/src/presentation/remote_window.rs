@@ -946,6 +946,47 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 }
             }
         }
+        // Objective markers use only the host's already-fog-filtered
+        // ship/obstacle projection. A remote peer cannot look up a target
+        // whose coordinates were withheld by the host.
+        if let Some(objective) = state["campaign_objective"].as_object() {
+            let kind = objective.get("kind").and_then(Value::as_str)
+                .unwrap_or("survival");
+            let (key, source) = match kind {
+                "survival" => ("protected_ship_id", "ships"),
+                "escort" => ("escorted_ship_id", "ships"),
+                "demolition" => ("target_map_object_id", "obstacles"),
+                _ => ("", ""),
+            };
+            if let Some(target_id) = objective.get(key).and_then(Value::as_i64) {
+                if let Some(target) = state[source].as_array().into_iter().flatten()
+                    .find(|item| item["id"].as_i64() == Some(target_id))
+                {
+                    let category = if source == "ships" { 0 } else { 2 };
+                    if let Some(point) = visual.position(target, category, fraction) {
+                        let center = screen(camera, point);
+                        outline(pixels, center.0 - 20, center.1 - 22,
+                            40, 44, GOLD);
+                    }
+                }
+            }
+        }
+        // A convoy exit is public only to its authenticated commander.
+        // Render its exact physical AABB even before host activation,
+        // never a locally invented pathfinding or trigger position.
+        if let Some(points) = state["escort_destination"].as_array()
+            .filter(|points| points.len() == 2)
+        {
+            if let (Some(min), Some(max)) =
+                (point_from_wire(&points[0]), point_from_wire(&points[1]))
+            {
+                if min.x < max.x && min.y < max.y {
+                    let a = screen(camera, Vec2::new(min.x, max.y));
+                    let b = screen(camera, Vec2::new(max.x, min.y));
+                    outline(pixels, a.0, a.1, b.0-a.0, b.1-a.1, GREEN);
+                }
+            }
+        }
         text::draw_at(pixels, WIDTH, FIELD+14, 90,
             &format!("World {}  Tick {}",state["world_id"],state["tick"]),1,TEXT);
         let friendly=state["squads"].as_array().into_iter().flatten().filter(|s|s["owned"]==true).count();
@@ -978,30 +1019,49 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             text::draw_at(pixels,WIDTH,16,20,
                 &format!("Result: {outcome}"),2,[255,210,129]);
         } else if let Some(objective)=state["campaign_objective"].as_object() {
-            let remaining=objective.get("seconds_remaining").and_then(Value::as_f64);
-            let elapsed=objective.get("elapsed_seconds").and_then(Value::as_f64);
-            let duration=objective.get("duration_seconds").and_then(Value::as_f64);
-            if let (Some(remaining),Some(elapsed),Some(duration))=(remaining,elapsed,duration) {
-                if remaining.is_finite()&&elapsed.is_finite()&&
-                    duration.is_finite()&&duration>0.0 {
-                    let percent=(100.0*elapsed/duration).clamp(0.0,100.0);
-                    let waves=objective.get("reinforcements_pending")
-                        .and_then(Value::as_u64).unwrap_or(0);
-                    let eta=objective.get("next_reinforcement_tick")
-                        .and_then(Value::as_u64).map(|next|{
-                            let tick=state["tick"].as_u64().unwrap_or(next);
-                            let dt=state["fixed_step_seconds"].as_f64().unwrap_or(0.0);
-                            ((next.saturating_sub(tick) as f64)*dt).max(0.0)
-                        });
-                    let status=if let Some(seconds)=eta.filter(|s|s.is_finite()) {
-                        format!("Defend {:.0}s  {:.0}%  Waves {}  Next {:.0}s",
-                            remaining,percent,waves,seconds)
-                    }else {
-                        format!("Defend {:.0}s  {:.0}%  Waves {}",
-                            remaining,percent,waves)
-                    };
+            let remaining = objective.get("seconds_remaining")
+                .and_then(Value::as_f64).filter(|v| v.is_finite() && *v >= 0.0);
+            let duration = objective.get("duration_seconds")
+                .and_then(Value::as_f64).filter(|v| v.is_finite() && *v > 0.0);
+            if let (Some(remaining), Some(duration)) = (remaining, duration) {
+                let objective_kind = objective.get("kind").and_then(Value::as_str)
+                    .unwrap_or("survival");
+                let seconds = remaining.ceil().min(duration.ceil()) as u64;
+                let name = match objective_kind {
+                    "survival" => {
+                        let percent = 100.0 * (1.0 - remaining / duration).clamp(0.0, 1.0);
+                        let waves = state["reinforcements"]["pending"].as_u64().unwrap_or(0);
+                        format!("Defend {:02}:{:02}  {:.0}%  Waves {}",
+                            seconds / 60, seconds % 60, percent, waves)
+                    },
+                    "demolition" => {
+                        let id = objective.get("target_map_object_id")
+                            .and_then(Value::as_i64).unwrap_or(0);
+                        let attacking = objective.get("attacking_side")
+                            .and_then(Value::as_i64) == Some(i64::from(side));
+                        let health = state["obstacles"].as_array().into_iter().flatten()
+                            .find(|item| item["id"].as_i64() == Some(id))
+                            .and_then(|item| item["health"].as_i64())
+                            .map(|hp| format!("  {hp} HP")).unwrap_or_default();
+                        format!("{} object #{}{}  {:02}:{:02}",
+                            if attacking { "Destroy" } else { "Defend" },
+                            id, health, seconds / 60, seconds % 60)
+                    },
+                    "escort" => {
+                        let id = objective.get("escorted_ship_id")
+                            .and_then(Value::as_i64).unwrap_or(0);
+                        let health = state["ships"].as_array().into_iter().flatten()
+                            .find(|item| item["id"].as_i64() == Some(id))
+                            .and_then(|item| item["health"].as_i64())
+                            .map(|hp| format!("  {hp} HP")).unwrap_or_default();
+                        format!("Escort ship #{}{}  {:02}:{:02}",
+                            id, health, seconds / 60, seconds % 60)
+                    },
+                    _ => String::new(),
+                };
+                if !name.is_empty() {
                     text::draw_at(pixels,WIDTH,16,23,
-                        text::fit(&status,FIELD-32),1,[255,211,130]);
+                        text::fit(&name,FIELD-32),1,[255,211,130]);
                 }
             }
         } else if let Some(waves)=state["reinforcements"].as_object() {
