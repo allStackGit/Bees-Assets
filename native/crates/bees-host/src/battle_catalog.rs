@@ -536,11 +536,13 @@ impl BattleCatalog {
             }
             if !mission.victory_squads.is_empty() && (
                 !mission.record_fleet_stats || !mission.persist_fleet_losses ||
-                self.max_squad_ships.is_none() ||
+                !self.max_squad_ships.is_some_and(|n| (1..=1024).contains(&n)) ||
                 mission.victory_squads.len() > 64 ||
                 mission.victory_squads.iter().any(|grant|
                     grant.saved_squad_id <= 0 ||
+                    grant.saved_squad_id == i64::MAX ||
                     grant.template_saved_squad_id <= 0 ||
+                    grant.template_saved_squad_id == i64::MAX ||
                     grant.saved_squad_id == grant.template_saved_squad_id ||
                     !awarded_squad_ids.insert(grant.saved_squad_id))
             ) {
@@ -550,7 +552,7 @@ impl BattleCatalog {
                 )));
             }
             if !mission.victory_grants.is_empty() && (
-                self.max_squad_ships.is_none() ||
+                !self.max_squad_ships.is_some_and(|n| (1..=1024).contains(&n)) ||
                 !mission.record_fleet_stats || !mission.persist_fleet_losses ||
                 mission.victory_grants.iter().any(|grant|
                     grant.count == 0 || grant.count > 1024 ||
