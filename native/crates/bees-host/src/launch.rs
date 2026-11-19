@@ -1939,8 +1939,9 @@ fn run_build_ship(
     let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
     let progress = catalog.load_progress(output_root)?;
     let shop = catalog.buildable_ships.iter().find(|shop|
-        shop.player_side == player_side && shop.ship_type == ship_type
-    ).ok_or_else(|| invalid("requested ship type is not in the player's authored shop"))?;
+        shop.player_side == player_side && shop.ship_type == ship_type &&
+        shop.purchasable
+    ).ok_or_else(|| invalid("requested ship type is not purchasable in the player's authored shop"))?;
     if !progress.bank_history_complete() {
         return Err(invalid("cannot buy ships with incomplete historical campaign income").into());
     }
@@ -2953,7 +2954,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         let squad_rows = progress.squad_rows();
         let available = progress.unspent_minerals()?;
         let mut shop_rows = Vec::new();
-        for ship in &catalog.buildable_ships {
+        for ship in catalog.buildable_ships.iter().filter(|ship| ship.purchasable) {
             for squad_id in progress.saved_squad_ids_for_side(ship.player_side) {
                 let unlocked = progress.is_ship_unlocked(ship);
                 shop_rows.push(NativeShopMenuRow {

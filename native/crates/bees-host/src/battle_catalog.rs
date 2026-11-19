@@ -969,7 +969,8 @@ impl BattleCatalog {
                 !self.buildable_ships.iter().any(|shop|
                     shop.player_side == purchase.player_side &&
                     shop.ship_type == purchase.ship.ship_type &&
-                    shop.price_tsv == purchase.ship.price_tsv)
+                    shop.price_tsv == purchase.ship.price_tsv &&
+                    shop.purchasable)
             {
                 return Err(invalid("campaign purchase has an unknown type, cost, or identity"));
             }
