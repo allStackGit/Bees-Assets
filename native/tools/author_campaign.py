@@ -75,11 +75,11 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
             packaged.get("packaged_manifest") == run.get("model_manifest") and
             packaged.get("packaged_manifest_sha256") ==
                 file_sha256(challenge_manifest) and
+            isinstance(packaged.get("model_slots"), list) and
             any(isinstance(slot, dict) and
                 slot.get("slot") == learner_slot and
                 slot.get("sha256") == checkpoint_sha
-                for slot in packaged.get("model_slots", [])
-                if isinstance(packaged.get("model_slots"), list))
+                for slot in packaged["model_slots"])
         )
     if (source.get("selected_checkpoint_sha256") != checkpoint_sha or
             source.get("learner_slot") != learner_slot or
