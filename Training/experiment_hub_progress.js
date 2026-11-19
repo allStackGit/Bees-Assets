@@ -201,6 +201,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_devices_assigned',
             'training_gpu_devices_active',
             'training_gpu_rollout_lineages',
+            'training_gpu_rollout_states_per_batch',
             'training_local_gpu_rollout_lineages',
             'training_gpu_forward_stream_max_seconds',
             'training_gpu_forward_stream_workers',
@@ -857,6 +858,18 @@ class BottleneckEvidence {
             // Wall intervals overlap: compare each worker's own stages and
             // use the coordinator's actual finished-at timings for waits.
             const count=metrics.training_lineage_workers.value;
+            // Exact GPU rollout batch density, across the independent
+            // lineages participating in this completed PPO round. This
+            // is not an inferred GPU occupancy or an instruction to
+            // change the frozen recurrent policy batch.
+            const gpuBatches=metrics.training_gpu_rollout_batches;
+            const gpuStates=metrics.training_gpu_rollout_states;
+            if(gpuBatches?.unit==='count'&&gpuStates?.unit==='count'&&
+                Number.isSafeInteger(gpuBatches.value)&&gpuBatches.value>0&&
+                Number.isSafeInteger(gpuStates.value)&&
+                gpuStates.value>=gpuBatches.value)
+                add('training_gpu_rollout_states_per_batch',
+                    gpuStates.value/gpuBatches.value,'scalar');
             const wall=seconds('training_batch_wall_seconds');
             const queue=seconds('training_queue_max_seconds');
             const gap=seconds('training_reply_gap_seconds');
