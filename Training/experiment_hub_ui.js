@@ -2498,6 +2498,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const knownPerformanceMetrics=[
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
         'source_metrics_omitted',
+        'training_live_retain_reports','training_live_retained_shards',
+        'training_live_imported_shards','training_live_retired_shards','training_live_retained_processes',
         ...['mode','next_mode','policies','next_policies','max_policies','cohorts','next_cohorts',
             'requests','results','host_requests','kernel_batches','routed_states','compute_states',
             'padding_states','wait_max_seconds','wait_owner','queue_max_seconds','queue_owner',

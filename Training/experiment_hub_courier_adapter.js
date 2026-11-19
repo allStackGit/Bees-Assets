@@ -20,6 +20,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_collector_probe_layout_changed',
     'training_live_map_moves','training_live_move_round',
     'training_live_move_workers','training_live_move_parallel_workers',
+    'training_live_retain_reports','training_live_retained_shards',
+    'training_live_imported_shards','training_live_retired_shards','training_live_retained_processes',
     'training_live_result_ready','training_live_result_accepted',
     'training_live_rollbacks',
     'training_gpu_memory_adjustments','training_gpu_memory_accepted',

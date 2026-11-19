@@ -31,10 +31,21 @@ alone cannot identify the critical consumer. Checks passed for deferred timing,
 retirement/drain, 166 exact-unit native fields, 64-worker compact retention,
 asynchronous replies, rotating owners and four persistent PPO workers.
 
-Next implementation priority is retaining unchanged live world shards when
-shared collector map allocations change; the existing checkpoint-aligned path
-reconstructs changed pools. Joint physical-machine useful-SPS/continuation
-qualification remains outstanding.
+Paused local work: uncommitted Courier changes add checkpoint-aligned shard
+rebinding, retaining overlapping live worlds/processes while importing and
+retiring only changed shards. Single-shard collectors use the same pool; the
+existing authenticated socket owns cleanup through initializer handoffs.
+Hub changes publish retention counts with explicit report coverage. Pool-level
+shift/grow/shrink parity and RAM-denial/failed-import cleanup passed. The
+end-to-end PPO comparison is unfinished: the prior rebuild baseline changes
+VecEnv `_seeds` metadata when loading a one-shard collector. Resolve the
+comparison's administrative-state expectations, then verify actual world/RNG,
+LSTM, next policy/Adam, repeated handoffs and Hub metric units before committing.
+Temporary checks: `/tmp/training_efficiency_collector_reassign.py`,
+`/tmp/training_efficiency_collector_reassign_failure.py`, and
+`/tmp/training_efficiency_collector_reassign_ppo.py`; the latter compares the
+prior server source saved in `/tmp/courier_remote_before_reassign.txt`.
+Joint physical-machine useful-SPS/continuation qualification remains outstanding.
 
 Courier now has a checked frozen-policy batch executor for the outstanding
 independent-policy inference work. Distinct LSTM/MLP weights pack once; each
