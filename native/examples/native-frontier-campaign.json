@@ -9,7 +9,19 @@
         "player_side": 1,
         "record_fleet_stats": true,
         "persist_fleet_losses": true,
-        "bank_player_minerals": true
+        "bank_player_minerals": true,
+        "victory_grants": [
+          {
+            "ship_type": 21,
+            "count": 1,
+            "saved_squad_id": 1
+          },
+          {
+            "ship_type": 2,
+            "count": 1,
+            "saved_squad_id": 2
+          }
+        ]
       }
     },
     {

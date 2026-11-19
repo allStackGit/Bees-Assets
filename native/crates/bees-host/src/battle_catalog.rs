@@ -231,6 +231,9 @@ pub struct CampaignProgress<'a> {
     bank_history_complete: bool,
     spent_minerals: u64,
     purchases: Vec<(i32, NativePurchasedShip)>,
+    /// Awarded FleetShips share the ordinary deployment/transfer path
+    /// with purchases, but never debit the source mineral account.
+    awarded_fleet_ids: HashSet<i64>,
     created_squads: Vec<NativeCreatedSquad>,
     tactics: Vec<NativeSavedSquadTactics>,
     tactics_edits: u64,
@@ -757,6 +760,7 @@ impl BattleCatalog {
                             ..FleetProgress::default()
                         });
                         progress.purchases.push((mission.player_side, *ship));
+                        progress.awarded_fleet_ids.insert(ship.fleet_ship_id);
                     }
                     state.grants_claimed = true;
                 }
@@ -1162,7 +1166,13 @@ impl BattleCatalog {
                 "fleet_ship_id": ship.fleet_ship_id,
                 "saved_squad_id": ship.saved_squad_id,
                 "ship_type": ship.ship_type,
-                "cost_tsv": ship.price_tsv,
+                "acquisition": if progress.awarded_fleet_ids.contains(&ship.fleet_ship_id) {
+                    "victory_grant"
+                } else { "purchase" },
+                "cost_tsv": if progress.awarded_fleet_ids.contains(&ship.fleet_ship_id) {
+                    0
+                } else { ship.price_tsv },
+                "source_price_tsv": ship.price_tsv,
             })).collect::<Vec<_>>(),
         })
     }
