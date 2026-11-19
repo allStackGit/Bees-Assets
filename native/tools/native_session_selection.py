@@ -48,6 +48,44 @@ def _candidate(round_number, checkpoint, evaluation, learner_slot, episodes):
     }
 
 
+def verified_mission_holdout(receipt):
+    """Only verified role-aware physical mission evidence can rank models.
+
+    A side victory is not a goal delivery, and stopping the opponent from
+    completing its authored objective counts as an interception success.
+    Require complete episode coverage; never silently score elimination
+    episodes as failed missions or reconstruct roles from visible objects.
+    """
+    episodes = receipt.get("episodes")
+    success = receipt.get("learner_mission_successes")
+    attempts = receipt.get("mission_attempts")
+    rate = receipt.get("learner_mission_success_rate")
+    scenes = receipt.get("by_scene_sha256")
+    if (type(episodes) is not int or episodes <= 0 or
+            type(attempts) is not int or attempts != episodes or
+            type(success) is not int or not 0 <= success <= attempts or
+            type(rate) not in (int, float) or not math.isfinite(rate) or
+            rate != success / attempts or not isinstance(scenes, dict) or not scenes):
+        raise ValueError("physical mission selection needs complete verified holdout objectives")
+    counted = counted_success = 0
+    for scene in scenes.values():
+        n = scene.get("episodes")
+        total = scene.get("mission_attempts")
+        successes = scene.get("learner_mission_successes")
+        ratio = scene.get("learner_mission_success_rate")
+        if (type(n) is not int or n <= 0 or
+                type(total) is not int or total != n or
+                type(successes) is not int or not 0 <= successes <= n or
+                type(ratio) not in (int, float) or
+                not math.isfinite(ratio) or ratio != successes / n):
+            raise ValueError("physical mission scene has incomplete target-side attribution")
+        counted += n
+        counted_success += successes
+    if counted != attempts or counted_success != success:
+        raise ValueError("physical mission completion counts disagree with scenes")
+    return success
+
+
 def _playable_run(source_path, selected):
     source = json.loads(source_path.read_text(encoding="utf-8"))
     if (not isinstance(source, dict) or
@@ -118,7 +156,17 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
     mode = recipe.get("checkpoint_selection", "primary")
     if mode == "primary":
         return primary_candidate
-    if mode not in ("mean", "worst", "mean-scene", "worst-scene"):
+    if mode == "mission":
+        successes = verified_mission_holdout(primary)
+        primary_candidate.update({
+            "mission_successes": successes,
+            "mission_attempts": primary["episodes"],
+            "mission_success_rate": successes / primary["episodes"],
+            "selection_score": successes / primary["episodes"],
+        })
+        return primary_candidate
+    if mode not in ("mean", "worst", "mean-scene", "worst-scene",
+                    "mission-mean-scene", "mission-worst-scene"):
         raise ValueError("unknown native checkpoint ranking")
     suites = recipe.get("monitor_evaluations", [])
     if len(monitor_results) != len(suites) or (
@@ -156,7 +204,12 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
             "episodes": candidate["episodes"],
             "win_rate": candidate["win_rate"],
         })
-    if mode in ("mean-scene", "worst-scene"):
+    if mode in ("mean-scene", "worst-scene",
+                "mission-mean-scene", "mission-worst-scene"):
+        mission_based = mode.startswith("mission-")
+        if mission_based:
+            for _, receipt in source_receipts:
+                verified_mission_holdout(receipt)
         scene_rows = []
         distinct_scenes = set()
         for suite_id, receipt in source_receipts:
@@ -171,17 +224,31 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
                         scene.get("side_win_rate") != wins / episodes):
                     raise ValueError("invalid native per-scene model selection outcome")
                 distinct_scenes.add(scene_sha)
-                scene_rows.append({
+                row = {
                     "suite_id": suite_id, "scene_sha256": scene_sha,
                     "episodes": episodes, "wins": wins, "win_rate": wins / episodes,
-                })
+                }
+                if mission_based:
+                    successes = scene["learner_mission_successes"]
+                    row["mission_successes"] = successes
+                    row["mission_success_rate"] = successes / episodes
+                scene_rows.append(row)
         if len(distinct_scenes) < 2:
             raise ValueError("per-scene checkpoint ranking requires at least two different physical scenes")
-        rates = [row["win_rate"] for row in scene_rows]
+        rates = [row["mission_success_rate"] if mission_based else row["win_rate"]
+                 for row in scene_rows]
         primary_candidate["selection_score"] = (
-            sum(rates) / len(rates) if mode == "mean-scene" else min(rates)
+            sum(rates) / len(rates) if mode in ("mean-scene", "mission-mean-scene")
+            else min(rates)
         )
         primary_candidate["evaluation_scenes"] = scene_rows
+        if mission_based:
+            successes = verified_mission_holdout(primary)
+            primary_candidate.update({
+                "mission_successes": successes,
+                "mission_attempts": primary["episodes"],
+                "mission_success_rate": successes / primary["episodes"],
+            })
     else:
         rates = [suite["win_rate"] for suite in all_suites]
         primary_candidate["selection_score"] = (
@@ -269,6 +336,9 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
             "worst": "highest_minimum_fixed_suite_win_rate_with_earliest_tie",
             "mean-scene": "highest_equal_weight_mean_fixed_scene_win_rate_with_earliest_tie",
             "worst-scene": "highest_minimum_fixed_scene_win_rate_with_earliest_tie",
+            "mission": "most_role_adjusted_physical_goal_successes_with_earliest_tie",
+            "mission-mean-scene": "highest_equal_weight_mean_fixed_scene_role_adjusted_goal_rate",
+            "mission-worst-scene": "highest_minimum_fixed_scene_role_adjusted_goal_rate",
         }[recipe.get("checkpoint_selection", "primary")],
         "learner_side": baseline_holdout["learner_side"],
         "learner_slot": learner_slot,
@@ -276,6 +346,8 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
         "completed_rounds": len(completed),
         "baseline_wins": baseline["wins"],
         "baseline_win_rate": baseline["win_rate"],
+        **({"baseline_mission_success_rate": baseline["mission_success_rate"]}
+           if "mission_success_rate" in baseline else {}),
         **({"baseline_selection_score": baseline["selection_score"]}
            if "selection_score" in baseline else {}),
         "selected": best,
