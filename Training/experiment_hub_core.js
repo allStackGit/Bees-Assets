@@ -4424,6 +4424,21 @@ class ExperimentHub {
         };
         const collectors=validateMembers(value.collector_members,'collector');
         const optimizers=validateMembers(value.optimizer_members,'optimizer');
+        const configurations=new Map(this.state.configurations.map(item=>[item.id,item]));
+        const owner=configurations.get(optimizers[0].configuration_id)?.parameters;
+        const ownerThreads=optimizers[0].resources.gpu_count;
+        if(!SHA256.test(String(owner?.optimizer_inputs_sha256||''))||
+            owner?.config_sha256!==source.frozen_parameters?.config_sha256||
+            owner.seed_offset!==0||
+            optimizers.some((entry,index)=>{
+                const candidate=configurations.get(entry.configuration_id)?.parameters;
+                return candidate.optimizer_inputs_sha256!==owner.optimizer_inputs_sha256||
+                    candidate.seed_offset!==0||
+                    (candidate.refresh_opponent_slot??null)!==
+                        (owner.refresh_opponent_slot??null)||
+                    entry.resources.gpu_count!==ownerThreads;
+            }))
+            throw Error('Native multi-round optimizer templates must share exact installed MA-POCA source identity, fixed GPU ranks and checkpoint lineage before collecting new physical experience.');
         if(optimizers[0].machine_id!==source.assigned_machine_id)
             throw Error('The new optimizer checkpoint publisher must remain on its verified predecessor machine.');
         const machines=[...new Set([...collectors,...optimizers].map(item=>item.machine_id))];
