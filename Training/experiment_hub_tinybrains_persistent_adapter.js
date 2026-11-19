@@ -152,7 +152,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_inference_pixel_samples',
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
-        'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_inference_forward_chunks','rollout_inference_forward_states',
+        'rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'rollout_opponent_joined_learner_readbacks',
         'rollout_opponent_readback_slot_reused',
         'rollout_opponent_readback_slot_allocated',
@@ -396,6 +397,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_inference_readbacks,'count');
         add('collector_'+i+'_inference_forward_chunks',
             worker.rollout_inference_forward_chunks,'count');
+        // Actual unfused actor boards per forward call; fused vmap
+        // forwards are deliberately excluded from BOTH measurements.
+        const calls=worker.rollout_inference_forward_chunks;
+        const states=worker.rollout_inference_forward_states;
+        if(Number.isSafeInteger(calls)&&calls>0&&
+            Number.isSafeInteger(states)&&states>=calls)
+            add('collector_'+i+'_gpu_fwd_batch_mean',
+                states/calls,'scalar');
         add('collector_'+i+'_board_uploads_saved',worker.rollout_board_uploads_saved,'count');
         add('collector_'+i+'_board_packed_bytes',worker.rollout_board_packed_bytes,'bytes');
         add('collector_'+i+'_opponent_shape_groups',
