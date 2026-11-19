@@ -548,12 +548,14 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
     // group. Read the separately reserved remote jobs; never infer resources
     // from collector counts, measured rates or machine CPU capacity.
     const allocation=job=>{
-        const distributed=job.distributed_rollout_managed===true;
+        const courierGroup=job.project_id==='courier'&&
+            job.distributed_courier_managed===true;
+        const distributed=job.distributed_rollout_managed===true||courierGroup;
         const workers=distributed?allJobs.filter(other=>
-            other.project_id==='tinybrains_rollout'&&
+            other.project_id===(courierGroup?'courier_lineage':'tinybrains_rollout')&&
             other.frozen_parameters?.learner_job_id===job.id):[];
-        if(distributed&&(workers.length<1||workers.length>8))return null;
-        const pinnedThreads=distributed&&workers.every(worker=>
+        if(distributed&&(workers.length<1||workers.length>(courierGroup?16:8)))return null;
+        const pinnedThreads=distributed&&!courierGroup&&workers.every(worker=>
             Number.isSafeInteger(worker.frozen_parameters?.threads)&&
             worker.frozen_parameters.threads>=1&&
             Number.isSafeInteger(worker.resources?.cpus)&&
@@ -592,6 +594,7 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             return {
                 host:member.assigned_machine_id,
                 role:index===0?'learner':'collector',
+                shared_policy:member.frozen_parameters?.shared_policy===true,
                 cpus:member.resources?.cpus,
                 ram_mb:member.resources?.ram_mb,
                 gpus:gpuCount,
@@ -605,10 +608,28 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
         if(members.some(member=>!member.host||
             !Number.isSafeInteger(member.cpus)||member.cpus<1||
             !Number.isSafeInteger(member.ram_mb)||member.ram_mb<1||
-            !Number.isSafeInteger(member.gpus)||member.gpus<0)||
-            new Set(members.map(member=>member.host)).size!==members.length)
+            !Number.isSafeInteger(member.gpus)||member.gpus<0))
             return null;
-        members.sort((a,b)=>a.host.localeCompare(b.host));
+        // The learner and its slot-pinned shared-policy collectors may
+        // share a host, but only with separate acknowledged exclusive
+        // GPU leases. Other distributed members require distinct hosts.
+        const ownersByHost=new Map();
+        for(const member of members) {
+            if(!ownersByHost.has(member.host))ownersByHost.set(member.host,[]);
+            ownersByHost.get(member.host).push(member);
+        }
+        if([...ownersByHost].some(([host,owners])=>owners.length>1&&
+            (!courierGroup||job.frozen_parameters?.shared_policy!==true||
+                owners.filter(owner=>owner.role==='learner').length!==
+                    (host===job.assigned_machine_id?1:0)||
+                owners.some(owner=>owner.shared_policy!==true||
+                    owner.mode!=='exclusive'||owner.gpus!==1||
+                    owner.gpu_ids?.length!==1)||
+                new Set(owners.map(owner=>owner.gpu_ids[0])).size!==owners.length)))
+            return null;
+        members.sort((a,b)=>a.host.localeCompare(b.host)||
+            a.role.localeCompare(b.role)||
+            (a.gpu_ids?.[0]||'').localeCompare(b.gpu_ids?.[0]||''));
         return {
             members,
             cpus:members.reduce((total,m)=>total+m.cpus,0),
@@ -618,7 +639,9 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             gpu_mode:members.map(m=>m.mode).join('|'),
             claims_verified:members.every(m=>m.gpu_ids!==null),
             collector_threads:pinnedThreads?.threads??null,
-            collector_cpus:pinnedThreads?.cpus??null,
+            collector_cpus:courierGroup
+                ?workers.reduce((sum,worker)=>sum+worker.resources.cpus,0)
+                :pinnedThreads?.cpus??null,
         };
     };
     const rows=runs.map(run=>{
@@ -643,7 +666,9 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             members:resources?.members||null,
             lineage:run.job.artifact_lineage_root_id||run.job.id,
             status:run.job.status,
-            distributed:run.job.distributed_rollout_managed===true,
+            distributed:run.job.distributed_rollout_managed===true||
+                run.job.project_id==='courier'&&
+                run.job.distributed_courier_managed===true,
             cpus:resources?.cpus??null,
             gpus:resources?.gpus??null,
             gpu_mode:resources?.gpu_mode||null,
@@ -830,12 +855,17 @@ function hubDistributedMetricSelection(selected,remoteCount) {
         const missing=[first,second].filter(name=>!names.includes(name));
         if(names.length+missing.length<=96)names.push(...missing);
     };
-    for(let i=0;i<total;i++)
+    for(let i=0;i<total;i++) {
         includePair('collector_'+i+'_rollout_engine_step_seconds',
             'collector_'+i+'_learner_inference_seconds');
+        includePair('collector_'+i+'_observation_prepare_seconds',
+            'collector_'+i+'_opponent_processing_seconds');
+    }
     for(let i=0;i<total;i++) {
         const model='collector_'+i+'_model_prepare_seconds';
         if(!names.includes(model)&&names.length<96)names.push(model);
+        const matchRate='collector_'+i+'_match_steps_per_second';
+        if(!names.includes(matchRate)&&names.length<96)names.push(matchRate);
         if(i>0) {
             const roundtrip='collector_'+i+'_roundtrip_seconds';
             if(!names.includes(roundtrip)&&names.length<96)names.push(roundtrip);
@@ -885,6 +915,9 @@ function hubCollectorStageProfile(run) {
             if(engine===null||inference===null||rate===null)continue;
             samples.push({
                 engine,inference,rate,
+                matchRate:value(metrics,slot,'match_steps_per_second','rate'),
+                observation:value(metrics,slot,'observation_prepare_seconds','seconds'),
+                opponent:value(metrics,slot,'opponent_processing_seconds','seconds'),
                 model:value(metrics,slot,'model_prepare_seconds','seconds'),
                 roundtrip:value(metrics,slot,'roundtrip_seconds','seconds'),
             });
@@ -898,7 +931,9 @@ function hubCollectorStageProfile(run) {
         slots.push({
             slot,samples:latest.length,
             engine:observed('engine'),inference:observed('inference'),
-            rate:observed('rate'),model:observed('model'),
+            observation:observed('observation'),opponent:observed('opponent'),
+            rate:observed('rate'),matchRate:observed('matchRate'),
+            model:observed('model'),
             roundtrip:observed('roundtrip'),
         });
     }
@@ -2423,7 +2458,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains and Courier groups sum only their explicitly reserved learner and collector resources; the remote threads/CPU column shows frozen TinyBrains thread limits or Courier collector CPU leases, not actual CPU occupancy. Same-host Courier collectors are counted only with distinct, verified exclusive GPU leases. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {
@@ -2434,8 +2469,9 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,row.gpus===null?'Unknown':row.gpus.toLocaleString());
             cell(tr,row.host||'Unknown');
             cell(tr,!row.distributed?'—':
-                row.collector_threads===null?'Unknown':
-                    row.collector_threads+' / '+row.collector_cpus);
+                row.collector_threads===null
+                    ?row.collector_cpus===null?'Unknown':'— / '+row.collector_cpus
+                    :row.collector_threads+' / '+row.collector_cpus);
             cell(tr,String(row.sample_count));
             cell(tr,row.median_rate===null?'—':
                 row.median_rate.toLocaleString(undefined,{maximumFractionDigits:2}));
@@ -2482,9 +2518,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' collectors with at least five complete recent samples';
             collectorStageProfiles.append(heading);
             const table=document.createElement('table');
-            const headers=['Collector','Samples','Decisions/s',
-                'Engine step (s)','Inference (s)','Model prepare (s)',
-                'Roundtrip (s)'];
+            const headers=['Collector','Samples','Decisions/s','Match steps/s',
+                'Engine step/join (s)','Observation preparation (s)',
+                'Inference (s)','Opponent processing (s)',
+                'Model prepare (s)','Roundtrip (s)'];
             const tr=document.createElement('tr');
             for(const title of headers) {
                 const th=document.createElement('th');
@@ -2498,8 +2535,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const row=document.createElement('tr');
                 for(const value of [
                     slot.slot===0?'0 · learner':' '+slot.slot+' · remote',
-                    String(slot.samples),format(slot.rate),format(slot.engine),
-                    format(slot.inference),format(slot.model),
+                    String(slot.samples),format(slot.rate),format(slot.matchRate),
+                    format(slot.engine),format(slot.observation),format(slot.inference),
+                    format(slot.opponent),format(slot.model),
                     slot.slot===0?'—':format(slot.roundtrip),
                 ])cell(row,value);
                 tbody.append(row);
@@ -2508,7 +2546,7 @@ document.addEventListener('DOMContentLoaded', () => {
             collectorStageProfiles.append(table);
         }
         const note=document.createElement('p');
-        note.textContent='Medians use up to 32 paired observations from the latest chart segment. Engine and inference timings are host-wall stage observations, not exclusive CPU or GPU time; stages may overlap. Remote roundtrip includes transfer and worker computation, not network latency alone. Missing columns mean the recorded samples did not contain the metric consistently; no values are inferred.';
+        note.textContent='Medians use up to 32 paired observations from the latest chart segment. Engine and inference timings are host-wall observations, not exclusive CPU or GPU time. When native steps are prefetched, the engine figure is remaining join wait and may overlap opponent preparation; full native batch wall is recorded separately. Remote roundtrip includes transfer and worker computation, not network latency alone. Missing columns are not inferred.';
         collectorStageProfiles.append(note);
     }
     function renderMeasuredSeconds(runs) {
@@ -3589,9 +3627,10 @@ document.addEventListener('DOMContentLoaded', () => {
     tinyBrainsRemote.type='checkbox';
     tinyBrainsWeights.type='text';
     tinyBrainsWeights.placeholder='Optional: 2,8,4 (local, then each remote)';
-    tinyBrainsDevice.append(new Option('Profile default',''),
-        new Option('CPU-only fallback (no GPU)','cpu'),
-        new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
+    tinyBrainsDevice.append(new Option('From resource allocation',''),
+        new Option('CPU only','cpu'),
+        new Option('Dedicated two-GPU split PPO (CUDA/ROCm)','dual'),
+        new Option('Multi-GPU PPO + local collectors (3–8 exclusive)','multi'));
     tinyBrainsThreads.type='number';
     tinyBrainsThreads.min='1';
     tinyBrainsThreads.max='256';
@@ -3610,6 +3649,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
         const stage=tinyBrainsStage.value;
+        const multiGpu=tinyBrainsDevice.value==='multi';
         const remoteRollouts=tinyBrainsRemote.checked;
         const weightText=tinyBrainsWeights.value.trim();
         const weights=weightText?weightText.split(',').map(s=>Number(s.trim())):[];
@@ -3618,9 +3658,11 @@ document.addEventListener('DOMContentLoaded', () => {
             !(state?.machines||[]).some(machine=>
                 machine.status==='connected'&&
                 machine.tinybrains_profiles?.[profile]===digest&&
-                machine.tinybrains_remote_rollout_endpoints?.length===weights.length-1))) {
+                (machine.tinybrains_remote_rollout_endpoints?.length===weights.length-1||
+                    machine.tinybrains_rollout_subset===true&&
+                    machine.tinybrains_remote_rollout_endpoints?.length>=weights.length-1)))) {
             feedback('hub-config-message',
-                'Fixed action weights require one integer from 1–1024 for the learner and each approved remote endpoint.');
+                'Fixed action weights require one integer from 1–1024 for the learner and each selected remote collector.');
             return;
         }
         if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
@@ -3642,7 +3684,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(dualGpu&&!(state?.machines||[]).some(machine=>
             machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
             machine.tinybrains_dual_gpu_profiles?.includes(profile))) {
-            feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
+            feedback('hub-config-message','No connected CUDA/ROCm worker approves two-GPU split PPO for this profile.');
             return;
         }
         if(stage&&!(state?.machines||[]).some(machine=>
@@ -3653,11 +3695,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 'No connected worker with this approved profile advertises the selected curriculum stage. Install the stage-capable runtime or select existing maps.');
             return;
         }
-        if(remoteRollouts&&(cpuFallback||!(state?.machines||[]).some(machine=>
-            machine.status==='connected'&&machine.agent_platform==='linux'&&
+        if(multiGpu&&!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_multi_gpu_profiles?.includes(profile))) {
+            feedback('hub-config-message','No connected CUDA/ROCm worker approves 3–8 GPU split PPO collectors for this profile.');
+            return;
+        }
+        if(remoteRollouts&&!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&
+            ['linux','win32'].includes(machine.agent_platform)&&
             machine.tinybrains_profiles?.[profile]===digest&&
-            machine.tinybrains_remote_rollout_profiles?.includes(profile)))) {
-            feedback('hub-config-message','Remote CPU rollouts require an approved Linux GPU learner and a locally installed tailnet worker configuration.');
+            machine.tinybrains_remote_rollout_profiles?.includes(profile)&&
+            (!cpuFallback||machine.tinybrains_remote_cpu_learner===true&&
+                machine.tinybrains_cpu_fallback_profiles?.includes(profile)))) {
+            feedback('hub-config-message','Remote rollouts require an approved native learner for this device mode and locally installed private-network worker configuration.');
             return;
         }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
@@ -3669,7 +3720,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-config-json').value=JSON.stringify({
             profile,profile_sha256:digest,updates,
             ...(hasThreads?{threads}:{}),
-            ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
+            ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:
+                multiGpu?{device:'multi'}:{}),
             ...(remoteRollouts?{remote_rollouts:true}:{}),
             ...(weights.length?{rollout_action_weights:weights}:{}),
             ...(stage?{training_stage:stage}:{}),
@@ -3688,8 +3740,10 @@ document.addEventListener('DOMContentLoaded', () => {
             (cpuFallback||!selected?.cudaWorkers
                 ?'When queueing, request CPU/RAM without GPUs. '
                 :dualGpu
-                    ?'When queueing, request two EXCLUSIVE GPUs and sufficient CPU/RAM; a single PPO optimizer runs on one GPU while collection runs on the other. '
-                    :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
+                    ?'When queueing, request two EXCLUSIVE GPUs and sufficient CPU/RAM; one PPO optimizer runs on one GPU, with collection on the other. '
+                    :multiGpu
+                        ?'When queueing, request 3–8 EXCLUSIVE GPUs and sufficient CPU/RAM; one GPU owns PPO optimization and the remaining GPUs collect in parallel. '
+                        :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
             (sourceId
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
@@ -3705,7 +3759,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
         ['Learning curriculum map stage ',tinyBrainsStage],
-        ['Use approved remote CPU rollout collectors ',tinyBrainsRemote],
+        ['Use approved remote rollout collectors ',tinyBrainsRemote],
         ['Fixed rollout action weights (optional; local then remotes) ',tinyBrainsWeights],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
@@ -4089,6 +4143,169 @@ document.addEventListener('DOMContentLoaded', () => {
         const live=job.live_execution;
         const p=live?.progress||job.final_progress;
         if(p?.source==='hub-metrics-v1') {
+            // Sustained stage evidence is deliberately narrower than a CPU/GPU
+            // hardware diagnosis; measured stage time alone cannot prove
+            // device saturation or justify buying additional resources.
+            const measured=p.metrics||{};
+            const remoteWaitOwner=measured.pipeline_remote_wait_owner?.value;
+            let remoteWaitHost=null;
+            if(job.project_id==='tinybrains'&&
+                job.distributed_rollout_managed===true&&
+                Number.isSafeInteger(remoteWaitOwner)&&remoteWaitOwner>=1) {
+                const learner=(state.machines||[]).find(
+                    host=>host.id===job.assigned_machine_id);
+                const endpoint=(job.frozen_parameters?.rollout_endpoints??
+                    learner?.tinybrains_remote_rollout_endpoints)?.[
+                    remoteWaitOwner-1];
+                if(endpoint&&learner.tinybrains_remote_key_fingerprint) {
+                    // The learner's ordered, approved endpoint identity must
+                    // match exactly one originally assigned native worker.
+                    // Do not guess a physical host from collector index alone.
+                    const matching=(state.jobs||[]).filter(worker=>{
+                        if(worker.project_id!=='tinybrains_rollout'||
+                            worker.frozen_parameters?.learner_job_id!==job.id)
+                            return false;
+                        const host=(state.machines||[]).find(
+                            machine=>machine.id===worker.assigned_machine_id);
+                        return host?.tinybrains_rollout_endpoint===endpoint&&
+                            host.tinybrains_rollout_key_fingerprint===
+                                learner.tinybrains_remote_key_fingerprint;
+                    });
+                    if(matching.length===1) {
+                        const host=(state.machines||[]).find(
+                            machine=>machine.id===matching[0].assigned_machine_id);
+                        remoteWaitHost=host?.name||host?.id||null;
+                    }
+                }
+            }
+            const remoteWaitLabel=Number.isSafeInteger(remoteWaitOwner)&&
+                remoteWaitOwner>=1&&remoteWaitOwner<=16
+                ?' (Collector '+remoteWaitOwner+
+                    (remoteWaitHost?' on '+remoteWaitHost:'')+')'
+                :measured.pipeline_remote_wait_competing_collectors?.value===1
+                    ?' (multiple similar collector completion times)'
+                    :' (no stable collector owner)';
+            const delay=measured.pipeline_remote_wait_dominant?.value===1
+                ?'remote collector join wait'+remoteWaitLabel
+                :measured.pipeline_merge_dominant?.value===1
+                    ?'learner-side rollout merge':null;
+            const stage=measured.pipeline_collection_dominant?.value===1
+                ?'collection':measured.pipeline_optimization_dominant?.value===1
+                    ?'optimization':null;
+            const signal=delay
+                ?' · Sustained collection delay: '+delay+' (not proof of hardware saturation)'
+                :stage
+                    ?' · Sustained longest stage: '+stage+' (not a hardware saturation claim)'
+                    :measured.pipeline_timing_sample_count?.value>0
+                        ?' · Bottleneck stage: insufficient sustained evidence'
+                        :'';
+            const connectPressure=job.project_id==='tinybrains'&&
+                measured.pipeline_remote_connect_pressure?.value===1;
+            const connectOwner=measured.pipeline_remote_connect_owner?.value;
+            const connectSignal=connectPressure&&
+                Number.isSafeInteger(connectOwner)&&connectOwner>=1&&connectOwner<=16
+                ?' · Sustained remote TCP connection setup on Collector '+
+                    connectOwner+' (not evidence of network saturation)'
+                :'';
+            const remotePrepSignal=measured.pipeline_remote_prep_pressure?.value===1
+                ?' · Learner regularly still preparing remote rollouts after local collectors finish'
+                :'';
+            const dispatchOwner=measured.pipeline_collector_dispatch_owner?.value;
+            const dispatchSignal=measured.pipeline_collector_dispatch_pressure?.value===1&&
+                Number.isSafeInteger(dispatchOwner)&&dispatchOwner>=1&&dispatchOwner<=16
+                ?' · Collector '+dispatchOwner+' regularly waits for learner dispatch'
+                :'';
+            const measuredWorkers=[];
+            for(let i=0;i<9;i++) {
+                for(const stageName of ['engine','observation','inference','opponent']) {
+                    if(measured['collector_'+i+'_stage_'+stageName+
+                            '_dominant']?.value===1)
+                        measuredWorkers.push((i===0?'Learner':'Collector '+i)+
+                            ': '+stageName);
+                }
+            }
+            const workerSignal=measuredWorkers.length
+                ?' · Sustained measured stage: '+measuredWorkers.slice(0,2).join('; ')+
+                    (measuredWorkers.length>2
+                        ?' (+'+(measuredWorkers.length-2)+' more)':'')+
+                    ' (not hardware saturation)'
+                :'';
+            const enginePressure=[];
+            for(let i=0;i<9;i++) {
+                if(measured['collector_'+i+'_sim_straggler_pressure']?.value===1)
+                    enginePressure.push((i===0?'Learner':'Collector '+i)+
+                        ' waiting for slowest simulation');
+                if(measured['collector_'+i+'_sim_dispatch_pressure']?.value===1)
+                    enginePressure.push((i===0?'Learner':'Collector '+i)+
+                        ' simulation dispatch queueing');
+                if(measured['collector_'+i+'_record_encode_pressure']?.value===1)
+                    enginePressure.push((i===0?'Learner':'Collector '+i)+
+                        ' rollout record packing');
+            }
+            const enginePressureSignal=enginePressure.length
+                ?' · Sustained simulation pressure: '+enginePressure.slice(0,2).join('; ')+
+                    (enginePressure.length>2?' (+'+(enginePressure.length-2)+' more)':'')
+                :'';
+            const queueOwner=measured.training_sim_queue_ratio_owner?.value;
+            const courierQueueSignal=job.project_id==='courier'&&
+                measured.training_sim_queue_pressure?.value===1&&
+                Number.isSafeInteger(queueOwner)&&queueOwner>=0&&queueOwner<64
+                ?' · Sustained simulation shard backlog at PPO lineage '+queueOwner+
+                    (measured.training_sim_cpu_underuse_evidence?.value===1
+                        ?' with unused leased CPU capacity'
+                        :' (not evidence of hardware saturation)')
+                :'';
+            const idleTailOwner=measured.training_sim_idle_tail_ratio_owner?.value;
+            const courierImbalanceSignal=job.project_id==='courier'&&
+                measured.training_sim_tail_skew_pressure?.value===1&&
+                Number.isSafeInteger(idleTailOwner)&&idleTailOwner>=0&&idleTailOwner<64
+                ?' · Sustained shard receipt tail skew at PPO lineage '+
+                    idleTailOwner+' (may reflect shard imbalance or receipt overhead, not measured CPU idle%)'
+                :'';
+            const gpuFwdOwner=measured.training_gpu_forward_owner?.value;
+            const sharedGpuFwdOwner=measured.training_shared_gpu_fwd_owner?.value;
+            const tbLocalFwdOwner=measured.pipeline_local_gpu_fwd_owner?.value;
+            const tbRemoteFwdOwner=measured.pipeline_remote_gpu_fwd_owner?.value;
+            const tbGpuFwdSignal=job.project_id==='tinybrains'&&
+                measured.pipeline_local_gpu_fwd_pressure?.value===1&&
+                Number.isSafeInteger(tbLocalFwdOwner)&&tbLocalFwdOwner>=0&&
+                tbLocalFwdOwner<=16
+                ?' · Sustained exposed forward-stream work on local GPU collector '+
+                    tbLocalFwdOwner+' (not proof of GPU hardware saturation)'
+                :job.project_id==='tinybrains'&&
+                    measured.pipeline_remote_gpu_fwd_pressure?.value===1&&
+                    Number.isSafeInteger(tbRemoteFwdOwner)&&tbRemoteFwdOwner>=1&&
+                    tbRemoteFwdOwner<=16
+                    ?' · Sustained exposed forward-stream work on remote collector '+
+                        tbRemoteFwdOwner+' (not proof of GPU hardware saturation)'
+                    :'';
+            const courierGpuFwdSignal=job.project_id==='courier'&&
+                measured.training_gpu_forward_pressure?.value===1&&
+                Number.isSafeInteger(gpuFwdOwner)&&gpuFwdOwner>=0&&gpuFwdOwner<64
+                ?' · Sustained exposed GPU forward stream work at PPO lineage '+
+                    gpuFwdOwner+' (not proof of GPU hardware saturation)'
+                :job.project_id==='courier'&&
+                    measured.training_shared_gpu_fwd_pressure?.value===1&&
+                    Number.isSafeInteger(sharedGpuFwdOwner)&&
+                    sharedGpuFwdOwner>=0&&sharedGpuFwdOwner<16
+                    ?' · Sustained exposed GPU forward stream work at shared-policy collector '+
+                        sharedGpuFwdOwner+' (not proof of GPU hardware saturation)'
+                    :'';
+            const resourceFlags=[
+                ['pipeline_cpu_lease_pressure','CPU lease nearly occupied'],
+                ['pipeline_cpu_throttle_pressure','CPU quota throttling'],
+                ['pipeline_ram_lease_pressure','RAM lease nearly occupied'],
+                ['pipeline_gpu_host_busy_pressure','allocated GPUs host-busy'],
+                ['pipeline_gpu_mixed_host_evidence','allocated GPUs show mixed host activity'],
+                ['pipeline_cpu_underuse_evidence','CPU lease underused during collection'],
+                ['pipeline_gpu_idle_evidence','allocated GPUs host-idle during optimization']
+            ].filter(([metric])=>measured[metric]?.value===1)
+                .map(([,name])=>name);
+            const resourceSignal=resourceFlags.length
+                ?' · Sustained resource evidence: '+resourceFlags.slice(0,2).join('; ')+
+                    (resourceFlags.length>2?' (+'+(resourceFlags.length-2)+' more)':'')+
+                    ' (not proof of a causal hardware bottleneck)'
+                :'';
             // Compact Monitor summaries should show the trainer's recorded
             // learning outcomes as well as steps; timing-only summaries
             // can misleadingly look like missing learning telemetry.
@@ -4110,7 +4327,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const remaining=Math.max(0,Object.keys(p.metrics).length-values.length);
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
-                (remaining?' · +'+remaining+' more':'')+
+                (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
+                enginePressureSignal+connectSignal+remotePrepSignal+dispatchSignal+
+                courierQueueSignal+courierImbalanceSignal+courierGpuFwdSignal+
+                tbGpuFwdSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -4578,11 +4798,80 @@ document.addEventListener('DOMContentLoaded', () => {
     const knownPerformanceMetrics=[
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
         'active_training_time',
-        'engine_steps','engine_steps_per_second','ant_decisions',
+        'pipeline_collection_work_share','pipeline_optimization_work_share',
+        'pipeline_collection_dominant','pipeline_optimization_dominant',
+        'pipeline_remote_wait_work_share','pipeline_merge_work_share',
+        'pipeline_remote_exposed_work_share','pipeline_remote_wait_owner',
+        'pipeline_remote_wait_competing_collectors',
+        'remote_collector_exposed_wait_seconds','remote_collectors_pending_after_local',
+        'remote_collector_co_limiting_count',
+        'remote_collector_exposed_wait_owner',
+        'remote_transport_new_connections',
+        'remote_transport_reused_collectors',
+        'remote_transport_connect_max_seconds',
+        'remote_transport_connect_owner',
+        'remote_connect_exposed_seconds',
+        'remote_network_launch_delay_seconds',
+        'remote_network_prep_exposed_seconds',
+        'collector_dispatch_queue_peak','collector_dispatch_queue_max_seconds',
+        'collector_dispatch_tail_seconds','collector_dispatch_tail_owner',
+        'pipeline_collector_dispatch_pressure','pipeline_collector_dispatch_owner',
+        'local_lease_ram_charged_mb',
+        'local_lease_ram_headroom_mb',
+        'remote_snapshot_cache_hits',
+        'remote_snapshot_staged_bytes',
+        'remote_snapshot_unstaged_bytes',
+        'remote_snapshot_unstaged_ratio',
+        'pipeline_remote_connection_reuse_ratio',
+        'pipeline_remote_connect_pressure',
+        'pipeline_remote_connect_owner',
+        'pipeline_remote_prep_pressure',
+        'pipeline_remote_wait_dominant','pipeline_merge_dominant',
+        'pipeline_cpu_lease_pressure','pipeline_cpu_throttle_pressure',
+        'pipeline_ram_lease_pressure','pipeline_gpu_host_busy_pressure',
+        'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
+        'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
+        'pipeline_timing_sample_count','rollout_engine_measured_work_share',
+        'rollout_inference_measured_work_share',
+        ...Array.from({length:17},(_,i)=>'collector_'+i+'_turnaround_overhead_share'),
+        'engine_steps','engine_steps_per_second',
+        'simulation_match_steps','simulation_match_steps_per_second',
+        'ant_decisions',
         'ant_decisions_per_second','group_states','group_states_per_second',
         'collection_seconds','rollout_model_refresh_seconds',
-        'rollout_engine_step_seconds','rollout_learner_inference_seconds',
-        'optimization_seconds','overlap_seconds',
+        'rollout_engine_step_seconds','rollout_observation_prepare_seconds',
+        'rollout_learner_inference_seconds','rollout_opponent_processing_seconds',
+        'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
+        'simulation_batch_wall_seconds','simulation_last_child_gap_seconds',
+        'simulation_prefetch_overlap_seconds',
+        'simulation_prefetch_engine_steps','optimization_seconds','overlap_seconds',
+        'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
+        'training_sim_queue_max_seconds','training_sim_queue_peak_shards',
+        'training_sim_prestaged_actions',
+        'training_sim_prestage_max_seconds',
+        'training_sim_dispatch_copy_max_seconds',
+        'training_sim_idle_tail_max_ratio',
+        'training_sim_idle_tail_ratio_owner',
+        'training_sim_owner_tail_max_seconds',
+        'training_sim_idle_tail_work_share',
+        'training_sim_tail_skew_pressure',
+        'training_sim_queue_work_share','training_sim_queue_pressure',
+        'training_sim_cpu_underuse_evidence',
+        'training_sim_topology_trial_lineages','training_sim_topology_accepted',
+        'training_cpu_lstm_boundary_batches','training_cpu_rollout_lstm_calls',
+        'training_cpu_optimizer_threads_max','training_cpu_optimizer_threads_next',
+        'training_cpu_optimizer_threads_settled','training_remote_cpu_optimizer_trials',
+        'training_gpu_rollout_state_copy_batches','training_gpu_rollout_state_copy_bytes',
+        'training_gpu_rollout_state_wait_seconds',
+        'training_gpu_rollout_input_packs','training_gpu_rollout_input_seconds',
+        'training_gpu_rollout_input_owner',
+        'training_local_gpu_rollout_lineages','training_gpu_rollout_next_lineages',
+        'training_gpu_rollout_trial',
+        'training_sim_topology_rejected','training_sim_topology_unavailable',
+        'training_sim_topology_unverified','training_sim_topology_migrations',
+        'training_topology_max_migration_seconds',
+        'training_topology_max_pred_gain_ratio','training_topology_migration_owner',
+            'training_topology_sps_change_pct','training_topology_result_owner',
         'remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds','ppo_microbatches','states_per_microbatch','actor_grad_norm',
         'group_grad_norm','baseline_grad_norm','policy_lag',
@@ -4603,6 +4892,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'host_gpu_'+i+'_hotspot_temperature_c',
             'host_gpu_'+i+'_power_w',
         ]).flat(),
+        'remote_collector_join_wait_seconds','collection_merge_seconds',
         'data_preparation_seconds','inference_seconds','forward_seconds',
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
@@ -4612,21 +4902,97 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_grouping_seconds','ppo_data_preparation_seconds',
         'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
         'ppo_backward_seconds','ppo_metric_readback_seconds',
+        'ppo_diagnostic_aggregation_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
-        'ppo_minibatches','ppo_board_pixel_samples',
+        'ppo_gpu_stream_interval_seconds',
+        'simulation_active_matches','simulation_target_matches',
+        'simulation_concurrency_adjustments','simulation_tuner_accepted',
+        'simulation_tuner_settled','simulation_tuner_trial','simulation_target_restored',
+        'simulation_memory_rejected_trials','simulation_workload_reprobes',
+        'simulation_inconclusive_trials',
+        'simulation_proven_target','simulation_engine_memory_mb',
+        'simulation_learner_memory_mb','simulation_total_charged_memory_mb',
+        'simulation_ram_lease_headroom_mb',
+        'ppo_minibatches','ppo_gpu_pixel_budget',
+        'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
+        'ppo_prestaged_board_bytes','ppo_prestaged_board_states',
+        'ppo_reused_board_states',
+        'rollout_inference_shape_groups','rollout_inference_readbacks',
+        'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_board_uploads_saved','rollout_board_packed_bytes',
+        'ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count',
-        // The TinyBrains learner contributes slot 0; up to eight remote
-        // workers contribute slots 1–8. Let the operator select every slot.
-        ...Array.from({length:9},(_,i)=>[
+        'collector_auto_balance_adjustments',
+        'collector_auto_balance_accepted','collector_auto_balance_settled',
+        'collector_balance_changed_next_update',
+        'collector_balance_predicted_gain_ratio','collector_balance_noisy_rollbacks',
+        'collector_balance_drift_reprobes',
+        'collector_balance_trial_sps_gain',
+        'gpu_role_optimizer_lease_index','gpu_role_primary_lease_index','gpu_role_startup_seconds',
+        'rollout_model_refresh_groups',
+        'gpu_role_probe_valid','gpu_role_estimated_gain_ratio',
+        // The TinyBrains learner, local GPU collectors and up to eight
+        // network workers can occupy seventeen separately measured slots.
+        ...Array.from({length:17},(_,i)=>[
             'collector_'+i+'_ant_decisions',
             'collector_'+i+'_engine_steps',
+            'collector_'+i+'_simulation_match_steps',
+            'collector_'+i+'_match_steps_per_second',
+            'collector_'+i+'_inference_shape_groups',
+            'collector_'+i+'_inference_readbacks',
+            'collector_'+i+'_inference_forward_chunks',
+            'collector_'+i+'_board_uploads_saved',
+            'collector_'+i+'_board_packed_bytes',
+            'collector_'+i+'_opponent_shape_groups',
+            'collector_'+i+'_opponent_readbacks',
+            'collector_'+i+'_sim_matches',
+            'collector_'+i+'_sim_target',
+            'collector_'+i+'_sim_changes',
+            'collector_'+i+'_sim_accepted',
+            'collector_'+i+'_sim_settled',
+            'collector_'+i+'_sim_rss_mb', // Historical RSS-era reports.
+            'collector_'+i+'_sim_engine_charged_mb',
+            'collector_'+i+'_sim_learner_mb',
+            'collector_'+i+'_sim_charged_mb',
+            'collector_'+i+'_sim_ram_headroom_mb',
+            'collector_'+i+'_sim_engine_roundtrip_seconds',
+            'collector_'+i+'_sim_dispatch_queue_seconds',
+            'collector_'+i+'_sim_batch_wall_seconds',
+            'collector_'+i+'_sim_last_child_gap_seconds',
+            'collector_'+i+'_sim_prefetch_engine_steps',
+            'collector_'+i+'_sim_prefetch_overlap_seconds',
+            'collector_'+i+'_sim_last_child_gap_share',
+            'collector_'+i+'_sim_exposed_wait_share',
+            'collector_'+i+'_sim_dispatch_queue_share',
+            'collector_'+i+'_sim_inflight_factor',
+            'collector_'+i+'_sim_straggler_pressure',
+            'collector_'+i+'_sim_dispatch_pressure',
             'collector_'+i+'_action_target',
             'collector_'+i+'_elapsed_seconds',
             'collector_'+i+'_rollout_engine_step_seconds',
+            'collector_'+i+'_observation_prepare_seconds',
             'collector_'+i+'_learner_inference_seconds',
+            'collector_'+i+'_opponent_processing_seconds',
+            'collector_'+i+'_max_stage_work_share',
+            ...['engine','observation','inference','opponent'].map(
+                stage=>'collector_'+i+'_stage_'+stage+'_dominant'),
             'collector_'+i+'_roundtrip_seconds',
+            'collector_'+i+'_service_seconds',
+            'collector_'+i+'_record_encode_seconds',
+            'collector_'+i+'_record_encode_work_share',
+            'collector_'+i+'_record_encode_pressure',
+            'collector_'+i+'_serialize_seconds',
+            'collector_'+i+'_compress_seconds',
+            'collector_'+i+'_send_seconds',
+            'collector_'+i+'_receive_seconds',
+            'collector_'+i+'_decode_seconds',
+            'collector_'+i+'_ingestion_seconds',
+            'collector_'+i+'_worker_receive_seconds',
+            'collector_'+i+'_worker_decode_seconds',
+            'collector_'+i+'_request_wire_bytes',
+            'collector_'+i+'_response_wire_bytes',
             'collector_'+i+'_model_prepare_seconds',
             'collector_'+i+'_snapshot_cache_files',
             'collector_'+i+'_snapshot_cache_bytes',
@@ -5222,16 +5588,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 :j.checkpoint_reinspection_requested_at?' · Checkpoint recheck pending':'';
             const noTrainer=j.prelaunch_absence_verified===true
                 ?' · No trainer started':'';
-            const groupWorkers=j.project_id==='tinybrains'&&
+            const courierGroup=j.project_id==='courier'&&
+                j.distributed_courier_managed===true;
+            const groupWorkers=courierGroup||j.project_id==='tinybrains'&&
                 j.distributed_rollout_managed===true
-                ?state.jobs.filter(worker=>worker.project_id==='tinybrains_rollout'&&
+                ?state.jobs.filter(worker=>
+                    worker.project_id===(courierGroup?'courier_lineage':'tinybrains_rollout')&&
                     worker.frozen_parameters?.learner_job_id===j.id):[];
             const scheduledGroup=(state.distributed_group_plans||[])
                 .filter(plan=>plan.learner_job_id===j.id).at(-1);
             const unresolvedScheduledGroup=scheduledGroup&&
                 ['pending','needs_review'].includes(scheduledGroup.status);
             const distributedLaunch=(state.distributed_launches||[]).find(launch=>
-                launch.learner_job_id===j.id);
+                launch.learner_job_id===j.id&&launch.status==='pending');
             const launchText=distributedLaunch
                 ?' · Coordinated Start '+distributedLaunch.status+
                     (distributedLaunch.recovery_pending?' (coordinator restart recovery)':'')+
@@ -5246,7 +5615,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Startup abort requested: native collector shutdown and verified claim release pending'
                 :'';
             const distributedSummary=groupWorkers.length
-                ?' · Distributed collectors: '+groupWorkers.map(worker=>
+                ?' · Distributed '+(courierGroup?'PPO lineages':'collectors')+': '+groupWorkers.map(worker=>
+                    (courierGroup?'slot '+worker.frozen_parameters?.slot+' @ ':'')+
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
                     (worker.capacity_released_at?' (released)':'')).join('; ')
                 :'';
@@ -5640,8 +6010,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     proof?.status==='verified'?'Recheck GPU device access':'Check GPU device access',async()=>{
                     if(!confirm('Run an inert Linux GPU access probe for '+
                         j.configuration_name+' on '+machine.name+
-                        '? It opens the selected and excluded render devices, '+
-                        'and starts a short isolated systemd probe. '+
+                        '? It checks which render devices a short isolated probe can open. '+
                         'It does NOT train, reserve VRAM, authorize GPU execution, '+
                         'or guarantee isolation from other host processes.'))return;
                     try{
@@ -5701,11 +6070,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             ?'Also authorize ONE learner GPU Start after all collectors have fresh verified running receipts. '+
                                 'This permission expires after 20 minutes. '+
                                 (recovery
-                                    ?'You separately approve coordinator restart recovery, but ONLY after all ORIGINAL remote dispatches are freshly verified running and the GPU learner passes its native admission and HMAC endpoint checks again. The learner and remote workers are NEVER retried. '
+                                    ?'You separately approve coordinator restart recovery after all original remote dispatches are freshly verified and the learner passes its native admission and HMAC endpoint checks again. '
                                     :'Coordinator restart disarms learner Start. ')+
                                 'Changed collector dispatches, lease owners, HMAC identities or unsafe machine states disarm launch. '+
                                 'If any collector exits before learner Start, remaining sidecars receive native Stop/cleanup requests. '
-                            :'The GPU learner must be started separately after verification. ')+
+                            :'The learner must be started separately after verification. ')+
                         'All resource allocations stay fixed.'))return;
                     try {
                         const result=await action('hub/distributed/tinybrains/start-collectors',{
@@ -5749,7 +6118,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     !worker.dispatch_id&&worker.lease_id&&worker.assigned_machine_id)) {
                 const schedule=async recovery=>{
                     if(!confirm('Approve the complete distributed TinyBrains group for one future native Start when ALL pinned collector and learner machine claims are ready? '+
-                        'This grants real remote collector Starts and a subsequent one-use GPU learner Start only after verified original native collector ownership. '+
+                        'This authorizes remote collectors and one learner Start after their native ownership is verified. '+
                         'The approval expires after 20 minutes. '+
                         (recovery
                             ?'You separately permit the pending approval to survive a coordinator restart, after fresh machine, lease, HMAC and GPU proof. '
@@ -5775,9 +6144,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if(unresolvedScheduledGroup)
                 actions.append(button('Cancel scheduled group',async()=>{
-                    if(!confirm('Revoke future collector and GPU learner Starts for this group? The queued native jobs and their resource claims stay unchanged.'))return;
+                    if(!confirm('Revoke future collector and learner Starts for this group? The queued native jobs and their resource claims stay unchanged.'))return;
                     try {
-                        await action('hub/distributed/tinybrains/cancel-start-plan',{
+                        await action('hub/distributed/'+(courierGroup?'courier':'tinybrains')+'/cancel-start-plan',{
                             plan_id:scheduledGroup.id,confirm_cancel:true,
                         });
                         feedback('hub-job-message',
@@ -5790,7 +6159,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if(!confirm('Disarm this pending coordinated learner Start? '+
                         'The existing remote collector processes and all resource claims remain unchanged.'))return;
                     try{
-                        await action('hub/distributed/tinybrains/cancel-launch',{
+                        await action('hub/distributed/'+(courierGroup?'courier':'tinybrains')+'/cancel-launch',{
                             learner_job_id:j.id,confirm_cancel:true,
                         });
                         feedback('hub-job-message',
@@ -5821,7 +6190,91 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){feedback('hub-job-message',error.message);}
                     await reload();
                 }));
-            if(j.status==='waiting_adapter'&&readiness?.eligible===true)
+            if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !unresolvedScheduledGroup&&!j.distributed_abort_requested_at&&
+                groupWorkers.length>0&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.lease_id&&worker.assigned_machine_id))
+                {
+                    const scheduleCourier=async recovery=>{
+                        if(!confirm('Approve these original Courier PPO machine leases for one future group Start? '+
+                            'When every worker has a fresh lease and GPU proof, the Hub will authorize '+
+                            'all remote services in one transaction, then Start the learner only after '+
+                            'authenticated running receipts. Approval expires after 20 minutes. '+
+                            (recovery
+                                ?'The pending approval may survive coordinator restart after fresh native owner, lease, HMAC and GPU proof. '
+                                :'Coordinator restart disarms the approval. ')+
+                            'No uncertain native process or incomplete PPO update will be retried.'))return;
+                        try {
+                            const plan=await action('hub/distributed/courier/schedule-start',{
+                                learner_job_id:j.id,
+                                expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                                confirm_schedule:true,confirm_learner_start:true,
+                                ...(recovery?{
+                                    resume_after_restart:true,confirm_restart_rearm:true,
+                                }:{}),
+                            });
+                            feedback('hub-job-message','Courier distributed group '+plan.status+
+                                '; no native process Starts until original resource proof is complete.');
+                        }catch(error){feedback('hub-job-message',error.message);}
+                        await reload();
+                    };
+                    actions.append(button('Schedule Courier group when ready',()=>scheduleCourier(false)));
+                    actions.append(button('Schedule recoverable Courier group',()=>scheduleCourier(true)));
+                }
+            if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !unresolvedScheduledGroup&&!j.distributed_abort_requested_at&&groupWorkers.length>0&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
+                {
+                    const startCourier=async recovery=>{
+                        if(!confirm('Authorize '+groupWorkers.length+
+                            ' separately leased Courier PPO services and one subsequent learner Start? '+
+                            'The learner Starts only after every original worker has a verified running native receipt. '+
+                            'The approval expires after 20 minutes. '+
+                            (recovery
+                                ?'Coordinator restart retains the pending learner approval after fresh native running, lease and HMAC proof. '
+                                :'Coordinator restart disarms the future learner Start. ')+
+                            'No failed PPO owner or uncertain in-flight update is retried automatically.'))return;
+                        try {
+                            const result=await action('hub/distributed/courier/start-lineages',{
+                                learner_job_id:j.id,
+                                expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                                confirm_start:true,confirm_learner_start:true,
+                                ...(recovery?{
+                                    resume_after_restart:true,confirm_restart_rearm:true,
+                                }:{}),
+                            });
+                            feedback('hub-job-message',result.starts_authorized+
+                                ' remote Courier Starts approved. Waiting for verified native owners.');
+                        }catch(error){feedback('hub-job-message',error.message);}
+                        await reload();
+                    };
+                    actions.append(button('Start Courier distributed group',()=>startCourier(false)));
+                    actions.append(button('Start recoverable Courier group',()=>startCourier(true)));
+                }
+            }
+            if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&groupWorkers.length>0)
+                actions.append(button('Abort Courier distributed startup',async()=>{
+                    if(!confirm('Abandon this unstarted Courier learner and its '+
+                        groupWorkers.length+' remote PPO lineages? Running or uncertain native owners '+
+                        'receive supervised Stop orders; all fixed CPU/GPU leases remain held '+
+                        'until verified termination or absence. Checkpoints are preserved.'))return;
+                    try {
+                        const result=await action('hub/distributed/courier/abort-startup',{
+                            learner_job_id:j.id,
+                            expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_abort:true,
+                        });
+                        feedback('hub-job-message',result.learner_cancelled
+                            ?'Courier distributed startup cancelled.'
+                            :'Courier remote Stop reconciliation requested; claims remain reserved until verified.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                }));
+            if(j.status==='waiting_adapter'&&readiness?.eligible===true&&
+                j.project_id!=='courier_lineage')
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
                     const gpu=j.resources.gpu_count>0;
@@ -7064,6 +7517,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'It will not resume a previous Hub job checkpoint or optimizer state.\n')+
             '\n';
     }
+    function budgetMatchingControl() {
+        const input=document.createElement('input');
+        input.type='checkbox';
+        const label=document.createElement('label');
+        label.append(input,' Match budgets across the selected machines');
+        return {input,label};
+    }
+    function distributedBudgetRequest(budgets,matching,field) {
+        const ids=budgets.map(item=>item.machine_id);
+        if(matching&&ids.some(id=>typeof id!=='string'||!id))
+            throw Error('Enter a machine ID on each row to select the machines available for matching.');
+        return {[field]:budgets.map(({machine_id,...budget})=>({
+            ...budget,...(!matching&&machine_id!==undefined?{machine_id}:{}),
+        })),...(matching?{worker_machine_ids:ids}:{})};
+    }
+    function matchedWorkerSummary(leases) {
+        return ' Assigned '+leases.slice(1).map(lease=>lease.machine_id+
+            (lease.resources.gpus.length?' ('+lease.resources.gpus.join(', ')+')':' (CPU)'))
+            .join(', ')+'.';
+    }
     // Distributed groups are frozen and claimed atomically. The operator
     // chooses the CPU/RAM/GPU budgets; endpoint-to-machine identity is never
     // entered by the browser and comes from connected native agents instead.
@@ -7073,7 +7546,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const distributedMachine=document.createElement('select');
     const distributedBudgets=document.createElement('textarea');
     distributedBudgets.rows=5;
-    distributedBudgets.placeholder='Worker resource budgets, in endpoint order';
+    distributedBudgets.placeholder='Worker machine IDs and resource budgets';
+    const distributedMatch=budgetMatchingControl();
     const distributedDetails=document.createElement('div');
     const distributedFeedback=document.createElement('div');
     const distributedMachineLabel=document.createElement('label');
@@ -7099,44 +7573,275 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const budgets=JSON.parse(distributedBudgets.value);
             const selectedMachine=state.machines.find(m=>m.id===distributedMachine.value);
-            if(!Array.isArray(budgets)||budgets.length!==
-                selectedMachine?.tinybrains_remote_rollout_endpoints?.length)
-                throw Error('Supply one resource budget for each physically approved remote collector.');
+            if(!Array.isArray(budgets)||!budgets.length||
+                (selectedMachine?.tinybrains_rollout_subset!==true&&budgets.length!==
+                    selectedMachine?.tinybrains_remote_rollout_endpoints?.length))
+                throw Error('Supply the selected remote collector budgets.');
             const resources=JSON.parse($('hub-job-resources').value);
             // The distributed queue must preserve the same Train metrics as
             // ordinary queueing. Prioritize paired collector evidence for
             // a subsequent *advisory* allocation recommendation.
             const metricSelection=hubDistributedMetricSelection(
                 selectedJobMetrics(),budgets.length);
+            const matching=distributedMatch.input.checked&&!distributedMatch.label.hidden;
+            const budgetRequest=distributedBudgetRequest(budgets.map(item=>{
+                if(!item||typeof item!=='object'||Array.isArray(item))
+                    throw Error('Each collector budget must be a JSON object.');
+                const {machine_id,threads,...resources}=item;
+                return {resources,machine_id,...(threads===undefined?{}:{threads})};
+            }),matching,'collectors');
             if(!confirm(newLineageWarning(predecessor,selected.parameters)+
                 'Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
                 ' on '+distributedMachine.value+
                 ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
-                ' reservations will be created together, but no process will start.'))return;
+                ' reservations will be created together, but no process will start.'+
+                (matching?' Budgets may be assigned to a different selected machine than the one on their row.':'')))return;
             const result=await action('hub/distributed/tinybrains',{
                 confirm_queue:true,
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:distributedMachine.value,resources,
                     metric_selection:metricSelection,
                     ...(predecessor?{continuation_of_job_id:predecessor}:{})},
-                collectors:budgets.map(item=>{
-                    if(!item||typeof item!=='object'||Array.isArray(item))
-                        throw Error('Each collector budget must be a JSON object.');
-                    const {threads,...resources}=item;
-                    return {resources,...(threads===undefined?{}:{threads})};
-                }),
+                ...budgetRequest,
             });
             distributedFeedback.textContent='Queued learner '+result.learner.id+
                 ' and '+result.collectors.length+' separate collector jobs. All '+
-                result.leases.length+' claims await native receipts and explicit Starts.';
+                result.leases.length+' claims await native receipts and explicit Starts.'+
+                (matching?matchedWorkerSummary(result.leases):'');
             await reload();
         }catch(error){distributedFeedback.textContent=String(error.message||error);}
     });
     distributedPanel.append(distributedLegend,distributedMachineLabel,
-        distributedBudgetsLabel,distributedDetails,distributedQueue,distributedFeedback);
+        distributedBudgetsLabel,distributedMatch.label,distributedDetails,distributedQueue,distributedFeedback);
     $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
+    // Courier reuses the same native group claims, but unlike TinyBrains
+    // each remote process trains its own immutable recurrent PPO lineage.
+    const courierPanel=document.createElement('fieldset');
+    const courierLegend=document.createElement('legend');
+    courierLegend.textContent='Distributed Courier training';
+    const courierMachine=document.createElement('select');
+    const courierBudgets=document.createElement('textarea');
+    courierBudgets.rows=5;
+    courierBudgets.placeholder='Worker machine IDs and resource budgets';
+    const courierMatch=budgetMatchingControl();
+    const courierDetails=document.createElement('div');
+    const courierFeedback=document.createElement('div');
+    const courierMachineLabel=document.createElement('label');
+    courierMachineLabel.append('Learner machine ',courierMachine);
+    const courierBudgetsLabel=document.createElement('label');
+    courierBudgetsLabel.append('Remote worker budgets (JSON array) ',courierBudgets);
+    const courierQueue=button('Queue and reserve Courier group',async()=>{
+        const selected=state?.configurations.find(c=>
+            c.project_id==='courier'&&c.id===$('hub-job-configuration').value);
+        if(!selected||selected.parameters?.remote_lineages!==true||
+            !courierMachine.value)return;
+        try {
+            const budgets=JSON.parse(courierBudgets.value);
+            const machine=state.machines.find(item=>item.id===courierMachine.value);
+            if(!Array.isArray(budgets)||!budgets.length||
+                (machine?.courier_lineage_subset!==true&&budgets.length!==
+                    machine?.courier_remote_lineage_endpoints?.length)||
+                budgets.some(item=>!item||typeof item!=='object'||
+                    Array.isArray(item)))
+                throw Error('Provide one CPU/RAM/GPU budget for each selected Courier worker.');
+            const resources=JSON.parse($('hub-job-resources').value);
+            const matching=courierMatch.input.checked&&!courierMatch.label.hidden;
+            if(budgets.some(item=>item.machine_id===courierMachine.value)&&!matching)
+                throw Error('Same-machine Courier GPU collectors require explicitly matched machine budgets.');
+            const slotBound=budgets.some(item=>Object.hasOwn(item,'endpoint'));
+            if(slotBound&&!matching)
+                throw Error('Selected Courier listeners require fixed machine binding.');
+            const budgetRequest=distributedBudgetRequest(
+                budgets.map(({machine_id,endpoint,...resources})=>({
+                    resources,machine_id,...(endpoint!==undefined?{endpoint}:{})
+                })),matching,'lineages');
+            const predecessor=$('hub-job-predecessor').value;
+            if(predecessor) {
+                const parent=state.jobs.find(job=>job.id===predecessor);
+                if(parent?.project_id!=='courier'||!parent.capacity_released_at||
+                    parent.assigned_machine_id!==courierMachine.value||
+                    !(parent.status==='finished'&&parent.checkpoint_ready_verified===true||
+                      parent.status==='stopped'&&parent.checkpoint_stop_verified===true))
+                    throw Error('Courier distributed continuation requires a released, verified checkpoint on the original learner machine.');
+            }
+            const role=selected.parameters.shared_policy===true
+                ?' shared-policy collectors':' independent PPO workers';
+            const fixedSlots=matching&&selected.parameters.shared_policy===true&&
+                budgets.some(item=>state.machines.some(machine=>
+                    machine.id===item.machine_id&&machine.courier_lineage_slots?.length>0));
+            if(!confirm('Reserve a Courier learner with '+budgets.length+role+
+                '? All machine CPU/RAM/GPU claims are atomic; '+
+                'no process will Start without a separate native approval.'+
+                (fixedSlots
+                    ?' Each collector remains bound to its chosen machine and approved PPO slot listener.'
+                    :matching
+                        ?' Budgets may be matched across the selected machines.'
+                        :'')))return;
+            const result=await action('hub/distributed/courier',{
+                confirm_queue:true,
+                learner:{configuration_id:selected.id,expected_revision:selected.revision,
+                    machine_id:courierMachine.value,resources,
+                    metric_selection:selectedJobMetrics(),
+                    ...(predecessor?{continuation_of_job_id:predecessor}:{})},
+                ...budgetRequest,
+            });
+            courierFeedback.textContent='Reserved '+result.lineages.length+
+                ' remote PPO lineages and learner '+result.learner.id+
+                '. All '+result.leases.length+' independent native leases await receipts.'+
+                (matching?matchedWorkerSummary(result.leases):'');
+            await reload();
+        }catch(error){courierFeedback.textContent=String(error.message||error);}
+    });
+    courierPanel.append(courierLegend,courierMachineLabel,
+        courierBudgetsLabel,courierMatch.label,courierDetails,courierQueue,courierFeedback);
+    distributedPanel.insertAdjacentElement('afterend',courierPanel);
+    let courierBudgetHost=null;
+    function renderCourierDistributedGroup() {
+        if(!state)return;
+        const selected=state.configurations.find(c=>
+            c.project_id==='courier'&&c.id===$('hub-job-configuration').value);
+        courierPanel.hidden=project!=='courier'||
+            selected?.parameters?.remote_lineages!==true;
+        if(courierPanel.hidden)return;
+        const shared=selected.parameters.shared_policy===true;
+        courierLegend.textContent=shared?'Courier shared-policy learner and collectors'
+            :'Courier learner and independent PPO workers';
+        const prior=courierMachine.value;
+        const machines=state.machines.filter(machine=>
+            machine.status==='connected'&&machine.local_executor_enabled&&
+            machine.native_preflight_passed&&
+            machine.installed_projects?.includes('courier')&&
+            machine.courier_remote_lineage_endpoints?.length&&
+            (!shared||machine.courier_shared_policy_maps>0));
+        courierMachine.replaceChildren(...machines.map(machine=>new Option(
+            (machine.name||machine.id)+' ('+machine.id+') · '+
+                machine.courier_remote_lineage_endpoints.length+' approved endpoints',machine.id)));
+        if(machines.some(machine=>machine.id===prior))courierMachine.value=prior;
+        const machine=machines.find(item=>item.id===courierMachine.value);
+        const endpoints=machine?.courier_remote_lineage_endpoints||[];
+        // Each separately leased shared-policy collector can use its own
+        // private slot listener and exclusive GPU on the learner machine.
+        // The coordinator proves physical identity at native Start.
+        const colocated=shared&&machine?.courier_lineage_subset===true&&
+            machine.gpus?.length>=2&&
+            ['courier','courier_lineage'].every(project=>
+                machine.gpu_projects?.includes(project));
+        const activeCourierPort=(host,endpoint)=>(state.jobs||[]).some(job=>{
+            if(job.project_id!=='courier_lineage'||job.assigned_machine_id!==host.id||
+                ['cancelled','finished','stopped'].includes(job.status))return false;
+            // A failed collector's private port becomes selectable only
+            // after the native terminal lease is explicitly released.
+            if(job.status==='failed'&&job.capacity_released_at&&
+                state.reservations?.some(lease=>lease.id===job.lease_id&&
+                    lease.job_id===job.id&&lease.machine_id===host.id&&
+                    lease.status==='released'&&lease.released_at))return false;
+            const learner=state.jobs.find(parent=>
+                parent.id===job.frozen_parameters?.learner_job_id&&
+                parent.project_id==='courier');
+            const plan=learner?.frozen_parameters?.remote_lineage_plan;
+            const first=learner?.frozen_parameters?.shared_policy===true?0:
+                Number.isSafeInteger(learner?.frozen_parameters?.workers)&&
+                Array.isArray(plan)&&learner.frozen_parameters.workers>plan.length
+                    ?learner.frozen_parameters.workers-plan.length:null;
+            const index=first===null?null:job.frozen_parameters?.slot-first;
+            const frozen=Array.isArray(plan)&&Number.isSafeInteger(index)&&
+                index>=0&&index<plan.length?plan[index]?.endpoint:null;
+            const listeners=host.courier_lineage_slots||[];
+            const advertised=(listeners.length
+                ?listeners.find(item=>item.slot===
+                    (job.frozen_parameters?.listener_slot??job.frozen_parameters?.slot))?.endpoint
+                :host.courier_lineage_endpoint)||null;
+            // A mapped listener changing while its native job remains
+            // assigned cannot make the original bound port available.
+            return !frozen||!advertised||advertised!==frozen||
+                frozen===endpoint;
+        });
+        const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
+            host.status==='connected'&&!activeCourierPort(host,endpoint)&&
+            (host.id!==machine.id||colocated)&&
+            (shared&&host.courier_lineage_slots?.length
+                ?host.courier_lineage_slots.some(listener=>
+                    listener.endpoint===endpoint&&
+                    listener.max_shards===machine.courier_remote_max_shards?.[i])
+                :host.courier_lineage_endpoint===endpoint&&
+                    host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i])&&
+            host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
+            (!shared||host.courier_shared_policy_collector===true)&&
+            host.installed_projects?.includes('courier_lineage')));
+        const subset=machine?.courier_lineage_subset===true;
+        courierMatch.label.hidden=!subset;
+        const population=selected.parameters.workers;
+        const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
+        // PPO slots are logical and contiguous. An explicitly chosen
+        // endpoint can be any still-approved free native listener, so
+        // a second experiment need not wait for listener zero to free.
+        const slotPinned=shared&&match.some(hosts=>hosts.some(host=>
+            host.courier_lineage_slots?.length>0));
+        const entries=match.flatMap((hosts,index)=>
+            hosts.length===1?[{host:hosts[0],endpoint:endpoints[index]}]:[]);
+        // Only the selected map/lineage population is being reserved.
+        // Extra advertised listeners are not additional resource claims.
+        const selectedEntries=entries.slice(0,capacity);
+        const available=selectedEntries.map(entry=>entry.host);
+        courierMatch.label.lastChild.textContent=slotPinned
+            ?' Bind each budget to its selected approved endpoint and machine'
+            :' Match budgets across the selected machines';
+        const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
+            ':'+selectedEntries.map(entry=>entry.host.id+'@'+entry.endpoint).join(';'):null;
+        if(courierBudgetHost!==budgetHost) {
+            const local=colocated&&available.some(host=>host.id===machine.id);
+            const repeated=available.some(host=>
+                available.filter(other=>other.id===host.id).length>1);
+            // Selected-machine mode is mandatory for a local collector:
+            // plain remote endpoint budgets cannot authorize self-hosting.
+            courierMatch.input.checked=Boolean(local||repeated||slotPinned);
+            courierBudgetHost=subset&&!available.length?null:budgetHost;
+            courierBudgets.value=JSON.stringify(
+                selectedEntries.map(({host:worker,endpoint})=>
+                    ({...(subset?{machine_id:worker.id}:{}),
+                        ...(slotPinned?{endpoint}:{}),cpus:2,ram_mb:4096,
+                        ...(subset&&(worker.id===machine.id||
+                            available.filter(other=>other.id===worker.id).length>1||
+                            worker.courier_lineage_slots?.length&&
+                                worker.gpu_projects?.includes('courier_lineage')&&
+                                worker.gpus?.length)
+                            ?{gpu_count:1,gpu_mode:'exclusive'}
+                            :{gpu_count:0})})),
+                null,2);
+        }
+        const localCount=available.filter(host=>host.id===machine?.id).length;
+        const remoteIds=available.filter(host=>host.id!==machine?.id)
+            .map(host=>host.id);
+        const localCapacity=localCount<=1||
+            colocated&&machine?.courier_lineage_slots?.length>=localCount&&
+            machine?.gpus?.length>localCount;
+        const remoteCapacity=[...new Set(remoteIds)].every(id=>{
+            const members=available.filter(host=>host.id===id);
+            if(members.length<=1)return true;
+            const host=members[0];
+            return shared&&host.gpu_projects?.includes('courier_lineage')&&
+                host.gpus?.length>=members.length&&
+                host.courier_lineage_slots?.length>=members.length;
+        });
+        const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
+            capacity>0&&available.length>0&&localCapacity&&remoteCapacity&&
+            (subset||capacity>=endpoints.length&&available.length===endpoints.length));
+        courierQueue.disabled=!ready;
+        courierDetails.textContent=ready
+            ?'Available '+(shared?'collectors':'PPO workers')+': '+available.map(host=>host.id).join(', ')+
+                (subset?'. Keep the machines you want to allocate.':'. Supply one budget per worker in the listed order.')+
+                (shared
+                    ?' Each collector gets at least one whole map.'+
+                        (slotPinned?' Several collectors may share a GPU-capable host'+
+                            ' only with unique slot listeners and independent exclusive GPUs.'+
+                            ' Keep slot-to-machine binding checked for repeated hosts.':'')
+                    :' Leave at least one PPO lineage on the learner.')
+            :'Register the Courier lineage project and connect the approved workers.';
+    }
+    courierMachine.addEventListener('change',renderCourierDistributedGroup);
     let distributedBudgetHost=null;
     function renderDistributedGroup() {
+        renderCourierDistributedGroup();
         if(!state)return;
         const selected=state.configurations.find(c=>
             c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
@@ -7145,38 +7850,46 @@ document.addEventListener('DOMContentLoaded', () => {
         if(distributedPanel.hidden)return;
         const prior=distributedMachine.value;
         const machines=state.machines.filter(m=>m.status==='connected'&&
-            m.agent_platform==='linux'&&m.local_executor_enabled&&
-            m.native_preflight_passed&&m.tinybrains_profiles?.[selected.parameters.profile]===
+            ['linux','win32'].includes(m.agent_platform)&&
+            m.local_executor_enabled&&m.native_preflight_passed&&
+            m.tinybrains_profiles?.[selected.parameters.profile]===
                 selected.parameters.profile_sha256&&
             m.tinybrains_remote_rollout_profiles?.includes(selected.parameters.profile)&&
+            (selected.parameters.device!=='cpu'||m.tinybrains_remote_cpu_learner===true&&
+                m.tinybrains_cpu_fallback_profiles?.includes(selected.parameters.profile))&&
             m.tinybrains_remote_rollout_endpoints?.length);
         distributedMachine.replaceChildren(...machines.map(m=>new Option(
             (m.name||m.id)+' ('+m.id+') · '+
                 m.tinybrains_remote_rollout_endpoints.length+' collectors',m.id)));
         if(machines.some(m=>m.id===prior))distributedMachine.value=prior;
         const machine=machines.find(m=>m.id===distributedMachine.value);
-        if(distributedBudgetHost!==machine?.id) {
-            distributedBudgetHost=machine?.id||null;
-            distributedBudgets.value=JSON.stringify(
-                (machine?.tinybrains_remote_rollout_endpoints||[]).map(()=>
-                    ({cpus:2,ram_mb:4096,gpu_count:0,threads:2})),null,2);
-        }
         const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
         const workers=endpoints.map(endpoint=>state.machines.filter(m=>
             m.status==='connected'&&m.id!==machine.id&&
             m.tinybrains_rollout_endpoint===endpoint&&
             m.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
             m.installed_projects?.includes('tinybrains_rollout')));
+        const subset=machine?.tinybrains_rollout_subset===true;
+        distributedMatch.label.hidden=!subset;
+        const available=workers.filter(items=>items.length===1).map(items=>items[0]);
+        const budgetHost=machine?machine.id+':'+subset:null;
+        if(distributedBudgetHost!==budgetHost) {
+            distributedMatch.input.checked=false;
+            distributedBudgetHost=budgetHost;
+            distributedBudgets.value=JSON.stringify((subset?available:workers).map(worker=>
+                ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),null,2);
+            if(subset&&!available.length)distributedBudgetHost=null;
+        }
         const ready=Boolean(machine&&
             state.projects.some(p=>p.id==='tinybrains_rollout')&&
-            workers.every(m=>m.length===1)&&
-            new Set(workers.map(m=>m[0]?.id)).size===workers.length);
+            available.length>0&&new Set(available.map(m=>m.id)).size===available.length&&
+            (subset||available.length===workers.length));
         distributedQueue.disabled=!ready;
         distributedDetails.textContent=ready
-            ?'Approved collectors: '+workers.map((items,i)=>
-                endpoints[i]+' on '+items[0].id).join('; ')+
-                '. Modify each CPU/RAM budget, its independent threads setting, or request an exclusive CUDA GPU.'
-            :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
+            ?'Available collectors: '+available.map(worker=>worker.id).join(', ')+
+                (subset?'. Keep the machines you want to allocate.':'. Supply one budget per collector in the listed order.')+
+                ' Set each CPU/RAM budget and any exclusive GPU allocation.'
+            :'Register the TinyBrains rollout project and connect the approved workers.';
     }
     $('hub-job-configuration').addEventListener('change',()=>{
         renderJobMetricSelection();
