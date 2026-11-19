@@ -234,7 +234,8 @@ async function setup(hub) {
             const oldTimer='bees-experiment-hub-courier-'+o.machine+
                 '-evaluator-survival_'+
                 current.suite_id.slice('courier_survival_'.length)+'.timer';
-            await systemctl(['stop',oldTimer]);
+            if(fs.existsSync(path.join(o.unitDir,oldTimer)))
+                await systemctl(['stop',oldTimer]);
             const temporary=o.approvalFile+'.new';
             fs.writeFileSync(temporary,approval,{flag:'wx',mode:0o600});
             fs.renameSync(temporary,o.approvalFile);
