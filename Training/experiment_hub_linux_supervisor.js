@@ -184,6 +184,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     const context=Object.freeze({
         job_id:job.id,project_id:job.project_id,
         ...(job.resource_bundle?{resource_bundle:Object.freeze({...job.resource_bundle})}:{}),
+        ...(job.model_source_job_id?{model_source_job_id:job.model_source_job_id}:{}),
         cpu_quota:r.cpus,ram_quota_mb:r.ram_mb,
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
