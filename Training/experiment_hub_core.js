@@ -4268,7 +4268,10 @@ class ExperimentHub {
     // owner, checkpoint, Stop policy, and explicit Start authorization.
     queueResourceBundle(value) {
         if(!object(value)||value.confirm_queue!==true||
-            Object.keys(value).some(key=>!['confirm_queue','members'].includes(key))||
+            Object.keys(value).some(key=>
+                !['confirm_queue','members','model_source_job_id'].includes(key))||
+            (value.model_source_job_id!==undefined&&
+                !UUID.test(String(value.model_source_job_id)))||
             !Array.isArray(value.members)||value.members.length<2||
             value.members.length>16)
             throw Error('Confirm 2–16 machine-pinned job allocations in one resource bundle.');
@@ -4293,12 +4296,22 @@ class ExperimentHub {
                      !['cpu','memory'].every(controller=>
                          machine.execution_capabilities?.cgroup_controllers?.includes(controller)))))
                 throw Error('Bundle member '+(index+1)+' requires a connected, qualified native machine.');
-            const job=this.queueIn(next,selection);
+            const modelSourceId=value.model_source_job_id;
+            const job=this.queueIn(next,{
+                ...selection,
+                ...(modelSourceId?{
+                    model_source_job_id:modelSourceId,
+                    ...(index===0?{continuation_of_job_id:modelSourceId}:{}),
+                }:{}),
+            });
             if(job.project_id==='tinybrains_rollout'||job.project_id==='bees'||
                 job.project_id==='ants'||
                 (job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true)||
                 job.status!=='waiting_adapter'||
-                job.continuation_of_job_id||job.after_job_id||
+                (job.continuation_of_job_id&&
+                    !(value.model_source_job_id&&index===0&&
+                      job.continuation_of_job_id===value.model_source_job_id))||
+                job.after_job_id||
                 !machine.installed_projects?.includes(job.project_id)||
                 !supportsEvaluation(machine.evaluation_suites,job)||
                 !supportsTinyBrainsProfile(machine,job))
@@ -4332,6 +4345,9 @@ class ExperimentHub {
             const inputIdentity=source?.optimizer_inputs_sha256;
             if(jobs.length>8||jobs[0].project_id!=='bees_native'||
                 source?.optimizer_group!==true||
+                (value.model_source_job_id!==undefined&&
+                    jobs[0].assigned_machine_id!==next.jobs.find(item=>
+                        item.id===value.model_source_job_id)?.assigned_machine_id)||
                 !SHA256.test(String(inputIdentity||''))||
                 !Array.isArray(source.rollout_bundles)||
                 source.rollout_bundles.length<1||
@@ -4350,6 +4366,10 @@ class ExperimentHub {
                     job.resources.gpu_count!==jobs[0].resources.gpu_count))
                 throw Error('Native MA-POCA optimizer bundle requires one checkpoint owner and 1–7 exclusive GPU worker machines with identical verified model, trainer, backend and pinned rollout inputs.');
         }
+        if(value.model_source_job_id!==undefined&&
+            !(jobs[0]?.project_id==='bees_native'&&
+                jobs[0].frozen_parameters?.optimizer_group===true))
+            throw Error('A native checkpoint source can only be attached to a synchronized Bees optimizer bundle.');
         this.commit(next);
         return {bundle_id:bundleId,members:jobs.map(copy),
             leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
