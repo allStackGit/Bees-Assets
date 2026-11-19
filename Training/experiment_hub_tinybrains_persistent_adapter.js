@@ -4,6 +4,7 @@
 // A Hub job copies only its seed checkpoint, frozen run spec and gate proof;
 // frozen opponents remain referenced from an immutable, read-only source run.
 const fs=require('node:fs');
+const os=require('node:os');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
@@ -1176,11 +1177,45 @@ function createTinyBrainsPersistentDockerAdapter({
     const runner=nativeWindows
         ?path.join(hub,'Training/experiment_hub_tinybrains_persistent.py')
         :HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
+    // A locally confirmed immutable suite upgrade can be advertised after
+    // the agent restarts even when its private adapter map still lists v3.
+    // The original local evaluation opt-in is required; no HTTP-controlled
+    // suite or path can enable evaluation implicitly.
+    let approvedEvaluationSuites=evaluationSuites;
+    if(!nativeWindows&&evaluationRoot!=null&&
+        Array.isArray(evaluationSuites)&&evaluationSuites.length) {
+        const root=path.join(os.homedir(),'evaluation-audits/tinybrains/suites');
+        const marker=path.join(root,'hub-approved-latest.json');
+        if(fs.existsSync(marker)) {
+            const stat=fs.lstatSync(marker);
+            if(!stat.isFile()||stat.isSymbolicLink()||
+                fs.realpathSync(marker)!==marker||
+                stat.uid!==process.getuid()||stat.mode&0o077||stat.size>1024)
+                throw Error('Local TinyBrains evaluator approval changed or is unsafe.');
+            const approval=JSON.parse(fs.readFileSync(marker,'utf8'));
+            if(!approval||approval.version!==1||
+                Object.keys(approval).sort().join(',')!=='micro,nano,version')
+                throw Error('Invalid TinyBrains versioned evaluator approval.');
+            for(const id of ['nano','micro']) {
+                const name=approval[id];
+                if(typeof name!=='string'||
+                    !new RegExp('^tinybrains_'+id+'_tiny_v[3-9][0-9]*$').test(name))
+                    throw Error('Invalid approved TinyBrains suite identity.');
+                const file=path.join(root,name+'.json');
+                if(fs.realpathSync(file)!==file||
+                    JSON.parse(fs.readFileSync(file,'utf8')).suite_id!==name)
+                    throw Error('Approved TinyBrains suite file is missing or redirected.');
+            }
+            approvedEvaluationSuites=[...new Set([
+                ...evaluationSuites,approval.nano,approval.micro,
+            ])];
+        }
+    }
     return {
         executable,cwd:nativeWindows?project:PROJECT_IN,
         ...(docker?{docker}:{}),
         stop_policy:nativeWindows?'terminate-group':'interrupt-main',
-        ...evaluationReader('tinybrains',evaluationRoot,evaluationSuites,
+        ...evaluationReader('tinybrains',evaluationRoot,approvedEvaluationSuites,
             [project,hub,artifacts,source,cache,
              ...(remote?[remote.keyDirectory]:[])]),
         artifact_export_dir(jobId) {
