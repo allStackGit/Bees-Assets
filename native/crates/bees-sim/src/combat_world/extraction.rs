@@ -92,8 +92,16 @@ impl CombatWorld {
         if state.escort_ship_id.is_some() { return None; }
         let player = state.zone.player_side;
         let enemy = 3 - player;
-        let player_eliminated = self.living_mobile_ships_on_side(player) == 0;
-        if player_eliminated || self.living_mobile_ships_on_side(enemy) == 0 {
+        // A physical faction with no *deployed* mobile ships may still
+        // have an authored reinforcement wave. Do not let extraction
+        // bypass the same reserved-hull elimination rule used by normal
+        // battles and demolition/escort: the pending ship belongs to the
+        // canonical world, not an imagined training-only spectator.
+        let player_eliminated = self.living_mobile_ships_on_side(player) == 0 &&
+            !self.has_reserved_future_ships_on_side(player);
+        let enemy_eliminated = self.living_mobile_ships_on_side(enemy) == 0 &&
+            !self.has_reserved_future_ships_on_side(enemy);
+        if player_eliminated || enemy_eliminated {
             Some((if player_eliminated && !state.last_mobile_extracted { enemy } else { player },
                 player_eliminated && state.last_mobile_extracted))
         } else { None }
@@ -111,6 +119,12 @@ impl CombatWorld {
             // Its first contacts arrive on the next physics step.
             return Ok(());
         }
+        // The final evacuation flag is valid only after the last mobile
+        // *including authored future waves* has left. Otherwise a late
+        // reserve could be destroyed while an earlier exit remains
+        // incorrectly marked as a successful full-fleet extraction.
+        let pending_friendly_reinforcements =
+            self.has_reserved_future_ships_on_side(zone.player_side);
         let hits = self.physics.ship_ids_overlapping_box(zone.bounds())?
             .filter_map(|id| self.ship_by_id.get(&id).copied())
             .filter(|&index| self.ships[index].side == zone.player_side &&
@@ -128,7 +142,8 @@ impl CombatWorld {
             }
             ship.vitals.kill_without_hit();
             if self.physics.ships()[index].motion.mobile &&
-                self.living_mobile_ships_on_side(zone.player_side) == 1
+                self.living_mobile_ships_on_side(zone.player_side) == 1 &&
+                !pending_friendly_reinforcements
             {
                 self.extraction.as_mut().expect("configured extraction").last_mobile_extracted = true;
             }
