@@ -291,6 +291,9 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                     stats["native_mission_learner_decision_rows_validated"] = (
                         stats.get("native_mission_learner_decision_rows_validated", 0) + observed
                     )
+                    by_kind = stats.setdefault("native_mission_learner_decisions_by_kind", {})
+                    kind = mission["kind"]
+                    by_kind[kind] = by_kind.get(kind, 0) + observed
             if stats is not None:
                 if not ticks:
                     stats["episodes_without_policy_decisions"] = (
@@ -1293,7 +1296,9 @@ def main():
     verified_goal_rows = capture_stats.get(
         "native_mission_learner_decision_rows_validated", 0,
     )
-    if verified_goal_rows != mission_learner_decisions:
+    verified_kinds = capture_stats.get("native_mission_learner_decisions_by_kind", {})
+    if (verified_goal_rows != mission_learner_decisions or
+            sum(verified_kinds.values()) != verified_goal_rows):
         raise ValueError(
             "native learner objective features disagree with durable "
             "per-episode mission identities"
@@ -1423,6 +1428,10 @@ def main():
         "native_mission_learner_decisions": mission_learner_decisions,
         "native_mission_learner_decision_rows_validated":
             capture_stats.get("native_mission_learner_decision_rows_validated", 0),
+        "native_mission_learner_decisions_by_kind": {
+            kind: verified_kinds.get(kind, 0)
+            for kind in ("survival", "demolition", "escort", "extraction")
+        },
         "trajectory_processing_wall_seconds": processing_wall_seconds,
         "trajectory_processing_cpu_seconds": processing_cpu_seconds,
         "capture_read_and_validation_wall_seconds": capture_read_wall_seconds,

@@ -710,6 +710,13 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         observed for observed in measured_observations
         if "native_mission_rows_by_kind" in observed
     ]
+    measured_learner_kinds = [
+        record["learner_metrics"]["native_mission_learner_decisions_by_kind"]
+        for _, record in completed
+        if isinstance(
+            record["learner_metrics"].get("native_mission_learner_decisions_by_kind"), dict,
+        )
+    ]
     measured_learner_goals = [
         record["learner_metrics"]["native_mission_learner_decisions"]
         for _, record in completed
@@ -866,6 +873,13 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
             } if mission_coverage else {}),
             "rounds_with_learner_goal_counts": len(measured_learner_goals),
             "goal_bearing_learner_decisions_measured": sum(measured_learner_goals),
+            **({
+                "rounds_with_learner_goal_mix": len(measured_learner_kinds),
+                "learner_decisions_by_kind": {
+                    kind: sum(rows.get(kind, 0) for rows in measured_learner_kinds)
+                    for kind in ("survival", "demolition", "escort", "extraction")
+                },
+            } if measured_learner_kinds else {}),
         }} if measured_observations or measured_learner_goals else {}),
         **({"sampled_model_inference": {
             "scope": "sum_of_sampled_model_forward_call_wall_seconds",
