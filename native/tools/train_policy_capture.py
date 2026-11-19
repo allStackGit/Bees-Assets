@@ -7,6 +7,7 @@ from collections import defaultdict, deque
 import hashlib
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import time
@@ -1185,6 +1186,8 @@ def main():
                         help="zero-based identity of this machine in the optimizer group")
     parser.add_argument("--learner-backend", choices=("auto", "nccl", "gloo"),
                         default="auto", help="shared distributed gradient backend")
+    parser.add_argument("--learner-group-id",
+                        help="Hub-authorized immutable optimizer bundle UUID shared by all nodes")
     parser.add_argument(
         "--rollout", type=Path, nargs=3, action="append", default=[],
         metavar=("CAPTURE", "JOURNAL", "MANIFEST"),
@@ -1230,6 +1233,13 @@ def main():
         parser.error(f"optimizer device {device} is not available")
     if not 1 <= args.learner_nodes <= 8 or not 0 <= args.learner_node_rank < args.learner_nodes:
         parser.error("optimizer node count and node rank must identify 1–8 participating machines")
+    if args.learner_nodes > 1:
+        if not isinstance(args.learner_group_id, str) or re.fullmatch(
+                r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}",
+                args.learner_group_id) is None:
+            parser.error("multi-machine optimizer requires its immutable Hub bundle UUID")
+    elif args.learner_group_id is not None:
+        parser.error("single-machine optimizer cannot claim a multi-machine Hub bundle")
     learner_workers = args.learner_nodes * args.learner_gpus
     rank = 0
     local_rank = 0
@@ -1426,6 +1436,7 @@ def main():
             "checkpoint": input_sha,
             "manifest": primary_manifest_sha,
             "trainer": file_sha256(args.config),
+            "optimizer_group_id": args.learner_group_id,
             "learner_slot": args.learner_slot,
             "captures": [
                 (file_sha256(capture), file_sha256(journal), manifests[path][1])
@@ -1548,6 +1559,7 @@ def main():
                     "kind": "native_distributed_optimizer_node_complete",
                     "node_rank": args.learner_node_rank,
                     "node_count": args.learner_nodes,
+                    "optimizer_group_id": args.learner_group_id,
                     "local_gpu_workers": args.learner_gpus,
                     "global_gpu_workers": learner_workers,
                     "input_checkpoint_sha256": input_sha,
@@ -1655,6 +1667,8 @@ def main():
         "optimizer_device": str(device),
         "optimizer_gpu_workers": learner_workers if device.type == "cuda" else 0,
         "optimizer_gpu_nodes": args.learner_nodes if device.type == "cuda" else 0,
+        **({"optimizer_group_id": args.learner_group_id}
+           if args.learner_group_id is not None else {}),
         "optimizer_gpu_local_workers": args.learner_gpus if device.type == "cuda" else 0,
         **({"optimizer_global_input_sha256": global_input_sha}
            if global_input_sha is not None else {}),
