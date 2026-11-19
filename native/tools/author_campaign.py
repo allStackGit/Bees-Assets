@@ -201,10 +201,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         if grants:
             allowed = {squad["saved_squad_id"] for squad in scene["squads"]
                        if squad["side"] == args.player_side}
-            if any(kind not in args.shop_types or saved_id not in allowed
+            classes = set(args.shop_types) | set(args.grant_only_types)
+            if any(kind not in classes or saved_id not in allowed
                    for _, kind, _, saved_id in grants):
                 raise ValueError(
-                    f"mission {index} rewards require a source-priced shop type and "
+                    f"mission {index} rewards require a source-priced fleet class and "
                     "an authored player SavedSquad"
                 )
             if sum(count for _, _, count, _ in grants) > 1024:
@@ -222,26 +223,27 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         outputs.extend(((scene_file, scene), (run_file, run)))
         sources.append({"mission_id": ident, **provenance})
         previous = ident
-    buyable = []
-    if args.shop_types:
-        for ship_type in args.shop_types:
-            prices = shop_catalog.get(ship_type)
-            if prices is None or len(prices) != 1:
-                raise ValueError(
-                    f"shop hull type {ship_type} must have one source-authored "
-                    "full-health TSV price in the player fleet across missions"
-                )
-            # Each mission has the same player fleet identity and type; the
-            # source Rust preflight validates actual prototype construction.
-            buyable.append({
-                "player_side": args.player_side, "ship_type": ship_type,
-                "price_tsv": next(iter(prices)), "unlocked_after": ["mission-001"],
-            })
+    fleet_classes = []
+    classes = [*args.shop_types, *args.grant_only_types]
+    for ship_type in classes:
+        prices = shop_catalog.get(ship_type)
+        if prices is None or len(prices) != 1:
+            raise ValueError(
+                f"native FleetShip class {ship_type} must have one source-authored "
+                "full-health TSV price in the player fleet across missions"
+            )
+        purchasable = ship_type in args.shop_types
+        fleet_classes.append({
+            "player_side": args.player_side, "ship_type": ship_type,
+            "price_tsv": next(iter(prices)),
+            "purchasable": purchasable,
+            "unlocked_after": ["mission-001"] if purchasable else [],
+        })
     catalog = {
         "campaign_id": slug, "battles": missions,
-        "buildable_ships": buyable,
+        "buildable_ships": fleet_classes,
     }
-    if buyable:
+    if fleet_classes:
         catalog["max_squad_ships"] = args.max_squad_ships
     library = {
         "library_schema": 1,
@@ -255,6 +257,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         "campaign_id": slug, "player_side": args.player_side,
         "missions": sources,
         "shop_types": args.shop_types,
+        "grant_only_types": args.grant_only_types,
         "victory_grants": [
             {"mission_index": index, "ship_type": kind,
              "count": count, "saved_squad_id": saved_id}
@@ -306,15 +309,22 @@ def main() -> None:
     parser.add_argument("--player-side", type=int, choices=(1, 2), default=1)
     parser.add_argument("--title", default="Native Fleet Campaign")
     parser.add_argument("--shop-types", type=ship_types, default=[],
-                        help="optional source-backed hull shop: comma-separated type numbers")
+                        help="optional purchasable hull classes: comma-separated ship types")
+    parser.add_argument("--grant-only-types", type=ship_types, default=[],
+                        help="source-backed reward classes that can never be purchased")
     parser.add_argument("--max-squad-ships", type=int, default=10,
-                        help="saved-squad ship cap when a shop is enabled (default: 10)")
+                        help="saved-squad ship cap when a fleet shop or reward is enabled (default: 10)")
     parser.add_argument("--victory-grant", action="append", type=victory_grant,
                         default=[], metavar="MISSION:TYPE:COUNT:SQUAD",
-                        help="one-time victory FleetShip rewards, using a source-priced --shop-types class; repeat as needed")
+                        help="one-time victory FleetShip rewards, using a --shop-types or --grant-only-types class")
     args = parser.parse_args()
     if any(mission > len(args.mission) for mission, _, _, _ in args.victory_grant):
         parser.error("--victory-grant refers to a mission not included by --mission")
+    if set(args.shop_types) & set(args.grant_only_types):
+        parser.error("a fleet class cannot be both purchasable and grant-only")
+    if set(args.grant_only_types) - {
+            kind for _, kind, _, _ in args.victory_grant}:
+        parser.error("--grant-only-types must be awarded by at least one --victory-grant")
     if not 1 <= args.max_squad_ships <= 1024:
         parser.error("--max-squad-ships must be within 1..1024")
     try:
@@ -348,6 +358,7 @@ def main() -> None:
         "library": str(output / "library.json"),
         "mission_count": receipt["mission_count"],
         "shop_types": receipt["shop_types"],
+        "grant_only_types": receipt["grant_only_types"],
         "victory_grants": receipt["victory_grants"],
         "player_side": args.player_side,
     }, sort_keys=True))
