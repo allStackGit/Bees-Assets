@@ -882,6 +882,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
     pub survival: Option<bees_sim::episode_terminal::SurvivalObjective>,
     pub demolition: Option<bees_sim::episode_terminal::DemolitionObjective>,
+    pub escort: Option<bees_sim::episode_terminal::EscortObjective>,
     pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     pub reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
     pub scripted_queues: Vec<crate::policy_only_metadata::NativeScriptedQueuePlan>,
@@ -900,6 +901,7 @@ pub enum NativePolicyOnlyLevelError {
     InvalidControllerBinding(i64),
     InvalidSurvivalObjective,
     InvalidDemolitionObjective,
+    InvalidEscortObjective,
     InvalidCampaignDialogue,
 }
 
@@ -2289,6 +2291,30 @@ impl NativePhysicalScene {
                 return Err(NativePolicyOnlyLevelError::InvalidDemolitionObjective);
             }
             episode.arm_demolition(objective, self.fixed_dt_seconds)
+                .map_err(NativeSnapshotError::Episode)
+                .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        }
+        if let Some(objective) = setup.escort {
+            let valid_target = self.entities.iter().any(|entity| matches!(
+                entity,
+                NativeAuthoredEntity::Ship(ship)
+                    if ship.entity_id == objective.escorted_ship_id &&
+                    ship.side == objective.escorting_side &&
+                    ship.motion.mobile && !ship.vitals.is_dead()
+            ));
+            let target_squad = self.source_squads.iter().find(|squad|
+                squad.members.contains(&objective.escorted_ship_id)
+            ).map(|squad| squad.item_id);
+            let is_deferred = setup.reinforcements.iter().any(|wave|
+                wave.squad_item_ids.iter().any(|&item| Some(item) == target_squad));
+            if setup.survival.is_some() || setup.demolition.is_some() ||
+                !setup.extraction.is_some_and(|zone|
+                    zone.player_side == objective.escorting_side) ||
+                !valid_target || target_squad.is_none() || is_deferred
+            {
+                return Err(NativePolicyOnlyLevelError::InvalidEscortObjective);
+            }
+            episode.arm_escort(objective, self.fixed_dt_seconds)
                 .map_err(NativeSnapshotError::Episode)
                 .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         }

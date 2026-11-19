@@ -1367,6 +1367,7 @@ where
             campaign_dialogue: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.current()),
             survival: world.state.events.survival_status(),
             demolition: world.state.events.demolition_status(),
+            escort: world.state.events.escort_status(),
             reinforcement_waves_pending:
                 world.state.metadata.pending_reinforcement_waves(),
             next_reinforcement_tick:

@@ -2005,6 +2005,17 @@ impl NativeSoftwareRenderer {
                 ),
             };
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
+        } else if let Some(escort) = view.escort {
+            let remaining = escort.seconds_remaining.ceil() as u64;
+            let health = view.combat.ship(escort.escorted_ship_id).map_or(
+                "  Lost".to_owned(), |ship|
+                    format!("  {}/{} HP", ship.vitals.health(), ship.vitals.max_health()),
+            );
+            let label = format!(
+                "Escort ship #{} to extraction{}  |  {:02}:{:02}",
+                escort.escorted_ship_id, health, remaining / 60, remaining % 60,
+            );
+            text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         } else if let Some(demolition) = view.demolition {
             let seconds = demolition.seconds_remaining.ceil() as u64;
             let target = view.combat.map_object(demolition.target_map_object_id);
@@ -2033,7 +2044,8 @@ impl NativeSoftwareRenderer {
         // vanishes naturally with the canonical simulation clock; paused
         // games do not consume its time and no frame timer is allocated.
         if view.terminal_result.is_none() {
-            let y = if view.survival.is_some() || view.demolition.is_some() {
+            let y = if view.survival.is_some() || view.demolition.is_some() ||
+                view.escort.is_some() {
                 8 + text::HEIGHT + 4
             } else { 8 };
             let recently_arrived = view.last_reinforcement_tick
@@ -2701,6 +2713,7 @@ impl NativeSoftwareRenderer {
         let title = battle_outcome_label(result);
         let reason = if result.extraction_victory { "Extraction" }
             else if view.survival.is_some() { "Defense" }
+            else if view.escort.is_some() { "Escort" }
             else if let Some(objective) = view.demolition {
                 if result.winner_side == objective.attacking_side {
                     "Demolition"

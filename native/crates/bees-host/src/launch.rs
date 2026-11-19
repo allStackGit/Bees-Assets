@@ -112,6 +112,7 @@ struct LevelConfig {
     extraction: Option<ExtractionConfig>,
     survival: Option<SurvivalConfig>,
     demolition: Option<DemolitionConfig>,
+    escort: Option<EscortConfig>,
     campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     #[serde(default)]
     reinforcements: Vec<ReinforcementConfig>,
@@ -225,6 +226,16 @@ struct SurvivalConfig {
 struct DemolitionConfig {
     attacking_side: i32,
     target_map_object_id: i64,
+    seconds: f32,
+}
+
+/// A named mobile ship must reach the existing physical extraction zone
+/// before a gameplay/learning Level deadline.
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct EscortConfig {
+    escorting_side: i32,
+    escorted_ship_id: i64,
     seconds: f32,
 }
 
@@ -515,6 +526,11 @@ fn make_setup(
             target_map_object_id: objective.target_map_object_id,
             seconds: objective.seconds,
         }),
+        escort: level.escort.map(|objective| bees_sim::episode_terminal::EscortObjective {
+            escorting_side: objective.escorting_side,
+            escorted_ship_id: objective.escorted_ship_id,
+            seconds: objective.seconds,
+        }),
         campaign_dialogue: level.campaign_dialogue,
         reinforcements: level.reinforcements.iter().map(|wave| {
             let activation = match (
@@ -760,6 +776,10 @@ fn gameplay_config_sha256(
         level.demolition.map(|objective| (level.world_id, objective)))
         .collect::<Vec<_>>();
     if !demolition.is_empty() { inputs["demolition"] = json!(demolition); }
+    let escort = config.levels.iter().filter_map(|level|
+        level.escort.map(|objective| (level.world_id, objective)))
+        .collect::<Vec<_>>();
+    if !escort.is_empty() { inputs["escort"] = json!(escort); }
     let extraction = config.levels.iter().filter_map(|level|
         level.extraction.as_ref().map(|zone| (level.world_id, zone)))
         .collect::<std::collections::BTreeMap<_, _>>();
@@ -3763,6 +3783,42 @@ fn run_battle(
                 {
                     return Err(invalid(format!(
                         "Campaign demolition needs at least {} rounds; max_rounds is {}",
+                        required as u64, config.max_rounds,
+                    )).into());
+                }
+            }
+        }
+        if let Some(objective) = level.escort {
+            let target_squad = source.source_squads.iter().find(|squad|
+                squad.members.contains(&objective.escorted_ship_id)
+            );
+            if level.survival.is_some() || level.demolition.is_some() ||
+                !level.extraction.as_ref().is_some_and(|zone|
+                    zone.player_side == objective.escorting_side) ||
+                mission.is_some_and(|mission|
+                    mission.player_side != objective.escorting_side) ||
+                !sides.contains(&objective.escorting_side) ||
+                !objective_has_controller(objective.escorting_side) ||
+                !target_squad.is_some_and(|squad| squad.side == objective.escorting_side &&
+                    !deferred_squads.contains(&squad.item_id)) ||
+                !source.entities.iter().any(|entity| matches!(
+                    entity,
+                    NativeAuthoredEntity::Ship(ship)
+                        if ship.entity_id == objective.escorted_ship_id &&
+                            ship.side == objective.escorting_side &&
+                            ship.motion.mobile && !ship.vitals.is_dead()
+                ))
+            {
+                return Err(invalid("Escort requires an initial living mobile ship on its extraction side and an active player, policy or scripted controller").into());
+            }
+            if mission.is_some() {
+                let required = (objective.seconds / source.fixed_dt_seconds).ceil();
+                if required.is_finite() && required >= 1.0 &&
+                    required < u64::MAX as f32 &&
+                    required as u64 > config.max_rounds
+                {
+                    return Err(invalid(format!(
+                        "Campaign escort needs at least {} fixed rounds; max_rounds is {}",
                         required as u64, config.max_rounds,
                     )).into());
                 }
