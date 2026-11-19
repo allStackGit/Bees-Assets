@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import tempfile
 
 from native_training_artifacts import atomic_json, file_sha256, sync_directory
@@ -67,6 +68,55 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
             receipt["selected"]["manifest_sha256"]
             if "selected" in receipt else receipt["manifest_sha256"]
         ),
+    }
+
+
+def package_model_manifest(
+    run_path: Path, run: dict, label: str,
+    outputs: list, model_files: dict,
+) -> dict:
+    """Copy every checkpoint used by the verified opponent into its campaign.
+
+    Challenge publication keeps source locations pinned, so simply copying
+    its run JSON produces a game tied to a different folder's manifest.
+    Preserve model ABI/slots/settings; only rebase the verified file paths.
+    The resident native policy process still requires an installed Python
+    interpreter and compatible worker/dependencies on the target platform.
+    """
+    manifest_path = existing_path(run_path, run.get("model_manifest"))
+    manifest = read(manifest_path)
+    models = manifest.get("models")
+    if (manifest.get("format") != "bees-native-model-v1" or
+            manifest.get("abi_version") != 26 or
+            not isinstance(models, list) or not models):
+        raise ValueError("campaign trained opponent needs a complete native v26 model manifest")
+    manifest = copy.deepcopy(manifest)
+    seen_slots = set()
+    saved_models = []
+    for model in manifest["models"]:
+        if not isinstance(model, dict):
+            raise ValueError("native model slot must be an object")
+        slot, digest = model.get("slot"), model.get("sha256")
+        if (type(slot) is not int or not 0 <= slot < 2**32 or
+                slot in seen_slots or
+                not isinstance(digest, str) or
+                re.fullmatch(r"[0-9a-f]{64}", digest) is None):
+            raise ValueError("native opponent manifest has invalid model slot or SHA-256")
+        seen_slots.add(slot)
+        source_model = existing_path(manifest_path, model.get("path"))
+        if not source_model.is_file() or file_sha256(source_model) != digest:
+            raise ValueError(f"native opponent checkpoint was changed or removed: {source_model}")
+        destination = f"models/{digest}.model"
+        model_files.setdefault(destination, source_model)
+        model["path"] = destination
+        saved_models.append({"slot": slot, "sha256": digest})
+    manifest_name = f"{label}.model-manifest.json"
+    outputs.append((manifest_name, manifest))
+    run["model_manifest"] = manifest_name
+    return {
+        "original_manifest_sha256": file_sha256(manifest_path),
+        "packaged_manifest": manifest_name,
+        "model_slots": saved_models,
     }
 
 
@@ -202,6 +252,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
     if len(set(args.mission)) != len(args.mission):
         raise ValueError("campaign must not replay the same source run as different missions")
     outputs = []
+    model_files = {}
     sources = []
     missions = []
     mission_dependencies = dict(args.mission_requires)
@@ -261,6 +312,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         scene_file = f"{ident}.scene.json"
         run_file = f"{ident}.run.json"
         run = copy.deepcopy(run)
+        if run.get("model_manifest") is not None:
+            provenance["packaged_model"] = package_model_manifest(
+                source_path, run, ident, outputs, model_files,
+            )
         run["levels"][0]["scene"] = scene_file
         run["run_id"] = f"{slug}-{ident}"
         run["connection_checkpoint"] = f"{ident}-connection.json"
@@ -355,6 +410,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
             variant_scene_file = f"{ident}.victory.scene.json"
             variant_run_file = f"{ident}.victory.run.json"
             variant_run = copy.deepcopy(variant_run)
+            if variant_run.get("model_manifest") is not None:
+                variant_provenance["packaged_model"] = package_model_manifest(
+                    variant_path.resolve(strict=True), variant_run,
+                    f"{ident}.victory", outputs, model_files,
+                )
             variant_run["levels"][0]["scene"] = variant_scene_file
             variant_run["run_id"] = f"{slug}-{ident}-victory"
             variant_run["connection_checkpoint"] = f"{ident}-victory-connection.json"
@@ -451,7 +511,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         ],
         "mission_count": len(missions),
     }
-    return catalog, library, outputs, receipt
+    receipt["packaged_model_files"] = [
+        {"file": name, "sha256": name.split("/")[-1].removesuffix(".model")}
+        for name in sorted(model_files)
+    ]
+    return catalog, library, outputs, receipt, model_files
 
 
 def ship_types(value: str) -> list[int]:
@@ -627,7 +691,7 @@ def main() -> None:
            for prerequisite in prerequisites):
         parser.error("--shop-unlock refers to an absent mission")
     try:
-        catalog, library, outputs, receipt = campaign(args)
+        catalog, library, outputs, receipt, model_files = campaign(args)
         output = args.output_dir.resolve()
         if output.exists():
             raise FileExistsError(f"native campaign destination already exists: {output}")
@@ -642,6 +706,22 @@ def main() -> None:
                                   ("campaign.json", catalog),
                                   ("library.json", library)]:
                 atomic_json(staged / name, payload)
+            for name, source in model_files.items():
+                destination = staged / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                expected_sha = destination.stem
+                # Publish only verified checkpoint bytes. Detect source
+                # replacements during the copy, and sync before the single
+                # final atomic campaign directory rename.
+                with source.open("rb") as reader, destination.open("xb") as writer:
+                    shutil.copyfileobj(reader, writer, length=1024 * 1024)
+                    writer.flush()
+                    os.fsync(writer.fileno())
+                if file_sha256(source) != expected_sha or
+                    file_sha256(destination) != expected_sha:
+                    raise ValueError(f"checkpoint content changed during native campaign publication: {source}")
+            if model_files:
+                sync_directory(staged / "models")
             receipt["catalog_sha256"] = file_sha256(staged / "campaign.json")
             receipt["library_sha256"] = file_sha256(staged / "library.json")
             atomic_json(staged / "campaign-receipt.json", receipt)
