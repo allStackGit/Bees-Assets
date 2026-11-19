@@ -81,6 +81,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_learner_inference_seconds','rollout_learner_gpu_stream_seconds',
         'rollout_opponent_processing_seconds',
         'rollout_opponent_gpu_stream_seconds',
+        'rollout_fused_gpu_stream_seconds',
         'rollout_result_processing_seconds','rollout_bootstrap_seconds',
         'rollout_returns_seconds',
         'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
@@ -163,11 +164,16 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'rollout_opponent_readback_models','rollout_opponent_readbacks_saved',
+        'rollout_inference_forward_chunks','rollout_inference_forward_states',
+        'rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_opponent_joined_learner_readbacks',
         'rollout_opponent_readback_slot_reused',
         'rollout_opponent_readback_slot_allocated',
         'rollout_opponent_readback_cached_indices',
         'rollout_opponent_grouped_calls','rollout_opponent_grouped_models',
         'rollout_opponent_grouped_states','rollout_opponent_grouped_padding',
+        'rollout_learner_grouped_forwards_saved',
+        'rollout_learner_grouped_states',
         'rollout_opponent_grouped_fallbacks',
         'rollout_opponent_grouped_weight_reuses',
         'rollout_opponent_pixel_samples',
@@ -185,6 +191,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'remote_snapshot_cache_hits',
         'local_gpu_collector_count',
         'local_gpu_direct_model_updates',
+        'local_gpu_policy_source_pack_groups',
+        'local_gpu_policy_packed_consumers',
         'local_lease_native_engines_active',
         'local_lease_simulation_trial_active',
         'local_gpu_collectors_ready_at_local_end',
@@ -201,7 +209,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'gpu_role_optimizer_lease_index','gpu_role_primary_lease_index','gpu_role_restored',
         'rollout_model_refresh_groups',
         'gpu_role_probe_valid',
-        'remote_policy_readback_groups',
+        'remote_policy_readback_groups','remote_policy_source_pack_reused',
         'ppo_gpu_max_group_pixels','rollout_inference_max_group_pixels',
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target'])
@@ -218,6 +226,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rollout_board_packed_bytes',row.rollout_board_packed_bytes,'bytes');
+    // Bytes actually staged into one grouped frozen-opponent H2D input.
+    // This is neither physical bus throughput nor device utilization.
+    add('rollout_opponent_grouped_input_bytes',
+        row.rollout_opponent_grouped_input_bytes,'bytes');
     for(const name of ['pipeline_collection_exposure_fraction',
         'collector_balance_predicted_gain_ratio',
         'gpu_role_estimated_gain_ratio',
@@ -402,6 +414,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_inference_readbacks,'count');
         add('collector_'+i+'_inference_forward_chunks',
             worker.rollout_inference_forward_chunks,'count');
+        // Actual unfused actor boards per forward call; fused vmap
+        // forwards are deliberately excluded from BOTH measurements.
+        const calls=worker.rollout_inference_forward_chunks;
+        const states=worker.rollout_inference_forward_states;
+        if(Number.isSafeInteger(calls)&&calls>0&&
+            Number.isSafeInteger(states)&&states>=calls)
+            add('collector_'+i+'_gpu_fwd_batch_mean',
+                states/calls,'scalar');
         add('collector_'+i+'_board_uploads_saved',worker.rollout_board_uploads_saved,'count');
         add('collector_'+i+'_board_packed_bytes',worker.rollout_board_packed_bytes,'bytes');
         add('collector_'+i+'_opponent_shape_groups',
@@ -412,6 +432,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_readback_models,'count');
         add('collector_'+i+'_opp_readbacks_saved',
             worker.rollout_opponent_readbacks_saved,'count');
+        add('collector_'+i+'_opp_learner_joined_readbacks',
+            worker.rollout_opponent_joined_learner_readbacks,'count');
         add('collector_'+i+'_opp_slot_reused',
             worker.rollout_opponent_readback_slot_reused,'count');
         add('collector_'+i+'_opp_slot_allocated',
@@ -424,12 +446,22 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_grouped_models,'count');
         add('collector_'+i+'_opp_group_states',
             worker.rollout_opponent_grouped_states,'count');
+        add('collector_'+i+'_opp_group_input_bytes',
+            worker.rollout_opponent_grouped_input_bytes,'bytes');
+        add('collector_'+i+'_learner_fused_forwards',
+            worker.rollout_learner_grouped_forwards_saved,'count');
+        add('collector_'+i+'_learner_fused_states',
+            worker.rollout_learner_grouped_states,'count');
         add('collector_'+i+'_opp_group_padding',
             worker.rollout_opponent_grouped_padding,'count');
         add('collector_'+i+'_opp_group_fallbacks',
             worker.rollout_opponent_grouped_fallbacks,'count');
         add('collector_'+i+'_opp_gpu_stream_seconds',
             worker.rollout_opponent_gpu_stream_seconds,'seconds');
+        // A mixed frozen/learner forward cannot be assigned exclusively
+        // to either model. Keep its combined GPU stream timing separate.
+        add('collector_'+i+'_fused_gpu_stream_seconds',
+            worker.rollout_fused_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_opp_budget_pixels',
             worker.rollout_opponent_batch_budget_pixels,'count');
         add('collector_'+i+'_opp_pixel_samples',
@@ -645,10 +677,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'board_uploads_saved','board_packed_bytes',
                 'inference_max_group_px','bootstrap_seconds','returns_seconds',
                 'opponent_readbacks','opp_readback_models','opp_readbacks_saved',
+                'opponent_readbacks','opp_learner_joined_readbacks',
                 'opp_slot_reused',
                 'opp_slot_allocated','opp_cached_indices',
                 'opp_group_calls','opp_group_models',
-                'opp_group_states','opp_group_padding','opp_group_fallbacks',
+                'opp_group_states','opp_group_input_bytes',
+                'learner_fused_forwards','learner_fused_states',
+                'opp_group_padding','opp_group_fallbacks',
+                'fused_gpu_stream_seconds',
                 'snapshot_cache_files','snapshot_cache_bytes',
                 'policy_upload_groups',
                 'record_packed','record_board_groups',

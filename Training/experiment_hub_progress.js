@@ -112,18 +112,24 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_board_cache_mixed_chunks',
             'rollout_gpu_batch_target_pixels',
             'rollout_gpu_batch_next_target','rollout_gpu_batch_settled',
+            'rollout_gpu_unfused_batch_mean',
             'rollout_gpu_batch_proven_target',
             'ppo_gpu_batch_proven_target',
             'rollout_opponent_gpu_stream_seconds',
             'rollout_opponent_readbacks',
             'rollout_opponent_readbacks_saved',
             'rollout_opponent_readback_models',
+            'rollout_fused_gpu_stream_seconds',
+            'rollout_opponent_joined_learner_readbacks',
             'rollout_opponent_readback_slot_reused',
             'rollout_opponent_readback_slot_allocated',
             'rollout_opponent_readback_cached_indices',
             'rollout_opponent_grouped_calls',
             'rollout_opponent_grouped_models',
             'rollout_opponent_grouped_states',
+            'rollout_opponent_grouped_input_bytes',
+            'rollout_learner_grouped_forwards_saved',
+            'rollout_learner_grouped_states',
             'rollout_opponent_grouped_padding',
             'rollout_opponent_grouped_fallbacks',
             'rollout_opponent_grouped_weight_reuses',
@@ -132,10 +138,13 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_gpu_stream_work_share',
             'remote_policy_shared_collectors',
             'remote_policy_shared_encode_seconds',
+            'remote_policy_source_pack_reused',
             'remote_policy_shared_bytes',
             'local_gpu_collector_count',
             'local_gpu_direct_model_updates',
             'local_gpu_direct_model_tensor_bytes',
+            'local_gpu_policy_source_pack_groups',
+            'local_gpu_policy_packed_consumers',
             'local_gpu_join_wait_seconds',
             'local_gpu_pending_at_local_end',
             'local_lease_native_engines_active',
@@ -173,6 +182,16 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             // Exposed Python simulation packing is a cross-project CPU
             // throughput clue, not an independent hardware saturation claim.
             'training_info_pack_max_seconds',
+            // A proved live map move changes the physical collector barrier,
+            // not the fixed PPO batch or the operator's machine lease.
+            'training_live_map_moves','training_live_map_pred_gain_ratio',
+            'training_live_move_parallel_workers',
+            'training_live_move_seconds','training_live_move_wait_seconds',
+            'training_live_move_service_seconds',
+            'training_live_move_wire_bytes',
+            'training_live_result_ready','training_live_result_accepted',
+            'training_live_sps_change_pct','training_live_rollbacks',
+            'training_collector_span_ratio',
             'training_collector_probe_moved_maps',
             'training_resume_map_moves',
             'training_resume_gain_ratio',
@@ -195,6 +214,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_tuner_settled',
             'training_gpu_optimizer_lineages',
             'training_gpu_optimizer_next_lineages',
+            'training_gpu_memory_peer_contexts',
+            'training_gpu_memory_peak_share',
+            'training_gpu_memory_adjustments','training_gpu_memory_trial',
+            'training_gpu_memory_settled','training_gpu_memory_accepted',
+            'training_gpu_memory_rejected',
+            'training_gpu_memory_sps_change_pct',
             'training_gpu_devices_assigned',
             'training_gpu_devices_active',
             'training_gpu_peak_reserved_mb',
@@ -208,6 +233,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_memory_rejected',
             'training_gpu_memory_sps_change_pct',
             'training_gpu_rollout_lineages',
+            'training_gpu_rollout_states_per_batch',
             'training_local_gpu_rollout_lineages',
             'training_gpu_pin_reused_batches',
             'training_gpu_pin_allocated_slots',
@@ -550,6 +576,17 @@ class BottleneckEvidence {
             // not physical GPU occupancy or useful compute utilization.
             add('training_shared_gpu_reserved_share',
                 sharedGpuReserved.value/sharedGpuLimit.value);
+        // Report the mean shape of ACTUAL unfused GPU learner actor
+        // launches, not total observations divided by mixed fused/ordinary
+        // calls. A zero-call vmap-only rollout has no unfused mean.
+        const learnerCalls=metrics.rollout_inference_forward_chunks;
+        const learnerStates=metrics.rollout_inference_forward_states;
+        if(learnerCalls?.unit==='count'&&learnerStates?.unit==='count'&&
+            Number.isSafeInteger(learnerCalls.value)&&learnerCalls.value>0&&
+            Number.isSafeInteger(learnerStates.value)&&
+            learnerStates.value>=learnerCalls.value)
+            add('rollout_gpu_unfused_batch_mean',
+                learnerStates.value/learnerCalls.value,'scalar');
         const history=()=>{
             const version=metrics.training_environment_version;
             const environment=(version?.unit==='count'&&
@@ -1011,6 +1048,18 @@ class BottleneckEvidence {
             // Wall intervals overlap: compare each worker's own stages and
             // use the coordinator's actual finished-at timings for waits.
             const count=metrics.training_lineage_workers.value;
+            // Exact GPU rollout batch density, across the independent
+            // lineages participating in this completed PPO round. This
+            // is not an inferred GPU occupancy or an instruction to
+            // change the frozen recurrent policy batch.
+            const gpuBatches=metrics.training_gpu_rollout_batches;
+            const gpuStates=metrics.training_gpu_rollout_states;
+            if(gpuBatches?.unit==='count'&&gpuStates?.unit==='count'&&
+                Number.isSafeInteger(gpuBatches.value)&&gpuBatches.value>0&&
+                Number.isSafeInteger(gpuStates.value)&&
+                gpuStates.value>=gpuBatches.value)
+                add('training_gpu_rollout_states_per_batch',
+                    gpuStates.value/gpuBatches.value,'scalar');
             const wall=seconds('training_batch_wall_seconds');
             const queue=seconds('training_queue_max_seconds');
             const gap=seconds('training_reply_gap_seconds');
