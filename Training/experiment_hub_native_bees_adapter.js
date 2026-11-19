@@ -818,6 +818,8 @@ function createNativeBeesAdapter({
         sha256(JSON.stringify([
             checkpointDigest,manifestDigest,pins.get(trainer),
             learnerSlot ?? null,distributedOptimizer?.backend ?? null,
+            distributedOptimizer?.masterAddress ?? null,
+            distributedOptimizer?.masterPort ?? null,
         ]));
     const optimizerInputsSha256=distributedOptimizer
         ?optimizerInputIdentity(pins.get(input),pins.get(manifest)):null;
