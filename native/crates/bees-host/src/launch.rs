@@ -1266,12 +1266,23 @@ struct CampaignOutcome {
     mission_id: String,
     player_side: i32,
     winner_side: i32,
+    /// Physical objective result, distinct from an ordinary faction win.
+    /// Historical receipts did not record this and retain their original
+    /// winner-based interpretation; new native mission receipts always do.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mission_success: Option<bool>,
     /// Original durable result owns these one-time rewards. A replay or
     /// incomplete/defeated mission never mints a FleetShip.
     #[serde(default)]
     awarded_ships: Vec<NativePurchasedShip>,
     #[serde(default)]
     awarded_squads: Vec<NativeCreatedSquad>,
+}
+
+impl CampaignOutcome {
+    fn mission_victory(&self) -> bool {
+        self.mission_success.unwrap_or(self.winner_side == self.player_side)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -5032,14 +5043,25 @@ fn run_battle(
     let campaign_outcome = mission.filter(|_| replay_inputs.is_none() && !user_closed &&
         failed_window.is_none() && cleanup_errors.is_empty() && completed_episodes == [1])
         .and_then(|mission| {
-            let result = host.simulation().world(0)?.state.events.latest_finalized_episode()?.result;
+            let finalized = host.simulation().world(0)?
+                .state.events.latest_finalized_episode()?;
+            let result = finalized.result;
+            // The exact gameplay episode already identified the physical
+            // mission outcome. Campaign progression must not reinterpret
+            // a mere opponent elimination as a successful extraction.
+            // Ordinary elimination battles retain their historical meaning.
+            let mission_success = result.winner_side == mission.player_side &&
+                finalized.mission.is_none_or(|objective|
+                    objective.completed ==
+                        (objective.objective_side == mission.player_side));
             Some(CampaignOutcome {
                 campaign_id: mission.campaign_id.to_owned(), mission_id: mission.mission_id.to_owned(),
                 player_side: mission.player_side, winner_side: result.winner_side,
-                awarded_ships: if result.winner_side == mission.player_side {
+                mission_success: Some(mission_success),
+                awarded_ships: if mission_success {
                     mission.victory_grants.to_vec()
                 } else { Vec::new() },
-                awarded_squads: if result.winner_side == mission.player_side {
+                awarded_squads: if mission_success {
                     mission.victory_squads.to_vec()
                 } else { Vec::new() },
             })
@@ -5125,8 +5147,7 @@ fn run_battle(
     let campaign_banked_minerals = if campaign_outcome.is_some() &&
         mission.is_some_and(|mission| mission.bank_player_minerals) {
         let side = mission.expect("banked campaign owner").player_side;
-        if campaign_outcome.as_ref().is_some_and(|outcome|
-            outcome.winner_side == outcome.player_side)
+        if campaign_outcome.as_ref().is_some_and(CampaignOutcome::mission_victory)
         {
             Some(campaign_fleet.as_ref().ok_or_else(||
                 invalid("banked campaign cannot lack its FleetShip receipt"))?

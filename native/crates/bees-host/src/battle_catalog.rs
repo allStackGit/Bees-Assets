@@ -768,7 +768,7 @@ impl BattleCatalog {
                 .find(|mission| mission.id == outcome.mission_id && mission.player_side == outcome.player_side)
             {
                 let state = progress.missions.entry(&mission.id).or_default();
-                state.latest_victory = outcome.winner_side == mission.player_side;
+                state.latest_victory = outcome.mission_victory();
                 state.completed |= matches!(mission.advance_on, AdvanceOn::Finished) || state.latest_victory;
                 // Awarded hulls and SavedSquads are one atomic campaign
                 // outcome. They are reconstructed together from this
