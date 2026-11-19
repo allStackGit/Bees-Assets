@@ -734,6 +734,16 @@ pub enum NativeMusicLocation {
     Pluto, Neptune, Uranus, Titania,
 }
 
+/// Validated source ship that can be installed later into a persistent
+/// FleetShip but is not a physical body, squad member or training agent.
+#[derive(Clone)]
+struct NativeFleetTemplate {
+    ship: NativeAuthoredShip,
+    perception: AuthoredShipPerception,
+    vision: NativeSourceVision,
+    formation: NativeSourceFormation,
+}
+
 /// A source-authored INITIAL physical scene, ready to compose with actual
 /// squad identities, full RL metadata, episode configuration and model slots.
 /// Records are owned, but shared immutable prefab geometry stays in the
@@ -780,6 +790,9 @@ pub struct NativePhysicalScene {
     pub has_obstacles: bool,
     pub command_settings: bees_gameplay::commands::HiveMindCommandSettings,
     pub entities: Vec<NativeAuthoredEntity>,
+    // Native authored reserve classes: complete physical source prototypes,
+    // deliberately excluded from the gameplay and training World.
+    fleet_templates: Vec<NativeFleetTemplate>,
     source_episode: Option<NativeSourceEpisode>,
     /// Real participating Unity Agent instances and the active episode
     /// number. Schema 15 may legitimately have no group identities.
@@ -1255,7 +1268,19 @@ impl NativePhysicalScene {
                         ship.vitals.mined_cargo() == 0 =>
                     Some(ship.clone()),
                 _ => None,
-            }).ok_or(invalid("purchased type has no safe ordinary source ship prefab"))?;
+            }).or_else(|| self.fleet_templates.iter().find(|entry|
+                entry.ship.side == player_side &&
+                entry.ship.ship_type == purchase.ship_type &&
+                entry.ship.policy.is_none() &&
+                entry.ship.drone_carrier_id.is_none() &&
+                !entry.ship.motion.is_policy_controlled &&
+                !entry.ship.motion.is_moving &&
+                !entry.ship.motion.has_target_coordinates &&
+                entry.ship.motion.body_velocity.length_squared() == 0.0 &&
+                entry.ship.vitals.health() == entry.ship.vitals.max_health() &&
+                entry.ship.vitals.mined_cargo() == 0
+            ).map(|entry| entry.ship.clone()))
+                .ok_or(invalid("purchased type has no safe ordinary source ship prefab"))?;
             if template.vitals.tsv() <= 0 ||
                 u64::try_from(template.vitals.tsv()).ok() != Some(purchase.price_tsv)
             {
@@ -1357,15 +1382,20 @@ impl NativePhysicalScene {
                 rank.fleet_owner_ship_id = ship_entity_id;
             }
             let template_id = template.entity_id;
-            let mut perception = *self.authored_ship_perceptions.get(&template_id)
+            let reserved = self.fleet_templates.iter()
+                .find(|entry| entry.ship.entity_id == template_id);
+            let mut perception = self.authored_ship_perceptions.get(&template_id)
+                .copied().or_else(|| reserved.map(|entry| entry.perception))
                 .ok_or(invalid("purchased ship template lacks authored perception"))?;
             perception.minerals_mined_this_level = 0;
             if let Some(message) = &mut perception.allied_communication {
                 *message = [0.0; 4];
             }
-            let vision = *self.source_vision.get(&template_id)
+            let vision = self.source_vision.get(&template_id)
+                .copied().or_else(|| reserved.map(|entry| entry.vision))
                 .ok_or(invalid("purchased ship template lacks vision"))?;
-            let mut formation = *self.source_formation.get(&template_id)
+            let mut formation = self.source_formation.get(&template_id)
+                .copied().or_else(|| reserved.map(|entry| entry.formation))
                 .ok_or(invalid("purchased ship template lacks formation"))?;
             formation.offset = casualty_slot.map_or(
                 anchor_offset + (position - anchor_position),
@@ -3672,6 +3702,7 @@ impl NativePhysicalScene {
             has_obstacles: raw.has_obstacles,
             command_settings,
             entities,
+            fleet_templates: Vec::new(),
             source_episode,
             source_policy_group,
             source_navigation,
