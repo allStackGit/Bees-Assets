@@ -66,6 +66,17 @@ impl CombatWorld {
     /// The destination is mission-authored and visible to the escorting
     /// commander even before the first nearby ship activates the collider.
     /// This accessor never changes physics activation or exit processing.
+    /// Source-authored extraction objective and its destination, whether
+    /// the physical exit trigger has activated yet or not. This read-only
+    /// contract is shared by gameplay HUD and policy perception; actual
+    /// extraction still occurs exclusively through step_extraction.
+    pub fn extraction_objective(&self) -> Option<(i32, Aabb, bool)> {
+        self.extraction.as_ref().map(|state| (
+            state.zone.player_side, state.zone.bounds(),
+            state.escort_ship_id.is_some(),
+        ))
+    }
+
     pub fn escorted_destination_bounds(&self) -> Option<Aabb> {
         self.extraction.as_ref()
             .filter(|state| state.escort_ship_id.is_some())

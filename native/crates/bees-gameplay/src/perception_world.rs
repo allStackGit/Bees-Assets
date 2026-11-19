@@ -409,6 +409,22 @@ impl NativeWorldPerceptionAssembler {
                 seconds_remaining: status.seconds_remaining,
                 duration_seconds: status.duration_seconds,
             })
+        } else if let Some((exiting_side, bounds, escort)) = world.extraction_objective() {
+            // Generic extraction has no named escort ship or fixed mission
+            // deadline. Its only progress scalar is the actual owning
+            // episode's normalized progress (zero for unbounded gameplay).
+            // The physical exit stays a real Level collider; no policy
+            // worker computes or advances a second zone.
+            (!escort).then_some(NativeMissionObservation {
+                kind: NativeMissionKind::Extraction,
+                objective_side: exiting_side == side,
+                visible_target: None,
+                destination: Some((bounds.min + bounds.max) * 0.5),
+                seconds_remaining:
+                    (1.0 - owning_world.state.events.normalized_episode_progress())
+                        .clamp(0.0, 1.0),
+                duration_seconds: 1.0,
+            })
         } else { None };
         Ok(PolicyPerceptionSnapshot {
             ship,

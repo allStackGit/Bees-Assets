@@ -327,6 +327,7 @@ pub enum NativeMissionKind {
     Survival,
     Demolition,
     Escort,
+    Extraction,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -342,9 +343,9 @@ pub struct NativeMissionObservation {
     pub duration_seconds: f32,
 }
 
-/// Indices: active; one-hot mission [1..4); objective/defender role;
+/// Indices: active; one-hot mission [1..5); objective/defender role;
 /// known target; target dx/dy/range/health; destination present/dx/dy/range;
-/// remaining and elapsed fractions. Distances follow the v26 policy frame
+/// remaining fraction. Distances follow the v26 policy frame
 /// and existing squash rules; absent target geometry remains zero.
 pub fn write_native_mission_objectives(
     row: &mut [f32], mission: NativeMissionObservation,
@@ -369,8 +370,9 @@ pub fn write_native_mission_objectives(
         NativeMissionKind::Survival => 1,
         NativeMissionKind::Demolition => 2,
         NativeMissionKind::Escort => 3,
+        NativeMissionKind::Extraction => 4,
     }] = 1.0;
-    out[4] = if mission.objective_side { 1.0 } else { -1.0 };
+    out[5] = if mission.objective_side { 1.0 } else { -1.0 };
     let relative = |target: Vec2| {
         let world_delta = target - observer;
         let policy_delta = frame.world_to_policy(world_delta);
@@ -382,23 +384,22 @@ pub fn write_native_mission_objectives(
     };
     if let Some((target, health)) = mission.visible_target {
         let [x, y, distance] = relative(target);
-        out[5] = 1.0;
-        out[6] = x;
-        out[7] = y;
-        out[8] = distance;
-        out[9] = health;
+        out[6] = 1.0;
+        out[7] = x;
+        out[8] = y;
+        out[9] = distance;
+        out[10] = health;
     }
     if let Some(destination) = mission.destination {
         let [x, y, distance] = relative(destination);
-        out[10] = 1.0;
-        out[11] = x;
-        out[12] = y;
-        out[13] = distance;
+        out[11] = 1.0;
+        out[12] = x;
+        out[13] = y;
+        out[14] = distance;
     }
     let remaining = (mission.seconds_remaining / mission.duration_seconds)
         .clamp(0.0, 1.0);
-    out[14] = remaining;
-    out[15] = 1.0 - remaining;
+    out[15] = remaining;
     Ok(())
 }
 

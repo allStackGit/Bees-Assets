@@ -766,6 +766,18 @@ scripted queues, and supply genuine model/learner settings and per-team model
 slots as for the policy duel. Example ship values and reward baselines are
 authored demonstration inputs, not measured Unity parity.
 
+Native mission learning uses the 16 previously reserved v26 observation
+scalars without changing the policy input width. Only authored survival,
+demolition, escorted-ship, and extraction missions activate them. They
+encode mission kind, objective faction, visible target health/relative
+direction, authored extraction direction and remaining episode fraction.
+The target coordinates obey actual HiveMind discovery: an enemy not yet
+discovered never appears as a feature merely because the Level knows its
+ID. Normal elimination and legacy Unity v26 episodes keep the reserved
+block zero. Native rollout receipts identify objective-encoded policy
+rows, and the training launcher refuses native missions whose collector
+did not emit any objective observations.
+
 To initialize a native MA-POCA learner without an existing Unity
 checkpoint, use the repository's existing Python learner environment:
 
