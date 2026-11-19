@@ -671,7 +671,7 @@ def main() -> None:
                         default=[], metavar="MISSION:NEW_SQUAD:TEMPLATE_SQUAD",
                         help="one-time victory SavedSquad; ships may be awarded into this ID in the same mission")
     args = parser.parse_args()
-    if any(mission > len(args.mission) for mission, _, _, _ in args.victory_squad):
+    if any(mission > len(args.mission) for mission, _, _ in args.victory_squad):
         parser.error("--victory-squad refers to a mission not included by --mission")
     if any(mission > len(args.mission) for mission, _, _, _ in args.victory_grant):
         parser.error("--victory-grant refers to a mission not included by --mission")
