@@ -1026,17 +1026,28 @@ function courierWorkerSlot(machine,slot) {
         ?{slot,endpoint:machine.courier_lineage_endpoint,
             max_shards:machine.courier_lineage_max_shards}:null;
 }
-// An already assigned service owns its listener until its job is terminal.
-// Missing slot advertisement on a live service is an uncertain native
-// owner, so fail closed rather than silently reusing a possibly active port.
+// Active native owners must retain the endpoint frozen into their learner's
+// plan. A changed/unknown advertisement is not permission to claim a free
+// port: the old service might still be listening there after agent recovery.
 function courierEndpointOccupied(snapshot,machine,endpoint,exceptJobId=null) {
     if(!machine||!endpoint)return true;
     return snapshot.jobs.some(job=>{
         if(job.id===exceptJobId||job.project_id!=='courier_lineage'||
             job.assigned_machine_id!==machine.id||
             ['cancelled','finished','stopped'].includes(job.status))return false;
-        const slot=courierWorkerSlot(machine,job.frozen_parameters?.slot);
-        return !slot||slot.endpoint===endpoint;
+        const learner=snapshot.jobs.find(parent=>
+            parent.id===job.frozen_parameters?.learner_job_id&&
+            parent.project_id==='courier');
+        const plan=learner?.frozen_parameters?.remote_lineage_plan;
+        const first=Array.isArray(plan)?courierFirstSlot(learner,plan.length):null;
+        const index=first===null?null:job.frozen_parameters?.slot-first;
+        const frozen=Number.isSafeInteger(index)&&index>=0&&
+            index<plan.length?plan[index]?.endpoint:null;
+        const advertised=courierWorkerSlot(machine,job.frozen_parameters?.slot)?.endpoint;
+        // Legacy groups without a durable endpoint plan, or a changed
+        // listener mapping, own uncertain native state on the entire host.
+        if(!frozen||!advertised||advertised!==frozen)return true;
+        return frozen===endpoint;
     });
 }
 function selectDistributedMachines(machines,learner,selections,approved,capability,endpointField,
