@@ -239,8 +239,10 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let player_side = match mode { 0 => Some(1), 1 => Some(2), _ => None };
     let objective_side = match objective {
         Objective::Elimination => None,
-        _ if player_side.is_some() => player_side,
         _ => {
+            // A local player can own the mission OR intercept an AI-owned
+            // objective. The same playable objective-side choice already
+            // exists for LAN and fixed native evaluations.
             let Some(side) = choose_objective_side()? else { return Ok(None); };
             Some(side)
         },
@@ -1229,8 +1231,7 @@ pub(super) fn archive(
             // orders rather than inventing combat weapons.
             let orders = if supporting {
                 vec![json!({"kind": "hold"})]
-            } else if selected.ai_both &&
-                selected.objective_side == Some(side as i32 + 1) &&
+            } else if selected.objective_side == Some(side as i32 + 1) &&
                 matches!(selected.objective, Objective::Extraction)
             {
                 // Every mobile unit must physically evacuate. Reuse the
@@ -1239,8 +1240,7 @@ pub(super) fn archive(
                 vec![json!({"kind": "move_to_point", "destination": [
                     if side == 0 { 125.0 } else { -125.0 }, 0.0,
                 ]})]
-            } else if selected.ai_both &&
-                selected.objective_side == Some(side as i32 + 1) &&
+            } else if selected.objective_side == Some(side as i32 + 1) &&
                 matches!(selected.objective, Objective::Escort) &&
                 position == 0
             {
@@ -1250,8 +1250,7 @@ pub(super) fn archive(
                 vec![json!({"kind": "move_to_point", "destination": [
                     if side == 0 { 125.0 } else { -125.0 }, 0.0,
                 ]})]
-            } else if selected.ai_both &&
-                selected.objective_side == Some(side as i32 + 1) &&
+            } else if selected.objective_side == Some(side as i32 + 1) &&
                 matches!(selected.objective, Objective::Demolition) && !scout
             {
                 // Approach within the actual turret firing range, then
@@ -1274,8 +1273,10 @@ pub(super) fn archive(
             } else {
                 vec![json!({"kind": selected.ai_tactics.source_order(position)})]
             };
-            let mission_owner = selected.ai_both &&
-                selected.objective_side == Some(side as i32 + 1);
+            // A squad reaches this loop only when it has a scripted
+            // controller, in gameplay or a benchmark. It never steals
+            // control from a player on the mission-owning side.
+            let mission_owner = selected.objective_side == Some(side as i32 + 1);
             // Only commands that physically complete a one-shot goal
             // terminate their script. Escort defenders and ordinary
             // bombardment interceptors still need repeated live target
