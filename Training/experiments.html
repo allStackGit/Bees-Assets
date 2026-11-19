@@ -1290,6 +1290,15 @@ label.hub-toggle-row > input[type="checkbox"] {
     <tbody id="hub-machine-rows"></tbody>
   </table></div>
   <div class="hub-standalone">
+    <h3>Distributed training readiness</h3>
+    <p class="muted">Reports the enrolled worker capabilities needed for
+      TinyBrains and Courier multi-machine training. Only signed agent
+      advertisements confirm installed adapters; registration alone does
+      not authorize execution. Remote installation still requires
+      permission on each machine.</p>
+    <div id="hub-machine-readiness" class="hub-notice" role="status"></div>
+  </div>
+  <div class="hub-standalone">
     <h3>Machine agent enrollment</h3>
     <p class="muted">Enroll a registered machine once, then configure its agent with its machine ID and enrollment token. Rotate invalidates the previous token. Revoke disables access. Only the issued response shows the token; routine dashboard refreshes cannot retrieve it. Run Training/experiment_hub_agent.js on the machine using the restricted agent-only localhost port 7149 (or a trusted SSH tunnel forwarding that port). Never forward the privileged dashboard port 7148 to workers. Agent heartbeats report CPU, memory, and operating system, not physical GPU isolation.</p>
     <p id="hub-enrollment-message" class="hub-notice" role="status">No enrollment token issued in this session.</p>
