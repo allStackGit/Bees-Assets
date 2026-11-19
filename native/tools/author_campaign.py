@@ -212,7 +212,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
         for mission, previous, run_path in args.mission_variant
     }
     stable_roster = None
-    earned_saved_squads = set()
+    granted_squad_origin = {}
+    required_ancestors = {}
     shop_catalog = {}
     per_mission_sources = []
     per_mission_class_contracts = []
@@ -271,41 +272,6 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
             "record_fleet_stats": True, "persist_fleet_losses": True,
             "bank_player_minerals": True,
         }
-        authored_squads = {squad["saved_squad_id"] for squad in scene["squads"]
-                           if squad["side"] == args.player_side}
-        squad_grants = [grant for grant in args.victory_squad if grant[0] == index]
-        if len(squad_grants) > 64:
-            raise ValueError(f"mission {index} awards too many new SavedSquads")
-        for _, new_id, template_id in squad_grants:
-            if (new_id in authored_squads or new_id in earned_saved_squads or
-                    template_id not in authored_squads | earned_saved_squads or
-                    new_id == template_id):
-                raise ValueError(
-                    f"mission {index} needs a new persistent SavedSquad ID and "
-                    "a previously available player command template"
-                )
-            earned_saved_squads.add(new_id)
-        if squad_grants:
-            mission["victory_squads"] = [
-                {"saved_squad_id": new_id, "template_saved_squad_id": template_id}
-                for _, new_id, template_id in squad_grants
-            ]
-        grants = [grant for grant in args.victory_grant if grant[0] == index]
-        if grants:
-            allowed = authored_squads | earned_saved_squads
-            classes = set(args.shop_types) | set(args.grant_only_types)
-            if any(kind not in classes or saved_id not in allowed
-                   for _, kind, _, saved_id in grants):
-                raise ValueError(
-                    f"mission {index} ship rewards require a source-priced fleet class and "
-                    "an existing or already-awarded player SavedSquad"
-                )
-            if sum(count for _, _, count, _ in grants) > 1024:
-                raise ValueError(f"mission {index} exceeds 1024 awarded ships")
-            mission["victory_grants"] = [
-                {"ship_type": kind, "count": count, "saved_squad_id": saved_id}
-                for _, kind, count, saved_id in grants
-            ]
         prerequisites = mission_dependencies.get(
             index, [index - 1] if index > 1 else []
         )
@@ -315,6 +281,60 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
             ]
         if mission_advances.get(index, "victory") == "finished":
             mission["advance_on"] = "finished"
+        ancestors = set(prerequisites)
+        for prerequisite in prerequisites:
+            ancestors.update(required_ancestors[prerequisite])
+        required_ancestors[index] = ancestors
+        # Completing a 'finished' mission can mean defeat. Its victory
+        # rewards therefore cannot be assumed available to a later mission
+        # simply because that mission was unlocked. In contrast, any
+        # ancestor whose unlock rule is 'victory' is guaranteed won.
+        guaranteed_squads = {
+            saved_id for saved_id, grant_mission in granted_squad_origin.items()
+            if grant_mission in ancestors and
+            mission_advances.get(grant_mission, "victory") == "victory"
+        }
+        authored_squads = {squad["saved_squad_id"] for squad in scene["squads"]
+                           if squad["side"] == args.player_side}
+        squad_grants = [grant for grant in args.victory_squad if grant[0] == index]
+        if len(squad_grants) > 64:
+            raise ValueError(f"mission {index} awards too many new SavedSquads")
+        awarded_this_mission = set()
+        for _, new_id, template_id in squad_grants:
+            if (new_id in authored_squads or new_id in granted_squad_origin or
+                    new_id in awarded_this_mission or
+                    template_id not in
+                    authored_squads | guaranteed_squads | awarded_this_mission or
+                    new_id == template_id):
+                raise ValueError(
+                    f"mission {index} awards a reused SavedSquad ID or uses "
+                    "a command template that is not guaranteed to exist on "
+                    "every path reaching this mission"
+                )
+            awarded_this_mission.add(new_id)
+        if squad_grants:
+            mission["victory_squads"] = [
+                {"saved_squad_id": new_id, "template_saved_squad_id": template_id}
+                for _, new_id, template_id in squad_grants
+            ]
+        grants = [grant for grant in args.victory_grant if grant[0] == index]
+        if grants:
+            allowed = authored_squads | guaranteed_squads | awarded_this_mission
+            classes = set(args.shop_types) | set(args.grant_only_types)
+            if any(kind not in classes or saved_id not in allowed
+                   for _, kind, _, saved_id in grants):
+                raise ValueError(
+                    f"mission {index} ship rewards require a source-priced fleet class and "
+                    "a SavedSquad guaranteed by its prerequisite victories"
+                )
+            if sum(count for _, _, count, _ in grants) > 1024:
+                raise ValueError(f"mission {index} exceeds 1024 awarded ships")
+            mission["victory_grants"] = [
+                {"ship_type": kind, "count": count, "saved_squad_id": saved_id}
+                for _, kind, count, saved_id in grants
+            ]
+        for new_id in awarded_this_mission:
+            granted_squad_origin[new_id] = index
         variant_provenance = None
         if index in victory_variants:
             previous, variant_path = victory_variants[index]
