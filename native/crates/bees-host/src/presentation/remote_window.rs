@@ -1442,7 +1442,10 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             }
         }
         let was_connected=peer.connected;
-        peer.poll()?;
+        // Reset the old view BEFORE reading the new connection's first
+        // welcome/snapshot. Otherwise a fast host can deliver a valid first
+        // state that is immediately discarded as stale by this reset.
+        if !rejoined { peer.poll()?; }
         if rejoined || was_connected && !peer.connected {
             // A new TCP connection has a new peer ID and no retained squad
             // authority. No previous snapshot, camera selection, or
