@@ -703,7 +703,7 @@ impl RemoteObstacleHull {
     fn draw(&self, pixels: &mut [u32], camera: NativeCamera, color: u32) {
         match self {
             Self::Circle { center, radius } => {
-                let diameter = radius * camera.pixels_per_unit * 2.0;
+                let diameter = *radius * camera.pixels_per_unit * 2.0;
                 let segments = ((diameter * 0.2) as usize).clamp(12, 64);
                 let mut previous = screen(camera, *center + Vec2::new(*radius, 0.0));
                 for index in 1..=segments {
@@ -1379,7 +1379,16 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
                 target["side"].as_i64().unwrap_or(0)) else {
                 return Err(invalid("friendly target has no visible squad").into())
             };
-            ("support",json!({"action":{"Guard":{"target":squad["owner"]}}}))
+            if mode.is_none() && squad["owner"]["squad_id"].as_i64()
+                .is_some_and(|id| selected.contains(&id))
+            {
+                // A context click on one's already-selected formation is a
+                // destination order, not a request to guard itself.
+                let point = camera.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
+                ("move",json!({"destination":{"x":point.x,"y":point.y}}))
+            } else {
+                ("support",json!({"action":{"Guard":{"target":squad["owner"]}}}))
+            }
         }
         (Some(TargetMode::Mine),Some(("obstacle",target))) |
         (None,Some(("obstacle",target))) if target["mining"]==true => {
