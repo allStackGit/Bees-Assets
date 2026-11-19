@@ -207,26 +207,20 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
     mission_dependencies = dict(args.mission_requires)
     mission_advances = dict(args.mission_advance)
     shop_unlocks = dict(args.shop_unlock)
+    victory_variants = {
+        mission: (previous, run_path)
+        for mission, previous, run_path in args.mission_variant
+    }
     stable_roster = None
     earned_saved_squads = set()
     shop_catalog = {}
     per_mission_sources = []
     per_mission_class_contracts = []
-    for index, source in enumerate(args.mission, 1):
-        source_path = source.resolve(strict=True)
-        scene, run, provenance = input_mission(source_path, args.player_side)
-        if stable_roster is None:
-            stable_roster = provenance["player_fleet_contract"]
-        elif provenance["player_fleet_contract"] != stable_roster:
-            raise ValueError(
-                f"mission {index} changes authored player FleetShip or SavedSquad identities; "
-                "use the same player fleet and squad membership in every native mission"
-            )
+
+    def record_class_source(scene: dict) -> None:
+        """Require each selectable game variant to supply real identical hulls."""
         class_prices = {}
         class_contracts = {}
-        # Live original player hulls and inert authored reserve templates
-        # are both real physical source archetypes. Reward-only classes
-        # need not be deployed before the mission that unlocks them.
         candidates = (
             (ship for ship in scene["ships"] if ship.get("persistent_fleet")),
             iter(scene.get("fleet_templates", [])),
@@ -246,6 +240,22 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
             shop_catalog.setdefault(ship_type, set()).update(prices)
         per_mission_sources.append(class_prices)
         per_mission_class_contracts.append(class_contracts)
+
+    for index, source in enumerate(args.mission, 1):
+        source_path = source.resolve(strict=True)
+        scene, run, provenance = input_mission(source_path, args.player_side)
+        if stable_roster is None:
+            stable_roster = provenance["player_fleet_contract"]
+        elif provenance["player_fleet_contract"] != stable_roster:
+            raise ValueError(
+                f"mission {index} changes authored player FleetShip or SavedSquad identities; "
+                "use the same player fleet and squad membership in every native mission"
+            )
+        # Both ordinary and conditional battles have the same persistent
+        # campaign player fleet and source-priced hull class contract.
+        # Any variant lacking a purchasable/earned hull is rejected before
+        # publication, never at the next attempted mission launch.
+        record_class_source(scene)
         ident = f"mission-{index:03d}"
         scene_file = f"{ident}.scene.json"
         run_file = f"{ident}.run.json"
@@ -305,12 +315,52 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
             ]
         if mission_advances.get(index, "victory") == "finished":
             mission["advance_on"] = "finished"
+        variant_provenance = None
+        if index in victory_variants:
+            previous, variant_path = victory_variants[index]
+            if previous not in prerequisites:
+                raise ValueError(
+                    f"mission {index} conditional victory route requires "
+                    f"mission {previous} in its own --mission-requires"
+                )
+            variant_scene, variant_run, variant_provenance = input_mission(
+                variant_path.resolve(strict=True), args.player_side,
+            )
+            if variant_provenance["player_fleet_contract"] != stable_roster:
+                raise ValueError(
+                    f"mission {index} conditional victory battle changes the "
+                    "saved player FleetShip identities or squad memberships"
+                )
+            record_class_source(variant_scene)
+            variant_scene_file = f"{ident}.victory.scene.json"
+            variant_run_file = f"{ident}.victory.run.json"
+            variant_run = copy.deepcopy(variant_run)
+            variant_run["levels"][0]["scene"] = variant_scene_file
+            variant_run["run_id"] = f"{slug}-{ident}-victory"
+            variant_run["connection_checkpoint"] = f"{ident}-victory-connection.json"
+            variant_run["notifications"] = f"{ident}-victory-notifications.jsonl"
+            variant_run["rollout_summary"] = f"{ident}-victory-summary.json"
+            variant_run["policy_capture"] = None
+            outputs.extend((
+                (variant_scene_file, variant_scene),
+                (variant_run_file, variant_run),
+            ))
+            mission["on_victory"] = {
+                "mission": f"mission-{previous:03d}",
+                "config": variant_run_file,
+            }
         missions.append({
             "title": scene["level_name"], "config": run_file,
             "mission": mission,
         })
         outputs.extend(((scene_file, scene), (run_file, run)))
-        sources.append({"mission_id": ident, **provenance})
+        sources.append({
+            "mission_id": ident, **provenance,
+            **({"victory_variant": {
+                "depends_on": f"mission-{victory_variants[index][0]:03d}",
+                **variant_provenance,
+            }} if variant_provenance is not None else {}),
+        })
     fleet_classes = []
     classes = [*args.shop_types, *args.grant_only_types]
     for ship_type in classes:
@@ -359,6 +409,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict]:
             "mission_id": f"mission-{index:03d}",
             "requires": missions[index - 1]["mission"].get("requires", []),
             "advance_on": missions[index - 1]["mission"].get("advance_on", "victory"),
+            "on_victory": missions[index - 1]["mission"].get("on_victory"),
         } for index in range(1, len(missions) + 1)],
         "shop_unlocked_after": {
             str(entry["ship_type"]): entry["unlocked_after"]
@@ -429,6 +480,21 @@ def victory_squad(value: str) -> tuple[int, int, int]:
     return mission, new_id, template_id
 
 
+def mission_variant(value: str) -> tuple[int, int, Path]:
+    """MISSION:PREVIOUS_MISSION:RUN; a conditional native game scenario."""
+    pieces = value.split(":", 2)
+    if len(pieces) != 3 or not pieces[0].isdigit() or not pieces[1].isdigit() or not pieces[2]:
+        raise argparse.ArgumentTypeError(
+            "--mission-variant needs MISSION:PREVIOUS_MISSION:RUN_FILE"
+        )
+    mission, previous = int(pieces[0]), int(pieces[1])
+    if not 2 <= mission <= 40 or not 1 <= previous < mission:
+        raise argparse.ArgumentTypeError(
+            "conditional victory source needs a previous mission in 1..39"
+        )
+    return mission, previous, Path(pieces[2])
+
+
 def preceding_missions(value: str) -> tuple[int, list[int]]:
     """MISSION:PREREQ[,PREREQ] or MISSION:none; 1-based forward-only DAG."""
     match = re.fullmatch(r"(\d+):(none|\d+(?:,\d+)*)", value)
@@ -495,6 +561,9 @@ def main() -> None:
     parser.add_argument("--mission-advance", action="append", type=mission_advance,
                         default=[], metavar="MISSION:victory|finished",
                         help="choose the finished-battle or victorious-battle unlock rule")
+    parser.add_argument("--mission-variant", action="append", type=mission_variant,
+                        default=[], metavar="MISSION:PREVIOUS:RUN",
+                        help="use another native battle if the required previous mission's latest result was victory")
     parser.add_argument("--shop-unlock", action="append", type=shop_unlock,
                         default=[], metavar="TYPE:MISSION[,MISSION]",
                         help="unlock a purchasable class after named mission(s); TYPE:none unlocks it initially")
@@ -521,6 +590,8 @@ def main() -> None:
     for label, rules in (
         ("--mission-requires", args.mission_requires),
         ("--mission-advance", args.mission_advance),
+        ("--mission-variant", [(mission, path) for mission, _, path
+                              in args.mission_variant]),
         ("--shop-unlock", args.shop_unlock),
     ):
         ids = [index for index, _ in rules]
