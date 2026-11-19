@@ -869,6 +869,8 @@ document.addEventListener('DOMContentLoaded', () => {
             label.textContent=description+' ';
             select=document.createElement('select');
             select.id=id;
+            if(id==='hub-native-bundle-model-source')
+                select.addEventListener('change',renderResourceBundleMembers);
             label.append(select);
             anchor.before(label);
         }
@@ -938,6 +940,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const configs=(state?.configurations||[]).filter(c=>
             !['bees','ants','tinybrains_rollout'].includes(c.project_id));
         const machines=state?.machines||[];
+        const sourceId=$('hub-native-bundle-model-source')?.value||'';
+        const source=nativeModelSources().find(job=>job.id===sourceId);
         for(const [i,row] of rows.entries()) {
             const captions=row.querySelectorAll('.hub-bundle-caption');
             const config=row.querySelector('.hub-bundle-config');
@@ -945,18 +949,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const oldConfig=config.value,oldMachine=machine.value;
             captions[0].textContent='Member '+(i+1)+' saved configuration';
             captions[1].textContent='Machine';
-            config.replaceChildren(...configs.map(c=>new Option(
+            const choices=source
+                ?configs.filter(c=>
+                    c.project_id===(i===0?'bees_native':'bees_native_optimizer_worker')&&
+                    c.parameters?.optimizer_group===true)
+                :configs;
+            config.replaceChildren(...choices.map(c=>new Option(
                 c.project_id+' · '+c.name+' · revision '+c.revision,c.id)));
-            if(configs.some(c=>c.id===oldConfig))config.value=oldConfig;
-            else {
-                const own=configs.find(c=>c.project_id===project);
+            if(choices.some(c=>c.id===oldConfig))config.value=oldConfig;
+            else if(!source) {
+                const own=choices.find(c=>c.project_id===project);
                 if(own)config.value=own.id;
             }
-            const selected=configs.find(c=>c.id===config.value);
+            const selected=choices.find(c=>c.id===config.value);
             const eligible=machines.filter(m=>
                 m.status==='connected'&&m.local_executor_enabled===true&&
                 m.native_preflight_passed===true&&
-                m.installed_projects?.includes(selected?.project_id));
+                m.installed_projects?.includes(selected?.project_id)&&
+                (!source||i===0
+                    ?!source||m.id===source.assigned_machine_id
+                    :m.id!==source.assigned_machine_id));
             machine.replaceChildren(...eligible.map(m=>
                 new Option(m.name+' ('+m.id+')',m.id)));
             if(eligible.some(m=>m.id===oldMachine))machine.value=oldMachine;
