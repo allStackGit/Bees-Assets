@@ -839,14 +839,26 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
     train_command = [
         python, str(Path(__file__).with_name("train_policy_capture.py")),
         *primary, str(manifest), str(checkpoint), str(trainer_config), str(learner_dir),
-        "--device", args.device,
-        *([] if args.torch_threads is None else ["--torch-threads", str(args.torch_threads)]),
+        "--device", args.device, "--learner-gpus", str(args.learner_gpus),
+        *([] if args.torch_threads is None else [
+            "--torch-threads", str(max(1, args.torch_threads // args.learner_gpus))
+        ]),
         *rollout_args,
     ]
     if args.learner_slot is not None:
         train_command += ["--learner-slot", str(args.learner_slot)]
     if args.refresh_opponent_slot is not None:
         train_command += ["--refresh-opponent-slot", str(args.refresh_opponent_slot)]
+    if args.learner_gpus > 1:
+        # Run the existing MA-POCA optimizer on one rank per visible leased
+        # GPU. torchrun owns process failure and NCCL rendezvous; the rank-0
+        # worker alone publishes the normal checkpoint and manifest.
+        train_command = [
+            python, "-m", "torch.distributed.run",
+            "--standalone", "--nnodes=1",
+            "--nproc-per-node", str(args.learner_gpus),
+            *train_command[1:],
+        ]
     run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
     next_checkpoint = learner_dir / "checkpoint.pt"
     next_manifest = learner_dir / "manifest.json"
@@ -871,8 +883,17 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
             metrics.get("refreshed_opponent_slot") != args.refresh_opponent_slot or
             type(metrics.get("optimizer_input_steps")) is not int or
             metrics["optimizer_input_steps"] < 1 or
-            type(metrics.get("episodes")) is not int or metrics["episodes"] < 1):
-        raise ValueError("native learner completion receipt disagrees with its model artifacts")
+            type(metrics.get("episodes")) is not int or metrics["episodes"] < 1 or
+            metrics.get("optimizer_gpu_workers") != (
+                args.learner_gpus if args.device.startswith("cuda") else 0
+            ) or
+            (args.learner_gpus > 1 and (
+                type(metrics.get("optimizer_synchronized_minibatches")) is not int or
+                metrics["optimizer_synchronized_minibatches"] < 1 or
+                not isinstance(metrics.get("optimizer_gpu_per_device"), list) or
+                len(metrics["optimizer_gpu_per_device"]) != args.learner_gpus
+            ))):
+        raise ValueError("native learner completion receipt disagrees with its model artifacts or actual GPU ranks")
     publish_receipt(output, "round-result.json", {
         "schema_version": 1,
         "kind": "native_training_round_complete",
@@ -897,6 +918,8 @@ def main() -> None:
     parser.add_argument("--refresh-opponent-slot", type=int,
                         help="also publish this opponent slot using the successful learner checkpoint")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--learner-gpus", type=int, choices=(1, 2), default=1,
+                        help="synchronous MA-POCA optimizer GPU workers (one per visible CUDA/ROCm GPU)")
     parser.add_argument("--torch-threads", type=int,
                         help="fixed optimizer intra-op threads, not rollout parallelism")
     parser.add_argument("--rollout-workers", type=int,
@@ -952,6 +975,11 @@ def main() -> None:
         parser.error("--bundle-delivery-name requires a pinned collection, inbox and safe name")
     if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
         parser.error("--torch-threads must be between 1 and 256")
+    if args.learner_gpus > 1 and (
+            args.collect_only or args.device not in ("cuda", "cuda:0")):
+        parser.error("multi-GPU MA-POCA requires optimizer execution on CUDA/ROCm")
+    if args.torch_threads is not None and args.torch_threads < args.learner_gpus:
+        parser.error("optimizer CPU threads must accommodate every GPU learner")
     if args.rollout_workers is not None and not 1 <= args.rollout_workers <= 256:
         parser.error("--rollout-workers must be between 1 and 256")
     if args.physics_workers is not None and not 1 <= args.physics_workers <= 128:
