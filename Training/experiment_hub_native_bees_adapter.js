@@ -677,6 +677,7 @@ function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, modelInbox, rocrGpuUuids = {},
     evaluationRoot, evaluationSuites, gameLibrarySaveRoot, distributedOptimizer,
+    curriculumPlan,
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
     // Local operator-owned PCI to ROCr UUID mappings are never job parameters.
@@ -765,6 +766,9 @@ function createNativeBeesAdapter({
 
     const runBytes = fs.readFileSync(run);
     const config = JSON.parse(runBytes);
+    const curriculumFile=curriculumPlan===undefined?null:trustedFile(curriculumPlan);
+    if(curriculumFile&&!collectOnly)
+        throw Error('Native curriculum applies only to physical collectors, not synchronized PPO ranks.');
     const bundleRound = Object.hasOwn(config, 'rollout_bundles');
     const inboxLearner = !collectOnly && Boolean(inbox);
     if (distributedOptimizer !== undefined && !bundleRound)
@@ -811,21 +815,73 @@ function createNativeBeesAdapter({
         ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
     const sourcePins = nativeSourceDependencies(run, config);
-    let sourceContract = null;
-    if (collectOnly) {
-        // The exact shared Python implementation also signs the learner's
-        // work orders. One process at adapter setup, never in the hot path.
-        const probe = spawnSync(executable, ['-B', contractScript, run], {
-            encoding: 'utf8', timeout: 15000, maxBuffer: 4096,
+    const curriculumModule=curriculumFile
+        ?trustedFile(path.resolve(__dirname,'../native/tools/native_curriculum.py'))
+        :null;
+    // Use the standalone session's original curriculum validator rather
+    // than implementing a second environment-stage contract in JavaScript.
+    // The Hub authorizes only a round number; authored source paths remain
+    // fixed machine-local installation inputs.
+    const curriculumRuns=[{start_round:1,run,config}];
+    const curriculumPins=new Map();
+    if(curriculumFile) {
+        const command=[
+            'import json,sys',
+            'from native_curriculum import load_curriculum',
+            'base={"path":sys.argv[2],"sha256":sys.argv[3]}',
+            'plan=load_curriculum(sys.argv[1],base,8,sys.argv[4],'+
+                '(None if sys.argv[5]=="none" else int(sys.argv[5])),None)',
+            'print(json.dumps(plan))',
+        ].join(';');
+        const probe=spawnSync(executable,[
+            '-B','-c',command,curriculumFile,run,sha256(runBytes),
+            executable,learnerSlot===undefined?'none':String(learnerSlot),
+        ],{cwd:path.dirname(curriculumModule),encoding:'utf8',
+            timeout:15000,maxBuffer:65536});
+        if(probe.error||probe.status!==0)
+            throw Error('Native curriculum stage validation failed: '+
+                String(probe.stderr||probe.error).slice(0,320));
+        const plan=JSON.parse(probe.stdout);
+        if(plan?.plan?.path!==curriculumFile||
+            plan.plan.sha256!==sha256(fs.readFileSync(curriculumFile))||
+            !Array.isArray(plan.stages)||!plan.stages.length||
+            plan.stages.length>7)
+            throw Error('Native curriculum stage plan changed during adapter installation.');
+        curriculumPins.set(curriculumFile,plan.plan.sha256);
+        curriculumPins.set(curriculumModule,sha256(fs.readFileSync(curriculumModule)));
+        for(const stage of plan.stages) {
+            const stageRun=trustedFile(stage.run_config?.path);
+            const stageBytes=fs.readFileSync(stageRun);
+            if(stage.run_config.sha256!==sha256(stageBytes)||
+                !Number.isSafeInteger(stage.start_round)||
+                stage.start_round<2||stage.start_round>8||
+                stage.start_round<=curriculumRuns.at(-1).start_round)
+                throw Error('Native curriculum has a changed or unordered stage.');
+            const stageConfig=JSON.parse(stageBytes);
+            curriculumPins.set(stageRun,stage.run_config.sha256);
+            for(const [file,digest] of nativeSourceDependencies(stageRun,stageConfig))
+                curriculumPins.set(file,digest);
+            curriculumRuns.push({
+                start_round:stage.start_round,run:stageRun,config:stageConfig,
+            });
+        }
+    }
+    const sourceContracts=new Map();
+    if(collectOnly)for(const stage of curriculumRuns) {
+        // Signed by the same native source contract used for bundle
+        // verification and physical World partition acceptance.
+        const probe=spawnSync(executable,['-B',contractScript,stage.run],{
+            encoding:'utf8',timeout:15000,maxBuffer:4096,
         });
-        if (probe.error || probe.status !== 0 ||
-            !/^[a-f0-9]{64}$/.test((probe.stdout || '').trim()))
-            throw Error('Native Bees physical source identity could not be verified by the installed Python runtime.');
-        sourceContract = probe.stdout.trim();
+        if(probe.error||probe.status!==0||
+            !/^[a-f0-9]{64}$/.test((probe.stdout||'').trim()))
+            throw Error('Native Bees physical source identity could not be verified.');
+        sourceContracts.set(stage.run,probe.stdout.trim());
     }
     const pins = new Map([
         ...basePins,
         ...sourcePins,
+        ...curriculumPins,
         ...[runner, contractScript, gpuAllocationScript,
             ...trainingSources, ...(binary ? [binary] : []), ...gallerySources]
             .map(file => [file, sha256(fs.readFileSync(file))]),
@@ -838,7 +894,7 @@ function createNativeBeesAdapter({
     // for execution, but a Windows/Linux rollout cannot share a single
     // ELF/PE digest. Scene/Stage/worker content is part of the experiment.
     const configIdentity = [...basePins.values(), learnerSlot ?? null,
-        ...sourcePins.values()];
+        ...sourcePins.values(), ...curriculumPins.values()];
     if (collectOnly || distributedOptimizer?.role === 'worker') configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
     const configSha256 = sha256(JSON.stringify(configIdentity));
@@ -1002,6 +1058,13 @@ function createNativeBeesAdapter({
     }
 
     function verifyRoundGpuLease(context, receipt) {
+        if(collectOnly && context.frozen_parameters?.native_round_number!==undefined) {
+            const round=context.frozen_parameters.native_round_number;
+            const source=curriculumRuns.filter(stage=>stage.start_round<=round).at(-1);
+            if(!source||receipt.run_config_sha256!==pins.get(source.run)||
+                receipt.source_run_contract_sha256!==sourceContracts.get(source.run))
+                throw Error('Native collector did not run its pinned curriculum stage.');
+        }
         const count=gpuLeaseCount(context);
         // Inbox-only learners legitimately consume verified bundles with
         // CPU-side collection performed on other workers. Direct rounds and
@@ -1209,7 +1272,17 @@ function createNativeBeesAdapter({
                 optimizer_group, optimizer_inputs_sha256,
                 physics_workers, collection_id, rollout_world_start, rollout_worlds,
                 bundle_directory, refresh_opponent_slot,
-                source_run_contract_sha256} = parameters;
+                source_run_contract_sha256, native_round_number} = parameters;
+            if(native_round_number!==undefined&&
+                (!collectOnly||collection_id===undefined||
+                 !Number.isSafeInteger(native_round_number)||
+                 native_round_number<1||native_round_number>8))
+                throw Error('Only Hub-owned native collector rounds can select curriculum stages.');
+            const sourceStage=native_round_number===undefined
+                ?curriculumRuns[0]
+                :curriculumRuns.filter(stage=>
+                    stage.start_round<=native_round_number).at(-1);
+            const activeRun=sourceStage.run,activeConfig=sourceStage.config;
             const allowed = inboxLearner
                 ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads',
                     'refresh_opponent_slot', 'optimizer_group', 'optimizer_inputs_sha256']
@@ -1219,7 +1292,8 @@ function createNativeBeesAdapter({
                     : collectOnly
                         ? ['config_sha256', 'seed_offset', 'rollout_workers', 'physics_workers',
                             'collection_id', 'rollout_world_start', 'rollout_worlds',
-                            'bundle_directory', 'source_run_contract_sha256']
+                            'bundle_directory', 'source_run_contract_sha256',
+                            'native_round_number']
                         : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers',
                             'physics_workers', 'rollout_worlds', 'refresh_opponent_slot'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
@@ -1269,7 +1343,7 @@ function createNativeBeesAdapter({
                 (source_run_contract_sha256 !== undefined &&
                     (collection_id === undefined ||
                         !/^[a-f0-9]{64}$/.test(String(source_run_contract_sha256)) ||
-                        source_run_contract_sha256 !== sourceContract))
+                        source_run_contract_sha256 !== sourceContracts.get(activeRun)))
             ))
                 throw Error('Native distributed work order needs an exact ID, bounded World window and safe inbox name.');
             const dualGpu=Array.isArray(context.gpu_pci_addresses);
@@ -1279,10 +1353,10 @@ function createNativeBeesAdapter({
             // model worker; expand the default native World pool rather
             // than forcing users to tune counts for every project.
             const activeWorlds = rollout_worlds ??
-                Math.max(config.rollout_worlds ?? config.levels?.length ?? 1,
-                    dualGpu ? 2 : 1);
+                Math.max(activeConfig.rollout_worlds ??
+                    activeConfig.levels?.length ?? 1,dualGpu ? 2 : 1);
             const activeWorkers = rollout_workers ??
-                Math.max(config.rollout_workers ?? 1, dualGpu ? 2 : 1);
+                Math.max(activeConfig.rollout_workers ?? 1,dualGpu ? 2 : 1);
             // Rollout processes each retain a model worker and run their
             // own shared physical CPU pool. Both dimensions consume the
             // same fixed machine lease; never advertise more runnable
@@ -1295,7 +1369,7 @@ function createNativeBeesAdapter({
             const activePhysicsWorkers = physics_workers === 'allocation'
                 ? Math.min(128, Math.floor(context.cpu_quota / activeWorkers),
                     Math.ceil(activeWorlds / activeWorkers))
-                : physics_workers ?? config.physics_workers ?? 1;
+                : physics_workers ?? activeConfig.physics_workers ?? 1;
             if (!bundleRound && !inboxLearner &&
                 (!Number.isSafeInteger(activeWorkers) ||
                     activeWorkers < 1 || activeWorkers > 256 ||
@@ -1356,7 +1430,7 @@ function createNativeBeesAdapter({
                 const opponents = current.models.filter(model => model.slot === refresh_opponent_slot);
                 if (opponents.length !== 1 || opponents[0].backend !== 'mlagents')
                     throw Error('Native Bees self-play promotion requires an existing MA-POCA opponent slot.');
-                if (!config.levels?.some(level =>
+                if (!activeConfig.levels?.some(level =>
                     [learnerSlot, refresh_opponent_slot].every(slot =>
                         Object.values(level.model_slots || {}).includes(slot))) && !inboxLearner)
                     throw Error('Native Bees training Levels must route the learner and selected opponent.');
@@ -1377,7 +1451,7 @@ function createNativeBeesAdapter({
             if (context.continuation_of_job_id &&
                 context.expected_parent_model_sha256 !== inputs.checkpointDigest)
                 throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
-            return ['-B', runner, run, inputs.checkpoint, trainer, output,
+            return ['-B', runner, activeRun, inputs.checkpoint, trainer, output,
                 '--model-manifest', inputs.manifest, ...(binary ? ['--rollout-binary', binary] : []),
                 '--stage-diagnostics',
                 // Supervisor-owned exclusive GPU selection is already verified.
