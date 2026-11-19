@@ -79,9 +79,16 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
     let gpu=null,multiGpu=null;
     if(r.gpu_count>=2) {
         const bindings=lease.gpu_bindings;
-        if(!gpuEnabled||job.project_id!=='courier'||
+        const courier=job.project_id==='courier'&&
+            adapter.gpu_multi_execution==='independent-ppo';
+        const tinybrains=job.project_id==='tinybrains'&&
+            (r.gpu_count===2
+                ?job.frozen_parameters?.device==='dual'&&
+                    adapter.gpu_dual_execution==='split-ppo'
+                :job.frozen_parameters?.device==='multi'&&
+                    adapter.gpu_multi_execution==='split-ppo-collectors');
+        if(!gpuEnabled||!(courier||tinybrains)||
             adapter.gpu_execution!=='cuda'||
-            adapter.gpu_multi_execution!=='independent-ppo'||
             !Number.isSafeInteger(r.gpu_count)||r.gpu_count>8||
             lr.gpu_count!==r.gpu_count||
             r.gpu_mode!=='exclusive'||lr.gpu_mode!=='exclusive'||
@@ -96,7 +103,7 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
             new Set(bindings.map(bound=>bound.pci_address)).size!==bindings.length||
             new Set(bindings.map(bound=>bound.cuda_uuid.toLowerCase())).size!==
                 bindings.length)
-            throw Error('Windows multi-GPU Courier requires 2–8 distinct exclusive pinned CUDA devices.');
+            throw Error('Windows native multi-GPU training requires 2–8 distinct exclusive pinned CUDA devices.');
         const current=gpuInventory();
         if(!Array.isArray(current))
             throw Error('Windows CUDA device inventory unavailable.');
