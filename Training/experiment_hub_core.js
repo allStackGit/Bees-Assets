@@ -4624,6 +4624,28 @@ class ExperimentHub {
                     if(!checkpointContinuationComplete(owner)||
                         nativeOptimizerGroupBlock(this.state,owner))
                         continue;
+                    // One already-registered native evaluator owns the
+                    // fixed-reference holdout. Unlike training SPS, its
+                    // checkpoint-bound receipts may decide whether further
+                    // physical experience is necessary. Never advance an
+                    // approved round before the frozen suites have reported.
+                    const rules=evaluationRules(owner.evaluation_stop);
+                    const missing=rules.length?missingFinalEvaluationRules(owner):[];
+                    if(missing.length) {
+                        if(!finalEvaluationPending(snapshot,owner,Date.now()))
+                            throw Error('Native optimizer completed but its independent final evaluations did not arrive before the approved evaluation window closed.');
+                        const reason='Awaiting independent final evaluation of native checkpoint '+
+                            owner.checkpoint_model_sha256.slice(0,12)+' before the next collection.';
+                        if(plan.reason!==reason)update(plan.status,reason);
+                        continue;
+                    }
+                    const cohort=rules.length?owner.evaluation_candidates?.find(item=>
+                        item.checkpoint_sha256===owner.checkpoint_model_sha256):null;
+                    const receipts=rules.map(rule=>cohort.receipts[rule.suite_id]);
+                    const passed=rules.length>0&&evaluationComplete(
+                        owner.evaluation_stop.all_of?{all_of:receipts}:receipts[0],
+                        owner.evaluation_stop,owner.dispatch_id,
+                    );
                     const nextCount=plan.completed_rounds+1;
                     // The source and output checkpoints were verified by
                     // the exact collector/optimizer group owners above.
@@ -4641,15 +4663,28 @@ class ExperimentHub {
                         optimizer_bundle_id:bundleId,
                         checkpoint_job_id:owner.id,
                         checkpoint_sha256:owner.checkpoint_model_sha256,
+                        ...(receipts.length?{
+                            evaluation_receipts:receipts.map(receipt=>({
+                                suite_id:receipt.suite_id,
+                                suite_sha256:receipt.suite_sha256,
+                                checkpoint_sha256:receipt.checkpoint_sha256,
+                                dispatch_id:receipt.dispatch_id,
+                                successes:receipt.successes,
+                                trials:receipt.trials,
+                            })),
+                            evaluation_stop_satisfied:passed,
+                        }:{}),
                         ...(plan.collector_seed_offset===undefined?{}:{
                             collector_seed_offset:
                                 plan.collector_seed_offset+plan.completed_rounds,
                         }),
                     }];
-                    update(nextCount===plan.round_count?'complete':'pending_collectors',
-                        nextCount===plan.round_count
-                            ?'All approved native collection and optimizer rounds completed.'
-                            :'Starting fresh physical collection against the newly verified checkpoint.',
+                    update(passed||nextCount===plan.round_count?'complete':'pending_collectors',
+                        passed
+                            ?'Independent fixed-reference evaluation target met; further authorized native training rounds are stopped.'
+                            :nextCount===plan.round_count
+                                ?'All approved native collection and optimizer rounds completed.'
+                                :'Independent evaluation did not meet its target; collecting fresh native experience from the latest verified checkpoint.',
                         {
                             completed_rounds:nextCount,
                             round_history:history,
