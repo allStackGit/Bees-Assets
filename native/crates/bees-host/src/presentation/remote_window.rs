@@ -1290,6 +1290,24 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
         (None,Some(("obstacle",target))) if target["mining"]==true => {
             ("support",json!({"action":{"Mining":{"asteroid_id":target["id"]}}}))
         }
+        (None,Some(("obstacle",target))) if
+            state["campaign_objective"]["kind"] == "demolition" &&
+            state["campaign_objective"]["attacking_side"].as_i64() ==
+                Some(i64::from(peer.side)) &&
+            target["id"] == state["campaign_objective"]["target_map_object_id"] => {
+            // Only fog-visible physical target colliders arrive on the
+            // network. Use the authoritative bounds rather than trusting
+            // a guessed location or changing the regular point-fire API.
+            let points=target["collider_bounds"].as_array()
+                .filter(|points|points.len()==2)
+                .ok_or_else(||invalid("demolition target lacks verified collider bounds"))?;
+            let min=point_from_wire(&points[0])
+                .ok_or_else(||invalid("demolition target bounds are invalid"))?;
+            let max=point_from_wire(&points[1])
+                .ok_or_else(||invalid("demolition target bounds are invalid"))?;
+            let point=(min+max)*0.5;
+            ("fire",json!({"target":{"x":point.x,"y":point.y}}))
+        }
         (Some(TargetMode::Heal),Some(("ship",target))) if target["friendly"]==true => {
             ("support",json!({"action":{"Heal":{"beehive_ids":[target["id"]]}}}))
         }
