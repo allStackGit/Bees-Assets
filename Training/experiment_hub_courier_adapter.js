@@ -150,7 +150,14 @@ function courierMetrics(source) {
     // Preserve the handful of whole-run GPU placement decisions before
     // optional per-lineage details. The append-only Courier event still
     // contains every original measurement for full native history.
-    const primary=name=>name.startsWith('training_live_')||
+    const primary=name=>[
+        'training_profile_round','training_end_to_end_steps_per_second',
+        'training_useful_steps_per_second','training_total_useful_steps',
+        'training_collector_workers','training_lineage_workers',
+        'training_sim_processes','training_gpu_devices_active',
+        'training_gpu_devices_assigned','training_slowest_worker',
+        'training_shared_last_wire_worker',
+    ].includes(name)||name.startsWith('training_live_')||
         name.startsWith('training_gpu_memory_')||
         name.startsWith('training_gpu_placement_')||
         name.startsWith('training_gpu_output_')||
