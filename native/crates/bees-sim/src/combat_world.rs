@@ -1800,7 +1800,13 @@ impl CombatWorld {
         {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
-        if snapshot.source_spawn_configuration != self.source_spawn_configuration_checkpoint() {
+        let authored_spawn = self.source_spawn_configuration_checkpoint();
+        let recovered_spawn = &snapshot.source_spawn_configuration;
+        if recovered_spawn.full_asteroid_stage != authored_spawn.full_asteroid_stage ||
+            recovered_spawn.fragments != authored_spawn.fragments ||
+            authored_spawn.scout_beacon_specs.iter().any(|(&id, spec)|
+                recovered_spawn.scout_beacon_specs.get(&id) != Some(spec)
+            ) {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1884,6 +1890,14 @@ impl CombatWorld {
             ship.side <= 0 || !ship.vitals.valid_recovery() ||
             (physics.ships()[index].active && ship.vitals.is_dead()) ||
             ship_by_id.insert(ship.entity_id, index).is_some()
+        ) {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        if snapshot.source_spawn_configuration.scout_beacon_specs.iter().any(
+            |(&id, spec)| !spec.valid() ||
+                ship_by_id.get(&id).is_none_or(|&index|
+                    snapshot.ships[index].ship_type != scout::SCOUT_TYPE
+                )
         ) {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
@@ -2055,7 +2069,7 @@ impl CombatWorld {
             ) ||
             matches!(controller.special, Some(
                 policy::PolicyShipSpecial::Scout(_),
-            )) && !self.scout_beacon_specs.contains_key(&id)
+            )) && !snapshot.source_spawn_configuration.scout_beacon_specs.contains_key(&id)
         ) ||
             policy.decision_seen.iter().any(|&id|
                 id == 0 || i64::try_from(id).is_err()
@@ -2344,6 +2358,7 @@ impl CombatWorld {
         self.next_entity_id = snapshot.next_entity_id;
         self.ships = snapshot.ships;
         self.ship_by_id = ship_by_id;
+        self.scout_beacon_specs = snapshot.source_spawn_configuration.scout_beacon_specs;
         self.projectiles = snapshot.projectiles;
         self.projectile_by_id = projectile_by_id;
         self.free_projectile_slots = snapshot.free_projectile_slots;

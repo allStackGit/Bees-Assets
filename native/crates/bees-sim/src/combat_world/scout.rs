@@ -40,7 +40,7 @@ pub struct NativeBeaconTargetSource {
 }
 
 impl ScoutBeaconSpec {
-    fn valid(&self) -> bool {
+    pub(super) fn valid(&self) -> bool {
         self.combat_activity.is_none_or(NativeCombatActivity::valid) &&
             self.beacon_asset.ship_type == BEACON_TYPE &&
             !self.beacon_vitals.is_dead() &&
