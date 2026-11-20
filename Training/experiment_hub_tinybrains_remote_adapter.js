@@ -74,16 +74,15 @@ function createTinyBrainsRemoteRolloutAdapter({
     if(!slotPorts||typeof slotPorts!=='object'||Array.isArray(slotPorts)||
         Object.keys(slotPorts).length>8||
         Object.keys(slotPorts).some(key=>!/^(?:0|[1-7])$/.test(key))||
+        Object.values(slotPorts).some(value=>!Number.isSafeInteger(value)||
+            value<1024||value>65535)||
         (Object.keys(slotPorts).length>0&&
             !Object.values(slotPorts).includes(port)))
         throw Error('TinyBrains local collector slots require 1–8 approved ports including the base port.');
     const slots=Object.entries(slotPorts).map(([slot,listenerPort])=>({
         slot:Number(slot),endpoint:host+':'+listenerPort,
     })).sort((a,b)=>a.slot-b.slot);
-    if(slots.some(item=>!Number.isSafeInteger(Number(item.endpoint.split(':')[1]))||
-            Number(item.endpoint.split(':')[1])<1024||
-            Number(item.endpoint.split(':')[1])>65535)||
-        new Set(slots.map(item=>item.endpoint)).size!==slots.length)
+    if(new Set(slots.map(item=>item.endpoint)).size!==slots.length)
         throw Error('TinyBrains collector listener ports must be distinct nonprivileged ports.');
 
     if(typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
