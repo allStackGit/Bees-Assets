@@ -71,6 +71,10 @@ if [[ "$MODE" == status ]]; then
     echo "Agent environment: $ENVFILE (private; contents suppressed)"
     exit 0
 fi
+if [[ "$MODE" == install && -f "$HOME/.config/systemd/user/$SERVICE" ]]; then
+    echo "An existing Hub agent already owns this Linux user. Do not install a second agent." >&2
+    exit 1
+fi
 if [[ "$MODE" == install && -e "$ENVFILE" ]]; then
     echo "An agent is already installed here. Use 'update'; never overwrite its token." >&2
     exit 1
@@ -127,7 +131,7 @@ sync_checkout() {
     if [[ ! -d "$dir/.git" ]]; then
         git clone --filter=blob:none --depth=1 --branch "$branch" "$url" "$dir"
     else
-        [[ -z "$(git -C "$dir" status --porcelain)" ]] ||
+        [[ -z "$(git -C "$dir" status --porcelain --untracked-files=no)" ]] ||
             { echo "Refusing to change a dirty checkout: $dir" >&2; exit 1; }
         [[ "$(git -C "$dir" branch --show-current)" == "$branch" ]] ||
             { echo "Unexpected source branch at $dir" >&2; exit 1; }
