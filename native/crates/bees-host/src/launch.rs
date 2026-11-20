@@ -3439,24 +3439,28 @@ fn recover_generated_library_battle(
         let checkpoint = run.join("native-host-checkpoint.json");
         if !checkpoint.is_file() { continue; }
         let source = root.join("replay-source-run.json");
-        if !source.is_file() { continue; }
         let saved_path = root.join("native-quick-battle-start.json");
         if run.is_symlink() || checkpoint.is_symlink() ||
-            source.is_symlink() || saved_path.is_symlink() ||
-            !saved_path.is_file()
+            source.is_symlink() || saved_path.is_symlink()
         {
+            return Err(invalid(
+                "generated battle recovery path is a symlink",
+            ).into());
+        }
+        // A committed battle no longer needs its generated source. If
+        // its original file is missing or its archived contents changed,
+        // the terminal receipt still owns the completed game's outcome.
+        // An unfinished checkpoint must NEVER be silently skipped because
+        // the archived source disappeared: that would start a new game
+        // instead of recovering or explicitly reporting the lost input.
+        if terminal_recording::complete_committed_recording(&run)? { continue; }
+        if !source.is_file() || !saved_path.is_file() {
             return Err(invalid(
                 "interrupted generated battle has no owned immutable source archive",
             ).into());
         }
         let saved = QuickBattleStart::load(&saved_path)?;
         if saved.remote_host != remote_host { continue; }
-        // The completed World is owned by its immutable run receipt, not
-        // today's archived source. Finish a committed replay footer and
-        // skip it BEFORE interpreting that source as a live recovery input.
-        // Only unfinished Worlds require the original source digest and
-        // checkpoint-enabled configuration to remain unchanged.
-        if terminal_recording::complete_committed_recording(&run)? { continue; }
         let current = QuickBattleStart::capture(&source, remote_host)?
             .ok_or_else(|| invalid(
                 "interrupted generated game no longer enables native World recovery",
