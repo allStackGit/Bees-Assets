@@ -283,6 +283,19 @@ impl NativeHostCheckpointFile {
             Ok(())
         })
     }
+
+    /// A small, read-only projection for Experiment Hub. Written strictly
+    /// AFTER the authoritative cohort is durable; this file is never used
+    /// to resume Worlds or accept optimizer input. A crash may leave it
+    /// behind the latest checkpoint but never ahead of committed gameplay.
+    pub fn persist_progress(
+        &self, progress: &serde_json::Value,
+    ) -> Result<(), CheckpointFileError> {
+        persist_atomic(&self.path.with_extension("progress.json"), |writer| {
+            serde_json::to_writer(writer, progress)?;
+            Ok(())
+        })
+    }
 }
 
 /// One durable checkpoint write path for both network connection identity
