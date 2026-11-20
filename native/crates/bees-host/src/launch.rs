@@ -2314,21 +2314,33 @@ fn run_reassign_authored_ship(
         // ledger. Verify it against the currently selected authored scene;
         // after that, FleetShip ID and the saved destination govern every
         // route variant, even when its initial source squad differs.
-        let first = catalog.battles.iter().find(|battle| battle.mission.as_ref()
-            .is_some_and(|mission| mission.player_side == side))
-            .ok_or_else(|| invalid("no authored player campaign mission"))?;
-        let scene = load_native_fleet_edit_scene(&resolve(root, first.config_for(&progress)))?;
-        let parent = scene.entities.iter().find_map(|entity| match entity {
-            NativeAuthoredEntity::Ship(ship) if ship.side == side &&
-                ship.fleet_ship_id == Some(fleet_ship_id) => Some(ship.entity_id),
-            _ => None,
-        }).ok_or_else(|| invalid("original FleetShip is absent from the active campaign source"))?;
-        if !scene.source_squads.iter().any(|squad|
-            squad.side == side && squad.saved_squad_id == Some(from_squad) &&
-            squad.player_permissions.user_controlled &&
-            squad.members.contains(&parent))
-        {
-            return Err(invalid("original FleetShip source squad differs from the first saved assignment").into());
+        let has_upcoming = catalog.battles.iter().filter_map(|battle|
+            battle.mission.as_ref()).any(|mission|
+                mission.player_side == side && !progress.completed(&mission.id));
+        let mut source_proven = false;
+        for battle in &catalog.battles {
+            let Some(mission) = battle.mission.as_ref().filter(|mission|
+                mission.player_side == side &&
+                (!has_upcoming || !progress.completed(&mission.id))
+            ) else { continue };
+            let scene = load_native_fleet_edit_scene(
+                &resolve(root, battle.config_for(&progress)))?;
+            let Some(parent) = scene.entities.iter().find_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) if ship.side == mission.player_side &&
+                    ship.fleet_ship_id == Some(fleet_ship_id) => Some(ship.entity_id),
+                _ => None,
+            }) else { continue };
+            if scene.source_squads.iter().any(|squad|
+                squad.side == side && squad.saved_squad_id == Some(from_squad) &&
+                squad.player_permissions.user_controlled &&
+                squad.members.contains(&parent))
+            {
+                source_proven = true;
+                break;
+            }
+        }
+        if !source_proven {
+            return Err(invalid("original FleetShip source squad differs from every active authored mission assignment").into());
         }
     }
     let mut projected = progress.authored_roster_for_side(side);
@@ -2680,14 +2692,18 @@ fn authored_menu_fleet(
     progress: &battle_catalog::CampaignProgress<'_>,
 ) -> Vec<(i32, i64, i64)> {
     let mut listed = Vec::new();
-    let mut seen_side = HashSet::new();
+    let mut seen_fleet = HashSet::new();
+    let upcoming_sides = catalog.battles.iter().filter_map(|entry|
+        entry.mission.as_ref().filter(|mission|
+            !progress.completed(&mission.id)).map(|mission| mission.player_side))
+        .collect::<HashSet<_>>();
     for entry in &catalog.battles {
         let Some(mission) = entry.mission.as_ref() else { continue };
-        if seen_side.contains(&mission.player_side) { continue; }
+        if upcoming_sides.contains(&mission.player_side) &&
+            progress.completed(&mission.id) { continue; }
         let path = resolve(root, entry.config_for(progress));
         let Ok(path) = path.canonicalize() else { continue };
         let Ok(scene) = load_native_fleet_edit_scene(&path) else { continue };
-        seen_side.insert(mission.player_side);
         for squad in &scene.source_squads {
             let Some(saved_squad_id) = squad.saved_squad_id else { continue };
             if squad.side != mission.player_side ||
@@ -2701,7 +2717,8 @@ fn authored_menu_fleet(
                 }) else { continue };
                 let Some(fleet_id) = ship.fleet_ship_id else { continue };
                 if progress.original_fleet_is_editable(mission.player_side, fleet_id) &&
-                    scene.can_reassign_authored_ship(mission.player_side, entity_id)
+                    scene.can_reassign_authored_ship(mission.player_side, entity_id) &&
+                    seen_fleet.insert((mission.player_side, fleet_id))
                 {
                     listed.push((mission.player_side, fleet_id, saved_squad_id));
                 }
