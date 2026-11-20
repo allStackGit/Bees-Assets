@@ -1942,7 +1942,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 .ok_or_else(|| invalid("--capture requires an output .ppm path"))?));
         } else if flag == "--output-dir" && output.is_none() {
             output = Some(PathBuf::from(args.next()
-                .ok_or_else(|| invalid("--output-dir requires a new directory path"))?));
+                .ok_or_else(|| invalid("--output-dir requires a new or recoverable directory path"))?));
         } else if flag == "--replay-inputs" && replay_inputs.is_none() {
             replay_inputs = Some(PathBuf::from(args.next()
                 .ok_or_else(|| invalid("--replay-inputs requires a trace path"))?));
@@ -4576,7 +4576,23 @@ fn run_battle(
     if config.host_recovery_checkpoint.is_some() && replay_inputs.is_some() {
         return Err(invalid("native host continuation cannot share an input replay").into());
     }
-    if let Some(directory) = output { fs::create_dir(directory)?; }
+    if let Some(directory) = output {
+        if directory.exists() || directory.is_symlink() {
+            // Only the same original World/Level/journal transaction can
+            // resume a prior gameplay output directory. New unrelated
+            // sessions retain the create-only saved battle contract.
+            if config.host_recovery_checkpoint.is_none() ||
+                directory.is_symlink() || !directory.is_dir() ||
+                !directory.join("native-host-checkpoint.json").is_file()
+            {
+                return Err(invalid(
+                    "an existing native output directory requires its original durable host recovery checkpoint",
+                ).into());
+            }
+        } else {
+            fs::create_dir(directory)?;
+        }
+    }
     let host_checkpoint_file = config.host_recovery_checkpoint.as_ref().map(|path| {
         let path = output.map_or_else(
             || resolve(root, path), |dir| dir.join("native-host-checkpoint.json"),
