@@ -86,6 +86,13 @@ pub trait NativePolicyInference {
     /// must also retain the run identity and immutable model artifact SHA.
     fn model_generation(&self) -> u64 { 0 }
 
+    /// A restart must bind the original resident weight artifact, not
+    /// merely a policy file path or matching model generation. Inference
+    /// backends that cannot prove identity cannot resume live episodes.
+    /// Weight identity alone does not imply that stochastic sampler/RNG
+    /// state has been recovered by the backend.
+    fn checkpoint_model_digest(&self) -> Option<[u8; 32]> { None }
+
     /// Per row: raw continuous samples, continuous log probabilities,
     /// then selected discrete log probabilities. Empty for inference-only models.
     fn behavior_statistics(&self) -> &[f32] { &[] }
@@ -105,6 +112,11 @@ pub struct PolicyInferenceRequired;
 
 impl NativePolicyInference for NoPolicyInference {
     type Error = PolicyInferenceRequired;
+
+    fn checkpoint_model_digest(&self) -> Option<[u8; 32]> {
+        // Distinct sentinel for explicitly model-free gameplay Levels.
+        Some([0_u8; 32])
+    }
 
     fn forward(
         &mut self,

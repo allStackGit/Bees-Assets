@@ -344,6 +344,11 @@ impl NativePolicyInference for ResidentPolicyProcess {
 
     fn model_generation(&self) -> u64 { self.model_generation }
 
+    fn checkpoint_model_digest(&self) -> Option<[u8; 32]> {
+        (!self.unavailable && self.manifest_digest != [0_u8; 32])
+            .then_some(self.manifest_digest)
+    }
+
     fn forward(
         &mut self,
         keys: &[PolicyAgentKey],
