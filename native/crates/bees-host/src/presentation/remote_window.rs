@@ -604,6 +604,29 @@ impl PeerClient {
                     self.notice = text;
                     self.metrics.battle_result_receipts += 1;
                 }
+                Some("briefing_result") => {
+                    if !self.authenticated {
+                        return Err(invalid("unauthenticated campaign briefing receipt").into());
+                    }
+                    let request=message["request_id"].as_u64()
+                        .ok_or_else(||invalid("campaign briefing receipt has no request ID"))?;
+                    let processed=message["processed"].as_bool()
+                        .ok_or_else(||invalid("campaign briefing receipt has no result"))?;
+                    let feedback=message["feedback"].as_str()
+                        .filter(|text|!text.is_empty())
+                        .ok_or_else(||invalid("campaign briefing receipt has no feedback"))?;
+                    let Some((world,revision,sequence,id))=self.briefing_pending
+                    else {return Err(invalid("unsolicited campaign briefing receipt").into())};
+                    if request!=id {
+                        return Err(invalid("campaign briefing receipt does not match its request").into());
+                    }
+                    self.briefing_pending=None;
+                    if processed {
+                        self.briefing_approved=Some((world,revision,sequence));
+                    }
+                    self.metrics.briefing_receipts+=1;
+                    self.notice=format!("Story {request}: {feedback}");
+                }
                 Some("input_result") => {
                     if !self.authenticated {
                         return Err(invalid("native host acknowledged an unauthenticated order").into());
@@ -623,23 +646,9 @@ impl PeerClient {
                         return Err(invalid("out-of-order native host command acknowledgment").into());
                     }
                     self.last_response_request=request;
-                    let briefing_result=self.briefing_pending
-                        .is_some_and(|(_,_,_,id)|id==request);
-                    if let Some((world,revision,sequence,id))=self.briefing_pending {
-                        if id==request {
-                            self.briefing_pending=None;
-                            if processed {
-                                self.briefing_approved=Some((world,revision,sequence));
-                            }
-                        }
-                    }
-                    if briefing_result {
-                        self.metrics.briefing_receipts+=1;
-                    }else{
-                        self.metrics.acknowledgments+=1;
-                        if processed {self.metrics.orders_accepted+=1;}
-                        else {self.metrics.orders_rejected+=1;}
-                    }
+                    self.metrics.acknowledgments+=1;
+                    if processed {self.metrics.orders_accepted+=1;}
+                    else {self.metrics.orders_rejected+=1;}
                     if self.held_fire_begin_request == Some(request) {
                         self.held_fire_begin_request = None;
                         // A rejected Begin must not cause 30 new attempts
