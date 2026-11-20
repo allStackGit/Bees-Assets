@@ -1040,6 +1040,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · '+lastRound.collector_world_partitions.reduce(
                         (total,part)=>total+part.world_count,0)+' physical Worlds'
                     :'')+
+                (lastRound?.collector_work_totals
+                    ?' · '+lastRound.collector_work_totals.successful_world_steps.toLocaleString()+
+                        ' physical World steps · '+
+                        lastRound.collector_work_totals.successful_policy_rows.toLocaleString()+
+                        ' policy rows'
+                    :'')+
                 (lastRound?.collector_world_partitions?.[0]?.source_run_contract_sha256
                     ?' · Level source '+
                         lastRound.collector_world_partitions[0].source_run_contract_sha256.slice(0,12)
@@ -1076,6 +1082,25 @@ document.addEventListener('DOMContentLoaded', () => {
                             (entry.evaluation_stop_satisfied?' (target met)':' (below target)')
                         :'')+
                     ' · collectors '+entry.collector_job_ids.join(', ')+
+                    (entry.collector_work_totals
+                        ?' · observed '+entry.collector_work_totals.successful_world_steps+
+                            ' World steps / '+
+                            entry.collector_work_totals.successful_policy_rows+
+                            ' policy rows; '+entry.collector_work_totals.sum_collector_wall_seconds.toFixed(2)+
+                            ' summed independent collector seconds (not fleet wall time); '+
+                            entry.collector_work_totals.verified_gpu_model_forwards+
+                            ' verified GPU forwards'
+                        :'')+
+                    (entry.collector_work?.length
+                        ?' · per machine '+entry.collector_work.map(worker=>
+                            worker.job_id.slice(-8)+': '+
+                            worker.successful_world_steps+' steps, '+
+                            worker.successful_policy_rows+' policy rows, '+
+                            worker.collector_wall_seconds.toFixed(2)+' s, '+
+                            worker.rollout_processes+' rollout processes, '+
+                            worker.physics_workers_per_process+' physics workers/process'
+                        ).join(' | ')
+                        :'')+
                     (entry.collector_world_partitions?.length
                         ?' · physical partitions '+entry.collector_world_partitions.map(part=>
                             part.job_id.slice(-8)+': ['+part.world_start+','+
@@ -3881,9 +3906,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                 expected_job_ids:optimizerGroup.map(member=>member.id),
                                 confirm_restart:true,
                             });
+                            const belongsToRound=(state.native_round_plans||[])
+                                .some(plan=>plan.optimizer_bundle_id===j.resource_bundle.id);
                             feedback('hub-job-message',
                                 'New synchronized optimizer group '+result.bundle_id+
-                                ' reserved. Authorize its group Start after fresh GPU admission.');
+                                ' reserved. '+(belongsToRound
+                                    ?'Use Authorize replacement optimizer in the native multi-round plan before Hub can schedule its Start.'
+                                    :'Authorize the new group Start after fresh GPU admission.'));
                             await reload();
                         }catch(error){
                             feedback('hub-job-message',error.message);
