@@ -193,8 +193,6 @@ if has_project tinybrains; then
     uv venv --python 3.11.18 "$VENV/tinybrains"
     uv pip install --python "$VENV/tinybrains/bin/python" --index-url https://download.pytorch.org/whl/cpu 'torch==2.6.0'
     uv pip install --python "$VENV/tinybrains/bin/python" \
-        -r "$TB_ROOT/requirements-lock.txt"
-    uv pip install --python "$VENV/tinybrains/bin/python" --no-deps \
         -e "$TB_ROOT/upstream/ants/baselines" -e "$TB_ROOT"
     (cd "$TB_ROOT" && "$VENV/tinybrains/bin/python" -B -c 'import ants_mapoca.remote_rollout; from ants_mapoca.env import Engine')
 fi
