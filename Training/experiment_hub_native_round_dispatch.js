@@ -66,14 +66,17 @@ function checkPlan(plan,orders) {
         !Number.isSafeInteger(orders.round)||orders.round<1)
         throw Error('Hub round dispatch requires a native v2 source contract work order.');
     const seen=new Set();
+    const machines=new Set();
     for(const selected of plan.collectors) {
         if(!selected||!jobs.has(selected.id)||seen.has(selected.id)||
+            machines.has(selected.machine_id)||
             typeof selected.machine_id!=='string'||!selected.machine_id||
             !/^[a-z][a-z0-9_-]{0,47}$/.test(selected.machine_id)||
             !selected.resources||typeof selected.resources!=='object'||
             Array.isArray(selected.resources))
             throw Error('Each Hub dispatch allocation must identify one issued collector and machine.');
         seen.add(selected.id);
+        machines.add(selected.machine_id);
         const allocation=selected.resources;
         const job=jobs.get(selected.id);
         const physics=job.physics_workers??1;
