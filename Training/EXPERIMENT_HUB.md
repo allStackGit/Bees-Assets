@@ -3094,7 +3094,7 @@ enforceable OS GPU compute and VRAM quotas, production-qualified Linux cooperati
 independent non-PyTorch shared GPU adapters, seamless adoption of
 independently running trainers,
 production coexistence qualification of the
-CPU-only scheduler, production independent evaluators for non-Bees adapters,
+CPU-only scheduler, production qualification of the implemented TinyBrains and Courier independent evaluators,
 trusted production-source metrics adapters for additional
 projects, safe live rebalancing, and comprehensive
 CLI parity for all runtime configuration controls remain future work.
