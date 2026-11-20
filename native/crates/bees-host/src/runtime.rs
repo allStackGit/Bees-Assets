@@ -201,10 +201,18 @@ pub struct NativeHostRecoveryCheckpoint {
     sampling_state: Vec<u8>,
     connection_sha256: [u8; 32],
     notifications: serde_json::Value,
+    /// Authoritative launcher-owned round/allocator/campaign progress.
+    /// The host does not interpret the concrete owner's schema.
+    launcher: serde_json::Value,
 }
 
 impl NativeHostRecoveryCheckpoint {
     pub fn notifications(&self) -> &serde_json::Value { &self.notifications }
+    pub fn launcher(&self) -> &serde_json::Value { &self.launcher }
+    pub fn with_launcher(mut self, launcher: serde_json::Value) -> Self {
+        self.launcher = launcher;
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -276,6 +284,18 @@ where
         checkpoint_file.persist(&snapshot).map_err(HostRecoveryError::File)
     }
 
+    pub fn persist_recovery_checkpoint_with_launcher(
+        &mut self, checkpoint_file: &NativeHostCheckpointFile,
+        launcher: serde_json::Value,
+    ) -> Result<(), HostRecoveryError>
+    where
+        M: NativeHostRecoverableMetadata,
+        S: NativeHostRecoverableNotifications,
+    {
+        let snapshot = self.recovery_checkpoint()?.with_launcher(launcher);
+        checkpoint_file.persist(&snapshot).map_err(HostRecoveryError::File)
+    }
+
     /// Resume only from a committed cohort file. Missing or malformed
     /// data is fatal for recovery, never interpreted as a fresh episode.
     pub fn restore_recovery_file(
@@ -341,7 +361,7 @@ where
             model_generation: self.model.model_generation(),
             model_sha256, sampling_state,
             connection_sha256: self.connection_recovery_digest()?,
-            notifications,
+            notifications, launcher: serde_json::Value::Null,
         })
     }
 
