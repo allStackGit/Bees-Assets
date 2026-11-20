@@ -11,7 +11,7 @@ use crate::protocol::{
     ValidatedTargetingSelection, COMMAND_STRATEGIES, SHOOTING_STRATEGIES,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LocalCommandKind {
     Aggressive,
     BombingRun,

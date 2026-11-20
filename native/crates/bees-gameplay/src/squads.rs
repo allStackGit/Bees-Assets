@@ -9,6 +9,11 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bees_hivemind::session::SquadLifetime;
+use bees_hivemind::dispatch::LocalCommandKind;
+use bees_hivemind::protocol::{
+    StrategyIdentity, ValidatedTargetingSelection, TARGETING_STRATEGIES,
+};
+use crate::squad_targeting::NativeInstalledTargeting;
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use bees_sim::ship_assets::BEACON_TYPE;
 use bees_sim::episode_terminal::{
@@ -81,7 +86,8 @@ pub enum SquadRosterChange {
     },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SquadRosterMeasurements {
     pub squads_registered: u64,
     pub minion_squads_registered: u64,
@@ -111,6 +117,57 @@ pub struct NativeSquadEntry {
     pub original_squad_count: Option<u32>,
 }
 
+/// A source-ordered, lossless snapshot of the live Level.State.Squads.
+/// Indexes (ship owner, Queen wave, and ordered lifetime lookup) are
+/// derived on recovery rather than persisted as competing truth.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeSquadRosterCheckpoint {
+    schema_version: u32,
+    squads: Vec<NativeSquadEntryCheckpoint>,
+    measurements: SquadRosterMeasurements,
+    failed: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSquadEntryCheckpoint {
+    owner: SquadLifetime,
+    side: i32,
+    members: Vec<i64>,
+    mother_squad: Option<SquadLifetime>,
+    queen_wave: Option<(i64, u64)>,
+    command_bans: Option<Vec<LocalCommandKind>>,
+    targeting: Option<NativeTargetingCheckpoint>,
+    source_hotkey_number: Option<u32>,
+    original_squad_count: Option<u32>,
+}
+
+/// A server selection is serialized by stable protocol ID, not by an
+/// independently owned strategy name with a static lifetime.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeTargetingCheckpoint {
+    strategy_id: u8,
+    outcome_id: i64,
+    enemy: Option<SquadLifetime>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SquadRosterRestoreError {
+    InvalidVersion,
+    FailedRoster,
+    InvalidOwner,
+    InvalidMembership,
+    DuplicateSquad,
+    DuplicateShip,
+    InvalidTargeting,
+    InvalidHotkey,
+    InvalidQueenWave,
+    InvalidMeasurements,
+    IncompleteRoster,
+}
+
 #[derive(Default)]
 pub struct NativeSquadRoster {
     active: BTreeMap<SquadLifetime, NativeSquadEntry>,
@@ -125,6 +182,185 @@ pub struct NativeSquadRoster {
 
 impl NativeSquadRoster {
     pub fn new() -> Self { Self::default() }
+
+    /// Snapshot only authoritative source-owned squad fields. Physical
+    /// state remains in the one CombatWorld; indexes are recomputed.
+    pub fn checkpoint(&self) -> NativeSquadRosterCheckpoint {
+        let squads = self.source_order.iter().map(|owner| {
+            let entry = self.active.get(owner)
+                .expect("canonical source order contains each live squad");
+            NativeSquadEntryCheckpoint {
+                owner: entry.owner,
+                side: entry.side,
+                members: entry.members.clone(),
+                mother_squad: entry.mother_squad,
+                queen_wave: entry.queen_wave,
+                command_bans: entry.command_bans.clone(),
+                targeting: entry.targeting.map(|target| NativeTargetingCheckpoint {
+                    strategy_id: target.selection.strategy.id,
+                    outcome_id: target.selection.outcome_id,
+                    enemy: target.enemy,
+                }),
+                source_hotkey_number: entry.source_hotkey_number,
+                original_squad_count: entry.original_squad_count,
+            }
+        }).collect();
+        NativeSquadRosterCheckpoint {
+            schema_version: 1,
+            squads,
+            measurements: self.measurements,
+            failed: self.failed,
+        }
+    }
+
+    /// Prepare the exact source roster from a committed Level checkpoint,
+    /// validating identities against the restored authoritative CombatWorld.
+    /// No caller state changes on failure. This is a constituent of a FULL
+    /// Level recovery transaction, not permission to discard active command,
+    /// episode, or connection-owned reservation ledgers.
+    pub fn prepare_restore(
+        checkpoint: NativeSquadRosterCheckpoint,
+        world: &CombatWorld,
+    ) -> Result<Self, SquadRosterRestoreError> {
+        use SquadRosterRestoreError as Error;
+        if checkpoint.schema_version != 1 {
+            return Err(Error::InvalidVersion);
+        }
+        if checkpoint.failed {
+            return Err(Error::FailedRoster);
+        }
+        if checkpoint.measurements.peak_squads < checkpoint.squads.len() ||
+            checkpoint.measurements.squads_registered < checkpoint.squads.len() as u64 {
+            return Err(Error::InvalidMeasurements);
+        }
+        let mut restored = Self::new();
+        let mut squad_numbers = HashSet::with_capacity(checkpoint.squads.len());
+        let mut hotkeys = HashSet::new();
+        let mut original_counts = HashMap::<(i64, i32), u32>::new();
+        let mut active_minions = 0u64;
+        for saved in checkpoint.squads {
+            if !saved.owner.valid() || saved.side <= 0 {
+                return Err(Error::InvalidOwner);
+            }
+            // The source may recycle a numeric squad ID only AFTER the
+            // previous lifecycle is retired; do not revive two at once.
+            if !squad_numbers.insert((saved.owner.level_id, saved.owner.squad_id)) {
+                return Err(Error::DuplicateSquad);
+            }
+            if saved.members.is_empty() {
+                return Err(Error::InvalidMembership);
+            }
+            if let Some(mother) = saved.mother_squad {
+                if !mother.valid() || mother.level_id != saved.owner.level_id {
+                    return Err(Error::InvalidOwner);
+                }
+                active_minions += 1;
+            }
+            if let Some(key) = saved.queen_wave {
+                if key.0 <= 0 || key.1 == 0 || saved.mother_squad.is_none() ||
+                    !world.ship(key.0).is_some_and(|queen|
+                        queen.ship_type == 17 && queen.side == saved.side
+                    ) ||
+                    restored.queen_wave_owner.insert(key, saved.owner).is_some()
+                {
+                    return Err(Error::InvalidQueenWave);
+                }
+            }
+            if let Some(number) = saved.source_hotkey_number {
+                if number == 0 || saved.original_squad_count.is_none_or(|total|
+                    number > total
+                ) || !hotkeys.insert((saved.owner.level_id, saved.side, number)) {
+                    return Err(Error::InvalidHotkey);
+                }
+            }
+            if let Some(total) = saved.original_squad_count {
+                if original_counts.insert((saved.owner.level_id, saved.side), total)
+                    .is_some_and(|previous| previous != total) {
+                    return Err(Error::InvalidHotkey);
+                }
+            }
+            if let Some(bans) = &saved.command_bans {
+                for (index, ban) in bans.iter().enumerate() {
+                    if bans[..index].contains(ban) {
+                        return Err(Error::InvalidMembership);
+                    }
+                }
+            }
+            let targeting = match saved.targeting {
+                None => None,
+                Some(target) => {
+                    let index = usize::from(target.strategy_id)
+                        .checked_sub(1).ok_or(Error::InvalidTargeting)?;
+                    let name = TARGETING_STRATEGIES.get(index)
+                        .ok_or(Error::InvalidTargeting)?;
+                    if target.outcome_id <= 0 ||
+                        target.enemy.is_some_and(|owner| !owner.valid()) {
+                        return Err(Error::InvalidTargeting);
+                    }
+                    Some(NativeInstalledTargeting {
+                        selection: ValidatedTargetingSelection {
+                            strategy: StrategyIdentity {
+                                id: target.strategy_id, name,
+                            },
+                            outcome_id: target.outcome_id,
+                        },
+                        enemy: target.enemy,
+                    })
+                }
+            };
+            for &ship_id in &saved.members {
+                if ship_id <= 0 ||
+                    !world.ship(ship_id).is_some_and(|ship|
+                        ship.side == saved.side && !ship.vitals.is_dead()
+                    ) ||
+                    !world.ship_body(ship_id).is_some_and(|body| body.active) {
+                    return Err(Error::InvalidMembership);
+                }
+                if restored.owner_by_ship.insert(ship_id, saved.owner).is_some() {
+                    return Err(Error::DuplicateShip);
+                }
+                if saved.queen_wave.is_some() {
+                    if !world.ship(ship_id).is_some_and(|ship| ship.ship_type == 22) {
+                        return Err(Error::InvalidQueenWave);
+                    }
+                }
+            }
+            let entry = NativeSquadEntry {
+                command_bans: saved.command_bans,
+                targeting,
+                owner: saved.owner,
+                side: saved.side,
+                members: saved.members,
+                mother_squad: saved.mother_squad,
+                queen_wave: saved.queen_wave,
+                source_hotkey_number: saved.source_hotkey_number,
+                original_squad_count: saved.original_squad_count,
+            };
+            restored.source_order.push(entry.owner);
+            restored.active.insert(entry.owner, entry);
+        }
+        if restored.owner_by_ship.len() != world.total_living_ships() {
+            return Err(Error::IncompleteRoster);
+        }
+        if checkpoint.measurements.minion_squads_registered < active_minions ||
+            checkpoint.measurements.squads_registered <
+                checkpoint.measurements.minion_squads_registered {
+            return Err(Error::InvalidMeasurements);
+        }
+        restored.measurements = checkpoint.measurements;
+        Ok(restored)
+    }
+
+    /// Atomic roster-only replacement for a caller that already committed
+    /// the matching CombatWorld and remaining Level owners.
+    pub fn restore_checkpoint(
+        &mut self, checkpoint: NativeSquadRosterCheckpoint,
+        world: &CombatWorld,
+    ) -> Result<(), SquadRosterRestoreError> {
+        let prepared = Self::prepare_restore(checkpoint, world)?;
+        *self = prepared;
+        Ok(())
+    }
 
     pub fn measurements(&self) -> SquadRosterMeasurements {
         self.measurements
