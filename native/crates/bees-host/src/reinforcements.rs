@@ -594,6 +594,7 @@ impl NativePolicyOnlyMetadata {
             // roster membership exist. Next-tick decision synchronization
             // discovers their CombatWorld policy bindings normally.
             let policy_agents = wave.policy_agents;
+            let group_agents = wave.group_agents.len();
             if !wave.group_agents.is_empty() {
                 for (ship_id, side, group_id) in wave.group_agents {
                     let team = events.group_delivery().and_then(|group| group.team_id(side))
@@ -612,7 +613,9 @@ impl NativePolicyOnlyMetadata {
                     ).map_err(|error| invalid(format!("Policy reinforcement admission: {error:?}")))?;
                 }
             }
-            events.record_reinforcements(tick, ships, squads, policy_agents)?;
+            events.record_reinforcements(
+                tick, ships, squads, policy_agents, group_agents,
+            )?;
         }
         if changed {
             self.reinforcement_wakeup = ReinforcementWakeup::from_waves(
