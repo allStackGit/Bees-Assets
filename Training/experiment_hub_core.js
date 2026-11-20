@@ -5121,6 +5121,7 @@ class ExperimentHub {
         return changed;
     }
     offerEvaluatorAction(machine,instance) {
+        if(!UUID.test(String(instance||'')))return [];
         const snapshot=this.state;
         const item=(snapshot.evaluator_actions||[]).find(action=>
             action.machine_id===machine.id&&action.status==='pending');
@@ -5205,6 +5206,11 @@ class ExperimentHub {
             throw Error('Native lifecycle reports require a locally enabled supported executor.');
         const acceptedReports=new Map();
         if(this.recordExecution(next,machine,reports,acceptedReports,report.evaluation_suites,received))
+            changed=true;
+        const evaluatorReports=value.evaluator_action_reports??[];
+        if(evaluatorReports.length&&!UUID.test(String(instance||'')))
+            throw Error('Evaluator action reports require a live agent instance identity.');
+        if(this.evaluatorActionReport(next,machine,evaluatorReports,instance))
             changed=true;
         const gpuReports=value.gpu_qualification_reports==null
             ?[]:value.gpu_qualification_reports;
@@ -5519,13 +5525,17 @@ class ExperimentHub {
                 'One-shot native agent signed off; review and re-arm automation with a continuously running agent.');
             return {machine_id:machine.id,status:'connected',
                 heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
-                lease_offers:[],execution_orders:[]};
+                lease_offers:[],execution_orders:[],evaluator_orders:[]};
         }
         // A --once agent closes its native session; never authorize a new
         // learner on the closing heartbeat when it cannot receive a Start.
         this.advancePendingDistributedGroups();
         this.advanceDistributedLaunches();
         this.advancePendingResourceBundles();
+        const nativeOrders=value.request_execution_orders===false
+            ?[]:this.executionOrders(machine.id);
+        const evaluatorOrders=value.request_execution_orders===false||nativeOrders.length
+            ?[]:this.offerEvaluatorAction(machine,instance);
         // An agent awaiting a slow native Start/Stop/probe can renew
         // authenticated liveness without receiving a second instruction.
         // This does not close the session or release native ownership.
@@ -5540,8 +5550,7 @@ class ExperimentHub {
                 // a process launch token. The agent checks it against sysfs.
                 gpu_bindings:physicalGpuBindings(machine,report,x.resources,x.gpu_bindings)||[],
             })),
-            execution_orders:value.request_execution_orders===false
-                ?[]:this.executionOrders(machine.id)};
+            execution_orders:nativeOrders,evaluator_orders:evaluatorOrders};
     }
     project(id) {
         const project = this.state.projects.find(p=>p.id===id);
