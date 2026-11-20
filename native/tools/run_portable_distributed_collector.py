@@ -95,6 +95,8 @@ def main():
                         help="private machine-owned transport credential, never supplied by a Hub job")
     parser.add_argument("--hub-job-id",
                         help="Hub-owned artifact/job UUID; requires exactly pinned work order")
+    parser.add_argument("--replaced-hub-job-id",
+                        help="machine-supervisor-approved failed predecessor artifact UUID")
     parser.add_argument("--cpu-quota", type=int,
                         help="Hub's acknowledged CPU quota for this job")
     parser.add_argument("--expected-collection-id")
@@ -115,6 +117,12 @@ def main():
         parser.error("dual-GPU native collection needs an authorized Hub GPU lease")
     if args.input_url and not args.collector_id:
         parser.error("--collector-id is required with --input-url")
+    if args.replaced_hub_job_id is not None and (
+            args.hub_job_id is None or
+            args.replaced_hub_job_id == args.hub_job_id or
+            re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                         args.replaced_hub_job_id) is None):
+        parser.error("collector replacement requires a distinct validated Hub predecessor")
     if args.hub_job_id is not None:
         if (args.collector_id is None or
                 re.fullmatch(r"[0-9a-f]{64}", str(args.expected_collection_id or "")) is None or
@@ -278,6 +286,9 @@ def main():
             *([] if upload_url is None else ["--upload-url", upload_url]),
             *([] if args.hub_job_id is None else [
                 "--hub-artifact-job-id", args.hub_job_id,
+            ]),
+            *([] if args.replaced_hub_job_id is None else [
+                "--previous-hub-artifact-job-id", args.replaced_hub_job_id,
             ]),
             *([] if not args.permit_leased_gpu else [
                 "--leased-gpu-inference", "--leased-gpu-count",
