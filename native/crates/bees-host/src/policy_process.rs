@@ -402,6 +402,20 @@ impl ResidentPolicyProcess {
         result
     }
 
+    /// After launching a new worker with the checkpoint's exact resident
+    /// model manifest, rebind the historical generation before the first
+    /// resumed inference batch. The host verifies the model digest and
+    /// sampling stream independently before committing any Level state.
+    pub fn bind_recovered_generation(
+        &mut self, generation: u64,
+    ) -> Result<(), PolicyProcessError> {
+        if self.unavailable || self.sequence != 0 || self.model_generation != 0 {
+            return Err(PolicyProcessError::Unavailable);
+        }
+        self.model_generation = generation;
+        Ok(())
+    }
+
     pub fn model_generation(&self) -> u64 { self.model_generation }
 
     pub fn model_manifest_sha256(&self) -> String {
