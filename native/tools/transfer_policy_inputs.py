@@ -231,13 +231,15 @@ def export_inputs(orders_file, collector_id, run, trainer, checkpoint, manifest,
 
 
 def import_inputs(archive_path, destination, policy_worker, interpreter=None,
-                  collector_id=None):
+                  collector_id=None, *, reuse_existing=False):
     started = time.perf_counter()
     archive_path = Path(archive_path).resolve(strict=True)
     target = Path(destination).absolute()
     parent = target.parent.resolve(strict=True)
-    if target.exists() or target.is_symlink():
-        raise FileExistsError(f"collector source destination must be new: {target}")
+    if target.is_symlink() or (target.exists() and
+            (not reuse_existing or not target.is_dir())):
+        raise FileExistsError(f"collector source destination must be an owned directory: {target}")
+    existing = target.exists()
     policy_worker = Path(policy_worker).resolve(strict=True)
     if not policy_worker.is_file():
         raise ValueError("native collector needs an installed local policy worker")
@@ -422,12 +424,33 @@ def import_inputs(archive_path, destination, policy_worker, interpreter=None,
         if actual != expected or info.get("source_contract_sha256") != expected:
             raise ValueError("local native collector scene or policy worker differs from issued task")
         check_learner(root / "manifest.json", root / "checkpoint.pt", orders["learner_slot"])
-        root.rename(target)
-        sync_directory(parent)
+        if existing:
+            # The old native rollout has hardcoded absolute model and scene
+            # paths inside its immutable run.json. Reconstruct the approved
+            # archive into a fresh private staging directory, then compare
+            # EVERY source file byte-for-byte before retaining that old path.
+            # A matching work-order digest by itself is not sufficient:
+            # local installed Python/model paths may have changed.
+            def pinned_files(directory):
+                found = {}
+                for candidate in directory.rglob("*"):
+                    if candidate.is_symlink():
+                        raise ValueError("native collector source cannot contain symlinks")
+                    if candidate.is_file():
+                        found[candidate.relative_to(directory).as_posix()] = file_sha256(candidate)
+                    elif not candidate.is_dir():
+                        raise ValueError("native collector source contains unexpected filesystem entries")
+                return found
+            if pinned_files(target) != pinned_files(root):
+                raise ValueError("native collector's original imported inputs differ from the issued archive")
+        else:
+            root.rename(target)
+            sync_directory(parent)
     return {
         "kind": "native_collector_inputs_imported", "collector_id": selected,
         "directory": str(target), "source_contract_sha256": actual,
         "files": len(files), "source_bytes": total,
+        "reused": existing,
         "wall_seconds": time.perf_counter() - started,
     }
 
