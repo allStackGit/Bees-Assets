@@ -93,6 +93,20 @@ pub trait NativePolicyInference {
     /// state has been recovered by the backend.
     fn checkpoint_model_digest(&self) -> Option<[u8; 32]> { None }
 
+    /// A restart needs the stochastic policy sampler as well as the model
+    /// weights. This is an explicit between-batch operation, never a
+    /// per-step copy. An absent snapshot refuses recovery of a live policy.
+    fn checkpoint_sampling_state(&mut self) -> Result<Option<Vec<u8>>, Self::Error> {
+        Ok(None)
+    }
+
+    /// Restore the exact backend sampling stream after the rest of the
+    /// Level cohort has passed preflight. False means unsupported; no
+    /// gameplay state may be committed from that checkpoint.
+    fn restore_sampling_state(&mut self, _saved: &[u8]) -> Result<bool, Self::Error> {
+        Ok(false)
+    }
+
     /// Per row: raw continuous samples, continuous log probabilities,
     /// then selected discrete log probabilities. Empty for inference-only models.
     fn behavior_statistics(&self) -> &[f32] { &[] }
@@ -116,6 +130,14 @@ impl NativePolicyInference for NoPolicyInference {
     fn checkpoint_model_digest(&self) -> Option<[u8; 32]> {
         // Distinct sentinel for explicitly model-free gameplay Levels.
         Some([0_u8; 32])
+    }
+
+    fn checkpoint_sampling_state(&mut self) -> Result<Option<Vec<u8>>, Self::Error> {
+        Ok(Some(Vec::new()))
+    }
+
+    fn restore_sampling_state(&mut self, saved: &[u8]) -> Result<bool, Self::Error> {
+        Ok(saved.is_empty())
     }
 
     fn forward(
