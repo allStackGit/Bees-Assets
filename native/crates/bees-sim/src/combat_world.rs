@@ -1804,14 +1804,20 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
-        if physics.ships().len() != self.ships.len() ||
-            physics.projectiles().len() != self.projectiles.len() ||
-            physics.obstacles().len() != self.obstacles.len() ||
-            physics.ships().iter().zip(&self.ships)
+        // Scene construction installs the immutable authored starting
+        // roster. Reinforcements, Queen/Scout children and projectile or
+        // asteroid pools append new slots during play. Their exact saved
+        // shapes and lifecycle order are already owned by physics.
+        if physics.ships().len() != snapshot.ships.len() ||
+            snapshot.ships.len() < self.ships.len() ||
+            physics.projectiles().len() != snapshot.projectiles.len() ||
+            physics.obstacles().len() != snapshot.obstacles.len() ||
+            snapshot.obstacles.len() < self.obstacles.len() ||
+            physics.ships().iter().zip(&snapshot.ships)
                 .any(|(body, ship)| body.id != ship.entity_id) ||
             physics.projectiles().iter().zip(&snapshot.projectiles)
                 .any(|(body, shot)| body.id != shot.entity_id) ||
-            physics.obstacles().iter().zip(&self.obstacles)
+            physics.obstacles().iter().zip(&snapshot.obstacles)
                 .any(|(body, obstacle)| body.id != obstacle.entity_id)
         {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
@@ -1820,29 +1826,23 @@ impl CombatWorld {
         // and mutable object health are replaced. Preserve immutable
         // authored type/side and map asset contracts from this Level.
         if snapshot.next_entity_id <= 0 ||
-            snapshot.projectiles.len() != physics.projectiles().len() ||
-            snapshot.ships.len() != self.ships.len() ||
-            snapshot.ships.iter().zip(&self.ships).enumerate().any(
-                |(index, (saved, current))|
-                    saved.entity_id != current.entity_id ||
-                    saved.side != current.side ||
-                    saved.ship_type != current.ship_type ||
-                    saved.side <= 0 || !saved.vitals.valid_recovery() ||
-                    physics.ships()[index].id != saved.entity_id ||
-                    (physics.ships()[index].active && saved.vitals.is_dead())
+            snapshot.ships.iter().zip(&self.ships).any(|(saved, current)|
+                saved.entity_id != current.entity_id ||
+                saved.side != current.side ||
+                saved.ship_type != current.ship_type
             ) ||
-            snapshot.obstacles.len() != self.obstacles.len() ||
-            snapshot.obstacles.iter().zip(&self.obstacles).enumerate().any(
-                |(index, (saved, current))|
-                    saved.entity_id != current.entity_id ||
-                    saved.kind != current.kind ||
-                    saved.size_class != current.size_class ||
-                    saved.entity_id <= 0 ||
-                    physics.obstacles()[index].id != saved.entity_id ||
-                    saved.vitals.is_some_and(|vitals|
-                        vitals.effective_max_health <= 0 ||
-                        vitals.original_health <= 0
-                    )
+            snapshot.obstacles.iter().zip(&self.obstacles).any(|(saved, current)|
+                saved.entity_id != current.entity_id ||
+                saved.kind != current.kind ||
+                saved.size_class != current.size_class
+            ) ||
+            snapshot.obstacles.iter().enumerate().any(|(index, saved)|
+                saved.entity_id <= 0 ||
+                physics.obstacles()[index].id != saved.entity_id ||
+                saved.vitals.is_some_and(|vitals|
+                    vitals.effective_max_health <= 0 ||
+                    vitals.original_health <= 0
+                )
             ) ||
             snapshot.map_objects.len() != self.map_objects.len() ||
             snapshot.map_objects.iter().any(|(&id, saved)|
@@ -1860,6 +1860,32 @@ impl CombatWorld {
             )
         {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        // Rebuild the single authoritative all-lifetime ship index. Source
+        // ship slots never recycle; dead initial ships and spawned children
+        // retain their original slot for commands and damage attribution.
+        let mut ship_by_id = HashMap::with_capacity(snapshot.ships.len());
+        if snapshot.ships.iter().enumerate().any(|(index, ship)|
+            ship.entity_id <= 0 || ship.entity_id >= snapshot.next_entity_id ||
+            ship.side <= 0 || !ship.vitals.valid_recovery() ||
+            (physics.ships()[index].active && ship.vitals.is_dead()) ||
+            ship_by_id.insert(ship.entity_id, index).is_some()
+        ) {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        // Active projectile and obstacle lookup keys are derived from the
+        // recovered physical slots, not a partially rebuilt live scene.
+        let mut projectile_by_id = HashMap::new();
+        for (index, body) in physics.projectiles().iter().enumerate() {
+            if body.active && projectile_by_id.insert(body.id, index).is_some() {
+                return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+            }
+        }
+        let mut obstacle_by_id = HashMap::new();
+        for (index, body) in physics.obstacles().iter().enumerate() {
+            if body.active && obstacle_by_id.insert(body.id, index).is_some() {
+                return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+            }
         }
         // Projectile slots are reused at their original dense position.
         // Recover the *behavior*, not only a collider: piercing hit sets,
@@ -1917,9 +1943,9 @@ impl CombatWorld {
         if snapshot.reserved_ship_ids.iter().any(|(&side, ids)|
             side <= 0 || ids.iter().any(|&id|
                 id <= 0 || id >= snapshot.next_entity_id ||
-                self.ship_by_id.contains_key(&id) ||
-                self.projectile_by_id.contains_key(&id) ||
-                self.obstacle_by_id.contains_key(&id) ||
+                ship_by_id.contains_key(&id) ||
+                projectile_by_id.contains_key(&id) ||
+                obstacle_by_id.contains_key(&id) ||
                 !reserved.insert(id)
             )
         ) ||
@@ -1956,9 +1982,9 @@ impl CombatWorld {
         // authentic dense slots, and every deferred order stays on its
         // original ship. Do not substitute a fresh A* plan at restore.
         if !snapshot.weapon_rank_history.valid_recovery(
-            &self.ship_by_id, snapshot.movement.events.len(),
+            &ship_by_id, snapshot.movement.events.len(),
         ) || snapshot.combat_activity.iter().any(|(&id, timer)|
-            !self.ship_by_id.contains_key(&id) || !timer.valid()
+            !ship_by_id.contains_key(&id) || !timer.valid()
         ) {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
@@ -1972,7 +1998,7 @@ impl CombatWorld {
                     .then_some(shot.entity_id)
             ).collect();
         if snapshot.weapons.iter().any(|(&ship_id, weapons)|
-            !self.ship_by_id.contains_key(&ship_id) ||
+            !ship_by_id.contains_key(&ship_id) ||
             !weapons.valid_recovery(&self.projectile_assets) ||
             weapons.turrets.iter().flatten().any(|mount|
                 mount.active_beam_projectile_id.is_some_and(|id|
@@ -1980,32 +2006,33 @@ impl CombatWorld {
                 )
             )
         ) || snapshot.pending_turret_shots.iter().any(|pending|
-            !self.ship_by_id.contains_key(&pending.ship_id) ||
+            !ship_by_id.contains_key(&pending.ship_id) ||
             !pending.valid_recovery(&self.projectile_assets)
         ) {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         // Bomb, Charge and proximity contact memory must continue from
         // the original authored weapon, not a newly generated range.
-        if snapshot.special_weapons.len() != self.special_weapons.len() ||
-            snapshot.special_weapons.iter().any(|(&ship_id, contacts)| {
-                let Some(&index) = self.ship_by_id.get(&ship_id) else {
+        if self.special_weapons.iter().any(|(&ship_id, source)|
+            snapshot.special_weapons.get(&ship_id)
+                .is_none_or(|restored| !restored.matches_source(source))
+        ) || snapshot.special_weapons.iter().any(|(&ship_id, contacts)| {
+                let Some(&index) = ship_by_id.get(&ship_id) else {
                     return true;
                 };
                 !contacts.valid_recovery(snapshot.ships[index].ship_type) ||
-                self.special_weapons.get(&ship_id).is_none_or(|source|
-                    !contacts.matches_source(source)
-                )
+                self.special_weapons.get(&ship_id)
+                    .is_some_and(|source| !contacts.matches_source(source))
             }) ||
             snapshot.special_body_entries.iter().any(|&(owner, target)|
                 target <= 0 || !snapshot.special_weapons.contains_key(&owner) ||
-                !self.ship_by_id.contains_key(&target)
+                !ship_by_id.contains_key(&target)
             ) {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let policy = &snapshot.policy;
         if policy.controllers.iter().any(|(&id, controller)|
-            !self.ship_by_id.get(&id).is_some_and(|&index|
+            !ship_by_id.get(&id).is_some_and(|&index|
                 physics.ships()[index].active &&
                 !snapshot.ships[index].vitals.is_dead() &&
                 controller.valid_recovery(
@@ -2087,8 +2114,8 @@ impl CombatWorld {
         for (&queen_id, saved) in &snapshot.queens {
             let original = self.game_queens.get(&queen_id)
                 .ok_or(CombatWorldError::InvalidRecoveryCheckpoint)?;
-            if !self.ship_by_id.contains_key(&queen_id) ||
-                snapshot.ships[self.ship_by_id[&queen_id]].ship_type != queen::QUEEN_TYPE {
+            if !ship_by_id.contains_key(&queen_id) ||
+                snapshot.ships[ship_by_id[&queen_id]].ship_type != queen::QUEEN_TYPE {
                 return Err(CombatWorldError::InvalidRecoveryCheckpoint);
             }
             let recovered = original.prepare_restore(saved)
@@ -2104,7 +2131,7 @@ impl CombatWorld {
         }
         let movement = &snapshot.movement;
         let registered_ship = |id: i64| {
-            id > 0 && self.ship_by_id.contains_key(&id)
+            id > 0 && ship_by_id.contains_key(&id)
         };
         if movement.steering.iter().any(|(&id, steer)|
             !registered_ship(id) || !steer.valid_recovery()
@@ -2125,9 +2152,9 @@ impl CombatWorld {
             movement.fleet_ids.iter().any(|(&id, &fleet)| !registered_ship(id) || fleet == 0) ||
             movement.beacon_parent_by_id.iter().any(|(&beacon, &parent)|
                 !registered_ship(beacon) || !registered_ship(parent) ||
-                snapshot.ships[self.ship_by_id[&beacon]].ship_type != 1 ||
-                snapshot.ships[self.ship_by_id[&beacon]].side !=
-                    snapshot.ships[self.ship_by_id[&parent]].side
+                snapshot.ships[ship_by_id[&beacon]].ship_type != 1 ||
+                snapshot.ships[ship_by_id[&beacon]].side !=
+                    snapshot.ships[ship_by_id[&parent]].side
             ) ||
             movement.target_front_offsets.iter().any(|(&id, &offset)|
                 !registered_ship(id) || !offset.is_finite()
@@ -2141,8 +2168,8 @@ impl CombatWorld {
                 entry.ship_ids.windows(2).any(|pair| pair[0] >= pair[1]) ||
                 entry.ship_ids.iter().any(|id|
                     !registered_ship(*id) ||
-                    snapshot.ships[self.ship_by_id[id]].ship_type != entry.ship_type ||
-                    snapshot.ships[self.ship_by_id[id]].side != entry.side
+                    snapshot.ships[ship_by_id[id]].ship_type != entry.ship_type ||
+                    snapshot.ships[ship_by_id[id]].side != entry.side
                 )
             ) ||
             movement.asteroid_navigation_refresh.iter().any(|(&id, timer)|
@@ -2163,7 +2190,7 @@ impl CombatWorld {
         // to a reused slot or independently inferred nearby hull.
         let specials = &snapshot.game_specials;
         let has_ship_type = |id: i64, kind: u8| {
-            self.ship_by_id.get(&id).is_some_and(|&index|
+            ship_by_id.get(&id).is_some_and(|&index|
                 snapshot.ships[index].ship_type == kind &&
                 !snapshot.ships[index].vitals.is_dead() &&
                 physics.ships()[index].active
@@ -2173,7 +2200,7 @@ impl CombatWorld {
             !has_ship_type(id, 19) || !state.carrier.valid() ||
             !state.reload_timer.valid_recovery() ||
             state.carrier.carrier_id.is_some_and(|carrier|
-                carrier == id || self.ship(carrier).is_none()
+                carrier == id || !ship_by_id.contains_key(&carrier)
             )
         ) ||
             specials.scouts.iter().any(|(&id, state)|
@@ -2196,10 +2223,10 @@ impl CombatWorld {
                 !has_ship_type(id, 0) || power < 0
             ) ||
             specials.healers.iter().any(|(&ship, &(hive, _))|
-                !self.ship_by_id.contains_key(&ship) ||
+                !ship_by_id.contains_key(&ship) ||
                 !has_ship_type(hive, BEEHIVE_TYPE) ||
-                snapshot.ships[self.ship_by_id[&ship]].side !=
-                    snapshot.ships[self.ship_by_id[&hive]].side
+                snapshot.ships[ship_by_id[&ship]].side !=
+                    snapshot.ships[ship_by_id[&hive]].side
             ) ||
             specials.healing_slots.iter().any(|(&hive, &used)|
                 !has_ship_type(hive, BEEHIVE_TYPE) || used == 0 || used > 4 ||
@@ -2214,7 +2241,7 @@ impl CombatWorld {
                 !session.valid_recovery(gate, &specials.warp_by_ship)
             ) ||
             specials.warp_by_ship.iter().any(|(&ship, &gate)|
-                !self.ship_by_id.contains_key(&ship) ||
+                !ship_by_id.contains_key(&ship) ||
                 !specials.warp_sessions.get(&gate)
                     .is_some_and(|session| session.contains_participant(ship))
             ) ||
@@ -2228,13 +2255,13 @@ impl CombatWorld {
                 !has_ship_type(id, 0) || !specials.barge_config.contains_key(&id)
             ) ||
             specials.bomb_weapon_by_ship.iter().any(|(&ship, &weapon)|
-                !self.ship_by_id.contains_key(&ship) || weapon <= 0
+                !ship_by_id.contains_key(&ship) || weapon <= 0
             ) ||
             specials.fire_barge_powers.iter().any(|(&ship, &power)|
-                !self.ship_by_id.contains_key(&ship) || power < 0
+                !ship_by_id.contains_key(&ship) || power < 0
             ) ||
             specials.pending_fire_barges.iter().any(|&(id, outcome)|
-                !self.ship_by_id.contains_key(&id) ||
+                !ship_by_id.contains_key(&id) ||
                 outcome.is_some_and(|value| value <= 0)
             )
         {
@@ -2254,30 +2281,17 @@ impl CombatWorld {
         // These lookup maps are part of the other authored CombatWorld
         // gameplay state. Never apply the physical owner bundle to a world
         // whose ship/shot slot identities have not first been recovered.
-        let mut projectile_by_id = HashMap::new();
-        for (index, body) in physics.projectiles().iter().enumerate() {
-            if body.active && projectile_by_id.insert(body.id, index).is_some() {
-                return Err(CombatWorldError::InvalidRecoveryCheckpoint);
-            }
-        }
-        let mut obstacle_by_id = HashMap::new();
-        for (index, body) in physics.obstacles().iter().enumerate() {
-            if body.active && obstacle_by_id.insert(body.id, index).is_some() {
-                return Err(CombatWorldError::InvalidRecoveryCheckpoint);
-            }
-        }
-        if self.ship_by_id.len() != physics.ships().len() ||
+        if ship_by_id.len() != physics.ships().len() ||
             projectile_by_id.len() != physics.active_projectile_indices().len() ||
             obstacle_by_id.len() != physics.active_obstacle_indices().len() ||
-            self.next_entity_id <= 0 ||
             physics.ships().iter().any(|body|
-                body.id <= 0 || body.id >= self.next_entity_id) ||
+                body.id <= 0 || body.id >= snapshot.next_entity_id) ||
             physics.projectiles().iter().any(|body|
-                body.id <= 0 || body.id >= self.next_entity_id) ||
+                body.id <= 0 || body.id >= snapshot.next_entity_id) ||
             physics.obstacles().iter().any(|body|
-                body.id <= 0 || body.id >= self.next_entity_id) ||
+                body.id <= 0 || body.id >= snapshot.next_entity_id) ||
             physics.ships().iter().enumerate().any(|(index, body)|
-                self.ship_by_id.get(&body.id) != Some(&index)) ||
+                ship_by_id.get(&body.id) != Some(&index)) ||
             physics.projectiles().iter().enumerate().any(|(index, body)|
                 (projectile_by_id.get(&body.id) == Some(&index)) != body.active) ||
             physics.obstacles().iter().enumerate().any(|(index, body)|
@@ -2297,7 +2311,7 @@ impl CombatWorld {
             snapshot, physics, discovery, navigation, reservations, outcomes,
             game_queens, live_ships_by_side, live_mobile_ships_by_side,
             live_ship_total, projectile_by_id, obstacle_by_id,
-            ship_by_id: self.ship_by_id.clone(),
+            ship_by_id,
         })
     }
 
@@ -2310,11 +2324,12 @@ impl CombatWorld {
             snapshot, physics, discovery, navigation, reservations, outcomes,
             game_queens, live_ships_by_side, live_mobile_ships_by_side,
             live_ship_total, projectile_by_id, obstacle_by_id,
-            ship_by_id: _,
+            ship_by_id,
         } = prepared;
         self.physics = physics;
         self.next_entity_id = snapshot.next_entity_id;
         self.ships = snapshot.ships;
+        self.ship_by_id = ship_by_id;
         self.projectiles = snapshot.projectiles;
         self.projectile_by_id = projectile_by_id;
         self.free_projectile_slots = snapshot.free_projectile_slots;
