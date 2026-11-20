@@ -347,13 +347,21 @@ function configureService(root,training,serviceBinary=null) {
 // must not depend on the Windows py launcher or a machine-wide interpreter.
 const UV_WINDOWS_VERSION='0.13.6';
 const UV_WINDOWS_SHA256='a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f';
+function verifyWindowsUvVersion(executable) {
+    // Official uv may append its build identifier and build date. Verify the
+    // pinned semantic version rather than requiring the whole banner to equal
+    // "uv X.Y.Z". The downloaded ZIP is separately SHA-256 verified.
+    const reported=exec(executable,['--version']);
+    const match=/^uv ([0-9]+\.[0-9]+\.[0-9]+)(?: \([^\r\n]{1,128}\))?$/.exec(reported);
+    if(!match||match[1]!==UV_WINDOWS_VERSION)
+        throw Error('Pinned Windows uv runtime version mismatch: '+reported.slice(0,120));
+}
 function windowsUv(root) {
     const tools=path.join(root,'Tooling');
     const directory=path.join(tools,'uv-'+UV_WINDOWS_VERSION);
     const uv=path.join(directory,'uv.exe');
     if(fs.existsSync(uv)) {
-        if(exec(uv,['--version'])!=='uv '+UV_WINDOWS_VERSION)
-            throw Error('Pinned Windows uv executable changed unexpectedly.');
+        verifyWindowsUvVersion(uv);
         return uv;
     }
     fs.mkdirSync(tools,{recursive:true,mode:0o700});
@@ -375,9 +383,7 @@ function windowsUv(root) {
             throw Error('Pinned Windows uv archive contains unexpected paths.');
         fs.mkdirSync(temporary,{recursive:true,mode:0o700});
         exec('tar.exe',['-xf',archive,'-C',temporary]);
-        if(exec(path.join(temporary,'uv.exe'),['--version'])!==
-            'uv '+UV_WINDOWS_VERSION)
-            throw Error('Pinned Windows uv runtime version mismatch.');
+        verifyWindowsUvVersion(path.join(temporary,'uv.exe'));
         fs.renameSync(temporary,directory);
         return uv;
     }finally{
