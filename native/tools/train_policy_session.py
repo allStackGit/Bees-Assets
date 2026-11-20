@@ -19,6 +19,7 @@ import signal
 import subprocess
 import sys
 import time
+from tempfile import TemporaryDirectory
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -1621,9 +1622,36 @@ def main():
                         "checkpoint_sha256": orders["input_checkpoint_sha256"],
                         "manifest_sha256": orders["input_manifest_sha256"],
                     }
-                    if archive.exists() or receipt_path.exists():
-                        if not archive.is_file() or not receipt_path.is_file():
-                            raise ValueError("previous native round source export is incomplete")
+                    if archive.exists() or archive.is_symlink():
+                        if (archive.is_symlink() or not archive.is_file() or
+                                receipt_path.is_symlink()):
+                            raise ValueError("previous native round source archive is not a regular file")
+                        if not receipt_path.is_file():
+                            # Publication is two durable operations: the
+                            # immutable tar arrives before its small index.
+                            # A crash between them must not strand a Hub
+                            # collection. Reconstruct the exact deterministic
+                            # tar in private temporary storage, compare its
+                            # complete bytes, then publish only the missing
+                            # index. Never accept an unverified old tar.
+                            with TemporaryDirectory(
+                                    prefix=".native-input-recovery-", dir=outbox,
+                            ) as recovery:
+                                expected = export_inputs(
+                                    order_path, "@round", Path(stage_run["path"]),
+                                    Path(trainer["path"]), Path(next_checkpoint),
+                                    Path(next_manifest),
+                                    Path(recovery) / "issued-inputs.tar",
+                                )
+                                if (expected["archive_bytes"] != archive.stat().st_size or
+                                        expected["archive_sha256"] != file_sha256(archive)):
+                                    raise ValueError(
+                                        "unindexed native round archive differs from issued source"
+                                    )
+                                atomic_json(receipt_path, {
+                                    **identity,
+                                    "archive_sha256": expected["archive_sha256"],
+                                })
                         previous = read_json(receipt_path)
                         if (any(previous.get(key) != value
                                 for key, value in identity.items()) or
@@ -1635,6 +1663,8 @@ def main():
                             "archive_bytes": archive.stat().st_size,
                             "reused": True,
                         }
+                    elif receipt_path.exists() or receipt_path.is_symlink():
+                        raise ValueError("previous native round source export has no archive")
                     else:
                         result = export_inputs(
                             order_path, "@round", Path(stage_run["path"]),
