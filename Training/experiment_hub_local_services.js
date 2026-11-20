@@ -121,6 +121,9 @@ async function status(hub) {
             machine.installed_projects?.some(project=>['tinybrains','courier'].includes(project)))).map(machine=>({
         id:machine.id,name:machine.name,status:machine.status,
         platform:machine.agent_platform||null,
+        native_restart_blocked:snapshot.jobs.some(job=>
+            (!job.assigned_machine_id||job.assigned_machine_id===machine.id)&&
+            BUSY.has(job.status)),
         installed_projects:(machine.installed_projects||[]).filter(project=>
             ['tinybrains','courier'].includes(project)),
         issue:machine.evaluator_service_issue||null,
