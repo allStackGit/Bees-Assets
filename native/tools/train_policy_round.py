@@ -866,7 +866,7 @@ def publish_receipt(output, filename, receipt, *, announce=True):
         print(json.dumps(receipt), flush=True)
 
 
-def deliver_bundle(output, inbox, receipt, delivery_name=None):
+def deliver_bundle(output, inbox, receipt, delivery_name=None, *, preserve_delivery=False):
     # A Hub job's artifact root is its immutable job UUID. A separately
     # pinned distributed work order may name the inbox delivery without
     # changing that Hub-owned root or any resource/owner identity.
@@ -895,7 +895,23 @@ def deliver_bundle(output, inbox, receipt, delivery_name=None):
                     raise ValueError("rollout artifact changed before inbox publication")
                 if target.parent != stage:
                     sync_directory(target.parent)
-        receipt["delivery"] = {"bytes": transferred, "copy_wall_seconds": time.perf_counter() - started}
+        if preserve_delivery:
+            # A replacement Hub job must republish EXACTLY the bytes of
+            # the original accepted rollout receipt. Changing copy timing
+            # changes the archive digest, which the learner will correctly
+            # reject after a lost upload acknowledgement.
+            previous = receipt.get("delivery")
+            if (not isinstance(previous, dict) or
+                    previous.get("bytes") != transferred or
+                    not isinstance(previous.get("copy_wall_seconds"), (int, float)) or
+                    not math.isfinite(previous["copy_wall_seconds"]) or
+                    previous["copy_wall_seconds"] < 0):
+                raise ValueError("completed native collection lacks original delivery identity")
+        else:
+            receipt["delivery"] = {
+                "bytes": transferred,
+                "copy_wall_seconds": time.perf_counter() - started,
+            }
         publish_receipt(stage, "rollout-bundle.json", receipt, announce=False)
         stage.rename(destination)
         sync_directory(inbox)
