@@ -2140,14 +2140,18 @@ impl CombatWorld {
         // registration order survive a native game/headless restart.
         let mut game_queens = BTreeMap::new();
         for (&queen_id, saved) in &snapshot.queens {
-            let original = self.game_queens.get(&queen_id)
-                .ok_or(CombatWorldError::InvalidRecoveryCheckpoint)?;
             if !ship_by_id.contains_key(&queen_id) ||
                 snapshot.ships[ship_by_id[&queen_id]].ship_type != queen::QUEEN_TYPE {
                 return Err(CombatWorldError::InvalidRecoveryCheckpoint);
             }
-            let recovered = original.prepare_restore(saved)
-                .ok_or(CombatWorldError::InvalidRecoveryCheckpoint)?;
+            // Initial Queens must match their loaded authored source.
+            // Deferred Queens have no startup runtime: their saved
+            // immutable minion template is validated and reused.
+            let recovered = if let Some(authored) = self.game_queens.get(&queen_id) {
+                authored.prepare_restore(saved)
+            } else {
+                QueenRuntime::restore_deferred_source(saved)
+            }.ok_or(CombatWorldError::InvalidRecoveryCheckpoint)?;
             game_queens.insert(queen_id, recovered);
         }
         if snapshot.queen_measurements.max_concurrent_waves <

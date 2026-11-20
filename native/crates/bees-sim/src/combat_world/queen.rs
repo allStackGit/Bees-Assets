@@ -11,7 +11,8 @@ const MAX_WAVE_SIZE: u8 = 16;
 /// All mutable weapon/physics identity comes from the source-authored
 /// YellowJacket template. The prefab's original weapon ID is intentionally
 /// replaced for every spawned minion.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct QueenMinionSpec {
     pub asset: Arc<ShipAsset>,
     pub vitals: ShipVitals,
@@ -56,7 +57,8 @@ impl QueenMinionSpec {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct QueenSpawnSpec {
     pub minion: Arc<QueenMinionSpec>,
     pub minions_per_wave: u8,
@@ -104,12 +106,17 @@ struct QueenWave {
     next_index: u8,
 }
 
-/// Mutable Queen coroutine clocks only. Prefab catalogs, animation,
-/// physics and the minion template remain owned by the authored Stage.
+/// Native Queen coroutine clocks plus one authored minion template.
+/// The template is saved once per Queen at a recovery boundary and
+/// reused by reference during normal gameplay; it is never duplicated
+/// per spawned minion or training simulation step.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct QueenRuntimeCheckpoint {
     schema_version: u32,
+    // The saved source template is needed only when the Queen arrived as
+    // a deferred reinforcement after scene construction.
+    spec: Arc<QueenSpawnSpec>,
     minions_per_wave: u8,
     frequency_seconds: f32,
     seconds_between_minions: f32,
@@ -128,11 +135,23 @@ pub(super) struct QueenRuntime {
 }
 
 impl QueenRuntime {
+    pub(super) fn restore_deferred_source(saved: &QueenRuntimeCheckpoint) -> Option<Self> {
+        if !saved.spec.valid() { return None; }
+        let source = Self {
+            spec: Arc::clone(&saved.spec),
+            until_next_wave: saved.spec.spawn_frequency_seconds,
+            next_sequence: 0,
+            waves: Vec::new(),
+        };
+        source.prepare_restore(saved)
+    }
+
     pub(super) fn active_wave_count(&self) -> usize { self.waves.len() }
 
     pub(super) fn checkpoint(&self) -> QueenRuntimeCheckpoint {
         QueenRuntimeCheckpoint {
-            schema_version: 1,
+            schema_version: 2,
+            spec: Arc::clone(&self.spec),
             minions_per_wave: self.spec.minions_per_wave,
             frequency_seconds: self.spec.spawn_frequency_seconds,
             seconds_between_minions: self.spec.seconds_between_minions,
@@ -148,7 +167,9 @@ impl QueenRuntime {
     pub(super) fn prepare_restore(
         &self, saved: &QueenRuntimeCheckpoint,
     ) -> Option<Self> {
-        if saved.schema_version != 1 ||
+        if saved.schema_version != 2 ||
+            !saved.spec.valid() ||
+            saved.spec.as_ref() != self.spec.as_ref() ||
             saved.minions_per_wave != self.spec.minions_per_wave ||
             saved.frequency_seconds != self.spec.spawn_frequency_seconds ||
             saved.seconds_between_minions != self.spec.seconds_between_minions ||
