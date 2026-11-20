@@ -90,6 +90,20 @@ impl<T> WorldCheckpoint<T> {
     pub fn tick(&self) -> u64 { self.tick }
     pub fn world_id(&self) -> WorldId { self.id }
     pub fn state(&self) -> &T { &self.state }
+    pub fn episode_revision(&self) -> u64 { self.episode_revision }
+
+    /// Split executable Level recovery data from the immutable World
+    /// clock/RNG envelope without cloning battle state.
+    pub fn split_state(self) -> (WorldCheckpoint<()>, T) {
+        let WorldCheckpoint {
+            schema_version, id, state, random_state,
+            fixed_step_seconds, tick, episode_revision, failed, measurements,
+        } = self;
+        (WorldCheckpoint {
+            schema_version, id, state: (), random_state,
+            fixed_step_seconds, tick, episode_revision, failed, measurements,
+        }, state)
+    }
 }
 
 /// World-local state, owned by exactly one simulation. No Unity-style static
@@ -172,6 +186,20 @@ impl<S> World<S> {
         snapshot: WorldCheckpoint<T>,
         restore_level: impl FnOnce(&mut S, T, u64) -> Result<(), E>,
     ) -> Result<(), WorldOwnersRestoreError<E>> {
+        self.validate_owner_checkpoint(&snapshot)
+            .map_err(WorldOwnersRestoreError::InvalidCheckpoint)?;
+        let (clock, state) = snapshot.split_state();
+        restore_level(&mut self.state, state, clock.tick)
+            .map_err(WorldOwnersRestoreError::State)?;
+        self.commit_owner_checkpoint(clock);
+        Ok(())
+    }
+
+    /// All worlds in a host checkpoint are validated before the first
+    /// Level or RNG commit. This never samples the original random stream.
+    pub fn validate_owner_checkpoint<T>(
+        &self, snapshot: &WorldCheckpoint<T>,
+    ) -> Result<(), &'static str> {
         if snapshot.schema_version != 1 ||
             snapshot.id != self.id ||
             snapshot.fixed_step_seconds.map(f32::to_bits) !=
@@ -184,23 +212,20 @@ impl<S> World<S> {
             snapshot.measurements.sampled_failed_steps >
                 snapshot.measurements.failed_steps
         {
-            return Err(WorldOwnersRestoreError::InvalidCheckpoint(
-                "native World ownership checkpoint disagrees with source identity or clock",
-            ));
+            return Err("native World ownership checkpoint disagrees with source identity or clock");
         }
-        let WorldCheckpoint {
-            state, random_state, fixed_step_seconds, tick, episode_revision,
-            failed, measurements, ..
-        } = snapshot;
-        restore_level(&mut self.state, state, tick)
-            .map_err(WorldOwnersRestoreError::State)?;
-        self.random = RandomStream::new(random_state);
-        self.fixed_step_seconds = fixed_step_seconds;
-        self.tick = tick;
-        self.episode_revision = episode_revision;
-        self.failed = failed;
-        self.measurements = measurements;
         Ok(())
+    }
+
+    /// Infallible World clock commit only after the parent has staged the
+    /// state-specific gameplay owners. The envelope contains no new state.
+    pub fn commit_owner_checkpoint(&mut self, snapshot: WorldCheckpoint<()>) {
+        self.random = RandomStream::new(snapshot.random_state);
+        self.fixed_step_seconds = snapshot.fixed_step_seconds;
+        self.tick = snapshot.tick;
+        self.episode_revision = snapshot.episode_revision;
+        self.failed = snapshot.failed;
+        self.measurements = snapshot.measurements;
     }
 
     fn from_checkpoint(snapshot: WorldCheckpoint<S>) -> Result<Self, &'static str> {
