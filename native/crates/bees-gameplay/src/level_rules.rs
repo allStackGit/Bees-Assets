@@ -821,7 +821,8 @@ impl NativeDecisionCadence {
 
 /// Actual Level-provided friendly command input work. Counts remain cheap
 /// even when timing samples are disabled for maximum training throughput.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeCommandInputMeasurements {
     /// Successful, timer-gated live friendly squad snapshots.
     pub friendly_snapshots: u64,
@@ -861,6 +862,8 @@ pub struct NativeLevelRecoveryOwnersCheckpoint {
     combat: CombatWorldRecoveryOwnersCheckpoint,
     decisions: NativeDecisionCadenceCheckpoint,
     campaign_dialogue: Option<CampaignDialogueCheckpoint>,
+    command_input_measurements: NativeCommandInputMeasurements,
+    navigation_jobs_completed: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -915,10 +918,12 @@ impl<M, A> NativeLevelState<M, A> {
     /// command/reward events, source metadata and model state to be resumable.
     pub fn recovery_owners_checkpoint(&self) -> NativeLevelRecoveryOwnersCheckpoint {
         NativeLevelRecoveryOwnersCheckpoint {
-            schema_version: 2,
+            schema_version: 3,
             combat: self.combat.recovery_owners_checkpoint(),
             decisions: self.decisions.checkpoint(),
             campaign_dialogue: self.campaign_dialogue.as_ref().map(|story| story.checkpoint()),
+            command_input_measurements: self.command_input_measurements,
+            navigation_jobs_completed: self.navigation_jobs_completed,
         }
     }
 
@@ -931,7 +936,7 @@ impl<M, A> NativeLevelState<M, A> {
         checkpoint: NativeLevelRecoveryOwnersCheckpoint,
         completed_ticks: u64,
     ) -> Result<(), NativeLevelRecoveryError> {
-        if checkpoint.schema_version != 2 {
+        if checkpoint.schema_version != 3 {
             return Err(NativeLevelRecoveryError::InvalidVersion);
         }
         let dialogue = match (
@@ -953,6 +958,8 @@ impl<M, A> NativeLevelState<M, A> {
             .map_err(NativeLevelRecoveryError::Combat)?;
         self.decisions = decisions;
         self.campaign_dialogue = dialogue;
+        self.command_input_measurements = checkpoint.command_input_measurements;
+        self.navigation_jobs_completed = checkpoint.navigation_jobs_completed;
         // These are reused per-tick projections, never durable gameplay
         // owners. Rebuild them from the recovered authoritative world on
         // the next step rather than retaining stale pre-restore entries.
