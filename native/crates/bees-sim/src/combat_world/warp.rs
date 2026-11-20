@@ -9,6 +9,7 @@ use super::policy::WARP_GATE_TYPE;
 /// Sprites/Ships/Animations/Warp Gate Opening.anim: ChangeSpriteLoop event.
 pub const WARP_GATE_OPENING_SECONDS: f32 = 2.375;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct GameWarpGateSession {
     elapsed: f32,
     participants: HashSet<i64>,
@@ -21,6 +22,23 @@ pub(super) struct GameWarpGateSession {
 }
 
 impl GameWarpGateSession {
+    /// Source continuation state is valid only when all remaining
+    /// participants share this real gate and callback progress.
+    pub(super) fn valid_recovery(
+        &self, gate_id: i64, by_ship: &HashMap<i64, i64>,
+    ) -> bool {
+        self.elapsed.is_finite() && self.elapsed >= 0.0 &&
+        self.waiting.is_subset(&self.participants) &&
+        self.committed.is_subset(&self.participants) &&
+        self.participants.iter().all(|id|
+            by_ship.get(id) == Some(&gate_id)
+        )
+    }
+
+    pub(super) fn contains_participant(&self, ship_id: i64) -> bool {
+        self.participants.contains(&ship_id)
+    }
+
     fn new() -> Self {
         Self {
             elapsed: 0.0,

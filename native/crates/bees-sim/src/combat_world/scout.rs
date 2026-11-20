@@ -57,7 +57,7 @@ impl ScoutBeaconSpec {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct PolicyScoutRuntime {
     pub(super) dropped: u8,
     pub(super) remaining_cooldown: f32,

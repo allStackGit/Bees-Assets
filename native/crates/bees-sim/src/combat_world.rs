@@ -573,7 +573,7 @@ impl CombatProjectile {
 /// Cumulative, allocation-free tracked-order workload counters. A renderer
 /// or training dashboard can compare successive snapshots to measure actual
 /// A* suppression rather than infer it from total simulation throughput.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TrackedOrderMeasurements {
     pub requests: u64,
     pub movement_lock_deferrals: u64,
@@ -628,7 +628,7 @@ pub struct PolicySpecialMeasurements {
 
 /// Cumulative work and delivered bomb count for authored game commands.
 /// This is separate from policy special-action request measurements.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GameBombMeasurements {
     pub striker_contact_checks: u64,
     pub striker_contact_misses: u64,
@@ -639,7 +639,7 @@ pub struct GameBombMeasurements {
     pub yellow_jacket_detonations: u64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GameMapBorderMeasurements {
     /// Authoritative physics ship/MapBorder ENTER contacts, never frame scans.
     pub ship_entries: u64,
@@ -656,7 +656,7 @@ pub struct GameMapBorderMeasurements {
     pub confinement_missing_profiles: u64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GameBargeMeasurements {
     pub starts: u64,
     pub stops: u64,
@@ -752,6 +752,35 @@ struct EnemyShipContact {
     exact_tests: u64,
 }
 
+/// World-owned source game command specials, shared by local play,
+/// HiveMind and native headless use. All physical hulls, damage and
+/// movement remain owned by the same CombatWorld.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CombatWorldGameSpecialsCheckpoint {
+    strikers: BTreeMap<i64, GameStrikerRuntime>,
+    scouts: HashMap<i64, PolicyScoutRuntime>,
+    pending_player_scout_beacons: Vec<i64>,
+    drone_carriers: HashMap<i64, Option<i64>>,
+    barges: BTreeMap<i64, GameBargeCharge>,
+    barge_config: HashMap<i64, (i32, bool)>,
+    pending_player_barge_charges: Vec<i64>,
+    barge_charge_hits: HashSet<(i64, i64)>,
+    healers: HashMap<i64, (i64, bool)>,
+    healing_slots: HashMap<i64, u8>,
+    healing_cascade_kills: u64,
+    warp_sessions: HashMap<i64, GameWarpGateSession>,
+    warp_by_ship: HashMap<i64, i64>,
+    pending_warps: Vec<(i64, i64)>,
+    bomb_weapon_by_ship: HashMap<i64, i64>,
+    fire_barge_powers: HashMap<i64, i32>,
+    pending_fire_barges: Vec<(i64, Option<i64>)>,
+    bomb_measurements: GameBombMeasurements,
+    barge_measurements: GameBargeMeasurements,
+    tracked_order_measurements: TrackedOrderMeasurements,
+    map_border_measurements: GameMapBorderMeasurements,
+}
+
 /// Fixed-boundary bundle of authoritative physics, ship vitals,
 /// obstacle vitals, MapObject health, reserved reinforcement IDs and the earlier five
 /// simulation ledgers. Other game specials, weapon controllers and
@@ -769,6 +798,7 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     map_objects: HashMap<i64, CombatMapObject>,
     range_visible_map_objects: HashSet<i64>,
     reserved_ship_ids: HashMap<i32, HashSet<i64>>,
+    game_specials: CombatWorldGameSpecialsCheckpoint,
     discovery: LevelDiscovery,
     navigation: NavigationRequestsCheckpoint,
     damage: DamageReservationsCheckpoint,
@@ -1408,7 +1438,7 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 3,
+            schema_version: 4,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1418,6 +1448,29 @@ impl CombatWorld {
             map_objects: self.map_objects.clone(),
             range_visible_map_objects: self.range_visible_map_objects.clone(),
             reserved_ship_ids: self.reserved_ship_ids.clone(),
+            game_specials: CombatWorldGameSpecialsCheckpoint {
+                strikers: self.game_strikers.clone(),
+                scouts: self.game_scout_runtime.clone(),
+                pending_player_scout_beacons: self.pending_player_scout_beacons.clone(),
+                drone_carriers: self.drone_carriers.clone(),
+                barges: self.game_barge_charges.clone(),
+                barge_config: self.game_barge_player_config.clone(),
+                pending_player_barge_charges: self.pending_player_barge_charges.clone(),
+                barge_charge_hits: self.barge_charge_hits.clone(),
+                healers: self.healing_hive_by_ship.clone(),
+                healing_slots: self.healing_slots_used_by_hive.clone(),
+                healing_cascade_kills: self.game_healing_cascade_kills,
+                warp_sessions: self.game_warp_gate_sessions.clone(),
+                warp_by_ship: self.game_warp_gate_by_ship.clone(),
+                pending_warps: self.pending_game_warps.clone(),
+                bomb_weapon_by_ship: self.game_bomb_weapon_by_ship.clone(),
+                fire_barge_powers: self.fire_barge_bomb_powers.clone(),
+                pending_fire_barges: self.pending_game_fire_barges.clone(),
+                bomb_measurements: self.game_bomb_measurements,
+                barge_measurements: self.game_barge_measurements,
+                tracked_order_measurements: self.tracked_order_measurements,
+                map_border_measurements: self.map_border_measurements,
+            },
             discovery: self.discovery.clone(),
             navigation: self.navigation_requests.checkpoint(),
             damage: self.reservations.checkpoint(),
@@ -1432,7 +1485,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 3 {
+        if snapshot.schema_version != 4 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1539,6 +1592,88 @@ impl CombatWorld {
                 }
             }
         }
+        // Command-owned timers and capability reservations belong to the
+        // exact recovered source ship identities; they must not migrate
+        // to a reused slot or independently inferred nearby hull.
+        let specials = &snapshot.game_specials;
+        let has_ship_type = |id: i64, kind: u8| {
+            self.ship_by_id.get(&id).is_some_and(|&index|
+                snapshot.ships[index].ship_type == kind &&
+                !snapshot.ships[index].vitals.is_dead() &&
+                physics.ships()[index].active
+            )
+        };
+        if specials.strikers.iter().any(|(&id, state)|
+            !has_ship_type(id, 19) || !state.carrier.valid() ||
+            !state.reload_timer.valid_recovery() ||
+            state.carrier.carrier_id.is_some_and(|carrier|
+                carrier == id || self.ship(carrier).is_none()
+            )
+        ) ||
+            specials.scouts.iter().any(|(&id, state)|
+                !has_ship_type(id, 18) ||
+                !state.remaining_cooldown.is_finite() ||
+                state.remaining_cooldown < 0.0
+            ) ||
+            specials.barges.iter().any(|(&id, state)|
+                !has_ship_type(id, 0) ||
+                !(1..=4).contains(&state.phase) ||
+                !state.elapsed.is_finite() || state.elapsed < 0.0 ||
+                !state.map_bounds.min.is_finite() ||
+                !state.map_bounds.max.is_finite() ||
+                state.map_bounds.min.x > state.map_bounds.max.x ||
+                state.map_bounds.min.y > state.map_bounds.max.y ||
+                state.power < 0 ||
+                state.command_outcome_id.is_some_and(|outcome| outcome <= 0)
+            ) ||
+            specials.barge_config.iter().any(|(&id, &(power, _))|
+                !has_ship_type(id, 0) || power < 0
+            ) ||
+            specials.healers.iter().any(|(&ship, &(hive, _))|
+                !self.ship_by_id.contains_key(&ship) ||
+                !has_ship_type(hive, BEEHIVE_TYPE) ||
+                snapshot.ships[self.ship_by_id[&ship]].side !=
+                    snapshot.ships[self.ship_by_id[&hive]].side
+            ) ||
+            specials.healing_slots.iter().any(|(&hive, &used)|
+                !has_ship_type(hive, BEEHIVE_TYPE) || used == 0 || used > 4 ||
+                specials.healers.values().filter(|&&(owner, _)| owner == hive).count()
+                    != usize::from(used)
+            ) ||
+            specials.healers.values().any(|&(hive, _)|
+                !specials.healing_slots.contains_key(&hive)
+            ) ||
+            specials.warp_sessions.iter().any(|(&gate, session)|
+                !has_ship_type(gate, WARP_GATE_TYPE) ||
+                !session.valid_recovery(gate, &specials.warp_by_ship)
+            ) ||
+            specials.warp_by_ship.iter().any(|(&ship, &gate)|
+                !self.ship_by_id.contains_key(&ship) ||
+                !specials.warp_sessions.get(&gate)
+                    .is_some_and(|session| session.contains_participant(ship))
+            ) ||
+            specials.pending_warps.iter().any(|&(ship, gate)|
+                specials.warp_by_ship.get(&ship) != Some(&gate)
+            ) ||
+            specials.pending_player_scout_beacons.iter().any(|&id|
+                !has_ship_type(id, 18) || !specials.scouts.contains_key(&id)
+            ) ||
+            specials.pending_player_barge_charges.iter().any(|&id|
+                !has_ship_type(id, 0) || !specials.barge_config.contains_key(&id)
+            ) ||
+            specials.bomb_weapon_by_ship.iter().any(|(&ship, &weapon)|
+                !self.ship_by_id.contains_key(&ship) || weapon <= 0
+            ) ||
+            specials.fire_barge_powers.iter().any(|(&ship, &power)|
+                !self.ship_by_id.contains_key(&ship) || power < 0
+            ) ||
+            specials.pending_fire_barges.iter().any(|&(id, outcome)|
+                !self.ship_by_id.contains_key(&id) ||
+                outcome.is_some_and(|value| value <= 0)
+            )
+        {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
         let mut discovery = LevelDiscovery::new();
         discovery.restore_checkpoint(snapshot.discovery)
             .map_err(|_| CombatWorldError::InvalidRecoveryCheckpoint)?;
@@ -1599,6 +1734,28 @@ impl CombatWorld {
         self.map_objects = snapshot.map_objects;
         self.range_visible_map_objects = snapshot.range_visible_map_objects;
         self.reserved_ship_ids = snapshot.reserved_ship_ids;
+        let special = snapshot.game_specials;
+        self.game_strikers = special.strikers;
+        self.game_scout_runtime = special.scouts;
+        self.pending_player_scout_beacons = special.pending_player_scout_beacons;
+        self.drone_carriers = special.drone_carriers;
+        self.game_barge_charges = special.barges;
+        self.game_barge_player_config = special.barge_config;
+        self.pending_player_barge_charges = special.pending_player_barge_charges;
+        self.barge_charge_hits = special.barge_charge_hits;
+        self.healing_hive_by_ship = special.healers;
+        self.healing_slots_used_by_hive = special.healing_slots;
+        self.game_healing_cascade_kills = special.healing_cascade_kills;
+        self.game_warp_gate_sessions = special.warp_sessions;
+        self.game_warp_gate_by_ship = special.warp_by_ship;
+        self.pending_game_warps = special.pending_warps;
+        self.game_bomb_weapon_by_ship = special.bomb_weapon_by_ship;
+        self.fire_barge_bomb_powers = special.fire_barge_powers;
+        self.pending_game_fire_barges = special.pending_fire_barges;
+        self.game_bomb_measurements = special.bomb_measurements;
+        self.game_barge_measurements = special.barge_measurements;
+        self.tracked_order_measurements = special.tracked_order_measurements;
+        self.map_border_measurements = special.map_border_measurements;
         self.live_ships_by_side = live_ships_by_side;
         self.live_mobile_ships_by_side = live_mobile_ships_by_side;
         self.live_ship_total = live_ship_total;

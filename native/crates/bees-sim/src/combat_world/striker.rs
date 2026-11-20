@@ -13,7 +13,7 @@ use super::carrier::CARRIER_SHIP_TYPE;
 /// The source-authored game Striker's persistent Carrier relationship.
 /// Caller supplies the actual Level spawn offset and configured return
 /// radius; neither comes from a training heuristic or collider dimensions.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GameStrikerCarrier {
     pub carrier_id: Option<i64>,
     pub offset_from_center: Vec2,
@@ -21,7 +21,7 @@ pub struct GameStrikerCarrier {
 }
 
 impl GameStrikerCarrier {
-    fn valid(self) -> bool {
+    pub(super) fn valid(self) -> bool {
         self.carrier_id.is_none_or(|id| id > 0) &&
             self.offset_from_center.is_finite() &&
             self.refill_distance.is_finite() && self.refill_distance > 0.0
@@ -31,7 +31,7 @@ impl GameStrikerCarrier {
 /// Ship-owned IsBombReady and one-second CheckCarrierReload timer.
 /// Command-owned HasDroppedBomb/HasCompletedRun/HasReturnedToCarrier
 /// remain separate because they reset with each BombingRun.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct GameStrikerRuntime {
     pub(super) carrier: GameStrikerCarrier,
     pub(super) ready: bool,

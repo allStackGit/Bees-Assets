@@ -23,7 +23,7 @@ pub(super) struct PolicyBargeCharge {
 /// A scripted Barge runs the same authored phase durations and physical
 /// hit transaction as a policy Barge; its selected Bomb weapon and the
 /// originating HiveMind command determine target and attribution.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct GameBargeCharge {
     pub(super) phase: u8, // 1 wind-up, 2 charge, 3 cooldown, 4 completed
     pub(super) elapsed: f32,
