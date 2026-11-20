@@ -3411,7 +3411,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             tactic_defaults.sort_unstable_by_key(|row| (row.side, row.saved_squad_id));
             tactic_source_cache = Some((created_count, selected_routes, tactic_defaults));
         }
-        let tactics_rows = &tactic_source_cache.as_ref()
+        let tactics_rows = tactic_source_cache.as_ref()
             .expect("saved tactics source cache initialized").2
             .iter().copied().map(|original| {
             let tactics = progress.tactics_for_squad(original.side, original.saved_squad_id)
