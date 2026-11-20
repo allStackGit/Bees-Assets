@@ -60,6 +60,8 @@ struct WireCounts {
     frames_rendered: u64,
     orders_sent: u64,
     acknowledgments: u64,
+    briefing_requests_sent: u64,
+    briefing_receipts: u64,
     orders_accepted: u64,
     orders_rejected: u64,
     campaign_receipts: u64,
@@ -621,6 +623,8 @@ impl PeerClient {
                         return Err(invalid("out-of-order native host command acknowledgment").into());
                     }
                     self.last_response_request=request;
+                    let briefing_result=self.briefing_pending
+                        .is_some_and(|(_,_,_,id)|id==request);
                     if let Some((world,revision,sequence,id))=self.briefing_pending {
                         if id==request {
                             self.briefing_pending=None;
@@ -629,9 +633,13 @@ impl PeerClient {
                             }
                         }
                     }
-                    self.metrics.acknowledgments+=1;
-                    if processed {self.metrics.orders_accepted+=1;}
-                    else {self.metrics.orders_rejected+=1;}
+                    if briefing_result {
+                        self.metrics.briefing_receipts+=1;
+                    }else{
+                        self.metrics.acknowledgments+=1;
+                        if processed {self.metrics.orders_accepted+=1;}
+                        else {self.metrics.orders_rejected+=1;}
+                    }
                     if self.held_fire_begin_request == Some(request) {
                         self.held_fire_begin_request = None;
                         // A rejected Begin must not cause 30 new attempts
@@ -674,7 +682,9 @@ impl PeerClient {
         {
             return Err(invalid("orders unavailable during briefing or after battle").into());
         }
-        self.enqueue_request(json!({"kind":"input","action":action}),notice)
+        self.enqueue_request(json!({"kind":"input","action":action}),notice)?;
+        self.metrics.orders_sent+=1;
+        Ok(())
     }
 
     /// Presentation-only, per-cue acknowledgment. It never impersonates a
@@ -690,6 +700,7 @@ impl PeerClient {
             "world_id":world,"episode_revision":revision,
             "sequence":sequence}),"Campaign briefing ready".into())?;
         self.briefing_pending=Some((world,revision,sequence,id));
+        self.metrics.briefing_requests_sent+=1;
         Ok(())
     }
 
@@ -707,7 +718,6 @@ impl PeerClient {
         self.queued_bytes += packet.len();
         self.queued.push_back(packet);
         self.next_request = next;
-        self.metrics.orders_sent += 1;
         self.notice = notice;
         self.flush()?;
         Ok(())
@@ -2099,10 +2109,16 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             peer.state.as_ref().is_some_and(|state|
                 state["campaign_dialogue"]["line_count"].as_u64()
                     .is_some_and(|count|dialogue_line<count as usize));
+        // Local+LAN hosting already has a local window that paces its
+        // authored briefing. Only dedicated hosts request a remote ACK,
+        // explicitly marked on the side-filtered authoritative snapshot.
+        let ack_required=peer.state.as_ref()
+            .is_some_and(|state|state["briefing_requires_ack"]==true) &&
+            story_briefing.is_some();
         // A completed K/L dialogue is not an accepted host release until
         // its separate authenticated acknowledgment returns. This prevents
         // gameplay inputs racing the paused server's final briefing tick.
-        if !briefing&&!terminal {
+        if ack_required&&!briefing&&!terminal {
             if let Some((world,revision,sequence))=story_briefing {
                 let pending=peer.briefing_pending.is_some_and(|(w,r,s,_)|
                     (w,r,s)==(world,revision,sequence));
@@ -2115,7 +2131,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 }
             }
         }
-        let awaiting_briefing=story_briefing.is_some() &&
+        let awaiting_briefing=ack_required &&
             peer.briefing_approved!=story_briefing;
         peer.input_suppressed=terminal||briefing||awaiting_briefing;
         if peer.input_suppressed {
@@ -2721,6 +2737,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "audio":audio.measurements(),
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
+        "briefing_requests_sent":peer.metrics.briefing_requests_sent,
+        "briefing_receipts":peer.metrics.briefing_receipts,
         "orders_accepted":peer.metrics.orders_accepted,
         "orders_rejected":peer.metrics.orders_rejected,
         "campaign_receipts":peer.metrics.campaign_receipts,
