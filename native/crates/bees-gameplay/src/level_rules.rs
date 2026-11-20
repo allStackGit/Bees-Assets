@@ -622,7 +622,7 @@ pub trait NativeLevelCommandContext {
 /// Unity Agent.FixedUpdate requests a decision after each controller's
 /// own DecisionPeriod successful fixed steps, not every simulation tick.
 /// One clock is enough: the owning World tick plus each ship's bind tick.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeDecisionCadenceMeasurements {
     /// Fixed-step synchronization requests, including unchanged rosters.
     pub sync_calls: u64,
@@ -630,10 +630,23 @@ pub struct NativeDecisionCadenceMeasurements {
     pub roster_reconciliations: u64,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PolicyBindingClock {
     tick: u64,
     revision: u64,
+}
+
+/// Fixed-tick decision continuity independent of sampled policy actions.
+ /// The due-phase map is a derived index and is rebuilt, not persisted.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeDecisionCadenceCheckpoint {
+    schema_version: u32,
+    period: NonZeroU32,
+    bound_at_tick: BTreeMap<i64, PolicyBindingClock>,
+    observed_roster_revision: Option<u64>,
+    measurements: NativeDecisionCadenceMeasurements,
 }
 
 pub struct NativeDecisionCadence {
@@ -662,6 +675,62 @@ impl NativeDecisionCadence {
 
     pub fn measurements(&self) -> NativeDecisionCadenceMeasurements {
         self.measurements
+    }
+
+    /// Persist exactly the live controller's original binding clocks.
+    /// Recomputable due-phase groups never become a second source of truth.
+    pub fn checkpoint(&self) -> NativeDecisionCadenceCheckpoint {
+        NativeDecisionCadenceCheckpoint {
+            schema_version: 1,
+            period: self.period,
+            bound_at_tick: self.bound_at_tick.clone(),
+            observed_roster_revision: self.observed_roster_revision,
+            measurements: self.measurements,
+        }
+    }
+
+    /// Restore without moving the decision clock to the restart time.
+    /// An unsynchronized roster revision remains unsynchronized; the first
+    /// normal fixed-tick synchronization performs the ordinary reconciliation.
+    pub fn restore_checkpoint(
+        &mut self,
+        checkpoint: NativeDecisionCadenceCheckpoint,
+        combat: &CombatWorld,
+        completed_ticks: u64,
+    ) -> Result<(), &'static str> {
+        if checkpoint.schema_version != 1 || checkpoint.period != self.period ||
+            checkpoint.bound_at_tick.iter().any(|(&id, clock)|
+                id <= 0 || clock.tick > completed_ticks) ||
+            checkpoint.observed_roster_revision.is_some_and(|revision|
+                revision > combat.policy_roster_revision()) {
+            return Err("native policy decision cadence checkpoint disagrees with the Level clock");
+        }
+        if checkpoint.observed_roster_revision == Some(combat.policy_roster_revision()) {
+            // When synchronization was already complete, the checkpoint
+            // must identify precisely the bound controllers and revisions
+            // of the recovered CombatWorld, not a different policy roster.
+            let live = combat.bound_policy_agent_bindings()
+                .collect::<BTreeMap<_, _>>();
+            if live.len() != checkpoint.bound_at_tick.len() ||
+                live.iter().any(|(&id, &revision)|
+                    checkpoint.bound_at_tick.get(&id)
+                        .is_none_or(|clock| clock.revision != revision)) {
+                return Err("native policy decision cadence owner mismatch");
+            }
+        }
+        let mut due = BTreeMap::<u64, Vec<(i64, u64)>>::new();
+        let mut latest = 0u64;
+        let period = u64::from(self.period.get());
+        for (&ship_id, clock) in &checkpoint.bound_at_tick {
+            due.entry(clock.tick % period).or_default().push((ship_id, clock.tick));
+            latest = latest.max(clock.tick);
+        }
+        self.bound_at_tick = checkpoint.bound_at_tick;
+        self.due_by_phase = due;
+        self.latest_binding_tick = latest;
+        self.observed_roster_revision = checkpoint.observed_roster_revision;
+        self.measurements = checkpoint.measurements;
+        Ok(())
     }
 
     /// Reconcile the single authoritative policy roster at a decision
