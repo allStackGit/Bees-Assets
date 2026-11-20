@@ -382,6 +382,8 @@ struct NativeBattleRecoveryCursor {
     next_model_update: usize,
     network_schedule: Option<NativeSourceCommandSchedulerCheckpoint>,
     network_game_id: Option<i64>,
+    #[serde(default)]
+    remote_play: Option<bees_host::remote_play::NativeRemotePlayRecoveryCheckpoint>,
     segment_start_round: u64,
     segment_baseline: NativeDiagnosticMeasurements,
     segment_generation: u64,
@@ -4615,6 +4617,7 @@ fn run_battle(
             cursor.next_squad_item_id < next_id.load(Ordering::Relaxed) ||
             cursor.network_schedule.is_some() != config.hivemind.is_some() ||
             cursor.network_game_id.is_some() != config.hivemind.is_some() ||
+            cursor.remote_play.is_some() != remote_step_interval.is_some() ||
             config.hivemind.as_ref().is_some_and(|net|
                 net.reconnect_game_id.is_some() &&
                 net.reconnect_game_id != cursor.network_game_id)
@@ -4849,6 +4852,21 @@ fn run_battle(
         ).into());
     }
     let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(local_player_side)?;
+    if let Some(cursor) = &resume_cursor {
+        match (remote.as_mut(), cursor.remote_play.as_ref()) {
+            (Some(server), Some(saved)) => {
+                let world = host.simulation().world(0)
+                    .ok_or_else(|| invalid("recovered native multiplayer Level disappeared"))?;
+                server.restore_recovery_checkpoint(
+                    saved.clone(), world.id, world.episode_revision(),
+                ).map_err(|error| contextual("native multiplayer session recovery", error))?;
+            }
+            (None, None) => {}
+            _ => return Err(invalid(
+                "recovered multiplayer side transport does not match the original host",
+            ).into()),
+        }
+    }
     if let Some(server) = &mut remote {
         server.set_music_location(remote_music_location);
     }
@@ -5050,6 +5068,11 @@ fn run_battle(
                 network_schedule: network.as_ref().map(|network|
                     network.scheduler.recovery_checkpoint()),
                 network_game_id: network.as_ref().and_then(|network| network.server_game_id),
+                remote_play: remote.as_ref().map(|server| {
+                    let world = host.simulation().world(0)
+                        .expect("native remote checkpoint always has one live Level");
+                    server.recovery_checkpoint(world.id, world.episode_revision())
+                }),
                 segment_start_round,
                 segment_baseline: segment_baseline.clone(),
                 segment_generation,
