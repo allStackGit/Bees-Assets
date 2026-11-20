@@ -574,7 +574,8 @@ impl PeerClient {
                         message["viewer_side"].as_i64() != Some(i64::from(self.side)) ||
                         message["world_id"].as_u64().is_none() ||
                         message["episode_revision"].as_u64().is_none() ||
-                        message["winner_side"].as_i64().is_none()
+                        !(message["winner_side"].is_null() ||
+                            message["winner_side"].as_i64().is_some())
                     {
                         return Err(invalid("native battle result belongs to another session or side").into());
                     }
@@ -584,6 +585,9 @@ impl PeerClient {
                     let reason = message["reason"].as_str()
                         .filter(|text| !text.is_empty())
                         .ok_or_else(|| invalid("missing authoritative battle result reason"))?;
+                    // Winnerless timeouts/draws are still real completed
+                    // native battles; the source terminal receipt does not
+                    // manufacture a winner merely to satisfy the client.
                     let text = format!("{label}: {reason}");
                     self.battle_result_receipt = Some(text.clone());
                     self.notice = text;
@@ -1535,9 +1539,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             text::draw_at(pixels,WIDTH,FIELD+14,435,
                 text::fit(&flags,WIDTH-FIELD-24),1,MUTED);
         }
-        let outcome=state["terminal_outcome"]["label"].as_str().map(str::to_owned)
-            .or_else(||(!state["terminal_result"].is_null()).then(||
-                format!("Winner side {}",state["terminal_result"])));
+        let outcome=state["terminal_outcome"]["label"].as_str().map(str::to_owned);
         if let Some(outcome)=outcome {
             let reason = state["terminal_outcome"]["reason"].as_str()
                 .unwrap_or("Battle finished");
@@ -2028,7 +2030,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             }
         }
         peer.input_suppressed=peer.state.as_ref().is_some_and(|state| {
-            !state["terminal_result"].is_null() ||
+            state["terminal_outcome"].is_object() ||
+                peer.battle_result_receipt.is_some() ||
                 (state["campaign_dialogue"]["line_count"].as_u64()
                     .is_some_and(|count|dialogue_line<count as usize) &&
                 serde_json::from_value::<CampaignCue>(
