@@ -392,15 +392,65 @@ function windowsUv(root) {
             fs.rmSync(temporary,{recursive:true,force:true});
     }
 }
+function linuxUv(root) {
+    if(process.arch!=='x64')
+        throw Error('Pinned Linux uv provisioning currently needs x86_64.');
+    const target=path.join(root,'Tooling','uv-'+UV_WINDOWS_VERSION);
+    const binary=path.join(target,'uv');
+    if(fs.existsSync(binary)) {
+        verifyWindowsUvVersion(binary);
+        return binary;
+    }
+    fs.mkdirSync(path.dirname(target),{recursive:true,mode:0o700});
+    const filename='uv-x86_64-unknown-linux-gnu.tar.gz';
+    const base='https://github.com/astral-sh/uv/releases/download/'+
+        UV_WINDOWS_VERSION+'/'+filename;
+    const archive=path.join(path.dirname(target),'.uv-'+process.pid+'.tar.gz');
+    const checksum=archive+'.sha256';
+    const temporary=target+'.'+process.pid+'.stage';
+    try {
+        exec('curl',['--fail','--location','--silent','--show-error',
+            '--max-time','180','--output',checksum,base+'.sha256']);
+        const expected=fs.readFileSync(checksum,'utf8').trim().split(/\s+/)[0];
+        if(!HASH.test(expected)||fs.statSync(checksum).size>4096)
+            throw Error('The pinned official Linux uv checksum is invalid.');
+        exec('curl',['--fail','--location','--silent','--show-error',
+            '--max-time','180','--output',archive,base]);
+        if(fs.statSync(archive).size>48*1024*1024||
+            crypto.createHash('sha256').update(fs.readFileSync(archive))
+                .digest('hex')!==expected)
+            throw Error('Official Linux uv archive checksum mismatch.');
+        const names=exec('tar',['-tzf',archive]).split(/\r?\n/).filter(Boolean);
+        if(!names.includes('uv-x86_64-unknown-linux-gnu/uv')||
+            names.length>24||names.some(name=>name.startsWith('/')||
+                name.includes('\\')||name.includes(':')||
+                name.split('/').includes('..')))
+            throw Error('Pinned official Linux uv archive has unexpected paths.');
+        fs.mkdirSync(temporary,{recursive:true,mode:0o700});
+        exec('tar',['-xzf',archive,'-C',temporary]);
+        const unpacked=path.join(temporary,'uv-x86_64-unknown-linux-gnu','uv');
+        verifyWindowsUvVersion(unpacked);
+        fs.mkdirSync(target,{recursive:true,mode:0o700});
+        fs.copyFileSync(unpacked,binary,fs.constants.COPYFILE_EXCL);
+        fs.chmodSync(binary,0o700);
+        return binary;
+    }finally {
+        for(const file of [archive,checksum]) {
+            try{fs.unlinkSync(file);}catch{}
+        }
+        if(fs.existsSync(temporary))
+            fs.rmSync(temporary,{recursive:true,force:true});
+    }
+}
 function preparePythonRuntimes(root,changes) {
     // The permanent Hub worker has no Python requirement. Only simulation
     // releases create or update Python environments.
     if(!changes.tinybrains&&!changes.courier)return {};
     const env={...process.env};
     const windows=process.platform==='win32';
-    // The timer is independent of the interactive shell's PATH on Linux.
-    const localUv=path.join(require('node:os').homedir(),'.local','bin','uv');
-    let command=windows?null:fs.existsSync(localUv)?localUv:'uv';
+    // Both platforms use a project-local pinned uv executable only when
+    // installing a simulation. No system-wide Python or uv prerequisite.
+    let command=windows?null:linuxUv(root);
     const prefix=[];
     let pythonVersion='3.11.18';
     if(windows) {
