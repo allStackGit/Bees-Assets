@@ -277,8 +277,8 @@ function learnerMeasurements(metrics) {
     const ingest = metrics.trajectory_assembly_and_ingest_wall_seconds;
     if ([elapsed, processing, update, reading, ingest].every(
         value=>Number.isFinite(value) && value>=0) && elapsed>0 &&
-        update>0 && processing+update<=elapsed+0.01 &&
-        reading+ingest<=processing+0.01) {
+        update>0 && processing+update<=elapsed &&
+        reading+ingest<=processing) {
         const other = Math.max(0, elapsed-processing-update);
         for (const [name,value] of [
             ['learner_total_wall_seconds',elapsed],
