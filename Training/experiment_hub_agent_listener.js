@@ -57,6 +57,16 @@ async function readBody(req) {
         Buffer.concat(chunks,received))||'{}');
 }
 
+function approvedReleaseProjects(hub,id) {
+    // Worker capability names refer to executor roles; release component
+    // names refer to the shared simulation source shipped to those roles.
+    const live=hub.agentReports.get(id)?.installed_projects;
+    const selected=hub.state.machines.find(m=>m.id===id)?.bootstrap_projects;
+    const projects=new Set(live||selected||[]);
+    if(projects.has('tinybrains_rollout'))projects.add('tinybrains');
+    if(projects.has('courier_lineage'))projects.add('courier');
+    return [...projects];
+}
 function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null,bootstrapRoot=null) {
     if(bindHost!==AGENT_HOST&&!isTailnetIPv4(bindHost))
         throw Error('Machine-agent server can bind only to loopback or a tailnet IPv4.');
@@ -105,8 +115,7 @@ function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null,bootstrapRoo
                     keys.length===1&&Number(req.headers['content-length']||0)===0) {
                     const live=hub.agentReports.get(identity);
                     return respond(res,200,{
-                        components:releases.manifest(live?.installed_projects||
-                            hub.state.machines.find(m=>m.id===identity)?.bootstrap_projects||[]),
+                        components:releases.manifest(approvedReleaseProjects(hub,identity)),
                         mode:hub.machineUpdatePolicy(identity),
                         agent_instance_id:live?.instance_id||null,
                         agent_preflight_passed:live?.native_preflight_passed===true,
@@ -125,9 +134,7 @@ function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null,bootstrapRoo
                     const component=url.searchParams.get('component');
                     const sha=url.searchParams.get('sha256');
                     if(component!=='worker'&&
-                        !(hub.agentReports.get(identity)?.installed_projects||
-                            hub.state.machines.find(m=>m.id===identity)?.bootstrap_projects||[])
-                            .includes(component))
+                        !approvedReleaseProjects(hub,identity).includes(component))
                         return respond(res,403,{error:'Project not enrolled on this worker.'});
                     const archive=releases.archive(component,sha);
                     res.writeHead(200,{
