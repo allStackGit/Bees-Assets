@@ -415,6 +415,10 @@ struct NativeBattleRecoveryCursor {
     past_queen_controllers: bees_host::policy_only_metadata::NativeQueenControllerMeasurements,
 }
 
+/// Opt-in training recovery batches full World serialization at a coarse
+/// interval; a crash replays the uncommitted tail from the last fixed tick.
+const TRAINING_RECOVERY_ROUND_INTERVAL: u64 = 4096;
+
 fn one_episode() -> u32 { 1 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -5070,8 +5074,10 @@ fn run_battle(
         }};
     }
     'battle: loop {
-        if host_checkpoint_file.is_some() &&
-            checkpointed_round != Some(rounds) &&
+        let recovery_due = checkpointed_round.is_none_or(|previous|
+            previous != rounds && (policy_capture.is_none() ||
+                rounds.saturating_sub(previous) >= TRAINING_RECOVERY_ROUND_INTERVAL));
+        if host_checkpoint_file.is_some() && recovery_due &&
             network.as_ref().is_none_or(|session| session.server_game_id.is_some() &&
                 session.next_level == session.levels.len()) &&
             host.connection_mut().connection().pending_request_count() == 0
