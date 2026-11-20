@@ -10,6 +10,7 @@ const {ExperimentHub}=require('./experiment_hub_core');
 const {JobExporter}=require('./experiment_hub_job_export');
 const localServices=require('./experiment_hub_local_services');
 const {route:hubRoute}=require('./experiment_hub_admin');
+const {ReleaseStore}=require('./experiment_hub_releases');
 const {createAgentServer,AGENT_HOST,AGENT_PORT,activeTailnetAddress}=
     require('./experiment_hub_agent_listener');
 
@@ -222,8 +223,9 @@ async function main(argv=process.argv.slice(2)) {
     const html=renderPage(fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8'));
     const ui=fs.readFileSync(path.join(__dirname,'experiment_hub_ui.js'),'utf8');
     const admin=createAdminServer(hub,{html,ui,dataRoot:root});
-    const worker=createAgentServer(()=>hub);
-    const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet):null;
+    const releases=new ReleaseStore(root);
+    const worker=createAgentServer(()=>hub,AGENT_HOST,releases);
+    const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet,releases):null;
     async function listen(server,port,host) {
         await new Promise((resolve,reject)=>{
             server.once('error',reject);
@@ -240,6 +242,12 @@ async function main(argv=process.argv.slice(2)) {
         if(remoteWorker?.listening)remoteWorker.close();
         throw error;
     }
+    // Publish HEADs from the coordinator's configured trusted Git checkouts.
+    // Private GitHub credentials never leave Halifax or reach machine agents.
+    releases.refresh().catch(error=>console.error('[hub-updates] '+error.message));
+    const releaseTimer=setInterval(()=>{
+        releases.refresh().catch(error=>console.error('[hub-updates] '+error.message));
+    },120000);
     const automationTimer=setInterval(()=>{
         try {
             // A lost worker heartbeat is a durable observation, never a
@@ -260,6 +268,7 @@ async function main(argv=process.argv.slice(2)) {
         if(closing)return;
         closing=true;
         clearInterval(automationTimer);
+        clearInterval(releaseTimer);
         admin.close();
         worker.close();
         if(remoteWorker)remoteWorker.close();
