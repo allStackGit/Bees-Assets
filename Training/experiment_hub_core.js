@@ -886,6 +886,10 @@ function collectorReplacementBlock(snapshot,job) {
             JSON.stringify(job.frozen_parameters)||
         parent.resources?.gpu_count!==job.resources?.gpu_count||
         parent.resources?.gpu_mode!==job.resources?.gpu_mode||
+        (parent.model_source_job_id||null)!==
+            (job.model_source_job_id||null)||
+        (parent.expected_parent_model_sha256||null)!==
+            (job.expected_parent_model_sha256||null)||
         job.continuation_machine_id!==parent.assigned_machine_id||
         job.artifact_lineage_root_id!==(parent.artifact_lineage_root_id||parent.id)||
         job.assigned_machine_id&&
@@ -4096,6 +4100,10 @@ class ExperimentHub {
                 job:{
                     id:job.id,project_id:job.project_id,adapter:job.adapter,
                     lease_id:job.lease_id,status:'waiting_adapter',
+                    ...(job.collector_replacement_of_job_id?{
+                        collector_replacement_of_job_id:
+                            job.collector_replacement_of_job_id,
+                    }:{}),
                     frozen_parameters:copy(job.frozen_parameters),
                     configuration_sha256:job.configuration_sha256,
                     continuation_of_job_id:job.continuation_of_job_id||null,
@@ -6312,6 +6320,7 @@ class ExperimentHub {
                 failedCollector.configuration_id!==selected.id||
                 failedCollector.configuration_revision!==selected.revision||
                 JSON.stringify(failedCollector.frozen_parameters)!==JSON.stringify(frozen)||
+                (failedCollector.model_source_job_id||null)!==sourceId||
                 failedCollector.status!=='failed'||
                 !failedCollector.capacity_released_at||
                 !failedCollector.assigned_machine_id||
