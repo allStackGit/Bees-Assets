@@ -921,6 +921,7 @@ impl RunNetwork {
     fn poll(&mut self, host: &mut RolloutHost,
         mut recording: Option<(&mut fs::File, u64)>,
     ) -> io::Result<()> {
+        let mut recorded_this_poll = false;
         for _ in 0..16 {
             let event = if self.issue_source_commands {
                 host.poll_network_and_continue_source_commands(&mut self.worker)
@@ -995,6 +996,7 @@ impl RunNetwork {
                 record["round"] = json!(*round);
                 writeln!(*trace, "{record}")?;
                 self.recorded_network_events += 1;
+                recorded_this_poll = true;
             }
         }
         // A single sync amortizes disk barriers across up to sixteen
@@ -1002,8 +1004,10 @@ impl RunNetwork {
         // The actual Level and durable request ledger already own their
         // effects; the replay record must be committed before the next
         // physical tick can depend on these server decisions.
-        if let Some((trace, _)) = recording {
-            trace.sync_data()?;
+        if recorded_this_poll {
+            if let Some((trace, _)) = recording {
+                trace.sync_data()?;
+            }
         }
         Ok(())
     }
