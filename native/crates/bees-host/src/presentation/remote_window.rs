@@ -453,6 +453,9 @@ impl PeerClient {
             start = index + 1;
             match message["kind"].as_str() {
                 Some("welcome") => {
+                    if self.authenticated {
+                        return Err(invalid("native multiplayer socket reauthenticated after its session was established").into());
+                    }
                     if message["protocol"].as_u64() != Some(1) ||
                         message["side"].as_i64() != Some(i64::from(self.side)) {
                         return Err(invalid("native host authenticated the wrong player side or protocol").into());
