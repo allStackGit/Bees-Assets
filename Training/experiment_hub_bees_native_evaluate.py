@@ -17,18 +17,20 @@ if str(NATIVE) not in sys.path:
     sys.path.insert(0, str(NATIVE))
 
 from evaluate_policy import evaluate as evaluate_native
-from native_training_artifacts import atomic_json, file_sha256
+from native_training_artifacts import (
+    atomic_json, file_sha256, native_source_contract_sha256,
+)
 
 FIELDS = {
     "suite_id", "source_run_config", "source_run_config_sha256",
-    "reference_manifest", "reference_manifest_sha256", "learner_slot",
+    "source_contract_sha256", "reference_manifest", "reference_manifest_sha256", "learner_slot",
     "learner_side", "policy_seed", "physics_workers", "success_metric", "trials",
 }
 METRICS = {"side_victories", "learner_mission_successes"}
 
 
 def pinned_file(raw, digest):
-    if not isinstance(raw, str) or not Path(raw).is_absolute():
+    if not isinstance(raw, (str, Path)) or not Path(raw).is_absolute():
         raise ValueError("Native evaluation inputs must be installed absolute paths.")
     file = Path(raw)
     if not file.is_file() or file.resolve(strict=True) != file:
@@ -58,10 +60,15 @@ def read_suite(source):
         raise ValueError("Invalid fixed native Bees evaluation parameters.")
     run = pinned_file(raw["source_run_config"], raw["source_run_config_sha256"])
     reference = pinned_file(raw["reference_manifest"], raw["reference_manifest_sha256"])
+    if (not isinstance(raw["source_contract_sha256"], str) or
+        not SHA256.fullmatch(raw["source_contract_sha256"]) or
+        native_source_contract_sha256(run) != raw["source_contract_sha256"]):
+        raise ValueError("Native evaluation physical scene or policy contract differs from frozen suite.")
     source_config = json.loads(read_bounded(run, 1024 * 1024))
     count = source_config.get("episodes_per_world", 1)
     levels = source_config.get("levels")
-    if (type(count) is not int or not 1 <= count <= 10000 or
+    if (not isinstance(source_config, dict) or type(count) is not int or
+        not 1 <= count <= 10000 or
         not isinstance(levels, list) or not levels or
         count * len(levels) != raw["trials"]):
         raise ValueError("Native evaluation trials disagree with its authored physical Levels.")
@@ -78,9 +85,13 @@ def fixed_reference_manifest(checkpoint, digest, installed, definition, workspac
     reference_file = installed["reference"]
     pinned_file(source, definition["source_run_config_sha256"])
     pinned_file(reference_file, definition["reference_manifest_sha256"])
+    if native_source_contract_sha256(source) != definition["source_contract_sha256"]:
+        raise ValueError("Native evaluation source scene or policy worker changed.")
     if file_sha256(checkpoint) != digest:
         raise ValueError("Hub-snapshotted native learner checkpoint changed.")
     candidate_file = installed["candidate_manifest"]
+    if candidate_file.resolve(strict=True) != candidate_file:
+        raise ValueError("Native learned model manifest is redirected.")
     candidate = json.loads(read_bounded(candidate_file, 1024 * 1024))
     reference = json.loads(read_bounded(reference_file, 1024 * 1024))
     if any(candidate.get(key) != reference.get(key)
@@ -110,8 +121,10 @@ def fixed_reference_manifest(checkpoint, digest, installed, definition, workspac
             models.append({**learner, "path": str(checkpoint)})
             continue
         opponent = originals[identifier]
+        if not isinstance(opponent.get("path"), str):
+            raise ValueError("Fixed opponent has no pinned model artifact.")
         original_file = pinned_file(
-            str((reference_file.parent / opponent["path"]).resolve(strict=True)),
+            reference_file.parent / opponent["path"],
             opponent.get("sha256"),
         )
         models.append({**opponent, "path": str(original_file)})
@@ -127,6 +140,8 @@ def evaluate_checkpoint(job, checkpoint, digest, work, suite, installed, binary)
     if job.get("final_checkpoint_sha256") != digest:
         raise ValueError("Native Hub evaluation requires a verified final publisher checkpoint.")
     output = work / "native-evaluation"
+    candidate_sha = file_sha256(installed["candidate_manifest"])
+    binary_sha = file_sha256(binary)
     manifest = fixed_reference_manifest(checkpoint, digest, installed, suite, work)
     report = evaluate_native(
         installed["source"], manifest, output,
@@ -144,6 +159,13 @@ def evaluate_checkpoint(job, checkpoint, digest, work, suite, installed, binary)
         raise ValueError("Native physical evaluation does not prove the pinned suite result.")
     pinned_file(installed["source"], suite["source_run_config_sha256"])
     pinned_file(installed["reference"], suite["reference_manifest_sha256"])
+    if (native_source_contract_sha256(installed["source"]) != suite["source_contract_sha256"] or
+        file_sha256(installed["candidate_manifest"]) != candidate_sha or
+        file_sha256(binary) != binary_sha):
+        raise ValueError("Native evaluator code, learned manifest or physical source changed.")
+    for model in json.loads(read_bounded(manifest, 1024 * 1024))["models"]:
+        if model["slot"] != suite["learner_slot"]:
+            pinned_file(model["path"], model["sha256"])
     if file_sha256(checkpoint) != digest:
         raise ValueError("Evaluated checkpoint changed before receipt acceptance.")
     return successes
