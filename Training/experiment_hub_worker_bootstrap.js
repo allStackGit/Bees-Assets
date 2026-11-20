@@ -62,6 +62,24 @@ function keyFile(root,name) {
         throw Error('Existing learner rollout key is invalid.');
     return key;
 }
+function machineReinstallBlock(hub,machineId) {
+    // Completed historical runs are not active native owners. An outstanding
+    // lease or uncertain native dispatch, however, must never be reassigned.
+    const recent=hub.agentReports.get(machineId);
+    if(recent&&Date.now()-recent.received_ms>=0&&
+        Date.now()-recent.received_ms<45000)
+        return 'A currently connected agent is already using this machine identity.';
+    if(hub.state.reservations.some(lease=>
+        lease.machine_id===machineId&&
+        ['active','offered','acknowledged'].includes(lease.status)))
+        return 'The machine still has outstanding capacity claims. Resolve them in Experiment Hub before reinstalling.';
+    if(hub.state.jobs.some(job=>
+        job.assigned_machine_id===machineId&&job.dispatch_id&&
+        !job.capacity_released_at&&
+        !['finished','failed','stopped','cancelled'].includes(job.status)))
+        return 'The machine has an unfinished or unverified native job. Reconcile the job before reinstalling.';
+    return null;
+}
 function bootstrap(hub,root,ip,request) {
     if(!request||typeof request!=='object'||Array.isArray(request)||
         Object.keys(request).some(k=>!['projects','cpus','ram_mb'].includes(k)))
@@ -79,16 +97,16 @@ function bootstrap(hub,root,ip,request) {
     const secrets=Object.fromEntries(projects.map(p=>[p,keyFile(root,p)]));
     let registered=hub.state.machines.find(m=>m.id===peer.machineId);
     if(registered) {
-        // Re-running an interrupted first install is allowed only from the
-        // SAME Tailscale node, before its first heartbeat or native job.
-        // Never rotate an existing active or legacy machine's identity.
-        if((registered.tailnet_node_id&&
-             registered.tailnet_node_id!==peer.nodeId)||
-            hub.agentReports.has(peer.machineId)||
-            hub.state.jobs.some(j=>j.assigned_machine_id===peer.machineId)||
-            hub.state.reservations.some(r=>r.machine_id===peer.machineId)||
-            (registered.agent_key_sha256&&!registered.tailnet_node_id))
-            throw Error('Machine already enrolled; use its existing installation.');
+        const blocked=machineReinstallBlock(hub,peer.machineId);
+        if(blocked)throw Error(blocked);
+        const requiresApproval=Boolean(registered.agent_key_sha256&&
+            !registered.tailnet_node_id||
+            registered.tailnet_node_id&&registered.tailnet_node_id!==peer.nodeId);
+        if(requiresApproval&&
+            !(Date.parse(registered.bootstrap_reinstall_approved_until||'')>Date.now()))
+            throw Error('Existing machine identity needs one-time approval. In Experiment Hub > Machines, select Allow reinstall for '+peer.machineId+', then rerun the installer.');
+        // The verified Tailscale node may retry an interrupted enrollment
+        // without another dashboard step. Historical jobs remain intact.
     } else {
         hub.addMachine({id:peer.machineId,name:peer.machineId,cpus,ram_mb:ram,gpus:[]});
     }
@@ -98,6 +116,7 @@ function bootstrap(hub,root,ip,request) {
     registered=next.machines.find(m=>m.id===peer.machineId);
     registered.tailnet_node_id=peer.nodeId;
     registered.bootstrap_projects=projects;
+    delete registered.bootstrap_reinstall_approved_until;
     hub.commit(next);
     const enrolled=hub.enrollMachine({
         machine_id:peer.machineId,confirm_enroll:true,
@@ -106,4 +125,4 @@ function bootstrap(hub,root,ip,request) {
     return {machine_id:peer.machineId,agent_token:enrolled.agent_token,
         rollout_keys:secrets};
 }
-module.exports={bootstrap,authenticatedPeer,keyFile};
+module.exports={bootstrap,authenticatedPeer,keyFile,machineReinstallBlock};

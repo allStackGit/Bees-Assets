@@ -5342,6 +5342,36 @@ class ExperimentHub {
         this.commit(next);
         return {machine_id:machine.id,gpus:copy(retained)};
     }
+    approveMachineReinstallation(value) {
+        if(!object(value)||value.confirm_reinstall!==true||
+            !ID.test(String(value.machine_id||''))||
+            Object.keys(value).some(key=>
+                !['machine_id','confirm_reinstall'].includes(key)))
+            throw Error('Confirm which machine identity may be reinstalled.');
+        const machine=this.state.machines.find(m=>m.id===value.machine_id);
+        if(!machine||!machine.agent_key_sha256)
+            throw Error('This machine has no prior enrollment to recover.');
+        const report=this.agentReports.get(machine.id);
+        if(report&&Date.now()-report.received_ms>=0&&
+            Date.now()-report.received_ms<AGENT_HEARTBEAT_TTL_MS)
+            throw Error('The old worker is still connected. Do not replace an active agent.');
+        if(this.state.reservations.some(lease=>
+            lease.machine_id===machine.id&&
+            ['active','offered','acknowledged'].includes(lease.status)))
+            throw Error('Release outstanding machine capacity claims before reinstalling.');
+        if(this.state.jobs.some(job=>
+            job.assigned_machine_id===machine.id&&job.dispatch_id&&
+            !job.capacity_released_at&&
+            !['finished','failed','stopped','cancelled'].includes(job.status)))
+            throw Error('Reconcile uncertain or unfinished native jobs before reinstalling.');
+        const next=copy(this.state);
+        next.machines.find(m=>m.id===machine.id).bootstrap_reinstall_approved_until=
+            new Date(Date.now()+15*60*1000).toISOString();
+        this.commit(next);
+        return {machine_id:machine.id,reinstall_approved:true,
+            expires_at:next.machines.find(m=>m.id===machine.id)
+                .bootstrap_reinstall_approved_until};
+    }
     enrollMachine(value) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
             throw Error('Invalid machine identity.');

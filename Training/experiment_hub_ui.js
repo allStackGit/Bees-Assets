@@ -6716,6 +6716,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }catch(e){feedback('hub-enrollment-message',e.message);}
             }));
+            // Only an offline identity can be approved for replacement.
+            // A signed-in same-owner Tailscale node must then claim this
+            // identity within 15 minutes; this button issues no secret.
+            if(m.agent_enrolled&&m.status==='offline')
+                actions.append(button('Allow reinstall',async()=>{
+                    if(!confirm('Permit a one-time new Tailscale enrollment for '+
+                        m.id+' within 15 minutes? It will replace the old machine credential. '+
+                        'Existing job history is preserved. The Hub refuses if native jobs or capacity claims remain.'))return;
+                    try{
+                        const result=await action('hub/machines/approve-reinstall',{
+                            machine_id:m.id,confirm_reinstall:true,
+                        });
+                        feedback('hub-enrollment-message',
+                            'Reinstall approved for '+m.id+' until '+
+                            new Date(result.expires_at).toLocaleTimeString()+
+                            '. Run the worker installer again on that machine.');
+                        await reload();
+                    }catch(e){feedback('hub-enrollment-message',e.message);}
+                }));
             if(m.agent_enrolled)actions.append(button('Revoke',async()=>{
                 if(!confirm('Disable machine agent access for '+m.id+'?'))return;
                 try{

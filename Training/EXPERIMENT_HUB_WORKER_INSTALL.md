@@ -73,8 +73,13 @@ The coordinator verifies the new node through its local Tailscale daemon
 (`tailscale whois` and `tailscale status`), automatically registers its
 machine inventory, generates a private machine token and securely provisions
 TinyBrains/Courier HMAC rollout credentials. Only the verified same-owner node
-may receive them. A previously registered or active machine is never silently
-reassigned; an interrupted first install may retry from the same node.
+may receive them. A currently connected machine or a machine with outstanding capacity claims
+or uncertain native jobs cannot be reassigned. An interrupted first install
+on the same Tailscale node can retry without re-registering or deleting
+historical jobs. To migrate an old manually enrolled machine without a Tailscale
+node binding, use **Machines > Allow reinstall** once on Halifax and rerun the
+installer within 15 minutes. This is an explicit credential rotation; it
+preserves historical jobs and is allowed only for an idle, offline machine.
 
 The worker downloads the current approved, SHA-256-checked private software
 archives directly from Halifax's Tailscale listener. **No SSH keys or tunnels,

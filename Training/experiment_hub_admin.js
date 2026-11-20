@@ -16,6 +16,7 @@ const POST_ACTIONS={
     '/api/hub/machines/gpu-budget':[200,'updateMachineGpuBudget'],
     '/api/hub/machines/gpus':[200,'bindMachineGpus'],
     '/api/hub/machines/enroll':[201,'enrollMachine'],
+    '/api/hub/machines/approve-reinstall':[200,'approveMachineReinstallation'],
     '/api/hub/machines/revoke':[200,'revokeMachine'],
     '/api/hub/machines/update':[200,'configureMachineUpdate'],
     '/api/hub/machines/install':[200,'requestMachineSoftware'],
