@@ -6365,6 +6365,29 @@ fn run_battle(
                     ));
                     break 'battle;
                 }
+                if checkpointed_round.is_none() {
+                    if let Some(directory) = output {
+                        // This marker is committed only AFTER the first
+                        // complete World/connection snapshot and BEFORE
+                        // any HiveMind setup, input or physics step. An
+                        // archived start lacking both checkpoint and marker
+                        // is provably pre-game and can be reconstructed
+                        // from its same immutable source. A later missing
+                        // checkpoint must never masquerade as such a start.
+                        let marker = directory.join("native-initial-world-committed.json");
+                        if let Err(error) = persist_new_json(&marker, &json!({
+                            "schema_version": 1,
+                            "kind": "native_initial_world_committed",
+                            "run_id": config.run_id,
+                            "config_sha256": config_digest,
+                        })) {
+                            failed_window = Some(format!(
+                                "native initial World commitment marker: {error:?}"
+                            ));
+                            break 'battle;
+                        }
+                    }
+                }
                 checkpointed_round = Some(rounds);
                 // This is the first boundary at which a remote player may
                 // be told its input took effect. A previously acknowledged
