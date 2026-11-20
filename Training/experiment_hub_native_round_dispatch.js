@@ -105,7 +105,20 @@ function parameters(orders,job) {
         source_run_contract_sha256:orders.source_run_contract_sha256,
     };
 }
-function sameJson(a,b) {return stable(a)===stable(b);}
+// Hub state and a locally issued work order can serialize object keys in
+// different orders after persistence/restart. Object member order is not
+// part of the frozen parameter or resource contract; array order is.
+function sameJson(a,b) {
+    if(a===b)return true;
+    if(Array.isArray(a)||Array.isArray(b))
+        return Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&
+            a.every((value,index)=>sameJson(value,b[index]));
+    if(a===null||b===null||typeof a!=='object'||typeof b!=='object')
+        return false;
+    const keysA=Object.keys(a).sort(),keysB=Object.keys(b).sort();
+    return keysA.length===keysB.length&&
+        keysA.every((key,index)=>key===keysB[index]&&sameJson(a[key],b[key]));
+}
 async function api(port,method,resource,body) {
     const response=await fetch('http://127.0.0.1:'+port+'/api/hub/'+resource,{
         method,redirect:'error',signal:AbortSignal.timeout(30000),
