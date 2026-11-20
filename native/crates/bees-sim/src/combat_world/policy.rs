@@ -184,7 +184,12 @@ impl CombatWorld {
             bound.movement_disabled = movement_disabled;
             bound.control = PolicyControl::new();
         } else {
-            self.ship_weapons.insert(ship_id, ShipWeapons::new(rotation));
+            // A living ship may gain policy control after ordinary
+            // gameplay already installed its physical turret mounts.
+            // Controller installation never creates a fresh hull or
+            // rewinds those weapons' real cooldown and target state.
+            self.ship_weapons.entry(ship_id)
+                .or_insert_with(|| ShipWeapons::new(rotation));
             self.policy_ship_runtime.insert(ship_id, PolicyShipRuntime {
                 frame, bind_revision: self.policy_roster_revision,
                 movement_disabled, control: PolicyControl::new(),
