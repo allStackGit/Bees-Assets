@@ -46,6 +46,18 @@ fn valid_prefix_digest(digest: &str) -> bool {
     digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+/// The original authenticated server Game identity, recorded alongside
+/// the canonical request-hash allocator. A pending initial setup with no
+/// Game ID is intentionally ambiguous after a crash: it cannot be retried
+/// as a new Game. A recognized Game ID permits reconnecting its Levels.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSetupBinding {
+    run_identity: String,
+    pending_hash: Option<i64>,
+    game_id: Option<i64>,
+}
+
 /// Only state that remains meaningful after a process restart. Strategy
 /// and targeting replies still in flight cannot be reconstructed as valid
 /// live commands without their original, live Squad instances: they are
@@ -62,6 +74,8 @@ pub struct NativeConnectionCheckpoint {
     journal_cursors: HashMap<String, JournalCursor>,
     #[serde(default)]
     journal_progress: BTreeMap<String, BTreeMap<u64, JournalPosition>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    setup_binding: Option<NativeSetupBinding>,
 }
 
 /// Borrowed serialization view: large StoreCommands queues are streamed
@@ -73,6 +87,8 @@ struct NativeConnectionCheckpointView<'a> {
     stores: &'a PendingStoreCommands,
     journal_cursors: &'a HashMap<String, JournalCursor>,
     journal_progress: &'a BTreeMap<String, BTreeMap<u64, JournalPosition>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    setup_binding: &'a Option<NativeSetupBinding>,
 }
 
 impl NativeConnectionCheckpoint {
@@ -122,6 +138,7 @@ pub struct NativeHiveMindConnection {
     stores: PendingStoreCommands,
     journal_cursors: HashMap<String, JournalCursor>,
     journal_progress: BTreeMap<String, BTreeMap<u64, JournalPosition>>,
+    setup_binding: Option<NativeSetupBinding>,
 }
 
 impl NativeHiveMindConnection {
@@ -135,6 +152,7 @@ impl NativeHiveMindConnection {
             stores: PendingStoreCommands::new(),
             journal_cursors: HashMap::new(),
             journal_progress: BTreeMap::new(),
+            setup_binding: None,
         })
     }
 
@@ -157,6 +175,15 @@ impl NativeHiveMindConnection {
             return Err(HiveMindProtocolError::InvalidRequest);
         }
         snapshot.stores.validate_checkpoint()?;
+        if snapshot.setup_binding.as_ref().is_some_and(|setup|
+            setup.run_identity.trim().is_empty() ||
+            setup.run_identity.len() > 1024 ||
+            setup.game_id.is_some_and(|id| id <= 0) ||
+            setup.pending_hash.is_some_and(|hash| !snapshot.hashes.has_issued(hash)) ||
+            setup.pending_hash.is_none() && setup.game_id.is_none()
+        ) {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
         if !snapshot.stores.owned_request_hashes()
             .all(|hash| snapshot.hashes.has_issued(hash))
         {
@@ -168,6 +195,7 @@ impl NativeHiveMindConnection {
             stores: snapshot.stores,
             journal_cursors: snapshot.journal_cursors,
             journal_progress: snapshot.journal_progress,
+            setup_binding: snapshot.setup_binding,
         })
     }
 
@@ -182,6 +210,7 @@ impl NativeHiveMindConnection {
             stores: self.stores.clone(),
             journal_cursors: self.journal_cursors.clone(),
             journal_progress: self.journal_progress.clone(),
+            setup_binding: self.setup_binding.clone(),
         }
     }
 
@@ -199,6 +228,7 @@ impl NativeHiveMindConnection {
             stores: &self.stores,
             journal_cursors: &self.journal_cursors,
             journal_progress: &self.journal_progress,
+            setup_binding: &self.setup_binding,
         })
     }
 
@@ -207,6 +237,63 @@ impl NativeHiveMindConnection {
     /// A 32-bit counter wrap is an error, not a duplicate server request.
     pub fn next_hash(&mut self) -> Result<i64, HiveMindProtocolError> {
         self.hashes.next_hash()
+    }
+
+    /// Durable setup identity is scoped to the authored run and its exact
+    /// configuration digest. A subsequent run sharing the same allocator
+    /// may create its own Game; a restart of this run must preserve its ID.
+    pub fn setup_game_id(&self, run_identity: &str) -> Option<i64> {
+        self.setup_binding.as_ref().filter(|setup|
+            setup.run_identity == run_identity).and_then(|setup| setup.game_id)
+    }
+
+    /// Persist this setup request before the socket can transmit it.
+    /// If an earlier initial setup may have reached the server but its
+    /// response was never committed, refuse to create a duplicate Game.
+    pub fn begin_setup(
+        &mut self, run_identity: &str, requested_game_id: i64,
+    ) -> Result<i64, HiveMindProtocolError> {
+        if run_identity.trim().is_empty() || run_identity.len() > 1024 ||
+            requested_game_id < 0
+        {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
+        let previous = self.setup_binding.as_ref().filter(|setup|
+            setup.run_identity == run_identity);
+        if previous.is_some_and(|setup|
+            setup.game_id.is_none() ||
+            requested_game_id > 0 && setup.game_id != Some(requested_game_id))
+        {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
+        let known_game_id = previous.and_then(|setup| setup.game_id)
+            .or_else(|| (requested_game_id > 0).then_some(requested_game_id));
+        let hash = self.hashes.next_hash()?;
+        self.setup_binding = Some(NativeSetupBinding {
+            run_identity: run_identity.to_owned(),
+            pending_hash: Some(hash),
+            game_id: known_game_id,
+        });
+        Ok(hash)
+    }
+
+    /// The transport already authenticated this response against its own
+    /// pending setup hash. Commit the accepted Game ID in the same durable
+    /// hash/StoreCommands checkpoint before initiating another Level setup.
+    pub fn accept_setup(
+        &mut self, run_identity: &str, request_hash: i64, game_id: i64,
+    ) -> Result<(), HiveMindProtocolError> {
+        let setup = self.setup_binding.as_mut()
+            .ok_or(HiveMindProtocolError::InvalidRequest)?;
+        if setup.run_identity != run_identity ||
+            setup.pending_hash != Some(request_hash) || game_id <= 0 ||
+            setup.game_id.is_some_and(|previous| previous != game_id)
+        {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
+        setup.game_id = Some(game_id);
+        setup.pending_hash = None;
+        Ok(())
     }
 
     /// Create an original-correlation strategy request. A connection
