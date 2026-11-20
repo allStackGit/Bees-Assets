@@ -720,7 +720,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     log_path.open("a" if resume else "x", encoding="utf-8")
                 ) if diagnostics or gpu_requested else None)
                 if resume and log is not None:
-                    log.write('{"kind":"native_rollout_worker_restart"}\\n')
+                    log.write('{"kind":"native_rollout_worker_restart"}\n')
                     log.flush()
                 processes[index] = subprocess.Popen(
                     [*command, str(config_path)],
