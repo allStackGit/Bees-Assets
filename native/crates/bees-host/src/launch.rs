@@ -2609,18 +2609,26 @@ fn interrupted_campaign_world(
                 let config: RunConfig = serde_json::from_slice(&bytes)?;
                 config.host_recovery_checkpoint.is_some()
             };
-            if required {
+            if !required { continue; }
+            if identity.schema_version < 4 {
                 return Err(invalid(
-                    "interrupted campaign lacks its first durable World checkpoint; refusing a replacement battle",
+                    "legacy interrupted campaign lacks its first durable World checkpoint",
                 ).into());
             }
-            continue;
+            // Only schema 4 promises that the original first checkpoint
+            // and its commitment marker precede player input, physical
+            // ticks and any HiveMind Game setup.
         }
         let frozen = CampaignReplaySetup::load(&saved)?;
         if pending.replace((run, frozen)).is_some() {
             return Err(invalid(
                 "multiple interrupted Worlds claim the same native campaign",
             ).into());
+        }
+    }
+    if let Some((run, _)) = &pending {
+        if !run.join("native-host-checkpoint.json").is_file() {
+            reset_uncommitted_native_start(run)?;
         }
     }
     Ok(pending)
