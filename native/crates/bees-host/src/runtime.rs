@@ -267,7 +267,7 @@ impl NativeHostRecoveryCheckpoint {
     /// digest and forbids silently abandoning its associated game actions.
     pub fn validate_connection_for_recovery(
         &self, connection: &DurableHiveMindConnection,
-    ) -> Result<(), HostRecoveryError> {
+    ) -> Result<bool, HostRecoveryError> {
         if !connection.is_available() ||
             connection.connection().pending_request_count() != 0
         {
@@ -275,7 +275,7 @@ impl NativeHostRecoveryCheckpoint {
         }
         let (exact, current) = connection_recovery_identity(connection)?;
         if exact == self.connection_sha256 {
-            return Ok(());
+            return Ok(false);
         }
         let saved = self.connection_setup_recovery.as_ref()
             .ok_or(HostRecoveryError::ConnectionChanged)?;
@@ -298,7 +298,7 @@ impl NativeHostRecoveryCheckpoint {
         {
             return Err(HostRecoveryError::ConnectionChanged);
         }
-        Ok(())
+        Ok(true)
     }
 
     pub fn with_launcher(mut self, launcher: serde_json::Value) -> Self {
