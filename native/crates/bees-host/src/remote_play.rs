@@ -48,6 +48,9 @@ const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 enum WireInput {
     Hello { token: String },
     Input { request_id: u64, action: NativePlayerInput },
+    /// UI acknowledgment only, without an alternative gameplay clock.
+    BriefingReady { request_id: u64, world_id: u64,
+        episode_revision: u64, sequence: u8 },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -202,6 +205,12 @@ pub struct RemotePlayMeasurements {
     pub orders_received: u64,
     pub orders_processed: u64,
     pub orders_rejected: u64,
+    #[serde(default)]
+    pub briefing_ready_acks: u64,
+    #[serde(default)]
+    pub briefing_rejected_acks: u64,
+    #[serde(default)]
+    pub briefing_wait_polls: u64,
     pub state_frames: u64,
     pub state_bytes: u64,
     pub states_superseded: u64,
@@ -304,6 +313,8 @@ pub struct NativeRemotePlay {
     music_location: Option<NativeMusicLocation>,
     held_fire: HashMap<u64, HeldFireLease>,
     pending_releases: Vec<RemoteOrder>,
+    /// Per-connection source briefing acknowledgment, never gameplay.
+    briefing_ready: HashMap<u64,(u64,u64,u8)>,
     measurements: RemotePlayMeasurements,
 }
 
@@ -362,6 +373,7 @@ impl NativeRemotePlay {
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
             music_location: None,
             held_fire: HashMap::new(), pending_releases: Vec::new(),
+            briefing_ready: HashMap::new(),
             measurements: RemotePlayMeasurements::default(),
         }))
     }
@@ -455,6 +467,9 @@ impl NativeRemotePlay {
         self.recovered_session = true;
         self.next_peer = saved.next_peer;
         self.pending_releases = releases;
+        // The recovered World retains its authored cue. The old TCP
+        // peers cannot acknowledge on behalf of newly authenticated ones.
+        self.briefing_ready.clear();
         self.measurements = saved.measurements;
         self.measurements.held_fire_disconnect_releases += previous.len() as u64;
         self.measurements.disconnected_peers += saved.connected_peers as u64;
@@ -479,7 +494,7 @@ impl NativeRemotePlay {
     /// episode cannot retain a peer's old gesture lease. Disconnect releases
     /// are returned as canonical inputs before newly received player orders.
     pub fn poll(&mut self, world_id: WorldId, revision: u64,
-                live_controllers: &[u64]) -> Vec<RemoteOrder> {
+                live_controllers: &[u64], briefing: Option<(i32,u8)>) -> Vec<RemoteOrder> {
         let poll_started = Instant::now();
         let mut retired_no_live = Vec::new();
         self.held_fire.retain(|&peer, lease| {
@@ -595,6 +610,43 @@ impl NativeRemotePlay {
                             peer.closed = true;
                         }
                     }
+                    Ok(WireInput::BriefingReady {
+                        request_id, world_id: claimed_world,
+                        episode_revision: claimed_revision, sequence,
+                    }) if peer.side.is_some() => {
+                        if request_id <= peer.last_request_id {
+                            self.measurements.briefing_rejected_acks += 1;
+                            let _ = peer.enqueue(&json!({
+                                "kind":"input_result","request_id":request_id,
+                                "processed":false,
+                                "feedback":"duplicate or out-of-order briefing acknowledgment",
+                            }));
+                            continue;
+                        }
+                        peer.last_request_id = request_id;
+                        if peer_orders >= MAX_ORDERS_PER_PEER_POLL {
+                            peer.closed = true;
+                            break;
+                        }
+                        peer_orders += 1;
+                        let valid = claimed_world == world_id.0 &&
+                            claimed_revision == revision &&
+                            briefing == Some((peer.side.expect("authenticated"),sequence));
+                        if valid {
+                            self.briefing_ready.insert(peer.id,
+                                (claimed_world,claimed_revision,sequence));
+                            self.measurements.briefing_ready_acks += 1;
+                        } else {
+                            self.measurements.briefing_rejected_acks += 1;
+                        }
+                        let _ = peer.enqueue(&json!({
+                            "kind":"input_result","request_id":request_id,
+                            "processed":valid,
+                            "feedback":if valid {
+                                "Campaign briefing acknowledged"
+                            } else { "Stale or unauthorized campaign briefing" },
+                        }));
+                    }
                     Ok(WireInput::Input { request_id, mut action }) if peer.side.is_some() => {
                         // No delayed/doubled request may reissue a movement
                         // or special under the same authenticated connection.
@@ -707,6 +759,35 @@ impl NativeRemotePlay {
         self.measurements.input_poll_wall_seconds +=
             poll_started.elapsed().as_secs_f64();
         before
+    }
+
+    /// Only the already-authenticated campaign viewers can release the
+    /// original physical World from its source briefing. A disconnected
+    /// viewer cannot hold up the mission after their socket is reaped.
+    pub fn briefing_waiting(&mut self, world_id: WorldId, revision: u64,
+        owner_side: i32, sequence: u8) -> bool
+    {
+        let required=(world_id.0,revision,sequence);
+        let mut viewers=0usize;
+        let mut waiting=false;
+        for peer in self.peers.iter().filter(|peer|
+            !peer.closed && peer.side==Some(owner_side)) {
+            viewers+=1;
+            if self.briefing_ready.get(&peer.id)!=Some(&required) {
+                waiting=true;
+            }
+        }
+        let waiting=waiting||viewers==0;
+        if waiting { self.measurements.briefing_wait_polls+=1; }
+        waiting
+    }
+
+    /// No repeated large idle snapshots. A newly authenticated viewer
+    /// receives the usual host-fog-filtered current World on connection.
+    pub fn broadcast_initial_if_pending(&mut self,
+        view: &NativeRenderWorldView<'_>, bounds: Aabb)
+    {
+        if self.force_initial_state { self.broadcast(view,bounds); }
     }
 
     pub fn held_fire_active(&self) -> bool { !self.held_fire.is_empty() }
@@ -947,6 +1028,8 @@ impl NativeRemotePlay {
         }
         let before = self.peers.len();
         self.peers.retain(|peer| !peer.closed);
+        self.briefing_ready.retain(|peer,_|
+            self.peers.iter().any(|client| client.id==*peer));
         self.measurements.disconnected_peers += (before - self.peers.len()) as u64;
     }
 }
