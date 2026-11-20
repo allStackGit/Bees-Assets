@@ -1393,9 +1393,22 @@ function createNativeBeesAdapter({
                     !SHA256.test(String(inputSha||''))||
                     !SHA256.test(String(modelSha||'')))
                     throw Error('Native optimizer evidence differs from the exact authorized group.');
+                // Only rank zero publishes the physical MA-POCA checkpoint
+                // and its measured learner work. Other nodes contribute to
+                // consensus, but overlapping rank wall times are not additive.
+                const measured=distributedOptimizer.role==='owner'?{
+                    optimizer_input_steps:evidence.optimizer_input_steps,
+                    learner_wall_seconds:evidence.total_wall_seconds,
+                    trajectory_processing_wall_seconds:
+                        evidence.trajectory_processing_wall_seconds,
+                    optimizer_update_wall_seconds:evidence.optimizer_update_wall_seconds,
+                    learner_process_cpu_seconds:evidence.total_cpu_seconds,
+                    synchronized_minibatches:evidence.optimizer_synchronized_minibatches,
+                }:null;
                 return {group_id:bundle.id,node_rank:bundle.index-1,
                     node_count:bundle.size,input_sha256:inputSha,
-                    model_consensus_sha256:modelSha};
+                    model_consensus_sha256:modelSha,
+                    ...(measured?{learner_work:measured}:{})};
             },
         }:{}),
         args(parameters, context) {
