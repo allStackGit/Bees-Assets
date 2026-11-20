@@ -1297,11 +1297,10 @@ function readySidecar(host,project,budget) {
 }
 
 function sidecarBudget(selection,threadOverride=false) {
-    const keys=threadOverride?['resources','machine_id','threads']:
+    const keys=threadOverride?['resources','machine_id','threads','endpoint']:
         ['resources','machine_id','endpoint'];
     if(!object(selection)||Object.keys(selection).some(key=>!keys.includes(key))||
-        (selection.endpoint!==undefined&&
-            (threadOverride||!rolloutEndpoint(selection.endpoint))))
+        (selection.endpoint!==undefined&&!rolloutEndpoint(selection.endpoint)))
         throw Error('Each remote worker needs a CPU/RAM budget and optionally one approved Courier endpoint and exclusive GPU.');
     const budget=resourceRequest(selection.resources);
     if(budget.gpu_count>1||budget.gpu_count===1&&budget.gpu_mode!=='exclusive')
@@ -6207,17 +6206,44 @@ class ExperimentHub {
         const config=snapshot.configurations.find(c=>c.id===value.learner.configuration_id&&
             c.revision===value.learner.expected_revision&&c.project_id==='tinybrains');
         const eligibleCollectors=(endpoint,budget)=>snapshot.machines.filter(host=>
-            host.tinybrains_rollout_endpoint===endpoint&&
+            (host.tinybrains_rollout_endpoint===endpoint||
+                host.tinybrains_rollout_slots?.some(item=>item.endpoint===endpoint))&&
             host.tinybrains_rollout_key_fingerprint===learnerMachine?.tinybrains_remote_key_fingerprint&&
+            !tinybrainsEndpointOccupied(snapshot,host,endpoint)&&
             readySidecar(host,'tinybrains_rollout',budget));
-        const {byMachine,endpoints,selections}=selectDistributedBudgets(snapshot,learnerMachine,
-            value.collectors,learnerMachine?.tinybrains_remote_rollout_endpoints,
-            'tinybrains_rollout_subset','tinybrains_rollout_endpoint',value.worker_machine_ids,8,
-            selection=>{
-                const budget=sidecarBudget(selection,true);
-                return {budget,eligible:host=>rolloutThreads(selection,budget,host)===null
-                    ?[]:eligibleCollectors(host.tinybrains_rollout_endpoint,budget)};
-            });
+        // Explicit endpoint selection is needed when two independent Hub
+        // learners reserve different ports on the same physical Exeter host.
+        // The selected port must already be advertised by that enrolled agent.
+        const selectedSlots=value.collectors.some(item=>item?.endpoint!==undefined);
+        let byMachine,endpoints,selections;
+        if(selectedSlots) {
+            const approved=learnerMachine?.tinybrains_remote_rollout_endpoints||[];
+            if(learnerMachine?.tinybrains_rollout_subset!==true||
+                value.worker_machine_ids!==undefined||
+                value.collectors.length<1||value.collectors.length>8||
+                value.collectors.some(item=>!object(item)||
+                    !ID.test(String(item.machine_id||''))||
+                    !approved.includes(item.endpoint)||
+                    !snapshot.machines.some(host=>
+                        host.id===item.machine_id&&
+                        host.tinybrains_rollout_slots?.some(slot=>slot.endpoint===item.endpoint)))||
+                new Set(value.collectors.map(item=>item.endpoint)).size!==value.collectors.length||
+                new Set(value.collectors.map(item=>item.machine_id)).size!==value.collectors.length)
+                throw Error('Select distinct approved TinyBrains collector listeners and machines.');
+            const chosen=new Map(value.collectors.map(item=>[item.endpoint,item]));
+            endpoints=approved.filter(endpoint=>chosen.has(endpoint));
+            selections=endpoints.map(endpoint=>chosen.get(endpoint));
+            byMachine=true;
+        }else {
+            ({byMachine,endpoints,selections}=selectDistributedBudgets(snapshot,learnerMachine,
+                value.collectors,learnerMachine?.tinybrains_remote_rollout_endpoints,
+                'tinybrains_rollout_subset','tinybrains_rollout_endpoint',value.worker_machine_ids,8,
+                selection=>{
+                    const budget=sidecarBudget(selection,true);
+                    return {budget,eligible:host=>rolloutThreads(selection,budget,host)===null
+                        ?[]:eligibleCollectors(host.tinybrains_rollout_endpoint,budget)};
+                }));
+        }
         const ancestorId=value.learner.continuation_of_job_id??null;
         const ancestor=ancestorId===null?null:snapshot.jobs.find(j=>j.id===ancestorId);
         if(ancestorId!==null&&(!UUID.test(String(ancestorId))||
@@ -6272,10 +6298,14 @@ class ExperimentHub {
             const desiredThreads=rolloutThreads(selection,budget,host);
             if(desiredThreads===null)
                 throw Error('Remote worker threads must fit its leased CPUs and approved local thread ceiling.');
+            const slot=host.tinybrains_rollout_slots?.find(item=>item.endpoint===endpoint);
+            if(selectedSlots&&!slot)
+                throw Error('Selected TinyBrains listener changed before native ownership was reserved.');
             const workerConfiguration={
                 id:crypto.randomUUID(),project_id:'tinybrains_rollout',
                 name:'Rollout '+(index+1)+' for '+learner.id.slice(-8),
-                parameters:{learner_job_id:learner.id,threads:desiredThreads},revision:1,
+                parameters:{learner_job_id:learner.id,threads:desiredThreads,
+                    ...(slot?{listener_slot:slot.slot}:{})},revision:1,
                 created_at:timestamp,updated_at:timestamp,
             };
             next.configurations.push(workerConfiguration);
