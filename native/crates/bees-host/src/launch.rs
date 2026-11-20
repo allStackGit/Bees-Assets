@@ -1280,6 +1280,7 @@ fn apply_remote_side_input(
 }
 
 const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
+       bees hivemind-reconcile <connection-checkpoint.json> --list
        bees hivemind-reconcile <connection-checkpoint.json> --review <review.json>
        bees menu <catalog.json> --output-dir <battle-runs>
        bees library <library.json> --output-dir <player-save-root>
@@ -1511,9 +1512,31 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         // using the same connection must be stopped before the operator
         // resolves a 409. It never sends a StoreCommands request itself.
         let checkpoint = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
-        if args.next().is_none_or(|flag| flag != "--review") {
-            return Err(invalid(USAGE).into());
+        let operation = args.next().ok_or_else(|| invalid(USAGE))?;
+        if operation == "--list" {
+            if args.next().is_some() { return Err(invalid(USAGE).into()); }
+            // Reuse the same checkpoint owner as a review. This command
+            // cannot observe a moving allocator or half-written 409 ledger.
+            let connection = DurableHiveMindConnection::open_existing(checkpoint)?;
+            let mut unresolved = Vec::new();
+            for hash in connection.reconciliation_hashes()
+                .map_err(|error| invalid(format!("read HiveMind 409 ledger: {error:?}")))?
+            {
+                let ids = connection.stale_reconciliation_ids(hash)
+                    .map_err(|error| invalid(format!("read stale outcome IDs: {error:?}")))?
+                    .ok_or_else(|| invalid("409 reconciliation lost its original IDs"))?;
+                unresolved.push(json!({
+                    "request_hash": hash,
+                    "stale_outcome_ids": ids,
+                }));
+            }
+            println!("{}", json!({
+                "kind": "hivemind_reconciliations",
+                "unresolved": unresolved,
+            }));
+            return Ok(());
         }
+        if operation != "--review" { return Err(invalid(USAGE).into()); }
         let review_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         let review: bees_hivemind::outcomes::ReconciliationReview =
