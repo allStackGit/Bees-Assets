@@ -6721,10 +6721,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     capabilities.push('Courier learner'+
                         (machine.courier_remote_lineage_endpoints?.length
                             ?' · '+machine.courier_remote_lineage_endpoints.length+
-                                ' remote endpoints pinned'
+                                ' remote endpoints pinned'+
+                                (machine.courier_remote_ppo_settings
+                                    ?' · remote PPO settings supported'
+                                    :' · remote PPO settings not supported')
                             :' · local only; no remote lineage endpoints pinned'));
                 if(installed.has('courier_lineage'))
-                    capabilities.push('Courier collector installed');
+                    capabilities.push('Courier collector installed'+
+                        (machine.courier_lineage_remote_ppo_settings
+                            ?' · remote PPO settings supported'
+                            :' · remote PPO settings not supported'));
                 const suites=machine.evaluation_suites||{};
                 for(const project of ['tinybrains','courier']) {
                     const count=suites[project]?.length||0;
