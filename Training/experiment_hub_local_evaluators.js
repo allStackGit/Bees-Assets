@@ -131,6 +131,56 @@ function validateInstall(options,{create=false}={}) {
     if(create)privateDirectory(options.bin,true);
     return suites;
 }
+// Setup owns fixed directories and never downloads or changes game assets.
+function prepareInstall(o) {
+    presentDirectory(o.project);
+    presentDirectory(o.hubRoot);
+    presentFile(o.engine);
+    for(const dir of [o.artifacts,o.cache]) {
+        checkedPath(dir);
+        fs.mkdirSync(dir,{recursive:true,mode:0o700});
+        presentDirectory(dir);
+    }
+    for(const dir of [o.suites,o.scratch,o.receipts,o.bin])
+        privateDirectory(dir,true);
+}
+async function createMissingBaselineSuites(o) {
+    // A previously approved version is immutable. Do not regenerate a
+    // missing approved suite against potentially changed opponents.
+    if(fs.existsSync(path.join(o.suites,'hub-approved-latest.json')))
+        return;
+    if(Object.values(SUITES).every(name=>
+        fs.existsSync(path.join(o.suites,name+'.json'))))
+        return;
+    // Generate frozen suites via the existing trusted recipe. Docker's suite
+    // mount stays read-only; only the local Hub exclusively writes definitions.
+    const {stdout}=await run(presentFile(o.launcher),[
+        '-B',path.join(o.hubRoot,'Training/experiment_hub_tinybrains_baseline_suites.py'),
+        '--suite-version','3','--stdout-json',
+    ],{timeout:90000,maxBuffer:16384});
+    const generated=JSON.parse(stdout);
+    if(!generated||!Array.isArray(generated.suites)||
+        generated.suites.length!==2||
+        new Set(generated.suites.map(s=>s?.suite_id)).size!==2)
+        throw Error('TinyBrains generator did not return the two approved suites.');
+    for(const [id,name] of Object.entries(SUITES)) {
+        const suite=generated.suites.find(s=>s?.suite_id===name);
+        if(!suite||suite.opponent!==id||
+            suite.maps?.length!==1||suite.maps[0]!=='basic-tiny-2p'||
+            suite.seeds?.length!==50||suite.seeds[0]!==813001||
+            suite.seeds[49]!==813050||suite.max_turns!==300||
+            [suite.runtime_sha256,suite.opponent_model_sha256,
+                suite.opponent_manifest_sha256].some(hash=>
+                    typeof hash!=='string'||!/^[0-9a-f]{64}$/.test(hash)))
+            throw Error('TinyBrains generator differs from the fixed approved evaluation recipe.');
+    }
+    for(const suite of generated.suites) {
+        const file=path.join(o.suites,suite.suite_id+'.json');
+        if(!fs.existsSync(file))
+            fs.writeFileSync(file,JSON.stringify(suite,null,2)+'\n',
+                {flag:'wx',mode:0o600});
+    }
+}
 function launcherText(o) {
     // Only fixed, server-derived paths are interpolated. No request-controlled
     // Docker arguments, writable source mounts or shell commands.
@@ -259,7 +309,7 @@ async function status(hub) {
 }
 async function setup(hub) {
     const o=localOptions(hub);
-    validateInstall(o,{create:true});
+    prepareInstall(o);
     const expected=launcherText(o);
     if(fs.existsSync(o.launcher)) {
         const stat=fs.lstatSync(o.launcher);
@@ -271,6 +321,7 @@ async function setup(hub) {
         fs.writeFileSync(o.launcher,expected,{flag:'wx',mode:0o700});
     }
     fs.chmodSync(o.launcher,0o700);
+    await createMissingBaselineSuites(o);
     const defs=definitions(o);
     // Never overwrite an installed service, even one sharing our fixed name.
     for(const [id,definition] of Object.entries(defs)) {
