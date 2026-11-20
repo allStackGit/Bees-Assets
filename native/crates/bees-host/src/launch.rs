@@ -20,10 +20,11 @@ use bees_host::durable_connection::DurableHiveMindConnection;
 use bees_host::socket_worker::NativeSocketWorker;
 use bees_host::socket::{SetupKind, SetupLevelIdentity};
 use bees_host::runtime::{NativeHostRuntime, NativeHostSocketEvent};
+use bees_host::checkpoint_file::{NativeHostCheckpointFile, CheckpointFileError};
 use bees_host::source_command_scheduler::NativeSourceCommandScheduler;
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
 use bees_host::fleet_inventory::NativeFleetCombatStats;
-use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvaluationContext, recover_command_outcomes};
+use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvaluationContext, NativeDiagnosticMeasurements, recover_command_outcomes};
 use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
 use bees_host::policy_action_trace::{PolicyActionPlayback, PolicyActionRecorder};
 use bees_host::player_trace::{
@@ -322,6 +323,10 @@ struct RunConfig {
     policy_worker: Option<PathBuf>,
     model_manifest: Option<PathBuf>,
     connection_checkpoint: PathBuf,
+    /// Exact World/Level/model/journal/launcher continuation transaction.
+    /// Omitted for latency-sensitive runs which do not request recovery.
+    #[serde(default)]
+    host_recovery_checkpoint: Option<PathBuf>,
     notifications: PathBuf,
     policy_capture: Option<PathBuf>,
     rollout_summary: Option<PathBuf>,
@@ -354,6 +359,55 @@ struct RunConfig {
     delivery_every: u32,
     timing_sample_period: Option<u32>,
     levels: Vec<LevelConfig>,
+}
+
+/// Launcher-owned state which cannot be reconstructed from World tick alone.
+/// Stored atomically inside the same host checkpoint as physical gameplay,
+/// the notification prefix and resident model sampling state.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeBattleRecoveryCursor {
+    schema_version: u32,
+    run_id: String,
+    config_sha256: String,
+    gameplay_sha256: String,
+    source_sha256: Vec<String>,
+    rounds: u64,
+    next_squad_item_id: i64,
+    completed_episodes: Vec<u32>,
+    counted_revisions: Vec<Option<u64>>,
+    next_model_update: usize,
+    segment_start_round: u64,
+    segment_baseline: NativeDiagnosticMeasurements,
+    segment_generation: u64,
+    segment_manifest_sha256: Option<String>,
+    next_status_round: u64,
+    successful_world_steps: u64,
+    successful_policy_rows: u64,
+    admission_snapshot_rows: u64,
+    admission_snapshot_frames: u64,
+    retirement_snapshot_rows: u64,
+    retirement_snapshot_frames: u64,
+    policy_boundary_capture_nanos: u128,
+    parallel_physics_rounds: u64,
+    parallel_physics_direct_rounds: u64,
+    stage_id_serialized_rounds: u64,
+    stage_id_serialized_arenas: u64,
+    peak_parallel_physics_workers: usize,
+    parallel_physics_worker_nanos: u128,
+    map_border_entries: u64,
+    map_border_movement_stops: u64,
+    map_border_override_skips: u64,
+    map_border_lethal_hits: u64,
+    map_border_lethal_kills: u64,
+    map_border_confinement_corrections: u64,
+    map_border_velocity_clamps: u64,
+    map_border_unfittable: u64,
+    map_border_missing_profiles: u64,
+    past_reinforcement_arrivals: bees_gameplay::level_events::NativeReinforcementArrivals,
+    past_reinforcement_idle_ticks_skipped: u64,
+    past_reinforcement_wakeup_scans: u64,
+    past_queen_controllers: bees_host::policy_only_metadata::NativeQueenControllerMeasurements,
 }
 
 fn one_episode() -> u32 { 1 }
