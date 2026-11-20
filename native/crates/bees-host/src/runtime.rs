@@ -279,20 +279,33 @@ impl NativeHostRecoveryCheckpoint {
         }
         let saved = self.connection_setup_recovery.as_ref()
             .ok_or(HostRecoveryError::ConnectionChanged)?;
-        // Require the same original Game, the same unchanged durable
-        // StoreCommands/journal ledger and the same client Hash prefix.
-        // Every additional Hash must be accounted for by exactly one
-        // persisted Level setup. Strategy, targeting or StoreCommands
-        // allocations therefore cannot be misclassified as setup-only.
+        // The round-zero checkpoint may precede the FIRST setup request.
+        // Identify that original run using its immutable launcher cursor:
+        // a previous unrelated Game bound to this connection is never
+        // mistaken for the World that owns this checkpoint.
+        let run_id = self.launcher.get("run_id").and_then(serde_json::Value::as_str);
+        let config_sha = self.launcher.get("config_sha256")
+            .and_then(serde_json::Value::as_str);
+        let expected = run_id.zip(config_sha)
+            .map(|(run, digest)| format!("{run}:{digest}"));
+        let same_original_run = expected.as_deref() == current.run_identity.as_deref();
+        // A setup-only advance can allocate new Hashes, or can acknowledge
+        // an already-pending setup without consuming another Hash. The
+        // authoritative allocator's entire advance must still equal exactly
+        // the count of durable setup reservations; no unrelated request
+        // or StoreCommands/journal change can be ignored here.
         let hash_advance = current.allocator_counter
             .checked_sub(saved.allocator_counter).map(u64::from);
         let setup_advance = current.setup_attempts
             .checked_sub(saved.setup_attempts);
-        if current.ledger_sha256 != saved.ledger_sha256 ||
+        let same_game = saved.game_id.is_none() ||
+            saved.game_id == current.game_id &&
+            saved.run_identity == current.run_identity;
+        let matching_binding = saved.run_identity == current.run_identity ||
+            saved.run_identity.is_none() && saved.game_id.is_none();
+        if !same_original_run || !matching_binding || !same_game ||
+            current.ledger_sha256 != saved.ledger_sha256 ||
             current.allocator_prefix != saved.allocator_prefix ||
-            current.run_identity != saved.run_identity ||
-            current.run_identity.is_none() ||
-            current.game_id != saved.game_id ||
             current.game_id.is_none() ||
             hash_advance.is_none() || hash_advance != setup_advance
         {
