@@ -3651,6 +3651,55 @@ fn recover_generated_library_battle(
     Ok(pending)
 }
 
+/// Reuse the same authenticated LAN listener to deliver completed game
+/// receipts when there is no active authoritative World. The existing menu
+/// keeps a visible stop control; the transport thread never runs physics,
+/// opens policy workers or modifies the immutable campaign ledger.
+#[cfg(feature = "client")]
+fn serve_native_archived_receipts(root: &Path) -> Result<(), Box<dyn Error>> {
+    use bees_host::presentation::{select_library, BattleMenuRow};
+    let _writer = battle_catalog::CampaignWriterLease::acquire(root)?;
+    let receipts = archived_native_remote_receipts_from_root(root, None)?;
+    if receipts.is_empty() {
+        return Err(invalid("no committed native multiplayer receipts for this game").into());
+    }
+    if env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS").is_none() {
+        return Err(invalid("archived multiplayer requires authenticated player-side tokens").into());
+    }
+    let mut server = bees_host::remote_play::NativeRemotePlay::from_environment(0, true)?
+        .ok_or_else(|| invalid("archived multiplayer requires a LAN listen endpoint"))?;
+    server.install_archived_receipts(receipts)?;
+    server.serve_archived_only();
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let (choice, measurements) = std::thread::scope(|scope| {
+        let signal = &stop;
+        let handler = scope.spawn(move || {
+            while !signal.load(Ordering::Relaxed) {
+                // This is transport-only polling. The session has no World,
+                // so the listener accepts only prior committed session IDs.
+                let _ = server.poll(WorldId(0), 0, &[], None);
+                std::thread::sleep(std::time::Duration::from_millis(16));
+            }
+            server.measurements().clone()
+        });
+        let rows = [BattleMenuRow {
+            title: "Stop delivering saved multiplayer results",
+            status: "  [LAN listener active]", unlocked: true,
+        }];
+        let mut selected = 0;
+        let choice = select_library(&rows, &mut selected, false);
+        stop.store(true, Ordering::Relaxed);
+        (choice, handler.join())
+    });
+    let measurements = measurements.map_err(|_| invalid("native archive listener terminated unexpectedly"))?;
+    println!("{}", json!({
+        "kind": "native_multiplayer_archived_delivery",
+        "measurements": measurements,
+    }));
+    choice?;
+    Ok(())
+}
+
 #[cfg(feature = "client")]
 fn run_library_host(settings_path: &Path, save_root: &Path,
     library: &NativeLibrary, games: &[PathBuf],
