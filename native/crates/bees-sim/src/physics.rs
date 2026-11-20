@@ -275,9 +275,16 @@ pub enum VisionProximity {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct WorldCollider {
     shape: ShipShape,
+    // Derived collider caches are always rebuilt from their canonical
+    // source shape and physical pose after checkpoint recovery. Do not
+    // persist redundant polygons, centers, AABBs or cached-pose keys.
+    #[serde(skip)]
     polygon_world: Vec<Vec2>,
+    #[serde(skip)]
     circle_world: Vec2,
+    #[serde(skip)]
     bounds: Option<Aabb>,
+    #[serde(skip)]
     cached_pose: Option<Pose>,
 }
 
@@ -1453,13 +1460,21 @@ impl KinematicPhysics {
         {
             return Err(PhysicsError::InvalidCollider);
         }
-        // No identity-bearing contact or state is recreated from source
-        // positions. Even dormant slot IDs and prior overlaps remain exact.
-        self.ships = snapshot.ships;
+        // Reconstruct ONLY derived geometry, including child triggers, from
+        // the SAME saved shapes and motions. Collider caches must never be
+        // accepted as a second source of physical truth. Retained contact
+        // history is not recalculated or discarded.
+        let mut ships = snapshot.ships;
+        let mut projectiles = snapshot.projectiles;
+        let mut obstacles = snapshot.obstacles;
+        for body in &mut ships { body.update_hull(); }
+        for body in &mut projectiles { body.update_hull(); }
+        for body in &mut obstacles { body.update_hull(); }
+        self.ships = ships;
         self.active_ship_indices = snapshot.active_ship_indices;
-        self.projectiles = snapshot.projectiles;
+        self.projectiles = projectiles;
         self.active_projectile_indices = snapshot.active_projectile_indices;
-        self.obstacles = snapshot.obstacles;
+        self.obstacles = obstacles;
         self.active_obstacle_indices = snapshot.active_obstacle_indices;
         self.ship_hulls_dirty = snapshot.ship_hulls_dirty;
         self.obstacle_hulls_dirty = snapshot.obstacle_hulls_dirty;
