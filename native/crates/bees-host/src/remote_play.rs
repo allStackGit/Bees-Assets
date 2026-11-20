@@ -188,6 +188,16 @@ pub struct RemotePlayMeasurements {
     pub state_frames: u64,
     pub state_bytes: u64,
     pub states_superseded: u64,
+    /// Actual time spent accepting/parsing/authenticating remote inputs at
+    /// fixed-tick boundaries; does not include simulation or render work.
+    pub input_poll_wall_seconds: f64,
+    /// Count one projection/JSON encoding per distinct authenticated side,
+    /// never once per cooperative peer who consumes the same bytes.
+    pub snapshot_unique_encoded_bytes: u64,
+    pub snapshot_projection_wall_seconds: f64,
+    /// Includes only enqueue and nonblocking write attempts made during
+    /// snapshot broadcast, not later terminal drain or reliable replies.
+    pub snapshot_socket_wall_seconds: f64,
     /// Final side-filtered state bytes drained after the last physical tick.
     pub terminal_drain_wall_seconds: f64,
     /// Connected peers whose terminal state remained queued at the drain deadline.
@@ -311,6 +321,7 @@ impl NativeRemotePlay {
     /// are returned as canonical inputs before newly received player orders.
     pub fn poll(&mut self, world_id: WorldId, revision: u64,
                 live_controllers: &[u64]) -> Vec<RemoteOrder> {
+        let poll_started = Instant::now();
         let mut retired_no_live = Vec::new();
         self.held_fire.retain(|&peer, lease| {
             if lease.world_id != world_id || lease.episode_revision != revision {
@@ -532,6 +543,8 @@ impl NativeRemotePlay {
         }
         before.extend(orders);
         before.extend(after);
+        self.measurements.input_poll_wall_seconds +=
+            poll_started.elapsed().as_secs_f64();
         before
     }
 
@@ -625,19 +638,27 @@ impl NativeRemotePlay {
         for peer in &mut self.peers {
             let Some(side) = peer.side else { continue };
             let encoded = snapshots.entry(side).or_insert_with(|| {
+                let started = Instant::now();
                 let cues = pending_audio.get(&side).map(Vec::as_slice).unwrap_or(&[]);
-                serde_json::to_vec(&current_state(
+                let payload = serde_json::to_vec(&current_state(
                     view, bounds, side, music_location, cues,
                     vision.get(&side).expect("authenticated side has sight"),
                     measurements,
-                )).unwrap_or_default()
+                )).unwrap_or_default();
+                measurements.snapshot_projection_wall_seconds +=
+                    started.elapsed().as_secs_f64();
+                measurements.snapshot_unique_encoded_bytes += payload.len() as u64;
+                payload
             });
+            let socket_started = Instant::now();
             if peer.enqueue_state(encoded) {
                 measurements.states_superseded += 1;
             }
             if !peer.closed {
                 measurements.state_bytes += peer.flush();
             }
+            measurements.snapshot_socket_wall_seconds +=
+                socket_started.elapsed().as_secs_f64();
         }
         self.measurements.state_frames += 1;
         self.reap();
