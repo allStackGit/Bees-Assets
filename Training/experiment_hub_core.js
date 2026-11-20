@@ -828,6 +828,83 @@ function verifiedOptimizerCompletion(job,raw,state) {
     return copy(raw);
 }
 
+// Read-only multi-round measurement projection from durable, verified Hub
+// decisions. These completed groups have already reconciled their original
+// physical collector receipts, synchronized optimizer and final evaluations.
+// Never use chart-cache samples for training provenance or stopping decisions.
+function nativeBeesRoundTrainingSummary(plan) {
+    const rounds=plan.round_history||[];
+    let worldSteps=0,policyRows=0,collectorSeconds=0,modelForwards=0;
+    let optimizerRows=0,learnerSeconds=0,ppoSeconds=0,processingSeconds=0;
+    let learnerCpuSeconds=0,collectorCoverage=0,learnerCoverage=0;
+    const evaluations=new Map();
+    for(const entry of rounds) {
+        const work=entry.collector_work_totals;
+        if(work&&work.scope==='sum_of_independent_native_collectors') {
+            worldSteps+=work.successful_world_steps;
+            policyRows+=work.successful_policy_rows;
+            collectorSeconds+=work.sum_collector_wall_seconds;
+            modelForwards+=work.verified_gpu_model_forwards;
+            collectorCoverage++;
+        }
+        const learner=entry.optimizer_group?.learner_work;
+        if(learner) {
+            optimizerRows+=learner.optimizer_input_steps;
+            learnerSeconds+=learner.learner_wall_seconds;
+            ppoSeconds+=learner.optimizer_update_wall_seconds;
+            processingSeconds+=learner.trajectory_processing_wall_seconds;
+            learnerCpuSeconds+=learner.learner_process_cpu_seconds;
+            learnerCoverage++;
+        }
+        for(const receipt of entry.evaluation_receipts||[]) {
+            // A suite name alone cannot establish comparability across
+            // checkpoints. Group only identical frozen suite definitions.
+            const key=receipt.suite_id+':'+receipt.suite_sha256;
+            if(!evaluations.has(key))evaluations.set(key,{
+                suite_id:receipt.suite_id,suite_sha256:receipt.suite_sha256,
+                measured_rounds:0,latest_round:null,latest_success_rate:null,
+                latest_checkpoint_sha256:null,best_success_rate:null,
+            });
+            const suite=evaluations.get(key),rate=receipt.successes/receipt.trials;
+            suite.measured_rounds++;
+            suite.latest_round=entry.round;
+            suite.latest_success_rate=rate;
+            suite.latest_checkpoint_sha256=receipt.checkpoint_sha256;
+            suite.best_success_rate=suite.best_success_rate===null
+                ?rate:Math.max(suite.best_success_rate,rate);
+        }
+    }
+    for(const receipt of plan.initial_evaluation_receipts||[]) {
+        const suite=evaluations.get(receipt.suite_id+':'+receipt.suite_sha256);
+        if(suite)suite.initial_checkpoint_success_rate=
+            receipt.successes/receipt.trials;
+    }
+    return {
+        scope:'verified_native_hub_multi_round_history',
+        completed_rounds:rounds.length,
+        target_rounds:plan.round_count,
+        latest_checkpoint_sha256:rounds.at(-1)?.checkpoint_sha256||null,
+        collector_rounds_measured:collectorCoverage,
+        learner_rounds_measured:learnerCoverage,
+        successful_world_steps:worldSteps,
+        successful_policy_rows:policyRows,
+        verified_gpu_model_forwards:modelForwards,
+        // Collector seconds are overlapping occupied time, never fleet
+        // elapsed seconds or an end-to-end training SPS denominator.
+        sum_independent_collector_wall_seconds:collectorSeconds,
+        world_steps_per_occupied_collector_second:
+            collectorSeconds>0?worldSteps/collectorSeconds:null,
+        optimizer_input_steps_measured:optimizerRows,
+        publishing_learner_wall_seconds:learnerSeconds,
+        ppo_update_wall_seconds:ppoSeconds,
+        trajectory_processing_wall_seconds:processingSeconds,
+        publishing_learner_process_cpu_seconds:learnerCpuSeconds,
+        optimizer_input_rows_per_ppo_update_second:
+            ppoSeconds>0?optimizerRows/ppoSeconds:null,
+        independent_evaluations:[...evaluations.values()],
+    };
+}
+
 // Rank zero alone owns the published checkpoint. A successful Finish
 // must prove optimizer consensus and durable model identity before its
 // lease is released. A confirmed native Stop has no valid consensus
