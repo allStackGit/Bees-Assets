@@ -412,7 +412,7 @@ async function confirmAgentReplacement(base,env,priorInstance) {
     }
     throw Error('Updated agent did not reconnect successfully: '+diagnostic);
 }
-async function apply(root,envFile,previous,changes,confirmReplacement=null) {
+async function apply(root,envFile,previous,changes,confirmReplacement=null,rolloutKeys={}) {
     const hasWorker=changes.worker;
     const entries={};
     let nativeServiceBinary=null;
@@ -447,6 +447,33 @@ async function apply(root,envFile,previous,changes,confirmReplacement=null) {
     if(changes.courier)
         entries.EXPERIMENT_HUB_COURIER_PROJECT_ROOT=changes.courier;
     if(changes.bees)entries.EXPERIMENT_HUB_BEES_PROJECT_ROOT=changes.bees;
+    // Install only the coordinator-requested simulations, retaining all
+    // previously installed components. Private keys are never stored in
+    // published source archives or replaced silently.
+    const localEnv=config(envFile);
+    const selected=new Set((localEnv.EXPERIMENT_HUB_WORKER_PROJECTS||'')
+        .split(',').filter(Boolean));
+    const privateDir=path.join(root,process.platform==='win32'?'Private':'private');
+    for(const name of ['tinybrains','courier']) {
+        if(!changes[name])continue;
+        const key=rolloutKeys[name];
+        if(!HASH.test(key||''))throw Error('Missing machine-authorized '+name+' rollout key.');
+        const target=path.join(privateDir,name+'-rollout.key');
+        if(fs.existsSync(target)) {
+            if(fs.readFileSync(target,'utf8').trim()!==key)
+                throw Error('Existing '+name+' rollout key differs from coordinator; refusing rotation.');
+        }else save(target,key+'\n');
+        selected.add(name);
+        entries['EXPERIMENT_HUB_'+name.toUpperCase()+'_ROLLOUT_KEY']=target;
+        const cache=path.join(root,process.platform==='win32'?'Cache':'cache',name);
+        fs.mkdirSync(cache,{recursive:true,mode:0o700});
+        entries['EXPERIMENT_HUB_'+name.toUpperCase()+'_CACHE']=cache;
+        if(name==='tinybrains')
+            entries.EXPERIMENT_HUB_TINYBRAINS_THREAD_LIMIT=
+                String(require('node:os').availableParallelism());
+    }
+    if(changes.tinybrains||changes.courier)
+        entries.EXPERIMENT_HUB_WORKER_PROJECTS=[...selected].sort().join(',');
     // Prepare a separate dependency environment before any service is stopped.
     // Previously running jobs keep their old Python executable and imports.
     const pythonPaths=preparePythonRuntimes(root,changes);
@@ -587,9 +614,17 @@ async function main(argv=process.argv.slice(2)) {
         const changes=Object.fromEntries(Object.entries(plan)
             .map(([key,value])=>[key,value.directory]));
         try {
+            const rolloutKeys={};
+            for(const name of ['tinybrains','courier']) {
+                if(!changes[name])continue;
+                const credential=await request(base,env,'GET','/rollout-key',{component:name});
+                if(credential?.component!==name||!HASH.test(credential.key||''))
+                    throw Error('Coordinator refused '+name+' rollout credential.');
+                rolloutKeys[name]=credential.key;
+            }
             await apply(root,envFile,active,changes,()=>{
                 return confirmAgentReplacement(base,env,manifest.agent_instance_id||null);
-            });
+            },rolloutKeys);
             for(const [name,item] of Object.entries(plan)) {
                 active[name]={version:item.entry.version,
                     sha256:item.entry.sha256,activated_at:new Date().toISOString()};
