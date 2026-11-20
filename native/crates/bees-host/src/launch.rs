@@ -1280,6 +1280,7 @@ fn apply_remote_side_input(
 }
 
 const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
+       bees hivemind-reconcile <connection-checkpoint.json> --review <review.json>
        bees menu <catalog.json> --output-dir <battle-runs>
        bees library <library.json> --output-dir <player-save-root>
        bees connect <host:port> --token-file <private-file> --side <1|2>
@@ -1503,6 +1504,33 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     if first == "--help" || first == "-h" {
         println!("{USAGE}");
+        return Ok(());
+    }
+    if first == "hivemind-reconcile" {
+        // This command is an OFFLINE checkpoint writer. The game/server
+        // using the same connection must be stopped before the operator
+        // resolves a 409. It never sends a StoreCommands request itself.
+        let checkpoint = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--review") {
+            return Err(invalid(USAGE).into());
+        }
+        let review_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        let review: bees_hivemind::outcomes::ReconciliationReview =
+            serde_json::from_slice(&fs::read(review_path)?)?;
+        let mut connection = DurableHiveMindConnection::open_existing(checkpoint)?;
+        let newly_reviewed = connection.review_reconciliation(review.clone())
+            .map_err(|error| invalid(format!(
+                "HiveMind 409 review does not match its durable reservation ledger: {error:?}"
+            )))?;
+        println!("{}", json!({
+            "kind": "hivemind_reconciliation_review",
+            "request_hash": review.request_hash,
+            "stale_outcome_ids": review.stale_outcome_ids,
+            "disposition": review.disposition,
+            "review_reference": review.review_reference,
+            "newly_reviewed": newly_reviewed,
+        }));
         return Ok(());
     }
     if first == "status" {

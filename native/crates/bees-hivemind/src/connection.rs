@@ -25,6 +25,7 @@ const CONNECTION_CHECKPOINT_VERSION: u32 = 1;
 
 use crate::outcomes::{
     OutcomeBatch, PendingStoreCommands, PreparedOutcomeBatch, StoreAcknowledgement, RecordedOutcomeBatch,
+    ReconciliationReview,
 };
 use crate::protocol::{
     GetStrategyRequest, GetTargetingRequest, HiveMindProtocolError,
@@ -386,8 +387,16 @@ impl NativeHiveMindConnection {
         self.stores.stale_reconciliation_ids(hash)
     }
 
-    pub fn finish_reconciliation(&mut self, hash: i64) -> bool {
-        self.stores.finish_reconciliation(hash)
+    pub fn review_reconciliation(
+        &mut self, review: ReconciliationReview,
+    ) -> Result<bool, HiveMindProtocolError> {
+        self.stores.review_reconciliation(review)
+    }
+
+    pub fn reviewed_reconciliation(
+        &self, hash: i64,
+    ) -> Option<&ReconciliationReview> {
+        self.stores.reviewed_reconciliation(hash)
     }
 
     /// Read-only transport view of the one pending request registry.

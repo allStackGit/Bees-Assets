@@ -25,6 +25,7 @@ use bees_hivemind::connection::{
 };
 use bees_hivemind::outcomes::{
     OutcomeBatch, PreparedOutcomeBatch, StoreAcknowledgement, RecordedOutcomeBatch,
+    ReconciliationReview,
 };
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, HiveMindProtocolError,
@@ -409,15 +410,19 @@ impl DurableHiveMindConnection {
         Ok(self.connection.stale_reconciliation_ids(hash))
     }
 
-    pub fn finish_reconciliation(
-        &mut self, hash: i64,
+    /// Atomically preserve the operator's review alongside the original
+    /// stale IDs in the connection checkpoint. Never remove a 409 without
+    /// an exact full-ID resolution and externally recorded review reference.
+    pub fn review_reconciliation(
+        &mut self, review: ReconciliationReview,
     ) -> Result<bool, DurableConnectionError> {
         self.ensure_available()?;
-        let removed = self.connection.finish_reconciliation(hash);
-        if removed {
+        let newly_reviewed = self.connection.review_reconciliation(review)
+            .map_err(DurableConnectionError::Protocol)?;
+        if newly_reviewed {
             self.persist_or_poison()?;
         }
-        Ok(removed)
+        Ok(newly_reviewed)
     }
 
     /// Disconnect discards transient strategy/targeting correlations.

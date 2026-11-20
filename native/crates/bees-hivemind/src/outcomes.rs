@@ -317,6 +317,43 @@ pub enum StoreAcknowledgement {
     Rejected { status: i32, stale_outcome_ids: Vec<i64> },
 }
 
+/// An operator-reviewed resolution of a terminal 409. The server already
+/// committed the valid rows; the operator must account for EVERY stale
+/// reservation, independently of the original StoreCommands retry payload.
+/// This records a decision, not evidence of an automatic server settlement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReconciliationDisposition {
+    ConfirmedUnrecoverable,
+    ConfirmedExternallySettled,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReconciliationReview {
+    pub request_hash: i64,
+    pub stale_outcome_ids: Vec<i64>,
+    pub disposition: ReconciliationDisposition,
+    pub review_reference: String,
+}
+
+impl ReconciliationReview {
+    fn validate(&self) -> Result<(), HiveMindProtocolError> {
+        let mut unique = HashSet::with_capacity(self.stale_outcome_ids.len());
+        if self.request_hash <= 0 ||
+            self.request_hash > crate::protocol::MAX_SAFE_REQUEST_HASH ||
+            self.review_reference.trim().is_empty() ||
+            self.review_reference.len() > 512 ||
+            self.stale_outcome_ids.is_empty() ||
+            self.stale_outcome_ids.iter().any(|&id|
+                id <= 0 || !unique.insert(id))
+        {
+            return Err(HiveMindProtocolError::InvalidReservation);
+        }
+        Ok(())
+    }
+}
+
 /// Transport-neutral retry ownership. Serialization supports a caller
 /// persisting the pending submissions outside the physics/learning core.
 /// Retrying uses the original Hash and identical payload, so response
@@ -329,6 +366,11 @@ pub struct PendingStoreCommands {
     /// restarts until the host explicitly records reconciliation.
     #[serde(default)]
     reconciliation: HashMap<i64, Vec<i64>>,
+    /// Historical operator decisions remain in the SAME atomic checkpoint.
+    /// Never erase the stale IDs or allow a subsequent restored request to
+    /// silently reuse one after a review.
+    #[serde(default)]
+    reviewed_reconciliation: HashMap<i64, ReconciliationReview>,
 }
 
 impl PendingStoreCommands {
@@ -376,6 +418,20 @@ impl PendingStoreCommands {
                 }
             }
         }
+        for (&hash, review) in &self.reviewed_reconciliation {
+            review.validate()?;
+            if hash != review.request_hash ||
+                self.submissions.contains_key(&hash) ||
+                self.reconciliation.contains_key(&hash)
+            {
+                return Err(HiveMindProtocolError::InvalidRequest);
+            }
+            for &id in &review.stale_outcome_ids {
+                if !owned_reservations.insert(id) {
+                    return Err(HiveMindProtocolError::DuplicateReservation);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -387,7 +443,8 @@ impl PendingStoreCommands {
             request.hash > crate::protocol::MAX_SAFE_REQUEST_HASH ||
             request.message_type != crate::protocol::STORE_COMMANDS_TYPE ||
             (self.submissions.contains_key(&request.hash) ||
-             self.reconciliation.contains_key(&request.hash)) {
+             self.reconciliation.contains_key(&request.hash) ||
+             self.reviewed_reconciliation.contains_key(&request.hash)) {
             return Err(HiveMindProtocolError::InvalidRequest);
         }
         self.submissions.insert(request.hash, request);
@@ -412,7 +469,8 @@ impl PendingStoreCommands {
     /// records. Used by connection restore to reject a corrupt allocator
     /// checkpoint before its Hash namespace can be reused.
     pub(crate) fn owned_request_hashes(&self) -> impl Iterator<Item = i64> + '_ {
-        self.submissions.keys().chain(self.reconciliation.keys()).copied()
+        self.submissions.keys().chain(self.reconciliation.keys())
+            .chain(self.reviewed_reconciliation.keys()).copied()
     }
 
     pub fn reconciliation_count(&self) -> usize {
@@ -425,11 +483,39 @@ impl PendingStoreCommands {
         self.reconciliation.get(&hash).map(Vec::as_slice)
     }
 
-    /// Only after the host has durably recorded that each stale ID is
-    /// settled, invalidated or requires operator intervention may this
-    /// retained reconciliation record be released.
-    pub fn finish_reconciliation(&mut self, hash: i64) -> bool {
-        self.reconciliation.remove(&hash).is_some()
+    /// Admit one explicit, complete review of a 409. Require the submitted
+    /// reservation IDs to match the entire original terminal set; no
+    /// partial release, implicit settlement or silent deletion is allowed.
+    /// Reapplying the same durable review is idempotent after a restart.
+    pub fn review_reconciliation(
+        &mut self, review: ReconciliationReview,
+    ) -> Result<bool, HiveMindProtocolError> {
+        review.validate()?;
+        let hash = review.request_hash;
+        if let Some(previous) = self.reviewed_reconciliation.get(&hash) {
+            return if previous == &review {
+                Ok(false)
+            } else {
+                Err(HiveMindProtocolError::RequestIdentityMismatch)
+            };
+        }
+        let pending = self.reconciliation.get(&hash)
+            .ok_or(HiveMindProtocolError::RequestIdentityMismatch)?;
+        let expected = pending.iter().copied().collect::<std::collections::BTreeSet<_>>();
+        let supplied = review.stale_outcome_ids.iter().copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        if expected != supplied {
+            return Err(HiveMindProtocolError::RequestIdentityMismatch);
+        }
+        self.reconciliation.remove(&hash);
+        self.reviewed_reconciliation.insert(hash, review);
+        Ok(true)
+    }
+
+    pub fn reviewed_reconciliation(
+        &self, hash: i64,
+    ) -> Option<&ReconciliationReview> {
+        self.reviewed_reconciliation.get(&hash)
     }
 
     pub fn retry_payload(&self, hash: i64) -> Option<&StoreCommandsRequest> {
