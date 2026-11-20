@@ -111,6 +111,11 @@ enum TraceRecord {
     PlayerInputTraceEnd {
         rounds: u64,
         failed_window: Option<String>,
+        // Legacy trace versions did not record the window-close flag.
+        // A modern partial recording is not eligible for direct playback,
+        // even if its last physical checkpoint is well formed.
+        #[serde(default)]
+        user_closed: bool,
         policy_actions_sha256: Option<String>,
     },
 }
@@ -295,9 +300,11 @@ impl NativePlayerTrace {
                     measurements.validated_network_events += 1;
                 }
                 Some(TraceRecord::PlayerInputTraceEnd {
-                    rounds, failed_window: None, policy_actions_sha256,
+                    rounds, failed_window: None, user_closed: false,
+                    policy_actions_sha256,
                 }) if rounds >= previous_round &&
-                    policy_actions_sha256.is_some() == expected_model.is_some() => {
+                    policy_actions_sha256.is_some() == expected_model.is_some() &&
+                    policy_actions_sha256.as_deref().is_none_or(valid_sha256) => {
                     if read_record(&mut reader, &mut line)?.is_some() {
                         return Err(trace_error(
                             "records follow the end of the player trace",
