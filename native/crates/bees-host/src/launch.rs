@@ -863,6 +863,8 @@ struct RunNetwork {
     issue_source_commands: bool,
     scheduler: NativeSourceCommandScheduler,
     recorded_network_events: u64,
+    recorded_network_syncs: u64,
+    recorded_network_sync_wall_seconds: f64,
 }
 
 impl RunNetwork {
@@ -886,6 +888,8 @@ impl RunNetwork {
             auth_ticket, flush_seconds: config.shutdown_flush_seconds,
             issue_source_commands: config.issue_source_commands,
             scheduler, recorded_network_events: 0,
+            recorded_network_syncs: 0,
+            recorded_network_sync_wall_seconds: 0.0,
         };
         let (kind, server_game_id) = config.reconnect_game_id
             .map_or((SetupKind::Initial, 0), |game| (SetupKind::Reconnect, game));
@@ -1006,7 +1010,11 @@ impl RunNetwork {
         // physical tick can depend on these server decisions.
         if recorded_this_poll {
             if let Some((trace, _)) = recording {
-                trace.sync_data()?;
+                let started = Instant::now();
+                let synced = trace.sync_data();
+                self.recorded_network_sync_wall_seconds += started.elapsed().as_secs_f64();
+                self.recorded_network_syncs += 1;
+                synced?;
             }
         }
         Ok(())
@@ -4728,6 +4736,12 @@ fn run_battle(
     let mut last_physical_checkpoint_round: Option<u64> = None;
     let mut recorded_physical_checkpoints = 0_u64;
     let mut recorded_player_inputs = 0_u64;
+    // Timed only for opt-in replay recording; headless training creates
+    // no recorder, counters or storage barriers on its physics hot path.
+    let mut trace_checkpoint_syncs = 0_u64;
+    let mut trace_checkpoint_sync_wall_seconds = 0.0_f64;
+    let mut trace_input_syncs = 0_u64;
+    let mut trace_input_sync_wall_seconds = 0.0_f64;
     let mut verified_physical_checkpoints = 0_u64;
     let mut verified_gameplay_checkpoints = 0_u64;
     'battle: loop {
@@ -4747,7 +4761,11 @@ fn run_battle(
                 // durable replay recovery boundary. Commit the whole
                 // sampled set before advancing another authoritative tick.
                 // Only opt-in interactive recording pays for this sync.
-                if let Err(error) = trace.sync_data() {
+                let started = Instant::now();
+                let synced = trace.sync_data();
+                trace_checkpoint_sync_wall_seconds += started.elapsed().as_secs_f64();
+                trace_checkpoint_syncs += 1;
+                if let Err(error) = synced {
                     failed_window = Some(format!(
                         "persisting native physical checkpoint at round {rounds}: {error}"
                     ));
@@ -4889,7 +4907,14 @@ fn run_battle(
                         "kind": "player_input", "round": rounds,
                         "tick": tick, "action": &order.action,
                         "remote_side": order.side,
-                    })).and_then(|_| trace.sync_data());
+                    }));
+                    let committed = if committed.is_ok() {
+                        let started = Instant::now();
+                        let synced = trace.sync_data();
+                        trace_input_sync_wall_seconds += started.elapsed().as_secs_f64();
+                        trace_input_syncs += 1;
+                        synced
+                    } else { committed };
                     if let Err(error) = committed {
                         failed_window = Some(format!("persisting remote player input: {error}"));
                         break 'battle;
@@ -4958,8 +4983,15 @@ fn run_battle(
                     "tick": tick, "action": input,
                 });
                 if let Some(side) = side { entry["remote_side"] = json!(side); }
-                if let Err(error) = writeln!(trace, "{entry}")
-                    .and_then(|_| trace.sync_data()) {
+                let committed = writeln!(trace, "{entry}");
+                let committed = if committed.is_ok() {
+                    let started = Instant::now();
+                    let synced = trace.sync_data();
+                    trace_input_sync_wall_seconds += started.elapsed().as_secs_f64();
+                    trace_input_syncs += 1;
+                    synced
+                } else { committed };
+                if let Err(error) = committed {
                     failed_window = Some(format!("persisting player input: {error}"));
                     break;
                 }
@@ -5422,7 +5454,11 @@ fn run_battle(
             // The final sample is useful even if later campaign, policy
             // recorder or notification finalization fails. Commit its
             // complete write before changing the Level's stop/abort state.
-            if let Err(error) = trace.sync_data() {
+            let started = Instant::now();
+            let synced = trace.sync_data();
+            trace_checkpoint_sync_wall_seconds += started.elapsed().as_secs_f64();
+            trace_checkpoint_syncs += 1;
+            if let Err(error) = synced {
                 failed_window.get_or_insert_with(||
                     format!("persisting final native physical checkpoint: {error}")
                 );
@@ -5784,6 +5820,16 @@ fn run_battle(
             "observation_build_wall_seconds": policy_boundary_capture_nanos as f64 / 1e9,
         },
         "remote_play": remote.as_ref().map(|server| server.measurements()),
+        "native_recording_durability": recorded_inputs.as_ref().map(|_| json!({
+            "checkpoint_syncs": trace_checkpoint_syncs,
+            "checkpoint_sync_wall_seconds": trace_checkpoint_sync_wall_seconds,
+            "player_input_syncs": trace_input_syncs,
+            "player_input_sync_wall_seconds": trace_input_sync_wall_seconds,
+            "hivemind_ingress_syncs": network.as_ref()
+                .map_or(0, |network| network.recorded_network_syncs),
+            "hivemind_ingress_sync_wall_seconds": network.as_ref()
+                .map_or(0.0, |network| network.recorded_network_sync_wall_seconds),
+        })),
         "run_id": config.run_id,
         "rounds": rounds,
         "throughput": {
