@@ -3947,9 +3947,9 @@ fn recover_generated_library_battle(
         let saved = saved.ok_or_else(|| invalid(
             "interrupted generated battle has no owned immutable start archive",
         ))?;
-        if !checkpoint.is_file() && saved.schema_version < 2 {
+        if !checkpoint.is_file() && saved.schema_version < 3 {
             return Err(invalid(
-                "legacy generated battle lacks its first durable World checkpoint",
+                "older generated battle lacks pinned source assets or its first World checkpoint",
             ).into());
         }
         if !source.is_file() {
@@ -3966,6 +3966,11 @@ fn recover_generated_library_battle(
         {
             return Err(invalid(
                 "interrupted generated battle cannot resume after its archived source changed",
+            ).into());
+        }
+        if !checkpoint.is_file() && current.assets_sha256 != saved.assets_sha256 {
+            return Err(invalid(
+                "interrupted generated battle scene, Stage or policy assets changed before initial World recovery",
             ).into());
         }
         if pending.replace((source, run)).is_some() {
