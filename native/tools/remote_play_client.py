@@ -119,7 +119,20 @@ class RemoteConsole:
                                 self.held_scope = None
                                 self.held_begin_request = None
                                 self.last_campaign_receipt = None
-                                self.last_battle_receipt = None
+                                # Reliable terminal replies can overtake a
+                                # replaceable unsent world_state. Keep an
+                                # already received final receipt for exactly
+                                # the World it authenticates, even when
+                                # this is the first snapshot of the socket.
+                                receipt = self.last_battle_receipt
+                                if receipt is not None and not (
+                                    receipt["kind"] == "battle_result" and
+                                    (receipt.get("world_id"), receipt.get("episode_revision")) == episode
+                                ) and not (
+                                    receipt["kind"] == "battle_interrupted" and
+                                    self.selected_scope is None
+                                ):
+                                    self.last_battle_receipt = None
                                 self.briefing_acknowledgments.clear()
                                 self.selected_scope = episode
                             self.latest = message
