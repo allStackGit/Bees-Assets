@@ -156,6 +156,19 @@ pub enum HostSourceCommandError {
     Driver(NativeLevelRoutingError),
 }
 
+/// A native Level's authored source metadata must be recovered with its
+/// physical World. A missing implementation cannot silently substitute
+/// initial FleetShip credit, player authority, exploration or policy agents.
+/// Prepared restoration must be side-effect-free until commit.
+pub trait NativeHostRecoverableMetadata {
+    type Prepared;
+    fn recovery_metadata_checkpoint(&self) -> Result<serde_json::Value, &'static str>;
+    fn prepare_metadata_recovery(
+        &self, snapshot: serde_json::Value,
+    ) -> Result<Self::Prepared, &'static str>;
+    fn commit_metadata_recovery(&mut self, prepared: Self::Prepared);
+}
+
 /// One durable host-owned fixed-step checkpoint spanning every registered
 /// authoritative native Level and the real model/connection identities.
 /// A separate socket writer persists the exact connection journal; the
@@ -165,6 +178,7 @@ pub enum HostSourceCommandError {
 pub struct NativeHostRecoveryCheckpoint {
     schema_version: u32,
     worlds: Vec<NativeLevelWorldRecoveryCheckpoint>,
+    metadata: Vec<serde_json::Value>,
     driver: NativeLevelDriverRecoveryCheckpoint,
     model_generation: u64,
     model_sha256: [u8; 32],
@@ -180,6 +194,7 @@ pub enum HostRecoveryError {
     ConnectionEncoding(serde_json::Error),
     File(CheckpointFileError),
     MissingCheckpoint,
+    Metadata { index: usize, error: &'static str },
     WorldCountMismatch,
     World { index: usize, error: &'static str },
     Level { index: usize, error: NativeLevelRecoveryError },
@@ -228,7 +243,10 @@ where
     /// HiveMind socket ledger remains independently write-ahead persisted.
     pub fn persist_recovery_checkpoint(
         &self, checkpoint_file: &NativeHostCheckpointFile,
-    ) -> Result<(), HostRecoveryError> {
+    ) -> Result<(), HostRecoveryError>
+    where
+        M: NativeHostRecoverableMetadata,
+    {
         let snapshot = self.recovery_checkpoint()?;
         checkpoint_file.persist(&snapshot).map_err(HostRecoveryError::File)
     }
@@ -237,7 +255,10 @@ where
     /// data is fatal for recovery, never interpreted as a fresh episode.
     pub fn restore_recovery_file(
         &mut self, checkpoint_file: &NativeHostCheckpointFile,
-    ) -> Result<(), HostRecoveryError> {
+    ) -> Result<(), HostRecoveryError>
+    where
+        M: NativeHostRecoverableMetadata,
+    {
         let saved = checkpoint_file.load().map_err(HostRecoveryError::File)?
             .ok_or(HostRecoveryError::MissingCheckpoint)?;
         self.restore_recovery_checkpoint(saved)
@@ -256,7 +277,10 @@ where
     /// Capture every live World and its one native inference driver at a
     /// synchronous host boundary. Do not snapshot in-flight, uncorrelated
     /// strategy/targeting requests: the connection cannot revive them.
-    pub fn recovery_checkpoint(&self) -> Result<NativeHostRecoveryCheckpoint, HostRecoveryError> {
+    pub fn recovery_checkpoint(&self) -> Result<NativeHostRecoveryCheckpoint, HostRecoveryError>
+    where
+        M: NativeHostRecoverableMetadata,
+    {
         if !self.connection.is_available() {
             return Err(HostRecoveryError::Unavailable);
         }
@@ -273,8 +297,14 @@ where
                 self.simulation.world(index).expect("bounded world index"),
             )
         ).collect();
+        let mut metadata = Vec::with_capacity(self.simulation.world_count());
+        for index in 0..self.simulation.world_count() {
+            let world = self.simulation.world(index).expect("bounded world index");
+            metadata.push(world.state.metadata.recovery_metadata_checkpoint()
+                .map_err(|error| HostRecoveryError::Metadata { index, error })?);
+        }
         Ok(NativeHostRecoveryCheckpoint {
-            schema_version: 1, worlds,
+            schema_version: 2, worlds, metadata,
             driver: self.driver.recovery_checkpoint(),
             model_generation: self.model.model_generation(),
             model_sha256,
@@ -287,8 +317,12 @@ where
     /// No owner changes until the complete cohort has passed validation.
     pub fn restore_recovery_checkpoint(
         &mut self, checkpoint: NativeHostRecoveryCheckpoint,
-    ) -> Result<(), HostRecoveryError> {
-        if checkpoint.schema_version != 1 ||
+    ) -> Result<(), HostRecoveryError>
+    where
+        M: NativeHostRecoverableMetadata,
+    {
+        if checkpoint.schema_version != 2 ||
+            checkpoint.metadata.len() != checkpoint.worlds.len() ||
             checkpoint.worlds.len() != self.simulation.world_count() ||
             self.driver.registered_world_count() != self.simulation.world_count() {
             return Err(HostRecoveryError::WorldCountMismatch);
@@ -309,7 +343,9 @@ where
 
         let mut staged = Vec::with_capacity(checkpoint.worlds.len());
         let mut layout = Vec::with_capacity(checkpoint.worlds.len());
-        for (index, snapshot) in checkpoint.worlds.into_iter().enumerate() {
+        for (index, (snapshot, metadata)) in checkpoint.worlds.into_iter()
+            .zip(checkpoint.metadata.into_iter()).enumerate()
+        {
             let world = self.simulation.world(index)
                 .ok_or(HostRecoveryError::WorldCountMismatch)?;
             world.validate_owner_checkpoint(&snapshot)
@@ -318,7 +354,9 @@ where
             let (clock, owners) = snapshot.split_state();
             let level = world.state.prepare_recovery_owners(owners, clock.tick())
                 .map_err(|error| HostRecoveryError::Level { index, error })?;
-            staged.push((clock, level));
+            let metadata = world.state.metadata.prepare_metadata_recovery(metadata)
+                .map_err(|error| HostRecoveryError::Metadata { index, error })?;
+            staged.push((clock, level, metadata));
         }
         let driver = NativeLevelBatchDriver::prepare_recovery_for_layout(
             checkpoint.driver, layout,
@@ -327,10 +365,11 @@ where
         // No fallible operation below. Reuse the original World instances,
         // native game engine and model process; do not restart either the
         // physics simulation or the resident policy by inference alone.
-        for (index, (clock, level)) in staged.into_iter().enumerate() {
+        for (index, (clock, level, metadata)) in staged.into_iter().enumerate() {
             let world = self.simulation.world_mut(index)
                 .expect("validated registered world index");
             world.state.commit_recovery_owners(level);
+            world.state.metadata.commit_metadata_recovery(metadata);
             world.commit_owner_checkpoint(clock);
         }
         self.driver = driver;
