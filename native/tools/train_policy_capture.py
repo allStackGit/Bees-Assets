@@ -1786,6 +1786,7 @@ def main():
         "empty_policy_terminal_boundaries":
             capture_stats.get("empty_policy_terminal_boundaries", 0),
         "capture_compact_opponent_decisions": capture_stats.get("compact_opponent_decisions", 0),
+        "capture_ungrouped_policy_decisions": capture_stats.get("ungrouped_policy_decision_rows", 0),
         "capture_compact_opponent_boundaries": capture_stats.get("compact_opponent_boundaries", 0),
         "episodes_without_policy_decisions":
             capture_stats.get("episodes_without_policy_decisions", 0),
