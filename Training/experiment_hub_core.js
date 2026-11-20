@@ -5629,6 +5629,10 @@ class ExperimentHub {
                     JSON.stringify(job.frozen_parameters)!==
                         JSON.stringify(predecessor.frozen_parameters)||
                     job.configuration_sha256!==predecessor.configuration_sha256||
+                    JSON.stringify(lease.gpu_bindings||[])!==JSON.stringify(
+                        next.reservations.find(original=>
+                            original.id===predecessor.lease_id&&
+                            original.job_id===predecessor.id)?.gpu_bindings||[])||
                     (job.model_source_job_id||null)!==
                         (predecessor.model_source_job_id||null)||
                     (job.expected_parent_model_sha256||null)!==
