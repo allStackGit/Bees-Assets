@@ -1863,6 +1863,31 @@ impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
     }
 }
 
+/// Host recovery stages the authored source ledger alongside the real
+/// World and Level owners. Every native policy scene uses this same source
+/// owner: there is no substitute registry in gameplay, training or replay.
+impl crate::runtime::NativeHostRecoverableMetadata for NativePolicyOnlyMetadata {
+    type Prepared = NativePolicySourceLedgerPrepared;
+
+    fn recovery_metadata_checkpoint(&self) -> Result<serde_json::Value, &'static str> {
+        serde_json::to_value(self.source_ledger_checkpoint())
+            .map_err(|_| "native authored source ledger cannot be serialized")
+    }
+
+    fn prepare_metadata_recovery(
+        &self, saved: serde_json::Value,
+    ) -> Result<Self::Prepared, &'static str> {
+        let snapshot: NativePolicySourceLedgerCheckpoint = serde_json::from_value(saved)
+            .map_err(|_| "invalid native authored source ledger format")?;
+        self.prepare_source_ledger_recovery(snapshot)
+            .map_err(|_| "native authored source ledger failed recovery preflight")
+    }
+
+    fn commit_metadata_recovery(&mut self, prepared: Self::Prepared) {
+        self.commit_source_ledger_recovery(prepared);
+    }
+}
+
 impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
     type Error = PolicyOnlyMetadataError;
 
