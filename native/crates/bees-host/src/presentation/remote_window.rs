@@ -1270,7 +1270,8 @@ fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) 
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
-    held_fire_active: bool, visual: &RemoteVisual, fraction: f32,
+    held_fire_active: bool, shooting_menu: bool, shooting_focus: u8,
+    visual: &RemoteVisual, fraction: f32,
     artwork: &RemoteArtwork, show_art: bool, obstacle_hull_draws: &mut u64,
     minimap_ship_markers: &mut u64, minimap_objective_markers: &mut u64,
     fog_masked_pixels: &mut u64) {
@@ -1571,23 +1572,32 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         text::draw_at(pixels,WIDTH,15,HEIGHT-44,
             "MANUAL FIRE - release J to stop",1,[255,221,151]);
     }
-    let instructions=[
-        "Left: select  Ctrl+A: select all",
-        "Drag: select multiple",
-        "Right click: order  drag: move",
-        "1-0 select Tab / PgUp-Dn cycle",
-        "T fire X stop J held fire",
-        "Shift+T attack Shift+I circle",
-        "Shift+O left Shift+U right",
-        "Shift+N in/out G guard C hold",
-        "E chase O lock Y/U speed",
-        "Shift+PgUp-Dn shooting (1-40)",
-        "K beacon D detonate Q charge",
-        "H heal R retreat P patrol M mine",
-        "V cease A attack F fit +/- zoom",
-    ];
-    for (index,label) in instructions.iter().enumerate(){
-        text::draw_at(pixels,WIDTH,FIELD+14,455+index*18,label,1,MUTED);
+    for &action in &ACTIONS {
+        let Some(rect)=remote_tactical_rect(action) else{continue};
+        let active=match action {
+            HudAction::Attack=>mode==Some(TargetMode::Attack),
+            HudAction::Guard=>mode==Some(TargetMode::Guard),
+            HudAction::Patrol=>mode==Some(TargetMode::Patrol),
+            HudAction::Mine=>mode==Some(TargetMode::Mine),
+            HudAction::Heal=>mode==Some(TargetMode::Heal),
+            HudAction::Retreat=>mode==Some(TargetMode::Retreat),
+            HudAction::Circle=>mode==Some(TargetMode::Circle),
+            HudAction::RightSwipe=>mode==Some(TargetMode::RightSwipe),
+            HudAction::LeftSwipe=>mode==Some(TargetMode::LeftSwipe),
+            HudAction::InAndOut=>mode==Some(TargetMode::InAndOut),
+            HudAction::PointFire=>mode==Some(TargetMode::Fire),
+            _=>false,
+        };
+        let color=if active{0x3d635d}else{0x244056};
+        for line in pixels.chunks_exact_mut(WIDTH)
+            .skip(rect.top).take(rect.bottom-rect.top) {
+            line[rect.left..rect.right].fill(color);
+        }
+        outline(pixels,rect.left as i32,rect.top as i32,
+            (rect.right-rect.left) as i32,(rect.bottom-rect.top) as i32,
+            if active{GOLD}else{0x456782});
+        text::draw_at(pixels,WIDTH,rect.left+4,rect.top+7,
+            action.label(),1,if active{TEXT}else{MUTED});
     }
     if let Some(mode)=mode {
         text::draw_at(pixels,WIDTH,15,HEIGHT-55,
@@ -1604,6 +1614,23 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 TargetMode::Retreat=>"Click friendly WarpGate to RETREAT",
                 TargetMode::Patrol=>"Click first / second PATROL corner",
             },1,[255,221,151]);
+    }
+    if shooting_menu {
+        for (index,name) in SHOOTING_STRATEGIES.iter().enumerate() {
+            let Some(rect)=shooting_rect(WIDTH,HEIGHT,index) else{continue};
+            let focused=index+1==usize::from(shooting_focus);
+            for line in pixels.chunks_exact_mut(WIDTH)
+                .skip(rect.top).take(rect.bottom-rect.top) {
+                line[rect.left..rect.right].fill(if focused{0x45675f}else{0x182c44});
+            }
+            outline(pixels,rect.left as i32,rect.top as i32,
+                (rect.right-rect.left) as i32,(rect.bottom-rect.top) as i32,
+                if focused{GOLD}else{0x456782});
+            let label=format!("{:02} {}",index+1,name);
+            text::draw_at(pixels,WIDTH,rect.left+7,rect.top+7,
+                text::fit(&label,rect.right-rect.left-14),1,
+                if focused{TEXT}else{MUTED});
+        }
     }
     text::draw_at(pixels,WIDTH,10,HEIGHT-25,text::fit(notice,FIELD-20),1,TEXT);
     text::draw_at(pixels,WIDTH,FIELD+14,HEIGHT-24,
@@ -1743,6 +1770,10 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut held_fire_active=false;
     let mut held_fire_target:Option<Vec2>=None;
     let mut show_art=true;
+    let mut shooting_menu=false;
+    let mut shooting_focus=1_u8;
+    let mut hud_press:Option<HudAction>=None;
+    let mut squad_tab_press:Option<i64>=None;
     let started=Instant::now();
     let mut previous_frame=started;
 
@@ -1812,6 +1843,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             last_left=false;last_right=false;
             last_selection_press=None;double_left_press=false;
             right_press=None;
+            hud_press=None;squad_tab_press=None;
+            shooting_menu=false;
             last_middle=None;minimap_dragging=false;
             camera=None;
             current_episode=(0,0);
@@ -1875,6 +1908,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     minimap_dragging=false;
                     right_press=None;
                     last_selection_press=None;double_left_press=false;
+                    hud_press=None;squad_tab_press=None;
+                    shooting_menu=false;
                     // The server forgets this lease at the same authoritative
                     // episode boundary; the client never aims old ships.
                     held_fire_active=false;
@@ -1941,77 +1976,59 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     }
                     continue;
                 }
-                // Match the local native command keys. Additional LAN
-                // tactical maneuvers use Shift combinations rather than
-                // silently sending a different action on the same key.
-                let send=match key {
-                    Key::A if control => {
-                        if let Some(state)=peer.state.as_ref() {
-                            selected=state["squads"].as_array().into_iter().flatten()
-                                .filter(|s|s["controllable"]==true&&s["source_root"]==true)
-                                .filter_map(|s|s["owner"]["squad_id"].as_i64()).collect();
-                        }
-                        None
+                // Keyboard and on-screen buttons share one typed command
+                // dispatcher. Source local controls retain their meanings.
+                if key==Key::F {
+                    if let Some(map)=peer.state.as_ref().and_then(bounds) {
+                        cam=NativeCamera::fit(map,FIELD,HEIGHT);
                     }
-                    Key::A=>Some(("cease_fire",json!({"cease_fire":false}))),
-                    Key::V=>Some(("cease_fire",json!({"cease_fire":true}))),
-                    Key::T if shift=>{mode=Some(TargetMode::Attack);patrol_start=None;None}
-                    Key::T=>{mode=Some(TargetMode::Fire);patrol_start=None;None}
-                    Key::I if shift=>{mode=Some(TargetMode::Circle);patrol_start=None;None}
-                    Key::O if shift=>{mode=Some(TargetMode::LeftSwipe);patrol_start=None;None}
-                    Key::U if shift=>{mode=Some(TargetMode::RightSwipe);patrol_start=None;None}
-                    Key::N if shift=>{mode=Some(TargetMode::InAndOut);patrol_start=None;None}
-                    Key::G=>{mode=Some(TargetMode::Guard);patrol_start=None;None}
-                    Key::M=>{mode=Some(TargetMode::Mine);patrol_start=None;None}
-                    Key::H=>{mode=Some(TargetMode::Heal);patrol_start=None;None}
-                    Key::R=>{mode=Some(TargetMode::Retreat);patrol_start=None;None}
-                    Key::P=>{mode=Some(TargetMode::Patrol);patrol_start=None;None}
-                    Key::F=>{
-                        if let Some(map)=peer.state.as_ref().and_then(bounds) {
-                            cam=NativeCamera::fit(map,FIELD,HEIGHT);
-                        }
-                        None
+                    continue;
+                }
+                if shift&&matches!(key,Key::PageUp|Key::PageDown) {
+                    let current=first_selected(peer.state.as_ref(),&selected)
+                        .and_then(|s|s["shooting"].as_u64()).unwrap_or(1).clamp(1,40);
+                    let next=if key==Key::PageUp{(current+1).min(40)}
+                        else{current.saturating_sub(1).max(1)};
+                    if let Err(error)=peer.order(&selected,"shooting",
+                        json!({"strategy_id":next})) {
+                        peer.notice=error.to_string();
                     }
-                    Key::C=>Some(("support",json!({"action":"Hold"}))),
-                    Key::E=>Some(("chase",json!({"chasing":true}))),
-                    Key::O=>Some(("lock_on",json!({
-                        "locked":!selected.iter().all(|id|
-                            peer.state.as_ref().is_some_and(|state|
-                                state["squads"].as_array().into_iter().flatten().any(|s|
-                                    s["controllable"]==true&&s["locked_on"]==true&&
-                                    s["owner"]["squad_id"].as_i64()==Some(*id))))
-                    }))),
-                    Key::Y=>Some(("match_speed",json!({"match_speed":true}))),
-                    Key::U=>Some(("match_speed",json!({"match_speed":false}))),
+                    continue;
+                }
+                let action=match key {
+                    Key::A if control=>Some(HudAction::SelectAll),
+                    Key::A=>Some(HudAction::AttackOnSight),
+                    Key::V=>Some(HudAction::CeaseFire),
+                    Key::T if shift=>Some(HudAction::Attack),
+                    Key::T=>Some(HudAction::PointFire),
+                    Key::I if shift=>Some(HudAction::Circle),
+                    Key::O if shift=>Some(HudAction::LeftSwipe),
+                    Key::U if shift=>Some(HudAction::RightSwipe),
+                    Key::N if shift=>Some(HudAction::InAndOut),
+                    Key::G=>Some(HudAction::Guard),
+                    Key::M=>Some(HudAction::Mine),
+                    Key::H=>Some(HudAction::Heal),
+                    Key::R=>Some(HudAction::Retreat),
+                    Key::P=>Some(HudAction::Patrol),
+                    Key::C=>Some(HudAction::Hold),
+                    Key::E=>Some(HudAction::Chase),
+                    Key::O=>Some(HudAction::LockOn),
+                    Key::Y=>Some(HudAction::MatchSpeed),
+                    Key::U=>Some(HudAction::FreeSpeed),
                     Key::K if dialogue_skip_key=>None,
-                    Key::K=>Some(("special",json!({"kind":"DropBeacon"}))),
-                    Key::D=>Some(("special",json!({"kind":"Detonate"}))),
-                    Key::Q=>Some(("special",json!({"kind":"Charge"}))),
-                    Key::X=>{
-                        if held_fire_active {
-                            if let Err(error)=peer.held_fire(&selected,"End",None) {
-                                let _=peer.socket.shutdown(std::net::Shutdown::Both);
-                                peer.connected=false;
-                                peer.notice=error.to_string();
-                            }
-                            held_fire_active=false;held_fire_target=None;
-                            None
-                        } else {
-                            Some(("fire",json!({"target":null})))
-                        }
-                    }
-                    Key::PageUp|Key::PageDown if shift=>{
-                        let previous=first_selected(peer.state.as_ref(),&selected)
-                            .and_then(|s|s["shooting"].as_u64()).unwrap_or(1).clamp(1,40);
-                        let next=if key==Key::PageUp{
-                            (previous+1).min(40)
-                        }else{previous.saturating_sub(1).max(1)};
-                        Some(("shooting",json!({"strategy_id":next})))
-                    }
+                    Key::K=>Some(HudAction::Beacon),
+                    Key::D=>Some(HudAction::Detonate),
+                    Key::Q=>Some(HudAction::Charge),
+                    Key::X=>Some(HudAction::StopFire),
+                    Key::S=>Some(HudAction::Shooting),
                     _=>None,
                 };
-                if let Some((name,fields))=send {
-                    if let Err(error)=peer.order(&selected,name,fields) {
+                if let Some(action)=action {
+                    if let Err(error)=remote_tactical_action(
+                        &mut peer,&mut selected,&mut mode,&mut patrol_start,
+                        &mut held_fire_active,&mut held_fire_target,
+                        &mut shooting_menu,&mut shooting_focus,action,
+                    ) {
                         peer.notice=error.to_string();
                     }
                 }
@@ -2316,7 +2333,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         let mut fog_masked = 0_u64;
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
-            held_fire_active,&peer.visual,visual_fraction,&artwork,show_art,
+            held_fire_active,shooting_menu,shooting_focus,
+            &peer.visual,visual_fraction,&artwork,show_art,
             &mut hulls, &mut map_ships, &mut map_objectives, &mut fog_masked);
         peer.metrics.fog_masked_pixels += fog_masked;
         peer.metrics.obstacle_hull_draws += hulls;
