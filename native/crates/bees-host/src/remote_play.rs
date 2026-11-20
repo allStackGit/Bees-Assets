@@ -885,9 +885,12 @@ impl NativeRemotePlay {
         // their existing reliable, bounded channel.
         let pending_audio = std::mem::take(&mut self.pending_audio);
         let music_location = self.music_location;
-        let requires_briefing_ack=self.dedicated_briefing_gate &&
-            view.tick==0 && view.terminal_result.is_none() &&
+        // The source briefing prevents both sides issuing physical orders,
+        // even when a local graphical commander (rather than a remote ACK)
+        // controls its pacing. Only dedicated servers request a remote ACK.
+        let briefing_paused=view.tick==0 && view.terminal_result.is_none() &&
             view.campaign_dialogue.is_some_and(|(_,cue)|cue.is_briefing());
+        let requires_briefing_ack=self.dedicated_briefing_gate && briefing_paused;
         let mut snapshots = HashMap::<i32, Vec<u8>>::new();
         let measurements = &mut self.measurements;
         for peer in &mut self.peers {
@@ -898,7 +901,7 @@ impl NativeRemotePlay {
                 let payload = serde_json::to_vec(&current_state(
                     view, bounds, side, music_location, cues,
                     vision.get(&side).expect("authenticated side has sight"),
-                    requires_briefing_ack,
+                    briefing_paused,
                     requires_briefing_ack && view.campaign_dialogue_side==Some(side),
                     measurements,
                 )).unwrap_or_default();
