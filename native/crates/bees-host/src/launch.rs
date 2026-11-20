@@ -1594,7 +1594,7 @@ impl CampaignReplaySetup {
     {
         let source = source.canonicalize()?;
         Ok(Self {
-            schema_version: 1,
+            schema_version: 2,
             kind: "native_campaign_replay_setup".to_owned(),
             source_config_sha256: format!("{:x}", Sha256::digest(fs::read(&source)?)),
             source_config: source,
@@ -1616,7 +1616,7 @@ impl CampaignReplaySetup {
 
     fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
         let setup: Self = serde_json::from_slice(&fs::read(path)?)?;
-        if setup.schema_version != 1 ||
+        if !(1..=2).contains(&setup.schema_version) ||
             setup.kind != "native_campaign_replay_setup" ||
             setup.campaign_id.is_empty() || setup.mission_id.is_empty() ||
             !(1..=2).contains(&setup.player_side) ||
@@ -2548,8 +2548,16 @@ fn launch_catalog_battle(
                     "interrupted campaign source or mission contract changed",
                 ).into());
             }
+            // Schema 1 snapshots used the public status view. Preserve their
+            // original digest contract; schema 2 pins only durable career
+            // state and the separately validated source/mission identity.
+            let career_state = if prior.schema_version == 1 {
+                catalog.status(&progress)
+            } else {
+                catalog.career_identity(&progress)
+            };
             let career_sha256 = format!("{:x}", Sha256::digest(
-                serde_json::to_vec(&catalog.status(&progress))?,
+                serde_json::to_vec(&career_state)?,
             ));
             if prior.career_sha256.as_deref() != Some(career_sha256.as_str()) {
                 return Err(invalid(
@@ -2696,9 +2704,9 @@ fn launch_catalog_battle(
         let mut setup = CampaignReplaySetup::capture(
             &config, mission.expect("saved campaign setup has an authored mission"),
         )?;
-        let status = catalog.status(&progress);
+        let identity = catalog.career_identity(&progress);
         setup.career_sha256 = Some(format!("{:x}", Sha256::digest(
-            serde_json::to_vec(&status)?,
+            serde_json::to_vec(&identity)?,
         )));
         Some(setup)
     } else { None };
