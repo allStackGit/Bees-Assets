@@ -233,21 +233,48 @@ function runningService() {
     try{return exec('systemctl',['--user','is-active',SERVICE])==='active';}
     catch{return false;}
 }
+function awaitWindowsState(wanted) {
+    // SCM stop/start requests are asynchronous, unlike systemctl.
+    for(let count=0;count<60;count++) {
+        const result=exec('sc.exe',['query',SERVICE]);
+        if(result.includes(wanted))return;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1000);
+    }
+    throw Error('Windows agent service failed to reach '+wanted);
+}
 function stopService() {
-    if(process.platform==='win32')exec('sc.exe',['stop',SERVICE]);
-    else exec('systemctl',['--user','stop',SERVICE]);
+    if(process.platform==='win32') {
+        exec('sc.exe',['stop',SERVICE]);
+        awaitWindowsState('STOPPED');
+    }else exec('systemctl',['--user','stop',SERVICE]);
 }
 function startService() {
-    if(process.platform==='win32')exec('sc.exe',['start',SERVICE]);
-    else exec('systemctl',['--user','start',SERVICE]);
+    if(process.platform==='win32') {
+        exec('sc.exe',['start',SERVICE]);
+        awaitWindowsState('RUNNING');
+    }else exec('systemctl',['--user','start',SERVICE]);
 }
-function configureService(root,training) {
+function configureService(root,training,serviceBinary=null) {
     if(process.platform==='win32') {
         const json=path.join(root,'Private','agent-service.json');
         const old=fs.readFileSync(json,'utf8'),parsed=JSON.parse(old);
+        const previous=exec('sc.exe',['qc',SERVICE]);
+        const match=/BINARY_PATH_NAME\s*:\s*(.+)/.exec(previous);
+        if(!match)throw Error('Cannot inspect existing Windows agent service binary.');
+        const originalCommand=match[1].trim();
         parsed.TrainingDirectory=training;
         save(json,JSON.stringify(parsed)+'\n');
-        return ()=>save(json,old);
+        try {
+            if(serviceBinary) {
+                const command='"'+serviceBinary+'" --service "'+json+'"';
+                exec('sc.exe',['config',SERVICE,'binPath=',command]);
+            }
+        }catch(error){save(json,old);throw error;}
+        return ()=>{
+            save(json,old);
+            if(serviceBinary)
+                exec('sc.exe',['config',SERVICE,'binPath=',originalCommand]);
+        };
     }
     const dir=path.join(require('node:os').homedir(),'.config','systemd','user',
         SERVICE+'.d');
@@ -269,6 +296,30 @@ function configureService(root,training) {
 async function apply(root,envFile,previous,changes) {
     const hasWorker=changes.worker;
     const entries={};
+    let nativeServiceBinary=null;
+    if(hasWorker&&process.platform==='win32') {
+        const version=path.basename(changes.worker);
+        const binaries=path.join(root,'Software','Binaries',version);
+        const ownerDir=path.join(binaries,'Owner');
+        const serviceDir=path.join(binaries,'Service');
+        fs.mkdirSync(ownerDir,{recursive:true,mode:0o700});
+        fs.mkdirSync(serviceDir,{recursive:true,mode:0o700});
+        const training=path.join(changes.worker,'Training');
+        const owner=path.join(ownerDir,'ExperimentHubWindowsOwner.exe');
+        const service=path.join(serviceDir,'ExperimentHubWindowsService.exe');
+        if(!fs.existsSync(owner)||!fs.existsSync(service)) {
+            exec('dotnet.exe',['publish',path.join(training,'experiment_hub_windows_owner',
+                'ExperimentHubWindowsOwner.csproj'),'-c','Release','-r','win-x64',
+                '--self-contained','true','-o',ownerDir]);
+            exec('dotnet.exe',['publish',path.join(training,'experiment_hub_windows_service',
+                'ExperimentHubWindowsService.csproj'),'-c','Release','-r','win-x64',
+                '--self-contained','true','-o',serviceDir]);
+        }
+        nativeServiceBinary=service;
+        entries.EXPERIMENT_HUB_WINDOWS_HELPER=owner;
+        entries.EXPERIMENT_HUB_WINDOWS_HELPER_SHA256=
+            crypto.createHash('sha256').update(fs.readFileSync(owner)).digest('hex');
+    }
     if(hasWorker)entries.EXPERIMENT_HUB_LOCAL_ADAPTERS=path.join(
         changes.worker,'Training','experiment_hub_worker_adapters.js');
     if(changes.tinybrains)
@@ -282,7 +333,7 @@ async function apply(root,envFile,previous,changes) {
         wasRunning=runningService();
         if(wasRunning)stopService();
         if(hasWorker)rollbackService=configureService(root,
-            path.join(changes.worker,'Training'));
+            path.join(changes.worker,'Training'),nativeServiceBinary);
         original=updateEnv(envFile,entries);
         // Existing venvs are immutable during active native jobs. Rebind
         // editable simulation modules only after the native journal is idle.
