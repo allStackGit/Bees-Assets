@@ -237,6 +237,10 @@ pub struct RemotePlayMeasurements {
     /// authoritative World without reusing its dead TCP sockets.
     pub recovered_sessions: u64,
     pub recovered_peer_connections: u64,
+    /// New player authentications after checkpointed host recovery,
+    /// distinct from sockets lost during the original process restart.
+    #[serde(default)]
+    pub post_recovery_authenticated_peers: u64,
     pub recovered_held_fire_releases: u64,
     pub held_fire_requests: u64,
     pub held_fire_rejected: u64,
@@ -605,6 +609,9 @@ impl NativeRemotePlay {
                             peer.side = Some(side);
                             newly_authenticated = true;
                             self.measurements.authenticated_peers += 1;
+                            if self.recovered_session {
+                                self.measurements.post_recovery_authenticated_peers += 1;
+                            }
                             let _ = peer.enqueue(&json!({
                                 "kind": "welcome", "protocol": 1,
                                 "mode": "authenticated_player_side", "side": side,
