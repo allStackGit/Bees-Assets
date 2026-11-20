@@ -271,9 +271,9 @@ async function setup(hub) {
     // Never overwrite an installed service, even one sharing our fixed name.
     for(const [id,definition] of Object.entries(defs)) {
         const unit=unitFiles(o,id);
-        if(fs.existsSync(unit.serviceFile)||fs.existsSync(unit.timerFile))
+        if(fs.existsSync(unit.serviceFile)&&fs.existsSync(unit.timerFile))
             approvedUnit(o,id,definition);
-        else installEvaluatorUnits(definition,o.home);
+        else installEvaluatorUnits(definition,o.home,{repairPartial:true});
     }
     await systemctl(['daemon-reload']);
     for(const id of Object.keys(SUITES))
