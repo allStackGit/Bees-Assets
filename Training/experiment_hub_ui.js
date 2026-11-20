@@ -7874,8 +7874,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 host.gpus?.length>=members.length&&
                 host.courier_lineage_slots?.length>=members.length;
         });
+        const needsRemotePpoSettings=!shared&&
+            Object.keys(selected.parameters.design_overrides||{}).some(key=>
+                key.startsWith('training.'));
+        const ppoReady=!needsRemotePpoSettings||
+            machine?.courier_remote_ppo_settings===true&&
+            available.every(host=>host.courier_lineage_remote_ppo_settings===true);
         const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
-            capacity>0&&available.length>0&&localCapacity&&remoteCapacity&&
+            capacity>0&&available.length>0&&localCapacity&&remoteCapacity&&ppoReady&&
             (subset||capacity>=endpoints.length&&available.length===endpoints.length));
         courierQueue.disabled=!ready;
         courierDetails.textContent=ready
@@ -7887,7 +7893,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             ' only with unique slot listeners and independent exclusive GPUs.'+
                             ' Keep slot-to-machine binding checked for repeated hosts.':'')
                     :' Leave at least one PPO lineage on the learner.')
-            :'Register the Courier lineage project and connect the approved workers.';
+            :!ppoReady
+                ?'The selected Courier learner or remote workers lack frozen PPO-settings support. Install the updated Courier backend on each host, then restart the native agents.'
+                :'Register the Courier lineage project and connect the approved workers.';
     }
     courierMachine.addEventListener('change',renderCourierDistributedGroup);
     let distributedBudgetHost=null;
