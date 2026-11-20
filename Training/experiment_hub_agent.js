@@ -12,6 +12,7 @@ const {discoverAmdGpus,discoverNvidiaGpus}=require('./experiment_hub_gpu_invento
 const {fromEnvironment}=require('./experiment_hub_execution');
 const {syncArtifacts}=require('./experiment_hub_artifact_agent');
 const {evaluatorHealth}=require('./experiment_hub_evaluator_health');
+const remoteEvaluator=require('./experiment_hub_remote_evaluator_control');
 const {MAX_BODY_BYTES}=require('./experiment_hub_agent_listener');
 const {request: resourceRequest}=require('./experiment_hub_resources');
 
@@ -188,7 +189,7 @@ function observedOffers(offers,observation) {
 
 function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
     executionReports=[],advertisement={},gpuQualificationReports=[],
-    requestExecutionOrders=true,closeAgentSession=false) {
+    requestExecutionOrders=true,closeAgentSession=false,evaluatorActionReports=[]) {
     if(typeof requestExecutionOrders!=='boolean')
         return Promise.reject(Error('Native instruction request preference must be boolean.'));
     if(typeof closeAgentSession!=='boolean'||
@@ -203,6 +204,7 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
     if(!Array.isArray(executionReports)||executionReports.length>50||
         !Array.isArray(gpuQualificationReports)||
         gpuQualificationReports.length>4||
+        !Array.isArray(evaluatorActionReports)||evaluatorActionReports.length>1||
         !advertisement||typeof advertisement!=='object')
         return Promise.reject(Error('Invalid local execution report batch.'));
     const payload=JSON.stringify({
@@ -212,6 +214,7 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         close_agent_session:closeAgentSession,
         execution_reports:executionReports,
         gpu_qualification_reports:gpuQualificationReports,
+        evaluator_action_reports:evaluatorActionReports,
         local_executor:advertisement.local_executor===true,
         installed_projects:advertisement.installed_projects||[],
         evaluation_suites:advertisement.evaluation_suites||{},
@@ -331,7 +334,8 @@ async function main() {
         Object.assign(advertisement,evaluatorObservation.value);
     };
     let active=false,executingNative=false,busyHeartbeat=null,
-        last='initial',receipts=[],pendingReports=[],pendingGpuReports=[];
+        last='initial',receipts=[],pendingReports=[],pendingGpuReports=[],
+        pendingEvaluatorReports=[];
     const artifactCache=new Map();
     let artifactSync=null;
     const collectArtifacts=()=>{
@@ -364,11 +368,13 @@ async function main() {
         active=true;
         try{
             const response=await sendHeartbeat(url,id,token,receipts,
-                pendingReports,advertisement,pendingGpuReports);
+                pendingReports,advertisement,pendingGpuReports,
+                true,false,pendingEvaluatorReports);
             // The coordinator accepted these reports. Any subsequent agent
             // crash is reconciled using the native service journal.
             pendingReports=[];
             pendingGpuReports=[];
+            pendingEvaluatorReports=[];
             // A corrupt advisory offer must not prevent this worker from
             // executing an independent native Stop or Inspect instruction.
             // Reject all lease receipts for this poll, but keep native
@@ -412,6 +418,20 @@ async function main() {
                         setTimeout(collectArtifacts,0);
                 }
             }
+            const evaluatorOrders=response.evaluator_orders||[];
+            if(!Array.isArray(evaluatorOrders)||evaluatorOrders.length>1||
+                evaluatorOrders.length&&(response.execution_orders||[]).length)
+                throw Error('Invalid overlapping evaluator and native directive batch.');
+            if(evaluatorOrders.length) {
+                executingNative=true;
+                try {
+                    pendingEvaluatorReports=[await remoteEvaluator.execute(id,evaluatorOrders[0])];
+                }finally {
+                    executingNative=false;
+                    if(busyHeartbeat)await busyHeartbeat;
+                }
+                if(expedite)setTimeout(()=>poll(true),0);
+            }
             if(last!=='connected')
                 console.log('[experiment-hub-agent] connected ('+id+
                     (executor
@@ -448,7 +468,7 @@ async function main() {
                 // still tells the coordinator that this process will exit:
                 // it must not keep this instance connected for another TTL.
                 await sendHeartbeat(url,id,token,receipts,pendingReports,
-                    advertisement,pendingGpuReports,false,true);
+                    advertisement,pendingGpuReports,false,true,pendingEvaluatorReports);
             }catch(error) {
                 console.error('[experiment-hub-agent] Final sign-off failed: '+error.message);
                 process.exitCode=1;
