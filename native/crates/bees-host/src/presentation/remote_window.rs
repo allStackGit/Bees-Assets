@@ -72,6 +72,10 @@ struct WireCounts {
     minimap_ship_markers: u64,
     minimap_objective_markers: u64,
     minimap_camera_moves: u64,
+    /// Local and LAN share the exact fog circle raster; pixels outside the
+    /// host-authenticated current/decaying vision are not presented.
+    fog_circle_stamps: u64,
+    fog_masked_pixels: u64,
 }
 
 /// The existing native source-art renderer, reused for authenticated
@@ -84,6 +88,8 @@ struct RemoteArtwork {
     asteroids: HashSet<i64>,
     shot_first_seen: HashMap<i64, (u64, u64)>,
     episode: Option<(u64, u64)>,
+    fog_enabled: bool,
+    fog_coverage: Vec<u8>,
 }
 
 impl RemoteArtwork {
@@ -96,7 +102,8 @@ impl RemoteArtwork {
             raster: NativeSoftwareRenderer::new(FIELD, HEIGHT, map)?,
             ships: HashSet::new(), projectiles: HashSet::new(),
             asteroids: HashSet::new(), shot_first_seen: HashMap::new(),
-            episode: None,
+            episode: None, fog_enabled: false,
+            fog_coverage: vec![0; FIELD * HEIGHT],
         })
     }
 
@@ -110,6 +117,21 @@ impl RemoteArtwork {
         self.ships.clear();
         self.projectiles.clear();
         self.asteroids.clear();
+        self.fog_enabled = state["fog_enabled"] == true;
+        if self.fog_enabled {
+            self.fog_coverage.fill(0);
+            for source in state["fog_sources"].as_array().into_iter().flatten() {
+                let (Some(point), Some(radius)) = (
+                    position(source),
+                    source["radius"].as_f64().map(|value| value as f32)
+                        .filter(|value| value.is_finite() && *value > 0.0),
+                ) else { continue };
+                NativeSoftwareRenderer::reveal_fog_circle(
+                    &mut self.fog_coverage, camera, FIELD, HEIGHT, point, radius,
+                );
+                stats.fog_circle_stamps += 1;
+            }
+        }
         if !show_art {
             // F6 skips the entire texture renderer (and framebuffer
             // clear/copy), retaining only the existing geometric UI.
@@ -236,6 +258,22 @@ impl RemoteArtwork {
         stats.sprite_blended_pixels += blended;
         stats.recolor_cache_peak = stats.recolor_cache_peak
             .max(self.raster.remote_ship_recolor_cache_size());
+    }
+
+    fn mask_field(&self, pixels: &mut [u32]) -> u64 {
+        if !self.fog_enabled { return 0; }
+        let mut masked = 0u64;
+        for (row, sight) in pixels.chunks_exact_mut(WIDTH)
+            .zip(self.fog_coverage.chunks_exact(FIELD))
+        {
+            for (pixel, &visible) in row[..FIELD].iter_mut().zip(sight) {
+                if visible == 0 {
+                    *pixel = 0x080e19;
+                    masked += 1;
+                }
+            }
+        }
+        masked
     }
 }
 
@@ -1018,7 +1056,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
     held_fire_active: bool, visual: &RemoteVisual, fraction: f32,
     artwork: &RemoteArtwork, show_art: bool, obstacle_hull_draws: &mut u64,
-    minimap_ship_markers: &mut u64, minimap_objective_markers: &mut u64) {
+    minimap_ship_markers: &mut u64, minimap_objective_markers: &mut u64,
+    fog_masked_pixels: &mut u64) {
     // F6 avoids allocating or clearing a second per-frame art layer,
     // while normal mode reuses the exact local game sprite raster.
     if show_art {
@@ -1130,6 +1169,11 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 }
             }
         }
+        // Mask both source artwork and geometric fallbacks using the
+        // local native renderer's exact circle raster. In particular,
+        // remembered death sprites cannot outlive the authenticated
+        // shrinking sight mask. HUD, dialogue and minimap are drawn after.
+        *fog_masked_pixels += artwork.mask_field(pixels);
         // Objective markers use only the host's already-fog-filtered
         // ship/obstacle projection. A remote peer cannot look up a target
         // whose coordinates were withheld by the host.
@@ -1892,10 +1936,12 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         let mut hulls = 0_u64;
         let mut map_ships = 0_u64;
         let mut map_objectives = 0_u64;
+        let mut fog_masked = 0_u64;
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,&peer.visual,visual_fraction,&artwork,show_art,
-            &mut hulls, &mut map_ships, &mut map_objectives);
+            &mut hulls, &mut map_ships, &mut map_objectives, &mut fog_masked);
+        peer.metrics.fog_masked_pixels += fog_masked;
         peer.metrics.obstacle_hull_draws += hulls;
         peer.metrics.minimap_ship_markers += map_ships;
         peer.metrics.minimap_objective_markers += map_objectives;
@@ -1939,6 +1985,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "minimap_ship_markers":peer.metrics.minimap_ship_markers,
         "minimap_objective_markers":peer.metrics.minimap_objective_markers,
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
+        "fog_circle_stamps":peer.metrics.fog_circle_stamps,
+        "fog_masked_pixels":peer.metrics.fog_masked_pixels,
         "source_art_enabled":show_art,
         "audio":audio.measurements(),
         "orders_sent":peer.metrics.orders_sent,

@@ -1196,6 +1196,13 @@ fn current_state(
         "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
         "music_location": music_location, "audio_events": audio_events,
         "viewer_side": viewer,
+        // Only authenticated side-owned vision and its authored fading
+        // masks are sent. The remote window reuses the native pixel stencil
+        // instead of revealing old sprites outside the current host sight.
+        "fog_enabled": fog,
+        "fog_sources": if fog { sources.sources.iter().map(|(position, radius)|
+            json!({"x": position.x, "y": position.y, "radius": radius})
+        ).collect::<Vec<_>>() } else { Vec::new() },
         "map_bounds": [[bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y]],
         "terminal_result": view.terminal_result.map(|result| result.winner_side),
         // Preserve the source distinction between timeout/draw, elimination

@@ -1238,7 +1238,7 @@ impl NativeSoftwareRenderer {
     /// Fill only visible scanline intervals. Keeping this helper free of
     /// renderer borrows allows iterating the reusable live-source map
     /// without allocating/copying it into a second visual registry.
-    fn reveal_fog_circle(
+    pub(super) fn reveal_fog_circle(
         stencil: &mut [u8], camera: NativeCamera, width: usize, height: usize,
         position: Vec2, source_radius: f32,
     ) {
