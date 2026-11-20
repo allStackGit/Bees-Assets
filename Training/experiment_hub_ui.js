@@ -6282,7 +6282,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){feedback('hub-job-message',error.message);}
                     await reload();
                 }));
-            if(j.status==='waiting_adapter'&&readiness?.eligible===true&&
+            if(j.status==='waiting_adapter'&&!j.pending_install_start&&
+                (readiness?.eligible===true||
+                    ['courier','tinybrains'].includes(j.project_id)&&
+                    machine?.status==='connected'&&machine.local_executor_enabled===true&&
+                    !machine.installed_projects?.includes(j.project_id)&&
+                    j.resources?.gpu_count===0&&
+                    !j.frozen_parameters?.remote_rollouts&&
+                    !j.frozen_parameters?.remote_lineages)&&
                 j.project_id!=='courier_lineage')
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
@@ -6316,9 +6323,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         $('hub-native-release-on-terminal').checked=false;
                         feedback('hub-job-message',
-                            'Native start authorized. Awaiting local OS enforcement verification.');
+                            'Start approved. If this simulation is not yet installed, the Hub will install and qualify it before launching.');
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
+                }));
+            if(j.status==='waiting_adapter'&&j.pending_install_start)
+                actions.append(button('Cancel pending install/Start',async()=>{
+                    if(!confirm('Withdraw the pending Start authorization for '+
+                        j.configuration_name+'? The machine claim and any software installation remain.'))return;
+                    try {
+                        await action('hub/jobs/cancel-install-start',{
+                            job_id:j.id,confirm_cancel:true,
+                        });
+                        feedback('hub-job-message','Pending Start approval withdrawn.');
+                        await reload();
+                    }catch(error){feedback('hub-job-message',error.message);}
                 }));
             if(j.status==='start_requested'&&j.start_first_offered_at===null)
                 actions.append(button('Withdraw Start',async()=>{

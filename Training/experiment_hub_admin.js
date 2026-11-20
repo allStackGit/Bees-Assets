@@ -58,6 +58,7 @@ const POST_ACTIONS={
     '/api/hub/jobs/qualify-gpu':[200,'requestGpuQualification'],
     '/api/hub/jobs/withdraw-gpu-probe':[200,'withdrawGpuQualification'],
     '/api/hub/jobs/start':[200,'authorizeStart'],
+    '/api/hub/jobs/cancel-install-start':[200,'cancelPendingInstallStart'],
     '/api/hub/jobs/withdraw-start':[200,'withdrawStart'],
     '/api/hub/jobs/stop':[200,'authorizeStop'],
     '/api/hub/jobs/reinspect-checkpoint':[200,'requestCheckpointReinspection'],

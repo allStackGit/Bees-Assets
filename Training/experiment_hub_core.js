@@ -3349,6 +3349,54 @@ class ExperimentHub {
         this.commit(next);
         return {job_id:job.id,request_id:proof.request_id,status:proof.status};
     }
+    cancelPendingInstallStart(value) {
+        if(!object(value)||value.confirm_cancel!==true||
+            !UUID.test(String(value.job_id||'')))
+            throw Error('Confirm the queued simulation Start approval to cancel.');
+        const next=copy(this.state);
+        const job=next.jobs.find(j=>j.id===value.job_id);
+        if(!job?.pending_install_start||job.status!=='waiting_adapter'||job.dispatch_id)
+            throw Error('No unstarted installation approval remains for this job.');
+        delete job.pending_install_start;
+        job.status_reason='Unstarted simulation Start approval withdrawn; machine claim retained.';
+        this.commit(next);
+        return {job_id:job.id,cancelled:true};
+    }
+    advancePendingInstallStarts() {
+        const ids=this.state.jobs.filter(j=>j.pending_install_start).map(j=>j.id);
+        for(const id of ids) {
+            const job=this.state.jobs.find(j=>j.id===id);
+            const approval=job?.pending_install_start;
+            if(!approval)continue;
+            const valid=job.status==='waiting_adapter'&&!job.dispatch_id&&
+                job.lease_id===approval.lease_id&&
+                job.assigned_machine_id===approval.machine_id&&
+                job.project_id===approval.project_id&&
+                job.configuration_sha256===approval.configuration_sha256&&
+                Date.parse(approval.expires_at)>Date.now()&&
+                this.state.reservations.some(lease=>
+                    lease.id===approval.lease_id&&lease.job_id===job.id&&
+                    ['offered','acknowledged'].includes(lease.status));
+            if(!valid) {
+                const next=copy(this.state);
+                const updated=next.jobs.find(j=>j.id===id);
+                delete updated.pending_install_start;
+                updated.status_reason='Simulation Start approval expired or its frozen claim changed; Start not issued.';
+                this.commit(next);
+                continue;
+            }
+            if(!nativeStartReadiness(this.snapshot(),job).eligible)continue;
+            try {
+                this.authorizeStart({job_id:id,confirm_start:true,
+                    release_on_terminal:approval.release_on_terminal},'operator');
+            }catch(error) {
+                // A mutable native gate can close between the snapshot and
+                // the final authorization. Keep the unstarted approval, but
+                // never bypass the same checks or blindly issue a dispatch.
+                console.error('[hub-install-start] '+String(error.message||error).slice(0,180));
+            }
+        }
+    }
     // A GPU preflight report never changes the job's execution state.
     recordGpuQualifications(next,machine,reports,instanceId) {
         if(!Array.isArray(reports)||reports.length>4)
@@ -3437,8 +3485,35 @@ class ExperimentHub {
         if(job?.project_id==='courier_lineage')
             throw Error('Courier remote PPO workers must Start through the frozen distributed group.');
         const readiness=nativeStartReadiness(snapshot,job);
-        if(!readiness.eligible)
-            throw Error(readiness.reason);
+        if(!readiness.eligible) {
+            // One explicit Start approval may wait for an approved, CPU-only
+            // simulation to be installed. It is NOT a launch instruction.
+            // Actual authorization still runs the complete readiness gate.
+            const host=snapshot.machines.find(m=>m.id===job?.assigned_machine_id);
+            const lease=snapshot.reservations.find(l=>l.id===job?.lease_id);
+            const preparable=origin==='operator'&&
+                job?.status==='waiting_adapter'&&!job.dispatch_id&&
+                canPrepareSimulation(host,job)&&
+                lease?.job_id===job.id&&lease.machine_id===host.id&&
+                lease.project_id===job.project_id&&
+                ['offered','acknowledged'].includes(lease.status)&&
+                !job.pending_install_start;
+            if(!preparable)throw Error(readiness.reason);
+            const next=copy(this.state);
+            const selected=next.jobs.find(j=>j.id===job.id);
+            selected.pending_install_start={
+                machine_id:host.id,lease_id:lease.id,
+                project_id:job.project_id,
+                configuration_sha256:job.configuration_sha256,
+                requested_at:now(),
+                expires_at:new Date(Date.now()+24*60*60*1000).toISOString(),
+                release_on_terminal:value.release_on_terminal===true,
+            };
+            selected.status_reason='Operator approved a single Start after this machine installs and qualifies the exact simulation.';
+            this.commit(next);
+            return {id:selected.id,status:selected.status,
+                pending_install:true,expires_at:selected.pending_install_start.expires_at};
+        }
         if(origin==='automation'&&(
             (job.resources.gpu_count!==0&&!this.automation.start_qualified_gpu)||!this.automation.enabled||
             !this.automation.machine_ids.includes(job.assigned_machine_id)||
@@ -3453,6 +3528,7 @@ class ExperimentHub {
         const next=copy(this.state);
         const selected=next.jobs.find(j=>j.id===job.id);
         selected.status='start_requested';
+        delete selected.pending_install_start;
         const component=['tinybrains','tinybrains_rollout'].includes(selected.project_id)
             ?'tinybrains':['courier','courier_lineage'].includes(selected.project_id)
                 ?'courier':null;
@@ -5881,6 +5957,7 @@ class ExperimentHub {
         this.advancePendingDistributedGroups();
         this.advanceDistributedLaunches();
         this.advancePendingResourceBundles();
+        this.advancePendingInstallStarts();
         const nativeOrders=value.request_execution_orders===false
             ?[]:this.executionOrders(machine.id);
         const evaluatorOrders=value.request_execution_orders===false||nativeOrders.length
