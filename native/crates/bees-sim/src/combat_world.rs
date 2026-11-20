@@ -947,6 +947,7 @@ pub struct CombatWorldRecoveryPrepared {
     live_ship_total: usize,
     projectile_by_id: HashMap<i64, usize>,
     obstacle_by_id: HashMap<i64, usize>,
+    ship_by_id: HashMap<i64, usize>,
 }
 
 impl CombatWorldRecoveryPrepared {
@@ -1195,6 +1196,41 @@ pub struct CombatWorld {
     pub shots_harmless: bool,
     /// Dedicated RL episodes cannot apply further hits after game over.
     pub frozen_after_elimination: bool,
+}
+
+/// Read-only source identity needed by squad, command and event recovery.
+/// Both the live gameplay world and a fully staged world implement it.
+/// No second simulation, physics engine or training-only roster exists.
+pub trait CombatRecoveryView {
+    fn ship(&self, id: i64) -> Option<&CombatShip>;
+    fn ship_body(&self, id: i64) -> Option<&ShipBody>;
+    fn total_living_ships(&self) -> usize;
+}
+
+impl CombatRecoveryView for CombatWorldRecoveryPrepared {
+    fn ship(&self, id: i64) -> Option<&CombatShip> {
+        self.ship_by_id.get(&id).and_then(|&i| self.snapshot.ships.get(i))
+    }
+
+    fn ship_body(&self, id: i64) -> Option<&ShipBody> {
+        self.ship_by_id.get(&id).and_then(|&i| self.physics.ships().get(i))
+    }
+
+    fn total_living_ships(&self) -> usize { self.live_ship_total }
+}
+
+impl CombatRecoveryView for CombatWorld {
+    fn ship(&self, id: i64) -> Option<&CombatShip> {
+        CombatWorld::ship(self, id)
+    }
+
+    fn ship_body(&self, id: i64) -> Option<&ShipBody> {
+        CombatWorld::ship_body(self, id)
+    }
+
+    fn total_living_ships(&self) -> usize {
+        CombatWorld::total_living_ships(self)
+    }
 }
 
 impl CombatWorld {
@@ -2240,6 +2276,7 @@ impl CombatWorld {
             snapshot, physics, discovery, navigation, reservations, outcomes,
             game_queens, live_ships_by_side, live_mobile_ships_by_side,
             live_ship_total, projectile_by_id, obstacle_by_id,
+            ship_by_id: self.ship_by_id.clone(),
         })
     }
 
@@ -2252,6 +2289,7 @@ impl CombatWorld {
             snapshot, physics, discovery, navigation, reservations, outcomes,
             game_queens, live_ships_by_side, live_mobile_ships_by_side,
             live_ship_total, projectile_by_id, obstacle_by_id,
+            ship_by_id: _,
         } = prepared;
         self.physics = physics;
         self.next_entity_id = snapshot.next_entity_id;

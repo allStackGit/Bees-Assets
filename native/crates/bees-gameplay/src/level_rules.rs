@@ -982,7 +982,7 @@ impl<M, A> NativeLevelState<M, A> {
         let staged_combat = self.combat.prepare_recovery_owners(checkpoint.combat)
             .map_err(NativeLevelRecoveryError::Combat)?;
         let staged_events = self.events.prepare_recovery_owners(
-            checkpoint.events, &self.combat, completed_ticks,
+            checkpoint.events, &staged_combat, completed_ticks,
         ).map_err(NativeLevelRecoveryError::Events)?;
         let mut decisions = NativeDecisionCadence::new(self.decisions.period);
         decisions.restore_checkpoint_for_roster(

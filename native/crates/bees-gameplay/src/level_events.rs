@@ -7,7 +7,7 @@
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime, StrategyReceipt};
 use bees_hivemind::outcomes::OutcomeBatch;
-use bees_sim::combat_world::{CombatEvent, CombatWorld};
+use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatRecoveryView};
 use bees_sim::combat::{DamageDelta, HitEvent};
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::CollisionMatrix;
@@ -299,7 +299,7 @@ pub enum NativeLevelDeliveryRestoreError {
 
 impl NativeLevelDeliveryCheckpoint {
     fn prepare(
-        self, world: &CombatWorld, completed_ticks: u64,
+        self, world: &impl CombatRecoveryView, completed_ticks: u64,
     ) -> Result<Self, NativeLevelDeliveryRestoreError> {
         use NativeLevelDeliveryRestoreError as Error;
         if self.pending_notifications.len() > MAX_PENDING_NOTIFICATIONS ||
@@ -468,7 +468,7 @@ impl NativeLevelEventProcessor {
     /// must independently restore that very same completed tick.
     pub(crate) fn prepare_recovery_owners(
         &self, checkpoint: NativeLevelEventRecoveryOwnersCheckpoint,
-        world: &CombatWorld, completed_ticks: u64,
+        world: &impl CombatRecoveryView, completed_ticks: u64,
     ) -> Result<NativeLevelEventRecoveryPrepared, NativeLevelEventRecoveryError> {
         use NativeLevelEventRecoveryError as Error;
         if checkpoint.schema_version != 4 {
@@ -542,7 +542,7 @@ impl NativeLevelEventProcessor {
 
     pub fn restore_recovery_owners(
         &mut self, checkpoint: NativeLevelEventRecoveryOwnersCheckpoint,
-        world: &CombatWorld, completed_ticks: u64,
+        world: &impl CombatRecoveryView, completed_ticks: u64,
     ) -> Result<(), NativeLevelEventRecoveryError> {
         let staged = self.prepare_recovery_owners(
             checkpoint, world, completed_ticks,

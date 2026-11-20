@@ -28,7 +28,7 @@ use bees_hivemind::protocol::{
 use bees_hivemind::session::StrategyReceipt;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::Aabb;
-use bees_sim::combat_world::{CombatWorld, CombatWorldError};
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, CombatRecoveryView};
 use bees_sim::geometry::Vec2;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
@@ -589,7 +589,7 @@ impl ActiveCommandCheckpoint {
         }
     }
 
-    fn restore(self, roster: &NativeSquadRoster, world: &CombatWorld)
+    fn restore(self, roster: &NativeSquadRoster, world: &impl CombatRecoveryView)
         -> Result<(SquadLifetime, ActiveNativeCommand), GameCommandError>
     {
         let owner = self.owner;
@@ -702,7 +702,7 @@ impl NativeSquadCommandDirector {
     pub fn prepare_restore(
         checkpoint: NativeCommandDirectorCheckpoint,
         roster: &NativeSquadRoster,
-        world: &CombatWorld,
+        world: &impl CombatRecoveryView,
     ) -> Result<Self, GameCommandError> {
         if checkpoint.schema_version != 1 {
             return Err(GameCommandError::InvalidCombatSnapshot);
@@ -735,7 +735,7 @@ impl NativeSquadCommandDirector {
     pub fn restore_checkpoint(
         &mut self, checkpoint: NativeCommandDirectorCheckpoint,
         roster: &NativeSquadRoster,
-        world: &CombatWorld,
+        world: &impl CombatRecoveryView,
     ) -> Result<(), GameCommandError> {
         let prepared = Self::prepare_restore(checkpoint, roster, world)?;
         *self = prepared;

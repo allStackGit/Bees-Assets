@@ -14,7 +14,7 @@ use bees_hivemind::protocol::{
     StrategyIdentity, ValidatedTargetingSelection, TARGETING_STRATEGIES,
 };
 use crate::squad_targeting::NativeInstalledTargeting;
-use bees_sim::combat_world::{CombatEvent, CombatWorld};
+use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatRecoveryView};
 use bees_sim::ship_assets::BEACON_TYPE;
 use bees_sim::episode_terminal::{
     EpisodeDeathAttribution, EpisodeTerminalError, EpisodeTerminalResult,
@@ -220,7 +220,7 @@ impl NativeSquadRoster {
     /// episode, or connection-owned reservation ledgers.
     pub fn prepare_restore(
         checkpoint: NativeSquadRosterCheckpoint,
-        world: &CombatWorld,
+        world: &impl CombatRecoveryView,
     ) -> Result<Self, SquadRosterRestoreError> {
         use SquadRosterRestoreError as Error;
         if checkpoint.schema_version != 1 {
