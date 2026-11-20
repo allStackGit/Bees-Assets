@@ -3454,20 +3454,29 @@ fn recover_generated_library_battle(
                 "generated battle recovery path is a symlink",
             ).into());
         }
+        // The saved launch mode is independent of its old scene file.
+        // Do not reconcile the opposite (local/LAN) mode's recordings
+        // while selecting a new battle for this mode.
+        let saved = if saved_path.is_file() {
+            let saved = QuickBattleStart::load(&saved_path)?;
+            if saved.remote_host != remote_host { continue; }
+            Some(saved)
+        } else { None };
         // A committed battle no longer needs its generated source. If
         // its original file is missing or its archived contents changed,
         // the terminal receipt still owns the completed game's outcome.
+        if terminal_recording::complete_committed_recording(&run)? { continue; }
         // An unfinished checkpoint must NEVER be silently skipped because
         // the archived source disappeared: that would start a new game
-        // instead of recovering or explicitly reporting the lost input.
-        if terminal_recording::complete_committed_recording(&run)? { continue; }
-        if !source.is_file() || !saved_path.is_file() {
+        // instead of recovering the original physical World.
+        let saved = saved.ok_or_else(|| invalid(
+            "interrupted generated battle has no owned immutable start archive",
+        ))?;
+        if !source.is_file() {
             return Err(invalid(
-                "interrupted generated battle has no owned immutable source archive",
+                "interrupted generated battle lost its original source archive",
             ).into());
         }
-        let saved = QuickBattleStart::load(&saved_path)?;
-        if saved.remote_host != remote_host { continue; }
         let current = QuickBattleStart::capture(&source, remote_host)?
             .ok_or_else(|| invalid(
                 "interrupted generated game no longer enables native World recovery",
