@@ -73,9 +73,31 @@ impl CampaignCue {
     }
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 enum DialogueMode {
     Minesweeper { tracked_tank: Option<i64> },
     Beenoculars { next_milestone: usize },
+}
+
+/// Exact authored campaign progress at the shared fixed-step recovery
+/// boundary. The outbox delivering cues is owned by the Level event
+/// processor; recovering this state alone must not re-emit old cues.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CampaignDialogueCheckpoint {
+    schema_version: u32,
+    player_side: i32,
+    mode: DialogueMode,
+    cue: CampaignCue,
+    sequence: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CampaignDialogueRestoreError {
+    InvalidVersion,
+    WrongStory,
+    InvalidProgress,
 }
 
 pub struct CampaignDialogue {
@@ -101,6 +123,67 @@ impl CampaignDialogue {
     }
 
     pub fn current(&self) -> (u8, CampaignCue) { (self.sequence, self.cue) }
+
+    pub fn checkpoint(&self) -> CampaignDialogueCheckpoint {
+        CampaignDialogueCheckpoint {
+            schema_version: 1,
+            player_side: self.player_side,
+            mode: self.mode,
+            cue: self.cue,
+            sequence: self.sequence,
+        }
+    }
+
+    /// Preflight a complete dialogue restore without changing the running
+    /// story. The caller commits it only after every other Level owner has
+    /// accepted the same checkpoint. Already-delivered cues stay delivered.
+    pub fn prepare_restore(
+        &self, checkpoint: CampaignDialogueCheckpoint,
+    ) -> Result<Self, CampaignDialogueRestoreError> {
+        let CampaignDialogueCheckpoint {
+            schema_version, player_side, mode, cue, sequence,
+        } = checkpoint;
+        if schema_version != 1 {
+            return Err(CampaignDialogueRestoreError::InvalidVersion);
+        }
+        if player_side != self.player_side ||
+            std::mem::discriminant(&mode) != std::mem::discriminant(&self.mode)
+        {
+            return Err(CampaignDialogueRestoreError::WrongStory);
+        }
+        let valid = match (&mode, cue) {
+            (DialogueMode::Minesweeper { tracked_tank: None },
+                CampaignCue::MinesweeperBriefing) => sequence == 0,
+            (DialogueMode::Minesweeper { tracked_tank: None },
+                CampaignCue::MinesweeperVictory | CampaignCue::MinesweeperDefeat) =>
+                sequence == 1,
+            (DialogueMode::Minesweeper { tracked_tank: Some(id) },
+                CampaignCue::FireTankSpotted { object_id }) =>
+                *id > 0 && *id == object_id && sequence == 1,
+            (DialogueMode::Minesweeper { tracked_tank: Some(id) },
+                CampaignCue::FireTankDestroyed { object_id }) =>
+                *id > 0 && *id == object_id && sequence == 2,
+            (DialogueMode::Minesweeper { tracked_tank: Some(id) },
+                CampaignCue::MinesweeperVictory | CampaignCue::MinesweeperDefeat) =>
+                *id > 0 && (2..=3).contains(&sequence),
+            (DialogueMode::Beenoculars { next_milestone: 0 },
+                CampaignCue::BeenocularsBriefing { .. }) => sequence == 0,
+            (DialogueMode::Beenoculars { next_milestone },
+                CampaignCue::BeenocularsUpload(milestone)) =>
+                *next_milestone > 0 &&
+                UploadMilestone::ORDERED.get(*next_milestone - 1) == Some(&milestone) &&
+                usize::from(sequence) == *next_milestone,
+            (DialogueMode::Beenoculars { next_milestone },
+                CampaignCue::BeenocularsVictory | CampaignCue::BeenocularsDefeat) =>
+                *next_milestone <= UploadMilestone::ORDERED.len() &&
+                usize::from(sequence) == *next_milestone + 1,
+            _ => false,
+        };
+        if !valid {
+            return Err(CampaignDialogueRestoreError::InvalidProgress);
+        }
+        Ok(Self { player_side, mode, cue, sequence })
+    }
 
     /// Authored story owner, independent of the current local viewer or
     /// any authenticated remote commander's temporary input scope.

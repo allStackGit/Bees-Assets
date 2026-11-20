@@ -28,6 +28,7 @@ use bees_sim::rl_shaping::DamageRewardMetadata;
 use bees_sim::simulation::{GameRules, World};
 use bees_sim::telemetry::StepCounts;
 
+use crate::campaign_dialogue::{CampaignDialogueCheckpoint, CampaignDialogueRestoreError};
 use crate::commands::{
     GameCommandError, NativeAggressiveCommandSnapshot,
     NativeCircleCommandSnapshot, NativeBombingTimerSnapshot,
@@ -849,8 +850,8 @@ impl From<NativeLevelEventError> for NativeLevelVisionError {
     fn from(error: NativeLevelEventError) -> Self { Self::Reward(error) }
 }
 
-/// One shared fixed-step ownership bundle for the CombatWorld recoverable
-/// systems and exact policy decision clocks. This is NOT a complete Level
+/// One shared fixed-step ownership bundle for CombatWorld, policy decision
+/// clocks and authored campaign dialogue. This is NOT a complete Level
 /// checkpoint until the event/command ledger, metadata and model state are
 /// committed at the same host boundary.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -859,12 +860,14 @@ pub struct NativeLevelRecoveryOwnersCheckpoint {
     schema_version: u32,
     combat: CombatWorldRecoveryOwnersCheckpoint,
     decisions: NativeDecisionCadenceCheckpoint,
+    campaign_dialogue: Option<CampaignDialogueCheckpoint>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeLevelRecoveryError {
     InvalidVersion,
     DecisionClock(&'static str),
+    CampaignDialogue(CampaignDialogueRestoreError),
     Combat(CombatWorldError),
 }
 
@@ -907,29 +910,41 @@ pub struct NativeLevelState<M, A> {
 }
 
 impl<M, A> NativeLevelState<M, A> {
-    /// One fixed-tick snapshot of the recoverable CombatWorld owners plus
-    /// the original agent decision clocks. The outer Level must still save
+    /// One fixed-tick snapshot of recoverable CombatWorld owners, agent
+    /// decision clocks and campaign dialogue. The outer Level must still save
     /// command/reward events, source metadata and model state to be resumable.
     pub fn recovery_owners_checkpoint(&self) -> NativeLevelRecoveryOwnersCheckpoint {
         NativeLevelRecoveryOwnersCheckpoint {
-            schema_version: 1,
+            schema_version: 2,
             combat: self.combat.recovery_owners_checkpoint(),
             decisions: self.decisions.checkpoint(),
+            campaign_dialogue: self.campaign_dialogue.as_ref().map(|story| story.checkpoint()),
         }
     }
 
-    /// Validate policy clocks before changing any authoritative CombatWorld
-    /// owner. CombatWorld itself stages all five physical/gameplay ledgers;
-    /// after that transaction succeeds, committing the prepared decision
-    /// schedule is infallible. A rejected checkpoint leaves both unchanged.
+    /// Preflight policy clocks and source-authored story before changing any
+    /// authoritative CombatWorld owner. CombatWorld stages its five ledgers;
+    /// after that transaction succeeds, the prepared Level owners commit
+    /// without another fallible operation.
     pub fn restore_recovery_owners(
         &mut self,
         checkpoint: NativeLevelRecoveryOwnersCheckpoint,
         completed_ticks: u64,
     ) -> Result<(), NativeLevelRecoveryError> {
-        if checkpoint.schema_version != 1 {
+        if checkpoint.schema_version != 2 {
             return Err(NativeLevelRecoveryError::InvalidVersion);
         }
+        let dialogue = match (
+            self.campaign_dialogue.as_ref(), checkpoint.campaign_dialogue,
+        ) {
+            (Some(source), Some(saved)) =>
+                Some(source.prepare_restore(saved)
+                    .map_err(NativeLevelRecoveryError::CampaignDialogue)?),
+            (None, None) => None,
+            _ => return Err(NativeLevelRecoveryError::CampaignDialogue(
+                CampaignDialogueRestoreError::WrongStory,
+            )),
+        };
         let mut decisions = NativeDecisionCadence::new(self.decisions.period);
         decisions.restore_checkpoint(
             checkpoint.decisions, &self.combat, completed_ticks,
@@ -937,6 +952,7 @@ impl<M, A> NativeLevelState<M, A> {
         self.combat.restore_recovery_owners(checkpoint.combat)
             .map_err(NativeLevelRecoveryError::Combat)?;
         self.decisions = decisions;
+        self.campaign_dialogue = dialogue;
         Ok(())
     }
 
