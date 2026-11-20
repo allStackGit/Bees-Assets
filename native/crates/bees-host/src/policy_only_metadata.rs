@@ -210,7 +210,7 @@ pub struct NativePolicyOnlyMetadata {
     dynamic_policy_ships: HashSet<i64>,
     /// Reclaim one fixed step after retirement, after the mandatory
     /// boundary observation has been journaled by the training sink.
-    retired_dynamic_pending: Vec<i64>,
+    retired_policy_pending: Vec<i64>,
     /// Source Agent slots that ended a physical trajectory and may now
     /// bind another ship on the same side. Entries are recycled only
     /// after their final physical observation has reached the sink.
@@ -412,7 +412,10 @@ pub struct NativePolicySourceLedgerCheckpoint {
     agents: HashMap<i64, AuthoredPolicyAgent>,
     policy_side_representative: HashMap<i32, i64>,
     dynamic_policy_ships: HashSet<i64>,
-    retired_dynamic_pending: Vec<i64>,
+    /// Source Agents are released only after the previous completed
+    /// tick's physical retirement observation has been captured.
+    #[serde(alias = "retired_dynamic_pending")]
+    retired_policy_pending: Vec<i64>,
     #[serde(default)]
     recycled_group_agent_ids: BTreeMap<i32, BTreeSet<u64>>,
     next_dynamic_group_agent_id: u64,
@@ -449,7 +452,7 @@ pub struct NativePolicySourceLedgerPrepared {
     agents: HashMap<i64, AuthoredPolicyAgent>,
     policy_side_representative: HashMap<i32, i64>,
     dynamic_policy_ships: HashSet<i64>,
-    retired_dynamic_pending: Vec<i64>,
+    retired_policy_pending: Vec<i64>,
     recycled_group_agent_ids: BTreeMap<i32, BTreeSet<u64>>,
     next_dynamic_group_agent_id: u64,
     player: NativeSourcePlayerInputs,
@@ -479,7 +482,7 @@ impl NativePolicyOnlyMetadata {
             agents: self.agents.clone(),
             policy_side_representative: self.policy_side_representative.clone(),
             dynamic_policy_ships: self.dynamic_policy_ships.clone(),
-            retired_dynamic_pending: self.retired_dynamic_pending.clone(),
+            retired_policy_pending: self.retired_policy_pending.clone(),
             recycled_group_agent_ids: self.recycled_group_agent_ids.clone(),
             next_dynamic_group_agent_id: self.next_dynamic_group_agent_id,
             player: NativePlayerSourceCheckpoint::capture(&self.player, &self.hivemind_squads),
@@ -559,8 +562,11 @@ impl NativePolicyOnlyMetadata {
                 )
             ) || saved.dynamic_policy_ships.iter().any(|id|
                 !saved.agents.contains_key(id)
-            ) || saved.retired_dynamic_pending.iter().any(|id|
-                !saved.dynamic_policy_ships.contains(id)
+            ) || saved.retired_policy_pending.iter().any(|id|
+                !saved.agents.get(id).is_some_and(|agent|
+                    saved.dynamic_policy_ships.contains(id) ||
+                    agent.source_group_agent_id.is_some()
+                )
             ) || saved.recycled_group_agent_ids.iter().any(|(&side, ids)|
                 !self.sides.contains_key(&side) ||
                 ids.iter().any(|&id|
@@ -631,7 +637,7 @@ impl NativePolicyOnlyMetadata {
             agents: saved.agents,
             policy_side_representative: saved.policy_side_representative,
             dynamic_policy_ships: saved.dynamic_policy_ships,
-            retired_dynamic_pending: saved.retired_dynamic_pending,
+            retired_policy_pending: saved.retired_policy_pending,
             recycled_group_agent_ids: saved.recycled_group_agent_ids,
             next_dynamic_group_agent_id: saved.next_dynamic_group_agent_id,
             player,
@@ -659,7 +665,7 @@ impl NativePolicyOnlyMetadata {
         self.agents = staged.agents;
         self.policy_side_representative = staged.policy_side_representative;
         self.dynamic_policy_ships = staged.dynamic_policy_ships;
-        self.retired_dynamic_pending = staged.retired_dynamic_pending;
+        self.retired_policy_pending = staged.retired_policy_pending;
         self.recycled_group_agent_ids = staged.recycled_group_agent_ids;
         self.next_dynamic_group_agent_id = staged.next_dynamic_group_agent_id;
         self.player = staged.player;
@@ -872,7 +878,7 @@ impl NativePolicyOnlyMetadata {
             explorers: Vec::new(),
             agents: agent_map, policy_side_representative,
             dynamic_policy_ships: HashSet::new(),
-            retired_dynamic_pending: Vec::new(),
+            retired_policy_pending: Vec::new(),
             recycled_group_agent_ids: BTreeMap::new(),
             next_dynamic_group_agent_id,
             sides: side_map, beacon_templates,
@@ -1018,37 +1024,31 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         events: &mut bees_gameplay::level_events::NativeLevelEventProcessor,
         completed_tick: u64,
     ) -> Result<(), CombatPerceptionError> {
-        // Retired policy actors must remain addressable through the
-        // *previous* completed step's terminal/retirement observation.
-        // The sink has now consumed that boundary. Keep its historical
-        // MA-POCA group membership and fleet stats, but release the
-        // obsolete per-ship inference route before admitting new children.
-        for old_id in self.retired_dynamic_pending.drain(..) {
-            if !self.dynamic_policy_ships.remove(&old_id) ||
-                !self.authored_ships.contains_key(&old_id) ||
-                !self.effective_vision.contains_key(&old_id)
-            {
-                return Err(CombatPerceptionError::InvalidAuthoredMetadata);
-            }
-            let old_agent = self.agents.remove(&old_id)
+        // Source Agents remain addressable through the previous tick's
+        // terminal/retirement capture. The sink has now accepted that
+        // physical boundary, so original and dynamic controller slots can
+        // both be recycled. Historical FleetShip/command ownership remains.
+        for old_id in self.retired_policy_pending.drain(..) {
+            let old_agent = self.agents.get_mut(&old_id)
                 .ok_or(CombatPerceptionError::InvalidAuthoredMetadata)?;
-            self.authored_ships.remove(&old_id);
-            self.effective_vision.remove(&old_id);
-            if let Some(group_id) = old_agent.source_group_agent_id {
-                // The old binding has already emitted ShipDied and its
-                // terminal observation. Preserve its group membership
-                // while freeing the same ML-Agents Agent for a later hull.
-                self.recycled_group_agent_ids.entry(old_agent.side)
+            let recycled = old_agent.source_group_agent_id.take()
+                .map(|group_id| (old_agent.side, group_id));
+            if self.dynamic_policy_ships.remove(&old_id) {
+                if self.agents.remove(&old_id).is_none() ||
+                    self.authored_ships.remove(&old_id).is_none() ||
+                    self.effective_vision.remove(&old_id).is_none()
+                {
+                    return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+                }
+                // Reclaim the dynamic-only observation and formation
+                // records, not the physical fleet/reward history.
+                self.player.ships.remove(&old_id);
+                self.queen_controller_measurements.retired_policy_routes_reclaimed += 1;
+            }
+            if let Some((side, group_id)) = recycled {
+                self.recycled_group_agent_ids.entry(side)
                     .or_default().insert(group_id);
             }
-            // A child that died on its birth tick may never have acquired
-            // player formation metadata. The original source fleet and
-            // reward identity are nonetheless preserved.
-            self.player.ships.remove(&old_id);
-            // The persistent FleetShip/MA-POCA group records still own
-            // accrued combat and group reward history. Only dead,
-            // observation-only ship state is recycled here.
-            self.queen_controller_measurements.retired_policy_routes_reclaimed += 1;
         }
         // A policy on the OTHER faction must never claim this Queen's
         // children. Game-only Levels remain valid, and mixed scripted vs
@@ -1111,10 +1111,11 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             // native game can play a trained checkpoint without one. Only
             // group-owned episodes allocate/register an agent identity.
             let recycled = self.recycled_group_agent_ids.get(&side)
-                .and_then(|available| available.first().copied());
+                .and_then(|available| available.iter().next().copied());
             let group_id = if let Some(group) = events.group_delivery_mut() {
                 if group.team_id(side) != Some(route.team_id) ||
-                    parent_agent.source_group_agent_id.is_none()
+                    (parent_agent.source_group_agent_id.is_none() &&
+                        recycled.is_none())
                 { return Err(invalid()); }
                 Some(recycled.unwrap_or(self.next_dynamic_group_agent_id))
             } else { None };
@@ -1185,8 +1186,11 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             if let CombatEvent::ShipDied {
                 victim_id, policy_binding_revision: Some(_), ..
             } = event {
-                if self.dynamic_policy_ships.contains(victim_id) {
-                    self.retired_dynamic_pending.push(*victim_id);
+                if self.agents.get(victim_id).is_some_and(|agent|
+                    self.dynamic_policy_ships.contains(victim_id) ||
+                    agent.source_group_agent_id.is_some()
+                ) {
+                    self.retired_policy_pending.push(*victim_id);
                 }
             }
         }
