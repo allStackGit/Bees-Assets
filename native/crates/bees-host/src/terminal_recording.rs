@@ -56,11 +56,20 @@ pub(super) fn complete_committed_recording(run: &Path)
         return Err(invalid("native completed receipt is not an immutable regular file").into());
     }
     let summary: Value = serde_json::from_reader(File::open(&summary_path)?)?;
-    if summary["kind"] != "run_final" ||
-        !summary["failed_window"].is_null() ||
-        summary["cleanup_errors"] != json!([])
+    if summary["kind"] != "run_final" {
+        return Err(invalid("native terminal receipt is not a run_final").into());
+    }
+    // Failed battles and cleanup failures have their own immutable run_final
+    // receipt, but NEVER a successful replay footer. A prior failed battle
+    // must not prevent a new game-library launch or turn into a recovered
+    // victory. Only an absent summary authorizes resuming its actual World.
+    if !summary["failed_window"].is_null() ||
+        summary["cleanup_errors"].as_array().is_some_and(|errors| !errors.is_empty())
     {
-        return Err(invalid("native terminal receipt is not a completed game").into());
+        return Ok(true);
+    }
+    if summary["cleanup_errors"] != json!([]) {
+        return Err(invalid("native terminal receipt has malformed cleanup errors").into());
     }
     // A player explicitly quitting, or a finished WATCH replay, is an
     // immutable completed session but never a new eligible recording.
