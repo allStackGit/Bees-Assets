@@ -5165,8 +5165,9 @@ class ExperimentHub {
             const saved=(next.evaluator_actions||[]).find(item=>
                 item.id===report.id&&item.machine_id===machine.id&&
                 item.unit===report.unit);
-            if(!saved||saved.status!=='dispatched'||
-                saved.agent_instance_id!==instance)continue;
+            if(!saved||!['dispatched','awaiting_restart'].includes(saved.status)||
+                saved.agent_instance_id!==instance||
+                (saved.status==='awaiting_restart'&&report.status!=='failed'))continue;
             saved.status=saved.action==='restart-agent'&&report.status==='completed'
                 ?'awaiting_restart':report.status;
             if(saved.status!=='awaiting_restart')saved.finished_at=now();
