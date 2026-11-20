@@ -108,35 +108,24 @@ fi
 
 install_dependencies() {
     if ! command -v apt-get >/dev/null; then
-        echo "Automatic prerequisites currently support Debian/Ubuntu; install Node 18+, Python 3.11+, Git and Tailscale manually." >&2
+        echo "Automatic prerequisites currently support Debian/Ubuntu; install Node 18+ and Tailscale manually." >&2
         return 1
     fi
     sudo apt-get update
-    sudo apt-get install -y curl ca-certificates python3 nodejs
+    sudo apt-get install -y curl ca-certificates nodejs
     if ! command -v tailscale >/dev/null; then
         curl -fsSL https://tailscale.com/install.sh | sudo sh
     fi
 }
 if [[ "$MODE" == install ]]; then install_dependencies; fi
-for tool in node python3 tailscale tar sha256sum; do
+for tool in node tailscale tar sha256sum; do
     command -v "$tool" >/dev/null || { echo "Missing prerequisite: $tool" >&2; exit 1; }
 done
 node -e 'if(Number(process.versions.node.split(".")[0])<18)process.exit(1)' ||
     { echo "Node.js 18 or newer is required." >&2; exit 1; }
-# TinyBrains pins Torch 2.6.0, which does not provide wheels for every
-# distro-default Python. Use a project-local Python 3.11.18 for both projects.
-if ! command -v uv >/dev/null; then
-    if [[ -x "$HOME/.local/bin/uv" ]]; then
-        export PATH="$HOME/.local/bin:$PATH"
-    else
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        export PATH="$HOME/.local/bin:$PATH"
-    fi
-fi
-command -v uv >/dev/null || { echo "uv install was unsuccessful." >&2; exit 1; }
-uv python install 3.11.18
+# Python and uv are simulation dependencies, provisioned on-demand only.
 umask 077
-mkdir -p "$PRIVATE" "$SRC" "$VENV" "$ROOT/cache/tinybrains" "$ROOT/cache/courier"
+mkdir -p "$PRIVATE" "$SRC" "$ROOT/cache"
 chmod 700 "$PRIVATE"
 # The installer invokes Tailscale itself. The browser sign-in link is the
 # only user action; a previously signed-in machine skips the login.
@@ -315,6 +304,9 @@ UPDATER_TIMER="$HOME/.config/systemd/user/bees-experiment-hub-worker-update.time
 mkdir -p "$UPDATER_DIR"
 install -m 600 "$TRAINING/experiment_hub_worker_updater.js" \
     "$UPDATER_DIR/experiment_hub_worker_updater.js"
+install -m 600 "$TRAINING/experiment_hub_worker_update_bootstrap.js" \
+    "$UPDATER_DIR/experiment_hub_worker_update_bootstrap.js"
+node --check "$UPDATER_DIR/experiment_hub_worker_update_bootstrap.js"
 NODE_BIN=$(command -v node)
 [[ "$ROOT" =~ ^/[A-Za-z0-9._/@:+-]+$ && "$NODE_BIN" =~ ^/[A-Za-z0-9._/@:+-]+$ ]] || {
     echo "Updater systemd paths contain unsupported characters." >&2
@@ -326,7 +318,7 @@ Description=Experiment Hub authenticated worker release updates
 After=network.target
 [Service]
 Type=oneshot
-ExecStart=$NODE_BIN $UPDATER_DIR/experiment_hub_worker_updater.js --root $ROOT
+ExecStart=$NODE_BIN $UPDATER_DIR/experiment_hub_worker_update_bootstrap.js --root $ROOT
 WorkingDirectory=$ROOT
 UMask=0077
 EOF
