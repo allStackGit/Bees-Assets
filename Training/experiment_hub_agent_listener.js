@@ -56,7 +56,7 @@ async function readBody(req) {
         Buffer.concat(chunks,received))||'{}');
 }
 
-function createAgentServer(getHub,bindHost=AGENT_HOST) {
+function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null) {
     if(bindHost!==AGENT_HOST&&!isTailnetIPv4(bindHost))
         throw Error('Machine-agent server can bind only to loopback or a tailnet IPv4.');
     const hosts=new Set(bindHost===AGENT_HOST
@@ -69,6 +69,65 @@ function createAgentServer(getHub,bindHost=AGENT_HOST) {
         const host=req.headers.host;
         if(!hosts.has(host)||req.headers.origin)
             return respond(res,404,{error:'Agent endpoint only.'});
+        // Authenticated release distribution uses the existing machine token.
+        // The administrator cannot reach this route from a worker port.
+        if(releases&&req.url?.startsWith('/api/hub/agent/releases')) {
+            try {
+                if(req.url.length>512)return respond(res,404,{error:'Invalid release route.'});
+                const url=new URL(req.url,'http://'+AGENT_HOST+':'+AGENT_PORT);
+                const pathname=url.pathname,keys=[...url.searchParams.keys()];
+                const identity=url.searchParams.get('machine_id');
+                if(url.hash||!identity||
+                    new Set(keys).size!==keys.length||
+                    req.headers.origin)
+                    return respond(res,404,{error:'Invalid release envelope.'});
+                const hub=getHub();
+                hub.authenticateAgent(identity,req.headers['x-hub-agent-token']);
+                if(req.method==='GET'&&pathname==='/api/hub/agent/releases'&&
+                    keys.length===1&&Number(req.headers['content-length']||0)===0) {
+                    const live=hub.agentReports.get(identity);
+                    return respond(res,200,{
+                        components:releases.manifest(live?.installed_projects||[]),
+                        mode:hub.machineUpdatePolicy(identity),
+                    });
+                }
+                if(req.method==='GET'&&pathname==='/api/hub/agent/releases/bundle'&&
+                    keys.length===3&&keys.every(key=>
+                        ['machine_id','component','sha256'].includes(key))&&
+                    Number(req.headers['content-length']||0)===0) {
+                    const component=url.searchParams.get('component');
+                    const sha=url.searchParams.get('sha256');
+                    if(component!=='worker'&&
+                        !hub.agentReports.get(identity)?.installed_projects?.includes(component))
+                        return respond(res,403,{error:'Project not enrolled on this worker.'});
+                    const archive=releases.archive(component,sha);
+                    res.writeHead(200,{
+                        'Content-Type':'application/x-tar',
+                        'Content-Length':archive.bytes,
+                        'Cache-Control':'no-store',
+                        'X-Content-Type-Options':'nosniff',
+                    });
+                    const stream=require('node:fs').createReadStream(archive.path);
+                    stream.on('error',()=>res.destroy());
+                    stream.pipe(res);
+                    return;
+                }
+                if(req.method==='POST'&&pathname==='/api/hub/agent/releases/status'&&
+                    keys.length===1) {
+                    const bytes=Number(req.headers['content-length']||0);
+                    if(bytes<1||bytes>MAX_BODY_BYTES)
+                        return respond(res,413,{error:'Invalid release status envelope.'});
+                    const report=await readBody(req);
+                    if(report.machine_id!==identity)throw Error('Machine status identity changed.');
+                    return respond(res,200,hub.reportMachineSoftware(report,
+                        req.headers['x-hub-agent-token']));
+                }
+                return respond(res,404,{error:'Unknown release route.'});
+            }catch(error) {
+                return respond(res,[401,403,409,413].includes(error.status)
+                    ?error.status:400,{error:String(error.message||error).slice(0,240)});
+            }
+        }
         // Separate bounded binary transfers from the 64-KiB heartbeat.
         // Worker credentials are machine-scoped; job ownership and each
         // relative telemetry path are verified before accepting bytes.
