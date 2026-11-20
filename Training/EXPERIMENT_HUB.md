@@ -2528,9 +2528,15 @@ comparison hash excludes machine-local paths and raw file-layout hashes,
 but includes the portable native source-scene contract, reference policy
 ABI and model content hashes, seeds, policy side, and trial count. Local
 raw SHA-256s are still checked against their original files before and
-after evaluation. Multiple suites use the existing coordinated
-same-checkpoint batch worker. Reuse the native training source-contract
-command `python -B native/tools/native_training_artifacts.py
+after evaluation. When Design requires a `suite_sha256`, hash the **portable
+definition**, not the raw installation JSON. From the repository root:
+
+```sh
+python -B -c "import sys;sys.path.insert(0,'Training');from experiment_hub_bees_native_evaluate import read_suite;from experiment_hub_eval_io import suite_digest;print(suite_digest(read_suite(sys.argv[1])[0]))" /absolute/native-holdout.json
+```
+
+Multiple suites use the existing coordinated same-checkpoint batch worker.
+Reuse the native training source-contract command `python -B native/tools/native_training_artifacts.py
 /absolute/eval-run.json` to obtain `source_contract_sha256`.
 
 ### Independent evaluation stops for non-Bees jobs
