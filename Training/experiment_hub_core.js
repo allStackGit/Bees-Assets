@@ -4393,7 +4393,7 @@ class ExperimentHub {
     }
     controlNativeEvaluator(value) {
         if(!object(value)||!ID.test(String(value.machine_id||''))||
-            !['start','stop','inspect'].includes(value.action)||
+            !['start','stop','restart','inspect'].includes(value.action)||
             value.confirm_control!==true||
             Object.keys(value).some(key=>![
                 'machine_id','action','confirm_control',
