@@ -1,15 +1,30 @@
 'use strict';
 
-// Restricted, worker-only loopback listener shared by the Bees coordinator
-// and isolated Hub transport qualification. The caller binds to loopback;
-// neither project administration nor Bees training routes are available here.
+// Restricted machine-agent listener. Standalone Hub may opt in to a
+// separate Tailscale interface; administrator routes are never available here.
 const http=require('node:http');
+const net=require('node:net');
+const os=require('node:os');
 const {ArtifactMirror,MAX_CHUNK}=require('./experiment_hub_artifact_sync');
 const AGENT_HOST='127.0.0.1';
 const AGENT_PORT=7149;
 // A heartbeat includes machine/lease reports beyond the separately
 // validated 32-KiB trainer progress summary.
 const MAX_BODY_BYTES=65536;
+
+function isTailnetIPv4(value) {
+    if(typeof value!=='string'||net.isIP(value)!==4)return false;
+    const parts=value.split('.').map(Number);
+    return parts[0]===100&&parts[1]>=64&&parts[1]<=127;
+}
+function activeTailnetAddress(value,interfaces=os.networkInterfaces()) {
+    if(!isTailnetIPv4(value)||!Object.entries(interfaces).some(([name,addresses])=>
+        /^tailscale/i.test(name)&&Array.isArray(addresses)&&
+        addresses.some(info=>info.family==='IPv4'&&info.address===value&&
+            info.internal!==true)))
+        throw Error('Agent tailnet listener requires a local Tailscale interface address in 100.64.0.0/10.');
+    return value;
+}
 
 function respond(res,status,value) {
     const payload=JSON.stringify(value);
@@ -41,14 +56,18 @@ async function readBody(req) {
         Buffer.concat(chunks,received))||'{}');
 }
 
-function createAgentServer(getHub) {
+function createAgentServer(getHub,bindHost=AGENT_HOST) {
+    if(bindHost!==AGENT_HOST&&!isTailnetIPv4(bindHost))
+        throw Error('Machine-agent server can bind only to loopback or a tailnet IPv4.');
+    const hosts=new Set(bindHost===AGENT_HOST
+        ?[AGENT_HOST+':'+AGENT_PORT,'localhost:'+AGENT_PORT]
+        :[bindHost+':'+AGENT_PORT]);
     if(typeof getHub!=='function')
         throw Error('Agent endpoint requires a local Hub provider.');
     const mirror=new ArtifactMirror(getHub);
     return http.createServer(async(req,res)=>{
         const host=req.headers.host;
-        if((host!==AGENT_HOST+':'+AGENT_PORT&&
-            host!=='localhost:'+AGENT_PORT)||req.headers.origin)
+        if(!hosts.has(host)||req.headers.origin)
             return respond(res,404,{error:'Agent endpoint only.'});
         // Separate bounded binary transfers from the 64-KiB heartbeat.
         // Worker credentials are machine-scoped; job ownership and each
@@ -150,4 +169,4 @@ function createAgentServer(getHub) {
         }
     });
 }
-module.exports={createAgentServer,AGENT_HOST,AGENT_PORT,MAX_BODY_BYTES};
+module.exports={createAgentServer,AGENT_HOST,AGENT_PORT,MAX_BODY_BYTES,isTailnetIPv4,activeTailnetAddress};
