@@ -138,6 +138,25 @@ restart; it can also be cancelled in Train. A resource bundle can use
 those same gates pass. On a resource-constrained machine, unrequested
 simulations are not downloaded.
 
+For the first pair of independent distributed TinyBrains experiments,
+open **Machines** and select **Install TinyBrains** on Exeter. When the
+worker reports native preflight and both listeners (12134 and 12135), use
+**Local service control → Connect collector to Halifax learner**. The Hub
+verifies the private HMAC key and actual native worker endpoints, updates
+only Halifax's protected agent configuration, and requests a local-agent
+restart. No SSH, manually copied keys, or endpoint-editing commands are
+needed.
+
+Once Halifax advertises the two approved endpoints, **Train → Distributed
+TinyBrains** can queue two distinct learners, each using a different
+Exeter collector port. If a selected collector is not installed yet, use
+**Install collector and queue when ready**; the Hub records a 24-hour
+queue-only intent, installs that simulation and queues the group after
+native endpoint and resource checks. This does not authorize Start.
+Approve coordinated Starts for each reserved group separately. Configure
+the approved checkpoint import and Nano/Micro evaluation suites before
+launching, and compare the two resulting job lineages in Metrics.
+
 Native Bees execution is not yet supported by this worker: the unfinished
 Unity-independent Bees runtime does not yet expose a trusted Hub training
 adapter. Do not confuse provisioning a Bees source release with a runnable
