@@ -369,7 +369,26 @@ function preparePythonRuntimes(root,changes) {
     }
     return pythonPaths;
 }
-async function apply(root,envFile,previous,changes) {
+async function confirmAgentReplacement(base,env,priorInstance) {
+    let diagnostic='No authenticated replacement agent has reported yet.';
+    for(let attempt=0;attempt<24;attempt++) {
+        try {
+            const observed=await request(base,env,'GET','');
+            if(observed.agent_instance_id&&
+                observed.agent_instance_id!==priorInstance&&
+                observed.agent_preflight_passed===true&&
+                Number.isFinite(observed.agent_report_age_ms)&&
+                observed.agent_report_age_ms>=0&&observed.agent_report_age_ms<45000)
+                return;
+            diagnostic=observed.agent_instance_id===priorInstance
+                ?'Previous agent instance is still reporting.'
+                :'Replacement native agent has not passed authenticated preflight.';
+        }catch(error){diagnostic=error.message;}
+        await new Promise(resolve=>setTimeout(resolve,5000));
+    }
+    throw Error('Updated agent did not reconnect successfully: '+diagnostic);
+}
+async function apply(root,envFile,previous,changes,confirmReplacement=null) {
     const hasWorker=changes.worker;
     const entries={};
     let nativeServiceBinary=null;
@@ -419,8 +438,12 @@ async function apply(root,envFile,previous,changes) {
         original=updateEnv(envFile,entries);
         if(shouldStart)startService();
         if(shouldStart&&!runningService())throw Error('Updated agent did not restart.');
+        if(shouldStart&&confirmReplacement)await confirmReplacement();
     }catch(error) {
         try {
+            // A newly launched but unqualified agent is not a successful
+            // installation. Stop it before restoring the old service path.
+            if(runningService())stopService();
             if(original!==null)save(envFile,original);
             if(rollbackService)rollbackService();
             if(shouldStart&&!runningService())startService();
@@ -540,7 +563,9 @@ async function main(argv=process.argv.slice(2)) {
         const changes=Object.fromEntries(Object.entries(plan)
             .map(([key,value])=>[key,value.directory]));
         try {
-            await apply(root,envFile,active,changes);
+            await apply(root,envFile,active,changes,()=>{
+                return confirmAgentReplacement(base,env,manifest.agent_instance_id||null);
+            });
             for(const [name,item] of Object.entries(plan)) {
                 active[name]={version:item.entry.version,
                     sha256:item.entry.sha256,activated_at:new Date().toISOString()};
