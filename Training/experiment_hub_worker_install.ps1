@@ -212,6 +212,11 @@ if('tinybrains' -in $selected){
         $TinyBrainsRoot=Join-Path $tiny 'Ants-MAPOCA'
     }
     if(-not(Test-Path (Join-Path $TinyBrainsRoot 'pyproject.toml'))){throw 'TinyBrains project root missing.'}
+    # The official CLI writes verified engine artifacts to ROOT/cache.
+    # Do not grant the service write access to source or Python packages.
+    $engineCache=Join-Path $TinyBrainsRoot 'cache'
+    New-Item -ItemType Directory -Path $engineCache -Force | Out-Null
+    Service-Permissions $engineCache
     Install-TinyBrainsEngine $TinyBrainsRoot
     $tbEnv=Join-Path $VenvRoot 'tinybrains'
     & (Tool 'py.exe') -3.11 -m venv $tbEnv
