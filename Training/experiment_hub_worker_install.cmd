@@ -25,8 +25,7 @@ exit /b %HUB_WORKER_EXIT%
 [CmdletBinding()]
 param(
     [ValidateSet('install','update','status')][string]$Command='install',
-    [ValidateSet('tinybrains','courier','tinybrains,courier','courier,tinybrains')]
-    [string]$Projects='tinybrains,courier',
+    [string]$Projects='',
     [string]$InstallRoot='C:\ProgramData\BeesExperimentHubWorker',
     [string]$MachineId='',
     [string]$HubTailnetIp='100.97.43.98',
@@ -62,28 +61,6 @@ function Assert-TailnetIP([string]$Value) {
         ($parts -join '.') -cne $Value) {
         throw 'Hub address must be a literal Tailscale IPv4 in 100.64.0.0/10.'
     }
-}
-function Exec-Git([string[]]$GitArguments) {
-    & (Tool 'git.exe') @GitArguments
-    Assert-Exit 'Git'
-}
-function Sync-Repo([string]$Name,[string]$Remote,[string]$Ref,[string]$SparseDirectory='') {
-    $dest=Join-Path $SourceRoot $Name
-    if(-not (Test-Path -LiteralPath (Join-Path $dest '.git'))) {
-        Exec-Git @('clone','--filter=blob:none','--depth=1','--sparse','--branch',$Ref,$Remote,$dest)
-        if($SparseDirectory){
-            Exec-Git @('-C',$dest,'sparse-checkout','set',$SparseDirectory)
-        }
-    }else{
-        $dirty=& (Tool 'git.exe') -C $dest status --porcelain --untracked-files=no
-        Assert-Exit 'Git status'
-        if($dirty){throw "Refusing to overwrite local changes at $dest"}
-        $branchName=& (Tool 'git.exe') -C $dest branch --show-current
-        Assert-Exit 'Git branch'
-        if($branchName -ne $Ref){throw "Refusing unexpected branch at $dest"}
-        Exec-Git @('-C',$dest,'pull','--ff-only','origin',$Ref)
-    }
-    return $dest
 }
 # Download immutable private software from Halifax after tailnet enrollment.
 # Initial installation never needs private-repository Git credentials.
@@ -157,56 +134,6 @@ function Install-HubRelease([string]$Component,[string]$Name) {
         }
     }
     return $destination
-}
-# Pin the official simulator and baseline code; never substitute a Python
-# recreation of game mechanics for the published TinyBrains engine.
-function Install-TinyBrainsEngine([string]$Project) {
-    $release='https://github.com/Tiny-Brains/cli/releases/download/v0.5.0'
-    $archive='tinybrains-x86_64-pc-windows-msvc.zip'
-    $downloads=Join-Path $Project 'downloads'
-    $cli=Join-Path $Project 'tools\tinybrains-0.5.0\tinybrains.exe'
-    New-Item -ItemType Directory -Path $downloads -Force | Out-Null
-    $bundle=Join-Path $downloads $archive
-    if(-not(Test-Path -LiteralPath $bundle)){
-        Invoke-WebRequest "$release/$archive" -OutFile $bundle
-    }
-    $checks=Join-Path $downloads 'SHA256SUMS'
-    Invoke-WebRequest "$release/SHA256SUMS" -OutFile $checks
-    $line=@(Get-Content -LiteralPath $checks | Where-Object {
-        $_ -match " $([regex]::Escape($archive))$"
-    })
-    if($line.Count -ne 1){throw 'Official TinyBrains CLI checksum is absent or ambiguous.'}
-    $expected=($line[0] -split '\s+')[0].ToLowerInvariant()
-    $actual=(Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
-    if($actual -cne $expected){throw 'Official TinyBrains CLI archive hash mismatch.'}
-    if(-not(Test-Path -LiteralPath $cli)){
-        $directory=Split-Path -Parent $cli
-        New-Item -ItemType Directory -Path $directory -Force | Out-Null
-        Expand-Archive -LiteralPath $bundle -DestinationPath $directory
-    }
-    if(-not(Test-Path -LiteralPath $cli)){throw 'Verified TinyBrains CLI was not installed.'}
-    $pinned=@{
-        'ants'='54edfab12469b432041658ec80bcdf5931ae23e4'
-        'ants-starter'='a9610c693c0559286e4f5a96efec511b024bd573'
-    }
-    foreach($name in $pinned.Keys){
-        $upstream=Join-Path $Project "upstream\$name"
-        if(-not(Test-Path -LiteralPath (Join-Path $upstream '.git'))){
-            Exec-Git @('clone',"https://github.com/Tiny-Brains/$name.git",$upstream)
-            Exec-Git @('-C',$upstream,'checkout','--detach',$pinned[$name])
-        }
-        $revision=(& (Tool 'git.exe') -C $upstream rev-parse HEAD).Trim()
-        Assert-Exit 'Inspect pinned TinyBrains dependency'
-        if($revision -cne $pinned[$name]){
-            throw "Refusing unexpected official TinyBrains upstream $name version."
-        }
-    }
-}
-function Copy-Private([string]$From,[string]$To) {
-    if(-not (Test-Path -LiteralPath $From -PathType Leaf)) {
-        throw "The approved local secret source does not exist: $From"
-    }
-    Copy-Item -LiteralPath $From -Destination $To -ErrorAction Stop
 }
 function Add-Line([System.Collections.Generic.List[string]]$Lines,[string]$Name,[string]$Value) {
     if([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n"\x00]' ) {
@@ -286,16 +213,7 @@ if($Command -eq 'update'){
         $pair=$entry.Split('=',2)
         if($pair.Count -eq 2){$saved[$pair[0]]=$pair[1]}
     }
-    if(-not $saved.ContainsKey('EXPERIMENT_HUB_WORKER_PROJECTS')){
-        throw 'Installed agent has no frozen project selection.'
-    }
-    $Projects=$saved['EXPERIMENT_HUB_WORKER_PROJECTS']
-    if(-not $TinyBrainsRoot){
-        $TinyBrainsRoot=$saved['EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT']
-    }
-    if(-not $CourierRoot){
-        $CourierRoot=$saved['EXPERIMENT_HUB_COURIER_PROJECT_ROOT']
-    }
+    $Projects=[string]$saved['EXPERIMENT_HUB_WORKER_PROJECTS']
     if(-not $HubTailnetIp){
         $oldUrl=$saved['EXPERIMENT_HUB_URL']
         if($oldUrl -match '^http://(100\.[0-9.]+):7149$'){
@@ -308,7 +226,7 @@ if($Command -eq 'update'){
 Assert-TailnetIP $HubTailnetIp
 
 if($Command -eq 'install'){
-    Ensure-Winget 'git.exe' 'Git.Git'
+    if($Projects){throw 'Install project software through Experiment Hub, not the base worker installer.'}
     Ensure-Winget 'node.exe' 'OpenJS.NodeJS.LTS'
     Ensure-Winget 'dotnet.exe' 'Microsoft.DotNet.SDK.8'
     Ensure-Winget 'py.exe' 'Python.Python.3.11'
@@ -354,7 +272,7 @@ $Enrollment=$null
 if($Command -eq 'install'){
     $stats=Get-CimInstance -ClassName Win32_ComputerSystem
     $payload=@{
-        projects=@($Projects.Split(','))
+        projects=@()
         cpus=[Environment]::ProcessorCount
         ram_mb=[int][Math]::Floor([double]$stats.TotalPhysicalMemory/1MB)
     } | ConvertTo-Json -Compress
@@ -366,7 +284,7 @@ if($Command -eq 'install'){
         throw 'Invalid authenticated Hub enrollment response.'
     }
 }
-foreach($tool in @('git.exe','node.exe','dotnet.exe')){
+foreach($tool in @('node.exe','dotnet.exe')){
     $null=Tool $tool
 }
 $node=Tool 'node.exe'
@@ -381,18 +299,6 @@ foreach($dir in @($InstallRoot,$Private,$SourceRoot,$VenvRoot,$NativeRoot,$Servi
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
 }
 Private-Permissions $InstallRoot
-if($Command -eq 'install'){
-    if('tinybrains' -in $Projects.Split(',')){
-        $key=[string]$Enrollment.rollout_keys.tinybrains
-        if($key -cnotmatch '^[0-9a-f]{64}$'){throw 'Invalid TinyBrains rollout credential.'}
-        [IO.File]::WriteAllText((Join-Path $Private 'tinybrains-rollout.key'),$key)
-    }
-    if('courier' -in $Projects.Split(',')){
-        $key=[string]$Enrollment.rollout_keys.courier
-        if($key -cnotmatch '^[0-9a-f]{64}$'){throw 'Invalid Courier rollout credential.'}
-        [IO.File]::WriteAllText((Join-Path $Private 'courier-rollout.key'),$key)
-    }
-}
 Service-Permissions $NativeRoot
 Service-Permissions $ServiceState
 Service-Permissions $CacheRoot
@@ -418,59 +324,6 @@ if(-not(Test-Path $managedPython)){throw 'Pinned machine-local Python is missing
 $assets=if($Command -eq 'install'){Install-HubRelease 'worker' 'Bees-Assets'}
     else {Join-Path $SourceRoot 'Bees-Assets'}
 $Training=Join-Path $assets 'Training'
-$selected=$Projects.Split(',')
-if('tinybrains' -in $selected){
-    if(-not $TinyBrainsRoot){
-        $tiny=if($Command -eq 'install'){Install-HubRelease 'tinybrains' 'TinyBrains'}
-            else {Join-Path $SourceRoot 'TinyBrains'}
-        $TinyBrainsRoot=Join-Path $tiny 'Ants-MAPOCA'
-    }
-    if(-not(Test-Path (Join-Path $TinyBrainsRoot 'pyproject.toml'))){throw 'TinyBrains project root missing.'}
-    # The official CLI writes verified engine artifacts to ROOT/cache.
-    # Do not grant the service write access to source or Python packages.
-    $engineCache=Join-Path $TinyBrainsRoot 'cache'
-    New-Item -ItemType Directory -Path $engineCache -Force | Out-Null
-    Service-Permissions $engineCache
-    Install-TinyBrainsEngine $TinyBrainsRoot
-    $tbEnv=Join-Path $VenvRoot 'tinybrains'
-    & (Tool 'py.exe') -3.11 -m uv venv --python $managedPython $tbEnv
-    Assert-Exit 'Create TinyBrains isolated Python 3.11 environment'
-    $tbPython=Join-Path $tbEnv 'Scripts\python.exe'
-    & (Tool 'py.exe') -3.11 -m uv pip install --python $tbPython `
-        --index-url https://download.pytorch.org/whl/cpu 'torch==2.6.0'
-    Assert-Exit 'Install TinyBrains CPU PyTorch'
-    & (Tool 'py.exe') -3.11 -m uv pip install --python $tbPython `
-        -r (Join-Path $TinyBrainsRoot 'requirements-lock.txt')
-    Assert-Exit 'Install pinned TinyBrains Python packages'
-    & (Tool 'py.exe') -3.11 -m uv pip install --python $tbPython --no-deps `
-        -e (Join-Path $TinyBrainsRoot 'upstream\ants\baselines') -e $TinyBrainsRoot
-    Assert-Exit 'Install official TinyBrains baseline and runtime'
-    Push-Location $TinyBrainsRoot
-    try{
-        & $tbPython -B -c 'import ants_mapoca.remote_rollout; from ants_mapoca.env import Engine'
-        Assert-Exit 'TinyBrains official engine and remote protocol imports'
-    }finally{Pop-Location}
-}
-if('courier' -in $selected){
-    if(-not $CourierRoot){
-        $CourierRoot=if($Command -eq 'install'){Install-HubRelease 'courier' 'Basic-Training'}
-            else {Join-Path $SourceRoot 'Basic-Training'}
-    }
-    if(-not(Test-Path (Join-Path $CourierRoot 'requirements.txt'))){throw 'Courier project root missing.'}
-    $courierEnv=Join-Path $VenvRoot 'courier'
-    & (Tool 'py.exe') -3.11 -m uv venv --python $managedPython $courierEnv
-    Assert-Exit 'Create Courier isolated Python 3.11 environment'
-    $courierPython=Join-Path $courierEnv 'Scripts\python.exe'
-    & (Tool 'py.exe') -3.11 -m uv pip install --python $courierPython `
-        -r (Join-Path $CourierRoot 'requirements.txt')
-    Assert-Exit 'Install Courier CPU dependencies'
-    Push-Location $CourierRoot
-    try {
-        & $courierPython -B -c 'import courier_remote_lineage'
-        Assert-Exit 'Courier remote protocol import'
-    }finally{Pop-Location}
-}
-
 # Build both reviewed native owners locally; never download unpinned
 # helper binaries or allow Hub job parameters to pick their executable.
 $ownerOut=Join-Path $InstallRoot 'Binaries\Owner'
@@ -503,20 +356,7 @@ if($Command -eq 'install'){
     Add-Line $lines 'EXPERIMENT_HUB_WINDOWS_HELPER_SHA256' $ownerSha
     Add-Line $lines 'EXPERIMENT_HUB_URL' "http://$($HubTailnetIp):7149"
     Add-Line $lines 'EXPERIMENT_HUB_TAILNET_IP' $tailnetIp
-    Add-Line $lines 'EXPERIMENT_HUB_WORKER_PROJECTS' $Projects
-    if('tinybrains' -in $selected){
-        Add-Line $lines 'EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT' ([IO.Path]::GetFullPath($TinyBrainsRoot))
-        Add-Line $lines 'EXPERIMENT_HUB_TINYBRAINS_PYTHON' $tbPython
-        Add-Line $lines 'EXPERIMENT_HUB_TINYBRAINS_CACHE' (Join-Path $CacheRoot 'tinybrains')
-        Add-Line $lines 'EXPERIMENT_HUB_TINYBRAINS_ROLLOUT_KEY' (Join-Path $Private 'tinybrains-rollout.key')
-        Add-Line $lines 'EXPERIMENT_HUB_TINYBRAINS_THREAD_LIMIT' ([string][Environment]::ProcessorCount)
-    }
-    if('courier' -in $selected){
-        Add-Line $lines 'EXPERIMENT_HUB_COURIER_PROJECT_ROOT' ([IO.Path]::GetFullPath($CourierRoot))
-        Add-Line $lines 'EXPERIMENT_HUB_COURIER_PYTHON' $courierPython
-        Add-Line $lines 'EXPERIMENT_HUB_COURIER_CACHE' (Join-Path $CacheRoot 'courier')
-        Add-Line $lines 'EXPERIMENT_HUB_COURIER_ROLLOUT_KEY' (Join-Path $Private 'courier-rollout.key')
-    }
+    if($Projects){Add-Line $lines 'EXPERIMENT_HUB_WORKER_PROJECTS' $Projects}
     $lines | Set-Content -LiteralPath $EnvFile -Encoding ascii
 }else{
     $lines=Get-Content -LiteralPath $EnvFile
@@ -569,5 +409,5 @@ $taskCommand='"'+$node+'" "'+$updater+'" --root "'+$InstallRoot+'"'
 & "$env:SystemRoot\System32\schtasks.exe" /Create /F /SC MINUTE /MO 2 /TN $taskName /TR $taskCommand /RU SYSTEM /RL HIGHEST
 Assert-Exit 'Install two-minute authenticated software update task'
 Write-Host "Hub worker installed. Service: $ServiceName (automatic startup when -Start was selected)."
-Write-Host 'Enabled collector ports: TinyBrains 12134/12135, Courier 13134/13135.'
+Write-Host 'Simulation software is installed separately by Experiment Hub when required.'
 Write-Host 'Automatically enrolled via Tailscale; Hub Machines will display native capabilities.'

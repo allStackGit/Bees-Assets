@@ -4,7 +4,7 @@
 set -euo pipefail
 
 MODE=install
-PROJECTS=tinybrains,courier
+PROJECTS=""
 ROOT="${HOME}/ai/experiment-hub-worker"
 MACHINE_ID=""
 HUB_IP="100.97.43.98"
@@ -20,7 +20,7 @@ COURIER_BRANCH=feat/hub-independent-courier-ppo-20261119
 usage() {
     cat <<'HELP'
 Usage: bash Training/experiment_hub_worker_install.sh [install|update|status]
-       [--projects tinybrains,courier] [--root ABSOLUTE_PATH]
+       [--root ABSOLUTE_PATH]
        [--machine-id EXISTING_HUB_MACHINE_ID]
        [--hub-tailnet-ip HALIFAX_TAILSCALE_IPV4]
        [--tinybrains-key EXISTING_PRIVATE_ROLLOUT_KEY]
@@ -38,7 +38,7 @@ if [[ ${1:-} == install || ${1:-} == update || ${1:-} == status ]]; then
 fi
 while (( $# )); do
     case "$1" in
-        --projects) PROJECTS=$2; shift 2;;
+        --projects) echo "Simulation selection belongs to Experiment Hub, not the base installer." >&2; exit 2;;
         --root) ROOT=$2; shift 2;;
         --machine-id) MACHINE_ID=$2; shift 2;;
         --hub-tailnet-ip) HUB_IP=$2; shift 2;;
@@ -54,9 +54,8 @@ done
 
 [[ "$ROOT" == /* && "$ROOT" != / && "$ROOT" != */../* ]] ||
     { echo "Use a dedicated absolute installation root." >&2; exit 2; }
-[[ "$PROJECTS" == tinybrains || "$PROJECTS" == courier ||
-    "$PROJECTS" == tinybrains,courier || "$PROJECTS" == courier,tinybrains ]] ||
-    { echo "Select tinybrains, courier or both." >&2; exit 2; }
+[[ "$MODE" != install || -z "$PROJECTS" ]] ||
+    { echo "Install simulations separately through Experiment Hub." >&2; exit 2; }
 has_project() { [[ ",$PROJECTS," == *",$1,"* ]]; }
 PRIVATE="$ROOT/private"
 SRC="$ROOT/sources"
@@ -98,7 +97,7 @@ if [[ "$MODE" == update ]]; then
     PROJECTS=$(config_value EXPERIMENT_HUB_WORKER_PROJECTS)
     TB_ROOT=$(config_value EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT)
     COURIER_ROOT=$(config_value EXPERIMENT_HUB_COURIER_PROJECT_ROOT)
-    [[ -n "$PROJECTS" ]] || { echo "Existing worker project selection missing." >&2; exit 1; }
+
     if [[ -z "$HUB_IP" ]]; then
         PREVIOUS_URL=$(config_value EXPERIMENT_HUB_URL)
         if [[ "$PREVIOUS_URL" =~ ^http://(100\.[0-9]+\.[0-9]+\.[0-9]+):7149$ ]]; then
@@ -113,13 +112,13 @@ install_dependencies() {
         return 1
     fi
     sudo apt-get update
-    sudo apt-get install -y git curl ca-certificates python3 nodejs
+    sudo apt-get install -y curl ca-certificates python3 nodejs
     if ! command -v tailscale >/dev/null; then
         curl -fsSL https://tailscale.com/install.sh | sudo sh
     fi
 }
 if [[ "$MODE" == install ]]; then install_dependencies; fi
-for tool in git node python3 tailscale tar sha256sum; do
+for tool in node python3 tailscale tar sha256sum; do
     command -v "$tool" >/dev/null || { echo "Missing prerequisite: $tool" >&2; exit 1; }
 done
 node -e 'if(Number(process.versions.node.split(".")[0])<18)process.exit(1)' ||
@@ -161,7 +160,7 @@ HUB_URL="http://$HUB_IP:7149"
 # manual tokens. The returned rollout secrets are written with mode 0600.
 if [[ "$MODE" == install ]]; then
     BOOT_BODY=$(node -e '
-      const os=require("node:os");const projects=process.argv[1].split(",");
+      const os=require("node:os");const projects=process.argv[1]?process.argv[1].split(","):[];
       process.stdout.write(JSON.stringify({projects,cpus:os.cpus().length,
         ram_mb:Math.floor(os.totalmem()/1048576)}));' "$PROJECTS")
     BOOT_REPLY=$(curl --noproxy '*' -fsS --max-time 30 -H 'Content-Type: application/json' \
@@ -251,75 +250,6 @@ install_release() {
 }
 if [[ "$MODE" == install ]]; then
     install_release worker "$SRC/Bees-Assets"
-    if has_project tinybrains && [[ -z "$TB_ROOT" ]]; then
-        install_release tinybrains "$SRC/TinyBrains"
-        TB_ROOT="$SRC/TinyBrains/Ants-MAPOCA"
-    fi
-    if has_project courier && [[ -z "$COURIER_ROOT" ]]; then
-        install_release courier "$SRC/Basic-Training"
-        COURIER_ROOT="$SRC/Basic-Training"
-    fi
-fi
-
-# Preserve the official TinyBrains simulator; never create a simplified
-# Python simulation for remote training. The official CLI release and
-# upstream baseline package are separate from the ants-mapoca wheel.
-install_tinybrains_runtime() {
-    local archive=tinybrains-x86_64-unknown-linux-gnu.tar.gz
-    local release=https://github.com/Tiny-Brains/cli/releases/download/v0.5.0
-    local downloads="$TB_ROOT/downloads"
-    local cli="$TB_ROOT/tools/tinybrains-0.5.0/tinybrains"
-    mkdir -p "$downloads" "$(dirname "$cli")" "$TB_ROOT/upstream"
-    if [[ ! -f "$downloads/$archive" ]]; then
-        curl -fLSs "$release/$archive" -o "$downloads/$archive"
-    fi
-    curl -fLSs "$release/SHA256SUMS" -o "$downloads/SHA256SUMS"
-    local expected actual
-    expected=$(awk -v file="$archive" '$2==file {print $1}' "$downloads/SHA256SUMS")
-    actual=$(sha256sum "$downloads/$archive" | cut -d' ' -f1)
-    [[ -n "$expected" && "$expected" == "$actual" ]] ||
-        { echo "Pinned official TinyBrains CLI archive checksum mismatch." >&2; exit 1; }
-    if [[ ! -x "$cli" ]]; then
-        mkdir -p "$(dirname "$cli")"
-        tar -xzf "$downloads/$archive" -C "$(dirname "$cli")"
-        [[ -x "$cli" ]] || { echo "Official TinyBrains CLI is not at the approved release path." >&2; exit 1; }
-    fi
-    # Preserve exact upstream simulation baselines; refuse drift.
-    local name commit dir
-    for name in ants-starter ants; do
-        case "$name" in
-            ants-starter) commit=a9610c693c0559286e4f5a96efec511b024bd573;;
-            ants) commit=54edfab12469b432041658ec80bcdf5931ae23e4;;
-        esac
-        dir="$TB_ROOT/upstream/$name"
-        if [[ ! -d "$dir/.git" ]]; then
-            git clone --filter=blob:none --depth=1 \
-                "https://github.com/Tiny-Brains/$name.git" "$dir"
-            git -C "$dir" fetch --depth=1 origin "$commit"
-            git -C "$dir" checkout --detach "$commit"
-        fi
-        [[ "$(git -C "$dir" rev-parse HEAD)" == "$commit" ]] ||
-            { echo "Refusing modified TinyBrains upstream $name engine dependency." >&2; exit 1; }
-    done
-}
-# Separate Python environments prevent Courier Torch 2.8.0+cpu from
-# replacing TinyBrains' pinned Torch 2.6.0 CPU collector.
-if has_project tinybrains; then
-    [[ -f "$TB_ROOT/pyproject.toml" ]] || { echo "TinyBrains source is missing." >&2; exit 1; }
-    install_tinybrains_runtime
-    uv venv --python 3.11.18 "$VENV/tinybrains"
-    uv pip install --python "$VENV/tinybrains/bin/python" --index-url https://download.pytorch.org/whl/cpu 'torch==2.6.0'
-    uv pip install --python "$VENV/tinybrains/bin/python" \
-        -e "$TB_ROOT/upstream/ants/baselines" -e "$TB_ROOT"
-    (cd "$TB_ROOT" && "$VENV/tinybrains/bin/python" -B -c 'import ants_mapoca.remote_rollout; from ants_mapoca.env import Engine')
-fi
-if has_project courier; then
-    [[ -f "$COURIER_ROOT/requirements.txt" ]] || { echo "Courier source is missing." >&2; exit 1; }
-    uv venv --python 3.11.18 "$VENV/courier"
-    uv pip install --python "$VENV/courier/bin/python" -r "$COURIER_ROOT/requirements.txt"
-    (cd "$COURIER_ROOT" && "$VENV/courier/bin/python" -B -c 'import courier_remote_lineage')
-fi
-
 if [[ "$MODE" == install ]]; then
     [[ "$MACHINE_ID" =~ ^[a-z][a-z0-9_-]{0,47}$ && "$TOKEN" =~ ^[0-9a-f]{64}$ ]] ||
         { echo "Tailscale bootstrap did not return valid enrollment credentials." >&2; exit 1; }
@@ -420,5 +350,5 @@ systemctl --user daemon-reload
 systemctl --user enable --now bees-experiment-hub-worker-update.timer
 
 echo "Worker prepared. No native experiment was started."
-echo "Tailscale listeners: TinyBrains 12134/12135; Courier 13134/13135 (enabled projects only)."
+echo "Project runtimes are installed separately by Experiment Hub when assigned."
 echo "Enrolled through Tailscale; worker will report its capabilities to Hub Machines."
