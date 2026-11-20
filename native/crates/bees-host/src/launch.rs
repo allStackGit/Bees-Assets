@@ -2351,7 +2351,7 @@ fn archived_native_remote_receipts_from_root(
         // Older local-only receipts contain no LAN identity. They cannot
         // be offered as another player's original authenticated session.
         let Some(id) = summary["remote_session_id"].as_str() else { continue };
-        // Current archives explicitly persist the original authenticated
+        // Current archives explicitly persist original authorized player
         // sides. Older ones can still be delivered when the original host
         // checkpoint proves the EXACT prior side-token mapping. Neither
         // path treats newer host credentials as retroactive participation.
@@ -7353,7 +7353,7 @@ fn run_battle(
         .and_then(|view|
             bees_host::remote_play::NativeRemotePlay::authoritative_battle_receipt(&view));
     let remote_session_id = remote.as_ref().map(|server| server.session_id().to_owned());
-    let remote_authorized_sides = remote.as_ref().map(|server| server.authenticated_sides());
+    let remote_authorized_sides = remote.as_ref().map(|server| server.authorized_sides());
     let mut final_summary = json!({
         "kind": "run_final",
         "remote_session_id": remote_session_id,
