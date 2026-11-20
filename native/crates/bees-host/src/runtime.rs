@@ -174,6 +174,15 @@ pub trait NativeHostRecoverableMetadata {
     fn commit_metadata_recovery(&mut self, prepared: Self::Prepared);
 }
 
+/// A journal must be recovered together with its exact Level outbox cursor;
+/// replaying accepted notifications into a fresh sink duplicates outcomes.
+pub trait NativeHostRecoverableNotifications: NativeLevelNotificationSink {
+    fn recovery_notifications_checkpoint(&mut self) -> Result<serde_json::Value, String>;
+    fn validate_notifications_recovery(
+        &self, saved: &serde_json::Value,
+    ) -> Result<(), String>;
+}
+
 /// One durable host-owned fixed-step checkpoint spanning every registered
 /// authoritative native Level and the real model/connection identities.
 /// A separate socket writer persists the exact connection journal; the
@@ -191,6 +200,11 @@ pub struct NativeHostRecoveryCheckpoint {
     /// Empty only for an explicitly model-free inference backend.
     sampling_state: Vec<u8>,
     connection_sha256: [u8; 32],
+    notifications: serde_json::Value,
+}
+
+impl NativeHostRecoveryCheckpoint {
+    pub fn notifications(&self) -> &serde_json::Value { &self.notifications }
 }
 
 #[derive(Debug)]
@@ -201,6 +215,7 @@ pub enum HostRecoveryError {
     ModelChanged,
     ConnectionChanged,
     ConnectionEncoding(serde_json::Error),
+    Notifications(String),
     File(CheckpointFileError),
     MissingCheckpoint,
     Metadata { index: usize, error: &'static str },
@@ -255,6 +270,7 @@ where
     ) -> Result<(), HostRecoveryError>
     where
         M: NativeHostRecoverableMetadata,
+        S: NativeHostRecoverableNotifications,
     {
         let snapshot = self.recovery_checkpoint()?;
         checkpoint_file.persist(&snapshot).map_err(HostRecoveryError::File)
@@ -267,6 +283,7 @@ where
     ) -> Result<(), HostRecoveryError>
     where
         M: NativeHostRecoverableMetadata,
+        S: NativeHostRecoverableNotifications,
     {
         let saved = checkpoint_file.load().map_err(HostRecoveryError::File)?
             .ok_or(HostRecoveryError::MissingCheckpoint)?;
@@ -289,6 +306,7 @@ where
     pub fn recovery_checkpoint(&mut self) -> Result<NativeHostRecoveryCheckpoint, HostRecoveryError>
     where
         M: NativeHostRecoverableMetadata,
+        S: NativeHostRecoverableNotifications,
     {
         if !self.connection.is_available() {
             return Err(HostRecoveryError::Unavailable);
@@ -298,6 +316,8 @@ where
         }
         let model_sha256 = self.model.checkpoint_model_digest()
             .ok_or(HostRecoveryError::ModelIdentityUnavailable)?;
+        let notifications = self.sink.recovery_notifications_checkpoint()
+            .map_err(HostRecoveryError::Notifications)?;
         let sampling_state = self.model.checkpoint_sampling_state()
             .map_err(|_| HostRecoveryError::ModelSamplingUnavailable)?
             .ok_or(HostRecoveryError::ModelSamplingUnavailable)?;
@@ -316,11 +336,12 @@ where
                 .map_err(|error| HostRecoveryError::Metadata { index, error })?);
         }
         Ok(NativeHostRecoveryCheckpoint {
-            schema_version: 3, worlds, metadata,
+            schema_version: 4, worlds, metadata,
             driver: self.driver.recovery_checkpoint(),
             model_generation: self.model.model_generation(),
             model_sha256, sampling_state,
             connection_sha256: self.connection_recovery_digest()?,
+            notifications,
         })
     }
 
@@ -332,8 +353,9 @@ where
     ) -> Result<(), HostRecoveryError>
     where
         M: NativeHostRecoverableMetadata,
+        S: NativeHostRecoverableNotifications,
     {
-        if checkpoint.schema_version != 3 ||
+        if checkpoint.schema_version != 4 ||
             checkpoint.metadata.len() != checkpoint.worlds.len() ||
             checkpoint.worlds.len() != self.simulation.world_count() ||
             self.driver.registered_world_count() != self.simulation.world_count() {
@@ -376,6 +398,8 @@ where
         let driver = NativeLevelBatchDriver::prepare_recovery_for_layout(
             checkpoint.driver, layout,
         ).map_err(HostRecoveryError::Driver)?;
+        self.sink.validate_notifications_recovery(&checkpoint.notifications)
+            .map_err(HostRecoveryError::Notifications)?;
 
         // The resident worker owns stochastic action sampling. Restore it
         // only after every World/Level/metadata/driver preflight succeeds,
