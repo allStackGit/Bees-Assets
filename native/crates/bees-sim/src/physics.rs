@@ -1437,6 +1437,22 @@ impl KinematicPhysics {
         if !(ships_valid && projectiles_valid && obstacles_valid) {
             return Err(PhysicsError::InvalidCollider);
         }
+        // Contact transition logic consumes sorted, unique prior pairs.
+        // Deserializing an unordered history could create false trigger
+        // entries/exits and therefore change actual gameplay damage and
+        // attribution on the first resumed tick.
+        fn ordered_unique<T: Ord>(items: &[T]) -> bool {
+            items.windows(2).all(|pair| pair[0] < pair[1])
+        }
+        if !ordered_unique(&snapshot.overlaps_previous) ||
+            !ordered_unique(&snapshot.obstacle_overlaps_previous) ||
+            !ordered_unique(&snapshot.ship_obstacle_previous) ||
+            !ordered_unique(&snapshot.obstacle_pairs_previous) ||
+            !ordered_unique(&snapshot.proximity_ship_previous) ||
+            !ordered_unique(&snapshot.proximity_obstacle_previous)
+        {
+            return Err(PhysicsError::InvalidCollider);
+        }
         // No identity-bearing contact or state is recreated from source
         // positions. Even dormant slot IDs and prior overlaps remain exact.
         self.ships = snapshot.ships;
