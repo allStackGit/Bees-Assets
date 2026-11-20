@@ -83,7 +83,7 @@ function createCourierRemoteLineageAdapter({
     if(new Set(slots.map(item=>item.endpoint)).size!==slots.length)
         throw Error('Every Courier collector slot needs its own private listener port.');
     if(typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
-        fs.realpathSync(pythonPath)!==pythonPath||!fs.statSync(pythonPath).isFile())
+        path.resolve(pythonPath)!==pythonPath||!fs.statSync(pythonPath).isFile())
         throw Error('Courier remote Python must be an installed executable file.');
     const probe=spawnSync(pythonPath,['-B','-c',
         'import inspect, courier_remote_lineage as r; print(int("shared_policy" in inspect.signature(r.serve).parameters), int(getattr(r, "REMOTE_PPO_SETTINGS_VERSION", None)==1))'],{
