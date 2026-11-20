@@ -47,7 +47,7 @@ fn command_identity(selection: &NativeCommandSelection) -> serde_json::Value {
 }
 
 /// Only a durably committed terminal counts as one objective attempt.
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct NativeMissionOutcomeCounts {
     pub attempts: u64,
     pub completions: u64,
@@ -56,7 +56,7 @@ pub struct NativeMissionOutcomeCounts {
     pub by_objective_side: BTreeMap<i32, NativeMissionSideCounts>,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct NativeMissionSideCounts {
     pub attempts: u64,
     pub completions: u64,
@@ -65,7 +65,7 @@ pub struct NativeMissionSideCounts {
 /// One physical authored scene's completed episode results, keyed by the
 /// exact content digest already bound to the source Level. Only terminal
 /// notifications update this map; physics and inference never touch it.
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct NativeSceneOutcomes {
     pub episodes_finished: u64,
     pub episodes_timed_out: u64,
@@ -157,7 +157,7 @@ impl NativeSceneOutcomes {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct NativeDiagnosticMeasurements {
     /// Exactly one outcome per durably delivered EpisodeFinal record.
     pub episodes_finished: u64,
@@ -335,7 +335,7 @@ impl NativeDiagnosticMeasurements {
 
 
 /// Immutable evaluation inputs for one authored episode.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EpisodeEvaluationContext {
     pub level_id: i64,
     pub seed: u64,
@@ -351,6 +351,20 @@ pub struct EpisodeEvaluationContext {
     pub group_team_by_side: BTreeMap<i32, u8>,
     pub group_agents_by_team: BTreeMap<u8, BTreeSet<u64>>,
     pub decision_period: u32,
+}
+
+/// The exact committed journal prefix and its delivery-derived summaries.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeDiagnosticRecoveryCheckpoint {
+    schema_version: u32,
+    run_id: String,
+    journal_id: String,
+    journal_bytes: u64,
+    journal_sha256: [u8; 32],
+    next_journal_sequence: u64,
+    evaluation_contexts: BTreeMap<u64, (u64, EpisodeEvaluationContext)>,
+    measurements: NativeDiagnosticMeasurements,
 }
 
 pub struct DurableDiagnosticNotifications {
@@ -409,6 +423,97 @@ impl DurableDiagnosticNotifications {
             prepared: VecDeque::new(),
             unavailable: false,
         })
+    }
+
+    /// Reopen only the exact durable journal bound to a committed host
+    /// checkpoint. No silent truncation of post-checkpoint events: those
+    /// might already have reached the independent network request ledger.
+    pub fn open_existing(path: &Path, run_id: &str,
+        saved: &serde_json::Value,
+    ) -> io::Result<Self> {
+        let checkpoint: NativeDiagnosticRecoveryCheckpoint =
+            serde_json::from_value(saved.clone()).map_err(io::Error::other)?;
+        if checkpoint.schema_version != 1 || checkpoint.run_id != run_id ||
+            checkpoint.run_id.trim().is_empty() ||
+            !PreparedOutcomeBatch::valid_journal_id(&checkpoint.journal_id) ||
+            (checkpoint.next_journal_sequence == 0) != (checkpoint.journal_bytes == 0)
+        {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "native journal checkpoint identity is invalid"));
+        }
+        // Stream the entire original file with a fixed buffer. This avoids
+        // the memory cost of materializing a large multi-episode event log.
+        let mut reader = File::open(path)?;
+        if reader.metadata()?.len() != checkpoint.journal_bytes {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "native journal length diverged from host checkpoint"));
+        }
+        let mut digest = Sha256::new();
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let count = reader.read(&mut buffer)?;
+            if count == 0 { break; }
+            digest.update(&buffer[..count]);
+        }
+        if <[u8; 32]>::from(digest.clone().finalize()) != checkpoint.journal_sha256 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "native journal digest diverged from host checkpoint"));
+        }
+        let file = OpenOptions::new().append(true).open(path)?;
+        Ok(Self {
+            file, run_id: checkpoint.run_id, journal_id: checkpoint.journal_id,
+            next_journal_sequence: checkpoint.next_journal_sequence,
+            journal_digest: digest, pending_prepared: Vec::new(),
+            pending: Vec::new(), measurements: checkpoint.measurements,
+            evaluation_contexts: checkpoint.evaluation_contexts,
+            policy_capture: None, prepared: VecDeque::new(), unavailable: false,
+        })
+    }
+
+    /// Only a fully acknowledged, durably synced delivery boundary is
+    /// eligible for a host checkpoint. The worker and journal must agree
+    /// before the corresponding World tick can be treated as committed.
+    pub fn recovery_checkpoint(&mut self) -> io::Result<serde_json::Value> {
+        if self.unavailable || self.policy_capture.is_some() ||
+            !self.pending_prepared.is_empty() || !self.prepared.is_empty() ||
+            !self.pending.is_empty()
+        {
+            return Err(io::Error::other(
+                "native journal has uncommitted outcomes or policy capture"));
+        }
+        self.file.sync_all()?;
+        let snapshot = NativeDiagnosticRecoveryCheckpoint {
+            schema_version: 1, run_id: self.run_id.clone(),
+            journal_id: self.journal_id.clone(),
+            journal_bytes: self.file.metadata()?.len(),
+            journal_sha256: self.journal_digest.clone().finalize().into(),
+            next_journal_sequence: self.next_journal_sequence,
+            evaluation_contexts: self.evaluation_contexts.clone(),
+            measurements: self.measurements.clone(),
+        };
+        serde_json::to_value(snapshot).map_err(io::Error::other)
+    }
+
+    pub fn validate_recovery_checkpoint(
+        &self, saved: &serde_json::Value,
+    ) -> io::Result<()> {
+        let checkpoint: NativeDiagnosticRecoveryCheckpoint =
+            serde_json::from_value(saved.clone()).map_err(io::Error::other)?;
+        if checkpoint.schema_version != 1 ||
+            checkpoint.run_id != self.run_id ||
+            checkpoint.journal_id != self.journal_id ||
+            checkpoint.next_journal_sequence != self.next_journal_sequence ||
+            checkpoint.journal_bytes != self.file.metadata()?.len() ||
+            checkpoint.journal_sha256 !=
+                <[u8; 32]>::from(self.journal_digest.clone().finalize()) ||
+            !self.pending.is_empty() || !self.prepared.is_empty() ||
+            !self.pending_prepared.is_empty() || self.policy_capture.is_some() ||
+            self.unavailable
+        {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "native journal recovery boundary changed"));
+        }
+        Ok(())
     }
 
     pub fn capture_policy_to(&mut self, path: &Path) -> io::Result<()> {
