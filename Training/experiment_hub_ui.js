@@ -1029,6 +1029,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const completeRounds=Array.isArray(plan.round_history)
                 ?plan.round_history:[];
             const lastRound=completeRounds.at(-1);
+            const measured=plan.training_summary;
             details.textContent='Native Bees multi-round '+plan.id.slice(-8)+
                 ' · '+plan.completed_rounds+'/'+plan.round_count+' rounds'+
                 ' · '+plan.status+
@@ -1040,11 +1041,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · '+lastRound.collector_world_partitions.reduce(
                         (total,part)=>total+part.world_count,0)+' physical Worlds'
                     :'')+
-                (lastRound?.collector_work_totals
-                    ?' · '+lastRound.collector_work_totals.successful_world_steps.toLocaleString()+
-                        ' physical World steps · '+
-                        lastRound.collector_work_totals.successful_policy_rows.toLocaleString()+
-                        ' policy rows'
+                (measured?.collector_rounds_measured
+                    ?' · '+measured.successful_world_steps.toLocaleString()+
+                        ' measured World steps · '+
+                        measured.successful_policy_rows.toLocaleString()+
+                        ' policy rows across '+measured.collector_rounds_measured+' rounds'
+                    :'')+
+                (measured?.learner_rounds_measured
+                    ?' · PPO '+measured.optimizer_input_steps_measured.toLocaleString()+
+                        ' input rows across '+measured.learner_rounds_measured+' rounds'
                     :'')+
                 (lastRound?.optimizer_group
                     ?' · '+lastRound.optimizer_group.total_leased_gpu_slots+
@@ -1061,6 +1066,32 @@ document.addEventListener('DOMContentLoaded', () => {
             if(completeRounds.length||plan.collector_source_contracts?.length||
                 plan.initial_evaluation_receipts?.length)
                 details.title=[
+                    ...(measured?.collector_rounds_measured?[
+                        'Measured native collection over '+measured.collector_rounds_measured+
+                        ' rounds: '+measured.successful_world_steps+
+                        ' World steps, '+measured.successful_policy_rows+
+                        ' policy rows, '+measured.sum_independent_collector_wall_seconds.toFixed(2)+
+                        ' summed overlapping collector seconds (not fleet time).',
+                    ]:[]),
+                    ...(measured?.learner_rounds_measured?[
+                        'Measured publishing-learner PPO over '+measured.learner_rounds_measured+
+                        ' rounds: '+measured.optimizer_input_steps_measured+
+                        ' input rows, '+measured.ppo_update_wall_seconds.toFixed(2)+
+                        ' PPO update seconds, '+measured.trajectory_processing_wall_seconds.toFixed(2)+
+                        ' trajectory seconds, '+measured.publishing_learner_wall_seconds.toFixed(2)+
+                        ' publishing-learner seconds; '+
+                        measured.optimizer_input_rows_per_ppo_update_second.toFixed(1)+
+                        ' input rows per PPO update second.',
+                    ]:[]),
+                    ...(measured?.independent_evaluations?.map(suite=>
+                        'Independent frozen suite '+suite.suite_id+' ('+
+                        suite.suite_sha256.slice(0,12)+'): '+suite.measured_rounds+
+                        ' completed checkpoints; latest '+(100*suite.latest_success_rate).toFixed(1)+
+                        '% at round '+suite.latest_round+
+                        ', best '+(100*suite.best_success_rate).toFixed(1)+'%'+
+                        (suite.initial_checkpoint_success_rate===undefined?''
+                            :', initial '+(100*suite.initial_checkpoint_success_rate).toFixed(1)+'%')
+                    )||[]),
                     ...(plan.initial_evaluation_receipts?.length?[
                         'Starting checkpoint met independent fixed-reference target: '+
                         plan.initial_evaluation_receipts.map(receipt=>
@@ -1116,6 +1147,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         ).join(', ')
                         :'')+
                     ' · optimizers '+entry.optimizer_job_ids.join(', ')+
+                    (entry.optimizer_group?.learner_work
+                        ?' · observed PPO: '+entry.optimizer_group.learner_work.optimizer_input_steps+
+                            ' input rows / '+
+                            entry.optimizer_group.learner_work.optimizer_update_wall_seconds.toFixed(2)+
+                            ' update seconds; '+
+                            entry.optimizer_group.learner_work.trajectory_processing_wall_seconds.toFixed(2)+
+                            ' trajectory seconds'
+                        :'')+
                     (entry.optimizer_group
                         ?' · synchronized '+entry.optimizer_group.nodes+
                             ' machine PPO group '+entry.optimizer_group.group_id+
