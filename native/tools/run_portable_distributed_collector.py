@@ -18,6 +18,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import uuid
 
 from transfer_policy_inputs import import_inputs
 from native_bundle_receiver import download_input_archive, bundle_token
@@ -179,7 +180,10 @@ def main():
                     "archive": str(input_archive),
                 }, sort_keys=True), flush=True)
             else:
-                input_archive = attempt / "issued-inputs.tar"
+                # A crash may have left a truncated prior download at the
+                # canonical path. Never overwrite it before a fresh archive
+                # has passed its authenticated manifest/source verification.
+                input_archive = attempt / f"issued-inputs-{uuid.uuid4().hex}.tar"
                 received = download_input_archive(
                     args.input_url, args.collector_id, input_archive,
                     token=transport_token,
@@ -195,7 +199,7 @@ def main():
             # A damaged prior archive must not poison all future retries.
             # Re-fetch once; the ordinary import still verifies every byte
             # and the Hub's exact frozen allocation before execution.
-            input_archive = attempt / "issued-inputs.tar"
+            input_archive = attempt / f"issued-inputs-{uuid.uuid4().hex}.tar"
             received = download_input_archive(
                 args.input_url, args.collector_id, input_archive,
                 token=transport_token,
@@ -204,6 +208,22 @@ def main():
             imported = import_inputs(input_archive, inputs,
                                      args.policy_worker, args.python, args.collector_id,
                                      reuse_existing=args.hub_job_id is not None)
+        # Preserve one canonical, successfully imported source archive
+        # after a fresh download. Other attempts can reuse it without
+        # trusting a partial download, while the stable imported paths are
+        # verified independently by import_inputs.
+        if args.input_url and input_archive.parent == attempt and (
+                input_archive.name != "issued-inputs.tar"):
+            canonical = attempt / "issued-inputs.tar"
+            os.replace(input_archive, canonical)
+            with canonical.open("rb") as archive_file:
+                os.fsync(archive_file.fileno())
+            if os.name != "nt":
+                directory_fd = os.open(attempt, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
         print(json.dumps(imported, sort_keys=True), flush=True)
         if args.hub_job_id is not None:
             orders, job = checked_order(inputs / "orders.json", args.collector_id)
