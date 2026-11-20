@@ -5584,15 +5584,24 @@ fn run_battle(
     // Physical signatures are trace-only. Sample at 64-step intervals,
     // at the start of the next input boundary *after* any model reset,
     // never per physics step or on every idle graphical frame.
-    let mut last_physical_checkpoint_round: Option<u64> = None;
-    let mut recorded_physical_checkpoints = 0_u64;
-    let mut recorded_player_inputs = 0_u64;
+    let saved_recording = resume_cursor.as_ref()
+        .and_then(|cursor| cursor.recording.as_ref());
+    let mut last_physical_checkpoint_round = saved_recording
+        .and_then(|recording| recording.last_physical_checkpoint_round);
+    let mut recorded_physical_checkpoints = saved_recording
+        .map_or(0, |recording| recording.recorded_physical_checkpoints);
+    let mut recorded_player_inputs = saved_recording
+        .map_or(0, |recording| recording.recorded_player_inputs);
     // Timed only for opt-in replay recording; headless training creates
     // no recorder, counters or storage barriers on its physics hot path.
-    let mut trace_checkpoint_syncs = 0_u64;
-    let mut trace_checkpoint_sync_wall_seconds = 0.0_f64;
-    let mut trace_input_syncs = 0_u64;
-    let mut trace_input_sync_wall_seconds = 0.0_f64;
+    let mut trace_checkpoint_syncs = saved_recording
+        .map_or(0, |recording| recording.trace_checkpoint_syncs);
+    let mut trace_checkpoint_sync_wall_seconds = saved_recording
+        .map_or(0.0, |recording| recording.trace_checkpoint_sync_wall_seconds);
+    let mut trace_input_syncs = saved_recording
+        .map_or(0, |recording| recording.trace_input_syncs);
+    let mut trace_input_sync_wall_seconds = saved_recording
+        .map_or(0.0, |recording| recording.trace_input_sync_wall_seconds);
     let mut verified_physical_checkpoints = 0_u64;
     let mut verified_gameplay_checkpoints = 0_u64;
     // Do not rehash or fsync a large journal while a window is paused and
@@ -5603,6 +5612,42 @@ fn run_battle(
     // themselves remain owned by the native host runtime.
     macro_rules! capture_native_progress {
         () => {{
+            // The immutable host checkpoint owns the exact synced prefix
+            // of both recordings. A process crash can leave extra bytes,
+            // but recovery validates and truncates them before appending.
+            let recording = if let (Some(trace), Some(path), Some(hasher)) = (
+                input_trace.as_mut(), recorded_inputs.as_ref(),
+                trace_prefix_hasher.as_mut(),
+            ) {
+                let started = Instant::now();
+                trace.sync_data()?;
+                trace_checkpoint_sync_wall_seconds += started.elapsed().as_secs_f64();
+                trace_checkpoint_syncs += 1;
+                let input_trace_prefix = hasher.capture(path, trace.stream_position()?)?;
+                let policy_actions = if let Some(recorder) = host.model_mut().recorder.as_mut() {
+                    let bytes = recorder.checkpoint_position()?;
+                    let tracker = policy_prefix_hasher.as_mut().ok_or_else(||
+                        invalid("policy recorder lost its original recovery cursor"))?;
+                    Some(tracker.capture(&path.with_file_name("policy-actions.bin"), bytes)?)
+                } else { None };
+                Some(NativeBattleRecordingCursor {
+                    input_trace: input_trace_prefix,
+                    policy_actions,
+                    last_physical_checkpoint_round,
+                    recorded_physical_checkpoints,
+                    recorded_player_inputs,
+                    trace_checkpoint_syncs,
+                    trace_checkpoint_sync_wall_seconds,
+                    trace_input_syncs,
+                    trace_input_sync_wall_seconds,
+                    network_events: network.as_ref()
+                        .map_or(0, |network| network.recorded_network_events),
+                    network_syncs: network.as_ref()
+                        .map_or(0, |network| network.recorded_network_syncs),
+                    network_sync_wall_seconds: network.as_ref()
+                        .map_or(0.0, |network| network.recorded_network_sync_wall_seconds),
+                })
+            } else { None };
             let cursor = NativeBattleRecoveryCursor {
                 schema_version: 1,
                 run_id: config.run_id.clone(),
@@ -5627,6 +5672,7 @@ fn run_battle(
                         .expect("native remote checkpoint always has one live Level");
                     server.recovery_checkpoint(world.id, world.episode_revision())
                 }),
+                recording,
                 segment_start_round,
                 segment_baseline: segment_baseline.clone(),
                 segment_generation,
@@ -5666,9 +5712,14 @@ fn run_battle(
         }) };
     }
     'battle: loop {
+        let recovery_interval = if policy_capture.is_some() ||
+            (!play && remote_step_interval.is_none())
+        {
+            TRAINING_RECOVERY_ROUND_INTERVAL
+        } else { GAMEPLAY_RECOVERY_ROUND_INTERVAL };
         let recovery_due = checkpointed_round.is_none_or(|previous|
-            previous != rounds && (policy_capture.is_none() ||
-                rounds.saturating_sub(previous) >= TRAINING_RECOVERY_ROUND_INTERVAL));
+            previous != rounds &&
+                rounds.saturating_sub(previous) >= recovery_interval);
         if host_checkpoint_file.is_some() && recovery_due &&
             network.as_ref().is_none_or(|session| session.server_game_id.is_some() &&
                 session.next_level == session.levels.len()) &&
