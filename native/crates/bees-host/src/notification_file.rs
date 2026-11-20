@@ -925,6 +925,20 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
     }
 }
 
+impl crate::runtime::NativeHostRecoverableNotifications
+    for DurableDiagnosticNotifications
+{
+    fn recovery_notifications_checkpoint(&mut self) -> Result<serde_json::Value, String> {
+        self.recovery_checkpoint().map_err(|error| error.to_string())
+    }
+
+    fn validate_notifications_recovery(
+        &self, saved: &serde_json::Value,
+    ) -> Result<(), String> {
+        self.validate_recovery_checkpoint(saved).map_err(|error| error.to_string())
+    }
+}
+
 /// Recovery imports only complete, newline-terminated records from a stopped
 /// run. It never reconstructs a world or appends to the previous incarnation.
 #[derive(Clone, Debug, Default, Serialize)]
