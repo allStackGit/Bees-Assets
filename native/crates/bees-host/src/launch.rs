@@ -2363,9 +2363,9 @@ fn launch_catalog_battle(
         return Err(invalid("the chosen campaign mission is no longer unlocked").into());
     }
     let config = resolve(catalog_root, entry.config_for(&progress));
-    if entry.mission.is_some() &&
-        env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some()
-    {
+    if env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
+        // Apply the same replayable remote-host contract to campaign and
+        // practice battles opened from the menu as direct "serve" sessions.
         // The original career writer lock owns the selected mission route.
         // A prior read of an unlocked/alternate campaign Level could
         // preflight a different configuration than the one we actually
@@ -2375,7 +2375,7 @@ fn launch_catalog_battle(
             !selected.model_updates.is_empty() || selected.navigation_workers.is_some()
         {
             return Err(invalid(
-                "campaign --serve requires one Level/episode, a fixed model manifest, and no background navigation",
+                "remote menu battles require one Level/episode, a fixed model manifest, and no background navigation",
             ).into());
         }
     }
