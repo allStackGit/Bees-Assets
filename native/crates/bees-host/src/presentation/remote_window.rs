@@ -1030,6 +1030,17 @@ fn first_selected<'a>(state: Option<&'a Value>, selected: &[i64]) -> Option<&'a 
             .as_i64().is_some_and(|id| selected.contains(&id)))
 }
 
+/// Numeric squad IDs can be reused after a source lifetime retires.
+/// Preserve the full authenticated lifetime across snapshot updates so an
+/// old UI selection cannot silently become a command for a replacement.
+fn selected_squad_lifetime(state: &Value, id: i64) -> Option<(i64, u64)> {
+    let squad=state["squads"].as_array()?.iter().find(|s|
+        s["controllable"]==true &&
+        s["owner"]["squad_id"].as_i64()==Some(id))?;
+    Some((squad["owner"]["level_id"].as_i64()?,
+          squad["owner"]["lifecycle_id"].as_u64()?))
+}
+
 fn squad_for_ship<'a>(state: &'a Value, id: i64, side: i64) -> Option<&'a Value> {
     state["squads"].as_array()?.iter().find(|squad|
         squad["side"].as_i64() == Some(side) &&
@@ -1861,10 +1872,26 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             }
         }
         let was_connected=peer.connected;
+        // Snapshot-scoped UI identity. Keep only selected lifetimes, not a
+        // duplicate roster or any remote simulation state.
+        let previous_snapshot=peer.metrics.snapshots;
+        let previously_selected: HashMap<i64, (i64,u64)> =
+            peer.state.as_ref().map(|state|
+                selected.iter().filter_map(|&id|
+                    selected_squad_lifetime(state,id).map(|owner|(id,owner))
+                ).collect()
+            ).unwrap_or_default();
         // Reset the old view BEFORE reading the new connection's first
         // welcome/snapshot. Otherwise a fast host can deliver a valid first
         // state that is immediately discarded as stale by this reset.
         if !rejoined { peer.poll()?; }
+        if peer.metrics.snapshots!=previous_snapshot {
+            if let Some(state)=peer.state.as_ref() {
+                selected.retain(|id|
+                    previously_selected.get(id).copied().is_some_and(|old|
+                        selected_squad_lifetime(state,*id)==Some(old)));
+            }
+        }
         if rejoined || was_connected && !peer.connected {
             // A new TCP connection has a new peer ID and no retained squad
             // authority. No previous snapshot, camera selection, or
