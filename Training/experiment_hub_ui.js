@@ -6601,8 +6601,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 sum+j.live_execution.memory_current_mb,0);
             const overClaimed=m.capacity_overcommitted===true;
             cell(tr,m.name+' ('+m.id+')');
+            const components=Object.values(state.machine_software?.[m.id]||{});
+            const updateState=components.map(item=>
+                item.component+' '+item.status+' ('+String(item.version).slice(0,8)+')')
+                .join(', ');
             const status=cell(tr,m.status+
-                (overClaimed?' · Claims exceed reported capacity':''));
+                (overClaimed?' · Claims exceed reported capacity':'')+
+                (updateState?' · Software: '+updateState:''));
+            const lastConnection=(state.machine_connection_events||[])
+                .filter(event=>event.machine_id===m.id).slice(-1)[0];
+            if(lastConnection)status.title=
+                'Last connectivity event: '+lastConnection.event+' at '+lastConnection.at+
+                '; ongoing native jobs are not stopped merely by disconnection.';
             if(overClaimed)
                 status.title='Hub claims exceed fresh agent CPU/RAM capacity; new starts require renewed receipts. Existing processes are not stopped.';
             const cpuCell=cell(tr,m.cpus+' configured'+
@@ -6690,6 +6700,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }catch(e){feedback('hub-enrollment-message',e.message);}
             }));
+            if(m.agent_enrolled) {
+                const overriding=state.machine_update_policies?.[m.id]==='override';
+                actions.append(button(overriding?'Wait for jobs':'Override update',async()=>{
+                    const mode=overriding?'defer':'override';
+                    if(mode==='override'&&!confirm(
+                        'Authorize mid-job software activation on '+m.id+
+                        '? The worker will only activate components whose native ownership can be preserved; incompatible live jobs must still wait.'))return;
+                    try {
+                        await action('hub/machines/update',{
+                            machine_id:m.id,mode,
+                            ...(mode==='override'?{confirm_override:true}:{})
+                        });
+                        await reload();
+                    }catch(error){feedback('hub-enrollment-message',error.message);}
+                }));
+            }
             $('hub-machine-rows').append(tr);
         }
         if(!state.machines.length) {
