@@ -30,6 +30,7 @@ pub enum NativeInferenceError {
     InvalidBehaviorStatistics,
     InvalidAgent,
     RepeatedGroupAgent { world: WorldId, agent: u64 },
+    UnregisteredGroupAgent { world: WorldId, agent: u64 },
     SnapshotIdentityMismatch,
     SnapshotStateMismatch,
     UnmatchedTeamRoute,
@@ -461,6 +462,20 @@ impl NativeLevelInferenceBatch {
         if world.state.events.policy_team_id(ship.side)
             .is_some_and(|team| team != route.team_id) {
             return Err(NativeInferenceError::UnmatchedTeamRoute);
+        }
+        // The group-reward owner alone admits source MA-POCA Agent
+        // identities. A caller-provided number, even one unique within
+        // this model batch, cannot create a training participant or
+        // attach an observation to the wrong faction's reward group.
+        // Non-group gameplay controllers legitimately use None.
+        if let Some(group_agent) = group_agent_id {
+            if !world.state.events.group_delivery()
+                .is_some_and(|group| group.is_registered(ship.side, group_agent))
+            {
+                return Err(NativeInferenceError::UnregisteredGroupAgent {
+                    world: world.id, agent: group_agent,
+                });
+            }
         }
         let mask = combat.policy_action_mask(ship_id)?;
         let frame = combat.policy_frame(ship_id)
