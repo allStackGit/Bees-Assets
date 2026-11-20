@@ -192,6 +192,9 @@ pub struct RemotePlayMeasurements {
     pub terminal_drain_wall_seconds: f64,
     /// Connected peers whose terminal state remained queued at the drain deadline.
     pub terminal_state_pending_peers: usize,
+    /// Complete Level outcomes queued on the reliable channel after the
+    /// battle finalization boundary, not inferred from presentation frames.
+    pub battle_result_receipts: u64,
     pub disconnected_peers: u64,
     pub held_fire_requests: u64,
     pub held_fire_rejected: u64,
@@ -656,6 +659,34 @@ impl NativeRemotePlay {
         ) {
             let _ = peer.enqueue(&receipt);
             if !peer.closed {
+                self.measurements.state_bytes += peer.flush();
+            }
+        }
+        self.reap();
+    }
+
+    /// Deliver the Level's existing terminal result independently of lossy
+    /// world snapshots. This is called only AFTER successful finalization
+    /// and the durable summary commit, alongside the campaign receipt.
+    /// The same actual Level result and source labels used by local play
+    /// remain authoritative for both authenticated opposing commanders.
+    pub fn publish_battle_result(&mut self, view: &NativeRenderWorldView<'_>) {
+        let Some(result) = view.terminal_result else { return };
+        for peer in self.peers.iter_mut().filter(|peer|
+            !peer.closed && peer.side.is_some()
+        ) {
+            let _ = peer.enqueue(&json!({
+                "kind": "battle_result",
+                "protocol": 1,
+                "viewer_side": peer.side,
+                "world_id": view.world_id.0,
+                "episode_revision": view.episode_revision,
+                "winner_side": result.winner_side,
+                "label": crate::presentation::battle_outcome_label(result),
+                "reason": crate::presentation::battle_outcome_reason(view, result),
+            }));
+            if !peer.closed {
+                self.measurements.battle_result_receipts += 1;
                 self.measurements.state_bytes += peer.flush();
             }
         }

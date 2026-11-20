@@ -6002,10 +6002,14 @@ fn run_battle(
             );
         }
     }
-    // Every authenticated multiplayer battle has a final result frame,
-    // including quick battles without a campaign ledger. Drain the
-    // already-queued terminal state before dropping the socket owner.
+    // A completed game result must not depend on the replaceable state
+    // snapshot surviving the network drain. Send a small, reliable terminal
+    // receipt from the same authoritative Level only after the durable
+    // finalization/summary boundary, including non-campaign battles.
     if let Some(server) = &mut remote {
+        if let Some(world) = host.render_world(0) {
+            server.publish_battle_result(&world);
+        }
         server.drain_terminal_output(Duration::from_millis(350));
     }
     // Publish replay eligibility last. Every prior error, including

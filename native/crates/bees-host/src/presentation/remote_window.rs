@@ -49,6 +49,7 @@ struct WireCounts {
     orders_sent: u64,
     acknowledgments: u64,
     campaign_receipts: u64,
+    battle_result_receipts: u64,
     reconnect_attempts: u64,
     reconnect_transports_opened: u64,
     /// Render-only smoothing; no simulation or network side-effects.
@@ -373,6 +374,7 @@ struct PeerClient {
     held_fire_begin_request: Option<u64>,
     held_fire_rejected: bool,
     campaign_receipt: Option<String>,
+    battle_result_receipt: Option<String>,
     metrics: WireCounts,
 }
 
@@ -408,7 +410,8 @@ impl PeerClient {
             state: None, visual: RemoteVisual::default(),
             notice: "Authenticating with native host".to_owned(),
             held_fire_begin_request: None, held_fire_rejected: false,
-            campaign_receipt: None, metrics: WireCounts::default(),
+            campaign_receipt: None, battle_result_receipt: None,
+            metrics: WireCounts::default(),
         })
     }
 
@@ -503,6 +506,26 @@ impl PeerClient {
                     self.campaign_receipt = Some(receipt.clone());
                     self.notice = receipt;
                     self.metrics.campaign_receipts += 1;
+                }
+                Some("battle_result") => {
+                    if !self.authenticated || message["protocol"].as_u64() != Some(1) ||
+                        message["viewer_side"].as_i64() != Some(i64::from(self.side)) ||
+                        message["world_id"].as_u64().is_none() ||
+                        message["episode_revision"].as_u64().is_none() ||
+                        message["winner_side"].as_i64().is_none()
+                    {
+                        return Err(invalid("native battle result belongs to another session or side").into());
+                    }
+                    let label = message["label"].as_str()
+                        .filter(|text| !text.is_empty())
+                        .ok_or_else(|| invalid("missing authoritative battle result label"))?;
+                    let reason = message["reason"].as_str()
+                        .filter(|text| !text.is_empty())
+                        .ok_or_else(|| invalid("missing authoritative battle result reason"))?;
+                    let text = format!("{label}: {reason}");
+                    self.battle_result_receipt = Some(text.clone());
+                    self.notice = text;
+                    self.metrics.battle_result_receipts += 1;
                 }
                 Some("input_result") => {
                     self.metrics.acknowledgments += 1;
@@ -1945,6 +1968,12 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         peer.metrics.obstacle_hull_draws += hulls;
         peer.metrics.minimap_ship_markers += map_ships;
         peer.metrics.minimap_objective_markers += map_objectives;
+        // A terminal outcome is reliable and survives transport closure,
+        // even if the replaceable final world_state could not drain.
+        if let Some(result) = peer.battle_result_receipt.as_deref() {
+            text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-61,
+                text::fit(result, FIELD-20), 1, [255, 211, 130]);
+        }
         // The authoritative commit receipt outlives the last world frame and
         // socket close. A transport status line cannot hide saved progression.
         if let Some(receipt) = peer.campaign_receipt.as_deref() {
@@ -1992,6 +2021,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
         "campaign_receipts":peer.metrics.campaign_receipts,
+        "battle_result_receipts":peer.metrics.battle_result_receipts,
         "reconnect_attempts":peer.metrics.reconnect_attempts,
         "reconnect_transports_opened":peer.metrics.reconnect_transports_opened,
         "connection_closed":!peer.connected,
