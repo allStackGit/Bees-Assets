@@ -859,9 +859,10 @@ function nativeBeesRoundTrainingSummary(plan) {
         for(const receipt of entry.evaluation_receipts||[]) {
             // A suite name alone cannot establish comparability across
             // checkpoints. Group only identical frozen suite definitions.
-            const key=receipt.suite_id+':'+receipt.suite_sha256;
+            const key=receipt.suite_id+':'+receipt.suite_sha256+':'+receipt.trials;
             if(!evaluations.has(key))evaluations.set(key,{
                 suite_id:receipt.suite_id,suite_sha256:receipt.suite_sha256,
+                trials_per_checkpoint:receipt.trials,
                 measured_rounds:0,latest_round:null,latest_success_rate:null,
                 latest_checkpoint_sha256:null,best_success_rate:null,
             });
@@ -875,7 +876,8 @@ function nativeBeesRoundTrainingSummary(plan) {
         }
     }
     for(const receipt of plan.initial_evaluation_receipts||[]) {
-        const suite=evaluations.get(receipt.suite_id+':'+receipt.suite_sha256);
+        const suite=evaluations.get(
+            receipt.suite_id+':'+receipt.suite_sha256+':'+receipt.trials);
         if(suite)suite.initial_checkpoint_success_rate=
             receipt.successes/receipt.trials;
     }
