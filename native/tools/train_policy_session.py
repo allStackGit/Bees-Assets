@@ -67,6 +67,9 @@ class NativeHubCollectionBarrier:
         if not isinstance(reported, list) or len(reported) != len(jobs):
             raise ValueError("Hub dispatch did not return every issued collector")
         self.members = {}
+        self.member_positions = {
+            job_id: index + 1 for index, job_id in enumerate(reported_ids)
+        }
         for row in reported:
             if not isinstance(row, dict) or row.get("collector_id") not in jobs:
                 raise ValueError("Hub returned an unissued native collector")
@@ -78,9 +81,13 @@ class NativeHubCollectionBarrier:
                                  hub_job) is None or
                     not isinstance(machine, str) or not machine):
                 raise ValueError("Hub returned a malformed or duplicate native collector")
-            if hub_job not in reported_ids:
-                raise ValueError("Hub collector is not a member of the issued resource bundle")
+            if hub_job not in self.member_positions or any(
+                    member[0] == hub_job for member in self.members.values()):
+                raise ValueError("Hub collector is duplicated or not in its issued resource bundle")
             self.members[name] = (hub_job, machine, jobs[name]["collection_id"])
+        if ({entry[0] for entry in self.members.values()} !=
+                set(self.member_positions)):
+            raise ValueError("Hub dispatch changed the frozen native resource-bundle roster")
         self.last_checked = float("-inf")
         self.checks = 0
         self.coordinator_unavailable = 0
@@ -123,8 +130,13 @@ class NativeHubCollectionBarrier:
             if not isinstance(job, dict):
                 raise ValueError(f"Hub no longer has native collector {collector} ({job_id})")
             params = job.get("frozen_parameters")
+            bundle = job.get("resource_bundle")
             if (job.get("project_id") != "bees_native_collect" or
                     job.get("assigned_machine_id") != machine or
+                    not isinstance(bundle, dict) or
+                    bundle.get("id") != self.bundle_id or
+                    bundle.get("index") != self.member_positions[job_id] or
+                    bundle.get("size") != len(self.member_positions) or
                     not isinstance(params, dict) or
                     params.get("collector_id") != collector or
                     params.get("collection_id") != collection_id):
