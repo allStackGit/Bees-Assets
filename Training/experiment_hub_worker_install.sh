@@ -19,7 +19,7 @@ COURIER_BRANCH=feat/hub-independent-courier-ppo-20261119
 
 usage() {
     cat <<'HELP'
-Usage: bash Training/experiment_hub_worker_install.sh [install|update|status]
+Usage: bash Training/experiment_hub_worker_install.sh [install|update|status|repair-updater]
        [--root ABSOLUTE_PATH]
        [--machine-id EXISTING_HUB_MACHINE_ID]
        [--hub-tailnet-ip HALIFAX_TAILSCALE_IPV4]
@@ -33,7 +33,7 @@ enrolls automatically. No SSH tunnel, GitHub password, copied secrets, Hub
 registration form, or separate enrollment token.
 'HELP'
 }
-if [[ ${1:-} == install || ${1:-} == update || ${1:-} == status ]]; then
+if [[ ${1:-} == install || ${1:-} == update || ${1:-} == status || ${1:-} == repair-updater ]]; then
     MODE=$1; shift
 fi
 while (( $# )); do
@@ -80,14 +80,14 @@ if [[ "$MODE" == install && -e "$ENVFILE" ]]; then
     echo "An agent is already installed here. Use 'update'; never overwrite its token." >&2
     exit 1
 fi
-if [[ "$MODE" == update && ! -f "$ENVFILE" ]]; then
+if [[ ( "$MODE" == update || "$MODE" == repair-updater ) && ! -f "$ENVFILE" ]]; then
     echo "No installed agent environment exists at $ENVFILE." >&2; exit 1
 fi
 if [[ "$MODE" == update ]] && systemctl --user is-active --quiet "$SERVICE"; then
     echo "Stop active Hub jobs through the dashboard, then stop the agent before updating." >&2
     exit 1
 fi
-if [[ "$MODE" == update ]]; then
+if [[ "$MODE" == update || "$MODE" == repair-updater ]]; then
     # Pinned project selection and installation paths belong to the
     # original enrolled worker, not new default CLI arguments.
     config_value() {
@@ -237,6 +237,54 @@ install_release() {
     fi
     rm -f "$archive"
 }
+if [[ "$MODE" == repair-updater ]]; then
+    # Migrate the old updater timer without touching the running native agent.
+    TOKEN=$(config_value EXPERIMENT_HUB_AGENT_TOKEN)
+    MACHINE_ID=$(config_value EXPERIMENT_HUB_MACHINE_ID)
+    SAVED_URL=$(config_value EXPERIMENT_HUB_URL)
+    [[ "$SAVED_URL" =~ ^http://(100\.[0-9]+\.[0-9]+\.[0-9]+):7149$ ]] ||
+        { echo "Existing worker Hub endpoint is invalid." >&2; exit 1; }
+    HUB_IP="${BASH_REMATCH[1]}"
+    HUB_URL="http://$HUB_IP:7149"
+    [[ "$MACHINE_ID" =~ ^[a-z][a-z0-9_-]{0,47}$ &&
+       "$TOKEN" =~ ^[0-9a-f]{64}$ ]] ||
+        { echo "Existing worker enrollment is invalid." >&2; exit 1; }
+    RELEASE="$SRC/.bootstrap-migration-$$"
+    trap 'rm -rf -- "$RELEASE"' EXIT
+    install_release worker "$RELEASE"
+    BOOTSTRAP="$RELEASE/Training/experiment_hub_worker_update_bootstrap.js"
+    [[ -f "$BOOTSTRAP" ]] ||
+        { echo "Authenticated worker release lacks its stable bootstrap." >&2; exit 1; }
+    node --check "$BOOTSTRAP"
+    UPDATER_DIR="$ROOT/Update"
+    mkdir -p "$UPDATER_DIR"
+    STABLE="$UPDATER_DIR/experiment_hub_worker_update_bootstrap.js"
+    if [[ -e "$STABLE" ]]; then
+        cmp -s "$STABLE" "$BOOTSTRAP" ||
+            { echo "Existing stable bootstrap differs; refusing replacement." >&2; exit 1; }
+    else
+        install -m 600 "$BOOTSTRAP" "$STABLE"
+    fi
+    UNIT="$HOME/.config/systemd/user/bees-experiment-hub-worker-update.service"
+    [[ -f "$UNIT" ]] ||
+        { echo "Existing update unit missing; no agent change." >&2; exit 1; }
+    NODE_BIN=$(command -v node)
+    CURRENT=$(grep '^ExecStart=' "$UNIT" || true)
+    LEGACY="ExecStart=$NODE_BIN $UPDATER_DIR/experiment_hub_worker_updater.js --root $ROOT"
+    UPDATED="ExecStart=$NODE_BIN $STABLE --root $ROOT"
+    if [[ "$CURRENT" != "$LEGACY" && "$CURRENT" != "$UPDATED" ]]; then
+        echo "Existing update unit differs from the approved worker; aborting." >&2
+        exit 1
+    fi
+    if [[ "$CURRENT" == "$LEGACY" ]]; then
+        sed -i "\|^ExecStart=|c\\$UPDATED" "$UNIT"
+    fi
+    systemctl --user daemon-reload
+    systemctl --user restart bees-experiment-hub-worker-update.timer
+    systemctl --user start bees-experiment-hub-worker-update.service
+    echo "Stable update bootstrap installed; agent and enrollment preserved."
+    exit 0
+fi
 if [[ "$MODE" == install ]]; then
     install_release worker "$SRC/Bees-Assets"
 fi
