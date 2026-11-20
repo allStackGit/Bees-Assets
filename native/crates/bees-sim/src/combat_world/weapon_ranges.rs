@@ -15,10 +15,10 @@ pub(super) struct WeaponRangeContacts {
 
 impl WeaponRangeContacts {
     pub(super) fn valid_recovery(&self) -> bool {
+        let mut seen = HashSet::with_capacity(self.ships.len());
         self.ships.len() == self.membership.len() &&
-        self.ships.iter().enumerate().all(|(index, id)|
-            *id > 0 && self.ships[..index].iter().all(|old| old != id) &&
-            self.membership.contains_key(id)
+        self.ships.iter().all(|id|
+            *id > 0 && seen.insert(*id) && self.membership.contains_key(id)
         )
     }
 

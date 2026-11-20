@@ -1796,16 +1796,18 @@ impl CombatWorld {
         // Beam ownership, charged clip progress and exact range-contact
         // registration are the mounted weapon's durable game state.
         // These are not reconstructed by making a new policy decision.
+        let live_beam_ids: HashSet<i64> = snapshot.projectiles.iter()
+            .zip(physics.projectiles())
+            .filter_map(|(shot, body)|
+                (body.active && shot.projectile_type == 8)
+                    .then_some(shot.entity_id)
+            ).collect();
         if snapshot.weapons.iter().any(|(&ship_id, weapons)|
             !self.ship_by_id.contains_key(&ship_id) ||
             !weapons.valid_recovery(&self.projectile_assets) ||
             weapons.turrets.iter().flatten().any(|mount|
                 mount.active_beam_projectile_id.is_some_and(|id|
-                    !snapshot.projectiles.iter().zip(physics.projectiles())
-                        .any(|(shot, body)|
-                            shot.entity_id == id &&
-                            shot.projectile_type == 8 && body.active
-                        )
+                    !live_beam_ids.contains(&id)
                 )
             )
         ) || snapshot.pending_turret_shots.iter().any(|pending|
