@@ -1355,6 +1355,12 @@ pub(super) fn archive(
     {
         level["scene"] = json!("replay-source-scene.json");
     }
+    // Generated playable fleets continue the same native World after an
+    // interruption. Headless benchmark/trainable cohorts retain their
+    // independent performance and checkpoint configuration.
+    if !selected.ai_both {
+        run["host_recovery_checkpoint"] = json!("native-host-checkpoint.json");
+    }
     // Validate the exact RunConfig accepted by the ordinary gameplay
     // runner before publishing a discoverable replay-source-run file.
     let _: RunConfig = serde_json::from_value(run.clone())?;
