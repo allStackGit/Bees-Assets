@@ -1652,7 +1652,7 @@ impl CampaignReplaySetup {
         let bytes = fs::read(&source)?;
         let config: RunConfig = serde_json::from_slice(&bytes)?;
         Ok(Self {
-            schema_version: 3,
+            schema_version: 4,
             kind: "native_campaign_replay_setup".to_owned(),
             source_config_sha256: format!("{:x}", Sha256::digest(&bytes)),
             source_config: source,
@@ -1675,7 +1675,7 @@ impl CampaignReplaySetup {
 
     fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
         let setup: Self = serde_json::from_slice(&fs::read(path)?)?;
-        if !(1..=3).contains(&setup.schema_version) ||
+        if !(1..=4).contains(&setup.schema_version) ||
             setup.kind != "native_campaign_replay_setup" ||
             setup.campaign_id.is_empty() || setup.mission_id.is_empty() ||
             !(1..=2).contains(&setup.player_side) ||
@@ -2266,7 +2266,7 @@ impl QuickBattleStart {
         // may resume a prior output directory.
         if run.host_recovery_checkpoint.is_none() { return Ok(None); }
         Ok(Some(Self {
-            schema_version: 1,
+            schema_version: 2,
             kind: "native_quick_battle_start".to_owned(),
             source_config: source,
             source_sha256: format!("{:x}", Sha256::digest(bytes)),
@@ -2276,7 +2276,7 @@ impl QuickBattleStart {
 
     fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
         let start: Self = serde_json::from_slice(&fs::read(path)?)?;
-        if start.schema_version != 1 ||
+        if !(1..=2).contains(&start.schema_version) ||
             start.kind != "native_quick_battle_start" ||
             !start.source_config.is_absolute() ||
             start.source_sha256.len() != 64 ||
@@ -2287,6 +2287,40 @@ impl QuickBattleStart {
         }
         Ok(start)
     }
+}
+
+/// Modern immutable battle starts guarantee that the first authoritative
+/// checkpoint and its durable commitment marker precede ALL World ticks,
+/// multiplayer inputs and external HiveMind setup. If a process died before
+/// both files were created, only transient initialization files can exist
+/// here. The owning campaign/game writer lease serializes this cleanup,
+/// while the native host lease refuses a still-active startup process.
+/// A checkpoint lost AFTER gameplay began leaves its marker and is fatal.
+fn reset_uncommitted_native_start(run: &Path) -> Result<(), Box<dyn Error>> {
+    let metadata = match fs::symlink_metadata(run) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if !metadata.file_type().is_dir() {
+        return Err(invalid("original native battle run has an unsafe directory").into());
+    }
+    let checkpoint = run.join("native-host-checkpoint.json");
+    let marker = run.join("native-initial-world-committed.json");
+    let _lease = NativeHostCheckpointFile::open(&checkpoint)
+        .map_err(|error| contextual("original native start owner", error))?;
+    if checkpoint.exists() || marker.exists() {
+        return Err(invalid(
+            "original native battle has already committed a World; missing recovery bytes cannot be discarded",
+        ).into());
+    }
+    // Never delete a completed or failed receipt. Its terminal settlement
+    // belongs to the original run, not a reconstructed opening Level.
+    if run.join("rollout-summary.json").exists() {
+        return Err(invalid("original native battle has a terminal receipt without its World checkpoint").into());
+    }
+    fs::remove_dir_all(run)?;
+    Ok(())
 }
 
 /// Only resume the original World when its exact source and committed
