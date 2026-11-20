@@ -3125,8 +3125,8 @@ class ExperimentHub {
                     delete job.automation_start_session_id;
                     job.status_reason='Native optimizer peer failed before this Start was delivered.';
                     changed=true;
-                }else if(['start_requested','launch_requested','running','unverified']
-                    .includes(job.status)) {
+                }else if(['start_requested','launch_requested','running','unverified',
+                    'stop_requested'].includes(job.status)) {
                     const lease=next.reservations.find(item=>
                         item.id===job.lease_id&&item.job_id===job.id&&
                         item.project_id===job.project_id&&
@@ -3134,11 +3134,20 @@ class ExperimentHub {
                         item.issued_by==='experiment-hub'&&
                         item.status==='acknowledged');
                     if(!lease||!job.dispatch_id)continue;
-                    job.status='stop_requested';
-                    job.stop_requested_at=at;
-                    job.release_on_terminal=true;
-                    job.status_reason='Synchronized native optimizer peer terminated; awaiting this machine\'s native Stop receipt.';
-                    changed=true;
+                    if(job.status!=='stop_requested') {
+                        job.status='stop_requested';
+                        job.stop_requested_at=at;
+                        job.status_reason='Synchronized native optimizer peer terminated; awaiting this machine\'s native Stop receipt.';
+                        changed=true;
+                    }
+                    // An earlier operator Stop is already owned by this
+                    // supervisor. Keep its original intent, but make sure
+                    // the confirmed terminal receipt settles the GPU lease
+                    // even when the synchronized group has failed.
+                    if(job.release_on_terminal!==true) {
+                        job.release_on_terminal=true;
+                        changed=true;
+                    }
                 }
             }
         }
