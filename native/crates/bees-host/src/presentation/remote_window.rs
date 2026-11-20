@@ -1659,7 +1659,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             // those cosmetic frames from the previous authoritative host.
             artwork=RemoteArtwork::new()?;
             audio.select_location(None);
-            if !peer.connected {
+            if !peer.connected &&
+                peer.notice != "Host restarted: original battle cannot be resumed" {
                 peer.notice="Host disconnected; press F5 to reconnect".into();
             }
         }
