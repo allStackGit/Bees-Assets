@@ -39,7 +39,8 @@ function checkPlan(plan,orders) {
          typeof plan.confirm_restart_rearm!=='boolean')||
         (plan.resume_after_restart===true&&
          (plan.confirm_restart_rearm!==true||
-          plan.collectors?.some(item=>item.resources?.gpu_count>0)))||
+          (Array.isArray(plan.collectors)&&plan.collectors.some(item=>
+             (item?.resources?.gpu_count??item?.resources?.gpus?.length??0)>0))))||
         (!plan.resume_after_restart&&plan.confirm_restart_rearm===true)||
         !Array.isArray(plan.collectors)||
         plan.collectors.length!==orders.jobs.length||
@@ -77,7 +78,10 @@ function checkPlan(plan,orders) {
             throw Error('Each Hub dispatch allocation must identify one issued collector and machine.');
         seen.add(selected.id);
         machines.add(selected.machine_id);
-        const allocation=selected.resources;
+        // Use Hub's existing resource contract, including the case where
+        // GPU IDs determine gpu_count. Native issued orders and Hub leases
+        // must agree before any resource bundle is queued.
+        const allocation=normalizeResources(selected.resources);
         const job=jobs.get(selected.id);
         const physics=job.physics_workers??1;
         if(!Number.isSafeInteger(physics)||physics<1||physics>128||
@@ -85,8 +89,8 @@ function checkPlan(plan,orders) {
             !Number.isSafeInteger(allocation.cpus)||
             allocation.cpus<job.rollout_workers*physics||
             !Number.isSafeInteger(allocation.ram_mb)||allocation.ram_mb<128||
-            ![0,1,2].includes(allocation.gpu_count??0)||
-            job.hub_gpu_count!==(allocation.gpu_count??0)||
+            ![0,1,2].includes(allocation.gpu_count)||
+            job.hub_gpu_count!==allocation.gpu_count||
             (allocation.gpu_count>0&&(
                 allocation.gpu_mode!=='exclusive'||
                 plan.confirm_gpu_start!==true||
