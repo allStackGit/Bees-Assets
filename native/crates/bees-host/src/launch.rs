@@ -2248,16 +2248,17 @@ fn recover_native_quick_battle(
         let saved = QuickBattleStart::load(&saved_path)?;
         if saved.source_config != start.source_config ||
             saved.remote_host != start.remote_host { continue; }
+        // Completed or failed prior games belong to their original immutable
+        // receipts, not the current package configuration. A later game
+        // update may legitimately change the static source file. Complete
+        // any interrupted terminal replay footer without resimulating,
+        // then skip that old run BEFORE comparing it to today's source.
+        if terminal_recording::complete_committed_recording(&run)? { continue; }
         if saved.source_sha256 != start.source_sha256 {
             return Err(invalid(
                 "interrupted native battle cannot resume after its source configuration changed",
             ).into());
         }
-        // The immutable summary may have been committed just before the
-        // process died without publishing the terminal replay footer.
-        // Repair that projection under the existing save/host locks rather
-        // than replaying and awarding another completed battle.
-        if terminal_recording::complete_committed_recording(&run)? { continue; }
         if original.replace(run).is_some() {
             return Err(invalid("multiple interrupted Worlds claim one quick battle").into());
         }
