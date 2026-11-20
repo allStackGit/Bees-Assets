@@ -162,6 +162,27 @@ Unity-independent Bees runtime does not yet expose a trusted Hub training
 adapter. Do not confuse provisioning a Bees source release with a runnable
 Bees job.
 
+### Automatic software updates and interrupted-updater recovery
+
+The Windows scheduled task and Linux user-systemd timer run a **permanent
+Node-only bootstrap** every two minutes. It fetches the authenticated,
+SHA-256-verified worker release from Halifax and runs a separate versioned
+updater for the Hub infrastructure first, then for each requested simulation.
+An error installing TinyBrains or Courier does not prevent infrastructure
+updates or another simulation update. The bootstrap retains the most recent
+working updater and falls back to it when a new candidate cannot activate.
+It does not install Git, Python or uv to update the Hub agent.
+
+**One-time migration for machines enrolled before this bootstrap:** the old
+scheduled task runs the broken replaceable updater and cannot repair itself.
+On Windows, download the current `experiment_hub_worker_install.cmd` and
+double-click it again. It recognizes the existing enrollment and migrates the
+task without restarting the running native agent or rotating credentials.
+On Linux, run the current installer with
+`repair-updater --root /absolute/existing/worker/root` to migrate only
+its user-systemd timer. Neither action reruns Tailscale enrollment.
+After migration, routine worker and simulation updates are automatic.
+
 ### Update an existing SSH-forwarded worker
 
 First stop and reconcile **all native jobs** and stop the worker's Hub agent.
