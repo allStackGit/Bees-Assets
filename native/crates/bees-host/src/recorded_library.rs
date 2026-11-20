@@ -28,9 +28,12 @@ pub(super) struct RecordedBattle {
 
 /// The save layout is owned by new_library_battle_output: exactly one
 /// battle-NNNNNN directory and one run directory per launched battle.
-fn battle_number(name: &str) -> Option<u64> {
+fn battle_number(name: &str, min_digits: usize) -> Option<u64> {
     let digits = name.strip_prefix("battle-")?;
-    if digits.len() != 6 || !digits.bytes().all(|c| c.is_ascii_digit()) {
+    // The launcher uses a minimum display width, not a fixed maximum.
+    // A long-running campaign must retain recordings after battle 9999,
+    // just as quick battles must remain visible after battle 999999.
+    if digits.len() < min_digits || !digits.bytes().all(|c| c.is_ascii_digit()) {
         return None;
     }
     digits.parse().ok()
@@ -79,7 +82,7 @@ fn completed_quick_battles(directory: &Path)
         let entry = entry?;
         let Some(name) = entry.file_name().to_str().map(str::to_owned)
         else { continue };
-        let Some(number) = battle_number(&name) else { continue };
+        let Some(number) = battle_number(&name, 6) else { continue };
         if entry.file_type()?.is_dir() {
             candidates.push((number, entry.path()));
         }
@@ -205,11 +208,7 @@ pub(super) fn list_campaigns(
             let entry = entry?;
             let Some(name) = entry.file_name().to_str().map(str::to_owned)
             else { continue };
-            let Some(number) = name.strip_prefix("battle-")
-                .filter(|suffix| suffix.len() == 4 &&
-                    suffix.bytes().all(|ch| ch.is_ascii_digit()))
-                .and_then(|suffix| suffix.parse::<u64>().ok())
-            else { continue };
+            let Some(number) = battle_number(&name, 4) else { continue };
             if entry.file_type()?.is_dir() {
                 candidates.push((number, entry.path()));
             }
