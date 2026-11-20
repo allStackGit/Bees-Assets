@@ -6,6 +6,7 @@ const http=require('node:http');
 const net=require('node:net');
 const os=require('node:os');
 const {ArtifactMirror,MAX_CHUNK}=require('./experiment_hub_artifact_sync');
+const {bootstrap}=require('./experiment_hub_worker_bootstrap');
 const AGENT_HOST='127.0.0.1';
 const AGENT_PORT=7149;
 // A heartbeat includes machine/lease reports beyond the separately
@@ -56,7 +57,7 @@ async function readBody(req) {
         Buffer.concat(chunks,received))||'{}');
 }
 
-function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null) {
+function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null,bootstrapRoot=null) {
     if(bindHost!==AGENT_HOST&&!isTailnetIPv4(bindHost))
         throw Error('Machine-agent server can bind only to loopback or a tailnet IPv4.');
     const hosts=new Set(bindHost===AGENT_HOST
@@ -69,6 +70,23 @@ function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null) {
         const host=req.headers.host;
         if(!hosts.has(host)||req.headers.origin)
             return respond(res,404,{error:'Agent endpoint only.'});
+        // Only a direct tailnet peer, verified by local tailscaled as owned by
+        // Halifax's signed-in Tailscale user, may perform initial enrollment.
+        // Loopback and the public dashboard never provide this capability.
+        if(req.method==='POST'&&req.url==='/api/hub/agent/bootstrap') {
+            if(!bootstrapRoot||bindHost===AGENT_HOST||
+                !isTailnetIPv4(req.socket.remoteAddress)||
+                Number(req.headers['content-length']||0)>2048)
+                return respond(res,403,{error:'Tailnet bootstrap only.'});
+            try {
+                const payload=await readBody(req);
+                return respond(res,200,bootstrap(getHub(),bootstrapRoot,
+                    req.socket.remoteAddress,payload));
+            }catch(error) {
+                return respond(res,[401,403,409,413].includes(error.status)
+                    ?error.status:403,{error:String(error.message||error).slice(0,240)});
+            }
+        }
         // Authenticated release distribution uses the existing machine token.
         // The administrator cannot reach this route from a worker port.
         if(releases&&req.url?.startsWith('/api/hub/agent/releases')) {
@@ -87,7 +105,8 @@ function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null) {
                     keys.length===1&&Number(req.headers['content-length']||0)===0) {
                     const live=hub.agentReports.get(identity);
                     return respond(res,200,{
-                        components:releases.manifest(live?.installed_projects||[]),
+                        components:releases.manifest(live?.installed_projects||
+                            hub.state.machines.find(m=>m.id===identity)?.bootstrap_projects||[]),
                         mode:hub.machineUpdatePolicy(identity),
                         agent_instance_id:live?.instance_id||null,
                         agent_preflight_passed:live?.native_preflight_passed===true,
@@ -106,7 +125,9 @@ function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null) {
                     const component=url.searchParams.get('component');
                     const sha=url.searchParams.get('sha256');
                     if(component!=='worker'&&
-                        !hub.agentReports.get(identity)?.installed_projects?.includes(component))
+                        !(hub.agentReports.get(identity)?.installed_projects||
+                            hub.state.machines.find(m=>m.id===identity)?.bootstrap_projects||[])
+                            .includes(component))
                         return respond(res,403,{error:'Project not enrolled on this worker.'});
                     const archive=releases.archive(component,sha);
                     res.writeHead(200,{
