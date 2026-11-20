@@ -207,6 +207,24 @@ async function stage(base,env,root,name,entry) {
         if(name==='tinybrains'&&
             !fs.existsSync(path.join(temporary,'Ants-MAPOCA','pyproject.toml')))
             throw Error('TinyBrains release has no simulation package.');
+        if(name==='tinybrains') {
+            // Git archive deliberately omits the separately pinned official
+            // engine, CLI, and upstream baselines installed during enrollment.
+            // Reuse that approved local dependency without copying private
+            // experiments, logs, training history, or Git metadata.
+            const source=env.EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT;
+            if(!source||!fs.existsSync(path.join(source,'upstream','ants','baselines')))
+                throw Error('Approved original TinyBrains upstream baseline is absent.');
+            const project=path.join(temporary,'Ants-MAPOCA');
+            for(const relative of ['tools','upstream']) {
+                const from=path.join(source,relative),to=path.join(project,relative);
+                if(!fs.existsSync(from))throw Error('Pinned TinyBrains '+relative+' is missing.');
+                fs.cpSync(from,to,{recursive:true,force:false,
+                    filter:file=>!file.split(path.sep).some(part=>
+                        ['.git','results','.results','Demonstrations','Logs',
+                            'TrainingHistory~'].includes(part))});
+            }
+        }
         fs.writeFileSync(path.join(temporary,'.verified-'+entry.sha256),'\n',{mode:0o600});
         fs.renameSync(temporary,directory);
     }finally {if(fs.existsSync(temporary))fs.rmSync(temporary,{recursive:true,force:true});}
@@ -293,6 +311,56 @@ function configureService(root,training,serviceBinary=null) {
         exec('systemctl',['--user','daemon-reload']);
     };
 }
+function preparePythonRuntimes(root,changes) {
+    const env={...process.env};
+    const windows=process.platform==='win32';
+    let command=windows?'py.exe':'uv';
+    let prefix=windows?['-3.11','-m','uv']:[];
+    let pythonVersion='3.11.18';
+    if(windows) {
+        env.PYTHONPATH=path.join(root,'Tooling','uv');
+        const managed=path.join(root,'Tooling','Python');
+        const matches=fs.readdirSync(managed,{withFileTypes:true})
+            .filter(item=>item.isDirectory()&&item.name.startsWith('cpython-3.11'))
+            .map(item=>path.join(managed,item.name,'python.exe'))
+            .filter(file=>fs.existsSync(file));
+        if(matches.length!==1)throw Error('Pinned machine-local Python is missing.');
+        pythonVersion=matches[0];
+    }
+    const pythonPaths={};
+    for(const name of ['tinybrains','courier']) {
+        if(!changes[name])continue;
+        const version=path.basename(changes[name]);
+        const venv=path.join(root,'Software','Venvs',name,version);
+        const python=path.join(venv,windows?'Scripts/python.exe':'bin/python');
+        if(!fs.existsSync(python)) {
+            fs.mkdirSync(path.dirname(venv),{recursive:true,mode:0o700});
+            exec(command,[...prefix,'venv','--python',pythonVersion,venv],{env});
+        }
+        if(name==='courier') {
+            exec(command,[...prefix,'pip','install','--python',python,
+                '-r',path.join(changes.courier,'requirements.txt')],{env});
+            exec(python,['-B','-c','import courier_remote_lineage'],{
+                cwd:changes.courier,env:{...env,PYTHONPATH:changes.courier}});
+        }else {
+            const project=path.join(changes.tinybrains,'Ants-MAPOCA');
+            exec(command,[...prefix,'pip','install','--python',python,
+                '--index-url','https://download.pytorch.org/whl/cpu','torch==2.6.0'],{env});
+            const requirements=path.join(project,'requirements-lock.txt');
+            if(fs.existsSync(requirements))
+                exec(command,[...prefix,'pip','install','--python',python,
+                    '-r',requirements],{env});
+            exec(command,[...prefix,'pip','install','--python',python,
+                '--no-deps','-e',path.join(project,'upstream','ants','baselines'),
+                '-e',project],{env});
+            exec(python,['-B','-c',
+                'import ants_mapoca.remote_rollout; from ants_mapoca.env import Engine'],{
+                    cwd:project,env:{...env,PYTHONPATH:project}});
+        }
+        pythonPaths[name]=python;
+    }
+    return pythonPaths;
+}
 async function apply(root,envFile,previous,changes) {
     const hasWorker=changes.worker;
     const entries={};
@@ -328,6 +396,11 @@ async function apply(root,envFile,previous,changes) {
     if(changes.courier)
         entries.EXPERIMENT_HUB_COURIER_PROJECT_ROOT=changes.courier;
     if(changes.bees)entries.EXPERIMENT_HUB_BEES_PROJECT_ROOT=changes.bees;
+    // Prepare a separate dependency environment before any service is stopped.
+    // Previously running jobs keep their old Python executable and imports.
+    const pythonPaths=preparePythonRuntimes(root,changes);
+    if(pythonPaths.courier)entries.EXPERIMENT_HUB_COURIER_PYTHON=pythonPaths.courier;
+    if(pythonPaths.tinybrains)entries.EXPERIMENT_HUB_TINYBRAINS_PYTHON=pythonPaths.tinybrains;
     let rollbackService=null,original=null,wasRunning=false;
     try {
         wasRunning=runningService();
@@ -335,32 +408,6 @@ async function apply(root,envFile,previous,changes) {
         if(hasWorker)rollbackService=configureService(root,
             path.join(changes.worker,'Training'),nativeServiceBinary);
         original=updateEnv(envFile,entries);
-        // Existing venvs are immutable during active native jobs. Rebind
-        // editable simulation modules only after the native journal is idle.
-        const venvs=path.join(root,process.platform==='win32'?'Venvs':'venvs');
-        if(changes.courier||changes.tinybrains) {
-            const uv=process.platform==='win32'?'py.exe':'uv';
-            const prefix=process.platform==='win32'?['-3.11','-m','uv']:[];
-            const env={...process.env};
-            if(process.platform==='win32')
-                env.PYTHONPATH=path.join(root,'Tooling','uv');
-            if(changes.courier) {
-                const python=path.join(venvs,'courier',process.platform==='win32'
-                    ?'Scripts/python.exe':'bin/python');
-                exec(uv,[...prefix,'pip','install','--python',python,
-                    '-r',path.join(changes.courier,'requirements.txt')],{env});
-                exec(python,['-B','-c','import courier_remote_lineage'],{
-                    env:{...env,PYTHONPATH:changes.courier}});
-            }
-            if(changes.tinybrains) {
-                const python=path.join(venvs,'tinybrains',process.platform==='win32'
-                    ?'Scripts/python.exe':'bin/python');
-                const project=path.join(changes.tinybrains,'Ants-MAPOCA');
-                exec(uv,[...prefix,'pip','install','--python',python,'--no-deps','-e',project],{env});
-                exec(python,['-B','-c','import ants_mapoca.remote_rollout'],{
-                    env:{...env,PYTHONPATH:project}});
-            }
-        }
         if(wasRunning)startService();
         if(wasRunning&&!runningService())throw Error('Updated agent did not restart.');
     }catch(error) {
