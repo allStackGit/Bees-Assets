@@ -5415,7 +5415,16 @@ fn run_battle(
                 }
                 recorded_physical_checkpoints += 1;
             }
-            last_physical_checkpoint_round = Some(rounds);
+            // The final sample is useful even if later campaign, policy
+            // recorder or notification finalization fails. Commit its
+            // complete write before changing the Level's stop/abort state.
+            if let Err(error) = trace.sync_data() {
+                failed_window.get_or_insert_with(||
+                    format!("persisting final native physical checkpoint: {error}")
+                );
+            } else {
+                last_physical_checkpoint_round = Some(rounds);
+            }
         }
     }
     let finalization_start = Instant::now();
