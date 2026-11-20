@@ -124,12 +124,23 @@ class NativeHubCollectionBarrier:
                         if item.get("id") == machine_id), None)
         if not isinstance(machine, dict) or machine.get("status") != "connected":
             return
+        observation_at = live.get("at")
+        if not isinstance(observation_at, str) or not observation_at:
+            return
         attempts = self.resource_observations.setdefault(collector, {})
         attempt = attempts.setdefault(job["id"], {
             "hub_job_id": job["id"], "machine_id": machine_id,
             "authenticated_observation_count": 0,
+            "first_observed_at": observation_at,
+            "last_observed_at": None,
             "job_process": {}, "physical_host": {}, "physical_gpus": {},
         })
+        # The Hub state API is polled more frequently than authenticated
+        # agent heartbeats. Identical source timestamps are one observation,
+        # never multiple utilization samples.
+        if attempt["last_observed_at"] == observation_at:
+            return
+        attempt["last_observed_at"] = observation_at
         attempt["authenticated_observation_count"] += 1
         add = self._observe_metric
         process = attempt["job_process"]
@@ -183,6 +194,8 @@ class NativeHubCollectionBarrier:
                 "machine_id": attempt["machine_id"],
                 "authenticated_observation_count":
                     attempt["authenticated_observation_count"],
+                "first_observed_at": attempt["first_observed_at"],
+                "last_observed_at": attempt["last_observed_at"],
                 "job_process": summarize(attempt["job_process"]),
                 "physical_host": summarize(attempt["physical_host"]),
                 "physical_gpus": {
