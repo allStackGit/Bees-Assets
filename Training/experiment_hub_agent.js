@@ -500,8 +500,13 @@ async function main() {
     }
 }
 
-if(require.main===module)main().catch(error=>{
-    console.error('[experiment-hub-agent] '+error.message);
-    process.exitCode=1;
-});
+if(require.main===module) {
+    // Remote workers keep coordinator traffic on a locally authenticated
+    // SSH forward; the agent itself still refuses any non-loopback HTTP.
+    const {withAgentTunnel}=require('./experiment_hub_worker_tunnel');
+    withAgentTunnel(main).catch(error=>{
+        console.error('[experiment-hub-agent] '+error.message);
+        process.exitCode=1;
+    });
+}
 module.exports={endpoint,observations,observedOffers,sendHeartbeat};
