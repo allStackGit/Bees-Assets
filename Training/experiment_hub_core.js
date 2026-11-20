@@ -1395,6 +1395,7 @@ function tinybrainsEndpointOccupied(snapshot,machine,endpoint,exceptJobId=null) 
                 lease.status==='released'&&lease.released_at))return false;
         const parent=snapshot.jobs.find(item=>item.id===job.frozen_parameters?.learner_job_id);
         const parentHost=snapshot.machines.find(item=>item.id===parent?.assigned_machine_id);
+        if(!parent||!parentHost)return true;
         const approved=rolloutEndpointsFor(parent,parentHost);
         const pinned=job.rollout_endpoint||
             (approved?.includes(machine.tinybrains_rollout_endpoint)
