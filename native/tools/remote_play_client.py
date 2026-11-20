@@ -38,6 +38,7 @@ HELP = """Commands:
   status               Show the latest world and selected friendly squads
   objective            Show the authored mission and reinforcement status
   ready                Acknowledge the current hosted campaign briefing
+  rejoin               Reconnect to the SAME recovered native host session
   ships                List currently visible ships and their positions
   squads               List friendly and visible target squads
   obstacles            List visible map objects and mining asteroids
@@ -622,26 +623,68 @@ def main():
         token = remote_token(args.side)
     except (ValueError, json.JSONDecodeError) as error:
         parser.error(str(error))
-    with socket.create_connection((args.host, args.port), timeout=10) as connection:
+    def connect(expected_session_id=None):
+        connection = socket.create_connection((args.host, args.port), timeout=10)
         connection.settimeout(None)
-        console = RemoteConsole(connection, expected_side=args.side)
-        connection.sendall((json.dumps({"kind": "hello", "token": token}) +
-                            "\n").encode("utf-8"))
-        receiver = threading.Thread(target=console.receive, daemon=True)
-        receiver.start()
-        print(HELP)
-        while console.alive:
+        try:
+            console = RemoteConsole(
+                connection, expected_side=args.side,
+                expected_session_id=expected_session_id,
+            )
+            connection.sendall(
+                (json.dumps({"kind": "hello", "token": token}) + "\n").encode("utf-8")
+            )
+            receiver = threading.Thread(target=console.receive, daemon=True)
+            receiver.start()
+            return connection, console, receiver
+        except BaseException:
+            connection.close()
+            raise
+
+    connection, console, receiver = connect()
+    print(HELP)
+    try:
+        while True:
             try:
                 line = input("bees> ")
+                if line.strip().lower() == "rejoin":
+                    if console.alive:
+                        print("The native host connection is already active")
+                        continue
+                    if console.host_session_id is None:
+                        print("No authenticated host session to rejoin")
+                        continue
+                    try:
+                        new_connection, new_console, new_receiver = connect(
+                            console.host_session_id
+                        )
+                    except OSError as error:
+                        print(f"Recovered native host unavailable: {error}")
+                        continue
+                    # The next socket belongs to a different peer ID.
+                    # Discard all old episode/squad/held-fire state.
+                    connection.close()
+                    receiver.join(timeout=1)
+                    connection, console, receiver = (
+                        new_connection, new_console, new_receiver
+                    )
+                    continue
+                if not console.alive:
+                    print("Connection closed; enter 'rejoin' to resume the original battle")
+                    continue
                 console.command(line)
+                if line.strip().lower() == "quit":
+                    break
             except (EOFError, KeyboardInterrupt):
                 break
             except (OSError, ValueError) as error:
                 print(f"Command error: {error}")
+    finally:
         try:
             connection.shutdown(socket.SHUT_RDWR)
         except OSError:
             pass
+        connection.close()
         receiver.join(timeout=1)
 
 
