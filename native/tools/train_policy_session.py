@@ -1274,6 +1274,7 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
     ]
     optimizer_seconds = sum(record["learner_metrics"]["total_wall_seconds"]
                             for _, record in completed)
+    learner_pipeline = measured_learner_pipeline(completed)
     # These are the simulator's real sampled model-forward calls, not
     # estimated GPU utilization or complete inference wall time. Worker
     # samples can overlap in parallel collections: retain a sum-of-calls
@@ -1319,6 +1320,37 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         if fleet_window is not None else
         "local_rollout_plus_optimizer"
     )
+    # Only complete, sequential collection + learner phase evidence may be
+    # presented as a critical-path share. GPU rank timings and collector
+    # upload work are concurrent and intentionally excluded.
+    measured_pipeline = (completed and fully_measured and
+        learner_pipeline["measured_rounds"] == len(completed))
+    phase_composition = None
+    if measured_pipeline and training_wall_seconds > 0:
+        collection_seconds = (
+            fleet_window["measured_wall_seconds"]
+            if fleet_window is not None else rollout_seconds
+        )
+        preparation_seconds = learner_pipeline[
+            "sum_trajectory_processing_wall_seconds"]
+        update_seconds = learner_pipeline["sum_optimizer_update_wall_seconds"]
+        other_seconds = learner_pipeline[
+            "sum_initialization_and_checkpoint_publication_wall_seconds"]
+        phase_composition = {
+            "scope": training_wall_scope,
+            "collection_wall_seconds": collection_seconds,
+            "learner_trajectory_processing_wall_seconds": preparation_seconds,
+            "learner_ppo_update_wall_seconds": update_seconds,
+            "learner_initialization_and_publication_wall_seconds": other_seconds,
+            "collection_wall_fraction": collection_seconds / training_wall_seconds,
+            "learner_trajectory_processing_wall_fraction":
+                preparation_seconds / training_wall_seconds,
+            "learner_ppo_update_wall_fraction":
+                update_seconds / training_wall_seconds,
+            "learner_initialization_and_publication_wall_fraction":
+                other_seconds / training_wall_seconds,
+            "overlapping_transfer_and_gpu_rank_seconds_excluded": True,
+        }
     latest_observed = next((
         (index, evaluations[str(directory)])
         for index, (directory, _) in reversed(list(enumerate(completed, 1)))
@@ -1530,7 +1562,7 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         **({"distributed_collection_wall_time": fleet_window}
            if fleet_window is not None else {}),
         "sum_round_optimizer_wall_seconds": optimizer_seconds,
-        "learner_pipeline_wall_time": measured_learner_pipeline(completed),
+        "learner_pipeline_wall_time": learner_pipeline,
         "useful_training_throughput": {
             "scope": training_wall_scope,
             "complete_round_coverage": fully_measured,
@@ -1550,6 +1582,8 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
                  if training_wall_seconds is not None and training_wall_seconds > 0
                  else None),
             "excludes_holdout_and_setup": True,
+            **({"critical_path_phase_composition": phase_composition}
+               if phase_composition is not None else {}),
         },
         "world_steps_per_rollout_wall_second":
             world_steps / rollout_seconds if rollout_seconds > 0 else None,
