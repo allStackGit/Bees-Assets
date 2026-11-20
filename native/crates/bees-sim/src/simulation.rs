@@ -128,7 +128,7 @@ impl<S> World<S> {
 
     /// Capture all mutable world-owned state without copying ship arrays,
     /// spatial grids, command ownership, or the model's native observations.
-    pub fn checkpoint(&self) -> WorldCheckpoint<&S> {
+    fn checkpoint(&self) -> WorldCheckpoint<&S> {
         WorldCheckpoint {
             schema_version: 1,
             id: self.id,
@@ -142,7 +142,7 @@ impl<S> World<S> {
         }
     }
 
-    pub fn from_checkpoint(snapshot: WorldCheckpoint<S>) -> Result<Self, &'static str> {
+    fn from_checkpoint(snapshot: WorldCheckpoint<S>) -> Result<Self, &'static str> {
         if snapshot.schema_version != 1 ||
             snapshot.fixed_step_seconds.is_some_and(|seconds|
                 !seconds.is_finite() || seconds <= 0.0) ||
@@ -396,25 +396,6 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             return Err("native Simulation checkpoint omits cumulative steps");
         }
         Ok(worlds)
-    }
-
-    pub fn from_checkpoint(
-        rules: R, snapshot: SimulationCheckpoint<S>,
-    ) -> Result<Self, &'static str> {
-        if snapshot.schema_version != 1 ||
-            !snapshot.dt_seconds.is_finite() || snapshot.dt_seconds <= 0.0 {
-            return Err("invalid native Simulation checkpoint");
-        }
-        let worlds = Self::restored_worlds(snapshot.worlds, snapshot.measurements)?;
-        Ok(Self {
-            rules,
-            worlds,
-            dt_seconds: snapshot.dt_seconds,
-            sample_every: snapshot.sample_every,
-            measurements: snapshot.measurements,
-            physics_pool: None,
-            window_action_buffers: Vec::new(),
-        })
     }
 
     /// Host startup first reconstructs the original approved world layout
