@@ -870,7 +870,7 @@ function createNativeBeesAdapter({
             '-B','-c',command,curriculumFile,run,sha256(runBytes),
             executable,learnerSlot===undefined?'none':String(learnerSlot),
         ],{cwd:path.dirname(curriculumModule),encoding:'utf8',
-            timeout:15000,maxBuffer:65536});
+            timeout:15000,maxBuffer:32*1024*1024});
         if(probe.error||probe.status!==0)
             throw Error('Native curriculum stage validation failed: '+
                 String(probe.stderr||probe.error).slice(0,320));
