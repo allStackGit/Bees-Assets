@@ -51,6 +51,13 @@ impl RequestHashAllocator {
     /// True only for a request ID already allocated by THIS persisted
     /// client prefix/counter pair, including a previous connection using
     /// the same durable allocator. No server credentials are involved.
+    /// Canonical prefix/counter at a durable World checkpoint. Recovery can
+    /// compare it with recorded setup-only Hash allocations without
+    /// constructing a second allocator or rewinding any request.
+    pub fn checkpoint_position(&self) -> (u32, u32) {
+        (self.client_prefix, self.counter)
+    }
+
     pub fn has_issued(&self, hash: i64) -> bool {
         if hash <= 0 || hash > MAX_SAFE_REQUEST_HASH ||
             self.validate().is_err()
