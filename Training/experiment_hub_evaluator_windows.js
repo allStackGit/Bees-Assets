@@ -9,11 +9,12 @@ const crypto=require('node:crypto');
 const {spawn,execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {parseArgs}=require('node:util');
+const {isTailnetIPv4}=require('./experiment_hub_agent_listener');
 const {setTimeout:delay}=require('node:timers/promises');
 const run=promisify(execFile);
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const NAME=/^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$/;
-const FIELDS=new Set(['schema_version','project','machine','python','port','suites',
+const FIELDS=new Set(['schema_version','project','machine','python','port','hub_host','suites',
     'project_root','artifact_root','snapshot_root','scratch','receipt_root',
     'engine_path','interval_seconds','timeout_seconds']);
 
@@ -53,9 +54,14 @@ function readConfiguration(file) {
     if(new Set(suites.map(file=>file.toLowerCase())).size!==suites.length)
         throw Error('Evaluation suites must be distinct.');
     const python=local(value.python,'Python executable');
+    const hubHost=value.hub_host??'127.0.0.1';
+    const port=integer(value.port??7148,1,65535,'Port');
+    if((hubHost!=='127.0.0.1'&&!isTailnetIPv4(hubHost))||
+        (hubHost!=='127.0.0.1'&&port!==7149)||![7148,7149].includes(port))
+        throw Error('Evaluator host must be localhost or a tailnet IPv4 at port 7149.');
     const args=['-B',local(path.join(__dirname,
         'experiment_hub_'+value.project+'_eval_poll.py'),'Evaluator entrypoint'),
-        '--machine',value.machine,'--port',String(integer(value.port??7148,1,65535,'Port'))];
+        '--machine',value.machine,'--port',String(port),'--hub-host',hubHost];
     for(const suite of suites)args.push('--suite',suite);
     const directories=[];
     for(const key of ['artifact_root','scratch','receipt_root',
@@ -78,19 +84,18 @@ function readConfiguration(file) {
         value.project==='tinybrains'&&(value.project_root||value.snapshot_root))
         throw Error('Configuration contains paths for a different evaluator project.');
     return {project:value.project,machine:value.machine,python,args,
-        port:integer(value.port??7148,1,65535,'Port'),
+        port,
         interval:integer(value.interval_seconds??180,60,86400,'Interval seconds'),
         timeout:integer(value.timeout_seconds??7200,60,86400,'Timeout seconds'),
         sha256:crypto.createHash('sha256').update(bytes).digest('hex')};
 }
 function validateEvaluatorTransport(config,env=process.env) {
-    // Port 7148 is the trusted coordinator-local administrator listener.
-    // Remote evaluators use only the private machine-agent endpoint,
-    // normally through a local SSH forward (e.g. 17149 -> 7149).
+    // Port 7148 is a coordinator-local privileged route. Remote evaluators
+    // use the authenticated machine-agent tailnet listener on port 7149.
     // Reject a missing token *before* starting repeated evaluator polls.
     if(config.port!==7148) {
         if(!/^[a-f0-9]{64}$/.test(String(env.EXPERIMENT_HUB_AGENT_TOKEN||'')))
-            throw Error('Remote evaluation requires a private machine agent token for the restricted loopback port.');
+            throw Error('Remote evaluation requires a private machine agent token for the restricted Hub port.');
         if(env.EXPERIMENT_HUB_MACHINE_ID!=null&&
             env.EXPERIMENT_HUB_MACHINE_ID!==config.machine)
             throw Error('Remote evaluator machine ID differs from its enrolled agent identity.');
