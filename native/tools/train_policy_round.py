@@ -763,10 +763,19 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                 # Preserve the historical one-process metric receipt layout.
                 result = metrics[0]
             else:
+                # A retried collector has work executed by earlier process
+                # incarnations. Using only this invocation's wall clock would
+                # inflate aggregate SPS, especially if all shards finished
+                # before artifact delivery failed. Sum measured shard wall
+                # times as a conservative bound when overlap is unknown.
+                resumed_wall = (sum(item["wall_seconds"] for item in metrics.values())
+                                if resume else time.perf_counter() - started)
                 result = combined_rollout_metrics(
                     [metrics[index] for index in range(len(shards))],
-                    time.perf_counter() - started,
+                    resumed_wall,
                 )
+                if resume:
+                    result["wall_time_basis"] = "summed_shard_incarnations_conservative"
             if gpu_requested:
                 # Every allocated process must have actually forwarded at
                 # least one action batch on a GPU, not merely loaded weights.
