@@ -720,24 +720,40 @@ impl NativeLevelBatchDriver {
         checkpoint: NativeLevelDriverRecoveryCheckpoint,
         simulation: &Simulation<NativeLevelState<M, A>, NativeLevelRules>,
     ) -> Result<Self, NativeLevelDriverError> {
-        if checkpoint.schema_version != 1 ||
-            checkpoint.worlds.len() != simulation.world_count() {
+        Self::prepare_recovery_for_layout(
+            checkpoint,
+            (0..simulation.world_count()).map(|index| {
+                let world = simulation.world(index).expect("bounded registered world index");
+                (world.id, world.episode_revision())
+            }),
+        )
+    }
+
+    /// Stage with the exact committed World IDs and episode revisions from
+    /// the pending host checkpoint, before any live world is mutated.
+    pub fn prepare_recovery_for_layout(
+        checkpoint: NativeLevelDriverRecoveryCheckpoint,
+        layout: impl IntoIterator<Item = (WorldId, u64)>,
+    ) -> Result<Self, NativeLevelDriverError> {
+        if checkpoint.schema_version != 1 {
             return Err(NativeLevelDriverError::WorldIdentityChanged);
         }
         let mut worlds = Vec::with_capacity(checkpoint.worlds.len());
-        for (index, saved) in checkpoint.worlds.into_iter().enumerate() {
-            let world = simulation.world(index).ok_or(NativeLevelDriverError::MissingWorld)?;
-            if saved.id != world.id ||
-                saved.revision != world.episode_revision() ||
+        let mut restored = checkpoint.worlds.into_iter();
+        for (id, revision) in layout {
+            let saved = restored.next().ok_or(NativeLevelDriverError::WorldIdentityChanged)?;
+            if saved.id != id || saved.revision != revision ||
                 !saved.identities.valid_recovery() {
                 return Err(NativeLevelDriverError::WorldIdentityChanged);
             }
             worlds.push(NativeWorldAssembly {
-                id: saved.id,
-                revision: saved.revision,
+                id, revision,
                 perception: NativeWorldPerceptionAssembler::new(saved.identities),
                 activation: NativeLevelActivationScratch::new(),
             });
+        }
+        if restored.next().is_some() {
+            return Err(NativeLevelDriverError::WorldIdentityChanged);
         }
         let inference = NativeLevelInferenceBatch::prepare_recovery(checkpoint.inference)
             .map_err(|_| NativeLevelDriverError::WorldIdentityChanged)?;
