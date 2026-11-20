@@ -407,7 +407,7 @@ impl NativePolicyOnlyMetadata {
         }
         if !saved.chase_elapsed_seconds.is_finite() ||
             saved.chase_elapsed_seconds < 0.0 ||
-            saved.scripted_retry_ticks == 0 {
+            (!saved.scripted_queues.is_empty() && saved.scripted_retry_ticks == 0) {
             return Err(Error::InvalidTimer);
         }
         // The constructed scene still owns the immutable deferred
