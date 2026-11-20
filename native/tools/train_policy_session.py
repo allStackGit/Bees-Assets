@@ -914,9 +914,10 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
     ]
     optimizer_steps = sum(record["learner_metrics"]["optimizer_input_steps"]
                           for _, record in completed)
-    multi_gpu_rounds = [
-        record["learner_metrics"] for _, record in completed
-        if record["learner_metrics"].get("optimizer_gpu_workers") == 2
+    synchronized_gpu_rounds = [
+        (number, record["learner_metrics"])
+        for number, (_, record) in enumerate(completed, 1)
+        if record["learner_metrics"].get("optimizer_gpu_workers", 0) > 1
     ]
     optimizer_seconds = sum(record["learner_metrics"]["total_wall_seconds"]
                             for _, record in completed)
@@ -1094,32 +1095,56 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         "total_optimizer_input_steps": optimizer_steps,
         **({"multi_gpu_optimizer": {
             "scope": "synchronized_native_ppo_gradient_updates_not_simulation",
-            "completed_dual_gpu_rounds": len(multi_gpu_rounds),
+            "completed_synchronized_gpu_rounds": len(synchronized_gpu_rounds),
+            "completed_multi_machine_rounds": sum(
+                sample["optimizer_gpu_nodes"] > 1
+                for _, sample in synchronized_gpu_rounds
+            ),
             "total_synchronized_minibatches": sum(
                 sample["optimizer_synchronized_minibatches"]
-                for sample in multi_gpu_rounds
+                for _, sample in synchronized_gpu_rounds
             ),
             "total_global_masked_loss_normalizations": sum(
                 sample["optimizer_masked_loss_normalizations"]
-                for sample in multi_gpu_rounds
-            ),
-            "rounds_with_synced_model_consensus": sum(
-                isinstance(sample.get("optimizer_gpu_model_consensus_sha256"), str)
-                for sample in multi_gpu_rounds
+                for _, sample in synchronized_gpu_rounds
             ),
             "sum_largest_gpu_update_wall_seconds": sum(
                 sample["optimizer_gpu_update_wall_seconds_max"]
-                for sample in multi_gpu_rounds
+                for _, sample in synchronized_gpu_rounds
             ),
             "per_gpu_process_memory_peak_bytes": {
                 str(rank): max(
                     sample["optimizer_gpu_per_device"][rank][
                         "torch_cuda_process_peak_allocated_bytes"
-                    ] for sample in multi_gpu_rounds
+                    ]
+                    for _, sample in synchronized_gpu_rounds
+                    if rank < sample["optimizer_gpu_workers"]
                 )
-                for rank in (0, 1)
+                for rank in range(max(
+                    sample["optimizer_gpu_workers"]
+                    for _, sample in synchronized_gpu_rounds
+                ))
             },
-        }} if multi_gpu_rounds else {}),
+            # An actual optimizer group can change between completed rounds
+            # as the Hub leases new machines. Preserve its rank topology,
+            # synced model consensus and global input identity individually,
+            # without treating GPU process wall time as learner-fleet time.
+            "round_groups": [{
+                "round": number,
+                "hub_group_id": sample.get("optimizer_group_id"),
+                "nodes": sample["optimizer_gpu_nodes"],
+                "gpus_per_node": sample["optimizer_gpu_local_workers"],
+                "total_gpu_ranks": sample["optimizer_gpu_workers"],
+                "global_input_sha256":
+                    sample.get("optimizer_global_input_sha256"),
+                "model_consensus_sha256":
+                    sample["optimizer_gpu_model_consensus_sha256"],
+                "synchronized_minibatches":
+                    sample["optimizer_synchronized_minibatches"],
+                "max_rank_update_wall_seconds":
+                    sample["optimizer_gpu_update_wall_seconds_max"],
+            } for number, sample in synchronized_gpu_rounds],
+        }} if synchronized_gpu_rounds else {}),
         "self_play_opponent_promotions": sum(
             record["learner_metrics"].get("refreshed_opponent_slot") is not None
             for _, record in completed
