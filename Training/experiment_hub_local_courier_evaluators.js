@@ -173,10 +173,14 @@ async function state(unit) {
 async function status(hub) {
     try {
         const o=configuration(hub),u=unitPaths(o);
-        const installed=fs.existsSync(u.serviceFile)&&fs.existsSync(u.timerFile);
+        const serviceExists=fs.existsSync(u.serviceFile);
+        const timerExists=fs.existsSync(u.timerFile);
+        const installed=serviceExists&&timerExists;
         if(!installed)return {available:true,entries:[{
             project:'courier',id:o.unitId,suite_id:o.suiteId,
             installed:false,managed:false,active:false,running:false,
+            reason:serviceExists!==timerExists
+                ?'Incomplete installation; use Set up to finish the approved unit pair.':null,
         }]};
         const approved=approvedUnits(o,definition(o));
         const [timer,service]=await Promise.all([
