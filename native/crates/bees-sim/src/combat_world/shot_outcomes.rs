@@ -86,8 +86,7 @@ impl ProjectileOutcomeTracker {
                 .is_none_or(|count| count > checkpoint.totals.launched) ||
             checkpoint.roots.iter().any(|(&root_id, state)|
                 root_id <= 0 || state.shooter_id <= 0 ||
-                state.shooter_side <= 0 || state.live == 0 ||
-                state.contact && state.near)
+                state.shooter_side <= 0 || state.live == 0)
         {
             return Err("invalid native projectile root outcome checkpoint");
         }
