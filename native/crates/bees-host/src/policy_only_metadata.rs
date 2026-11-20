@@ -746,6 +746,31 @@ impl NativePolicyOnlyMetadata {
         Ok(Some((agent.side, agent.source_group_agent_id)))
     }
 
+    /// The staged wave names an authentic future Agent, but that is only
+    /// a reservation. At physical deployment prove its current CombatWorld
+    /// binding and source route still agree before publishing a group
+    /// admission receipt. Nothing is inferred from ship IDs or model slots.
+    pub(crate) fn live_deferred_policy_binding(
+        &self, world: &CombatWorld, ship_id: i64, side: i32,
+        group_agent: u64, team: u8,
+    ) -> Result<u64, &'static str> {
+        let agent = self.agents.get(&ship_id)
+            .ok_or("Deployed policy ship has no authored Agent")?;
+        let ship = world.ship(ship_id)
+            .ok_or("Deployed policy ship is missing from CombatWorld")?;
+        if ship.vitals.is_dead() || ship.side != side ||
+            agent.ship_id != ship_id || agent.side != side ||
+            agent.route.team_id != team ||
+            agent.source_group_agent_id != Some(group_agent) ||
+            world.policy_frame(ship_id) != Some(agent.frame) ||
+            world.policy_binding_revision(ship_id).is_none()
+        {
+            return Err("Deployed policy Agent differs from its live physical binding");
+        }
+        Ok(world.policy_binding_revision(ship_id)
+            .expect("validated live policy binding"))
+    }
+
     /// Initial controller routes for the current episode, independent of reward groups.
     pub fn authored_policy_slots_by_side(&self) -> BTreeMap<i32, BTreeSet<u32>> {
         let mut slots = BTreeMap::<i32, BTreeSet<u32>>::new();
