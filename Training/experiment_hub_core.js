@@ -6676,7 +6676,25 @@ class ExperimentHub {
         if(parent) {
             const digestField=project.id==='tinybrains'?'profile_sha256':'config_sha256';
             const digest=parent.frozen_parameters?.[digestField];
-            if(typeof digest!=='string'||digest!==frozen[digestField])
+            // A physically trained native Bees checkpoint may enter its
+            // first Hub-owned imported-bundle PPO optimizer. The direct
+            // Level template and bundle-only template intentionally have
+            // different configuration hashes; requiring equality here
+            // makes this otherwise authenticated bootstrap impossible.
+            // This is ONLY a same-project, explicitly selected checkpoint
+            // source for a synchronized native optimizer. The resource
+            // bundle still verifies every physical collector against the
+            // source checkpoint, pins all GPU ranks to one learner input,
+            // and keeps the original owner's linear continuation slot.
+            const nativeBundleBootstrap=
+                project.id==='bees_native'&&
+                parent.project_id==='bees_native'&&
+                parent.frozen_parameters?.optimizer_group!==true&&
+                frozen.optimizer_group===true&&
+                sourceId===parent.id&&
+                optimizerRestartFrom===null;
+            if(typeof digest!=='string'||
+                digest!==frozen[digestField]&&!nativeBundleBootstrap)
                 throw Error('Checkpoint continuation requires the same approved configuration digest as the predecessor.');
         }
         if(afterId!==null) {
