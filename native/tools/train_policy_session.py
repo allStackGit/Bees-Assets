@@ -23,7 +23,9 @@ from tempfile import TemporaryDirectory
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from native_training_artifacts import atomic_json, check_learner, file_sha256
+from native_training_artifacts import (atomic_json, check_learner, file_sha256,
+                                       native_input_dependencies,
+                                       check_native_input_dependencies)
 from native_bundle_receiver import BundleReceiver
 from transfer_policy_inputs import export_inputs
 from native_distributed_collection import (
@@ -450,41 +452,6 @@ def pinned(path):
 
 def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def native_input_dependencies(*runs):
-    """Pin scene, Stage and policy-worker files actually used by each Level.
-
-    The run configuration already pins embedded native_stage bytes. Legacy
-    Stage files and referenced scene JSON are separate immutable inputs.
-    Do this once per session, not once per world or fixed physics tick.
-    """
-    paths = set()
-    for source in runs:
-        if source is None:
-            continue
-        base = Path(source["path"]).parent
-        config = read_json(Path(source["path"]))
-        if not isinstance(config, dict) or not isinstance(config.get("levels"), list):
-            raise ValueError("native session source run must contain Levels")
-        for level in config["levels"]:
-            if not isinstance(level, dict) or not isinstance(level.get("scene"), str) or not level["scene"]:
-                raise ValueError("native session Level has no scene path")
-            paths.add((base / level["scene"]).resolve(strict=True))
-        for key in ("policy_worker", "collision_matrix", "stage_palette"):
-            value = config.get(key)
-            if value is None:
-                continue
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"native session has an invalid {key} path")
-            paths.add((base / value).resolve(strict=True))
-    return [pinned(path) for path in sorted(paths)]
-
-
-def check_native_input_dependencies(recipe):
-    for item in recipe.get("source_dependencies", []):
-        if file_sha256(Path(item["path"])) != item["sha256"]:
-            raise ValueError(f"native source changed during training session: {item['path']}")
 
 
 @contextmanager
