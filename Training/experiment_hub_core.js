@@ -5691,6 +5691,7 @@ class ExperimentHub {
                     JSON.stringify(plan.optimizer_job_ids)!==
                         JSON.stringify(restartGroup.map(job=>job.id))||
                     plan.status==='needs_review'&&
+                        plan.restart_phase!=null&&
                         plan.restart_phase!=='awaiting_optimizer')
                     throw Error('Original native round must be reviewed before replacing its failed GPU owner group.');
                 plan.optimizer_bundle_id=bundleId;
