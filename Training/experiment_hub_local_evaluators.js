@@ -222,8 +222,12 @@ async function status(hub) {
     const entries=[];
     for(const id of Object.keys(SUITES)) {
         const names=unitFiles(options,id);
-        const installed=fs.existsSync(names.serviceFile)&&fs.existsSync(names.timerFile);
-        let managed=false,reason=null,active=false,running=false,lastResult=null,lastError=null;
+        const serviceExists=fs.existsSync(names.serviceFile);
+        const timerExists=fs.existsSync(names.timerFile);
+        const installed=serviceExists&&timerExists;
+        let managed=false,reason=serviceExists!==timerExists
+            ?'Incomplete installation; use Set up to finish the approved unit pair.':null;
+        let active=false,running=false,lastResult=null,lastError=null;
         if(installed) {
             try {
                 const defs=definitions(options);
