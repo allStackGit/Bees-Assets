@@ -958,8 +958,34 @@ def measured_distributed_collection_windows(completed):
     seconds = sum(row["work_order_to_last_receipt_wall_seconds"] for row in measured)
     steps = sum(row["world_steps"] for row in measured)
     rows = sum(row["policy_rows"] for row in measured)
+    stages = [row["coordinator_critical_path"] for row in measured
+              if "coordinator_critical_path" in row]
+    stage_keys = (
+        "source_export_wall_seconds", "hub_dispatch_wall_seconds",
+        "collector_barrier_wall_seconds", "other_coordinator_wall_seconds",
+    )
+    transfer_keys = (
+        "collector_input_bytes_served", "collector_output_bytes_received",
+        "collector_uploads_received", "collector_upload_and_verify_wall_seconds",
+    )
+    transfer = {}
+    for key in transfer_keys:
+        values = [row["transfer_activity"][key] for row in measured
+                  if key in row.get("transfer_activity", {})]
+        if values:
+            transfer[key] = {
+                "measured_rounds": len(values),
+                "sum": sum(values),
+            }
     return {
         "scope": "work_order_issued_to_final_collector_receipt_including_dispatch_and_transfer",
+        "coordinator_critical_path_stage_coverage": len(stages),
+        **({"coordinator_critical_path_wall_seconds": {
+            key: sum(row[key] for row in stages) for key in stage_keys
+        }} if stages else {}),
+        # Upload/verify seconds may overlap independent collector processes
+        # and are reported as measured activity, not critical-path latency.
+        **({"transfer_activity": transfer} if transfer else {}),
         "distributed_rounds": distributed,
         "measured_rounds": len(measured),
         "missing_window_rounds": missing,
