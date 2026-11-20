@@ -1472,8 +1472,7 @@ impl CombatWorld {
                     physics.obstacles()[index].id != saved.entity_id ||
                     saved.vitals.is_some_and(|vitals|
                         vitals.effective_max_health <= 0 ||
-                        vitals.original_health <= 0 ||
-                        (vitals.is_dead != (vitals.health <= 0))
+                        vitals.original_health <= 0
                     )
             ) ||
             snapshot.map_objects.len() != self.map_objects.len() ||
@@ -1498,8 +1497,7 @@ impl CombatWorld {
             index >= physics.obstacles().len() ||
             physics.obstacles()[index].active ||
             !free_obstacles.insert(index)
-        ) || snapshot.free_obstacle_slots.len() !=
-            physics.obstacles().iter().filter(|body| !body.active).count() {
+        ) {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let mut reserved = HashSet::new();
@@ -1555,9 +1553,15 @@ impl CombatWorld {
         // These lookup maps are part of the other authored CombatWorld
         // gameplay state. Never apply the physical owner bundle to a world
         // whose ship/shot slot identities have not first been recovered.
+        let mut obstacle_by_id = HashMap::new();
+        for (index, body) in physics.obstacles().iter().enumerate() {
+            if body.active && obstacle_by_id.insert(body.id, index).is_some() {
+                return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+            }
+        }
         if self.ship_by_id.len() != physics.ships().len() ||
             self.projectile_by_id.len() != physics.projectiles().len() ||
-            self.obstacle_by_id.len() != physics.active_obstacle_indices().len() ||
+            obstacle_by_id.len() != physics.active_obstacle_indices().len() ||
             self.next_entity_id <= 0 ||
             physics.ships().iter().any(|body|
                 body.id <= 0 || body.id >= self.next_entity_id) ||
@@ -1570,7 +1574,7 @@ impl CombatWorld {
             physics.projectiles().iter().enumerate().any(|(index, body)|
                 self.projectile_by_id.get(&body.id) != Some(&index)) ||
             physics.obstacles().iter().enumerate().any(|(index, body)|
-                (self.obstacle_by_id.get(&body.id) == Some(&index)) != body.active)
+                (obstacle_by_id.get(&body.id) == Some(&index)) != body.active)
         {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
@@ -1591,6 +1595,7 @@ impl CombatWorld {
         self.obstacles = snapshot.obstacles;
         self.free_obstacle_slots = snapshot.free_obstacle_slots;
         self.obstacle_slot_reuses = snapshot.obstacle_slot_reuses;
+        self.obstacle_by_id = obstacle_by_id;
         self.map_objects = snapshot.map_objects;
         self.range_visible_map_objects = snapshot.range_visible_map_objects;
         self.reserved_ship_ids = snapshot.reserved_ship_ids;
