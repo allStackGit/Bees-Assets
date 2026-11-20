@@ -247,13 +247,13 @@ async function setup(hub) {
     else installEvaluatorUnits(def,o.home);
     await systemctl(['daemon-reload']);
 
-    let oldStopped=false,newStartAttempted=false,temporary=null;
+    let oldRestoreNeeded=false,newStartAttempted=false,temporary=null;
     try {
         if(oldTimer) {
             const previous=await state(oldTimer);
             if(previous.ActiveState==='active') {
+                oldRestoreNeeded=true;
                 await systemctl(['stop',oldTimer]);
-                oldStopped=true;
             }
         }
         newStartAttempted=true;
@@ -273,7 +273,7 @@ async function setup(hub) {
             try { await systemctl(['stop',unit.timer]); }
             catch(rollback) { failures.push('new timer: '+rollback.message); }
         }
-        if(oldStopped) {
+        if(oldRestoreNeeded) {
             try { await systemctl(['start',oldTimer]); }
             catch(rollback) { failures.push('old timer: '+rollback.message); }
         }
