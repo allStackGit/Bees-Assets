@@ -211,6 +211,29 @@ pub struct NativeHostRecoveryCheckpoint {
 impl NativeHostRecoveryCheckpoint {
     pub fn notifications(&self) -> &serde_json::Value { &self.notifications }
     pub fn launcher(&self) -> &serde_json::Value { &self.launcher }
+
+    /// Authorize rewinding post-checkpoint diagnostic bytes only when the
+    /// independently write-ahead persisted network ledger has NOT changed.
+    /// An acknowledged outcome or transmitted new request changes this
+    /// digest and forbids silently abandoning its associated game actions.
+    pub fn validate_connection_for_recovery(
+        &self, connection: &DurableHiveMindConnection,
+    ) -> Result<(), HostRecoveryError> {
+        if !connection.is_available() ||
+            connection.connection().pending_request_count() != 0
+        {
+            return Err(HostRecoveryError::Unavailable);
+        }
+        let canonical = serde_json::to_value(connection.connection().checkpoint())
+            .map_err(HostRecoveryError::ConnectionEncoding)?;
+        let encoded = serde_json::to_vec(&canonical)
+            .map_err(HostRecoveryError::ConnectionEncoding)?;
+        if <[u8; 32]>::from(Sha256::digest(&encoded)) != self.connection_sha256 {
+            return Err(HostRecoveryError::ConnectionChanged);
+        }
+        Ok(())
+    }
+
     pub fn with_launcher(mut self, launcher: serde_json::Value) -> Self {
         self.launcher = launcher;
         self
