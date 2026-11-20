@@ -14,6 +14,8 @@
     const evaluatorSetup=$('hub-local-evaluator-setup');
     const courierSetup=$('hub-local-courier-evaluator-setup');
     const evaluatorMessage=$('hub-local-evaluator-message');
+    const remoteRows=$('hub-remote-evaluator-rows');
+    const remoteMessage=$('hub-remote-evaluator-message');
     let state=null,busy=false;
 
     const label=(name,service)=>{
@@ -73,6 +75,115 @@
             evaluatorRows.append(line);
         }
     }
+    function renderRemoteEvaluators(info) {
+        if(!remoteRows)return;
+        remoteRows.replaceChildren();
+        const machines=info?.machines||[];
+        const actions=info?.actions||[];
+        if(!machines.length) {
+            const empty=document.createElement('p');
+            empty.textContent='No remote evaluator service has been reported by an enrolled agent.';
+            remoteRows.append(empty);
+            return;
+        }
+        for(const machine of machines) {
+            const heading=document.createElement('p');
+            const title=document.createElement('strong');
+            title.textContent=(machine.name||machine.id)+' ('+machine.id+')';
+            heading.append(title,document.createTextNode(' · '+machine.status+
+                (machine.issue?' · '+machine.issue:'')));
+            remoteRows.append(heading);
+            for(const service of machine.services||[]) {
+                const line=document.createElement('div');
+                line.className='hub-controls';
+                const prior=actions.filter(item=>
+                    item.machine_id===machine.id&&item.unit===service.unit).at(-1);
+                const unresolved=prior&&['pending','dispatched','unverified'].includes(prior.status);
+                const detail=document.createElement('span');
+                detail.textContent=service.project+' · '+service.unit+' · '+
+                    (service.executor==='systemd-user'
+                        ?'schedule '+service.scheduler_state
+                        :'service '+service.service_state)+
+                    (service.last_result==='failed'?' · previous evaluation failed':'')+
+                    (prior?' · '+prior.action+' '+prior.status+
+                        (prior.reason?' ('+prior.reason+')':''):'');
+                line.append(detail);
+                const allowed=machine.status==='connected'&&!busy&&!unresolved;
+                if(service.executor==='systemd-user') {
+                    line.append(
+                        evaluatorButtonRemote('Start','start',machine.id,service.unit,
+                            !allowed||service.scheduler_state==='active'),
+                        evaluatorButtonRemote('Stop','stop',machine.id,service.unit,
+                            !allowed||service.scheduler_state!=='active'),
+                        evaluatorButtonRemote('Restart','restart',machine.id,service.unit,!allowed),
+                        evaluatorButtonRemote('Run now','run',machine.id,service.unit,
+                            !allowed||service.service_state==='running')
+                    );
+                }else if(service.executor==='windows-service') {
+                    line.append(
+                        evaluatorButtonRemote('Start','start',machine.id,service.unit,
+                            !allowed||service.service_state==='running'),
+                        evaluatorButtonRemote('Stop','stop',machine.id,service.unit,
+                            !allowed||service.service_state!=='running')
+                    );
+                }
+                if(unresolved) {
+                    const button=document.createElement('button');
+                    button.type='button';
+                    button.textContent=prior.status==='pending'?'Cancel pending action':'Mark reviewed';
+                    const eligible=prior.status!=='dispatched'||
+                        Date.now()-Date.parse(prior.dispatched_at||'')>=120000;
+                    button.disabled=busy||!eligible||
+                        (prior.status!=='pending'&&machine.status!=='connected');
+                    button.addEventListener('click',()=>reconcileRemote(prior));
+                    line.append(button);
+                }
+                remoteRows.append(line);
+            }
+        }
+    }
+    function evaluatorButtonRemote(title,action,machine,unit,disabled) {
+        const button=document.createElement('button');
+        button.type='button';
+        button.textContent=title;
+        button.disabled=disabled;
+        button.addEventListener('click',()=>manageRemoteEvaluator(machine,unit,action));
+        return button;
+    }
+    async function manageRemoteEvaluator(machine_id,unit,action) {
+        if(busy||!confirm('Request '+action+' for the installed evaluator '+unit+
+            ' on '+machine_id+'? The enrolled agent must independently verify the service. '+
+            'This is a one-use action and will not be automatically replayed.'))return;
+        busy=true;
+        try {
+            const result=await fetch('/api/hub/local-services/remote-evaluator',{
+                method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({machine_id,unit,action,confirm_action:true}),
+            });
+            const data=await result.json();
+            if(!result.ok)throw Error(data.error||'Remote evaluator action refused.');
+            remoteMessage.textContent='Queued '+action+' for '+machine_id+
+                ' (operation '+data.id+'). Refresh to see its confirmed outcome.';
+        }catch(error){remoteMessage.textContent='Remote evaluator: '+error.message;}
+        finally {busy=false;await update();}
+    }
+    async function reconcileRemote(prior) {
+        if(busy||!confirm(prior.status==='pending'
+            ?'Cancel this evaluator action before it is dispatched?'
+            :'I have inspected the current remote evaluator service state. Mark this operation reviewed WITHOUT replaying it?'))return;
+        busy=true;
+        try {
+            const result=await fetch('/api/hub/local-services/remote-evaluator/reconcile',{
+                method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({id:prior.id,confirm_reconcile:true}),
+            });
+            const data=await result.json();
+            if(!result.ok)throw Error(data.error||'Evaluator reconciliation refused.');
+            remoteMessage.textContent='Operation '+data.id+' marked '+data.status+
+                '; no remote command was replayed.';
+        }catch(error){remoteMessage.textContent='Reconciliation: '+error.message;}
+        finally {busy=false;await update();}
+    }
     async function manageEvaluator(action,id,project='tinybrains') {
         if(busy)return;
         const message=action==='setup'
@@ -116,6 +227,7 @@
             if(!response.ok)throw Error(data.error||'Service status unavailable.');
             state=data;
             renderEvaluators(data.evaluators);
+            renderRemoteEvaluators(data.remote_evaluators);
             const blocked=data.active_jobs>0;
             const localBlocked=(data.agent_active_jobs??data.active_jobs)>0;
             coordinator.disabled=busy||blocked||!data.coordinator.managed;
