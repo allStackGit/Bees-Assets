@@ -2372,10 +2372,10 @@ fn launch_catalog_battle(
         // launch after another player's persistent fleet edit.
         let selected: RunConfig = serde_json::from_slice(&fs::read(&config)?)?;
         if selected.levels.len() != 1 || selected.episodes_per_world != 1 ||
-            !selected.model_updates.is_empty()
+            !selected.model_updates.is_empty() || selected.navigation_workers.is_some()
         {
             return Err(invalid(
-                "campaign --serve requires one Level/episode with a fixed model manifest",
+                "campaign --serve requires one Level/episode, a fixed model manifest, and no background navigation",
             ).into());
         }
     }
