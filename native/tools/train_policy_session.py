@@ -114,7 +114,8 @@ class NativeHubCollectionBarrier:
         different native process identities or pretend GPUs are job-isolated.
         """
         live = job.get("live_execution")
-        if (not isinstance(live, dict) or
+        if (job.get("status") not in ("running", "stop_requested") or
+                not isinstance(live, dict) or
                 live.get("state") not in ("running", "stop_requested") or
                 live.get("dispatch_id") != job.get("dispatch_id")):
             return
@@ -320,6 +321,9 @@ class NativeHubCollectionBarrier:
                 raise ValueError(
                     f"collector {collector} lost its original-machine Hub lease"
                 )
+            # Use only the authenticated Hub's fresh native-owner telemetry,
+            # after its replacement lineage and lease identity are checked.
+            self._observe_resources(collector, current, snapshot)
             # A failed predecessor may await explicit operator approval.
             # Never restart it or accept it as data; simply retain the
             # existing bounded collection barrier until a newly leased
@@ -353,7 +357,8 @@ class NativeHubCollectionBarrier:
                 )
 
 
-def measured_hub_machine_collection(approved_plan, dispatched, bundles):
+def measured_hub_machine_collection(approved_plan, dispatched, bundles,
+                                    resource_observations=None):
     """Join verified collector work to Hub-owned machine and lease budgets.
 
     CPU/RAM/GPU quantities below are reserved capacity, never invented
@@ -390,6 +395,11 @@ def measured_hub_machine_collection(approved_plan, dispatched, bundles):
             "observed_world_steps": metrics["successful_world_steps"],
             "observed_policy_rows": metrics["successful_policy_rows"],
             "collector_execution_wall_seconds": metrics["wall_seconds"],
+            **({} if not resource_observations or
+                name not in resource_observations else {
+                "hub_authenticated_resource_observations":
+                    resource_observations[name],
+            }),
             "observed_world_steps_per_collector_wall_second":
                 metrics["successful_world_steps"] / metrics["wall_seconds"],
             **({"verified_gpu_model_forwards": proof["model_forwards"],
@@ -2151,6 +2161,7 @@ def main():
                         **({} if approved_hub_plan is None else {
                             "hub_machine_collection": measured_hub_machine_collection(
                                 approved_hub_plan, dispatched_hub_round, bundles,
+                                hub_barrier.observed_resource_summary(),
                             ),
                         }),
                         "hub_barrier_registry_checks": hub_barrier.checks if hub_barrier else 0,
