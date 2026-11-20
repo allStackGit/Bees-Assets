@@ -15,7 +15,9 @@ import subprocess
 import uuid
 
 from native_mission_contract import level_has_goal, verified_policy_observations
-from native_training_artifacts import file_sha256, sync_directory, atomic_json
+from native_training_artifacts import (file_sha256, sync_directory, atomic_json,
+                                       native_input_dependencies,
+                                       check_native_input_dependencies)
 
 
 def resolved(base, path):
@@ -223,6 +225,7 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     source_path = source_path.resolve(strict=True)
     manifest_sha = file_sha256(manifest)
     source_sha = file_sha256(source_path)
+    source_dependencies = native_input_dependencies({"path": str(source_path)})
     if inference_device is not None:
         if inference_device not in ("cpu", "cuda:0"):
             raise ValueError("native evaluation inference device must be cpu or cuda:0")
@@ -340,9 +343,15 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         raise ValueError("native evaluation physics worker accounting differs from its source")
     if file_sha256(manifest) != manifest_sha or file_sha256(source_path) != source_sha:
         raise ValueError("evaluation input changed during the native run")
+    # The same authored scene, Stage collision assets and policy code used
+    # by the native trainer must still be in place when the result becomes
+    # authoritative. Otherwise a fixed holdout may silently measure another
+    # environment while its run.json and policy manifest hashes still match.
+    check_native_input_dependencies({"source_dependencies": source_dependencies})
     receipt = {
         "schema_version": 1, "kind": "native_policy_evaluation_complete",
         "source_run_config": str(source_path), "source_run_config_sha256": source_sha,
+        "source_dependencies": source_dependencies,
         "model_manifest": str(manifest), "model_manifest_sha256": manifest_sha,
         "learner_side": learner_side, "policy_sampling_seed": policy_seed,
         **({"inference_device_override": inference_device} if inference_device else {}),
