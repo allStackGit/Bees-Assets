@@ -5200,6 +5200,23 @@ class ExperimentHub {
                                     plan.source_model_sha256;
                         }))
                         throw Error('Frozen native round resource bundle, machine or model ownership changed.');
+                    // Job status is not a substitute for the Hub's actual
+                    // original resource claim. In particular, do not accept
+                    // a reported finished GPU rank until that exact lease
+                    // has a verified terminal release. Otherwise a later
+                    // round could overlap an apparently free old owner.
+                    if(members.some(job=>{
+                        const lease=snapshot.reservations.find(item=>
+                            item.id===job.lease_id&&item.job_id===job.id&&
+                            item.machine_id===job.assigned_machine_id&&
+                            item.project_id===job.project_id&&
+                            item.issued_by==='experiment-hub');
+                        if(!lease)return true;
+                        return job.status==='finished'&&job.capacity_released_at
+                            ?lease.status!=='released'||!lease.released_at
+                            :!['offered','acknowledged'].includes(lease.status);
+                    }))
+                        throw Error('Native round member has no matching active or verified released Hub resource lease.');
                     // A known terminal failure cannot be repaired by waiting
                     // for an unrelated offline machine. Settle surviving
                     // native Stop owners and surface manual review now.
