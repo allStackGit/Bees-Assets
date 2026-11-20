@@ -5,6 +5,8 @@
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
+const crypto=require('node:crypto');
+const net=require('node:net');
 const {execFile,spawn}=require('node:child_process');
 const {promisify}=require('node:util');
 const localEvaluators=require('./experiment_hub_local_evaluators');
@@ -55,6 +57,95 @@ async function enrolledLocalAgentMachine(hub) {
         return id;
     }catch {return null;}
 }
+// The coordinator and learner share a canonical private rollout key. The
+// operator selects only a machine ID; neither arbitrary URLs nor key paths
+// come from the browser.
+function approvedTinyBrainsWorkers(hub) {
+    const root=path.dirname(hub.file);
+    const keyDirectory=path.join(root,'private-rollouts','tinybrains');
+    const key=path.join(keyDirectory,'rollout.key');
+    let fingerprint=null;
+    try {
+        const stat=fs.lstatSync(key);
+        if(stat.isFile()&&!stat.isSymbolicLink()&&
+            stat.uid===process.getuid()&&(stat.mode&0o077)===0)
+            fingerprint=crypto.createHash('sha256')
+                .update(fs.readFileSync(key)).digest('hex');
+    }catch {}
+    const snapshot=hub.snapshot();
+    const workers=snapshot.machines.filter(machine=>machine.status==='connected'&&
+        machine.id!=='halifax'&&machine.installed_projects?.includes('tinybrains_rollout'))
+        .map(machine=>{
+            const slots=machine.tinybrains_rollout_slots||[];
+            const named=slots.filter(entry=>Number.isSafeInteger(entry.slot)&&
+                entry.slot>=0&&entry.slot<=1&&typeof entry.endpoint==='string')
+                .sort((a,b)=>a.slot-b.slot);
+            const valid=named.length===2&&named[0].slot===0&&named[1].slot===1&&
+                [12134,12135].every((port,i)=>{
+                    const endpoint=named[i].endpoint;
+                    const match=/^(100\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{4,5})$/.exec(endpoint);
+                    return match&&net.isIP(match[1])===4&&
+                        Number(match[2])===port;
+                });
+            const trusted=machine.native_preflight_passed===true&&
+                fingerprint!==null&&machine.tinybrains_rollout_key_fingerprint===fingerprint;
+            return {machine_id:machine.id,name:machine.name,
+                endpoints:valid?named.map(entry=>entry.endpoint):[],
+                ready:Boolean(valid&&trusted),
+                reason:!valid?'Worker must advertise its two native TinyBrains slots.'
+                    :!fingerprint?'Coordinator has no approved private TinyBrains rollout key.'
+                    :!trusted?'Native preflight or HMAC fingerprint does not match Halifax.'
+                    :null};
+        });
+    return {workers,keyDirectory};
+}
+async function configureTinyBrainsCollectors(hub,value) {
+    if(!value||value.confirm_connect!==true||
+        !MACHINE_ID.test(String(value.machine_id||''))||
+        Object.keys(value).some(k=>!['confirm_connect','machine_id'].includes(k)))
+        reject('Confirm one enrolled TinyBrains collector machine.',400);
+    const localId=await enrolledLocalAgentMachine(hub);
+    const unit=await unitStatus('agent');
+    if(!localId||!unit.managed)reject('Halifax native agent service is not configured for managed local deployment.');
+    const activity=await restartActivity(hub,'agent');
+    if(activity.count)reject('Reconfigure remote collectors only when Halifax native jobs are idle.');
+    if(hub.state.jobs.some(job=>job.project_id==='tinybrains'&&
+        !job.capacity_released_at&&job.lease_id&&
+        job.assigned_machine_id===localId&&
+        job.frozen_parameters?.remote_rollouts===true&&
+        !['cancelled','finished','failed','stopped'].includes(job.status)))
+        reject('Existing Halifax TinyBrains distributed reservations must be resolved before changing endpoints.');
+    const {workers,keyDirectory}=approvedTinyBrainsWorkers(hub);
+    const chosen=workers.find(worker=>worker.machine_id===value.machine_id&&worker.ready);
+    if(!chosen)reject('Selected machine has not reported two trusted TinyBrains collector ports and native preflight.');
+    const file=path.join(os.homedir(),'.config/experiment-hub/agent.env');
+    const st=fs.lstatSync(file);
+    if(!st.isFile()||st.isSymbolicLink()||
+        st.uid!==process.getuid()||(st.mode&0o077)!==0)
+        reject('Halifax agent environment permissions are not approved.');
+    const existing=fs.readFileSync(file,'utf8');
+    if(Buffer.byteLength(existing)>65536||existing.includes('\0'))
+        reject('Halifax agent environment is invalid.');
+    const variables={
+        EXPERIMENT_HUB_TINYBRAINS_REMOTE_ENDPOINTS:chosen.endpoints.join(','),
+        EXPERIMENT_HUB_TINYBRAINS_KEY_DIRECTORY:keyDirectory,
+    };
+    const rows=existing.split(/\r?\n/).filter(row=>
+        !Object.keys(variables).some(name=>row.startsWith(name+'=')));
+    const updated=rows.filter((row,index)=>index<rows.length-1||row!=='')
+        .concat(Object.entries(variables).map(([name,v])=>name+'='+v)).join('\n')+'\n';
+    if(updated===existing)
+        return {configured:true,unchanged:true,endpoints:chosen.endpoints,
+            message:'Halifax already approves these two collector endpoints.'};
+    const temporary=file+'.'+crypto.randomBytes(6).toString('hex')+'.tmp';
+    try {
+        fs.writeFileSync(temporary,updated,{flag:'wx',mode:0o600});
+        fs.renameSync(temporary,file);
+    }finally {try{fs.unlinkSync(temporary);}catch{}}
+    return {configured:true,unchanged:false,endpoints:chosen.endpoints,
+        message:'Approved private learner endpoints saved; restart local agent to advertise both collectors.'};
+}
+
 async function restartActivity(hub,kind) {
     const jobs=activeJobs(hub);
     if(kind!=='agent')return {count:jobs.length,scope:'all'};
@@ -139,6 +230,7 @@ async function status(hub) {
         finished_at:action.finished_at||null,reason:action.reason||null,
     }));
     return {coordinator,agent,active_jobs:activeJobs(hub).length,
+        tinybrains_collectors:approvedTinyBrainsWorkers(hub).workers,
         remote_evaluators:{machines:remoteMachines,actions:remoteActions},
         agent_active_jobs:agentActivity.count,
         agent_restart_scope:agentActivity.scope,
@@ -192,4 +284,4 @@ async function evaluatorAction(hub,value) {
         activeEvaluatorActions.delete(project);
     }
 }
-module.exports={status,scheduleRestart,unitStatus,evaluatorAction};
+module.exports={status,scheduleRestart,unitStatus,evaluatorAction,configureTinyBrainsCollectors};
