@@ -136,6 +136,7 @@ pub fn assemble_circle_snapshot_from_live_weapons(
     })
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct CircleRun {
     target: NativeAttackTarget,
     pub(super) members: Vec<SquadFormationMember>,

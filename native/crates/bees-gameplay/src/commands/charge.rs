@@ -33,6 +33,7 @@ pub struct NativeChargeTimerSnapshot {
     pub retarget_weapons: Vec<NativeBombWeapon>,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct NativeChargeRun {
     target: NativeAttackTarget,
     pub(super) members: Vec<SquadFormationMember>,

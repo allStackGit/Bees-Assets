@@ -19,6 +19,7 @@ use super::{
     NativeSquadOrder, NativeSwipeCommandSnapshot,
 };
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct InAndOutRun {
     target: NativeAttackTarget,
     pub(super) members: Vec<SquadFormationMember>,

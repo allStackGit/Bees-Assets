@@ -13,7 +13,7 @@ pub enum TargetRankingError { InvalidStrategy, InvalidTarget }
 /// Position is read directly from the current physics body; it must not
 /// drift into an independently cached metadata view. Input is in
 /// EnemySquad.GetShips order, before strategy sorting.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeEnemyTargetStats {
     pub ship_id: i64,
     /// ConfigData.ShipTypeLetters A=0 through X=23 (not ShipTypes values).

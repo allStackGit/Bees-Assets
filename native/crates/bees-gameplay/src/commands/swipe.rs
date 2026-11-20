@@ -86,6 +86,7 @@ pub fn assemble_swipe_snapshot_from_live_weapons(
     })
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct SwipeRun {
     target: NativeAttackTarget,
     kind: LocalCommandKind,

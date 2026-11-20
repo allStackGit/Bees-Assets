@@ -246,7 +246,7 @@ pub(super) fn retarget_selected_game_bomb(
 /// Source GetSquad().GetShips order is retained throughout the run.
 /// The Level owns command state, while actual weapon leases, reload
 /// readiness, hulls, and movement remain in the single combat world.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 struct StrikerRunState {
     ship_id: i64,
     completed: bool,
@@ -348,6 +348,7 @@ pub(super) fn defenseless_carrier_strikers(
 /// Striker's ship-owned bomb readiness is separate from the command's
 /// per-run completed/returned flags. Physical damage and fuses stay in
 /// CombatWorld; this controller does not duplicate combat mechanics.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct NativeBombingRun {
     target: NativeAttackTarget,
     pub(super) members: Vec<SquadFormationMember>,

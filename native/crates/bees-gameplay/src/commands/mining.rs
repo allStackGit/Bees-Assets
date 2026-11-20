@@ -2,6 +2,7 @@
 use super::*;
 use bees_sim::combat_world::is_mining_ship_type;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct MiningRun {
     target_id: i64,
     destination_offset: Vec2,

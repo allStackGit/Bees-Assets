@@ -13,6 +13,7 @@ const WAIT_FOR_WARP_SECONDS: f32 = 2.0;
 const DRONE_TYPE: u8 = 8;
 const STRIKER_TYPE: u8 = 19;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct FullRetreatRun {
     gate_id: i64,
     pub(super) members: Vec<SquadFormationMember>,

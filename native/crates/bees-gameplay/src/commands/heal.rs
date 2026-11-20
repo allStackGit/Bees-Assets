@@ -6,6 +6,7 @@ use super::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 use bees_sim::combat_world::GamePointOrder;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct HealRun {
     /// Fixed Socket.HandleStrategicCommandResponse target order: nearest
     /// Beehive to Squad.GetPosition(), tied by live registry order.

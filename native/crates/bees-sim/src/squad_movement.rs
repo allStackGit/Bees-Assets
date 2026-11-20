@@ -37,7 +37,7 @@ pub fn authored_placement_offset(ship_type: u8, member_count: usize, offset: Vec
     Vec2::new(offset.x * x_scale, offset.y * y_scale)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SquadFormationMember {
     pub ship_id: i64,
     /// `Ship.OffsetFromCenter`, in shared physics/world coordinates.
@@ -48,7 +48,7 @@ pub struct SquadFormationMember {
     pub mobile: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SquadFormationOptions {
     pub map_bounds: Aabb,
     pub has_obstacles: bool,

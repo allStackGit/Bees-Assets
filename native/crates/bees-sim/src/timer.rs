@@ -8,7 +8,8 @@
 //! generation guard: the completed old interval must not be subtracted
 //! from a newly reused timer.
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScaledTimer {
     pub length_seconds: f32,
     pub elapsed_seconds: f32,
@@ -33,6 +34,13 @@ pub struct TimerDue {
 }
 
 impl ScaledTimer {
+    /// Reject nonfinite or negative time when rehydrating a command's
+    /// original timer phase. Zero-length timers are valid source inputs.
+    pub fn valid_recovery(&self) -> bool {
+        self.length_seconds.is_finite() && self.length_seconds >= 0.0 &&
+            self.elapsed_seconds.is_finite() && self.elapsed_seconds >= 0.0
+    }
+
     pub fn new(length_seconds: f32, recurring: bool, start_immediate: bool) -> Self {
         Self {
             length_seconds,

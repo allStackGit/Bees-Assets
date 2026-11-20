@@ -10,6 +10,7 @@ const BEACON_POLL_SECONDS: f32 = 10.0;
 const FINISH_AFTER_SIGHTING_SECONDS: f32 = 5.0;
 const RANDOM_STEP_MIN_DISTANCE: f32 = 10.0;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct ScoutingRun {
     side: i32,
     pub(super) members: Vec<SquadFormationMember>,

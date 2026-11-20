@@ -111,6 +111,7 @@ pub fn assemble_aggressive_snapshot_from_live_weapons(
     })
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct AggressiveRun {
     target: NativeAttackTarget,
     pub(super) members: Vec<SquadFormationMember>,

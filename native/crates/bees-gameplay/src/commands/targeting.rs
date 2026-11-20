@@ -171,7 +171,7 @@ pub fn select_native_game_bomb_target(
 /// Unity Command.OriginalQueue/TargetingQueue and each ship's retained
 /// TargetEnemyShipToFollow. Only IDs are cached; positions, vitals and
 /// target eligibility always come from the live gameplay world.
-#[derive(Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct NativeCommandTargetQueue {
     original: VecDeque<i64>,
     pending: VecDeque<i64>,
@@ -251,7 +251,7 @@ impl NativeCommandTargetQueue {
 /// Shared Unity Ship.SetAndGetTargetEnemy approach for SwipeSquad and
 /// InAndOut. A single source-owned queue and retained ship targets;
 /// no duplicate target ranking or movement implementation.
-#[derive(Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct NativeTargetApproach {
     target_queue: Option<NativeCommandTargetQueue>,
     ranked_candidates: Vec<NativeEnemyTargetStats>,
@@ -380,6 +380,7 @@ impl NativeTargetApproach {
 /// The real enemy lifecycle is captured AT command activation. If the
 /// Level reuses that numeric squad ID before the first timer callback,
 /// the new squad is never silently adopted. No delayed, mutable binding.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct NativeAttackTarget {
     lifetime: SquadLifetime,
 }
