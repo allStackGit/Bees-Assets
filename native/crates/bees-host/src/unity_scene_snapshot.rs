@@ -1524,11 +1524,21 @@ impl NativePhysicalScene {
             {
                 return Err(invalid("invalid original FleetShip reassignment"));
             }
-            let parent_id = self.entities.iter().find_map(|entity| match entity {
-                NativeAuthoredEntity::Ship(ship) if ship.side == side &&
-                    ship.fleet_ship_id == Some(fleet_id) => Some(ship.entity_id),
+            let parent = self.entities.iter().find_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) if ship.fleet_ship_id == Some(fleet_id) =>
+                    Some((ship.side, ship.entity_id)),
                 _ => None,
-            }).ok_or(invalid("source FleetShip not found on this campaign route"))?;
+            });
+            let Some((source_side, parent_id)) = parent else {
+                // A FleetShip introduced in a later authored mission has no
+                // physical body in an earlier, replayable Stage. Retain the
+                // durable account assignment, but do not manufacture its
+                // ship or squad in that earlier game's original roster.
+                continue;
+            };
+            if source_side != side {
+                return Err(invalid("saved FleetShip belongs to a different campaign faction"));
+            }
             // The saved initial squad is the provenance of the player's
             // first edit, not an immutable squad binding in every authored
             // mission variant. A later victory route can give the SAME
