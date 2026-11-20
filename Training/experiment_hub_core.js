@@ -1575,6 +1575,8 @@ class ExperimentHub {
     }
     snapshot() {
         const snapshot = copy(this.state);
+        snapshot.evaluator_services=(snapshot.evaluator_services||[]).map(
+            ({agent_instance_id,...item})=>item);
         snapshot.hub_observation_archive_issue=this.observations.error;
         snapshot.native_round_plans=(snapshot.native_round_plans||[]).map(plan=>{
             const {agent_instances,...display}=plan;
@@ -4381,6 +4383,43 @@ class ExperimentHub {
         const machine=this.authenticateAgent(machineId,token);
         return this.evaluationTargets(projectId,machine.id,suiteId);
     }
+    controlNativeEvaluator(value) {
+        if(!object(value)||!ID.test(String(value.machine_id||''))||
+            !['start','stop','inspect'].includes(value.action)||
+            value.confirm_control!==true||
+            Object.keys(value).some(key=>![
+                'machine_id','action','confirm_control',
+            ].includes(key)))
+            throw Error('Confirm a native Bees evaluator start, stop or status inspection.');
+        const machine=this.snapshot().machines.find(item=>item.id===value.machine_id);
+        const report=this.agentReports.get(value.machine_id);
+        if(!machine||machine.status!=='connected'||
+            !report||!UUID.test(String(report.instance_id||''))||
+            !report.local_executor||report.platform!=='linux'&&report.platform!=='win32'||
+            !report.installed_projects?.includes('bees_native')||
+            !report.evaluation_suites?.bees_native?.length)
+            throw Error('Native Bees evaluator requires a fresh enrolled execution agent and installed suite reader.');
+        const next=copy(this.state);
+        next.evaluator_services=next.evaluator_services||[];
+        const previous=next.evaluator_services.find(item=>
+            item.machine_id===value.machine_id);
+        if(previous?.status==='pending'&&
+            previous.agent_instance_id===report.instance_id)
+            throw Error('A native evaluator control is already awaiting its machine report.');
+        const command={
+            command_id:crypto.randomUUID(),
+            machine_id:value.machine_id,
+            agent_instance_id:report.instance_id,
+            action:value.action,status:'pending',
+            requested_at:now(),
+        };
+        if(previous)Object.assign(previous,command);
+        else next.evaluator_services.push(command);
+        this.commit(next);
+        return {command_id:command.command_id,
+            machine_id:command.machine_id,action:command.action,
+            status:command.status};
+    }
     heartbeat(value, token) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
             throw Error('Invalid agent identity.');
@@ -4420,12 +4459,35 @@ class ExperimentHub {
         // Only this authenticated machine may acknowledge its own offers.
         // No lease is evidence of OS resource enforcement.
         const next=copy(this.state);
+        const evaluatorResult=value.evaluator_service_report;
+        if(evaluatorResult!==undefined&&evaluatorResult!==null) {
+            const command=(next.evaluator_services||[]).find(item=>
+                item.machine_id===machine.id);
+            if(!object(evaluatorResult)||!command||
+                command.status!=='pending'||
+                command.command_id!==evaluatorResult.command_id||
+                command.action!==evaluatorResult.action||
+                command.agent_instance_id!==instance||
+                !['active','inactive','activating','deactivating','failed']
+                    .includes(evaluatorResult.state)||
+                evaluatorResult.diagnostic!=null&&(
+                    typeof evaluatorResult.diagnostic!=='string'||
+                    evaluatorResult.diagnostic.length>180)||
+                Object.keys(evaluatorResult).some(key=>![
+                    'command_id','action','state','diagnostic',
+                ].includes(key)))
+                throw Error('Native evaluator report does not match its one-use machine command.');
+            command.status='reported';
+            command.state=evaluatorResult.state;
+            command.diagnostic=evaluatorResult.diagnostic||null;
+            command.completed_at=now();
+        }
         // Receipt IDs are based on the agent's previous offer response,
         // while this heartbeat reports the current host capacity. Reject
         // carried-over IDs if *all* outstanding claims no longer fit.
         const withinCapacity=claimsFitCpuRam(next.reservations,machine,report.cpus,report.ram_mb);
         const acknowledgedIds=new Set();
-        let changed=false;
+        let changed=Boolean(evaluatorResult);
         for (const id of ids) {
             if(!withinCapacity)break;
             const lease=next.reservations.find(x=>x.id===id &&
@@ -4689,7 +4751,15 @@ class ExperimentHub {
                 gpu_bindings:physicalGpuBindings(machine,report,x.resources,x.gpu_bindings)||[],
             })),
             execution_orders:value.request_execution_orders===false
-                ?[]:this.executionOrders(machine.id)};
+                ?[]:this.executionOrders(machine.id),
+            evaluator_service_command:value.request_execution_orders===false
+                ?null:(()=>{
+                    const command=(this.state.evaluator_services||[]).find(item=>
+                        item.machine_id===machine.id&&item.status==='pending'&&
+                        item.agent_instance_id===instance);
+                    return command?{command_id:command.command_id,
+                        action:command.action}:null;
+                })()};
     }
     project(id) {
         const project = this.state.projects.find(p=>p.id===id);
