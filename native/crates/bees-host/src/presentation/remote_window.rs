@@ -725,7 +725,15 @@ impl PeerClient {
             let Some(front) = self.queued.front() else { break };
             let end = (self.written + budget).min(front.len());
             match self.socket.write(&front[self.written..end]) {
-                Ok(0) => { self.connected = false; self.notice = "Host disconnected".into(); break; }
+                Ok(0) => {
+                    // A closed transport is not a successfully submitted
+                    // command. Surface failure to the original sender and
+                    // let the next frame reset the disconnected seat.
+                    self.connected=false;
+                    self.notice="Host disconnected".into();
+                    return Err(io::Error::new(ErrorKind::BrokenPipe,
+                        "native multiplayer host closed during command delivery"));
+                }
                 Ok(n) => {
                     budget -= n;
                     self.written += n;
