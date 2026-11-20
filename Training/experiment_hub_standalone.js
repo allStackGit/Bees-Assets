@@ -262,12 +262,15 @@ async function main(argv=process.argv.slice(2)) {
             const active=hub.state.jobs.some(job=>job.dispatch_id&&
                 !job.capacity_released_at&&
                 !['finished','failed','stopped','cancelled'].includes(job.status));
-            if(active)return;
-            // Do not silently bypass the queue automation's explicit
-            // restart re-arm authorization and native ownership checks.
-            if(hub.automation.enabled&&!hub.state.automation_restart)return;
+            const override=active&&Object.values(
+                hub.state.machine_update_policies||{}).includes('override');
+            if(active&&!override)return;
+            // An ordinary idle update still honors the separate CPU queue
+            // restart re-arm authorization. An explicit mid-job software
+            // override may pause automation, never stop native workloads.
+            if(!override&&hub.automation.enabled&&!hub.state.automation_restart)return;
             hub.softwareMaintenance=true;
-            const result=await releases.applyLocalWhenIdle(hub);
+            const result=await releases.applyLocalWhenIdle(hub,override);
             if(!result.changed.length)return;
             console.log('[hub-updates] Local fast-forwarded software: '+
                 result.changed.join(', '));
