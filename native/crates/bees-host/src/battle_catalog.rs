@@ -1,8 +1,8 @@
 //! Authored battle lists and progress derived from completed runs.
 
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::io::{self, Write};
+use std::fs::{self, TryLockError};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -12,50 +12,65 @@ use serde_json::{json, Value};
 use super::{invalid, CampaignOutcome, CampaignFleetShipOutcome};
 use bees_host::fleet_inventory::NativeFleetCombatStats;
 
-/// Exclusive writer guard for one campaign directory. The native UI,
-/// headless mission launcher and fleet editor share this one ownership
-/// boundary, never an additional economy state. OS create_new is atomic
-/// on both Windows and Linux. A crashed process leaves a visible lock,
-/// intentionally requiring an operator to establish that no game/edit
-/// session is still running before clearing it.
+/// Exclusive campaign owner for the native menu, headless missions and
+/// all fleet edits. A stable OS lock survives as a pathname, but ownership
+/// automatically releases when the process dies. Never unlink the lock inode:
+/// a second writer could otherwise lock a replacement inode concurrently.
+///
+/// A legacy PID-file owner is not assumed dead. Its old filename remains a
+/// permanent marker, so pre-migration binaries cannot create a parallel
+/// campaign writer while the OS-locked native host owns the career ledger.
 pub struct CampaignWriterLease {
-    lock_path: PathBuf,
-    file: Option<fs::File>,
+    _file: fs::File,
 }
 
 impl CampaignWriterLease {
     pub fn acquire(root: &Path) -> io::Result<Self> {
         fs::create_dir_all(root)?;
-        let lock_path = root.join("campaign-writer.lock");
-        let mut file = match fs::OpenOptions::new()
-            .write(true).create_new(true).open(&lock_path)
-        {
-            Ok(file) => file,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+        let lock_path = root.join("campaign-writer.lease");
+        match fs::symlink_metadata(&lock_path) {
+            Ok(metadata) if !metadata.file_type().is_file() =>
+                return Err(invalid("campaign writer lease must be a regular file")),
+            Ok(_) => {},
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+            Err(error) => return Err(error),
+        }
+        let file = fs::OpenOptions::new().read(true).write(true).create(true)
+            .open(&lock_path)?;
+        match file.try_lock() {
+            Ok(()) => {},
+            Err(TryLockError::WouldBlock) =>
                 return Err(invalid(format!(
-                    "campaign directory is already in use ({}); if the prior process crashed, verify it has stopped before removing the stale lock",
-                    lock_path.display(),
-                )));
+                    "native campaign writer is already active: {}", root.display(),
+                ))),
+            Err(TryLockError::Error(error)) => return Err(error),
+        }
+        let marker_path = root.join("campaign-writer.lock");
+        const OWNER: &str = "native-os-campaign-writer-v1\n";
+        match fs::symlink_metadata(&marker_path) {
+            Ok(metadata) if !metadata.file_type().is_file() =>
+                return Err(invalid("campaign writer marker must be a regular file")),
+            Ok(_) => {
+                let mut marker = String::new();
+                fs::File::open(&marker_path)?.take(64).read_to_string(&mut marker)?;
+                if marker != OWNER {
+                    return Err(invalid(format!(
+                        "legacy campaign writer PID marker at {} requires confirmation that its original process has stopped before one-time removal",
+                        marker_path.display(),
+                    )));
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let mut marker = fs::OpenOptions::new().write(true).create_new(true)
+                    .open(&marker_path)?;
+                marker.write_all(OWNER.as_bytes())?;
+                marker.sync_all()?;
+                #[cfg(unix)]
+                fs::File::open(root)?.sync_all()?;
             }
             Err(error) => return Err(error),
-        };
-        if let Err(error) = writeln!(file, "pid={}", std::process::id())
-            .and_then(|_| file.sync_all())
-        {
-            drop(file);
-            let _ = fs::remove_file(&lock_path);
-            return Err(error);
         }
-        Ok(Self { lock_path, file: Some(file) })
-    }
-}
-
-impl Drop for CampaignWriterLease {
-    fn drop(&mut self) {
-        // Windows cannot unlink a still-open lock file. Close the handle
-        // first, then release the OS-visible writer guard.
-        drop(self.file.take());
-        let _ = fs::remove_file(&self.lock_path);
+        Ok(Self { _file: file })
     }
 }
 
