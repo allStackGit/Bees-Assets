@@ -918,6 +918,56 @@ def deliver_bundle(output, inbox, receipt, delivery_name=None, *, preserve_deliv
     return destination
 
 
+def optimizer_attempt_identity(args, trainer_config, result):
+    """Immutable input, GPU placement and rank identity for a completed
+    optimizer whose final Hub receipt was interrupted. No trainer state is
+    inferred from an uncommitted partial checkpoint.
+    """
+    return {
+        "schema_version": 1,
+        "kind": "native_optimizer_attempt",
+        "run_id": result["run_id"],
+        "run_config_sha256": result["run_config_sha256"],
+        "source_run_config_sha256": result["source_run_config_sha256"],
+        "input_checkpoint_sha256": result["input_checkpoint_sha256"],
+        "input_manifest_sha256": result["input_manifest_sha256"],
+        "trainer_sha256": file_sha256(trainer_config),
+        "rollout_receipts": [
+            [item["sha256"], Path(item["path"]).parent.name]
+            for item in result["rollout_bundles"]
+        ],
+        "collection_orders_sha256": result.get("collection_orders_sha256"),
+        "device": args.device,
+        "learner_gpus": args.learner_gpus,
+        "learner_nodes": args.learner_nodes,
+        "learner_node_rank": args.learner_node_rank,
+        "learner_backend": args.learner_backend,
+        "learner_group_id": args.learner_group_id,
+        "learner_slot": args.learner_slot,
+        "refresh_opponent_slot": args.refresh_opponent_slot,
+        "torch_threads": args.torch_threads,
+    }
+
+
+def prepare_optimizer_attempt(args, output, trainer_config, result):
+    receipt = output / "optimizer-attempt.json"
+    if args.resume_optimizer:
+        if receipt.is_symlink() or not receipt.is_file():
+            raise ValueError("no immutable optimizer attempt to finalize")
+        saved = json.loads(receipt.read_text(encoding="utf-8"))
+        if not isinstance(saved, dict) or not isinstance(saved.get("run_id"), str):
+            raise ValueError("invalid saved native optimizer attempt")
+        result["run_id"] = saved["run_id"]
+        if saved != optimizer_attempt_identity(args, trainer_config, result):
+            raise ValueError("native optimizer inputs, rank or GPU allocation changed")
+    else:
+        publish_receipt(
+            output, receipt.name,
+            optimizer_attempt_identity(args, trainer_config, result),
+            announce=False,
+        )
+
+
 def optimize(args, output, python, manifest, checkpoint, trainer_config, result, rollout_args):
     learner_dir = output / "learner"
     primary = [result["capture"], result["journal"]] if "capture" in result else []
@@ -956,7 +1006,22 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
             *launcher, "--nproc-per-node", str(args.learner_gpus),
             *train_command[1:],
         ]
-    run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
+    if args.resume_optimizer:
+        # Reattach only to a fully committed synchronized output. A rank
+        # that crashed mid-gradient update must not continue Adam from a
+        # partially saved tensor set; a new authorized group attempt is
+        # required instead.
+        eligible = ([learner_dir / "node-result.json"] if args.learner_node_rank
+                    else [learner_dir / "checkpoint.pt",
+                          learner_dir / "manifest.json",
+                          learner_dir / "metrics.json"])
+        if any(item.is_symlink() or not item.is_file() for item in eligible):
+            raise ValueError(
+                "native optimizer did not commit its complete rank output; "
+                "restart the synchronized group as a new attempt"
+            )
+    else:
+        run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
     if args.learner_node_rank != 0:
         worker_file = learner_dir / "node-result.json"
         worker = json.loads(worker_file.read_text(encoding="utf-8"))
@@ -1113,6 +1178,8 @@ def main() -> None:
                         help="publish a portable rollout bundle without running the optimizer")
     parser.add_argument("--resume-rollout", action="store_true",
                         help="continue the exact previously allocated distributed collector shard")
+    parser.add_argument("--resume-optimizer", action="store_true",
+                        help="finalize an already committed distributed optimizer rank without rerunning gradients")
     parser.add_argument("--bundle-inbox", type=Path,
                         help="also deliver the collected bundle to an existing shared inbox")
     parser.add_argument("--collection-id",
@@ -1126,6 +1193,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.resume_rollout and (not args.collect_only or args.collection_id is None):
         parser.error("--resume-rollout requires one pinned distributed collection")
+    if args.resume_optimizer and (
+            args.collect_only or args.resume_rollout or args.learner_nodes < 2):
+        parser.error("--resume-optimizer requires a distributed optimizer with completed rank outputs")
     if args.collection_id is not None and (
         len(args.collection_id) != 64 or any(
             char not in "0123456789abcdef" for char in args.collection_id
@@ -1280,13 +1350,14 @@ def main() -> None:
             result["source_run_config_sha256"] = orders["source_run_config_sha256"]
             result["collection_orders_sha256"] = file_sha256(order_path)
             result["rollout_metrics"] = aggregate_collection_metrics(collections)
-        output.mkdir(parents=True, exist_ok=False)
+        output.mkdir(parents=True, exist_ok=args.resume_optimizer)
         result.update(
             run_id=f"{run_id}-{uuid.uuid4().hex}",
             run_config=str(run_path),
             run_config_sha256=hashlib.sha256(run_bytes).hexdigest(),
             rollout_bundles=pinned,
         )
+        prepare_optimizer_attempt(args, output, trainer_config, result)
         optimize(args, output, python, manifest, checkpoint, trainer_config, result, rollout_args)
         return
     if args.rollout_binary is None and shutil.which("cargo") is None:
