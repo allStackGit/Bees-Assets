@@ -366,14 +366,23 @@ impl NativeRemotePlay {
 
     /// Save only transport-side command ownership and cumulative counters;
     /// no World, policies or player permissions are duplicated here.
-    pub fn recovery_checkpoint(&self) -> NativeRemotePlayRecoveryCheckpoint {
+    pub fn recovery_checkpoint(
+        &self, world_id: WorldId, revision: u64,
+    ) -> NativeRemotePlayRecoveryCheckpoint {
+        let mut held_fire = self.held_fire.values().copied()
+            .filter(|lease| lease.world_id == world_id &&
+                lease.episode_revision == revision)
+            .collect::<Vec<_>>();
+        held_fire.sort_unstable_by_key(|lease| lease.peer);
         NativeRemotePlayRecoveryCheckpoint {
             schema_version: 1,
             host_session_id: self.host_session_id.clone(),
             side_credentials_sha256: credential_digest(&self.side_tokens),
             next_peer: self.next_peer,
-            held_fire: self.held_fire.values().copied().collect(),
-            pending_releases: self.pending_releases.clone(),
+            held_fire,
+            pending_releases: self.pending_releases.iter()
+                .filter(|order| order.action.episode() == (world_id, revision))
+                .cloned().collect(),
             measurements: self.measurements.clone(),
         }
     }
