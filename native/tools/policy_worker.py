@@ -29,8 +29,9 @@ MASK_WIDTH = 15  # Five fire choices × 2, then five ship specials
 ROW_META_BYTES = 16
 MAX_SIGNATURE_BYTES = 8192
 MAX_BATCH_ROWS = 65536
-VERSION = 3
+VERSION = 4
 MAX_MANIFEST_PATH_BYTES = 4096
+MAX_SAMPLER_CHECKPOINT_BYTES = 1_048_576
 HEADER = struct.Struct("<4sIQI")
 READY = struct.Struct("<4sIIH")
 # Mirrors the Rust per-row wire header: slot(4), team(1), fire(5),
@@ -59,6 +60,76 @@ def read_exact(reader, count: int) -> bytearray | None:
             raise EOFError("incomplete inference wire frame")
         offset += received
     return output
+
+
+def checkpoint_sampler_state() -> bytes:
+    """Capture the resident sampler at a between-batch host boundary."""
+    import random
+    python_state = random.getstate()
+    numpy_state = np.random.get_state()
+    torch = sys.modules.get("torch")
+    state = {
+        "schema_version": 1,
+        "python": [
+            python_state[0], list(python_state[1]), python_state[2]
+        ],
+        "numpy": [
+            numpy_state[0], numpy_state[1].tolist(),
+            numpy_state[2], numpy_state[3], numpy_state[4],
+        ],
+        "torch_cpu": torch.get_rng_state().tolist() if torch is not None else None,
+        "torch_cuda": (
+            [part.tolist() for part in torch.cuda.get_rng_state_all()]
+            if torch is not None and torch.cuda.is_initialized() else []
+        ),
+    }
+    data = json.dumps(state, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    if len(data) > MAX_SAMPLER_CHECKPOINT_BYTES:
+        raise ValueError("native policy sampler checkpoint is too large")
+    return data
+
+
+def restore_sampler_state(data: bytes) -> None:
+    """Restore exact Python, NumPy and PyTorch CPU/accelerator sampling state."""
+    import random
+    if not data or len(data) > MAX_SAMPLER_CHECKPOINT_BYTES:
+        raise ValueError("invalid native policy sampler checkpoint size")
+    state = json.loads(data)
+    if not isinstance(state, dict) or set(state) != {
+        "schema_version", "python", "numpy", "torch_cpu", "torch_cuda"
+    } or state["schema_version"] != 1:
+        raise ValueError("invalid native policy sampler checkpoint schema")
+    python_state = state["python"]
+    numpy_state = state["numpy"]
+    if (not isinstance(python_state, list) or len(python_state) != 3 or
+            not isinstance(numpy_state, list) or len(numpy_state) != 5):
+        raise ValueError("invalid native policy sampler state")
+    numpy_keys = np.asarray(numpy_state[1], dtype=np.uint32)
+    if len(numpy_keys) != 624 or numpy_state[0] != "MT19937":
+        raise ValueError("incompatible NumPy policy sampler")
+    torch = sys.modules.get("torch")
+    cpu = state["torch_cpu"]
+    cuda = state["torch_cuda"]
+    if not isinstance(cuda, list) or (torch is None) != (cpu is None):
+        raise ValueError("incompatible PyTorch policy sampler")
+    if torch is None and cuda:
+        raise ValueError("checkpoint requires an unavailable PyTorch sampler")
+    if cuda and (not torch.cuda.is_initialized() or
+                 len(cuda) != torch.cuda.device_count()):
+        raise ValueError("checkpoint requires different CUDA/ROCm devices")
+    # All validation is complete before changing a resident RNG. An invalid
+    # state still terminates the worker; Rust never reuses an uncertain stream.
+    random.setstate((python_state[0], tuple(python_state[1]), python_state[2]))
+    np.random.set_state((
+        numpy_state[0], numpy_keys, numpy_state[2],
+        numpy_state[3], numpy_state[4],
+    ))
+    if torch is not None:
+        torch.set_rng_state(torch.tensor(cpu, dtype=torch.uint8))
+        if cuda:
+            torch.cuda.set_rng_state_all([
+                torch.tensor(part, dtype=torch.uint8) for part in cuda
+            ])
 
 
 class TorchScriptPolicy:
@@ -744,6 +815,24 @@ def main() -> None:
             report_model_residency()
             writer.write(HEADER.pack(b"MACK", VERSION, request_id, len(policy_map)))
             writer.write(manifest_digest)
+            writer.flush()
+            continue
+        if magic == b"BRNG":
+            if rows != 0:
+                raise ValueError("invalid policy sampler checkpoint request")
+            snapshot = checkpoint_sampler_state()
+            writer.write(HEADER.pack(b"BRNS", VERSION, request_id, len(snapshot)))
+            writer.write(snapshot)
+            writer.flush()
+            continue
+        if magic == b"BWNG":
+            if not 0 < rows <= MAX_SAMPLER_CHECKPOINT_BYTES:
+                raise ValueError("invalid policy sampler restore size")
+            snapshot = read_exact(reader, rows)
+            if snapshot is None:
+                raise EOFError("missing policy sampler restore payload")
+            restore_sampler_state(snapshot)
+            writer.write(HEADER.pack(b"BRNA", VERSION, request_id, 0))
             writer.flush()
             continue
         if magic not in (b"BINF", b"BPLY"):
