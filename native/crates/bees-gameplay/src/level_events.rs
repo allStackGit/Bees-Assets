@@ -334,6 +334,13 @@ impl NativeLevelDeliveryCheckpoint {
         ) {
             return Err(Error::InvalidAttribution);
         }
+        if self.reinforcement_arrivals.group_agents >
+                self.reinforcement_arrivals.policy_agents ||
+            self.reinforcement_arrivals.policy_agents >
+                self.reinforcement_arrivals.ships
+        {
+            return Err(Error::InvalidNotification);
+        }
         if self.pending_notifications.iter().any(|entry| matches!(
             &entry.kind,
             NativeLevelNotificationKind::PolicyControllerAdmitted {
@@ -1175,6 +1182,9 @@ impl NativeLevelEventProcessor {
     )
         -> Result<(), NativeLevelEventError>
     {
+        if group_agents > policy_agents || policy_agents > ships {
+            return Err(NativeLevelEventError::InvalidGroupConfiguration);
+        }
         Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
         self.pending_notifications.push(NativeLevelNotification {
             tick, kind: NativeLevelNotificationKind::ReinforcementsArrived { ships, squads },
