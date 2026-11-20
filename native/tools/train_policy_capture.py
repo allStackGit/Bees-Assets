@@ -833,16 +833,20 @@ def _validate_dynamic_episode(
     context = final["evaluation_context"]
     terminal_tick = final["tick"]
     period = context["decision_period"]
-    teams = effective_teams if effective_teams is not None else {
+    source_teams = {
         int(agent): int(team)
         for team, members in context["group_agents_by_team"].items()
         for agent in members
     }
+    teams = effective_teams if effective_teams is not None else source_teams
     if period <= 0 or not teams:
         raise ValueError("dynamic MA-POCA episode has no authenticated cohort")
-    if len(teams) != sum(len(members) for members in
-                        context["group_agents_by_team"].values()):
-        raise ValueError("duplicate native policy group identity")
+    if (len(source_teams) != sum(len(members) for members in
+                                context["group_agents_by_team"].values()) or
+            any(teams.get(agent) != team for agent, team in source_teams.items())):
+        # Synthesized keys separate physical lifetimes only inside the
+        # optimizer; they must never change actual source group ownership.
+        raise ValueError("duplicate or misrouted native policy group identity")
     starts = {agent: (admissions[agent][3] if agent in admissions else 0)
               for agent in teams}
     ticks = list(episode_ticks.items())
