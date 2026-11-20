@@ -185,13 +185,30 @@ function evaluatorDefinition({
     ].join('\n');
     return {name,service,timer};
 }
-function installEvaluatorUnits(result,home=os.homedir()) {
+function installEvaluatorUnits(result,home=os.homedir(),{repairPartial=false}={}) {
     const dir=path.join(home,'.config','systemd','user');
     fs.mkdirSync(dir,{recursive:true,mode:0o700});
     const service=path.join(dir,result.name+'.service');
     const timer=path.join(dir,result.name+'.timer');
-    if(fs.existsSync(service)||fs.existsSync(timer))
-        throw Error('Evaluator unit already exists; review and reconcile it manually.');
+    const serviceExists=fs.existsSync(service),timerExists=fs.existsSync(timer);
+    if(serviceExists||timerExists) {
+        // Only an explicit local setup action can finish an interrupted
+        // exclusive-create. A complete or mismatched installation is never
+        // overwritten, and ordinary CLI --install remains exclusive-create.
+        if(!repairPartial||serviceExists===timerExists)
+            throw Error('Evaluator unit already exists; review and reconcile it manually.');
+        const retained=serviceExists?service:timer;
+        const expected=serviceExists?result.service:result.timer;
+        const stat=fs.lstatSync(retained);
+        if(!stat.isFile()||stat.isSymbolicLink()||
+            stat.uid!==process.getuid()||(stat.mode&0o077)!==0||
+            fs.readFileSync(retained,'utf8')!==expected)
+            throw Error('Existing partial evaluator unit differs from its approved definition.');
+        const missing=serviceExists?timer:service;
+        fs.writeFileSync(missing,serviceExists?result.timer:result.service,
+            {encoding:'utf8',flag:'wx',mode:0o600});
+        return {service,timer};
+    }
     fs.writeFileSync(service,result.service,{encoding:'utf8',flag:'wx',mode:0o600});
     try {
         fs.writeFileSync(timer,result.timer,{encoding:'utf8',flag:'wx',mode:0o600});
