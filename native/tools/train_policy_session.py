@@ -335,6 +335,61 @@ def scheduled_opponent_slot(self_play, round_number):
     )
 
 
+def verified_optimizer_group(record):
+    """Validate one completed native GPU group's globally agreed update.
+
+    A multi-node Hub publication may be imported into a later training
+    session; never infer checkpoint consensus from a mere aggregate worker
+    count. This reads only the completed round receipt, with no GPU work.
+    """
+    metrics = record.get("learner_metrics")
+    if not isinstance(metrics, dict):
+        raise ValueError("native training round lacks learner measurements")
+    workers = metrics.get("optimizer_gpu_workers", 0)
+    nodes = metrics.get("optimizer_gpu_nodes", 0)
+    local = metrics.get("optimizer_gpu_local_workers", 0)
+    if workers == 0:
+        if nodes != 0 or local != 0:
+            raise ValueError("CPU optimizer claims an inconsistent GPU group")
+        return
+    if (type(workers) is not int or type(nodes) is not int or
+            type(local) is not int or not 1 <= nodes <= 8 or
+            local not in (1, 2) or workers != nodes * local):
+        raise ValueError("native optimizer GPU allocation disagrees with its nodes")
+
+    if workers == 1:
+        return
+    rows = metrics.get("optimizer_gpu_per_device")
+    updates = metrics.get("optimizer_synchronized_minibatches")
+    model = metrics.get("optimizer_gpu_model_consensus_sha256")
+    if (not isinstance(rows, list) or len(rows) != workers or
+            type(updates) is not int or updates <= 0 or
+            metrics.get("optimizer_masked_loss_normalizations") != updates or
+            not isinstance(model, str) or re.fullmatch(r"[0-9a-f]{64}", model) is None):
+        raise ValueError("native optimizer has no completed synchronized GPU evidence")
+    for rank, row in enumerate(rows):
+        if (not isinstance(row, dict) or
+                row.get("rank") != rank or
+                row.get("node_rank") != rank // local or
+                row.get("local_rank") != rank % local or
+                row.get("gradient_syncs") != updates or
+                row.get("masked_loss_syncs") != updates or
+                row.get("device") != f"cuda:{rank % local}"):
+            raise ValueError("native optimizer GPU rank lacks the agreed minibatch evidence")
+
+    if nodes > 1:
+        group = metrics.get("optimizer_group_id")
+        identity = metrics.get("optimizer_global_input_sha256")
+        if (not isinstance(group, str) or
+                re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", group) is None or
+                not isinstance(identity, str) or
+                re.fullmatch(r"[0-9a-f]{64}", identity) is None or
+                record.get("optimizer_group_id") != group):
+            raise ValueError("native optimizer checkpoint lacks its authorized group and shared source identity")
+    elif metrics.get("optimizer_group_id") is not None:
+        raise ValueError("local native GPU optimizer claims a remote Hub group")
+
+
 def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot,
                  refresh_opponent_slot=None, source_run_sha=None):
     receipt_path = directory / "round-result.json"
@@ -357,6 +412,7 @@ def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot,
         if file_sha256(path) != record[key + "_sha256"]:
             raise ValueError(f"round completion artifact changed: {path}")
     metrics = record["learner_metrics"]
+    verified_optimizer_group(record)
     if (metrics.get("next_checkpoint_sha256") != record["next_checkpoint_sha256"] or
             metrics.get("next_manifest_sha256") != record["next_manifest_sha256"] or
             metrics.get("input_checkpoint_sha256") != checkpoint_sha or
