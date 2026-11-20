@@ -898,6 +898,7 @@ impl NativeRemotePlay {
                 let payload = serde_json::to_vec(&current_state(
                     view, bounds, side, music_location, cues,
                     vision.get(&side).expect("authenticated side has sight"),
+                    requires_briefing_ack,
                     requires_briefing_ack && view.campaign_dialogue_side==Some(side),
                     measurements,
                 )).unwrap_or_default();
@@ -1409,8 +1410,8 @@ fn wire_primary_hull(shape: &ShipShape) -> Value {
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
     music_location: Option<NativeMusicLocation>, audio_events: &[Value],
-    sources: &RemoteFogSources, requires_briefing_ack: bool,
-    measurements: &mut RemotePlayMeasurements,
+    sources: &RemoteFogSources, briefing_paused: bool,
+    requires_briefing_ack: bool, measurements: &mut RemotePlayMeasurements,
 ) -> Value {
     let viewer = Some(side);
     let fog = view.player_authority.player_fog_of_war_enabled();
@@ -1563,6 +1564,9 @@ fn current_state(
         // Source-owned initial story pacing; never required for local
         // hosts or after this World has taken its first physical step.
         "briefing_requires_ack": requires_briefing_ack,
+        // Both sides use the one authoritative Level clock. The opposing
+        // side sees only this pause flag, never the owner's private story.
+        "briefing_paused": briefing_paused,
         // Only authenticated side-owned vision and its authored fading
         // masks are sent. The remote window reuses the native pixel stencil
         // instead of revealing old sprites outside the current host sight.
