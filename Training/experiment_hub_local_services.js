@@ -129,7 +129,10 @@ async function status(hub) {
         issue:machine.evaluator_service_issue||null,
         services:(machine.evaluator_services||[]).map(entry=>({...entry})),
     }));
-    const remoteActions=(snapshot.evaluator_actions||[]).slice(-48).map(action=>({
+    const history=snapshot.evaluator_actions||[];
+    const remoteActions=history.filter(action=>
+        ['pending','dispatched','awaiting_restart','unverified'].includes(action.status)
+        ||history.indexOf(action)>=history.length-48).map(action=>({
         id:action.id,machine_id:action.machine_id,unit:action.unit,
         project:action.project,action:action.action,status:action.status,
         created_at:action.created_at,dispatched_at:action.dispatched_at||null,
