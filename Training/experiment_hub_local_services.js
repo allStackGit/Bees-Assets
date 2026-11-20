@@ -128,7 +128,7 @@ async function status(hub) {
     }));
     const remoteActions=(snapshot.evaluator_actions||[]).slice(-48).map(action=>({
         id:action.id,machine_id:action.machine_id,unit:action.unit,
-        action:action.action,status:action.status,
+        project:action.project,action:action.action,status:action.status,
         created_at:action.created_at,dispatched_at:action.dispatched_at||null,
         finished_at:action.finished_at||null,reason:action.reason||null,
     }));
