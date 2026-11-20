@@ -842,8 +842,20 @@ def publish_receipt(output, filename, receipt, *, announce=True):
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(pending, output / filename)
-        sync_directory(output)
+        destination = output / filename
+        try:
+            # Immutable, create-only publication mirrors the native host's
+            # run_final transaction. A retry cannot rewrite an already
+            # acknowledged collection or optimizer result.
+            os.link(pending, destination)
+            sync_directory(output)
+        except FileExistsError:
+            if (destination.is_symlink() or not destination.is_file() or
+                    destination.stat().st_size > 2 * 1024 * 1024 or
+                    json.loads(destination.read_text(encoding="utf-8")) != receipt):
+                raise ValueError(
+                    f"completed native training receipt differs from the prior committed artifact: {destination}"
+                )
     finally:
         if pending is not None:
             pending.unlink(missing_ok=True)
