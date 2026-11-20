@@ -22,6 +22,23 @@ def file_sha256(path: Path) -> str:
 
 
 
+
+def native_headless_environment():
+    """Keep collector/evaluator subprocesses out of live multiplayer mode.
+
+    Native-host decides whether to start an authenticated LAN World from
+    these process environment variables. Their presence must not change
+    a model-only training or evaluation run launched by a Hub agent or an
+    interactive game host. GPU and model-store environment ownership stays
+    with the caller.
+    """
+    env = os.environ.copy()
+    for key in ("BEES_NATIVE_REMOTE_LISTEN", "BEES_NATIVE_REMOTE_SIDE_TOKENS",
+                "BEES_NATIVE_REMOTE_TOKEN"):
+        env.pop(key, None)
+    return env
+
+
 def native_input_dependencies(*runs):
     """Pin the original physical scenes, Stage files and inference code.
 
