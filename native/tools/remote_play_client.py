@@ -37,6 +37,7 @@ def remote_token(side):
 HELP = """Commands:
   status               Show the latest world and selected friendly squads
   objective            Show the authored mission and reinforcement status
+  ready                Acknowledge the current hosted campaign briefing
   ships                List currently visible ships and their positions
   squads               List friendly and visible target squads
   obstacles            List visible map objects and mining asteroids
@@ -97,6 +98,7 @@ class RemoteConsole:
         self.last_dialogue_cue = None
         self.last_campaign_receipt = None
         self.last_battle_receipt = None
+        self.briefing_acknowledgments = {}
 
     def receive(self):
         try:
@@ -118,6 +120,7 @@ class RemoteConsole:
                                 self.held_begin_request = None
                                 self.last_campaign_receipt = None
                                 self.last_battle_receipt = None
+                                self.briefing_acknowledgments.clear()
                                 self.selected_scope = episode
                             self.latest = message
                         dialogue = message.get("campaign_dialogue")
@@ -165,6 +168,18 @@ class RemoteConsole:
                         notice = (f"Battle finished: {message['label']} — {message['reason']}"
                                   if kind == "battle_result" else
                                   f"Battle interrupted: {message['reason']}")
+                        self.notifications.put(notice)
+                        if not self.silent:
+                            print(notice)
+                    elif kind == "briefing_result":
+                        with self.lock:
+                            pending = next((
+                                cue for cue, request_id in self.briefing_acknowledgments.items()
+                                if request_id == message.get("request_id")
+                            ), None)
+                            if pending is not None and message.get("processed") is not True:
+                                self.briefing_acknowledgments.pop(pending, None)
+                        notice = f"Briefing: {message.get('feedback', 'No acknowledgement')}"
                         self.notifications.put(notice)
                         if not self.silent:
                             print(notice)
@@ -221,6 +236,37 @@ class RemoteConsole:
     def battle_receipt_snapshot(self):
         with self.lock:
             return self.last_battle_receipt
+
+    def acknowledge_briefing(self):
+        """Release the real hosted Level after this viewer finishes its cue.
+
+        The host verifies the authenticated side, exact World/episode and
+        original cue sequence. This is not a gameplay input or local timer.
+        A retry is possible if the host rejects an outdated request.
+        """
+        state = self.snapshot()
+        dialogue = state.get("campaign_dialogue") if state else None
+        if not dialogue or state.get("briefing_requires_ack") is not True:
+            return False
+        cue = (state["world_id"], state["episode_revision"], dialogue["sequence"])
+        with self.lock:
+            if cue in self.briefing_acknowledgments:
+                return False
+        request_id = self.next_request
+        packet = {
+            "kind": "briefing_ready",
+            "request_id": request_id,
+            "world_id": cue[0],
+            "episode_revision": cue[1],
+            "sequence": cue[2],
+        }
+        self.socket.sendall(
+            (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
+        )
+        self.next_request += 1
+        with self.lock:
+            self.briefing_acknowledgments[cue] = request_id
+        return True
 
     @staticmethod
     def objective_summary(state):
@@ -400,6 +446,10 @@ class RemoteConsole:
             receipt = self.campaign_receipt_snapshot()
             if receipt is not None:
                 print(self.campaign_receipt_summary(receipt))
+            return
+        if cmd == "ready":
+            print("Briefing acknowledgment sent" if self.acknowledge_briefing()
+                  else "No unacknowledged hosted campaign briefing")
             return
         if cmd == "objective":
             objective = self.objective_summary(state)
