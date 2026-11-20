@@ -100,7 +100,6 @@ function createNativeBeesPortableCollectorAdapter({
     const trainingNames=[
         'bees_mlagents_ppo_compat.py',
         'bees_mlagents_structured_policy.py',
-        'bees_mlagents_factorized_poca.py',
     ];
     const pinned=new Map([
         [executable,sha256(fs.readFileSync(executable))],
