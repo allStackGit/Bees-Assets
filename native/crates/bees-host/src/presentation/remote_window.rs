@@ -1154,6 +1154,16 @@ fn remote_tactical_action(
     *patrol_start=None;
     match action {
         HudAction::Shooting=>{
+            // Do not leave an active hold-to-fire lease behind while the
+            // local presentation focuses the strategy picker.
+            if *held_fire_active {
+                if let Err(error)=peer.held_fire(selected,"End",None) {
+                    let _=peer.socket.shutdown(std::net::Shutdown::Both);
+                    peer.connected=false;
+                    return Err(error);
+                }
+                *held_fire_active=false;*held_fire_target=None;
+            }
             *shooting_focus=first_selected(peer.state.as_ref(),selected)
                 .and_then(|s|s["shooting"].as_u64())
                 .unwrap_or(1).clamp(1,40) as u8;
@@ -1791,6 +1801,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut shooting_focus=1_u8;
     let mut hud_press:Option<HudAction>=None;
     let mut squad_tab_press:Option<i64>=None;
+    let mut shooting_press:Option<u8>=None;
     let started=Instant::now();
     let mut previous_frame=started;
 
@@ -1819,7 +1830,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             } else { "Soundtrack playing".into() };
         }
         if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
-            if mode.is_some() {
+            if shooting_menu {
+                shooting_menu=false;shooting_press=None;
+            } else if mode.is_some() {
                 mode=None;patrol_start=None;drag_start=None;
             } else {break;}
         }
@@ -1860,7 +1873,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             last_left=false;last_right=false;
             last_selection_press=None;double_left_press=false;
             right_press=None;
-            hud_press=None;squad_tab_press=None;
+            hud_press=None;squad_tab_press=None;shooting_press=None;
             shooting_menu=false;
             last_middle=None;minimap_dragging=false;
             camera=None;
@@ -1925,7 +1938,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     minimap_dragging=false;
                     right_press=None;
                     last_selection_press=None;double_left_press=false;
-                    hud_press=None;squad_tab_press=None;
+                    hud_press=None;squad_tab_press=None;shooting_press=None;
                     shooting_menu=false;
                     // The server forgets this lease at the same authoritative
                     // episode boundary; the client never aims old ships.
@@ -1962,6 +1975,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     state["campaign_dialogue"]["cue"].clone(),
                 ).ok().is_some_and(CampaignCue::is_briefing))
         });
+        if peer.input_suppressed || selected.is_empty() {
+            shooting_menu=false;shooting_press=None;
+        }
         if let Some(mut cam)=camera {
             let keys=window.get_keys_pressed(KeyRepeat::No);
             let shift=window.is_key_down(Key::LeftShift)||
@@ -1969,6 +1985,27 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             let control=window.is_key_down(Key::LeftCtrl)||
                 window.is_key_down(Key::RightCtrl);
             for key in keys {
+                if shooting_menu {
+                    let current=usize::from(shooting_focus.saturating_sub(1));
+                    let next=match key {
+                        Key::Up=>Some(current/10*10+(current%10+9)%10),
+                        Key::Down=>Some(current/10*10+(current%10+1)%10),
+                        Key::Left=>Some((current+30)%40),
+                        Key::Right=>Some((current+10)%40),
+                        _=>None,
+                    };
+                    if let Some(index)=next {shooting_focus=(index+1) as u8;}
+                    if key==Key::Enter {
+                        match peer.order(&selected,"shooting",
+                            json!({"strategy_id":shooting_focus})) {
+                            Ok(())=>{shooting_menu=false;shooting_press=None;},
+                            Err(error)=>peer.notice=error.to_string(),
+                        }
+                    } else if matches!(key,Key::Backspace|Key::S) {
+                        shooting_menu=false;shooting_press=None;
+                    }
+                    continue;
+                }
                 let numbered=match key {
                     Key::Key1=>Some(1),Key::Key2=>Some(2),Key::Key3=>Some(3),
                     Key::Key4=>Some(4),Key::Key5=>Some(5),Key::Key6=>Some(6),
@@ -2092,6 +2129,38 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             if let Some(map)=peer.state.as_ref().and_then(bounds) {
                 cam.constrain_to_map(map,FIELD,HEIGHT);
             }
+            if shooting_menu {
+                // The shared native 40-strategy grid is a modal. A press
+                // must be released over its original strategy before
+                // sending the existing authenticated shooting input.
+                let left=window.get_mouse_down(MouseButton::Left);
+                if left&&!last_left&&window.is_active() {
+                    shooting_press=mouse.and_then(|(x,y)|
+                        shooting_hit(WIDTH,HEIGHT,x,y));
+                }
+                if !left&&last_left {
+                    let hovered=mouse.and_then(|(x,y)|
+                        shooting_hit(WIDTH,HEIGHT,x,y));
+                    if let Some(id)=shooting_press.take()
+                        .filter(|&id|Some(id)==hovered) {
+                        match peer.order(&selected,"shooting",
+                            json!({"strategy_id":id})) {
+                            Ok(())=>{shooting_menu=false;},
+                            Err(error)=>peer.notice=error.to_string(),
+                        }
+                    }
+                }
+                if let Some(id)=mouse.and_then(|(x,y)|
+                    shooting_hit(WIDTH,HEIGHT,x,y)) {
+                    shooting_focus=id;
+                }
+                last_left=left;
+                last_right=window.get_mouse_down(MouseButton::Right);
+                hud_press=None;squad_tab_press=None;
+                drag_start=None;right_press=None;
+                minimap_dragging=false;
+                camera=Some(cam);
+            } else {
             let within=mouse.and_then(|(x,y)| {
                 (x>=0.0 && x<FIELD as f32 && y>=0.0 && y<HEIGHT as f32 &&
                     !minimap.is_some_and(|layout| layout.world_at(x, y).is_some()))
@@ -2374,6 +2443,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             }
             last_left=left;last_right=right;
             camera=Some(cam);
+            }
         }
         let visual_fraction = peer.visual.fraction();
         if visual_fraction < 1.0 && !peer.visual.previous.is_empty() {
