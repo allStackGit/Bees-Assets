@@ -960,8 +960,21 @@ impl RunNetwork {
                 }
                 NativeHostSocketEvent::ServerFrame { request_hash,
                     delivery: Some(bees_gameplay::level_host::NativeHiveMindFrameDelivery::StoreCommands(ack)), .. } => {
+                    // 200 and 409 have already changed the durable retry
+                    // ledger. A transient rejection leaves its ORIGINAL
+                    // payload/hash owned by the connection. Give it one
+                    // bounded retry, not a new StoreCommands reservation or
+                    // an unbounded resend loop on each poll.
+                    let transient = matches!(
+                        &ack,
+                        bees_hivemind::outcomes::StoreAcknowledgement::Rejected { status, .. }
+                            if *status == 408 || *status == 429 || *status >= 500
+                    );
+                    let retry_scheduled = transient &&
+                        self.worker.retry_transient_store_once(request_hash);
                     println!("{}", json!({"kind": "hivemind_store_ack", "request_hash": request_hash,
-                        "acknowledgement": format!("{ack:?}")}));
+                        "acknowledgement": format!("{ack:?}"),
+                        "retry_scheduled": retry_scheduled}));
                 }
                 NativeHostSocketEvent::ServerFrame {
                     delivery: Some(
@@ -5784,6 +5797,7 @@ fn run_battle(
         "network": network.as_ref().map(|network| json!({
             "measurements": network.worker.measurements(),
             "queue_backpressure": network.worker.queue_backpressure(),
+            "transient_store_retries": network.worker.transient_store_retries(),
             "recorded_hivemind_events": network.recorded_network_events,
             "setups_remaining": network.levels.len() - network.next_level,
             "source_commands": {

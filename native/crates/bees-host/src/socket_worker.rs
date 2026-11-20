@@ -33,6 +33,11 @@ pub struct NativeSocketWorker {
     closed: bool,
     // Flow control only. Actual requests/retries remain in the connection.
     queued_stores: HashSet<i64>,
+    // One bounded retransmission for a transient StoreCommands rejection
+    // on this authenticated socket. The durable ledger remains the ONLY
+    // owner of the original payload and Hash; terminal 409 never retries.
+    retried_stores: HashSet<i64>,
+    transient_store_retries: u64,
     // Socket-local flow control only; all pending request identity and
     // outcome correlation stays inside DurableHiveMindConnection.session.
     queued_requests: HashSet<i64>,
@@ -88,6 +93,7 @@ impl NativeSocketWorker {
             }
         }).map_err(NativeSocketWorkerError::Spawn)?;
         Ok(Self { outgoing, incoming, ready: false, closed: false, queued_stores: HashSet::new(),
+            retried_stores: HashSet::new(), transient_store_retries: 0,
             queued_requests: HashSet::new(),
             measurements: NativeSocketMeasurements::default(), queue_backpressure: 0 })
     }
@@ -97,6 +103,7 @@ impl NativeSocketWorker {
     /// Snapshot at the most recently delivered socket event.
     pub fn measurements(&self) -> NativeSocketMeasurements { self.measurements }
     pub fn queue_backpressure(&self) -> u64 { self.queue_backpressure }
+    pub fn transient_store_retries(&self) -> u64 { self.transient_store_retries }
 
     fn enqueue(&mut self, request: PreparedSocketRequest) -> Result<(), NativeSocketWorkerError> {
         match self.outgoing.try_send(WorkerCommand::Send(request)) {
@@ -211,12 +218,26 @@ impl NativeSocketWorker {
         }
         // Acknowledged hashes need no further transport flow-control state.
         self.queued_stores.retain(|&hash| connection.connection().retry_store(hash).is_some());
+        self.retried_stores.retain(|&hash| connection.connection().retry_store(hash).is_some());
         Ok(queued)
     }
 
     /// Explicit retry after a nonterminal server failure. It remains the
     /// original persisted payload/hash; no per-frame resend timer is invented.
     pub fn retry_store(&mut self, hash: i64) { self.queued_stores.remove(&hash); }
+
+    /// A transient rejection may leave the server commit uncertain. Admit
+    /// at most one identical-Hash retry per socket session; a repeated
+    /// rejection remains in the durable checkpoint for later review or
+    /// reconnect rather than starting an unbounded network retry loop.
+    pub fn retry_transient_store_once(&mut self, hash: i64) -> bool {
+        if !self.queued_stores.contains(&hash) || !self.retried_stores.insert(hash) {
+            return false;
+        }
+        self.queued_stores.remove(&hash);
+        self.transient_store_retries += 1;
+        true
+    }
 
     /// A fresh worker replays pending stores after authenticated setup.
     /// Closing/dropping a worker never alters the connection's durable queue.
