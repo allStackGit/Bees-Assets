@@ -340,6 +340,11 @@ impl PendingStoreCommands {
     /// discard markers or terminal 409 records still agree. Reuse the
     /// one authoritative batch validator, off the gameplay hot path.
     pub fn validate_checkpoint(&self) -> Result<(), HiveMindProtocolError> {
+        // The same server reservation must never be credited/discarded
+        // under two different outstanding request Hashes. A 409's stale
+        // reservations are also terminal and cannot appear in a pending
+        // batch. Check all restored entries once, not during physics.
+        let mut owned_reservations = HashSet::new();
         for (&hash, request) in &self.submissions {
             if hash != request.hash ||
                 request.message_type != crate::protocol::STORE_COMMANDS_TYPE ||
@@ -354,12 +359,21 @@ impl PendingStoreCommands {
                 discarded: request.discarded_outcome_ids.clone(),
             };
             batch.validate_journal()?;
+            if batch.seen.iter().any(|&id| !owned_reservations.insert(id)) {
+                return Err(HiveMindProtocolError::DuplicateReservation);
+            }
         }
         for stale_ids in self.reconciliation.values() {
-            let mut unique = HashSet::with_capacity(stale_ids.len());
-            if stale_ids.is_empty() ||
-                stale_ids.iter().any(|&id| id <= 0 || !unique.insert(id)) {
+            if stale_ids.is_empty() {
                 return Err(HiveMindProtocolError::InvalidReservation);
+            }
+            for &id in stale_ids {
+                if id <= 0 {
+                    return Err(HiveMindProtocolError::InvalidReservation);
+                }
+                if !owned_reservations.insert(id) {
+                    return Err(HiveMindProtocolError::DuplicateReservation);
+                }
             }
         }
         Ok(())
