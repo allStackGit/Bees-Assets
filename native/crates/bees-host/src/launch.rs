@@ -778,9 +778,10 @@ impl NativePolicyInference for RolloutModel {
     }
 
     fn checkpoint_model_digest(&self) -> Option<[u8; 32]> {
-        // Playback and capture have external file cursors; their state must
-        // join the host transaction before either may resume mid-session.
-        if self.playback.is_some() || self.recorder.is_some() {
+        // Playback cannot be resumed with a World checkpoint. Recording
+        // can: the launcher syncs its exact byte cursors into the SAME
+        // authoritative host transaction before sampling this model.
+        if self.playback.is_some() {
             return None;
         }
         match &self.resident {
@@ -790,7 +791,7 @@ impl NativePolicyInference for RolloutModel {
     }
 
     fn checkpoint_sampling_state(&mut self) -> Result<Option<Vec<u8>>, Self::Error> {
-        if self.playback.is_some() || self.recorder.is_some() {
+        if self.playback.is_some() {
             return Ok(None);
         }
         match &mut self.resident {
@@ -800,7 +801,7 @@ impl NativePolicyInference for RolloutModel {
     }
 
     fn restore_sampling_state(&mut self, saved: &[u8]) -> Result<bool, Self::Error> {
-        if self.playback.is_some() || self.recorder.is_some() {
+        if self.playback.is_some() {
             return Ok(false);
         }
         match &mut self.resident {
@@ -4967,10 +4968,11 @@ fn run_battle(
     let trace_output = output.filter(|_| (play || remote_step_interval.is_some()) &&
         replay_inputs.is_none() && navigation_workers.is_none() &&
         config.model_updates.is_empty() && config.host_recovery_checkpoint.is_none());
-    // A checkpointed session must not create an unrelated policy capture
-    // or input trace whose write cursor cannot be rolled back with a World.
-    if config.host_recovery_checkpoint.is_some() && replay_inputs.is_some() {
-        return Err(invalid("native host continuation cannot share an input replay").into());
+    // Offline replay reads the exact original run bytes for its identity,
+    // but cannot checkpoint an action playback file as if it were a live
+    // resident policy. Playback always creates a distinct output World.
+    if replay_inputs.is_some() {
+        config.host_recovery_checkpoint = None;
     }
     if let Some(directory) = output {
         if directory.exists() || directory.is_symlink() {
