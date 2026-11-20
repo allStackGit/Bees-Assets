@@ -942,7 +942,7 @@ function distributedVersionBlock(snapshot,job) {
         ?'tinybrains':project==='courier'||project==='courier_lineage'
             ?'courier':null;
     if(!component)return null;
-    const release=machine=>snapshot.machine_software?.[machine]?.[component];
+    const release=machine=>snapshot.machine_active_software?.[machine]?.[component];
     const self=release(job.assigned_machine_id);
     // Missing version observations remain conservative unknowns; a known
     // mismatch is never silently admitted as protocol-compatible.
@@ -2006,6 +2006,14 @@ class ExperimentHub {
         if(value.status==='activating')
             this.updateRecovery.set(value.machine_id,Date.now());
         next.machine_software[value.machine_id][value.component]=item;
+        if(value.status==='active') {
+            next.machine_active_software=next.machine_active_software||{};
+            next.machine_active_software[value.machine_id]=
+                next.machine_active_software[value.machine_id]||{};
+            next.machine_active_software[value.machine_id][value.component]={
+                version:value.version,sha256:value.sha256,at:item.at,
+            };
+        }
         next.machine_software_events=next.machine_software_events||[];
         const previous=this.state.machine_software?.[value.machine_id]?.[value.component];
         if(!previous||previous.status!==item.status||
@@ -2160,6 +2168,7 @@ class ExperimentHub {
         });
         snapshot.machine_connection_events=copy(snapshot.machine_connection_events||[]);
         snapshot.machine_software=copy(snapshot.machine_software||{});
+        snapshot.machine_active_software=copy(snapshot.machine_active_software||{});
         snapshot.machine_software_events=copy(snapshot.machine_software_events||[]);
         snapshot.machine_update_policies=copy(snapshot.machine_update_policies||{});
         snapshot.machine_connectivity=copy(snapshot.machine_connectivity||{});
@@ -3388,7 +3397,7 @@ class ExperimentHub {
         const component=['tinybrains','tinybrains_rollout'].includes(selected.project_id)
             ?'tinybrains':['courier','courier_lineage'].includes(selected.project_id)
                 ?'courier':null;
-        const software=component&&snapshot.machine_software
+        const software=component&&snapshot.machine_active_software
             ?.[selected.assigned_machine_id]?.[component];
         if(software?.version)
             selected.dispatched_software_version=software.version;
