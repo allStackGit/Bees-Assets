@@ -53,7 +53,7 @@ function renderPage(html) {
         '</div>'+
         '<p id="hub-local-service-message" class="hub-notice" role="status"></p>'+
         '<h4>Independent evaluation services</h4>'+
-        '<p class="muted">Manage locally approved Nano and Micro timers here. '+
+        '<p class="muted">Set up missing frozen Nano/Micro suites and manage their timers here. '+
         'Starting a timer schedules evaluations; Run now requests one immediate evaluation. '+
         'Stopping a timer does not stop training or interrupt a running evaluation.</p>'+
         '<div class="hub-controls">'+
