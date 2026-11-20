@@ -1640,15 +1640,36 @@ function allocationBlockReason(machines,job,preferredMachineId=null) {
     }
     return 'No eligible connected worker has enough remaining capacity.';
 }
+// A base worker may reserve CPU capacity while its simulation is installed.
+// This is never evidence that an uninstalled adapter can execute a job.
+function canPrepareSimulation(machine,job) {
+    if(!machine||machine.status!=='connected'||
+        machine.local_executor_enabled!==true||
+        !['tinybrains','courier'].includes(job?.project_id)||
+        machine.installed_projects?.includes(job.project_id)||
+        job.resources?.gpu_count!==0||
+        job.continuation_of_job_id||job.after_job_id||
+        job.distributed_rollout_managed===true||
+        job.distributed_courier_managed===true||
+        job.frozen_parameters?.remote_rollouts===true||
+        job.frozen_parameters?.remote_lineages===true)
+        return false;
+    return machine.agent_platform==='win32'||
+        machine.agent_platform==='linux'&&
+        machine.execution_capabilities?.cgroup_v2_detected===true&&
+        ['cpu','memory'].every(c=>
+            machine.execution_capabilities?.cgroup_controllers?.includes(c));
+}
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
     following=[],futureMachinesFor=()=>machines,snapshot=null) {
     const eligibleOptions=(selected,hosts,preferred=null)=>{
         const eligible=hosts.filter(machine=>
             machine.software_update_blocked!==true&&
-            supportsEvaluation(machine.evaluation_suites,selected)&&
-            supportsTinyBrainsProfile(machine,selected)&&
-            supportsDesign(machine.design_catalog,selected.project_id,selected.frozen_parameters)&&
-            (!snapshot||!courierCurriculumBlock(snapshot,selected,machine))&&
+            (canPrepareSimulation(machine,selected)||
+                supportsEvaluation(machine.evaluation_suites,selected)&&
+                supportsTinyBrainsProfile(machine,selected)&&
+                supportsDesign(machine.design_catalog,selected.project_id,selected.frozen_parameters)&&
+                (!snapshot||!courierCurriculumBlock(snapshot,selected,machine)))&&
             (!snapshot||distributedRolloutHost(snapshot,selected,machine))&&
             (!preferred||preferred===machine.id)&&
             (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
@@ -6044,9 +6065,10 @@ class ExperimentHub {
                 !ID.test(String(selection.machine_id||'')))
                 throw Error('Each bundle member requires a saved configuration, machine ID and fixed resource budget.');
             const machine=machines.find(host=>host.id===selection.machine_id);
+            const preparing=canPrepareSimulation(machine,job);
             if(!machine||machine.status!=='connected'||
                 machine.local_executor_enabled!==true||
-                machine.native_preflight_passed!==true||
+                (!preparing&&machine.native_preflight_passed!==true)||
                 !['win32','linux'].includes(machine.agent_platform)||
                 (machine.agent_platform==='linux'&&
                     (machine.execution_capabilities?.cgroup_v2_detected!==true||
@@ -6060,10 +6082,10 @@ class ExperimentHub {
                 (job.project_id==='courier'&&job.frozen_parameters?.remote_lineages===true)||
                 job.status!=='waiting_adapter'||
                 job.continuation_of_job_id||job.after_job_id||
-                !machine.installed_projects?.includes(job.project_id)||
-                !supportsEvaluation(machine.evaluation_suites,job)||
-                !supportsTinyBrainsProfile(machine,job))
-                throw Error('Bundle member '+(index+1)+' requires an approved independent project adapter and configuration.');
+                (!preparing&&(!machine.installed_projects?.includes(job.project_id)||
+                    !supportsEvaluation(machine.evaluation_suites,job)||
+                    !supportsTinyBrainsProfile(machine,job))))
+                throw Error('Bundle member '+(index+1)+' requires an approved independent project adapter or a preparable CPU-only simulation.');
             const courierMulti=job.project_id==='courier'&&
                 ['linux','win32'].includes(machine.agent_platform)&&
                 job.resources.gpu_count>=2&&job.resources.gpu_count<=8&&

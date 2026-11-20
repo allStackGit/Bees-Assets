@@ -1333,8 +1333,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const selected=configs.find(c=>c.id===config.value);
             const eligible=machines.filter(m=>
                 m.status==='connected'&&m.local_executor_enabled===true&&
-                m.native_preflight_passed===true&&
-                m.installed_projects?.includes(selected?.project_id));
+                (m.native_preflight_passed===true&&
+                    m.installed_projects?.includes(selected?.project_id)||
+                    ['courier','tinybrains'].includes(selected?.project_id)&&
+                    !m.installed_projects?.includes(selected.project_id)&&
+                    (m.agent_platform==='win32'||m.agent_platform==='linux'&&
+                        m.execution_capabilities?.cgroup_v2_detected===true&&
+                        ['cpu','memory'].every(c=>
+                            m.execution_capabilities?.cgroup_controllers?.includes(c)))));
             machine.replaceChildren(...eligible.map(m=>
                 new Option(m.name+' ('+m.id+')',m.id)));
             if(eligible.some(m=>m.id===oldMachine))machine.value=oldMachine;
