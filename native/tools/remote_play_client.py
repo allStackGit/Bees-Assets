@@ -651,13 +651,12 @@ def main():
                     if console.alive:
                         print("The native host connection is already active")
                         continue
-                    if console.host_session_id is None:
+                    session = console.host_session_id or console.expected_session_id
+                    if session is None:
                         print("No authenticated host session to rejoin")
                         continue
                     try:
-                        new_connection, new_console, new_receiver = connect(
-                            console.host_session_id
-                        )
+                        new_connection, new_console, new_receiver = connect(session)
                     except OSError as error:
                         print(f"Recovered native host unavailable: {error}")
                         continue
@@ -670,7 +669,9 @@ def main():
                     )
                     continue
                 if not console.alive:
-                    print("Connection closed; enter 'rejoin' to resume the original battle")
+                    if line.strip().lower() == "quit":
+                        break
+                    print("Connection closed; enter 'rejoin' to resume the original battle, or 'quit'")
                     continue
                 console.command(line)
                 if line.strip().lower() == "quit":
