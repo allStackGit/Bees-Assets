@@ -6208,14 +6208,20 @@ fn run_battle(
                 } else { Vec::new() },
             })
         });
-    // Source FleetShip statistics are committed only for a finished,
-    // successful campaign battle. Read the SAME Level-owned mining ledger
-    // used by rewards, not ship visuals or the raw combat cargo gauge.
-    // An exported FleetShip ID is distinct from its transient entity ID;
-    // temporary children and unrelated skirmishes must never earn career
-    // progress. The completed run summary is the durable transaction.
+    // RecordStats and CollectMinedMineralsForPlayer are independent source
+    // mission actions. Read both from the SAME Level-owned FleetShip mining
+    // ledger, but never invent career combat statistics when RecordStats
+    // is disabled. No training tick pays for this terminal-only projection.
+    // Transient minions and unrelated factions never contribute account TSV.
+    let record_fleet_stats = mission.is_some_and(|value| value.record_fleet_stats);
+    let banking_side = mission.filter(|value|
+        value.bank_player_minerals &&
+        campaign_outcome.as_ref().is_some_and(CampaignOutcome::mission_victory)
+    ).map(|value| value.player_side);
+    let mut banked_minerals = 0_u64;
     let campaign_fleet = if campaign_outcome.is_some() &&
-        mission.is_some_and(|value| value.record_fleet_stats) {
+        mission.is_some_and(|value| value.record_fleet_stats || value.bank_player_minerals)
+    {
         let state = &host.simulation().world(0)
             .ok_or_else(|| invalid("completed campaign World is unavailable"))?.state;
         let mut seen = HashSet::new();
@@ -6223,23 +6229,35 @@ fn run_battle(
         for ship in state.combat.ships() {
             let Some(value) = state.metadata.fleet.get(ship.entity_id) else { continue };
             if !value.has_persistent_fleet_value { continue; }
+            // A persistent FleetShip ID is not its transient combat entity ID.
             let fleet_ship_id = state.combat.ship_fleet_identity(ship.entity_id)
                 .ok_or_else(|| invalid("persistent ship lacks its authored FleetShip identity"))?;
             if fleet_ship_id <= 0 || !seen.insert(fleet_ship_id) {
                 return Err(invalid("duplicate or invalid persistent FleetShip in completed campaign").into());
             }
-            fleet.push(CampaignFleetShipOutcome {
-                fleet_ship_id, side: ship.side,
-                minerals_mined_this_level: value.minerals_mined_this_level,
-                is_dead: Some(state.metadata.fleet.was_killed(ship.entity_id)),
-                combat: state.metadata.fleet.combat_stats(ship.entity_id),
-            });
+            let killed = state.metadata.fleet.was_killed(ship.entity_id);
+            if banking_side == Some(ship.side) && !killed {
+                banked_minerals = banked_minerals.checked_add(
+                    u64::try_from(value.minerals_mined_this_level)
+                        .map_err(|_| invalid("negative mined mineral balance"))?
+                ).ok_or_else(|| invalid("banked campaign mineral overflow"))?;
+            }
+            if record_fleet_stats {
+                fleet.push(CampaignFleetShipOutcome {
+                    fleet_ship_id, side: ship.side,
+                    minerals_mined_this_level: value.minerals_mined_this_level,
+                    is_dead: Some(killed),
+                    combat: state.metadata.fleet.combat_stats(ship.entity_id),
+                });
+            }
         }
-        fleet.sort_unstable_by_key(|ship| ship.fleet_ship_id);
+        if record_fleet_stats {
+            fleet.sort_unstable_by_key(|ship| ship.fleet_ship_id);
+        }
         Some(fleet)
     } else if campaign_outcome.is_some() {
-        // Explicitly empty (not missing historical data): the authored
-        // campaign stage did not permit recording long-term fleet stats.
+        // Explicitly empty: the authored campaign Stage did not record
+        // persistent fleet statistics or bank minerals.
         Some(Vec::new())
     } else { None };
     // Saved-squad career stats are derived from exactly the same verified
@@ -6283,27 +6301,12 @@ fn run_battle(
         squads.sort_unstable_by_key(|row| row.saved_squad_id);
         Some(squads)
     } else { None };
-    // Only campaign ending actions explicitly configured to collect
-    // player minerals may increase the account balance. Mining credits
-    // lost on ship death have already been retired by the shared Level.
+    // CollectMinedMineralsForPlayer banks only after actual mission
+    // victory, even when the source Stage opts out of RecordStats.
+    // A completed defeat has an explicit zero-income receipt.
     let campaign_banked_minerals = if campaign_outcome.is_some() &&
-        mission.is_some_and(|mission| mission.bank_player_minerals) {
-        let side = mission.expect("banked campaign owner").player_side;
-        if campaign_outcome.as_ref().is_some_and(CampaignOutcome::mission_victory)
-        {
-            Some(campaign_fleet.as_ref().ok_or_else(||
-                invalid("banked campaign cannot lack its FleetShip receipt"))?
-                .iter().filter(|ship| ship.side == side).try_fold(0_u64, |total, ship|
-                    total.checked_add(u64::try_from(ship.minerals_mined_this_level)
-                        .map_err(|_| invalid("negative mined mineral balance"))?)
-                        .ok_or_else(|| invalid("banked campaign mineral overflow"))
-                )?)
-        } else {
-            // Source campaign ending callbacks that bank resources run on
-            // victory. A completed defeat is a valid zero-income receipt,
-            // not a missing or replayable account transaction.
-            Some(0)
-        }
+        mission.is_some_and(|value| value.bank_player_minerals) {
+        Some(banked_minerals)
     } else { None };
     // Include all current episode admissions as well as those from
     // previously recycled worlds. This covers independent multi-episode
