@@ -34,7 +34,8 @@ pub struct DiscoveryCounts {
     pub map_objects: usize,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SideDiscovery {
     ships: HashSet<i64>,
     /// HashSet membership is O(1), while the authored game enumerates its
@@ -46,7 +47,8 @@ struct SideDiscovery {
     map_objects: HashSet<i64>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LevelDiscovery {
     sides: HashMap<i32, SideDiscovery>,
 }
@@ -56,6 +58,34 @@ impl LevelDiscovery {
 
     pub fn clear_level(&mut self) {
         self.sides.clear();
+    }
+
+    /// Restore the SAME learned faction vision cache as gameplay, not a
+    /// regenerated observation from current physical line of sight. First
+    /// sighting order affects source HiveMind matchup tie-breaking and must
+    /// survive even if the discovering observer has since been destroyed.
+    /// Validate the complete restored cache before changing this Level.
+    pub fn restore_checkpoint(
+        &mut self, checkpoint: LevelDiscovery,
+    ) -> Result<(), &'static str> {
+        for (&side_id, found) in &checkpoint.sides {
+            if side_id <= 0 ||
+                found.ships.iter().chain(found.obstacles.iter())
+                    .chain(found.mining.iter()).chain(found.map_objects.iter())
+                    .any(|&id| id <= 0) ||
+                !found.mining.is_subset(&found.obstacles) ||
+                found.ship_sighting_order.len() != found.ships.len()
+            {
+                return Err("invalid native learned faction discovery checkpoint");
+            }
+            let mut ordered = HashSet::with_capacity(found.ship_sighting_order.len());
+            if found.ship_sighting_order.iter().any(|id|
+                !found.ships.contains(id) || !ordered.insert(*id)) {
+                return Err("invalid native ship first-sighting order");
+            }
+        }
+        *self = checkpoint;
+        Ok(())
     }
 
     /// Source-owned faction IDs for optional deterministic replay capture.
