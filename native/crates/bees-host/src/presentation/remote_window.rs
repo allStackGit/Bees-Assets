@@ -62,6 +62,7 @@ struct WireCounts {
     acknowledgments: u64,
     briefing_requests_sent: u64,
     briefing_receipts: u64,
+    briefing_rejections: u64,
     orders_accepted: u64,
     orders_rejected: u64,
     campaign_receipts: u64,
@@ -394,6 +395,9 @@ struct PeerClient {
     /// Never restored when the TCP connection or host identity changes.
     briefing_pending: Option<(u64,u64,u8,u64)>,
     briefing_approved: Option<(u64,u64,u8)>,
+    /// A denied cue is not resent every display frame. A new World or
+    /// source cue can still request its own acknowledgment.
+    briefing_rejected: Option<(u64,u64,u8)>,
     authenticated: bool,
     connected: bool,
     /// UI-only control gate, computed from the authoritative story cue
@@ -442,6 +446,7 @@ impl PeerClient {
             written: 0, queued_bytes: 0, next_request: 1,
             last_response_request: 0,
             briefing_pending: None, briefing_approved: None,
+            briefing_rejected: None,
             authenticated: false, connected: true, input_suppressed: false, side,
             host_session_id: None, expected_host_session_id: None,
             state: None, visual: RemoteVisual::default(),
@@ -623,6 +628,13 @@ impl PeerClient {
                     self.briefing_pending=None;
                     if processed {
                         self.briefing_approved=Some((world,revision,sequence));
+                        self.briefing_rejected=None;
+                    } else {
+                        // A rejection is authoritative for this exact cue.
+                        // Retrying the same stale request every rendered frame
+                        // cannot release the Level and only floods its socket.
+                        self.briefing_rejected=Some((world,revision,sequence));
+                        self.metrics.briefing_rejections+=1;
                     }
                     self.metrics.briefing_receipts+=1;
                     self.notice=format!("Story {request}: {feedback}");
@@ -2147,7 +2159,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             if let Some((world,revision,sequence))=story_briefing {
                 let pending=peer.briefing_pending.is_some_and(|(w,r,s,_)|
                     (w,r,s)==(world,revision,sequence));
-                if peer.briefing_approved!=story_briefing && !pending &&
+                if peer.briefing_approved!=story_briefing &&
+                    peer.briefing_rejected!=story_briefing && !pending &&
                     peer.connected && peer.authenticated
                 {
                     if let Err(error)=peer.briefing_ready(world,revision,sequence) {
@@ -2768,6 +2781,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "order_acknowledgments":peer.metrics.acknowledgments,
         "briefing_requests_sent":peer.metrics.briefing_requests_sent,
         "briefing_receipts":peer.metrics.briefing_receipts,
+        "briefing_rejections":peer.metrics.briefing_rejections,
         "orders_accepted":peer.metrics.orders_accepted,
         "orders_rejected":peer.metrics.orders_rejected,
         "campaign_receipts":peer.metrics.campaign_receipts,
