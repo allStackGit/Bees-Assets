@@ -86,7 +86,7 @@ function createCourierRemoteLineageAdapter({
         fs.realpathSync(pythonPath)!==pythonPath||!fs.statSync(pythonPath).isFile())
         throw Error('Courier remote Python must be an installed executable file.');
     const probe=spawnSync(pythonPath,['-B','-c',
-        'import inspect, courier_remote_lineage as r; print(int("shared_policy" in inspect.signature(r.serve).parameters))'],{
+        'import inspect, courier_remote_lineage as r; print(int("shared_policy" in inspect.signature(r.serve).parameters), int(getattr(r, "REMOTE_PPO_SETTINGS_VERSION", None)==1))'],{
         cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
     });
     if(probe.status!==0)
@@ -100,7 +100,11 @@ function createCourierRemoteLineageAdapter({
         if(gpuProbe.status!==0)
             throw Error('Installed Courier remote worker has no approved CUDA/ROCm runtime.');
     }
-    const sharedPolicy=probe.stdout.trim()==='1';
+    const capabilities=probe.stdout.trim().split(/\s+/);
+    if(capabilities.length!==2||capabilities.some(bit=>!['0','1'].includes(bit)))
+        throw Error('Courier remote worker returned an invalid protocol capability probe.');
+    const sharedPolicy=capabilities[0]==='1';
+    const remotePpoSettings=capabilities[1]==='1';
     if(slots.length&&!sharedPolicy)
         throw Error('Slot-specific Courier listeners require the installed shared-policy collector protocol.');
     const approved=Object.freeze({...rocrGpuUuids});
@@ -111,6 +115,7 @@ function createCourierRemoteLineageAdapter({
         courier_lineage_key_fingerprint:fingerprint,
         courier_lineage_max_shards:maxShards,
         courier_shared_policy_collector:sharedPolicy,
+        courier_lineage_remote_ppo_settings:remotePpoSettings,
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
         ...(enableRocm?{
             rocr_gpu_uuids:approved,
