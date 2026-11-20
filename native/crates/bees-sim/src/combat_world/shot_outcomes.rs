@@ -99,6 +99,27 @@ impl ProjectileOutcomeTracker {
         Ok(())
     }
 
+    /// A tracked root's continuation count must equal the active physical
+    /// projectile bodies carrying its original immutable attribution.
+    /// Game-controlled (untracked) roots are deliberately excluded.
+    pub(super) fn validate_active_projectiles(
+        &self, projectiles: &[crate::physics::ProjectileBody],
+    ) -> Result<(), &'static str> {
+        let mut observed = HashMap::<i64, usize>::new();
+        for projectile in projectiles.iter().filter(|projectile| projectile.active) {
+            let root = projectile.motion.attribution.root_shot_id;
+            if self.active.contains_key(&root) {
+                *observed.entry(root).or_insert(0) += 1;
+            }
+        }
+        if self.active.iter().any(|(&root, owner)|
+            observed.get(&root).copied().unwrap_or(0) != owner.live
+        ) {
+            return Err("native policy projectile continuations disagree with physical shot ownership");
+        }
+        Ok(())
+    }
+
     pub(super) fn launched(&mut self, root: i64, shooter_id: i64, side: i32) {
         debug_assert!(root > 0 && shooter_id > 0 && side > 0);
         let replaced = self.active.insert(root, ActiveRoot {

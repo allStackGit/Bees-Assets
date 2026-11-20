@@ -1441,6 +1441,22 @@ impl CombatWorld {
         let mut outcomes = ProjectileOutcomeTracker::default();
         outcomes.restore_checkpoint(snapshot.shot_outcomes)
             .map_err(|_| CombatWorldError::InvalidRecoveryCheckpoint)?;
+        outcomes.validate_active_projectiles(physics.projectiles())
+            .map_err(|_| CombatWorldError::InvalidRecoveryCheckpoint)?;
+        // These lookup maps are part of the other authored CombatWorld
+        // gameplay state. Never apply the physical owner bundle to a world
+        // whose ship/shot slot identities have not first been recovered.
+        if self.ship_by_id.len() != physics.ships().len() ||
+            self.projectile_by_id.len() != physics.projectiles().len() ||
+            physics.ships().iter().enumerate().any(|(index, body)|
+                self.ship_by_id.get(&body.id) != Some(&index)) ||
+            physics.projectiles().iter().enumerate().any(|(index, body)|
+                self.projectile_by_id.get(&body.id) != Some(&index)) ||
+            physics.obstacles().iter().enumerate().any(|(index, body)|
+                (self.obstacle_by_id.get(&body.id) == Some(&index)) != body.active)
+        {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
         let positions = physics.ships().iter()
             .filter(|ship| ship.active)
             .map(|ship| (ship.id, ship.motion.position))
