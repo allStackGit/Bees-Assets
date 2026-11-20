@@ -476,6 +476,28 @@ async function main() {
     // heartbeat and never block native Stop/Inspect report delivery.
     const mirrorTimer=!once&&syncLogs
         ?setInterval(collectArtifacts,60000):null;
+    if(!once) {
+        // systemd-driven software activation can restart only the agent,
+        // leaving separately OS-owned native jobs and checkpoint journals.
+        // Sign off before this process disappears so the replacement agent
+        // does not collide with a stale 45-second instance identity.
+        let stopping=false;
+        process.once('SIGTERM',async()=>{
+            if(stopping)return;
+            stopping=true;
+            clearInterval(timer);
+            if(mirrorTimer)clearInterval(mirrorTimer);
+            try {
+                if(busyHeartbeat)await busyHeartbeat;
+                await sendHeartbeat(url,id,token,[],[],advertisement,[],false,true);
+            }catch(error) {
+                console.error('[experiment-hub-agent] Update sign-off: '+
+                    String(error.message||error).slice(0,160));
+            }finally {
+                process.exit(0);
+            }
+        });
+    }
     await poll(!once);
     if(!once)collectArtifacts();
     if(once) {
