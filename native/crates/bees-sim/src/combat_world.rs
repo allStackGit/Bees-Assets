@@ -1752,6 +1752,8 @@ impl CombatWorld {
         // Preserve ordered reuse and any delayed collision-retirement
         // timer. The matching immutable catalog must already be loaded.
         let pools = &snapshot.asteroid_pools;
+        let active_obstacle_ids: HashSet<i64> = physics.obstacles().iter()
+            .filter(|body| body.active).map(|body| body.id).collect();
         let full_valid = |profile: FullAsteroidPrototype| {
             profile.prefab_number > 0 && profile.prefab_number <= 28 &&
             profile.speed >= 2
@@ -1766,11 +1768,11 @@ impl CombatWorld {
                 !pools.pieces.is_empty() || !pools.pooled_pieces.is_empty() ||
                 !pools.pending_breakups.is_empty()) && self.fragmentation.is_none() ||
             pools.active_full.iter().any(|(&id, &profile)|
-                !obstacle_by_id.contains_key(&id) || !full_valid(profile)
+                !active_obstacle_ids.contains(&id) || !full_valid(profile)
             ) ||
             pools.pooled_full.iter().any(|&profile| !full_valid(profile)) ||
             pools.active_shards.iter().any(|(&id, &profile)|
-                !obstacle_by_id.contains_key(&id) || !shard_valid(profile)
+                !active_obstacle_ids.contains(&id) || !shard_valid(profile)
             ) ||
             pools.pooled_shards.iter().any(|&profile| !shard_valid(profile)) ||
             pools.pooled_pieces.iter().any(|&profile|
@@ -1779,7 +1781,7 @@ impl CombatWorld {
             ) ||
             pools.pieces.iter().any(|piece| !piece.valid_recovery()) ||
             pools.delayed_kills.iter().any(|(&id, timer)|
-                id <= 0 || !obstacle_by_id.contains_key(&id) ||
+                id <= 0 || !active_obstacle_ids.contains(&id) ||
                 !timer.valid_recovery()
             ) ||
             pools.shard_families.iter().any(|(&id, &parent)|
