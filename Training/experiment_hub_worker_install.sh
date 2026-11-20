@@ -289,19 +289,8 @@ if has_project courier; then
 fi
 
 if [[ "$MODE" == install ]]; then
-    [[ "$MACHINE_ID" =~ ^[a-z][a-z0-9_-]{0,47}$ ]] ||
-        { echo "Supply the exact enrolled Hub machine ID via --machine-id." >&2; exit 1; }
-    [[ -n "$TB_KEY" || "$PROJECTS" != *tinybrains* ]] ||
-        { echo "Supply the same private TinyBrains rollout key used by the Halifax learner." >&2; exit 1; }
-    if has_project courier && [[ -z "$COURIER_KEY" ]]; then
-        echo "Supply the same private Courier remote key used by the learner." >&2; exit 1
-    fi
-    read -r -s -p 'One-time Hub agent enrollment token (64 lowercase hex characters): ' TOKEN
-    echo
-    [[ "$TOKEN" =~ ^[0-9a-f]{64}$ ]] ||
-        { echo "Invalid token; enroll the machine in the Hub first." >&2; exit 1; }
-    if has_project tinybrains; then install -m 600 "$TB_KEY" "$PRIVATE/tinybrains-rollout.key"; fi
-    if has_project courier; then install -m 600 "$COURIER_KEY" "$PRIVATE/courier-rollout.key"; fi
+    [[ "$MACHINE_ID" =~ ^[a-z][a-z0-9_-]{0,47}$ && "$TOKEN" =~ ^[0-9a-f]{64}$ ]] ||
+        { echo "Tailscale bootstrap did not return valid enrollment credentials." >&2; exit 1; }
     {
         printf 'EXPERIMENT_HUB_MACHINE_ID=%s\n' "$MACHINE_ID"
         printf 'EXPERIMENT_HUB_AGENT_TOKEN=%s\n' "$TOKEN"
@@ -347,7 +336,7 @@ if [[ ! -f "$HOME/.config/systemd/user/$SERVICE" ]]; then
 fi
 systemctl --user daemon-reload
 if (( START )); then
-    echo "Start requested: confirm there are no active native jobs before restarting an existing agent."
+    echo "Starting enrolled Hub agent."
     if systemctl --user is-active --quiet "$SERVICE"; then
         echo "Existing agent still running; stop managed jobs and restart it through the Hub." >&2
     else
@@ -400,4 +389,4 @@ systemctl --user enable --now bees-experiment-hub-worker-update.timer
 
 echo "Worker prepared. No native experiment was started."
 echo "Tailscale listeners: TinyBrains 12134/12135; Courier 13134/13135 (enabled projects only)."
-echo "In Hub Machines, register/enroll this exact worker and confirm its authenticated native capability report."
+echo "Enrolled through Tailscale; worker will report its capabilities to Hub Machines."
