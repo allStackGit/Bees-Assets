@@ -51,7 +51,7 @@
             title.textContent=item.project==='courier'?'Courier survival':
                 item.id==='nano'?'TinyBrains Nano':'TinyBrains Micro';
             const status=document.createElement('span');
-            status.textContent=!item.installed?'Not installed':
+            status.textContent=!item.installed?(item.reason||'Not installed'):
                 !item.managed?'Not ready: '+(item.reason||'unmanaged service'):
                     (item.active?'Schedule active':'Schedule stopped')+
                     (item.running?' · evaluation running':'')+
