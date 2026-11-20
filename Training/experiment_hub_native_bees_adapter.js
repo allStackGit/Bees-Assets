@@ -209,7 +209,8 @@ function learnerMeasurements(metrics) {
         'dynamic_policy_admissions_without_decisions',
         'dynamic_policy_decision_phases_max',
         'dynamic_policy_decision_rows', 'dynamic_policy_learner_decision_rows',
-        'dynamic_policy_peak_live_agents', 'reward_journal_events',
+        'dynamic_policy_peak_live_agents', 'recycled_policy_bindings',
+        'capture_ungrouped_policy_decisions', 'reward_journal_events',
         'optimizer_torch_intraop_threads', 'optimizer_torch_interop_threads'])
         add(name, 'count');
     add('reward_journal_payload_bytes', 'bytes');
@@ -463,6 +464,15 @@ function rolloutReinforcementMeasurements(rollout) {
     }
     if (admissions.policy_agents > admissions.ships)
         throw Error('Policy admissions exceed physical reinforcement ships.');
+    if (admissions.group_agents != null) {
+        if (!Number.isSafeInteger(admissions.group_agents) ||
+            admissions.group_agents < 0 ||
+            admissions.group_agents > admissions.policy_agents)
+            throw Error('Native grouped policy admissions exceed physical policy bindings.');
+        result.rollout_reinforcement_group_agents = {
+            value: admissions.group_agents, unit: 'count',
+        };
+    }
     return result;
 }
 
@@ -489,6 +499,15 @@ function rolloutQueenControllerMeasurements(rollout) {
             throw Error('Invalid native reclaimed Queen policy routes.');
         result.rollout_queen_retired_policy_routes_reclaimed = {
             value: counts.retired_policy_routes_reclaimed, unit: 'count',
+        };
+    }
+    if (counts.recycled_group_agent_bindings != null) {
+        if (!Number.isSafeInteger(counts.recycled_group_agent_bindings) ||
+            counts.recycled_group_agent_bindings < 0 ||
+            counts.recycled_group_agent_bindings > counts.policy_minions_bound)
+            throw Error('Invalid recycled native MA-POCA controller measurement.');
+        result.rollout_queen_recycled_group_agent_bindings = {
+            value: counts.recycled_group_agent_bindings, unit: 'count',
         };
     }
     return result;
