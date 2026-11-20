@@ -2274,6 +2274,93 @@ fn recover_native_quick_battle(
     Ok(original)
 }
 
+/// Index only immutable, committed LAN results from this saved game's
+/// original numbered battle archives. This runs once at host startup, not
+/// on the physics or socket tick. The peer must present its old random
+/// session identity and authenticate a current player side to retrieve one.
+fn archived_native_remote_receipts(
+    output: &Path,
+) -> Result<Vec<bees_host::remote_play::NativeArchivedBattleReceipt>, Box<dyn Error>> {
+    let Some(battle_dir) = output.parent() else { return Ok(Vec::new()); };
+    if output.file_name().and_then(|name| name.to_str()) != Some("run") {
+        return Ok(Vec::new());
+    }
+    let is_battle_dir = |path: &Path| path.file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("battle-"))
+        .is_some_and(|number| !number.is_empty() &&
+            number.bytes().all(|byte| byte.is_ascii_digit()));
+    if !is_battle_dir(battle_dir) { return Ok(Vec::new()); }
+    let root = battle_dir.parent().ok_or_else(||
+        invalid("archived native battle has no save owner"))?;
+    let mut receipts = Vec::new();
+    let mut seen = HashSet::new();
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() || !is_battle_dir(&entry.path()) ||
+            entry.path() == battle_dir { continue; }
+        let run = entry.path().join("run");
+        let file = run.join("rollout-summary.json");
+        let metadata = match fs::symlink_metadata(&file) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        if run.is_symlink() || !metadata.file_type().is_file() ||
+            metadata.len() > 16 * 1024 * 1024
+        {
+            return Err(invalid("archived native terminal receipt has an unsafe file owner").into());
+        }
+        let summary: Value = serde_json::from_slice(&fs::read(&file)?)?;
+        if summary["kind"] != "run_final" ||
+            !summary["failed_window"].is_null() ||
+            summary["cleanup_errors"] != json!([]) ||
+            summary["user_closed"] != false
+        {
+            continue;
+        }
+        // Older local-only receipts contain no LAN identity. They cannot
+        // be offered as another player's original authenticated session.
+        let Some(id) = summary["remote_session_id"].as_str() else { continue };
+        if id.len() != 32 || !id.bytes().all(|byte|
+            byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) ||
+            !seen.insert(id.to_owned())
+        {
+            return Err(invalid("duplicate or malformed archived LAN session ID").into());
+        }
+        let result = &summary["remote_terminal_receipt"];
+        if result["kind"] != "battle_result" ||
+            result["protocol"] != 1 ||
+            !result["viewer_side"].is_null() ||
+            result["world_id"].as_u64().is_none() ||
+            result["episode_revision"].as_u64().is_none() ||
+            !result["winner_side"].is_null() &&
+                result["winner_side"].as_i64().is_none() ||
+            result["label"].as_str().is_none_or(str::is_empty) ||
+            result["reason"].as_str().is_none_or(str::is_empty)
+        {
+            // A nonterminal battle cannot be replayed as a victory.
+            // It has no physical terminal receipt to deliver.
+            if result.is_null() { continue; }
+            return Err(invalid("archived LAN result differs from native terminal protocol").into());
+        }
+        let campaign = summary["campaign_outcome"].as_object().map(|_|
+            summary["campaign_outcome"].clone());
+        if campaign.as_ref().is_some_and(|outcome|
+            !matches!(outcome["player_side"].as_i64(), Some(1 | 2)))
+        {
+            return Err(invalid("archived campaign receipt has no authorized player side").into());
+        }
+        receipts.push(bees_host::remote_play::NativeArchivedBattleReceipt {
+            session_id: id.to_owned(),
+            battle_result: result.clone(),
+            campaign_outcome: campaign,
+            banked_minerals: summary["campaign_banked_minerals"].as_u64(),
+        });
+    }
+    Ok(receipts)
+}
+
 fn save_native_quick_battle_start(
     output: &Path, start: &QuickBattleStart,
 ) -> Result<(), Box<dyn Error>> {
