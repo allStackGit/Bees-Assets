@@ -5888,8 +5888,13 @@ fn run_battle(
                 outcome.player_side, &final_summary["campaign_outcome"],
                 campaign_banked_minerals,
             );
-            server.drain_terminal_output(Duration::from_millis(350));
         }
+    }
+    // Every authenticated multiplayer battle has a final result frame,
+    // including quick battles without a campaign ledger. Drain the
+    // already-queued terminal state before dropping the socket owner.
+    if let Some(server) = &mut remote {
+        server.drain_terminal_output(Duration::from_millis(350));
     }
     if play && !user_closed && (playback.is_some() ||
         completed_episodes.iter().all(|&count| count == config.episodes_per_world)) {
