@@ -109,11 +109,14 @@ def split_rebound_policy_lifetimes(
     next_lifetime = max(teams, default=0) + 1
     observed = defaultdict(dict)
     rebound_agents = {record[0] for record in rebindings}
-    for tick, frame in list(ticks.items()) + list(boundaries.items()):
-        for agent, row in frame.items():
-            if agent in rebound_agents:
-                binding = int(row["ship"]), int(row["binding_revision"])
-                observed[agent].setdefault(binding, tick)
+    for source in (ticks, boundaries):
+        for tick, frame in source.items():
+            for agent, row in frame.items():
+                if agent in rebound_agents:
+                    binding = int(row["ship"]), int(row["binding_revision"])
+                    previous = observed[agent].get(binding)
+                    if previous is None or tick < previous:
+                        observed[agent][binding] = tick
 
     logical_by_binding = {}
     enrolled = dict(admissions)
@@ -147,8 +150,7 @@ def split_rebound_policy_lifetimes(
                     observed[agent][current] < joined or joined < previous_start or
                     retirements.get(previous) is None or
                     not previous_start <= retirements[previous] <= joined or
-                    current in (binding for _, binding in logical_by_binding
-                                if _ == agent)):
+                    (agent, current) in logical_by_binding):
                 raise ValueError("policy rebind lacks a completed prior physical trajectory")
             lifetime = next_lifetime
             next_lifetime += 1
