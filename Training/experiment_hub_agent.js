@@ -335,7 +335,7 @@ async function main() {
     };
     let active=false,executingNative=false,busyHeartbeat=null,
         last='initial',receipts=[],pendingReports=[],pendingGpuReports=[],
-        pendingEvaluatorReports=[];
+        pendingEvaluatorReports=[],pendingRemoteRestart=null;
     const artifactCache=new Map();
     let artifactSync=null;
     const collectArtifacts=()=>{
@@ -348,6 +348,8 @@ async function main() {
         artifactSync=work;
     };
     const once=process.argv.includes('--once');
+    const nativeOwned=()=>Boolean(executor?.supervisor.snapshot().some(entry=>
+        !['finished','failed','stopped'].includes(entry.state)));
     const poll=async(expedite=false)=>{
         if(active) {
             if(executingNative&&!busyHeartbeat) {
@@ -367,14 +369,27 @@ async function main() {
         refreshEvaluatorObservation();
         active=true;
         try{
+            const restartAwaitingReceipt=pendingRemoteRestart;
             const response=await sendHeartbeat(url,id,token,receipts,
                 pendingReports,advertisement,pendingGpuReports,
-                true,false,pendingEvaluatorReports);
+                !restartAwaitingReceipt,false,pendingEvaluatorReports);
             // The coordinator accepted these reports. Any subsequent agent
             // crash is reconciled using the native service journal.
             pendingReports=[];
             pendingGpuReports=[];
             pendingEvaluatorReports=[];
+            if(restartAwaitingReceipt) {
+                pendingRemoteRestart=null;
+                try {
+                    await remoteEvaluator.restartAgentAfterAcknowledgement(nativeOwned());
+                }catch(error) {
+                    pendingEvaluatorReports=[{
+                        id:restartAwaitingReceipt.id,unit:'@agent',
+                        status:'failed',diagnostic:String(error.message||error).slice(0,200),
+                    }];
+                    if(expedite)setTimeout(()=>poll(true),0);
+                }
+            }
             // A corrupt advisory offer must not prevent this worker from
             // executing an independent native Stop or Inspect instruction.
             // Reject all lease receipts for this poll, but keep native
@@ -425,8 +440,13 @@ async function main() {
             if(evaluatorOrders.length) {
                 executingNative=true;
                 try {
+                    const order=evaluatorOrders[0];
                     pendingEvaluatorReports=[await remoteEvaluator.execute(
-                        id,evaluatorOrders[0],advertisement.installed_projects||[])];
+                        id,order,advertisement.installed_projects||[],
+                        nativeOwned()||once&&order.action==='restart-agent')];
+                    if(order.action==='restart-agent'&&
+                        pendingEvaluatorReports[0].status==='completed')
+                        pendingRemoteRestart={id:order.id};
                 }finally {
                     executingNative=false;
                     if(busyHeartbeat)await busyHeartbeat;
