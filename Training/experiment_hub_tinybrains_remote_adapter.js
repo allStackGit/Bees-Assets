@@ -45,7 +45,7 @@ function tailnetIp(ip) {
 
 function createTinyBrainsRemoteRolloutAdapter({
     projectRoot,pythonPath,keyPath,cacheRoot,listenIp,port,threads,
-    enableCuda=false,enableRocm=false,rocrGpuUuids={},
+    enableCuda=false,enableRocm=false,rocrGpuUuids={},slotPorts={},
 }) {
     if(typeof enableCuda!=='boolean'||typeof enableRocm!=='boolean'||
         (enableCuda&&enableRocm)||
@@ -69,6 +69,23 @@ function createTinyBrainsRemoteRolloutAdapter({
     if(!Number.isSafeInteger(port)||port<1024||port>65535||
         !Number.isSafeInteger(threads)||threads<1||threads>256)
         throw Error('Remote rollout listener needs an approved non-privileged port and CPU thread count.');
+    // Each native job owns a distinct listener; all possible ports are
+    // authorized by the local administrator before any Hub job is queued.
+    if(!slotPorts||typeof slotPorts!=='object'||Array.isArray(slotPorts)||
+        Object.keys(slotPorts).length>8||
+        Object.keys(slotPorts).some(key=>!/^(?:0|[1-7])$/.test(key))||
+        (Object.keys(slotPorts).length>0&&
+            !Object.values(slotPorts).includes(port)))
+        throw Error('TinyBrains local collector slots require 1–8 approved ports including the base port.');
+    const slots=Object.entries(slotPorts).map(([slot,listenerPort])=>({
+        slot:Number(slot),endpoint:host+':'+listenerPort,
+    })).sort((a,b)=>a.slot-b.slot);
+    if(slots.some(item=>!Number.isSafeInteger(Number(item.endpoint.split(':')[1]))||
+            Number(item.endpoint.split(':')[1])<1024||
+            Number(item.endpoint.split(':')[1])>65535)||
+        new Set(slots.map(item=>item.endpoint)).size!==slots.length)
+        throw Error('TinyBrains collector listener ports must be distinct nonprivileged ports.');
+
     if(typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
         !fs.statSync(pythonPath).isFile()||path.resolve(pythonPath)!==pythonPath)
         throw Error('Remote rollout Python must be an installed regular file.');
@@ -97,6 +114,7 @@ function createTinyBrainsRemoteRolloutAdapter({
     return {
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
         tinybrains_rollout_endpoint:host+':'+port,
+        tinybrains_rollout_slots:slots.map(item=>({...item})),
         tinybrains_rollout_key_fingerprint:fingerprint,
         tinybrains_rollout_thread_limit:threads,
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
@@ -116,6 +134,14 @@ function createTinyBrainsRemoteRolloutAdapter({
         }:{}),
         args(parameters,context) {
             const desired=parameters?.threads??Math.min(threads,context.cpu_quota);
+            const slot=parameters?.listener_slot;
+            if(slot!==undefined&&(slots.length===0||
+                !Number.isSafeInteger(slot)||slot<0||slot>7))
+                throw Error('TinyBrains collector requires an approved local listener slot.');
+            const selected=slot===undefined?null:slots.find(item=>item.slot===slot);
+            if(slot!==undefined&&!selected)
+                throw Error('TinyBrains listener slot is not installed on this machine.');
+            const listenPort=selected?Number(selected.endpoint.split(':').at(-1)):port;
             if(supportsAutoPool&&(!Number.isSafeInteger(context.ram_quota_mb)||
                 context.ram_quota_mb<128||context.ram_quota_mb>1000000))
                 throw Error('Automatic remote simulation requires its original RAM lease.');
@@ -129,7 +155,7 @@ function createTinyBrainsRemoteRolloutAdapter({
             const cudaGpu=context.gpu_cuda_uuid!==undefined;
             const rocmGpu=hasGpu&&!cudaGpu;
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
-                Object.keys(parameters).some(key=>!['learner_job_id','threads'].includes(key))||
+                Object.keys(parameters).some(key=>!['learner_job_id','threads','listener_slot'].includes(key))||
                 !UUID.test(String(parameters.learner_job_id||''))||
                 !UUID.test(String(context.job_id||''))||
                 parameters.learner_job_id===context.job_id||
@@ -140,11 +166,17 @@ function createTinyBrainsRemoteRolloutAdapter({
                 (!hasGpu&&(cudaGpu||context.gpu_pci_addresses!==undefined))||
                 (hasGpu&&context.gpu_pci_addresses!==undefined))
                 throw Error('Remote rollout needs a distinct learner ID and an approved CPU or single exclusive GPU lease.');
+            const scratch=slots.length?path.join(cache,context.job_id):cache;
+            if(slots.length) {
+                fs.mkdirSync(scratch,{recursive:true,mode:0o700});
+                if(fs.realpathSync(scratch)!==scratch||!fs.statSync(scratch).isDirectory())
+                    throw Error('TinyBrains collector scratch directory was redirected.');
+            }
             return ['-B','-m','ants_mapoca.remote_rollout',
-                '--listen',host,'--port',String(port),
+                '--listen',host,'--port',String(listenPort),
                 '--job-id',parameters.learner_job_id,
                 '--threads',String(desired),'--key-file',secret,
-                '--cache-dir',cache,
+                '--cache-dir',scratch,
                 ...(supportsAutoPool?['--auto-env-pool',
                     '--ram-budget-mb',String(context.ram_quota_mb)]:[]),
                 ...(cudaGpu
