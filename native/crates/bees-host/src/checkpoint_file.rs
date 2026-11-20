@@ -46,6 +46,28 @@ impl From<HiveMindProtocolError> for CheckpointFileError {
     fn from(error: HiveMindProtocolError) -> Self { Self::Protocol(error) }
 }
 
+/// Normalize only the owned checkpoint's parent directory. A symlinked
+/// directory or "./" alias must not create an independent writer lock for
+/// the same connection. File symlinks are forbidden: atomic rename would
+/// replace the link rather than its target and split the persisted identity.
+pub fn canonical_writer_checkpoint_path(
+    path: PathBuf,
+) -> Result<PathBuf, CheckpointFileError> {
+    let file_name = path.file_name()
+        .ok_or(CheckpointFileError::InvalidPath)?;
+    let parent = path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let target = fs::canonicalize(parent)?.join(file_name);
+    match fs::symlink_metadata(&target) {
+        Ok(metadata) if !metadata.file_type().is_file() =>
+            Err(CheckpointFileError::InvalidPath),
+        Ok(_) => Ok(target),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(target),
+        Err(error) => Err(error.into()),
+    }
+}
+
 /// One active checkpoint writer across native games and offline review.
 /// Mirrors the campaign-writer lease. A crash leaves an explicit lock
 /// requiring confirmation that the original process has stopped.

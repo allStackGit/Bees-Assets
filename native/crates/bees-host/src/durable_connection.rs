@@ -35,7 +35,8 @@ use bees_hivemind::session::SquadLifetime;
 use bees_sim::simulation::Simulation;
 
 use crate::checkpoint_file::{
-    CheckpointFileError, ConnectionCheckpointFile, ConnectionCheckpointWriterLease,
+    canonical_writer_checkpoint_path, CheckpointFileError,
+    ConnectionCheckpointFile, ConnectionCheckpointWriterLease,
 };
 
 #[derive(Debug)]
@@ -75,7 +76,9 @@ impl DurableHiveMindConnection {
     pub fn open(
         checkpoint_path: impl Into<PathBuf>,
     ) -> Result<Self, CheckpointFileError> {
-        let checkpoint = ConnectionCheckpointFile::new(checkpoint_path);
+        let checkpoint = ConnectionCheckpointFile::new(
+            canonical_writer_checkpoint_path(checkpoint_path.into())?,
+        );
         let writer_lease = ConnectionCheckpointWriterLease::acquire(checkpoint.path())?;
         let connection = if let Some(restored) = checkpoint.load()? {
             restored
@@ -100,7 +103,9 @@ impl DurableHiveMindConnection {
     pub fn open_existing(
         checkpoint_path: impl Into<PathBuf>,
     ) -> Result<Self, CheckpointFileError> {
-        let checkpoint = ConnectionCheckpointFile::new(checkpoint_path);
+        let checkpoint = ConnectionCheckpointFile::new(
+            canonical_writer_checkpoint_path(checkpoint_path.into())?,
+        );
         let writer_lease = ConnectionCheckpointWriterLease::acquire(checkpoint.path())?;
         let connection = checkpoint.load()?.ok_or_else(||
             CheckpointFileError::Io(std::io::Error::new(
