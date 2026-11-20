@@ -87,6 +87,7 @@ struct WireCounts {
     minimap_objective_markers: u64,
     minimap_camera_moves: u64,
     ship_type_multiselections: u64,
+    selection_drag_preview_frames: u64,
     tactical_button_clicks: u64,
     squad_tab_clicks: u64,
     shooting_strategy_choices: u64,
@@ -2527,6 +2528,25 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             held_fire_active,shooting_menu,shooting_focus,
             &peer.visual,visual_fraction,&artwork,show_art,
             &mut hulls, &mut map_ships, &mut map_objectives, &mut fog_masked);
+        // The local client shows the selection box while dragging. Draw
+        // only the current screen-space intent; the real ship collisions
+        // are evaluated from the host-supplied hulls on release.
+        if !shooting_menu && mode.is_none() && !minimap_dragging &&
+            window.get_mouse_down(MouseButton::Left)
+        {
+            if let (Some((sx,sy)),Some((mx,my)))=
+                (drag_start,window.get_mouse_pos(MouseMode::Discard))
+            {
+                let (x,y)=(mx as i32,my as i32);
+                if x>=0&&x<FIELD as i32&&y>=0&&y<HEIGHT as i32 &&
+                    (x-sx).pow(2)+(y-sy).pow(2)>16
+                {
+                    outline(&mut pixels,sx.min(x),sy.min(y),
+                        (sx-x).abs(),(sy-y).abs(),0xe2c473);
+                    peer.metrics.selection_drag_preview_frames+=1;
+                }
+            }
+        }
         peer.metrics.fog_masked_pixels += fog_masked;
         peer.metrics.obstacle_hull_draws += hulls;
         peer.metrics.minimap_ship_markers += map_ships;
@@ -2578,6 +2598,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "minimap_objective_markers":peer.metrics.minimap_objective_markers,
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
+        "selection_drag_preview_frames":peer.metrics.selection_drag_preview_frames,
         "tactical_button_clicks":peer.metrics.tactical_button_clicks,
         "squad_tab_clicks":peer.metrics.squad_tab_clicks,
         "shooting_strategy_choices":peer.metrics.shooting_strategy_choices,
