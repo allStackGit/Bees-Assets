@@ -95,11 +95,9 @@ to point to the learner's existing approved secrets).
 ### Windows worker (Exeter, Warwick, Northumberland, Seagrams)
 
 Download the one-file `Training/experiment_hub_worker_install.cmd` from this
-branch, open PowerShell as Administrator in its directory and run:
-
-```powershell
-.\experiment_hub_worker_install.cmd
-```
+branch and **double-click it**. Windows requests administrator permission
+through its normal UAC prompt; no PowerShell command or manual setup is
+needed.
 
 Follow the Tailscale browser sign-in link if shown. The installer automatically
 enrolls using the signed-in node name (for example `exeter`), installs the
