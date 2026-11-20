@@ -1907,8 +1907,75 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
     peer.order(selected,action.0,action.1)
 }
 
-pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
-    -> Result<(), Box<dyn Error>> {
+/// The session ID identifies the original authoritative World across
+/// transport and client-process restarts. The token remains exclusively
+/// in the existing protected credential file.
+fn saved_remote_session(
+    path: &Path, address: &str, side: i32,
+) -> Result<Option<String>, Box<dyn Error>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if !metadata.file_type().is_file() || metadata.len() > 1024 {
+        return Err(invalid("saved multiplayer session must be a regular file").into());
+    }
+    let value: Value = serde_json::from_slice(&fs::read(path)?)?;
+    if value["schema_version"] != 1 ||
+        value["kind"] != "native_multiplayer_session" ||
+        value["address"].as_str().is_none() ||
+        value["side"].as_i64().is_none() ||
+        value["host_session_id"].as_str().is_none_or(|id|
+            id.len() != 32 || !id.bytes().all(|byte|
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+    {
+        return Err(invalid("invalid saved native multiplayer session identity").into());
+    }
+    if value["address"] != address || value["side"] != side {
+        return Ok(None);
+    }
+    Ok(value["host_session_id"].as_str().map(str::to_owned))
+}
+
+fn persist_remote_session(
+    path: &Path, address: &str, side: i32, session_id: &str,
+) -> Result<(), Box<dyn Error>> {
+    if session_id.len() != 32 || !session_id.bytes().all(|byte|
+        byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) {
+        return Err(invalid("invalid native host session identity").into());
+    }
+    let parent = path.parent().ok_or_else(||
+        invalid("saved multiplayer session has no parent"))?;
+    fs::create_dir_all(parent)?;
+    if let Ok(existing) = fs::symlink_metadata(path) {
+        if !existing.file_type().is_file() {
+            return Err(invalid("saved multiplayer session must be a regular file").into());
+        }
+    }
+    let temporary = parent.join(format!(
+        ".multiplayer-session-{}-{session_id}.tmp", std::process::id(),
+    ));
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)?;
+    serde_json::to_writer(&mut file, &json!({
+        "schema_version": 1,
+        "kind": "native_multiplayer_session",
+        "address": address,
+        "side": side,
+        "host_session_id": session_id,
+    }))?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(&temporary, path)?;
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+pub fn connect_remote(
+    address: &str, token_file: &Path, expected_side: i32,
+    session_file: Option<&Path>,
+) -> Result<(), Box<dyn Error>> {
     if !(1..=2).contains(&expected_side) {
         return Err(invalid("remote player side must be 1 or 2").into());
     }
@@ -1928,7 +1995,34 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     if !(24..=256).contains(&token.len()) ||token.chars().any(char::is_control) {
         return Err(invalid("invalid native multiplayer token").into());
     }
-    let mut peer=PeerClient::connect(address,token,expected_side,None)?;
+    let saved = session_file.map(|path|
+        saved_remote_session(path, address, expected_side)
+    ).transpose()?.flatten();
+    let original = if let Some(id) = saved {
+        // A completed World must remain reachable after the viewer exits.
+        // A new match is an explicit separate choice, never an automatic
+        // substitution when the original server is unavailable.
+        let rows = [
+            super::BattleMenuRow {
+                title: "Reconnect to previous multiplayer battle",
+                status: "  [Original World or committed result]",
+                unlocked: true,
+            },
+            super::BattleMenuRow {
+                title: "Join new multiplayer battle",
+                status: "  [New host session]",
+                unlocked: true,
+            },
+        ];
+        let mut selected = 0;
+        match super::select_library(&rows, &mut selected, false)? {
+            Some(0) => Some(id),
+            Some(1) => None,
+            _ => return Ok(()),
+        }
+    } else { None };
+    let mut last_persisted_session = original.clone();
+    let mut peer=PeerClient::connect(address,token,expected_side,original.as_deref())?;
     let mut window=Window::new("Bees | Native Multiplayer",WIDTH,HEIGHT,
         WindowOptions::default())?;
     window.set_target_fps(30);
@@ -2029,6 +2123,17 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         // welcome/snapshot. Otherwise a fast host can deliver a valid first
         // state that is immediately discarded as stale by this reset.
         if !rejoined { peer.poll()?; }
+        // A welcome is the first proof of a real authoritative session.
+        // Persist its ID before the viewer can lose the process, so the
+        // same game (or its committed terminal receipt) remains reachable.
+        if peer.authenticated {
+            if let (Some(path), Some(id)) = (session_file, peer.host_session_id.as_deref()) {
+                if last_persisted_session.as_deref() != Some(id) {
+                    persist_remote_session(path, address, expected_side, id)?;
+                    last_persisted_session = Some(id.to_owned());
+                }
+            }
+        }
         if peer.metrics.snapshots!=previous_snapshot {
             if let Some(state)=peer.state.as_ref() {
                 selected.retain(|id|
