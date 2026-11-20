@@ -262,6 +262,12 @@ def rollout_metrics(summary_path, config, manifest_sha):
         metrics["reinforcement_arrivals"] = {
             key: arrivals[key] for key in keys
         }
+        grouped = arrivals.get("group_agents")
+        if grouped is not None:
+            if (type(grouped) is not int or grouped < 0 or
+                    grouped > arrivals["policy_agents"]):
+                raise ValueError("native rollout has invalid MA-POCA reinforcement admissions")
+            metrics["reinforcement_arrivals"]["group_agents"] = grouped
     wakeups = summary.get("reinforcement_wakeup_work")
     if wakeups is not None:
         keys = ("idle_ticks_skipped", "wakeup_scans")
@@ -560,6 +566,10 @@ def combined_rollout_metrics(shards, wall_seconds):
             key: sum(shard["reinforcement_arrivals"][key] for shard in shards)
             for key in ("waves", "squads", "ships", "policy_agents")
         }
+        if all("group_agents" in shard["reinforcement_arrivals"] for shard in shards):
+            metrics["reinforcement_arrivals"]["group_agents"] = sum(
+                shard["reinforcement_arrivals"]["group_agents"] for shard in shards
+            )
     if all("reinforcement_wakeup_work" in shard for shard in shards):
         metrics["reinforcement_wakeup_work"] = {
             key: sum(shard["reinforcement_wakeup_work"][key] for shard in shards)
