@@ -80,8 +80,25 @@ class ReleaseStore {
             try {
                 // Git archives only tracked source at the resolved commit;
                 // no local secrets, logs, untracked files, or Git credentials.
+                // TinyBrains' tracked repository contains multi-gigabyte
+                // learning runs, checkpoints and evidence. These are not
+                // executable worker software and must never be shipped to
+                // enrolled machines. Include only the runtime's source,
+                // configuration, maps and tools; the pinned official engine
+                // and upstream baseline are installed separately on workers.
+                const archivePaths=name==='worker'?['Training']:
+                    name==='tinybrains'?[
+                        'Ants-MAPOCA/pyproject.toml',
+                        'Ants-MAPOCA/requirements-lock.txt',
+                        'Ants-MAPOCA/src',
+                        'Ants-MAPOCA/configs',
+                        'Ants-MAPOCA/maps',
+                        'Ants-MAPOCA/scripts',
+                        'Ants-MAPOCA/tools',
+                        'Ants-MAPOCA/games.toml',
+                    ]:[];
                 await git(['archive','--format=tar','--output='+temp,sha,
-                    ...(name==='worker'?['Training']:[])],repo,240000);
+                    ...archivePaths],repo,240000);
                 const info=await fileHash(temp);
                 if(info.bytes===0)throw Error('Empty release archive.');
                 fs.renameSync(temp,filename);
