@@ -119,16 +119,17 @@ class ReleaseStore {
             };
         return components;
     }
-    async applyLocalWhenIdle(hub) {
-        // Synchronize the Halifax learner from the same reviewed Git
-        // branches before remote workers activate a staged new protocol.
-        // Never modify a dirty checkout or touch source under a live job.
-        if(hub.state.jobs.some(job=>job.dispatch_id&&
+    async applyLocalWhenIdle(hub,allowWorkerOverride=false) {
+        // Ordinary learner/simulation revisions require an idle native-job
+        // boundary. Explicit operator override may refresh coordinator and
+        // Linux agents while separately OS-owned native workloads continue.
+        const active=hub.state.jobs.some(job=>job.dispatch_id&&
             !job.capacity_released_at&&
-            !['finished','failed','stopped','cancelled'].includes(job.status)))
-            return {deferred:true,changed:[]};
+            !['finished','failed','stopped','cancelled'].includes(job.status));
+        if(active&&!allowWorkerOverride)return {deferred:true,changed:[]};
         const changed=[];
         for(const [name,source] of Object.entries(this.sources)) {
+            if(active&&name!=='worker')continue;
             try {
                 const local=await git(['rev-parse','HEAD'],source.path);
                 const target=this.latest[name]?.version;
