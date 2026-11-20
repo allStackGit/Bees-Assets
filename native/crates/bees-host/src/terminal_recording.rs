@@ -168,8 +168,8 @@ pub(super) fn complete_committed_recording(run: &Path)
         match kind {
             "player_input_trace" if valid_end == 0 => {
                 if row["run_id"] != summary["run_id"] ||
-                    row["run_config_sha256"].as_str() != Some(&cursor.config_sha256) ||
-                    row["gameplay_config_sha256"].as_str() != Some(&cursor.gameplay_sha256) ||
+                    row["run_config_sha256"].as_str() != Some(cursor.config_sha256.as_str()) ||
+                    row["gameplay_config_sha256"].as_str() != Some(cursor.gameplay_sha256.as_str()) ||
                     row["policy_manifest_sha256"] != summary["policy_manifest_sha256"]
                 {
                     return Err(invalid("native replay header differs from committed run identity").into());
@@ -179,9 +179,7 @@ pub(super) fn complete_committed_recording(run: &Path)
             "hivemind_setup" | "hivemind_frame" => network_count += 1,
             "physical_state_checkpoint" => {
                 checkpoint_count += 1;
-                if row["rounds"].is_null() &&
-                    row["round"].as_u64() == Some(final_round)
-                {
+                if row["round"].as_u64() == Some(final_round) {
                     let id = row["world_id"].as_u64().ok_or_else(||
                         invalid("native replay World signature lacks identity"))?;
                     snapshots.insert(id, row.clone());
