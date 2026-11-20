@@ -2298,7 +2298,7 @@ fn archived_native_remote_receipts(
     for entry in fs::read_dir(root)? {
         let entry = entry?;
         if !entry.file_type()?.is_dir() || !is_battle_dir(&entry.path()) ||
-            entry.path() == battle_dir { continue; }
+            entry.path().as_path() == battle_dir { continue; }
         let run = entry.path().join("run");
         let file = run.join("rollout-summary.json");
         let metadata = match fs::symlink_metadata(&file) {
