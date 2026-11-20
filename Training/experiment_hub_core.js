@@ -1914,8 +1914,18 @@ class ExperimentHub {
         // coordinator restart. A dispatched operation may have run.
         const resetEvaluators=(s.evaluator_actions||[]).some(action=>
             ['pending','dispatched'].includes(action.status));
-        if(resetBundles||resetDistributed||resetQueuedDistributed||resetEvaluators) {
+        const resetInstallStarts=s.jobs.some(job=>job.pending_install_start);
+        if(resetBundles||resetDistributed||resetQueuedDistributed||
+            resetEvaluators||resetInstallStarts) {
             const next=copy(s);
+            for(const job of next.jobs)
+                if(job.pending_install_start) {
+                    // An install may finish while the coordinator is down.
+                    // An ordinary restart is not renewed Start approval.
+                    delete job.pending_install_start;
+                    if(job.status==='waiting_adapter'&&!job.dispatch_id)
+                        job.status_reason='Coordinator restarted; pending install/Start approval disarmed. Reauthorize Start after reconnect.';
+                }
             for(const plan of next.bundle_start_plans||[])
                 if(plan.status==='pending'&&plan.resume_after_restart!==true) {
                     plan.status='disarmed';
