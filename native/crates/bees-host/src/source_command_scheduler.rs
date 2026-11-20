@@ -20,7 +20,7 @@ use bees_hivemind::session::SquadLifetime;
 use crate::runtime::{NativeHostRuntime, NativeSourceCommandPulse};
 use crate::socket_worker::NativeSocketWorker;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeSourceScheduleMeasurements {
     /// Real source timer beats, not per-step or per-ship work.
     pub due_beats: u64,
@@ -36,7 +36,8 @@ pub struct NativeSourceScheduleMeasurements {
     pub episode_clock_resets: u64,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SourceCommandClock {
     revision: u64,
     next_due_tick: u64,
@@ -46,7 +47,8 @@ struct SourceCommandClock {
 /// Registration and its timer always move together, including append-only
 /// runtime enrollment and per-episode reset. The connection still owns
 /// all request IDs and the Level owns each SquadLifetime.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SourceWorldClock {
     level_id: i32,
     fixed_dt: f32,
@@ -71,6 +73,15 @@ fn source_command_ticks(seconds: f64, dt: f32) -> io::Result<u64> {
 /// Per-World source clock and reusable due set, independent of transport.
 /// A caller may own one scheduler per native game/trainer session; no
 /// scheduler is installed in CombatWorld and pure CPU PPO stays unchanged.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeSourceCommandSchedulerCheckpoint {
+    schema_version: u32,
+    worlds: Vec<SourceWorldClock>,
+    measurements: NativeSourceCommandPulse,
+    schedule_measurements: NativeSourceScheduleMeasurements,
+}
+
 pub struct NativeSourceCommandScheduler {
     worlds: Vec<SourceWorldClock>,
     due_levels: HashSet<i64>,
@@ -98,6 +109,38 @@ impl NativeSourceCommandScheduler {
             measurements: NativeSourceCommandPulse::default(),
             schedule_measurements: NativeSourceScheduleMeasurements::default(),
         })
+    }
+
+    /// Preserve the single Stage clock, including fractional seconds and
+    /// skipped/blocked pulses. Re-creating timers from resumed world ticks
+    /// would issue the same HiveMind commands twice.
+    pub fn recovery_checkpoint(&self) -> NativeSourceCommandSchedulerCheckpoint {
+        NativeSourceCommandSchedulerCheckpoint {
+            schema_version: 1, worlds: self.worlds.clone(),
+            measurements: self.measurements,
+            schedule_measurements: self.schedule_measurements,
+        }
+    }
+
+    pub fn restore_recovery_checkpoint(
+        &mut self, saved: NativeSourceCommandSchedulerCheckpoint,
+    ) -> io::Result<()> {
+        if saved.schema_version != 1 || saved.worlds.len() != self.worlds.len() ||
+            saved.worlds.iter().zip(&self.worlds).any(|(prior, current)|
+                prior.level_id != current.level_id ||
+                prior.fixed_dt.to_bits() != current.fixed_dt.to_bits() ||
+                prior.clock.is_some_and(|clock|
+                    clock.next_due_tick == 0 || clock.revision == u64::MAX ||
+                    !clock.next_due_seconds.is_finite() ||
+                    clock.next_due_seconds < 0.25))
+        {
+            return Err(invalid("source HiveMind scheduler recovery changed Level clocks"));
+        }
+        self.worlds = saved.worlds;
+        self.measurements = saved.measurements;
+        self.schedule_measurements = saved.schedule_measurements;
+        self.due_levels.clear();
+        Ok(())
     }
 
     pub fn measurements(&self) -> NativeSourceCommandPulse {
