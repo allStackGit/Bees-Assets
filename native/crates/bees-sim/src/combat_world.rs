@@ -1661,7 +1661,7 @@ impl CombatWorld {
 
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 17,
+            schema_version: 18,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1788,7 +1788,7 @@ impl CombatWorld {
     pub fn prepare_recovery_owners(
         &self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<CombatWorldRecoveryPrepared, CombatWorldError> {
-        if snapshot.schema_version != 17 {
+        if snapshot.schema_version != 18 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         if snapshot.level_geometry != self.level_geometry ||
