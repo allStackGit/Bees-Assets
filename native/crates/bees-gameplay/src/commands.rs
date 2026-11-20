@@ -42,7 +42,7 @@ use crate::squad_geometry::SquadMemberOffset;
 
 mod mining;
 mod identity;
-pub use identity::{NativeCommandSelection, NativeCommandOrigin,
+pub use identity::{NativeCommandSelection, NativeCommandSelectionCheckpoint, NativeCommandOrigin,
     NativeLocalCommandIdentity, NativeLocalCommandSource, NativeLocalCommandAction};
 mod heal;
 mod scouting;
@@ -287,7 +287,7 @@ pub enum StrategyReceiptFailureCause {
     Credit(crate::command_credit::CommandCreditError),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CommandFinishCause {
     Timeout,
     ReachedRandomDestination,

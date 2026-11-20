@@ -6,11 +6,16 @@
 use std::collections::BTreeMap;
 
 use bees_hivemind::outcomes::{OutcomeBatch, OutcomeSettlement};
-use bees_hivemind::protocol::HiveMindProtocolError;
+use bees_hivemind::protocol::{
+    HiveMindProtocolError, StrategyIdentity, ValidatedTargetingSelection,
+    TARGETING_STRATEGIES,
+};
+use bees_hivemind::session::SquadLifetime;
 
 use crate::commands::{
     FinishedNativeCommand, NativeCommandOrigin, NativeCommandSelection,
-    NativeCommandSettlement,
+    NativeCommandSelectionCheckpoint, NativeCommandSettlement,
+    CommandFinishCause, GameCommandError,
 };
 
 #[derive(Debug)]
@@ -22,7 +27,83 @@ pub enum CommandCreditError {
     AbortedCompletedOutcome(i64),
     InvalidOrigin(i64),
     AlreadyClosed,
+    InvalidCheckpoint,
     Protocol(HiveMindProtocolError),
+}
+
+/// Transactional snapshot of accrued credit and all unsettled outcomes.
+/// A shot may arrive after the initiating command has finished, so neither
+/// finished entries nor their attribution IDs may be thrown away on resume.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCommandCreditCheckpoint {
+    schema_version: u32,
+    commands: BTreeMap<i64, CommandCreditCheckpoint>,
+    targeting: std::collections::BTreeSet<i64>,
+    closed: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CommandCreditCheckpoint {
+    command_tsv: i64,
+    shooting_tsv: i64,
+    finished: Option<FinishedCommandCheckpoint>,
+    aborted: Option<NativeCommandSelectionCheckpoint>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinishedCommandCheckpoint {
+    targeting: Option<(u8, i64)>,
+    targeting_targeted_enemy: bool,
+    owner: SquadLifetime,
+    selection: NativeCommandSelectionCheckpoint,
+    cause: CommandFinishCause,
+    shooting_targeted_enemy: bool,
+    capability_command_tsv: Option<i64>,
+}
+
+impl FinishedCommandCheckpoint {
+    fn capture(command: &FinishedNativeCommand) -> Self {
+        Self {
+            targeting: command.targeting.map(|target|
+                (target.strategy.id, target.outcome_id)),
+            targeting_targeted_enemy: command.targeting_targeted_enemy,
+            owner: command.owner,
+            selection: command.selection.checkpoint(),
+            cause: command.cause,
+            shooting_targeted_enemy: command.shooting_targeted_enemy,
+            capability_command_tsv: command.capability_command_tsv,
+        }
+    }
+
+    fn restore(self) -> Result<FinishedNativeCommand, CommandCreditError> {
+        let targeting = self.targeting.map(|(id, outcome_id)| {
+            let name = usize::from(id).checked_sub(1)
+                .and_then(|i| TARGETING_STRATEGIES.get(i).copied())
+                .ok_or(CommandCreditError::InvalidCheckpoint)?;
+            if outcome_id <= 0 {
+                return Err(CommandCreditError::InvalidCheckpoint);
+            }
+            Ok(ValidatedTargetingSelection {
+                strategy: StrategyIdentity { id, name },
+                outcome_id,
+            })
+        }).transpose()?;
+        if !self.owner.valid() ||
+            (self.targeting_targeted_enemy && targeting.is_none()) {
+            return Err(CommandCreditError::InvalidCheckpoint);
+        }
+        let selection = NativeCommandSelection::from_checkpoint(self.selection)
+            .map_err(|_error: GameCommandError| CommandCreditError::InvalidCheckpoint)?;
+        Ok(FinishedNativeCommand {
+            targeting, targeting_targeted_enemy: self.targeting_targeted_enemy,
+            owner: self.owner, selection, cause: self.cause,
+            shooting_targeted_enemy: self.shooting_targeted_enemy,
+            capability_command_tsv: self.capability_command_tsv,
+        })
+    }
 }
 
 #[derive(Default)]
@@ -45,6 +126,73 @@ pub struct NativeCommandCreditLedger {
 
 impl NativeCommandCreditLedger {
     pub fn new() -> Self { Self::default() }
+
+    /// Persist the one Level-owned command TSV projection, including
+    /// finished commands whose projectile damage can still arrive later.
+    pub fn checkpoint(&self) -> NativeCommandCreditCheckpoint {
+        NativeCommandCreditCheckpoint {
+            schema_version: 1,
+            commands: self.commands.iter().map(|(&id, value)| (id,
+                CommandCreditCheckpoint {
+                    command_tsv: value.command_tsv,
+                    shooting_tsv: value.shooting_tsv,
+                    finished: value.finished.as_ref().map(FinishedCommandCheckpoint::capture),
+                    aborted: value.aborted.as_ref().map(NativeCommandSelection::checkpoint),
+                },
+            )).collect(),
+            targeting: self.targeting.clone(),
+            closed: self.closed,
+        }
+    }
+
+    /// Prepare an independent ledger for the outer Level's atomic restore.
+    /// Reservation identities are validated before any live TSV is replaced.
+    /// The shared connection's durable StoreCommands journal is not owned
+    /// here and must be restored at its own host boundary.
+    pub fn prepare_restore(
+        checkpoint: NativeCommandCreditCheckpoint,
+    ) -> Result<Self, CommandCreditError> {
+        if checkpoint.schema_version != 1 ||
+            (checkpoint.closed &&
+                (!checkpoint.commands.is_empty() || !checkpoint.targeting.is_empty())) ||
+            checkpoint.targeting.iter().any(|&id| id <= 0) {
+            return Err(CommandCreditError::InvalidCheckpoint);
+        }
+        let mut commands = BTreeMap::new();
+        for (id, saved) in checkpoint.commands {
+            if id <= 0 {
+                return Err(CommandCreditError::InvalidCheckpoint);
+            }
+            let finished = saved.finished.map(FinishedCommandCheckpoint::restore).transpose()?;
+            let aborted = saved.aborted.map(NativeCommandSelection::from_checkpoint)
+                .transpose().map_err(|_| CommandCreditError::InvalidCheckpoint)?;
+            if finished.as_ref().is_some_and(|command|
+                command.selection.server_outcome() != Some(id) ||
+                command.targeting.is_some_and(|target|
+                    !checkpoint.targeting.contains(&target.outcome_id))
+            ) || aborted.as_ref().is_some_and(|selection|
+                selection.server_outcome() != Some(id)
+            ) {
+                return Err(CommandCreditError::InvalidCheckpoint);
+            }
+            commands.insert(id, CommandCredit {
+                command_tsv: saved.command_tsv,
+                shooting_tsv: saved.shooting_tsv,
+                finished, aborted,
+            });
+        }
+        Ok(Self {
+            commands, targeting: checkpoint.targeting, closed: checkpoint.closed,
+        })
+    }
+
+    pub fn restore_checkpoint(
+        &mut self, checkpoint: NativeCommandCreditCheckpoint,
+    ) -> Result<(), CommandCreditError> {
+        let prepared = Self::prepare_restore(checkpoint)?;
+        *self = prepared;
+        Ok(())
+    }
 
     fn credit(
         &mut self, id: Option<i64>, command_delta: i64, shooting_delta: i64,
