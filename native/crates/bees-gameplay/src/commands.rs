@@ -318,7 +318,8 @@ pub enum CommandFinishCause {
     AllWarpParticipantsGone,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FinishedNativeCommand {
     pub targeting: Option<ValidatedTargetingSelection>,
     pub targeting_targeted_enemy: bool,

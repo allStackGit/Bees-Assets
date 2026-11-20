@@ -498,6 +498,44 @@ pub struct ValidatedTargetingSelection {
     pub outcome_id: i64,
 }
 
+/// Persistent targeting selection is identified by its canonical server ID,
+/// never by a deserialized arbitrary string with a fabricated lifetime.
+impl Serialize for ValidatedTargetingSelection {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Snapshot {
+            strategy_id: u8,
+            outcome_id: i64,
+        }
+        Snapshot {
+            strategy_id: self.strategy.id,
+            outcome_id: self.outcome_id,
+        }.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ValidatedTargetingSelection {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Snapshot {
+            strategy_id: u8,
+            outcome_id: i64,
+        }
+        let saved = Snapshot::deserialize(deserializer)?;
+        let name = usize::from(saved.strategy_id).checked_sub(1)
+            .and_then(|index| TARGETING_STRATEGIES.get(index).copied())
+            .ok_or_else(|| de::Error::custom("invalid HiveMind targeting strategy ID"))?;
+        if saved.outcome_id <= 0 {
+            return Err(de::Error::custom("invalid HiveMind targeting OutcomeId"));
+        }
+        Ok(Self {
+            strategy: StrategyIdentity { id: saved.strategy_id, name },
+            outcome_id: saved.outcome_id,
+        })
+    }
+}
+
 impl GetTargetingResponse {
     pub fn validate_for(
         &self,

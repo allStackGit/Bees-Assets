@@ -128,6 +128,26 @@ pub struct NativeCommandSelection {
     origin: NativeCommandOrigin,
 }
 
+// Notification persistence uses the same validated source identity schema
+// as the command director and command-credit recovery ledgers.
+impl serde::Serialize for NativeCommandSelection {
+    fn serialize<S: serde::Serializer>(&self, serializer: S)
+        -> Result<S::Ok, S::Error>
+    {
+        serde::Serialize::serialize(&self.checkpoint(), serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for NativeCommandSelection {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D)
+        -> Result<Self, D::Error>
+    {
+        let saved = serde::Deserialize::deserialize(deserializer)?;
+        Self::from_checkpoint(saved)
+            .map_err(|error| serde::de::Error::custom(format!("{error:?}")))
+    }
+}
+
 impl From<ResolvedHiveMindCommand> for NativeCommandSelection {
     fn from(selection: ResolvedHiveMindCommand) -> Self {
         Self { local_command: selection.local_command,
