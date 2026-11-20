@@ -346,7 +346,9 @@ function configureService(root,training,serviceBinary=null) {
 function preparePythonRuntimes(root,changes) {
     const env={...process.env};
     const windows=process.platform==='win32';
-    let command=windows?'py.exe':'uv';
+    // User-systemd timers do not inherit the installer's interactive PATH.
+    const localUv=path.join(require('node:os').homedir(),'.local','bin','uv');
+    let command=windows?'py.exe':fs.existsSync(localUv)?localUv:'uv';
     let prefix=windows?['-3.11','-m','uv']:[];
     let pythonVersion='3.11.18';
     if(windows) {

@@ -1,22 +1,19 @@
 # Experiment Hub worker installer — direct Tailscale transport
 
-This is the native Experiment Hub counterpart to `bees-remote-worker`. It
-does **not** run the Unity/Bees actors or replace an existing Hub agent.
-Each enrolled Windows or Linux worker has **one agent** and may provide:
+This is the native Experiment Hub counterpart to `bees-remote-worker`.
+One enrolled Windows or Linux machine runs **one permanent Hub agent**,
+even if no simulation is installed. Selecting an eligible machine for a
+TinyBrains or Courier job requests that simulation automatically; the
+trusted worker updater installs its independently versioned runtime,
+dependencies and native adapters. The Machines tab also offers explicit
+per-project installation.
 
-- `tinybrains`: official-engine CPU rollout collectors, listener slots
-  12134 and 12135, one for each independent Halifax GPU learner
-- `courier`: authenticated Courier lineage/shared-policy collectors,
-  listener slots 13134 and 13135
-- `tinybrains,courier`: both, in separate pinned Python environments
-  under one machine's native CPU/RAM ledger and process supervisor
-
-The coordinator publishes this Hub branch and the corresponding TinyBrains
-`feat/linux-tinybrains-runtime` and Courier
-`feat/hub-independent-courier-ppo-20261119` branches. It installs CPU-only
-Torch per project; the official TinyBrains CLI v0.5.0 and original simulation
-dependencies are verified and pinned. It does not substitute a simplified
-simulation.
+The coordinator publishes the Hub, TinyBrains
+`feat/linux-tinybrains-runtime`, and Courier
+`feat/hub-independent-courier-ppo-20261119` branches. Halifax packages the
+pinned upstream TinyBrains source and verified official v0.5.0 engine for
+both operating systems. Workers do not need Git, GitHub credentials or
+a simplified replacement simulation.
 
 ## How transport works
 
@@ -87,7 +84,8 @@ manual Machine registration, or install-time project setup are required.**
 Halifax stores rollout secrets in its private data directory:
 `private-rollouts/tinybrains/rollout.key` and `private-rollouts/courier.key`.
 The coordinator initializes a missing secret once and never overwrites one in
-use. The local learner must use these same secrets (or configure the corresponding
+use. The worker fetches only the selected simulation's secret through its
+machine-authenticated Tailscale release API. The local learner must use these same secrets (or configure the corresponding
 `EXPERIMENT_HUB_TINYBRAINS_KEY_DIRECTORY` and
 `EXPERIMENT_HUB_COURIER_REMOTE_KEY_PATH` coordinator environment variables
 to point to the learner's existing approved secrets).
@@ -101,8 +99,9 @@ needed.
 
 Follow the Tailscale browser sign-in link if shown. The installer automatically
 enrolls using the signed-in node name (for example `exeter`), installs the
-machine-local Python/Node/.NET runtimes, approved projects, Windows service,
-native job owner and update task, and starts the agent.
+base agent prerequisites, native Windows service and update task, and starts
+the agent. It does **not** install a TinyBrains or Courier simulation during
+enrollment. Each is installed when selected in the Hub or assigned a job.
 
 ### Linux worker
 
@@ -118,8 +117,19 @@ required software, provisions the agent and creates a user-systemd service with
 lingering and an automatic two-minute update timer. It starts the agent without
 additional arguments.
 
-The optional installer flags still allow selecting only one project or changing
-the installation directory; the default installs **both TinyBrains and Courier**.
+The base installer does not accept a project selection. Optional flags can
+change its installation directory. For a CPU-only independent job, assign
+the machine in Train or a resource bundle: this requests the missing
+simulation. Start remains gated on the completed installation, the fresh
+authenticated lease and native preflight. A resource bundle can use
+**Schedule auto-start when ready** to launch its approved members after
+those gates pass. On a resource-constrained machine, unrequested simulations
+are not downloaded.
+
+Native Bees execution is not yet supported by this worker: the unfinished
+Unity-independent Bees runtime does not yet expose a trusted Hub training
+adapter. Do not confuse provisioning a Bees source release with a runnable
+Bees job.
 
 ### Update an existing SSH-forwarded worker
 
