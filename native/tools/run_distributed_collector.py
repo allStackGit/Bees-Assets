@@ -7,6 +7,7 @@ central multi-round MA-POCA session, without sharing absolute file paths.
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path, PurePosixPath
 import subprocess
@@ -15,11 +16,37 @@ import uuid
 
 from native_training_artifacts import (
     check_learner, file_sha256, native_source_contract_sha256,
+    normalized_python_source_sha256, sync_directory,
 )
 from native_distributed_collection import verify_bundle
 from transfer_policy_bundle import export_bundle_archive, artifact_paths, checked_order
 from native_bundle_receiver import upload_bundle_archive
 
+
+
+def acquire_collector_lease(parent):
+    """OS-owned exclusive lease; a crashed collector releases it automatically.
+
+    The marker inode persists, so removing/recreating the path cannot let
+    simultaneous workers hold different locks for the same work order.
+    """
+    lease = (parent / ".collector.lease").open("a+b")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            lease.seek(0, os.SEEK_END)
+            if lease.tell() == 0:
+                lease.write(b"0")
+                lease.flush()
+            lease.seek(0)
+            msvcrt.locking(lease.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lease
+    except BaseException:
+        lease.close()
+        raise
 
 
 def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False,
@@ -151,16 +178,58 @@ def main():
                 break
 
     parent = (previous_parent if previous_parent is not None else
-              scratch / f"native-collector-{job['collection_id'][:12]}-{uuid.uuid4().hex}")
+              scratch / f"native-collector-{job['collection_id']}")
     output = parent / job["bundle_directory"]
+    attempt_lease = None
     if recovered is None:
-        parent.mkdir()
+        # Retain one original per-collector scratch identity across retries.
+        # A different binary, model, source, allocation or trainer can never
+        # acquire this old episode/capture state as its own rollout.
+        if parent.is_symlink():
+            raise ValueError("collector attempt path cannot be a symlink")
+        parent.mkdir(exist_ok=True)
+        attempt_lease = acquire_collector_lease(parent)
+        worker = Path(source["policy_worker"])
+        if not worker.is_absolute():
+            worker = args.run_config.resolve(strict=True).parent / worker
+        attempt = {
+            "schema_version": 1,
+            "kind": "native_collector_attempt",
+            "collection_id": job["collection_id"],
+            "collector_id": job["id"],
+            "orders_sha256": file_sha256(orders_path),
+            "run_sha256": file_sha256(args.run_config.resolve(strict=True)),
+            "checkpoint_sha256": orders["input_checkpoint_sha256"],
+            "manifest_sha256": orders["input_manifest_sha256"],
+            "trainer_sha256": file_sha256(trainer),
+            "runner_sha256": file_sha256(binary),
+            "policy_worker_sha256": normalized_python_source_sha256(worker),
+            "collector_options": job["collector_options"],
+            "leased_gpu_inference": args.leased_gpu_inference,
+            "leased_gpu_count": args.leased_gpu_count,
+        }
+        attempt_file = parent / "collector-attempt.json"
+        resume = attempt_file.exists()
+        if resume:
+            if attempt_file.is_symlink() or not attempt_file.is_file() or (
+                    json.loads(attempt_file.read_text(encoding="utf-8")) != attempt):
+                raise ValueError("collector attempt changed its immutable training inputs")
+        else:
+            if any(item.name != ".collector.lease" for item in parent.iterdir()):
+                raise ValueError("collector has an unowned interrupted scratch directory")
+            with attempt_file.open("x", encoding="utf-8") as stream:
+                json.dump(attempt, stream, sort_keys=True)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            sync_directory(parent)
         command = [
             sys.executable, str(Path(__file__).with_name("train_policy_round.py")),
             str(args.run_config.resolve()), str(args.checkpoint.resolve()),
             str(trainer), str(output),
             "--model-manifest", str(args.model_manifest.resolve()),
             "--rollout-binary", str(binary),
+            *([] if not resume else ["--resume-rollout"]),
             *([] if inbox is None else ["--bundle-inbox", str(inbox)]),
             *job["collector_options"],
             *([] if not args.leased_gpu_inference else [
@@ -180,6 +249,7 @@ def main():
             "collector": job["id"], "round": orders["round"],
             "output": str(output), "worlds": job["world_count"],
             "rollout_workers": job["rollout_workers"],
+            "resuming": resume,
         }), flush=True)
         subprocess.run(command, check=True)
         receipt_path = (
