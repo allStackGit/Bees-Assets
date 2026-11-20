@@ -867,7 +867,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     // Endpoint order determines the last N immutable PPO lineage slots.
     // Only the machine operator can install these private peer identities;
     // experiment parameters never supply network addresses or secrets.
-    let remote=null;
+    let remote=null,remotePpoSettings=false;
     if(remoteLineages!==null) {
         if(!remoteLineages||typeof remoteLineages!=='object'||
             Array.isArray(remoteLineages)||
@@ -903,11 +903,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         if(new Set(endpoints.map(item=>item.endpoint)).size!==endpoints.length)
             throw Error('Each Courier lineage requires a distinct remote endpoint.');
         const probe=spawnSync(executable,['-B','-c',
-            'import courier_remote_lineage as r; assert hasattr(r, "remote_proxy")'],{
+            'import courier_remote_lineage as r; assert hasattr(r, "remote_proxy"); print(int(getattr(r, "REMOTE_PPO_SETTINGS_VERSION", None)==1))'],{
             cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
         });
         if(probe.status!==0)
             throw Error('Installed Courier learner has no authenticated remote lineage transport.');
+        remotePpoSettings=probe.stdout.trim()==='1';
         remote={keyFile,endpoints,
             fingerprint:crypto.createHash('sha256').update(fs.readFileSync(keyFile)).digest('hex')};
     }
@@ -1154,8 +1155,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             // Keep population size independent of CPU lease changes.
             let chosenWorkers=workers===undefined?12:workers;
             const useRemote=parameters.remote_lineages===true;
-            if(useRemote&&!shared&&training!==null)
-                throw Error('Independent remote Courier lineages do not yet support distributed PPO setting overrides. Use the shared-policy learner or remove training overrides.');
+            if(useRemote&&!shared&&training!==null&&!remotePpoSettings)
+                throw Error('Independent Courier PPO overrides require the installed authenticated remote-settings backend on both learner and worker hosts.');
             if(useRemote&&!shared&&remotePlan.length>=chosenWorkers)
                 throw Error('Courier requires at least one local PPO lineage beside its remote workers.');
             const out=jobRoot(context);
