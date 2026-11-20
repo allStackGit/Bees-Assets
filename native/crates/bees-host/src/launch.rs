@@ -4326,7 +4326,8 @@ fn run_battle(
     // identity regardless of which presentation transport carries inputs;
     // otherwise a valid remote-player trace cannot be replayed offline.
     let gameplay_digest = gameplay_config_sha256(
-        &config, &assets, play || view || replay_inputs.is_some(),
+        &config, &assets,
+        play || view || remote_step_interval.is_some() || replay_inputs.is_some(),
     );
     let config_digest = format!("{:x}", Sha256::digest(&config_bytes));
     let trace_levels = config.levels.iter().zip(source_digests.iter()).map(|(level, digest)|
