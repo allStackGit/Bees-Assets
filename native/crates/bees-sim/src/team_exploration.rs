@@ -26,10 +26,34 @@ pub enum ExplorationError {
 /// Per-side 16x16 global sight history, with progress -1 representing a cell
 /// never observed this episode. Like Unity, an update checks cell centers
 /// within each living allied ship's sight circle, with no heap allocation.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug)]
 pub struct TeamExplorationGrid {
     last_seen_progress: [f32; EXPLORATION_LEN],
+}
+
+// Persist the canonical 256-cell array directly as a fixed-size logical
+// sequence. No alternate grid representation or per-step allocation.
+impl serde::Serialize for TeamExplorationGrid {
+    fn serialize<S: serde::Serializer>(&self, serializer: S)
+        -> Result<S::Ok, S::Error>
+    {
+        serde::Serialize::serialize(&self.last_seen_progress.as_slice(), serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for TeamExplorationGrid {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D)
+        -> Result<Self, D::Error>
+    {
+        let values: Vec<f32> = serde::Deserialize::deserialize(deserializer)?;
+        let last_seen_progress: [f32; EXPLORATION_LEN] = values.try_into()
+            .map_err(|_| serde::de::Error::custom("invalid native exploration grid length"))?;
+        let grid = Self { last_seen_progress };
+        if !grid.valid_recovery() {
+            return Err(serde::de::Error::custom("invalid native exploration cell"));
+        }
+        Ok(grid)
+    }
 }
 
 impl Default for TeamExplorationGrid {
