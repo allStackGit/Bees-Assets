@@ -2522,11 +2522,6 @@ fn launch_catalog_battle(
     // Reconstruct progress after obtaining exclusive ownership so a menu
     // cannot launch a stale roster if another client edited the account.
     let progress = catalog.load_progress(output_root)?;
-    if entry.mission.as_ref().is_some_and(|mission|
-        mission.requires.iter().any(|id| !progress.completed(id)))
-    {
-        return Err(invalid("the chosen campaign mission is no longer unlocked").into());
-    }
     let config = resolve(catalog_root, entry.config_for(&progress));
     if let (Some(campaign_id), Some(chosen)) =
         (catalog.campaign_id.as_deref(), entry.mission.as_ref())
@@ -2581,6 +2576,14 @@ fn launch_catalog_battle(
                 Some(output.clone()), None, None, Some(prior.recovery_mission()?))?;
             return Ok(output);
         }
+    }
+    // Unlocks apply to a new World only. An interrupted World was
+    // authorized at its original start and has already passed the frozen
+    // source and career checks above.
+    if entry.mission.as_ref().is_some_and(|mission|
+        mission.requires.iter().any(|id| !progress.completed(id)))
+    {
+        return Err(invalid("the chosen campaign mission is no longer unlocked").into());
     }
     if env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
         // Apply the same replayable remote-host contract to campaign and
@@ -3876,13 +3879,15 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         let progress = catalog.load_progress(&career_root)?;
         let available = catalog.battles.iter().filter_map(|entry| {
             let mission = entry.mission.as_ref()?;
-            (mission.requires.iter().all(|id| progress.completed(id)) &&
-                pending.as_deref().is_none_or(|id| id == mission.id))
-                .then_some((entry, mission))
+            (if let Some(original) = pending.as_deref() {
+                mission.id == original
+            } else {
+                mission.requires.iter().all(|id| progress.completed(id))
+            }).then_some((entry, mission))
         }).collect::<Vec<_>>();
         if available.is_empty() {
             return Err(invalid(if pending.is_some() {
-                "interrupted native campaign mission no longer matches an unlocked authored mission"
+                "interrupted native campaign mission is missing from its authored catalog"
             } else {
                 "no unlocked native campaign mission can be hosted"
             }).into());
