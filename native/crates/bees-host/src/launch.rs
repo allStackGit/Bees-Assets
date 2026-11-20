@@ -5657,6 +5657,13 @@ fn run_battle(
             ).into()),
         }
     }
+    if let (Some(server), Some(directory)) = (&mut remote, output) {
+        // Persisted receipts are indexed once per hosted session, never
+        // while applying remote player inputs or stepping the CombatWorld.
+        // A resumed original World keeps its checkpointed session identity;
+        // a later game may deliver the prior terminal receipt read-only.
+        server.install_archived_receipts(archived_native_remote_receipts(directory)?)?;
+    }
     if let Some(server) = &mut remote {
         server.set_music_location(remote_music_location);
     }
