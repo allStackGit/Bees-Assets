@@ -75,8 +75,13 @@ async function control(command,machineId,platform=os.platform()) {
         else await invoke('sc.exe',['start',name]);
     }else if(command.action==='stop'&&
         ['active','activating','deactivating'].includes(before)) {
-        if(platform==='linux')await invoke('systemctl',['--user','stop',name]);
-        else await invoke('sc.exe',['stop',name]);
+        if(platform==='linux') {
+            // Disarm the schedule AND stop an evaluation already running in
+            // its same OS-owned oneshot unit. Stopping the timer alone
+            // would leave a current holdout consuming machine resources.
+            await invoke('systemctl',['--user','stop',name,
+                name.replace(/\.timer$/,'.service')]);
+        }else await invoke('sc.exe',['stop',name]);
     }
     const observed=await inspect(machineId,platform);
     if(command.action==='start'&&
