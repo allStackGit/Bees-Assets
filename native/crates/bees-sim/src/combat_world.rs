@@ -33,9 +33,11 @@ use crate::explosion_lifecycle::{ExplosionAction, ExplosionEvent, ExplosionTimel
 use crate::bomb::{BombAction, StrikerBombFuse};
 use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
 use crate::damage::can_basic_projectile_damage;
-use crate::damage_reservations::{DamageReservations, DamageStatus, ReservationError};
+use crate::damage_reservations::{
+    DamageReservations, DamageReservationsCheckpoint, DamageStatus, ReservationError,
+};
 use crate::physics::{
-    CollisionMatrix, KinematicPhysics, MovementObstacleHit, ObstacleBody,
+    CollisionMatrix, KinematicPhysics, KinematicPhysicsCheckpoint, MovementObstacleHit, ObstacleBody,
     ObstaclePairContact, ObstacleTriggerEnter, PhysicsError, ProjectileBody,
     ShipBody, ShipHullOverlap, ShipShape, TriggerEnter,
 };
@@ -53,7 +55,7 @@ use crate::movement::MotionUpdate;
 use crate::navigation_search::NavigationSearch;
 use crate::navigation_requests::{
     NavigationCompletion, NavigationRequest, NavigationRequestDisposition,
-    NavigationRequestError, NavigationRequests,
+    NavigationRequestError, NavigationRequests, NavigationRequestsCheckpoint,
 };
 use crate::obstacle::{
     resolve_asteroid_pair_damage, resolve_asteroid_ship_damage,
@@ -110,7 +112,9 @@ pub use self::striker::GameStrikerCarrier;
 pub use self::warp::WARP_GATE_OPENING_SECONDS;
 pub use self::mining::{is_mining_ship_type, MINING_FACTORY_TYPE, MINING_CARPENTER_BEE_TYPE};
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
-use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
+use self::shot_outcomes::{
+    ProjectileOutcomeCheckpoint, ProjectileOutcomeTracker, NEAR_MISS_DISTANCE,
+};
 pub use self::scout::{NativeBeaconTargetSource, ScoutBeaconSpec, ScoutBeaconStatus, SCOUT_TYPE};
 use self::scout::PolicyScoutRuntime;
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
@@ -155,6 +159,7 @@ pub enum CombatWorldError {
     InvalidLiveShipSpawn,
     InvalidQueenConfiguration,
     InvalidLiveProjectileSpawn,
+    InvalidRecoveryCheckpoint,
     InvalidProjectilePower,
     InvalidProjectileType(u8),
     /// Never fabricate simplified behavior for unported weapons.
@@ -744,6 +749,21 @@ struct EnemyShipContact {
     candidates: u64,
     distance_rejections: u64,
     exact_tests: u64,
+}
+
+/// One fixed-boundary bundle of the five already-restorable authoritative
+/// owners inside CombatWorld. This is deliberately NOT a complete Level or
+/// game checkpoint: ship vitals, squad commands, specials and pending rewards
+/// have their own owners and must be committed in the same host transaction.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatWorldRecoveryOwnersCheckpoint {
+    schema_version: u32,
+    physics: KinematicPhysicsCheckpoint,
+    discovery: LevelDiscovery,
+    navigation: NavigationRequestsCheckpoint,
+    damage: DamageReservationsCheckpoint,
+    shot_outcomes: ProjectileOutcomeCheckpoint,
 }
 
 pub struct CombatWorld {
@@ -1372,6 +1392,72 @@ impl CombatWorld {
 
     pub fn tracked_order_measurements(&self) -> TrackedOrderMeasurements {
         self.tracked_order_measurements
+    }
+
+    /// Capture these actual CombatWorld owners at a fixed-tick boundary.
+    /// Callers must also checkpoint the other CombatWorld/Level ownership
+    /// before claiming that the battle is recoverable.
+    pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
+        CombatWorldRecoveryOwnersCheckpoint {
+            schema_version: 1,
+            physics: self.physics.checkpoint(),
+            discovery: self.discovery.clone(),
+            navigation: self.navigation_requests.checkpoint(),
+            damage: self.reservations.checkpoint(),
+            shot_outcomes: self.shot_outcomes.checkpoint(),
+        }
+    }
+
+    /// Install all five previously independent restorable owners as one
+    /// transaction. The outer host must restore complete gameplay wrappers,
+    /// command state and model state first; mismatched physical slot/entity
+    /// identities fail closed instead of fabricating missing ships or shots.
+    /// No live field changes until every component has been prepared.
+    pub fn restore_recovery_owners(
+        &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
+    ) -> Result<(), CombatWorldError> {
+        if snapshot.schema_version != 1 {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
+        if physics.ships().len() != self.ships.len() ||
+            physics.projectiles().len() != self.projectiles.len() ||
+            physics.obstacles().len() != self.obstacles.len() ||
+            physics.ships().iter().zip(&self.ships)
+                .any(|(body, ship)| body.id != ship.entity_id) ||
+            physics.projectiles().iter().zip(&self.projectiles)
+                .any(|(body, shot)| body.id != shot.entity_id) ||
+            physics.obstacles().iter().zip(&self.obstacles)
+                .any(|(body, obstacle)| body.id != obstacle.entity_id)
+        {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        let mut discovery = LevelDiscovery::new();
+        discovery.restore_checkpoint(snapshot.discovery)
+            .map_err(|_| CombatWorldError::InvalidRecoveryCheckpoint)?;
+        let mut reservations = DamageReservations::new();
+        reservations.restore_checkpoint(snapshot.damage)
+            .map_err(|_| CombatWorldError::InvalidRecoveryCheckpoint)?;
+        let mut outcomes = ProjectileOutcomeTracker::default();
+        outcomes.restore_checkpoint(snapshot.shot_outcomes)
+            .map_err(|_| CombatWorldError::InvalidRecoveryCheckpoint)?;
+        let positions = physics.ships().iter()
+            .filter(|ship| ship.active)
+            .map(|ship| (ship.id, ship.motion.position))
+            .collect::<HashMap<_, _>>();
+        let mut navigation = NavigationRequests::new();
+        navigation.restore_checkpoint(snapshot.navigation,
+            |ship_id| positions.get(&ship_id).copied())?;
+
+        // Commit only after every source ownership and physical identity
+        // validation succeeded. Invalid snapshots leave the active game
+        // and all five owners unchanged.
+        self.physics = physics;
+        self.discovery = discovery;
+        self.navigation_requests = navigation;
+        self.reservations = reservations;
+        self.shot_outcomes = outcomes;
+        Ok(())
     }
 
     pub fn physics(&self) -> &KinematicPhysics { &self.physics }

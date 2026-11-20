@@ -1522,6 +1522,17 @@ impl KinematicPhysics {
         Ok(())
     }
 
+    /// Validate and build the physical part of a larger CombatWorld restore
+    /// without altering any live entity or overlap history if it is invalid.
+    /// The caller must commit ALL gameplay owner states at one boundary.
+    pub(crate) fn restored_for_same_geometry(
+        &self, snapshot: KinematicPhysicsCheckpoint,
+    ) -> Result<Self, PhysicsError> {
+        let mut prepared = Self::new(self.grid.area, self.grid.cell_size)?;
+        prepared.restore_checkpoint(snapshot)?;
+        Ok(prepared)
+    }
+
     pub fn new(area: Aabb, cell_size: f32) -> Result<Self, PhysicsError> {
         Ok(Self {
             ships: Vec::new(),
