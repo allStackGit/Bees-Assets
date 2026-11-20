@@ -792,6 +792,17 @@ function verifiedOptimizerCompletion(job,raw,state) {
     return copy(raw);
 }
 
+// Rank zero alone owns the published checkpoint. Keep its original lease
+// inspectable until both the optimizer consensus and durable model identity
+// have been independently verified. Worker ranks need only consensus proof.
+function nativeOptimizerTerminalProof(job) {
+    if(job.frozen_parameters?.optimizer_group!==true)return true;
+    if(!job.optimizer_completion)return false;
+    return job.project_id!=='bees_native'||
+        job.checkpoint_ready_verified===true&&
+        SHA256.test(String(job.checkpoint_model_sha256||''));
+}
+
 // A distributed Bees checkpoint is suitable for continuation only after
 // every originally leased optimizer machine has returned a verified terminal
 // worker result and released its own native claim. Rank-zero checkpoint
@@ -3592,6 +3603,15 @@ class ExperimentHub {
                 const reinspected=finishCheckpointReinspection(job,report,observedAt);
                 if(reinspected)changed=true;
                 if(report.state===job.status) {
+                    // Native Finish may precede verification of the
+                    // resumable checkpoint. Retain a later authenticated
+                    // same-dispatch proof before admitting its fingerprint.
+                    if(job.project_id==='bees_native'&&job.status==='finished'&&
+                        report.checkpoint_ready_verified===true&&
+                        !job.checkpoint_ready_verified) {
+                        job.checkpoint_ready_verified=true;
+                        changed=true;
+                    }
                     if(!reinspected&&report.checkpoint_model_sha256!=null) {
                         const verified=job.status==='finished'
                             ?job.checkpoint_ready_verified===true&&
@@ -3613,7 +3633,7 @@ class ExperimentHub {
                         evaluationIssue:null,resources:null});
                     if(job.release_on_terminal&&job.status==='finished'&&
                         job.frozen_parameters?.optimizer_group===true&&
-                        job.optimizer_completion) {
+                        nativeOptimizerTerminalProof(job)) {
                         this.releaseIn(next,lease);
                         changed=true;
                     }
@@ -3803,8 +3823,7 @@ class ExperimentHub {
                     changed=true;
                 }
                 if(job.release_on_terminal&&['finished','stopped'].includes(job.status)&&
-                    (job.frozen_parameters?.optimizer_group!==true||
-                        Boolean(job.optimizer_completion)))
+                    nativeOptimizerTerminalProof(job))
                     this.releaseIn(next,lease);
             }
         }
@@ -3870,7 +3889,7 @@ class ExperimentHub {
                 !j.capacity_released_at&&
                 ['finished','stopped'].includes(j.status)||
              j.dispatch_id&&j.frozen_parameters?.optimizer_group===true&&
-                j.status==='finished'&&!j.optimizer_completion&&
+                j.status==='finished'&&!nativeOptimizerTerminalProof(j)&&
                 !j.capacity_released_at||
              j.dispatch_id&&supportsEvaluation(machine.evaluation_suites,j)&&
                 finalEvaluationPending(snapshot,j,observedAt)||
