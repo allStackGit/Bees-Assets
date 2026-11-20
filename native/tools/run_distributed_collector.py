@@ -59,6 +59,7 @@ def persist_delivery_acknowledgement(inbox, hub_job_id, job, orders, bundle, del
     """
     if (delivered.get("kind") != "native_bundle_received" or
             delivered.get("collector_id") != job["id"] or
+            delivered.get("bundle_sha256") != bundle["sha256"] or
             not re.fullmatch(r"[0-9a-f]{64}", str(delivered.get("archive_sha256", ""))) or
             type(delivered.get("archive_bytes")) is not int or
             delivered["archive_bytes"] <= 0):
