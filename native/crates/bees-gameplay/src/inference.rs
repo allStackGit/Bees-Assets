@@ -134,7 +134,7 @@ pub enum NativeInferenceRunError<E> {
 /// Cumulative, low-cardinality measurements: avoid tracing every action
 /// or allocating a per-row timestamp. Model forward elapsed includes
 /// accelerator launch/synchronization only when its backend synchronizes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeInferenceMeasurements {
     pub model_calls: u64,
     pub model_rows: u64,
@@ -156,6 +156,16 @@ pub struct NativeInferenceMeasurements {
 /// Reuse numeric observation and action buffers across inference requests.
 /// A single instance may contain agents from multiple independent native
 /// Levels, enabling CPU/GPU batching without a process-global world state.
+/// Only cumulative inference measurements and cadence belong to a durable
+/// checkpoint. Per-batch action tensors never outlive a simulation step.
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeInferenceCheckpoint {
+    schema_version: u32,
+    measurements: NativeInferenceMeasurements,
+    rollout_calls: u64,
+}
+
 #[derive(Default)]
 pub struct NativeLevelInferenceBatch {
     batch: PolicyBatch,
@@ -182,6 +192,35 @@ pub struct NativeLevelInferenceBatch {
 
 impl NativeLevelInferenceBatch {
     pub fn new() -> Self { Self::default() }
+
+    pub fn recovery_checkpoint(&self) -> NativeInferenceCheckpoint {
+        NativeInferenceCheckpoint {
+            schema_version: 1,
+            measurements: self.measurements,
+            rollout_calls: self.rollout_calls,
+        }
+    }
+
+    pub fn prepare_recovery(
+        checkpoint: NativeInferenceCheckpoint,
+    ) -> Result<Self, &'static str> {
+        if checkpoint.schema_version != 1 ||
+            checkpoint.measurements.last_model_generation.is_some_and(|generation|
+                generation == u64::MAX
+            ) ||
+            checkpoint.measurements.model_forward_timed_calls >
+                checkpoint.measurements.model_calls ||
+            checkpoint.measurements.model_forward_timed_rows >
+                checkpoint.measurements.model_rows ||
+            checkpoint.measurements.grouped_actor_rows >
+                checkpoint.measurements.model_rows {
+            return Err("invalid native inference checkpoint");
+        }
+        let mut inference = Self::new();
+        inference.measurements = checkpoint.measurements;
+        inference.rollout_calls = checkpoint.rollout_calls;
+        Ok(inference)
+    }
 
     pub fn clear(&mut self) {
         self.behavior_statistics.clear();

@@ -24,7 +24,8 @@ pub enum ShipIdentityError {
 
 /// Stable mapping from runtime ship identity to one permuted scalar code.
 /// Mutable state belongs to an episode, never a process-global registry.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EpisodeShipIdentities {
     ordinals: HashMap<i64, u32>,
     next_ordinal: u32,
@@ -68,6 +69,23 @@ impl EpisodeShipIdentities {
         self.offset = next.offset;
         self.ordinals.clear();
         self.next_ordinal = 0;
+    }
+
+    /// The saved identity function and its ordinal assignment order must
+    /// remain exactly the one sampled at episode setup.
+    pub fn valid_recovery(&self) -> bool {
+        self.multiplier > 0 && self.multiplier < IDENTITY_CAPACITY &&
+        self.multiplier & 1 == 1 &&
+        self.offset < IDENTITY_CAPACITY &&
+        self.next_ordinal <= IDENTITY_CAPACITY &&
+        self.ordinals.len() <= self.next_ordinal as usize &&
+        self.ordinals.keys().all(|&id| id > 0) &&
+        {
+            let mut seen = std::collections::HashSet::with_capacity(self.ordinals.len());
+            self.ordinals.values().all(|&ordinal|
+                ordinal < self.next_ordinal && seen.insert(ordinal)
+            )
+        }
     }
 
     pub fn assigned_count(&self) -> usize { self.ordinals.len() }

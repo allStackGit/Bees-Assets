@@ -669,6 +669,25 @@ pub struct NativeTerminalObservation {
 /// Runs the REAL v26 observation writer, a genuine supplied model and the
 /// single NativeLevelRules combat step. No per-tick roster copy, generated
 /// action, training-only combat or hidden session state is introduced.
+/// This checkpoint owns stable policy observation identities, per-world
+/// episode revisions, and shared inference accounting; never serializes
+/// mutable candidate projections or an in-flight model action.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeLevelDriverRecoveryCheckpoint {
+    schema_version: u32,
+    worlds: Vec<NativeWorldAssemblyRecoveryCheckpoint>,
+    inference: crate::inference::NativeInferenceCheckpoint,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeWorldAssemblyRecoveryCheckpoint {
+    id: WorldId,
+    revision: u64,
+    identities: bees_sim::episode_ship_identity::EpisodeShipIdentities,
+}
+
 pub struct NativeLevelBatchDriver {
     worlds: Vec<NativeWorldAssembly>,
     inference: NativeLevelInferenceBatch,
@@ -681,6 +700,54 @@ pub struct NativeLevelBatchDriver {
 }
 
 impl NativeLevelBatchDriver {
+    pub fn recovery_checkpoint(&self) -> NativeLevelDriverRecoveryCheckpoint {
+        NativeLevelDriverRecoveryCheckpoint {
+            schema_version: 1,
+            worlds: self.worlds.iter().map(|world|
+                NativeWorldAssemblyRecoveryCheckpoint {
+                    id: world.id,
+                    revision: world.revision,
+                    identities: world.perception.recovery_identities(),
+                }
+            ).collect(),
+            inference: self.inference.recovery_checkpoint(),
+        }
+    }
+
+    /// Stage against the already recovered real worlds, without drawing
+    /// another episode seed from their exact restored RandomStream.
+    pub fn prepare_recovery<M, A>(
+        checkpoint: NativeLevelDriverRecoveryCheckpoint,
+        simulation: &Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+    ) -> Result<Self, NativeLevelDriverError> {
+        if checkpoint.schema_version != 1 ||
+            checkpoint.worlds.len() != simulation.world_count() {
+            return Err(NativeLevelDriverError::WorldIdentityChanged);
+        }
+        let mut worlds = Vec::with_capacity(checkpoint.worlds.len());
+        for (index, saved) in checkpoint.worlds.into_iter().enumerate() {
+            let world = simulation.world(index).ok_or(NativeLevelDriverError::MissingWorld)?;
+            if saved.id != world.id ||
+                saved.revision != world.episode_revision() ||
+                !saved.identities.valid_recovery() {
+                return Err(NativeLevelDriverError::WorldIdentityChanged);
+            }
+            worlds.push(NativeWorldAssembly {
+                id: saved.id,
+                revision: saved.revision,
+                perception: NativeWorldPerceptionAssembler::new(saved.identities),
+                activation: NativeLevelActivationScratch::new(),
+            });
+        }
+        let inference = NativeLevelInferenceBatch::prepare_recovery(checkpoint.inference)
+            .map_err(|_| NativeLevelDriverError::WorldIdentityChanged)?;
+        Ok(Self {
+            worlds, inference, decisions: Vec::new(),
+            parallel_actions: Vec::new(),
+            parallel_serial_worlds: Vec::new(),
+        })
+    }
+
     /// Capture group observations at a controller retirement or episode end.
     pub fn policy_boundary_observations<M: NativeLevelObservationContext, A>(
         &self, index: usize, world: &World<NativeLevelState<M, A>>,

@@ -160,6 +160,12 @@ impl NativeWorldPerceptionAssembler {
         self.identities.assigned_count()
     }
 
+    /// Only stable episode identity is durable. Physical candidate lists
+    /// and environmental caches are rebuilt from the restored World.
+    pub(crate) fn recovery_identities(&self) -> EpisodeShipIdentities {
+        self.identities.clone()
+    }
+
     /// Episode-local work counters for the shared policy observation path.
     pub fn candidate_measurements(&self) -> LiveShipCandidateMeasurements {
         self.candidates.measurements()
