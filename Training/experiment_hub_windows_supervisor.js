@@ -112,7 +112,13 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
     }else if(lr.gpu_count!==0||(r.gpus||[]).length||(lr.gpus||[]).length)
         throw Error('Unexpected GPU resources in a CPU-only Windows lease.');
     const predecessor=job.continuation_of_job_id||null,
+        replacement=job.collector_replacement_of_job_id||null,
         root=job.artifact_lineage_root_id||job.id;
+    if(replacement!==null&&(
+        job.project_id!=='bees_native_collect'||predecessor!==null||
+        !UUID.test(String(replacement))||replacement===job.id||
+        !UUID.test(String(root))||root===job.id))
+        throw Error('Native collector replacement requires a distinct authorized job and original artifact lineage.');
     if(!UUID.test(String(root))||
         (predecessor!==null&&(!UUID.test(String(predecessor))||
             predecessor===job.id||root===job.id))||
@@ -126,6 +132,7 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         artifact_lineage_root_id:root,continuation_of_job_id:predecessor,
+        collector_replacement_of_job_id:replacement,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(gpu?{gpu_pci_address:gpu.pci_address,gpu_cuda_uuid:gpu.cuda_uuid,
@@ -449,6 +456,19 @@ class WindowsSupervisor {
             invocation.ramMb,cpuSlots,
             Math.floor(this.hostOs.totalmem()/1048576));
         ensureLocalGpuCapacity(this.state.records,invocation.gpu);
+        if(job.collector_replacement_of_job_id) {
+            const prior=this.state.records.find(r=>
+                r.job_id===job.collector_replacement_of_job_id);
+            if(!prior||prior.project_id!=='bees_native_collect'||
+                prior.state!=='failed'||
+                (prior.artifact_lineage_root_id||prior.job_id)!==
+                    job.artifact_lineage_root_id)
+                throw Error('Native collector replacement has no verified local failed predecessor.');
+            const observed=await this.observe(prior);
+            if(observed.active!==false||observed.owner_verified!==true||
+                observed.state!=='failed')
+                throw Error('Original Windows collector owner is not verified inactive and failed.');
+        }
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
@@ -483,6 +503,7 @@ class WindowsSupervisor {
         const record={job_id:job.id,lease_id:lease.id,
             project_id:job.project_id,
             continuation_of_job_id:invocation.predecessor,
+            collector_replacement_of_job_id:job.collector_replacement_of_job_id||null,
             artifact_lineage_root_id:invocation.root,
             ...(invocation.stopFile?{checkpoint_stop_file:invocation.stopFile}:{}),
             token,cpus:invocation.cpus,host_cpus:invocation.hostCpus,
