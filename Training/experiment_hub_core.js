@@ -936,6 +936,36 @@ function courierCurriculumBlock(snapshot,job,machine) {
 // Pure, non-authorizing readiness projection. The dashboard and the actual
 // start authorization share one eligibility contract; displaying readiness
 // does not claim a reservation or dispatch any native process.
+function distributedVersionBlock(snapshot,job) {
+    const project=job?.project_id;
+    const component=project==='tinybrains'||project==='tinybrains_rollout'
+        ?'tinybrains':project==='courier'||project==='courier_lineage'
+            ?'courier':null;
+    if(!component)return null;
+    const release=machine=>snapshot.machine_software?.[machine]?.[component];
+    const self=release(job.assigned_machine_id);
+    // Missing version observations remain conservative unknowns; a known
+    // mismatch is never silently admitted as protocol-compatible.
+    const parentId=job.frozen_parameters?.learner_job_id;
+    if(parentId) {
+        const parent=snapshot.jobs.find(item=>item.id===parentId);
+        const learner=release(parent?.assigned_machine_id);
+        if(self?.version&&learner?.version&&self.version!==learner.version)
+            return 'Learner and remote collector have different deployed '+component+
+                ' versions; wait for coordinated software activation.';
+    }else if((project==='tinybrains'&&job.distributed_rollout_managed===true)||
+             (project==='courier'&&job.distributed_courier_managed===true)) {
+        const children=snapshot.jobs.filter(child=>
+            child.frozen_parameters?.learner_job_id===job.id&&
+            child.project_id===(component==='tinybrains'?'tinybrains_rollout':'courier_lineage'));
+        if(self?.version&&children.some(child=>{
+            const worker=release(child.assigned_machine_id);
+            return worker?.version&&worker.version!==self.version;
+        }))
+            return 'Distributed learner and remote collector software revisions differ.';
+    }
+    return null;
+}
 function nativeStartReadiness(snapshot, job) {
     const block=reason=>({eligible:false,reason});
     if(job?.distributed_abort_requested_at)
@@ -965,6 +995,8 @@ function nativeStartReadiness(snapshot, job) {
         return block('The assigned machine has no trusted adapter for this project.');
     if(machine.native_preflight_passed!==true)
         return block('The local CPU/RAM supervisor preflight has not passed.');
+    const deployed=distributedVersionBlock(snapshot,job);
+    if(deployed)return block(deployed);
     if(machine.agent_platform==='linux'&&
         (machine.execution_capabilities?.cgroup_v2_detected!==true||
             !['cpu','memory'].every(c=>
@@ -3353,6 +3385,13 @@ class ExperimentHub {
         const next=copy(this.state);
         const selected=next.jobs.find(j=>j.id===job.id);
         selected.status='start_requested';
+        const component=['tinybrains','tinybrains_rollout'].includes(selected.project_id)
+            ?'tinybrains':['courier','courier_lineage'].includes(selected.project_id)
+                ?'courier':null;
+        const software=component&&snapshot.machine_software
+            ?.[selected.assigned_machine_id]?.[component];
+        if(software?.version)
+            selected.dispatched_software_version=software.version;
         if(origin==='automation')
             selected.automation_start_session_id=this.automation.session_id;
         selected.dispatch_id=crypto.randomUUID();
