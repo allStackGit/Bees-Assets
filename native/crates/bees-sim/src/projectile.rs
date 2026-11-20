@@ -13,7 +13,7 @@ use crate::geometry::{projectile_velocity, Vec2};
 /// catalog rather than assuming every weapon fires this shot.
 pub const SMALL_LASER_SHOT_RADIUS: f32 = 0.5;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ShotAttribution {
     /// The original shot identifier also belongs to explosion and split
     /// continuations, allowing correct hit/near-miss and terminal accounting.
@@ -23,7 +23,7 @@ pub struct ShotAttribution {
     pub command_outcome_id: i64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectileMotion {
     pub position: Vec2,
     pub starting_position: Vec2,

@@ -9,7 +9,7 @@
 
 use crate::geometry::Vec2;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Aabb {
     pub min: Vec2,
     pub max: Vec2,
@@ -44,7 +44,7 @@ impl Aabb {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Pose {
     pub position: Vec2,
     /// Unity's Transform rotation around Z, in degrees.

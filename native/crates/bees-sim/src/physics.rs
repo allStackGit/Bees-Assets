@@ -23,7 +23,7 @@ use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
 use crate::projectile::ProjectileMotion;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct TriggerEnter {
     pub projectile_id: i64,
     pub ship_id: i64,
@@ -31,7 +31,7 @@ pub struct TriggerEnter {
 
 /// Separate trigger stream: Unity projectiles queue ship and obstacle
 /// contacts independently and consume ship contacts first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct ObstacleTriggerEnter {
     pub projectile_id: i64,
     pub obstacle_id: i64,
@@ -40,7 +40,7 @@ pub struct ObstacleTriggerEnter {
 /// Primary hull overlap between a ship and a participating obstacle.
 /// Near/touch classification requires the separately authored proximity
 /// collider and is not implied by this contact.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct ShipObstacleContact {
     pub ship_id: i64,
     pub obstacle_id: i64,
@@ -48,7 +48,7 @@ pub struct ShipObstacleContact {
 
 /// Obstacle pairs have a stable, canonical ID order regardless of which
 /// physical body initiated the broadphase query.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct ObstaclePairContact {
     pub first_obstacle_id: i64,
     pub second_obstacle_id: i64,
@@ -56,7 +56,7 @@ pub struct ObstaclePairContact {
 
 /// Proximity is directional: the source obstacle owns the larger child
 /// trigger, and the target has its regular primary collider.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct ObstacleProximityContact {
     pub source_obstacle_id: i64,
     pub other_obstacle_id: i64,
@@ -187,7 +187,7 @@ impl CollisionMatrix {
 /// Shared authored ship collider. Offset and dimensions are imported from
 /// the actual Entity.Collider reference, not arbitrary nearby vision/range
 /// sensor colliders in Unity prefabs.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum ShipShape {
     Polygon(Arc<[Vec2]>),
     Circle { offset: Vec2, radius: f32 },
@@ -272,7 +272,7 @@ pub enum VisionProximity {
 
 /// A transformed collision shape with cached geometry. Ships, rockets,
 /// explosions and beam projectiles all use exactly this implementation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct WorldCollider {
     shape: ShipShape,
     polygon_world: Vec<Vec2>,
@@ -501,7 +501,7 @@ impl WorldCollider {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ShipBody {
     pub id: i64,
     pub motion: ShipMotion,
@@ -656,7 +656,7 @@ impl ShipBody {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProjectileBody {
     pub id: i64,
     pub motion: ProjectileMotion,
@@ -743,7 +743,7 @@ impl ProjectileBody {
 /// obstacles and borders use zero velocity; collision asteroids use the
 /// body's gameplay-supplied linear/angular velocity. This does not invent
 /// Unity Rigidbody2D collision impulses, asteroid AI or prefab geometry.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ObstacleBody {
     pub id: i64,
     /// Immutable source CollisionAsteroid prefab identity. All original
@@ -963,7 +963,7 @@ pub struct MovementObstacleHit {
     pub distance: f32,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PhysicsStepCounts {
     pub integrated_bodies: u64,
     /// Historical dead hull slots bypassed by the active-only integration.
@@ -1233,6 +1233,49 @@ pub enum ShipHullOverlap {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GridContents { Stale, Ships, Obstacles, VisionObstacles }
 
+/// The physical world's persistent fixed-tick state. The canonical ship,
+/// projectile and obstacle slots (including retired bodies) keep their
+/// original indices; overlap history retains trigger enter/exit continuity.
+/// The reusable spatial grid is derived, never authoritative or serialized.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KinematicPhysicsCheckpoint {
+    schema_version: u32,
+    area: Aabb,
+    cell_size: f32,
+    ships: Vec<ShipBody>,
+    active_ship_indices: Vec<usize>,
+    projectiles: Vec<ProjectileBody>,
+    active_projectile_indices: Vec<usize>,
+    obstacles: Vec<ObstacleBody>,
+    active_obstacle_indices: Vec<usize>,
+    ship_hulls_dirty: bool,
+    obstacle_hulls_dirty: bool,
+    overlaps_previous: Vec<TriggerEnter>,
+    overlaps_current: Vec<TriggerEnter>,
+    entries: Vec<TriggerEnter>,
+    obstacle_overlaps_previous: Vec<ObstacleTriggerEnter>,
+    obstacle_overlaps_current: Vec<ObstacleTriggerEnter>,
+    obstacle_entries: Vec<ObstacleTriggerEnter>,
+    ship_obstacle_previous: Vec<ShipObstacleContact>,
+    ship_obstacle_current: Vec<ShipObstacleContact>,
+    ship_obstacle_enters: Vec<ShipObstacleContact>,
+    ship_obstacle_exits: Vec<ShipObstacleContact>,
+    obstacle_pairs_previous: Vec<ObstaclePairContact>,
+    obstacle_pairs_current: Vec<ObstaclePairContact>,
+    obstacle_pair_enters: Vec<ObstaclePairContact>,
+    obstacle_pair_exits: Vec<ObstaclePairContact>,
+    proximity_ship_previous: Vec<ShipObstacleContact>,
+    proximity_ship_current: Vec<ShipObstacleContact>,
+    proximity_ship_enters: Vec<ShipObstacleContact>,
+    proximity_ship_exits: Vec<ShipObstacleContact>,
+    proximity_obstacle_previous: Vec<ObstacleProximityContact>,
+    proximity_obstacle_current: Vec<ObstacleProximityContact>,
+    proximity_obstacle_enters: Vec<ObstacleProximityContact>,
+    proximity_obstacle_exits: Vec<ObstacleProximityContact>,
+    counts: PhysicsStepCounts,
+}
+
 /// The same physical scene type will be owned by graphical and headless
 /// worlds. The caller supplies authored movement velocities and consumes
 /// trigger entries; no PPO/Unity/rendering dependency is present.
@@ -1289,6 +1332,143 @@ pub struct KinematicPhysics {
 }
 
 impl KinematicPhysics {
+    /// Infrequent persistence only: no heap copy or serde operation is
+    /// performed during a physics step unless the caller requests a save.
+    pub fn checkpoint(&self) -> KinematicPhysicsCheckpoint {
+        KinematicPhysicsCheckpoint {
+            schema_version: 1,
+            area: self.grid.area,
+            cell_size: self.grid.cell_size,
+            ships: self.ships.clone(),
+            active_ship_indices: self.active_ship_indices.clone(),
+            projectiles: self.projectiles.clone(),
+            active_projectile_indices: self.active_projectile_indices.clone(),
+            obstacles: self.obstacles.clone(),
+            active_obstacle_indices: self.active_obstacle_indices.clone(),
+            ship_hulls_dirty: self.ship_hulls_dirty,
+            obstacle_hulls_dirty: self.obstacle_hulls_dirty,
+            overlaps_previous: self.overlaps_previous.clone(),
+            overlaps_current: self.overlaps_current.clone(),
+            entries: self.entries.clone(),
+            obstacle_overlaps_previous: self.obstacle_overlaps_previous.clone(),
+            obstacle_overlaps_current: self.obstacle_overlaps_current.clone(),
+            obstacle_entries: self.obstacle_entries.clone(),
+            ship_obstacle_previous: self.ship_obstacle_previous.clone(),
+            ship_obstacle_current: self.ship_obstacle_current.clone(),
+            ship_obstacle_enters: self.ship_obstacle_enters.clone(),
+            ship_obstacle_exits: self.ship_obstacle_exits.clone(),
+            obstacle_pairs_previous: self.obstacle_pairs_previous.clone(),
+            obstacle_pairs_current: self.obstacle_pairs_current.clone(),
+            obstacle_pair_enters: self.obstacle_pair_enters.clone(),
+            obstacle_pair_exits: self.obstacle_pair_exits.clone(),
+            proximity_ship_previous: self.proximity_ship_previous.clone(),
+            proximity_ship_current: self.proximity_ship_current.clone(),
+            proximity_ship_enters: self.proximity_ship_enters.clone(),
+            proximity_ship_exits: self.proximity_ship_exits.clone(),
+            proximity_obstacle_previous: self.proximity_obstacle_previous.clone(),
+            proximity_obstacle_current: self.proximity_obstacle_current.clone(),
+            proximity_obstacle_enters: self.proximity_obstacle_enters.clone(),
+            proximity_obstacle_exits: self.proximity_obstacle_exits.clone(),
+            counts: self.counts,
+        }
+    }
+
+    /// Replace physical state only after verifying the existing authored
+    /// world's grid geometry and ALL active-slot rosters. The caller must
+    /// restore the enclosing CombatWorld/Level command state at this same
+    /// fixed-step boundary; this method is not a stand-alone game resume.
+    pub fn restore_checkpoint(
+        &mut self, snapshot: KinematicPhysicsCheckpoint,
+    ) -> Result<(), PhysicsError> {
+        fn slots_match<T>(indices: &[usize], bodies: &[T], active: impl Fn(&T) -> bool) -> bool {
+            let mut cursor = 0;
+            for (index, body) in bodies.iter().enumerate() {
+                if active(body) {
+                    if indices.get(cursor) != Some(&index) {
+                        return false;
+                    }
+                    cursor += 1;
+                }
+            }
+            cursor == indices.len()
+        }
+        if snapshot.schema_version != 1 ||
+            snapshot.area.min.x.to_bits() != self.grid.area.min.x.to_bits() ||
+            snapshot.area.min.y.to_bits() != self.grid.area.min.y.to_bits() ||
+            snapshot.area.max.x.to_bits() != self.grid.area.max.x.to_bits() ||
+            snapshot.area.max.y.to_bits() != self.grid.area.max.y.to_bits() ||
+            snapshot.cell_size.to_bits() != self.grid.cell_size.to_bits() ||
+            !slots_match(&snapshot.active_ship_indices, &snapshot.ships, |body| body.active) ||
+            !slots_match(&snapshot.active_projectile_indices, &snapshot.projectiles, |body| body.active) ||
+            !slots_match(&snapshot.active_obstacle_indices, &snapshot.obstacles, |body| body.active)
+        {
+            return Err(PhysicsError::InvalidBounds);
+        }
+        // Validate the three physical populations without constructing a
+        // second collider engine or changing the live world on failure.
+        let mut ids = std::collections::HashSet::new();
+        if snapshot.ships.iter().any(|body| !ids.insert(body.id) ||
+            body.layer >= 32 || !body.motion.position.is_finite() ||
+            !body.motion.rotation_degrees.is_finite() || !body.collider.shape.valid()) ||
+            snapshot.projectiles.iter().any(|body| !ids.insert(body.id) ||
+                body.layer >= 32 || !body.motion.position.is_finite() ||
+                !body.rotation_degrees.is_finite() ||
+                body.collider.as_ref().is_some_and(|collider| !collider.shape.valid())) ||
+            snapshot.obstacles.iter().any(|body| !ids.insert(body.id) ||
+                body.layer >= 32 || !body.pose.position.is_finite() ||
+                !body.pose.rotation_degrees.is_finite() ||
+                !body.linear_velocity.is_finite() ||
+                !body.angular_velocity_degrees.is_finite() || !body.collider.shape.valid())
+        {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        // No identity-bearing contact or state is recreated from source
+        // positions. Even dormant slot IDs and prior overlaps remain exact.
+        self.ships = snapshot.ships;
+        self.active_ship_indices = snapshot.active_ship_indices;
+        self.projectiles = snapshot.projectiles;
+        self.active_projectile_indices = snapshot.active_projectile_indices;
+        self.obstacles = snapshot.obstacles;
+        self.active_obstacle_indices = snapshot.active_obstacle_indices;
+        self.ship_hulls_dirty = snapshot.ship_hulls_dirty;
+        self.obstacle_hulls_dirty = snapshot.obstacle_hulls_dirty;
+        self.overlaps_previous = snapshot.overlaps_previous;
+        self.overlaps_current = snapshot.overlaps_current;
+        self.entries = snapshot.entries;
+        self.obstacle_overlaps_previous = snapshot.obstacle_overlaps_previous;
+        self.obstacle_overlaps_current = snapshot.obstacle_overlaps_current;
+        self.obstacle_entries = snapshot.obstacle_entries;
+        self.ship_obstacle_previous = snapshot.ship_obstacle_previous;
+        self.ship_obstacle_current = snapshot.ship_obstacle_current;
+        self.ship_obstacle_enters = snapshot.ship_obstacle_enters;
+        self.ship_obstacle_exits = snapshot.ship_obstacle_exits;
+        self.obstacle_pairs_previous = snapshot.obstacle_pairs_previous;
+        self.obstacle_pairs_current = snapshot.obstacle_pairs_current;
+        self.obstacle_pair_enters = snapshot.obstacle_pair_enters;
+        self.obstacle_pair_exits = snapshot.obstacle_pair_exits;
+        self.proximity_ship_previous = snapshot.proximity_ship_previous;
+        self.proximity_ship_current = snapshot.proximity_ship_current;
+        self.proximity_ship_enters = snapshot.proximity_ship_enters;
+        self.proximity_ship_exits = snapshot.proximity_ship_exits;
+        self.proximity_obstacle_previous = snapshot.proximity_obstacle_previous;
+        self.proximity_obstacle_current = snapshot.proximity_obstacle_current;
+        self.proximity_obstacle_enters = snapshot.proximity_obstacle_enters;
+        self.proximity_obstacle_exits = snapshot.proximity_obstacle_exits;
+        self.counts = snapshot.counts;
+        // Cache/buckets are reconstructible from these authoritative bodies
+        // and retain NO mutable contact history. Force one lazy rebuild.
+        self.grid_contents = GridContents::Stale;
+        self.grid.cell_to_bucket.clear();
+        self.grid.active_buckets = 0;
+        self.grid.sorted_cells.clear();
+        self.grid.sorted_cells_dirty = false;
+        self.grid.overflow.clear();
+        self.grid.generation = 0;
+        self.grid.seen.clear();
+        self.candidates.clear();
+        Ok(())
+    }
+
     pub fn new(area: Aabb, cell_size: f32) -> Result<Self, PhysicsError> {
         Ok(Self {
             ships: Vec::new(),

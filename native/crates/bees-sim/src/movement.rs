@@ -20,7 +20,7 @@ pub enum MotionUpdate {
     Applied { rotation_delta_degrees: f32 },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ShipMotion {
     pub position: Vec2,
     pub rotation_degrees: f32,
