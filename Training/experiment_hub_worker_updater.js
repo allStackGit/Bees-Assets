@@ -575,8 +575,14 @@ async function apply(root,envFile,previous,changes,confirmReplacement=null,rollo
     }
 }
 async function main(argv=process.argv.slice(2)) {
-    if(argv.length!==2||argv[0]!=='--root'||!path.isAbsolute(argv[1]))
-        throw Error('Usage: node experiment_hub_worker_updater.js --root /installed/worker');
+    const component=argv.length===4&&argv[2]==='--component'
+        ?argv[3]:argv.length===2?'all':null;
+    if(argv[0]!=='--root'||!path.isAbsolute(argv[1]||'')||
+        !['all','worker','tinybrains','courier','bees'].includes(component))
+        throw Error('Usage: node experiment_hub_worker_updater.js --root ABSOLUTE_PATH [--component worker|tinybrains|courier|bees]');
+    // The persistent update launcher invokes worker infrastructure first,
+    // then each requested simulation separately. A failed simulation update
+    // cannot block worker update or another simulation's installation.
     const root=path.resolve(argv[1]);
     const privateDir=path.join(root,process.platform==='win32'?'Private':'private');
     const envFile=path.join(privateDir,'worker.env'),env=config(envFile);
@@ -616,7 +622,8 @@ async function main(argv=process.argv.slice(2)) {
         // machine-requested components, not a frozen enrollment selection.
         const plan={};let dirty=false,baselineSaved=false;
         for(const [name,entry] of Object.entries(manifest.components)) {
-            if(!['worker','tinybrains','courier','bees'].includes(name))continue;
+            if(!['worker','tinybrains','courier','bees'].includes(name)||
+                component!=='all'&&component!==name)continue;
             validRelease(entry,name);
             const baseline=active[name]?.version||initialVersion(root,name,env);
             if(baseline===entry.version) {
