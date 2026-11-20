@@ -1409,7 +1409,10 @@ fn current_state(
             "rotation": body.rotation_degrees,
         }))
     }).collect();
-    let squads: Vec<_> = view.roster.active_lifetimes().filter_map(|owner| {
+    // Preserve the authoritative source registration order for LAN tab,
+    // type-selection and keyboard cycling, including dynamically admitted
+    // source squads. Retired lifetimes are skipped by the same live roster.
+    let squads: Vec<_> = view.roster.source_order().iter().copied().filter_map(|owner| {
         let squad = view.roster.get(owner)?;
         let owned = owns_player_side(view, owner, side);
         let members: Vec<_> = squad.members.iter().copied()
