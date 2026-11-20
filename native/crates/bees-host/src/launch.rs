@@ -1617,6 +1617,10 @@ struct CampaignReplaySetup {
     kind: String,
     source_config: PathBuf,
     source_config_sha256: String,
+    /// Frozen scene, Stage and policy-loader identity for a restart before
+    /// the first durable World checkpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    assets_sha256: Option<BTreeMap<String, String>>,
     // A recovered World must bind to the exact career projection that
     // purchased, lost and awarded its original physical FleetShips.
     // Historical replay-only setups intentionally have no such digest.
@@ -1652,9 +1656,10 @@ impl CampaignReplaySetup {
         let bytes = fs::read(&source)?;
         let config: RunConfig = serde_json::from_slice(&bytes)?;
         Ok(Self {
-            schema_version: 4,
+            schema_version: 5,
             kind: "native_campaign_replay_setup".to_owned(),
             source_config_sha256: format!("{:x}", Sha256::digest(&bytes)),
+            assets_sha256: Some(native_start_asset_digests(&source, &config)?),
             source_config: source,
             career_sha256: None,
             host_recovery_enabled: config.host_recovery_checkpoint.is_some(),
@@ -1675,7 +1680,9 @@ impl CampaignReplaySetup {
 
     fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
         let setup: Self = serde_json::from_slice(&fs::read(path)?)?;
-        if !(1..=4).contains(&setup.schema_version) ||
+        if !(1..=5).contains(&setup.schema_version) ||
+            (setup.schema_version >= 5 && setup.assets_sha256.as_ref()
+                .is_none_or(|assets| assets.is_empty())) ||
             setup.kind != "native_campaign_replay_setup" ||
             setup.campaign_id.is_empty() || setup.mission_id.is_empty() ||
             !(1..=2).contains(&setup.player_side) ||
@@ -2677,14 +2684,14 @@ fn interrupted_campaign_world(
                 config.host_recovery_checkpoint.is_some()
             };
             if !required { continue; }
-            if identity.schema_version < 4 {
+            if identity.schema_version < 5 {
                 return Err(invalid(
-                    "legacy interrupted campaign lacks its first durable World checkpoint",
+                    "older interrupted campaign lacks pinned source assets or its first durable World checkpoint",
                 ).into());
             }
-            // Only schema 4 promises that the original first checkpoint
-            // and its commitment marker precede player input, physical
-            // ticks and any HiveMind Game setup.
+            // Schema 5 also pins scenes, Stage assets and policy loader
+            // identities. Its first World checkpoint and commitment marker
+            // must precede player input, physical ticks or Game setup.
         }
         let frozen = CampaignReplaySetup::load(&saved)?;
         if pending.replace((run, frozen)).is_some() {
@@ -2795,6 +2802,15 @@ fn launch_catalog_battle(
                 require_replayable_remote_host(&original_config)?;
             }
             if !output.join("native-host-checkpoint.json").is_file() {
+                if prior.schema_version < 5 ||
+                    prior.assets_sha256.as_ref() != Some(
+                        &native_start_asset_digests(&prior.source_config, &original_config)?
+                    )
+                {
+                    return Err(invalid(
+                        "interrupted campaign source scene, Stage or policy assets changed before first World checkpoint",
+                    ).into());
+                }
                 reset_uncommitted_native_start(&output)?;
             }
             println!("{}", json!({
