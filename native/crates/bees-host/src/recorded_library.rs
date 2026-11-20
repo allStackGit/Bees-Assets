@@ -66,6 +66,24 @@ fn complete_trace(path: &Path) -> io::Result<bool> {
        end["user_closed"] == false)
 }
 
+/// A committed battle can outlive the process by milliseconds before
+/// the final replay footer is synced. Restore only that proven projection,
+/// through the same terminal host writer lease; never rerun the battle or
+/// alter campaign progress while scanning the saved replay library.
+fn complete_or_recover_trace(run: &Path) -> io::Result<bool> {
+    let trace = run.join("player-inputs.jsonl");
+    if complete_trace(&trace).unwrap_or(false) { return Ok(true); }
+    if run.join("rollout-summary.json").is_file() &&
+        run.join("native-host-checkpoint.json").is_file()
+    {
+        super::terminal_recording::complete_committed_recording(run)
+            .map_err(|error| io::Error::other(format!(
+                "native terminal replay finalization ({}): {error}", run.display(),
+            )))?;
+    }
+    Ok(complete_trace(&trace).unwrap_or(false))
+}
+
 /// Enumerate one known game's numbered battle folders. Shared by
 /// packaged quick battles and frozen trained-model replays.
 fn completed_quick_battles(directory: &Path)
@@ -96,7 +114,7 @@ fn completed_quick_battles(directory: &Path)
         if !fs::symlink_metadata(&run_dir)
             .is_ok_and(|meta| meta.file_type().is_dir()) { continue; }
         let trace = run_dir.join("player-inputs.jsonl");
-        if complete_trace(&trace).unwrap_or(false) {
+        if complete_or_recover_trace(&run_dir)? {
             completed.push((number, folder, trace));
             if completed.len() == 256 { break; }
         }
@@ -220,7 +238,7 @@ pub(super) fn list_campaigns(
             if !fs::symlink_metadata(&run)
                 .is_ok_and(|meta| meta.file_type().is_dir()) { continue; }
             let trace = run.join("player-inputs.jsonl");
-            if !complete_trace(&trace).unwrap_or(false) { continue; }
+            if !complete_or_recover_trace(&run)? { continue; }
 
             let setup = battle_path.join("campaign-replay-setup.json");
             let Ok(metadata) = fs::symlink_metadata(&setup) else { continue };
