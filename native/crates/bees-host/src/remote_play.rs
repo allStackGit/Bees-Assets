@@ -705,8 +705,42 @@ impl NativeRemotePlay {
                                 .then_some(side));
                         if let Some(side) = side {
                             peer.side = Some(side);
-                            newly_authenticated = true;
                             self.measurements.authenticated_peers += 1;
+                            if let Some(original) = resume_session_id.as_deref()
+                                .filter(|id| *id != self.host_session_id)
+                            {
+                                // The peer asked for its earlier physical
+                                // match, not this process's replacement
+                                // World. Only a committed same-game receipt
+                                // may satisfy that session identity.
+                                let Some(receipt) = self.archived_receipts.get(original) else {
+                                    peer.closed = true;
+                                    break;
+                                };
+                                let _ = peer.enqueue(&json!({
+                                    "kind": "welcome", "protocol": 1,
+                                    "mode": "authenticated_player_side", "side": side,
+                                    "host_session_id": original,
+                                    "recovered_host": true,
+                                }));
+                                if let Some(outcome) = receipt.campaign_outcome.as_ref()
+                                    .filter(|outcome| outcome["player_side"].as_i64()
+                                        == Some(i64::from(side)))
+                                {
+                                    let _ = peer.enqueue(&json!({
+                                        "kind": "campaign_receipt",
+                                        "campaign_outcome": outcome,
+                                        "banked_minerals": receipt.banked_minerals,
+                                    }));
+                                }
+                                let mut result = receipt.battle_result.clone();
+                                result["viewer_side"] = json!(side);
+                                let _ = peer.enqueue(&result);
+                                peer.archived_terminal = true;
+                                peer.close_after_flush = true;
+                                break;
+                            }
+                            newly_authenticated = true;
                             if self.recovered_session {
                                 self.measurements.post_recovery_authenticated_peers += 1;
                             }
