@@ -885,15 +885,22 @@ fn collect_remote_audio(
             _ => continue,
         };
         let Some(point) = point.filter(|point| point.is_finite()) else { continue };
-        // A player must see the death of their own last vision-providing
-        // ship. Its removal can empty the live fog-source set in this same
-        // physics tick, before the death event is projected to the LAN.
-        // All enemy and unowned deaths still require current source sight;
-        // no old discovery or remote-client visibility state is trusted.
-        let own_ship_death = matches!(event, CombatEvent::ShipDied { victim_id, .. }
-            if view.roster.owning_squad(*victim_id)
-                .is_some_and(|owner| owns_player_side(view, owner, side)));
-        if !own_ship_death && sources.as_ref().is_some_and(|sources|
+        // A player must see effects on their own last vision-providing
+        // ship. Death, damage or departure may remove the live sight source
+        // in this very physics tick. Authenticate ownership through the
+        // source roster, never the client's old discovery or visibility data.
+        // Unowned and enemy effects still require the current fog predicate.
+        let affected_ship = match event {
+            CombatEvent::Hit(hit) => Some(hit.target_id),
+            CombatEvent::ShipDied { victim_id, .. } => Some(*victim_id),
+            CombatEvent::StrikerBombDropped { ship_id, .. } |
+            CombatEvent::ShipWarped { ship_id, .. } => Some(*ship_id),
+            _ => None,
+        };
+        let own_ship_event = affected_ship
+            .and_then(|id| view.roster.owning_squad(id))
+            .is_some_and(|owner| owns_player_side(view, owner, side));
+        if !own_ship_event && sources.as_ref().is_some_and(|sources|
             !sources.covers(point, measurements)) { continue; }
         if let Some((id, _)) = launched {
             if pending.iter().any(|cue| cue["projectile_id"].as_i64() == Some(id)) {
