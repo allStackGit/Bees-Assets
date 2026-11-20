@@ -236,6 +236,161 @@ pub struct NativePolicyOnlyMetadata {
     pub chase_measurements: NativePlayerChaseMeasurements,
 }
 
+/// Composite SquadLifetime cannot be a JSON object key; use ordered
+/// lifecycle-keyed records rather than assigning ambiguous squad IDs.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativePlayerCommandCheckpoint {
+    owner: SquadLifetime,
+    is_carrier_squad: Option<bool>,
+    shooting_id: u8,
+    settings: bees_gameplay::commands::HiveMindCommandSettings,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativePlayerSourceCheckpoint {
+    human_side: i32,
+    has_obstacles: bool,
+    commands: Vec<NativePlayerCommandCheckpoint>,
+    squads: Vec<(SquadLifetime, NativePlayerPermissions)>,
+    chasing: Vec<SquadLifetime>,
+    matching_speeds: Vec<(SquadLifetime, f32)>,
+    cease_fire: Vec<(SquadLifetime, bool)>,
+    squad_colors: Vec<(SquadLifetime, [u8; 3])>,
+    ships: HashMap<i64, NativeSourceFormation>,
+    hivemind_squads: Vec<(SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource)>,
+}
+
+fn sorted_lifetime_entries<T: Copy>(
+    map: &HashMap<SquadLifetime, T>,
+) -> Vec<(SquadLifetime, T)> {
+    let mut entries = map.iter().map(|(&owner, &value)| (owner, value))
+        .collect::<Vec<_>>();
+    entries.sort_unstable_by_key(|(owner, _)| *owner);
+    entries
+}
+
+fn restored_lifetime_map<T>(
+    entries: Vec<(SquadLifetime, T)>,
+) -> Option<HashMap<SquadLifetime, T>> {
+    let length = entries.len();
+    if entries.iter().any(|(owner, _)| !owner.valid()) {
+        return None;
+    }
+    let map = entries.into_iter().collect::<HashMap<_, _>>();
+    (map.len() == length).then_some(map)
+}
+
+impl NativePlayerSourceCheckpoint {
+    fn capture(
+        player: &NativeSourcePlayerInputs,
+        hivemind: &HashMap<SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource>,
+    ) -> Self {
+        let mut commands = player.commands.iter().map(|(&owner, value)|
+            NativePlayerCommandCheckpoint {
+                owner, is_carrier_squad: value.is_carrier_squad,
+                shooting_id: value.shooting.id, settings: value.settings,
+            }
+        ).collect::<Vec<_>>();
+        commands.sort_unstable_by_key(|saved| saved.owner);
+        let mut chasing = player.chasing.iter().copied().collect::<Vec<_>>();
+        chasing.sort_unstable();
+        Self {
+            human_side: player.human_side,
+            has_obstacles: player.has_obstacles,
+            commands,
+            squads: sorted_lifetime_entries(&player.squads),
+            chasing,
+            matching_speeds: sorted_lifetime_entries(&player.matching_speeds),
+            cease_fire: sorted_lifetime_entries(&player.cease_fire),
+            squad_colors: sorted_lifetime_entries(&player.squad_colors),
+            ships: player.ships.clone(),
+            hivemind_squads: sorted_lifetime_entries(hivemind),
+        }
+    }
+
+    fn prepare_restore(
+        self,
+        source: &NativeSourcePlayerInputs,
+        source_hivemind: &HashMap<SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource>,
+    ) -> Result<(
+        NativeSourcePlayerInputs,
+        HashMap<SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource>,
+    ), NativePolicySourceLedgerRestoreError> {
+        use NativePolicySourceLedgerRestoreError as Error;
+        if self.human_side != source.human_side ||
+            self.has_obstacles != source.has_obstacles ||
+            source.ships.keys().any(|id| !self.ships.contains_key(id)) ||
+            self.ships.iter().any(|(&id, formation)|
+                id <= 0 || !formation.offset.is_finite() || formation.clearance < 0
+            ) {
+            return Err(Error::InvalidPlayerOwnership);
+        }
+        let squads = restored_lifetime_map(self.squads)
+            .ok_or(Error::InvalidPlayerOwnership)?;
+        let hivemind = restored_lifetime_map(self.hivemind_squads)
+            .ok_or(Error::InvalidPlayerOwnership)?;
+        if source.squads.keys().any(|owner| !squads.contains_key(owner)) ||
+            source_hivemind.keys().any(|owner| !hivemind.contains_key(owner)) {
+            return Err(Error::InvalidPlayerOwnership);
+        }
+        let mut commands = HashMap::with_capacity(self.commands.len());
+        for saved in self.commands {
+            let name = usize::from(saved.shooting_id).checked_sub(1)
+                .and_then(|index|
+                    bees_hivemind::protocol::SHOOTING_STRATEGIES.get(index).copied()
+                ).ok_or(Error::InvalidPlayerOwnership)?;
+            if !saved.owner.valid() || !squads.contains_key(&saved.owner) ||
+                !saved.settings.valid() ||
+                commands.insert(saved.owner,
+                    bees_gameplay::player_inputs::NativePlayerCommandInputs {
+                        is_carrier_squad: saved.is_carrier_squad,
+                        shooting: bees_hivemind::protocol::StrategyIdentity {
+                            id: saved.shooting_id, name,
+                        },
+                        settings: saved.settings,
+                    }
+                ).is_some() {
+                return Err(Error::InvalidPlayerOwnership);
+            }
+        }
+        if source.commands.keys().any(|owner| !commands.contains_key(owner)) ||
+            self.chasing.iter().any(|owner| !owner.valid() || !squads.contains_key(owner)) {
+            return Err(Error::InvalidPlayerOwnership);
+        }
+        let chase_count = self.chasing.len();
+        let chasing = self.chasing.into_iter().collect::<HashSet<_>>();
+        if chasing.len() != chase_count {
+            return Err(Error::InvalidPlayerOwnership);
+        }
+        if self.matching_speeds.iter().any(|(_, speed)|
+            !speed.is_finite() || *speed < 0.0
+        ) {
+            return Err(Error::InvalidPlayerOwnership);
+        }
+        let matching_speeds = restored_lifetime_map(self.matching_speeds)
+            .ok_or(Error::InvalidPlayerOwnership)?;
+        let cease_fire = restored_lifetime_map(self.cease_fire)
+            .ok_or(Error::InvalidPlayerOwnership)?;
+        let squad_colors = restored_lifetime_map(self.squad_colors)
+            .ok_or(Error::InvalidPlayerOwnership)?;
+        if matching_speeds.keys().chain(cease_fire.keys())
+            .chain(squad_colors.keys()).any(|owner| !squads.contains_key(owner)) {
+            return Err(Error::InvalidPlayerOwnership);
+        }
+        Ok((
+            NativeSourcePlayerInputs {
+                human_side: self.human_side,
+                has_obstacles: self.has_obstacles,
+                commands, squads, chasing, matching_speeds, cease_fire,
+                squad_colors, ships: self.ships,
+            },
+            hivemind,
+        ))
+    }
+}
+
 /// Mutable mission and career ledgers resident in the authored source
 /// metadata. Geometry, model observations, FleetShip assets and pathfinding
 /// stay in the same native Level and are not copied into this checkpoint.
@@ -251,6 +406,7 @@ pub struct NativePolicySourceLedgerCheckpoint {
     dynamic_policy_ships: HashSet<i64>,
     retired_dynamic_pending: Vec<i64>,
     next_dynamic_group_agent_id: u64,
+    player: NativePlayerSourceCheckpoint,
     exploration: BTreeMap<i32, TeamExplorationGrid>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_counts: NativeScriptedQueueMeasurements,
@@ -268,6 +424,7 @@ pub enum NativePolicySourceLedgerRestoreError {
     InvalidVersion,
     InvalidSide,
     InvalidPolicyAgents,
+    InvalidPlayerOwnership,
     InvalidScriptedState,
     InvalidReinforcementQueue,
     InvalidTimer,
@@ -283,6 +440,8 @@ pub struct NativePolicySourceLedgerPrepared {
     dynamic_policy_ships: HashSet<i64>,
     retired_dynamic_pending: Vec<i64>,
     next_dynamic_group_agent_id: u64,
+    player: NativeSourcePlayerInputs,
+    hivemind_squads: HashMap<SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource>,
     exploration: BTreeMap<i32, TeamExplorationGrid>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_counts: NativeScriptedQueueMeasurements,
@@ -300,7 +459,7 @@ impl NativePolicyOnlyMetadata {
     /// duplicate physical health or inferred command result.
     pub fn source_ledger_checkpoint(&self) -> NativePolicySourceLedgerCheckpoint {
         NativePolicySourceLedgerCheckpoint {
-            schema_version: 1,
+            schema_version: 2,
             fleet: self.fleet.checkpoint(),
             authored_ships: self.authored_ships.clone(),
             effective_vision: self.effective_vision.clone(),
@@ -309,6 +468,7 @@ impl NativePolicyOnlyMetadata {
             dynamic_policy_ships: self.dynamic_policy_ships.clone(),
             retired_dynamic_pending: self.retired_dynamic_pending.clone(),
             next_dynamic_group_agent_id: self.next_dynamic_group_agent_id,
+            player: NativePlayerSourceCheckpoint::capture(&self.player, &self.hivemind_squads),
             exploration: self.sides.iter().map(|(&side, value)|
                 (side, value.exploration.clone())
             ).collect(),
@@ -330,7 +490,7 @@ impl NativePolicyOnlyMetadata {
         &self, saved: NativePolicySourceLedgerCheckpoint,
     ) -> Result<NativePolicySourceLedgerPrepared, NativePolicySourceLedgerRestoreError> {
         use NativePolicySourceLedgerRestoreError as Error;
-        if saved.schema_version != 1 {
+        if saved.schema_version != 2 {
             return Err(Error::InvalidVersion);
         }
         if saved.exploration.len() != self.sides.len() ||
@@ -424,6 +584,9 @@ impl NativePolicyOnlyMetadata {
         {
             return Err(Error::InvalidReinforcementQueue);
         }
+        let (player, hivemind_squads) = saved.player.prepare_restore(
+            &self.player, &self.hivemind_squads,
+        )?;
         let fleet = self.fleet.prepare_restore(saved.fleet).map_err(Error::Fleet)?;
         if saved.authored_ships.keys().any(|id| fleet.get(*id).is_none()) {
             return Err(Error::InvalidPolicyAgents);
@@ -437,6 +600,8 @@ impl NativePolicyOnlyMetadata {
             dynamic_policy_ships: saved.dynamic_policy_ships,
             retired_dynamic_pending: saved.retired_dynamic_pending,
             next_dynamic_group_agent_id: saved.next_dynamic_group_agent_id,
+            player,
+            hivemind_squads,
             exploration: saved.exploration,
             scripted_queues: saved.scripted_queues,
             scripted_counts: saved.scripted_counts,
@@ -461,6 +626,8 @@ impl NativePolicyOnlyMetadata {
         self.dynamic_policy_ships = staged.dynamic_policy_ships;
         self.retired_dynamic_pending = staged.retired_dynamic_pending;
         self.next_dynamic_group_agent_id = staged.next_dynamic_group_agent_id;
+        self.player = staged.player;
+        self.hivemind_squads = staged.hivemind_squads;
         for (side, saved) in staged.exploration {
             self.sides.get_mut(&side)
                 .expect("validated authored side").exploration = saved;
