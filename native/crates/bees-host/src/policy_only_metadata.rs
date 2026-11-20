@@ -115,7 +115,7 @@ pub struct AuthoredPolicyAgent {
 
 /// Source-controlled Queen minion binding outcomes, sampled once per real
 /// spawn. No gameplay, model, or group work is repeated for measurements.
-#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct NativeQueenControllerMeasurements {
     pub policy_minions_bound: u64,
     pub ungrouped_policy_minions_bound: u64,
