@@ -365,6 +365,7 @@ impl TrainedGame {
             "{run_name}-challenge-side-{human_side}-level-{}", level_index + 1
         ));
         run["policy_capture"] = Value::Null;
+        run["host_recovery_checkpoint"] = json!("native-host-checkpoint.json");
         run["connection_checkpoint"] = json!("challenge-connection.json");
         run["notifications"] = json!("challenge-events.jsonl");
         run["rollout_summary"] = json!("challenge-summary.json");
@@ -408,6 +409,12 @@ impl TrainedGame {
         archived_run["run_id"] = json!(format!(
             "{run_name}-original-level-{}", level_index + 1
         ));
+        // A selected playable policy is a live game, not a training
+        // behavior-capture job. Its sampler and physical World recover
+        // together through the existing native host transaction.
+        archived_run["policy_capture"] = Value::Null;
+        archived_run["host_recovery_checkpoint"] =
+            json!("native-host-checkpoint.json");
         let levels = archived_run["levels"].as_array_mut()
             .ok_or_else(|| invalid("trained replay requires source Levels"))?;
         for (index, level) in levels.iter_mut().enumerate() {
