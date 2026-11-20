@@ -10,6 +10,7 @@ use bees_gameplay::{squads::NativeSquadRoster,
     player_inputs::NativePlayerAuthority};
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::simulation::WorldId;
+use bees_sim::geometry::Vec2;
 use bees_hivemind::session::SquadLifetime;
 
 mod software;
@@ -35,6 +36,23 @@ pub use battle_menu::{
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
 pub use tactical_hud::HudAction;
+
+/// Presentation-only FogOfWarVision death mask shared by local and remote
+/// viewers. It never affects combat visibility, decisions or simulation.
+#[derive(Clone, Copy)]
+pub(crate) struct NativeFogFade {
+    pub position: Vec2,
+    pub radius: f32,
+    pub born_tick: u64,
+}
+
+impl NativeFogFade {
+    pub fn current_radius(self, tick: u64, dt: f32) -> f32 {
+        let elapsed = tick.saturating_sub(self.born_tick) as f32 * dt;
+        let phases = (elapsed / 0.1).floor().max(0.0);
+        self.radius * 0.8f32.powf(phases)
+    }
+}
 
 pub(crate) fn battle_outcome_label(result: bees_sim::episode_terminal::EpisodeTerminalResult) -> String {
     if result.winner_side == 0 { "Draw".to_owned() }

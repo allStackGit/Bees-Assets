@@ -27,7 +27,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::player_trace::NativePlayerInput;
-use crate::presentation::NativeRenderWorldView;
+use crate::presentation::{NativeFogFade, NativeRenderWorldView};
 use crate::unity_scene_snapshot::NativeMusicLocation;
 
 const MAX_PEERS: usize = 4;
@@ -204,6 +204,9 @@ pub struct RemotePlayMeasurements {
     pub fog_visibility_candidate_checks: u64,
     pub fog_visibility_sources_indexed: u64,
     pub fog_visibility_grid_queries: u64,
+    /// Source-authored shrinking vision masks, sampled only for connected sides.
+    pub fog_fading_source_ticks: u64,
+    pub fog_fading_sources_peak: usize,
     pub audio_events_queued: u64,
     pub audio_events_dropped: u64,
     /// A real ship death displaced one cosmetic projectile cue when a
@@ -222,6 +225,9 @@ pub struct NativeRemotePlay {
     last_state: Option<(u64, u64)>,
     // Cosmetic cues only, not a duplicate gameplay event store.
     pending_audio: HashMap<i32, Vec<Value>>,
+    // Each authenticated side has only presentation vision masks; no
+    // second gameplay visibility or historical enemy positions are stored.
+    fog_by_side: HashMap<i32, RemoteFogSight>,
     music_location: Option<NativeMusicLocation>,
     held_fire: HashMap<u64, HeldFireLease>,
     pending_releases: Vec<RemoteOrder>,
@@ -273,7 +279,8 @@ impl NativeRemotePlay {
         Ok(Some(Self {
             listener, side_tokens, peers: Vec::new(),
             next_peer: 1, last_state: None,
-            pending_audio: HashMap::new(), music_location: None,
+            pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
+            music_location: None,
             held_fire: HashMap::new(), pending_releases: Vec::new(),
             measurements: RemotePlayMeasurements::default(),
         }))
@@ -548,11 +555,22 @@ impl NativeRemotePlay {
     pub fn broadcast(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) {
         if !self.peers.iter().any(|peer| peer.side.is_some()) {
             self.pending_audio.clear();
+            self.fog_by_side.clear();
             return;
         }
         let episode = (view.world_id.0, view.episode_revision);
         if self.last_state.is_some_and(|previous| previous != episode) {
             self.pending_audio.clear();
+            self.fog_by_side.clear();
+        }
+        // Build the same side-scoped sight masks for audio and world-state
+        // snapshots. Track changes every physics tick, not every fifth
+        // network frame, so a death starts its fade at the true source tick.
+        let mut vision = HashMap::<i32, RemoteFogSources>::new();
+        for side in self.peers.iter().filter_map(|peer| peer.side).collect::<HashSet<_>>() {
+            let source = self.fog_by_side.entry(side).or_default()
+                .sources(view, side, &mut self.measurements);
+            vision.insert(side, source);
         }
         // This runs at each physical tick, including the four ticks with no
         // state frame. Carry short-lived sounds to the next presentation frame.
@@ -574,6 +592,7 @@ impl NativeRemotePlay {
             for side in self.peers.iter().filter_map(|peer| peer.side) {
                 if sides.insert(side) {
                     collect_remote_audio(view, side, &shot_positions,
+                        vision.get(&side).expect("authenticated side has sight"),
                         self.pending_audio.entry(side).or_default(),
                         &mut self.measurements);
                 }
@@ -594,7 +613,9 @@ impl NativeRemotePlay {
             let encoded = snapshots.entry(side).or_insert_with(|| {
                 let cues = pending_audio.get(&side).map(Vec::as_slice).unwrap_or(&[]);
                 serde_json::to_vec(&current_state(
-                    view, bounds, side, music_location, cues, measurements,
+                    view, bounds, side, music_location, cues,
+                    vision.get(&side).expect("authenticated side has sight"),
+                    measurements,
                 )).unwrap_or_default()
             });
             if peer.enqueue_state(encoded) {
@@ -686,6 +707,65 @@ fn constant_time_matches(expected: &[u8], actual: &[u8]) -> bool {
         difference |= usize::from(expected[index] != actual.get(index).copied().unwrap_or(0));
     }
     difference == 0
+}
+
+/// The local native renderer and LAN host consume the same shrinking sight
+/// mask after a player-owned ship dies. Only the host determines which live
+/// combat entities fall inside these masks; clients cannot revive old intel.
+#[derive(Clone, Copy)]
+struct RemoteFogLive {
+    position: Vec2,
+    radius: f32,
+    seen_tick: u64,
+}
+
+#[derive(Default)]
+struct RemoteFogSight {
+    live: HashMap<i64, RemoteFogLive>,
+    fades: Vec<NativeFogFade>,
+}
+
+impl RemoteFogSight {
+    fn sources(&mut self, view: &NativeRenderWorldView<'_>, side: i32,
+               measurements: &mut RemotePlayMeasurements) -> RemoteFogSources {
+        if !view.player_authority.player_fog_of_war_enabled() {
+            self.live.clear();
+            self.fades.clear();
+            return RemoteFogSources::new(Vec::new(), measurements);
+        }
+        for (ship, body) in view.combat.render_ships() {
+            let Some(owner) = view.roster.owning_squad(ship.entity_id) else { continue };
+            if !owns_player_side(view, owner, side) { continue; }
+            let Some(radius) = view.player_authority.player_fog_vision_radius(ship.entity_id)
+                .filter(|radius| *radius > 0.0 && radius.is_finite()) else { continue };
+            if !body.motion.position.is_finite() { continue; }
+            self.live.insert(ship.entity_id, RemoteFogLive {
+                position: body.motion.position, radius, seen_tick: view.tick,
+            });
+        }
+        // Exactly as the local viewer: ordinary disappearance grants no
+        // extra sight. A dead original source leaves a shrinking mask only.
+        self.live.retain(|&id, last| {
+            if last.seen_tick == view.tick { return true; }
+            if view.combat.ship(id).is_some_and(|ship| ship.vitals.is_dead()) {
+                self.fades.push(NativeFogFade {
+                    position: last.position, radius: last.radius,
+                    born_tick: view.tick,
+                });
+            }
+            false
+        });
+        self.fades.retain(|fade|
+            fade.current_radius(view.tick, view.fixed_step_seconds) >= 1.5);
+        measurements.fog_fading_source_ticks += self.fades.len() as u64;
+        measurements.fog_fading_sources_peak =
+            measurements.fog_fading_sources_peak.max(self.fades.len());
+        let mut circles = Vec::with_capacity(self.live.len() + self.fades.len());
+        circles.extend(self.live.values().map(|s| (s.position, s.radius)));
+        circles.extend(self.fades.iter().map(|s|
+            (s.position, s.current_radius(view.tick, view.fixed_step_seconds))));
+        RemoteFogSources::new(circles, measurements)
+    }
 }
 
 /// The remote snapshot has no camera-specific fog framebuffer: visible
@@ -805,29 +885,13 @@ fn owns_player_side(view: &NativeRenderWorldView<'_>, owner: SquadLifetime, side
             .is_some_and(|permission| permission.user_controlled))
 }
 
-/// Share the actual source sight predicate with state and audio projections.
-fn remote_fog_sources(
-    view: &NativeRenderWorldView<'_>, side: i32,
-    measurements: &mut RemotePlayMeasurements,
-) -> RemoteFogSources {
-    let sources = view.combat.render_ships().filter_map(|(ship, body)| {
-        let owner = view.roster.owning_squad(ship.entity_id)?;
-        if !owns_player_side(view, owner, side) { return None; }
-        let radius = view.player_authority.player_fog_vision_radius(ship.entity_id)?;
-        (radius > 0.0 && radius.is_finite()).then_some((body.motion.position, radius))
-    }).collect();
-    RemoteFogSources::new(sources, measurements)
-}
-
 /// Host-only ephemeral cues, restricted to the same visibility as combat
 /// geometry. Unlocalized events are deliberately not sent to opponents.
 fn collect_remote_audio(
     view: &NativeRenderWorldView<'_>, side: i32,
-    shots: &HashMap<i64, (u8, Vec2)>, pending: &mut Vec<Value>,
-    measurements: &mut RemotePlayMeasurements,
+    shots: &HashMap<i64, (u8, Vec2)>, sources: &RemoteFogSources,
+    pending: &mut Vec<Value>, measurements: &mut RemotePlayMeasurements,
 ) {
-    let sources = view.player_authority.player_fog_of_war_enabled()
-        .then(|| remote_fog_sources(view, side, measurements));
     for event in view.combat.events() {
         let mut launched = None;
         let mut impact = None;
@@ -900,8 +964,8 @@ fn collect_remote_audio(
         let own_ship_event = affected_ship
             .and_then(|id| view.roster.owning_squad(id))
             .is_some_and(|owner| owns_player_side(view, owner, side));
-        if !own_ship_event && sources.as_ref().is_some_and(|sources|
-            !sources.covers(point, measurements)) { continue; }
+        if !own_ship_event && view.player_authority.player_fog_of_war_enabled() &&
+            !sources.covers(point, measurements) { continue; }
         if let Some((id, _)) = launched {
             if pending.iter().any(|cue| cue["projectile_id"].as_i64() == Some(id)) {
                 continue;
@@ -984,12 +1048,10 @@ fn collect_remote_audio(
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
     music_location: Option<NativeMusicLocation>, audio_events: &[Value],
-    measurements: &mut RemotePlayMeasurements,
+    sources: &RemoteFogSources, measurements: &mut RemotePlayMeasurements,
 ) -> Value {
     let viewer = Some(side);
     let fog = view.player_authority.player_fog_of_war_enabled();
-    let sources = if fog { remote_fog_sources(view, side, measurements) }
-        else { RemoteFogSources::new(Vec::new(), measurements) };
     let mut visible_ids = HashSet::<i64>::new();
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
         let owned = view.roster.owning_squad(ship.entity_id)

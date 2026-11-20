@@ -8,7 +8,7 @@ use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
 use bees_sim::simulation::{RandomStream, WorldId};
-use super::{NativeRenderWorldView, NativeSquadSelection,
+use super::{NativeFogFade, NativeRenderWorldView, NativeSquadSelection,
     battle_outcome_label, battle_outcome_reason, text};
 use super::minimap::MiniMapLayout;
 use super::tactical_hud;
@@ -184,8 +184,8 @@ pub struct NativeSoftwareRenderer {
     fog_context: Option<(WorldId, u64, Option<i32>)>,
     fog_render_pass: u64,
     fog_live: HashMap<i64, FogLiveSource>,
-    fog_fades: Vec<FogFade>,
-    pending_fog_fades: Vec<FogFade>,
+    fog_fades: Vec<NativeFogFade>,
+    pending_fog_fades: Vec<NativeFogFade>,
     pub camera: NativeCamera,
     /// Selection is scoped to a WorldId AND episode revision by the client.
     pub selected_ship: Option<i64>,
@@ -240,21 +240,6 @@ struct FogLiveSource {
     position: Vec2,
     radius: f32,
     seen_pass: u64,
-}
-
-#[derive(Clone, Copy)]
-struct FogFade {
-    position: Vec2,
-    radius: f32,
-    born_tick: u64,
-}
-
-impl FogFade {
-    fn current_radius(self, tick: u64, dt: f32) -> f32 {
-        let elapsed = tick.saturating_sub(self.born_tick) as f32 * dt;
-        let phases = (elapsed / 0.1).floor().max(0.0);
-        self.radius * 0.8f32.powf(phases)
-    }
 }
 
 /// The source ShipRemains is visible for five simulated seconds. This
@@ -1330,7 +1315,7 @@ impl NativeSoftwareRenderer {
         self.fog_live.retain(|&id, last| {
             if last.seen_pass == pass { return true; }
             if view.combat.ship(id).is_some_and(|ship| ship.vitals.is_dead()) {
-                self.pending_fog_fades.push(FogFade {
+                self.pending_fog_fades.push(NativeFogFade {
                     position: last.position, radius: last.radius,
                     born_tick: view.tick,
                 });
