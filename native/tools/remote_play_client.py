@@ -153,6 +153,8 @@ class RemoteConsole:
                             else:
                                 for speaker, line_text in lines:
                                     print(f"{speaker}: {line_text}")
+                                if message.get("briefing_requires_ack") is True:
+                                    print("Enter 'ready' after reading to start the hosted campaign.")
                         outcome = message.get("terminal_outcome")
                         episode = (message.get("world_id"), message.get("episode_revision"))
                         if outcome is not None and episode != self.last_terminal_episode:
