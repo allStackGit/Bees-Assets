@@ -62,7 +62,7 @@ impl NavigationMapFrame {
 
 /// Actual rasterization work performed by this Level. Counters are
 /// episode-local and count completed operations rather than estimates.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NavigationRasterMeasurements {
     pub static_rebuilds: u64,
     pub dynamic_asteroid_passes: u64,
@@ -128,6 +128,17 @@ impl NavigationRuntime {
 
     pub fn raster_measurements(&self) -> NavigationRasterMeasurements {
         self.raster_measurements
+    }
+
+    /// The source Level restores its original cumulative navigation work,
+    /// but static/dynamic occupancy must be rebuilt from restored physics.
+    /// Search scratch and authored coordinate transforms are never copied.
+    pub fn restore_measurements_and_invalidate(
+        &mut self, counters: NavigationRasterMeasurements,
+    ) {
+        self.raster_measurements = counters;
+        self.static_obstacles_present = None;
+        self.world_static_revision = None;
     }
 
     /// Update after authored static objects are created, moved or destroyed.

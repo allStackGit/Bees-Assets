@@ -414,6 +414,7 @@ pub struct NativePolicySourceLedgerCheckpoint {
     chase_elapsed_seconds: f32,
     chase_measurements: NativePlayerChaseMeasurements,
     navigation_worker_counts: NativeNavigationWorkerMeasurements,
+    navigation_raster_measurements: bees_sim::navigation_runtime::NavigationRasterMeasurements,
     reinforcement_idle_ticks_skipped: u64,
     reinforcement_wakeup_scans: u64,
     remaining_reinforcements: Vec<crate::reinforcements::ReinforcementWaveIdentity>,
@@ -449,6 +450,7 @@ pub struct NativePolicySourceLedgerPrepared {
     chase_elapsed_seconds: f32,
     chase_measurements: NativePlayerChaseMeasurements,
     navigation_worker_counts: NativeNavigationWorkerMeasurements,
+    navigation_raster_measurements: bees_sim::navigation_runtime::NavigationRasterMeasurements,
     reinforcement_idle_ticks_skipped: u64,
     reinforcement_wakeup_scans: u64,
     reinforcement_drop_count: usize,
@@ -459,7 +461,7 @@ impl NativePolicyOnlyMetadata {
     /// duplicate physical health or inferred command result.
     pub fn source_ledger_checkpoint(&self) -> NativePolicySourceLedgerCheckpoint {
         NativePolicySourceLedgerCheckpoint {
-            schema_version: 2,
+            schema_version: 3,
             fleet: self.fleet.checkpoint(),
             authored_ships: self.authored_ships.clone(),
             effective_vision: self.effective_vision.clone(),
@@ -478,6 +480,7 @@ impl NativePolicyOnlyMetadata {
             chase_elapsed_seconds: self.chase_elapsed_seconds,
             chase_measurements: self.chase_measurements,
             navigation_worker_counts: self.navigation_worker_counts,
+            navigation_raster_measurements: self.navigation.raster_measurements(),
             reinforcement_idle_ticks_skipped: self.reinforcement_idle_ticks_skipped,
             reinforcement_wakeup_scans: self.reinforcement_wakeup_scans,
             remaining_reinforcements: self.reinforcements.iter()
@@ -490,7 +493,7 @@ impl NativePolicyOnlyMetadata {
         &self, saved: NativePolicySourceLedgerCheckpoint,
     ) -> Result<NativePolicySourceLedgerPrepared, NativePolicySourceLedgerRestoreError> {
         use NativePolicySourceLedgerRestoreError as Error;
-        if saved.schema_version != 2 {
+        if saved.schema_version != 3 {
             return Err(Error::InvalidVersion);
         }
         if saved.exploration.len() != self.sides.len() ||
@@ -565,6 +568,10 @@ impl NativePolicyOnlyMetadata {
         } {
             return Err(Error::InvalidScriptedState);
         }
+        if self.navigation_scheduler.as_ref()
+            .is_some_and(|scheduler| scheduler.busy_workers() != 0) {
+            return Err(Error::InvalidTimer);
+        }
         if !saved.chase_elapsed_seconds.is_finite() ||
             saved.chase_elapsed_seconds < 0.0 ||
             (!saved.scripted_queues.is_empty() && saved.scripted_retry_ticks == 0) {
@@ -609,6 +616,7 @@ impl NativePolicyOnlyMetadata {
             chase_elapsed_seconds: saved.chase_elapsed_seconds,
             chase_measurements: saved.chase_measurements,
             navigation_worker_counts: saved.navigation_worker_counts,
+            navigation_raster_measurements: saved.navigation_raster_measurements,
             reinforcement_idle_ticks_skipped: saved.reinforcement_idle_ticks_skipped,
             reinforcement_wakeup_scans: saved.reinforcement_wakeup_scans,
             reinforcement_drop_count,
@@ -638,6 +646,12 @@ impl NativePolicyOnlyMetadata {
         self.chase_elapsed_seconds = staged.chase_elapsed_seconds;
         self.chase_measurements = staged.chase_measurements;
         self.navigation_worker_counts = staged.navigation_worker_counts;
+        // No work remains in flight across the recovered fixed-step
+        // boundary; cumulative counters still retain their source values.
+        self.navigation_worker_counts.busy_workers = 0;
+        self.navigation.restore_measurements_and_invalidate(
+            staged.navigation_raster_measurements,
+        );
         self.reinforcement_idle_ticks_skipped = staged.reinforcement_idle_ticks_skipped;
         self.reinforcement_wakeup_scans = staged.reinforcement_wakeup_scans;
         for _ in 0..staged.reinforcement_drop_count {
