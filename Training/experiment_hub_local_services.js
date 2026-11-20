@@ -112,7 +112,24 @@ async function status(hub) {
         unitStatus('coordinator'),unitStatus('agent'),
     ]);
     const agentActivity=await restartActivity(hub,'agent');
+    const snapshot=hub.snapshot();
+    const localId=await enrolledLocalAgentMachine(hub);
+    const remoteMachines=snapshot.machines.filter(machine=>
+        machine.id!==localId&&
+        (machine.evaluator_services?.length||machine.evaluator_service_issue)).map(machine=>({
+        id:machine.id,name:machine.name,status:machine.status,
+        platform:machine.agent_platform||null,
+        issue:machine.evaluator_service_issue||null,
+        services:(machine.evaluator_services||[]).map(entry=>({...entry})),
+    }));
+    const remoteActions=(snapshot.evaluator_actions||[]).slice(-48).map(action=>({
+        id:action.id,machine_id:action.machine_id,unit:action.unit,
+        action:action.action,status:action.status,
+        created_at:action.created_at,dispatched_at:action.dispatched_at||null,
+        finished_at:action.finished_at||null,reason:action.reason||null,
+    }));
     return {coordinator,agent,active_jobs:activeJobs(hub).length,
+        remote_evaluators:{machines:remoteMachines,actions:remoteActions},
         agent_active_jobs:agentActivity.count,
         agent_restart_scope:agentActivity.scope,
         evaluators:{available:tinybrains.available||courier.available,
