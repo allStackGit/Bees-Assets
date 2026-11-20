@@ -1825,12 +1825,7 @@ function createNativeBeesAdapter({
                             rollout_execution_seconds: {value: rollout.execution_wall_seconds, unit: 'seconds'},
                             rollout_finalization_seconds: {value: rollout.finalization_wall_seconds, unit: 'seconds'},
                         }),
-                        rollout_policy_rows_per_second: {
-                            value: rollout.successful_policy_rows / rollout.wall_seconds, unit: 'rate',
-                        },
-                        rollout_world_steps_per_second: {
-                            value: rollout.successful_world_steps / rollout.wall_seconds, unit: 'rate',
-                        },
+                        ...roundThroughputMeasurements(receipt, rollout, metrics),
                     } : {}),
                     ...(receipt.rollout_bundles ? {
                         imported_rollout_bundles: {value: receipt.rollout_bundles.length, unit: 'count'},
@@ -1845,18 +1840,8 @@ function createNativeBeesAdapter({
                     terminal_steps: {value: metrics.terminal_steps, unit: 'count'},
                     optimizer_update_wall_seconds: {value: metrics.optimizer_update_wall_seconds, unit: 'seconds'},
                     trajectory_processing_wall_seconds: {value: metrics.trajectory_processing_wall_seconds, unit: 'seconds'},
-                    ...(rollout?.wall_seconds > 0 && metrics.total_wall_seconds > 0 ? {
-                        training_round_input_steps_per_second: {
-                            value: metrics.optimizer_input_steps /
-                                (rollout.wall_seconds + metrics.total_wall_seconds),
-                            unit: 'rate',
-                        },
-                        training_round_world_steps_per_second: {
-                            value: rollout.successful_world_steps /
-                                (rollout.wall_seconds + metrics.total_wall_seconds),
-                            unit: 'rate',
-                        },
-                    } : {}),
+                    // Rates are emitted by roundThroughputMeasurements with
+                    // explicit local or independent-collector scope.
                     ...learnerMeasurements(metrics),
                 },
             }, PROJECT);
