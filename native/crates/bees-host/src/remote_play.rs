@@ -496,6 +496,11 @@ impl NativeRemotePlay {
                     !(1..=2).contains(side)) ||
                 receipt.authorized_sides.windows(2).any(|pair|
                     pair[0] >= pair[1]) ||
+                receipt.campaign_outcome.as_ref().is_some_and(|outcome|
+                    !matches!(outcome["player_side"].as_i64(), Some(1 | 2)) ||
+                    (!receipt.authorized_sides.is_empty() &&
+                        !receipt.authorized_sides.contains(
+                            &(outcome["player_side"].as_i64().unwrap_or(0) as i32)))) ||
                 receipt.session_id == self.host_session_id ||
                 self.archived_receipts.contains_key(&receipt.session_id)
             {
