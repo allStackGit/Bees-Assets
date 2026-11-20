@@ -1631,28 +1631,6 @@ impl CampaignReplaySetup {
         Ok(setup)
     }
 
-    fn matches_recovery_start(&self, original: &Self) -> Result<bool, Box<dyn Error>> {
-        if self.career_sha256.as_ref().is_none_or(|digest|
-            digest.len() != 64 || !digest.bytes().all(|byte|
-                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
-        {
-            return Ok(false);
-        }
-        let mut current = serde_json::to_value(self)?;
-        let mut earlier = serde_json::to_value(original)?;
-        // HashSet serialization does not preserve loss-ID iteration
-        // order. These are unordered original FleetShip identities, so
-        // compare sorted numeric IDs without relaxing any other field.
-        for document in [&mut current, &mut earlier] {
-            if let Some(ids) = document.get_mut("lost_fleet_ids")
-                .and_then(Value::as_array_mut)
-            {
-                ids.sort_unstable_by_key(|value| value.as_i64().unwrap_or(i64::MIN));
-            }
-        }
-        Ok(current == earlier)
-    }
-
     // Offline replay never mutates the current career, even when its
     // saved setup contains the original run's frozen victory rewards.
     fn mission(&self) -> CampaignMission<'_> {
@@ -2550,6 +2528,60 @@ fn launch_catalog_battle(
         return Err(invalid("the chosen campaign mission is no longer unlocked").into());
     }
     let config = resolve(catalog_root, entry.config_for(&progress));
+    if let (Some(campaign_id), Some(chosen)) =
+        (catalog.campaign_id.as_deref(), entry.mission.as_ref())
+    {
+        if let Some((output, prior)) =
+            interrupted_campaign_world(output_root, campaign_id)?
+        {
+            if prior.mission_id != chosen.id {
+                return Err(invalid(format!(
+                    "campaign mission {} still owns an interrupted World; resume it before starting {}",
+                    prior.mission_id, chosen.id,
+                )).into());
+            }
+            // An interrupted World already has its immutable scene, fleet,
+            // HiveMind command state and one-time reward allocation. Verify
+            // the source and career identities without recomputing new
+            // purchases, squads or victory rewards against a newer catalog.
+            if prior.source_config != config.canonicalize()? ||
+                prior.player_side != chosen.player_side ||
+                prior.record_fleet_stats != chosen.record_fleet_stats ||
+                prior.bank_player_minerals != chosen.bank_player_minerals
+            {
+                return Err(invalid(
+                    "interrupted campaign source or mission contract changed",
+                ).into());
+            }
+            let career_sha256 = format!("{:x}", Sha256::digest(
+                serde_json::to_vec(&catalog.status(&progress))?,
+            ));
+            if prior.career_sha256.as_deref() != Some(career_sha256.as_str()) {
+                return Err(invalid(
+                    "interrupted campaign cannot resume after its saved career changed",
+                ).into());
+            }
+            let original_config: RunConfig =
+                serde_json::from_slice(&fs::read(&prior.source_config)?)?;
+            if original_config.host_recovery_checkpoint.is_none() {
+                return Err(invalid(
+                    "interrupted campaign requires its original checkpoint-enabled source",
+                ).into());
+            }
+            if env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
+                require_replayable_remote_host(&original_config)?;
+            }
+            println!("{}", json!({
+                "kind": "native_campaign_battle_recovered",
+                "campaign_id": campaign_id,
+                "mission_id": chosen.id,
+                "run": output,
+            }));
+            run_session(&prior.source_config, interactive, interactive,
+                Some(output.clone()), None, None, Some(prior.recovery_mission()?))?;
+            return Ok(output);
+        }
+    }
     if env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
         // Apply the same replayable remote-host contract to campaign and
         // practice battles opened from the menu as direct "serve" sessions.
@@ -2649,15 +2681,14 @@ fn launch_catalog_battle(
     // The original career snapshot is already needed for replay. Reuse
     // that SAME frozen input projection for live campaign continuation,
     // rather than rebuilding purchases/grants from a changed save ledger.
-    let (recoverable, save_setup) = if mission.is_some() {
+    let save_setup = if mission.is_some() {
         let run_config: RunConfig = serde_json::from_slice(&fs::read(&config)?)?;
         let replayable = run_config.navigation_workers.is_none() &&
             run_config.model_updates.is_empty();
-        (run_config.host_recovery_checkpoint.is_some(),
-         run_config.host_recovery_checkpoint.is_some() ||
+        run_config.host_recovery_checkpoint.is_some() ||
             replayable && (interactive ||
-                env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some()))
-    } else { (false, false) };
+                env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some())
+    } else { false };
     let setup = if save_setup {
         let mut setup = CampaignReplaySetup::capture(
             &config, mission.expect("saved campaign setup has an authored mission"),
@@ -2669,41 +2700,6 @@ fn launch_catalog_battle(
         Some(setup)
     } else { None };
 
-    if let (Some(campaign_id), Some(chosen)) =
-        (catalog.campaign_id.as_deref(), entry.mission.as_ref())
-    {
-        if let Some((output, prior)) =
-            interrupted_campaign_world(output_root, campaign_id)?
-        {
-            if prior.mission_id != chosen.id {
-                return Err(invalid(format!(
-                    "campaign mission {} still owns an interrupted World; resume it before starting {}",
-                    prior.mission_id, chosen.id,
-                )).into());
-            }
-            if !recoverable {
-                return Err(invalid(
-                    "unfinished campaign World requires its original checkpoint-enabled source configuration",
-                ).into());
-            }
-            if !setup.as_ref().expect("checkpointed campaign has a frozen start")
-                .matches_recovery_start(&prior)?
-            {
-                return Err(invalid(
-                    "interrupted campaign cannot resume after its source, saved career, or victory rewards changed",
-                ).into());
-            }
-            println!("{}", json!({
-                "kind": "native_campaign_battle_recovered",
-                "campaign_id": campaign_id,
-                "mission_id": chosen.id,
-                "run": output,
-            }));
-            run_session(&prior.source_config, interactive, interactive,
-                Some(output.clone()), None, None, Some(prior.recovery_mission()?))?;
-            return Ok(output);
-        }
-    }
     // No existing original World was recoverable: allocate a fresh,
     // unique battle and persist its career inputs BEFORE gameplay begins.
     let output = loop {
