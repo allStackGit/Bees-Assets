@@ -5306,8 +5306,13 @@ fn run_battle(
             }
         }
     }
-    if let Some(mut trace) = input_trace {
-        let policy_actions_sha256 = host.model_mut().recorder.take().and_then(|recorder| {
+    // Finish resident model actions before durable run finalization, but
+    // do not certify the player trace yet. The replay library accepts a
+    // final trace footer as proof of a complete battle: writing it before
+    // notification/network cleanup or the campaign summary could publish
+    // a replay for an unsuccessful or uncommitted session.
+    let policy_actions_sha256 = if input_trace.is_some() {
+        host.model_mut().recorder.take().and_then(|recorder| {
             match recorder.finish() {
                 Ok(digest) => Some(digest),
                 Err(error) => {
@@ -5317,19 +5322,8 @@ fn run_battle(
                     None
                 }
             }
-        });
-        let finished = writeln!(trace, "{}", json!({
-            "kind": "player_input_trace_end",
-            "rounds": rounds,
-            "recorded_inputs": recorded_player_inputs,
-            "user_closed": user_closed,
-            "failed_window": failed_window,
-            "policy_actions_sha256": policy_actions_sha256,
-        })).and_then(|()| trace.sync_all());
-        if let Err(error) = finished {
-            cleanup_errors.push(format!("player input trace: {error}"));
-        }
-    }
+        })
+    } else { None };
     if let Some(path) = &capture {
         // Captures are diagnostic output, never a replacement world or model
         // input. Failure joins cleanup reporting so live Levels still retire.
@@ -5895,6 +5889,20 @@ fn run_battle(
     // already-queued terminal state before dropping the socket owner.
     if let Some(server) = &mut remote {
         server.drain_terminal_output(Duration::from_millis(350));
+    }
+    // Publish replay eligibility last. Every prior error, including
+    // final sink/capture cleanup and the atomic campaign summary commit,
+    // must prevent the recording from appearing as a finished game.
+    if let Some(mut trace) = input_trace {
+        writeln!(trace, "{}", json!({
+            "kind": "player_input_trace_end",
+            "rounds": rounds,
+            "recorded_inputs": recorded_player_inputs,
+            "user_closed": user_closed,
+            "failed_window": failed_window,
+            "policy_actions_sha256": policy_actions_sha256,
+        }))?;
+        trace.sync_all()?;
     }
     if play && !user_closed && (playback.is_some() ||
         completed_episodes.iter().all(|&count| count == config.episodes_per_world)) {
