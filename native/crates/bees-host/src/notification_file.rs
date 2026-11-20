@@ -22,6 +22,7 @@ use bees_sim::simulation::WorldId;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use crate::policy_capture::PolicyCaptureCheckpoint;
 
 /// Stable, machine-readable command identity for eventual outcome-ledger
 /// replay. The server reservation IDs never come from the command's locally
@@ -365,6 +366,7 @@ struct NativeDiagnosticRecoveryCheckpoint {
     next_journal_sequence: u64,
     evaluation_contexts: BTreeMap<u64, (u64, EpisodeEvaluationContext)>,
     measurements: NativeDiagnosticMeasurements,
+    policy_capture: Option<PolicyCaptureCheckpoint>,
 }
 
 pub struct DurableDiagnosticNotifications {
@@ -428,7 +430,7 @@ impl DurableDiagnosticNotifications {
     /// checkpoint. No silent truncation of post-checkpoint events: those
     /// might already have reached the independent network request ledger.
     pub fn open_existing(path: &Path, run_id: &str,
-        saved: &serde_json::Value,
+        saved: &serde_json::Value, capture_path: Option<&Path>,
     ) -> io::Result<Self> {
         let checkpoint: NativeDiagnosticRecoveryCheckpoint =
             serde_json::from_value(saved.clone()).map_err(io::Error::other)?;
@@ -458,6 +460,16 @@ impl DurableDiagnosticNotifications {
             return Err(io::Error::new(io::ErrorKind::InvalidData,
                 "native journal digest diverged from host checkpoint"));
         }
+        let policy_capture = match (capture_path, checkpoint.policy_capture.as_ref()) {
+            (Some(path), Some(saved)) => Some(
+                crate::policy_capture::PolicyCapture::open_existing(
+                    path, &checkpoint.journal_id, saved,
+                )?
+            ),
+            (None, None) => None,
+            _ => return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "native policy capture path differs from host checkpoint")),
+        };
         let file = OpenOptions::new().append(true).open(path)?;
         Ok(Self {
             file, run_id: checkpoint.run_id, journal_id: checkpoint.journal_id,
@@ -465,7 +477,7 @@ impl DurableDiagnosticNotifications {
             journal_digest: digest, pending_prepared: Vec::new(),
             pending: Vec::new(), measurements: checkpoint.measurements,
             evaluation_contexts: checkpoint.evaluation_contexts,
-            policy_capture: None, prepared: VecDeque::new(), unavailable: false,
+            policy_capture, prepared: VecDeque::new(), unavailable: false,
         })
     }
 
@@ -473,7 +485,7 @@ impl DurableDiagnosticNotifications {
     /// eligible for a host checkpoint. The worker and journal must agree
     /// before the corresponding World tick can be treated as committed.
     pub fn recovery_checkpoint(&mut self) -> io::Result<serde_json::Value> {
-        if self.unavailable || self.policy_capture.is_some() ||
+        if self.unavailable ||
             !self.pending_prepared.is_empty() || !self.prepared.is_empty() ||
             !self.pending.is_empty()
         {
@@ -481,6 +493,8 @@ impl DurableDiagnosticNotifications {
                 "native journal has uncommitted outcomes or policy capture"));
         }
         self.file.sync_all()?;
+        let capture = self.policy_capture.as_mut()
+            .map(|capture| capture.checkpoint()).transpose()?;
         let snapshot = NativeDiagnosticRecoveryCheckpoint {
             schema_version: 1, run_id: self.run_id.clone(),
             journal_id: self.journal_id.clone(),
@@ -488,7 +502,7 @@ impl DurableDiagnosticNotifications {
             journal_sha256: self.journal_digest.clone().finalize().into(),
             next_journal_sequence: self.next_journal_sequence,
             evaluation_contexts: self.evaluation_contexts.clone(),
-            measurements: self.measurements.clone(),
+            measurements: self.measurements.clone(), policy_capture: capture,
         };
         serde_json::to_value(snapshot).map_err(io::Error::other)
     }
@@ -498,7 +512,15 @@ impl DurableDiagnosticNotifications {
     ) -> io::Result<()> {
         let checkpoint: NativeDiagnosticRecoveryCheckpoint =
             serde_json::from_value(saved.clone()).map_err(io::Error::other)?;
+        let capture_matches = match (self.policy_capture.as_ref(),
+            checkpoint.policy_capture.as_ref())
+        {
+            (Some(active), Some(saved)) => active.validate_checkpoint(saved).is_ok(),
+            (None, None) => true,
+            _ => false,
+        };
         if checkpoint.schema_version != 1 ||
+            !capture_matches ||
             checkpoint.run_id != self.run_id ||
             checkpoint.journal_id != self.journal_id ||
             checkpoint.next_journal_sequence != self.next_journal_sequence ||
@@ -514,7 +536,7 @@ impl DurableDiagnosticNotifications {
                 serde_json::to_value(&self.measurements)
                     .map_err(io::Error::other)? ||
             !self.pending.is_empty() || !self.prepared.is_empty() ||
-            !self.pending_prepared.is_empty() || self.policy_capture.is_some() ||
+            !self.pending_prepared.is_empty() ||
             self.unavailable
         {
             return Err(io::Error::new(io::ErrorKind::InvalidData,
