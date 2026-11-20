@@ -373,6 +373,31 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
     /// implementation. The caller must also restore any outer host state
     /// (durable HiveMind connection, resident policy, client presentation)
     /// at the SAME checkpoint boundary before accepting new commands.
+    fn restored_worlds(
+        items: Vec<WorldCheckpoint<S>>,
+        aggregate: Measurements,
+    ) -> Result<Vec<World<S>>, &'static str> {
+        let mut worlds = Vec::with_capacity(items.len());
+        let mut identities = HashSet::with_capacity(items.len());
+        let mut active_ticks = 0u64;
+        for item in items {
+            let world = World::from_checkpoint(item)?;
+            if !identities.insert(world.id) {
+                return Err("duplicate World ID in native Simulation checkpoint");
+            }
+            active_ticks = active_ticks.checked_add(world.measurements.ticks)
+                .ok_or("native Simulation checkpoint tick count overflow")?;
+            worlds.push(world);
+        }
+        // Current episodes may have fewer steps than the lifetime
+        // cumulative counters because reset_episode intentionally zeros
+        // world-local telemetry; the reverse can never be authoritative.
+        if active_ticks > aggregate.ticks {
+            return Err("native Simulation checkpoint omits cumulative steps");
+        }
+        Ok(worlds)
+    }
+
     pub fn from_checkpoint(
         rules: R, snapshot: SimulationCheckpoint<S>,
     ) -> Result<Self, &'static str> {
@@ -380,19 +405,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             !snapshot.dt_seconds.is_finite() || snapshot.dt_seconds <= 0.0 {
             return Err("invalid native Simulation checkpoint");
         }
-        let mut worlds = Vec::with_capacity(snapshot.worlds.len());
-        let mut identities = HashSet::with_capacity(snapshot.worlds.len());
-        for item in snapshot.worlds {
-            let world = World::from_checkpoint(item)?;
-            if !identities.insert(world.id) {
-                return Err("duplicate World ID in native Simulation checkpoint");
-            }
-            worlds.push(world);
-        }
-        if worlds.iter().map(|world| world.measurements.ticks)
-            .sum::<u64>() > snapshot.measurements.ticks {
-            return Err("native Simulation checkpoint omits cumulative steps");
-        }
+        let worlds = Self::restored_worlds(snapshot.worlds, snapshot.measurements)?;
         Ok(Self {
             rules,
             worlds,
@@ -402,6 +415,34 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             physics_pool: None,
             window_action_buffers: Vec::new(),
         })
+    }
+
+    /// Host startup first reconstructs the original approved world layout
+    /// and GameRules. Restoration must not replace those source identities
+    /// with unrelated IDs, world counts or physics clocks. Validate every
+    /// member and prepare ALL restored state before the first mutation.
+    pub fn restore_checkpoint(
+        &mut self, snapshot: SimulationCheckpoint<S>,
+    ) -> Result<(), &'static str> {
+        if snapshot.schema_version != 1 ||
+            snapshot.dt_seconds.to_bits() != self.dt_seconds.to_bits() ||
+            snapshot.worlds.len() != self.worlds.len() ||
+            snapshot.worlds.iter().zip(self.worlds.iter()).any(|(incoming, source)|
+                incoming.id != source.id ||
+                incoming.fixed_step_seconds.map(f32::to_bits) !=
+                    source.fixed_step_seconds.map(f32::to_bits))
+        {
+            return Err("native checkpoint differs from the authored World identities or timestep");
+        }
+        let worlds = Self::restored_worlds(snapshot.worlds, snapshot.measurements)?;
+        self.worlds = worlds;
+        self.sample_every = snapshot.sample_every;
+        self.measurements = snapshot.measurements;
+        // Worker lanes and decisions are transient. They must not retain
+        // pre-restore actions or be mistaken for persisted game ownership.
+        self.physics_pool = None;
+        self.window_action_buffers.clear();
+        Ok(())
     }
 
     pub fn set_timing_sample_period(&mut self, every: Option<NonZeroU32>) {
