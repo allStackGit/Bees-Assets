@@ -43,7 +43,9 @@ function renderPage(html) {
         '<h3>Local service control</h3>'+
         '<p class="muted">Restart the coordinator or agent on this computer. '+
         'The controls require user systemd services; remote workers are not affected. '+
-        'Restarts are refused while any native job is active or unverified.</p>'+
+        'Coordinator restart requires all native jobs to be idle or reconciled. '+
+        'Local agent restart checks only this machine when its installed enrollment identity is verified; '+
+        'otherwise it conservatively checks all native jobs.</p>'+
         '<div class="hub-controls">'+
         '<button type="button" id="hub-local-restart-coordinator" disabled>Restart coordinator</button>'+
         '<button type="button" id="hub-local-restart-agent" disabled>Restart local agent</button>'+
