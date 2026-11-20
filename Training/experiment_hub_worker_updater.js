@@ -434,7 +434,23 @@ async function main(argv=process.argv.slice(2)) {
     const lock=path.join(stateDir,'updater.lock');
     let fd;
     try{fd=fs.openSync(lock,'wx',0o600);}
-    catch{console.log('[worker-updater] Another update process owns the lock.');return;}
+    catch{
+        // Crash residue is recoverable, but never break a live updater lock.
+        try {
+            const info=JSON.parse(fs.readFileSync(lock,'utf8'));
+            const age=Date.now()-info.started_at;
+            let alive=true;
+            try{process.kill(info.pid,0);}catch(e){alive=e.code!=='ESRCH';}
+            if(alive||!Number.isFinite(age)||age<8*3600000)
+                throw Error('Updater lock still belongs to a possibly live process.');
+            fs.unlinkSync(lock);
+            fd=fs.openSync(lock,'wx',0o600);
+        }catch(error){
+            console.error('[worker-updater] Lock not recoverable: '+error.message);
+            return;
+        }
+    }
+    fs.writeFileSync(fd,JSON.stringify({pid:process.pid,started_at:Date.now()}));
     try {
         const activeFile=path.join(stateDir,'active.json');
         const active=fs.existsSync(activeFile)
@@ -469,17 +485,33 @@ async function main(argv=process.argv.slice(2)) {
         // On Linux, an override can refresh agent code while separately
         // systemd-owned workloads continue on their pinned existing code.
         const liveOverride=busy&&manifest.mode==='override'&&
-            process.platform==='linux'&&Object.keys(plan).every(name=>name==='worker');
-        if(busy&&!liveOverride) {
-            for(const item of Object.values(plan))
+            process.platform==='linux'&&Boolean(plan.worker);
+        if(busy) {
+            for(const [name,item] of Object.entries(plan)) {
+                if(liveOverride&&name==='worker')continue;
                 await status(base,env,item.entry,'waiting',
                     manifest.mode==='override'
-                        ?'Override awaits a native checkpoint/compatible restart; live process replacement is unsafe.'
+                        ?'Live simulation restart needs compatible checkpoint recovery; no unsafe replacement performed.'
                         :'Active native experiment retains its pinned runtime.');
-            return;
+                delete plan[name];
+            }
+            if(!Object.keys(plan).length)return;
         }
         for(const item of Object.values(plan))
             await status(base,env,item.entry,'activating');
+        // A new dispatch may have been authorized after the original GET.
+        // Recheck before changing native service paths.
+        const fresh=await request(base,env,'GET','');
+        if((fresh.pending_native_jobs||[]).length>0&&!liveOverride) {
+            for(const item of Object.values(plan))
+                await status(base,env,item.entry,'waiting','A native job was dispatched during staging.');
+            return;
+        }
+        if(!liveOverride&&journalActive(root)) {
+            for(const item of Object.values(plan))
+                await status(base,env,item.entry,'waiting','A native owner became active during staging.');
+            return;
+        }
         const changes=Object.fromEntries(Object.entries(plan)
             .map(([key,value])=>[key,value.directory]));
         try {
