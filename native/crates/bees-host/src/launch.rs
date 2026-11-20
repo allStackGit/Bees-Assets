@@ -5446,8 +5446,13 @@ fn run_battle(
     // Surface that existing ledger in the durable run receipt so an
     // operator can identify the original Hash/OutcomeIds without replaying
     // the already-committed batch or guessing from a backlog count.
-    let pending_store_reconciliation = {
+    let (pending_store_hashes, pending_store_reconciliation) = {
         let connection = host.connection_mut();
+        // Retryable submissions and terminal 409 records are distinct.
+        // Both sets of original request Hashes are machine-owned recovery
+        // data; neither may be silently counted as successful settlement.
+        let pending = connection.pending_store_hashes()
+            .map_err(|error| contextual("final pending StoreCommands", error))?;
         let hashes = connection.reconciliation_hashes()
             .map_err(|error| contextual("final StoreCommands reconciliation", error))?;
         let mut records = Vec::with_capacity(hashes.len());
@@ -5460,10 +5465,12 @@ fn run_battle(
                 "stale_outcome_ids": stale_ids,
             }));
         }
-        records
+        (pending, records)
     };
-    if pending_store_reconciliation.len() != status.pending_store_reconciliations {
-        return Err(invalid("final StoreCommands reconciliation gauge disagrees with the durable ledger").into());
+    if pending_store_hashes.len() != status.pending_store_commands ||
+        pending_store_reconciliation.len() != status.pending_store_reconciliations
+    {
+        return Err(invalid("final StoreCommands gauges disagree with the durable connection ledger").into());
     }
     let evaluation = host.sink_mut().measurements().clone();
     let mean_episode_seconds = evaluation.mean_episode_seconds();
@@ -5786,6 +5793,7 @@ fn run_battle(
         "running_worlds": status.running_worlds,
         "pending_notifications": status.queued_notifications,
         "pending_store_commands": status.pending_store_commands,
+        "pending_store_hashes": pending_store_hashes,
         "pending_store_reconciliations": status.pending_store_reconciliations,
         // These IDs remain owned by the checkpoint until an explicit
         // settlement or review decision; a 409 is never a successful
