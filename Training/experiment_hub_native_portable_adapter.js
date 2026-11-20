@@ -306,15 +306,15 @@ function createNativeBeesPortableCollectorAdapter({
         const target=path.join(output,'delivery-acknowledgement.json');
         const temporary=path.join(output,
             '.delivery-acknowledgement-'+crypto.randomUUID()+'.pending');
-        let fd;
         try {
-            fd=fs.openSync(temporary,'wx',0o600);
-            fs.writeFileSync(fd,JSON.stringify(proof)+'\n');
-            fs.fsyncSync(fd);
-        }finally {
-            if(fd!==undefined)fs.closeSync(fd);
-        }
-        try {
+            let fd;
+            try {
+                fd=fs.openSync(temporary,'wx',0o600);
+                fs.writeFileSync(fd,JSON.stringify(proof)+'\n');
+                fs.fsyncSync(fd);
+            }finally {
+                if(fd!==undefined)fs.closeSync(fd);
+            }
             try { fs.linkSync(temporary,target); }
             catch(error) {
                 if(error.code!=='EEXIST'||!verifiedLearnerDelivery(context))
@@ -326,7 +326,8 @@ function createNativeBeesPortableCollectorAdapter({
                 finally { fs.closeSync(directory); }
             }
         }finally {
-            fs.unlinkSync(temporary);
+            try { fs.unlinkSync(temporary); }
+            catch(error) { if(error.code!=='ENOENT')throw error; }
         }
         return verifiedLearnerDelivery(context);
     }
