@@ -12,7 +12,7 @@
 //! Fleet credits remain Level-owned, and source shooting/targeting rewards
 //! are never fabricated by the command director.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bees_hivemind::dispatch::{
     resolve_hivemind_command, LocalCommandKind, ResolvedHiveMindCommand,
@@ -23,6 +23,7 @@ use bees_hivemind::outcomes::{
 };
 use bees_hivemind::protocol::{
     HiveMindProtocolError, ValidatedStrategySelection, ValidatedTargetingSelection,
+    StrategyIdentity, TARGETING_STRATEGIES,
 };
 use bees_hivemind::session::StrategyReceipt;
 use bees_hivemind::session::SquadLifetime;
@@ -412,6 +413,7 @@ pub enum Activation {
     Unavailable(NativeCommandSelection),
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct PatrolRoute {
     /// Unity's destination queue starts with top-left. On each timer tick,
     /// an arrived squad rotates the head to the tail and moves to the new
@@ -422,6 +424,7 @@ struct PatrolRoute {
     formation: SquadFormationOptions,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct FollowingFriendly {
     target: SquadLifetime,
     side: i32,
@@ -471,7 +474,8 @@ impl ActiveNativeCommand {
 
 /// Cheap command metrics for an experiment dashboard. Cumulative counts and
 /// current active-command gauges never retain per-tick histories or timings.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CommandMeasurements {
     pub updates: u64,
     pub commands_examined: u64,
@@ -521,6 +525,150 @@ pub struct CommandMeasurements {
     pub peak_active: usize,
 }
 
+/// One source-order command registration and its complete timer/controller
+/// state, including stalled and partly completed movements. No gameplay
+/// action is replayed when this checkpoint is installed.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ActiveCommandCheckpoint {
+    owner: SquadLifetime,
+    targeting: Option<(u8, i64)>,
+    selected_enemy: Option<SquadLifetime>,
+    preferred_weapon_enemy: Option<SquadLifetime>,
+    selection: NativeCommandSelectionCheckpoint,
+    timeout: Option<ScaledTimer>,
+    command_poll: Option<ScaledTimer>,
+    patrol: Option<PatrolRoute>,
+    following: Option<FollowingFriendly>,
+    circle: Option<CircleRun>,
+    swipe: Option<SwipeRun>,
+    in_and_out: Option<InAndOutRun>,
+    aggressive: Option<AggressiveRun>,
+    bombing: Option<NativeBombingRun>,
+    charge: Option<NativeChargeRun>,
+    mining: Option<MiningRun>,
+    heal: Option<HealRun>,
+    scouting: Option<ScoutingRun>,
+    full_retreat: Option<FullRetreatRun>,
+    member_ids: Vec<i64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCommandDirectorCheckpoint {
+    schema_version: u32,
+    active: Vec<ActiveCommandCheckpoint>,
+    measurements: CommandMeasurements,
+}
+
+impl ActiveCommandCheckpoint {
+    fn capture(owner: SquadLifetime, command: &ActiveNativeCommand) -> Self {
+        Self {
+            owner,
+            targeting: command.targeting.map(|target|
+                (target.strategy.id, target.outcome_id)),
+            selected_enemy: command.selected_enemy,
+            preferred_weapon_enemy: command.preferred_weapon_enemy,
+            selection: command.selection.checkpoint(),
+            timeout: command.timeout,
+            command_poll: command.command_poll,
+            patrol: command.patrol.clone(),
+            following: command.following.clone(),
+            circle: command.circle.clone(),
+            swipe: command.swipe.clone(),
+            in_and_out: command.in_and_out.clone(),
+            aggressive: command.aggressive.clone(),
+            bombing: command.bombing.clone(),
+            charge: command.charge.clone(),
+            mining: command.mining.clone(),
+            heal: command.heal.clone(),
+            scouting: command.scouting.clone(),
+            full_retreat: command.full_retreat.clone(),
+            member_ids: command.member_ids.clone(),
+        }
+    }
+
+    fn restore(self, roster: &NativeSquadRoster, world: &CombatWorld)
+        -> Result<(SquadLifetime, ActiveNativeCommand), GameCommandError>
+    {
+        let owner = self.owner;
+        let squad = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
+        let valid_lifetime = |candidate: SquadLifetime| {
+            candidate.valid() && candidate.level_id == owner.level_id
+        };
+        if self.member_ids.is_empty() ||
+            self.member_ids.iter().any(|&id|
+                id <= 0 || !world.ship(id).is_some_and(|ship|
+                    ship.side == squad.side
+                )
+            ) || self.selected_enemy.is_some_and(|id| !valid_lifetime(id)) ||
+            self.preferred_weapon_enemy.is_some_and(|id| !valid_lifetime(id))
+        {
+            return Err(GameCommandError::InvalidCombatSnapshot);
+        }
+        let mut unique = HashSet::with_capacity(self.member_ids.len());
+        if self.member_ids.iter().any(|id| !unique.insert(*id)) ||
+            self.timeout.is_some_and(|timer| !timer.valid_recovery()) ||
+            self.command_poll.is_some_and(|timer| !timer.valid_recovery()) {
+            return Err(GameCommandError::InvalidCombatSnapshot);
+        }
+        let targeting = self.targeting.map(|(id, outcome_id)| {
+            let name = usize::from(id).checked_sub(1)
+                .and_then(|index| TARGETING_STRATEGIES.get(index).copied())
+                .ok_or(GameCommandError::InvalidCommandOrigin)?;
+            if outcome_id <= 0 {
+                return Err(GameCommandError::InvalidCommandOrigin);
+            }
+            Ok(ValidatedTargetingSelection {
+                strategy: StrategyIdentity { id, name }, outcome_id,
+            })
+        }).transpose()?;
+        let selection = NativeCommandSelection::from_checkpoint(self.selection)?;
+        let kind = selection.kind();
+        // A restored command may retain historical dead ship identities,
+        // but it cannot execute the controller for another command kind.
+        if (self.patrol.is_some() && kind != LocalCommandKind::Patrol) ||
+            (self.following.is_some() && !matches!(kind,
+                LocalCommandKind::ClosestFriendly | LocalCommandKind::Guard)) ||
+            (self.circle.is_some() && kind != LocalCommandKind::CircleSquad) ||
+            (self.swipe.is_some() && !matches!(kind,
+                LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe)) ||
+            (self.in_and_out.is_some() && kind != LocalCommandKind::InAndOut) ||
+            (self.aggressive.is_some() && kind != LocalCommandKind::Aggressive) ||
+            (self.bombing.is_some() && kind != LocalCommandKind::BombingRun) ||
+            (self.charge.is_some() && kind != LocalCommandKind::Charge) ||
+            (self.mining.is_some() && kind != LocalCommandKind::Mining) ||
+            (self.heal.is_some() && kind != LocalCommandKind::Heal) ||
+            (self.scouting.is_some() && kind != LocalCommandKind::Scouting) ||
+            (self.full_retreat.is_some() && kind != LocalCommandKind::FullRetreat)
+        {
+            return Err(GameCommandError::InvalidCombatSnapshot);
+        }
+        let command = ActiveNativeCommand {
+            targeting,
+            selected_enemy: self.selected_enemy,
+            preferred_weapon_enemy: self.preferred_weapon_enemy,
+            selection,
+            timeout: self.timeout,
+            command_poll: self.command_poll,
+            patrol: self.patrol,
+            following: self.following,
+            circle: self.circle,
+            swipe: self.swipe,
+            in_and_out: self.in_and_out,
+            aggressive: self.aggressive,
+            bombing: self.bombing,
+            charge: self.charge,
+            mining: self.mining,
+            heal: self.heal,
+            scouting: self.scouting,
+            full_retreat: self.full_retreat,
+            member_ids: self.member_ids,
+        };
+        Ok((owner, command))
+    }
+}
+
 #[derive(Default)]
 pub struct NativeSquadCommandDirector {
     /// Sorted by (level, squad, lifecycle), matching the deterministic
@@ -533,6 +681,65 @@ pub struct NativeSquadCommandDirector {
 
 impl NativeSquadCommandDirector {
     pub fn new() -> Self { Self::default() }
+
+    /// Capture all active source command controllers at a fixed-step
+    /// boundary. The world retains physical orders/leases; the director
+    /// alone owns command issue state and exact callback timers.
+    pub fn checkpoint(&self) -> NativeCommandDirectorCheckpoint {
+        NativeCommandDirectorCheckpoint {
+            schema_version: 1,
+            active: self.active.iter().map(|(&owner, command)|
+                ActiveCommandCheckpoint::capture(owner, command),
+            ).collect(),
+            measurements: self.measurements,
+        }
+    }
+
+    /// Stage the entire command director without replaying activation,
+    /// moving ships, stealing physical reservations or advancing timers.
+    /// Restored native squad lifetimes are supplied by the same Level.
+    pub fn prepare_restore(
+        checkpoint: NativeCommandDirectorCheckpoint,
+        roster: &NativeSquadRoster,
+        world: &CombatWorld,
+    ) -> Result<Self, GameCommandError> {
+        if checkpoint.schema_version != 1 {
+            return Err(GameCommandError::InvalidCombatSnapshot);
+        }
+        let mut active = BTreeMap::new();
+        for saved in checkpoint.active {
+            let (owner, command) = saved.restore(roster, world)?;
+            if active.insert(owner, command).is_some() {
+                return Err(GameCommandError::InvalidSquad);
+            }
+        }
+        let following = active.values().filter(|command|
+            command.following.is_some()
+        ).count();
+        let full_retreat = active.values().filter(|command|
+            command.full_retreat.is_some()
+        ).count();
+        if checkpoint.measurements.active_following != following ||
+            checkpoint.measurements.active_full_retreat != full_retreat ||
+            checkpoint.measurements.peak_active < active.len() {
+            return Err(GameCommandError::InvalidCombatSnapshot);
+        }
+        Ok(Self {
+            active,
+            measurements: checkpoint.measurements,
+            completed_scratch: Vec::new(),
+        })
+    }
+
+    pub fn restore_checkpoint(
+        &mut self, checkpoint: NativeCommandDirectorCheckpoint,
+        roster: &NativeSquadRoster,
+        world: &CombatWorld,
+    ) -> Result<(), GameCommandError> {
+        let prepared = Self::prepare_restore(checkpoint, roster, world)?;
+        *self = prepared;
+        Ok(())
+    }
 
     pub fn active_count(&self) -> usize { self.active.len() }
 
