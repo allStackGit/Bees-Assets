@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Experiment Hub</title>
+<link rel="icon" type="image/svg+xml" href="/experiment-hub-beaker.svg">
 <style>
 :root {
     color-scheme: light;
@@ -49,6 +50,8 @@ header {
     padding: 2px 0 16px;
     margin-bottom: 14px;
 }
+.hub-brand-title { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.hub-brand-icon { display: block; width: clamp(36px, 5vw, 60px); height: auto; flex: 0 0 auto; }
 header small {
     display: block;
     margin-top: 10px;
@@ -814,7 +817,7 @@ label.hub-toggle-row > input[type="checkbox"] {
 </style>
 </head>
 <body>
-<header><div><h1>Experiment Hub</h1><small>Independent projects · unified training management</small></div>
+<header><div><div class="hub-brand-title"><h1>Experiment Hub</h1><img class="hub-brand-icon" src="/experiment-hub-beaker.svg" width="60" height="60" alt="" aria-hidden="true"></div><small>Independent projects · unified training management</small></div>
 <div class="bar" id="bees-controls"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="rebuild-unity" hidden>Rebuild Unity (experimental)</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
 
 <nav class="hub-tabs" role="tablist" aria-label="Experiment Hub navigation">
