@@ -118,7 +118,7 @@ function suiteFiles(options) {
         return [id,file];
     }));
 }
-function validateInstall(options,{create=false}={}) {
+function validateInstall(options) {
     presentDirectory(options.project);
     presentDirectory(options.hubRoot);
     presentFile(options.engine);
@@ -126,9 +126,8 @@ function validateInstall(options,{create=false}={}) {
     presentDirectory(options.cache);
     presentDirectory(options.suites);
     const suites=suiteFiles(options);
-    privateDirectory(options.scratch,create);
-    privateDirectory(options.receipts,create);
-    if(create)privateDirectory(options.bin,true);
+    privateDirectory(options.scratch);
+    privateDirectory(options.receipts);
     return suites;
 }
 // Setup owns fixed directories and never downloads or changes game assets.
