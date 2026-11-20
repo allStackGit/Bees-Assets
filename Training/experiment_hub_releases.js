@@ -60,7 +60,7 @@ class ReleaseStore {
         this.files=new Map();
         this.failures={};
         this.localVersions={};
-        this.bootWorkerVersion=null;
+        this.bootVersions={};
         this.pending=null;
         fs.mkdirSync(this.root,{recursive:true,mode:0o700});
     }
@@ -68,8 +68,7 @@ class ReleaseStore {
         const repo=source.path;
         const localVersion=await git(['rev-parse','HEAD'],repo);
         this.localVersions[name]=localVersion;
-        if(name==='worker'&&this.bootWorkerVersion===null)
-            this.bootWorkerVersion=localVersion;
+        if(!this.bootVersions[name])this.bootVersions[name]=localVersion;
         await git(['fetch','--quiet','--no-tags','origin',source.branch],repo);
         const sha=await git(['rev-parse','FETCH_HEAD'],repo);
         if(!SHA.test(sha))throw Error('Invalid Git commit from '+name);
@@ -114,9 +113,9 @@ class ReleaseStore {
         for(const [name,entry] of Object.entries(this.latest))
             if(name==='worker'||projects.has(name))components[name]={
                 ...entry,
-                activation_ready:name==='worker'
-                    ?entry.version===this.bootWorkerVersion
-                    :entry.version===this.localVersions[name],
+                // Remote activation waits until both the local checkout and
+                // coordinator generation were refreshed after a safe restart.
+                activation_ready:entry.version===this.bootVersions[name],
             };
         return components;
     }
