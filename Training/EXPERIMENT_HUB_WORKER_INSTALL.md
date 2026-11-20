@@ -205,6 +205,48 @@ without GitHub credentials, and activate them only after the native
 supervisor has established an idle/drained state. Preserve machine
 enrollment, private keys, native journals and checkpoints throughout.
 
+## Required unattended update and recovery behavior
+
+These are **requirements, not implemented functionality**. The currently
+checked-in one-file Windows CMD and Linux installer are bootstraps and do
+not yet provide unattended fleet updates.
+
+- New versions of Bees, TinyBrains, Courier and the native Hub worker must
+  be published through the trusted coordinator and staged on every
+  applicable enrolled machine, including the learner. Private project
+  sources must not require interactive GitHub login on each worker.
+- **Default:** retain the exact currently running simulation, worker and
+  learner versions for all in-flight native jobs. Activate staged versions
+  automatically on idle machines after their jobs finish, without
+  requiring a new installer. Prevent incompatible new allocations
+  during a version change.
+- **Explicit override:** the operator can authorize activation while a
+  job is running. Update remote workers individually, where their native
+  runtime supports checkpoint/reconnection, so unaffected collectors and
+  the learner continue training. Preserve job/dispatch identity,
+  checkpoints, training progress, resource claims and enrollment.
+  A learner/protocol-breaking update requires coordinated versioning and
+  explicit confirmation of any unavoidable interruption; never silently
+  replace an active process or change a frozen training contract.
+- **Machine disconnect:** record a durable lost-connectivity timestamp,
+  affected machine and assigned jobs. Do not fail/stop the parent
+  experiment or release an uncertain native ownership claim merely
+  because a heartbeat expires. Continue on remaining connected workers,
+  excluding the offline worker from new allocations. On reconnect,
+  record the restored timestamp and reconcile its original native
+  dispatch and checkpoint before allowing it to rejoin. A learner
+  deprived of all collectors can pause progress; that is not evidence
+  that its job has failed.
+- An update failure must retain or restore the previous runnable
+  version and report its status. The Machines view should distinguish
+  current, staged, waiting for job, applying, failed, and offline.
+
+Current code already derives an offline machine status from an expired
+authenticated heartbeat and retains resource reservations pending native
+proof. This is not a durable outage history or seamless mid-job
+upgrade mechanism. Existing automation may disarm when agent continuity
+is lost; this must not be mistaken for stopping an already-owned job.
+
 ## Limits
 
 The installed software has not yet passed full real-machine qualification
