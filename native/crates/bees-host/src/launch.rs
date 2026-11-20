@@ -2277,8 +2277,15 @@ fn native_start_asset_digests(
     // after an episode boundary. Its already-declared future artifacts
     // belong to the same immutable start even before the first World tick.
     for (index, update) in run.model_updates.iter().enumerate() {
-        files.insert(format!("model_update:{index}"),
-            resolve(root, &update.manifest));
+        let path = resolve(root, &update.manifest);
+        // Future learner-produced manifests need not exist at launch.
+        // Preserve that behavior: absence is recorded by a missing map
+        // entry, while any artifact already present is pinned by content.
+        match fs::metadata(&path) {
+            Ok(_) => { files.insert(format!("model_update:{index}"), path); },
+            Err(error) if error.kind() == ErrorKind::NotFound => {},
+            Err(error) => return Err(error.into()),
+        }
     }
     if let Some(path) = &run.policy_worker {
         files.insert("policy_worker".to_owned(), resolve(root, path));
