@@ -128,6 +128,8 @@ pub(super) struct QueenRuntime {
 }
 
 impl QueenRuntime {
+    pub(super) fn active_wave_count(&self) -> usize { self.waves.len() }
+
     pub(super) fn checkpoint(&self) -> QueenRuntimeCheckpoint {
         QueenRuntimeCheckpoint {
             schema_version: 1,

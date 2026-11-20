@@ -1728,7 +1728,7 @@ impl CombatWorld {
         }
         if snapshot.queen_measurements.max_concurrent_waves <
             game_queens.values().map(|queen|
-                queen.checkpoint().waves.len()
+                queen.active_wave_count()
             ).max().unwrap_or(0)
         {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
