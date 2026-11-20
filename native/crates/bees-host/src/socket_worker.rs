@@ -116,10 +116,11 @@ impl NativeSocketWorker {
         }
     }
 
-    pub fn send_setup(&mut self, connection: &mut DurableHiveMindConnection, identity: SetupLevelIdentity<'_>)
-        -> Result<(), NativeSocketWorkerError>
-    {
-        let request = PreparedSocketRequest::setup(connection, identity)?;
+    pub fn send_setup(
+        &mut self, connection: &mut DurableHiveMindConnection,
+        identity: SetupLevelIdentity<'_>, run_identity: &str,
+    ) -> Result<(), NativeSocketWorkerError> {
+        let request = PreparedSocketRequest::setup(connection, identity, run_identity)?;
         self.enqueue(request)?;
         self.ready = false;
         Ok(())
