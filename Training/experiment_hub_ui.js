@@ -4355,7 +4355,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         ?'Start the previously installed and budgeted native Bees independent evaluator service'
                         :operation==='stop'
                             ?'Stop the previously installed native Bees independent evaluator service'
-                            :'Inspect the previously installed native Bees evaluator service state';
+                            :operation==='restart'
+                                ?'Restart the existing native Bees evaluator OS service and end its current evaluation if running'
+                                :'Inspect the previously installed native Bees evaluator service state';
                     if(!confirm(description+' on '+m.id+
                         '? The agent will control only its fixed, machine-local OS service. '+
                         'This does not start or stop training jobs.'))return;
@@ -4374,7 +4376,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 for(const [label,operation] of [
                     ['Start evaluator','start'],['Stop evaluator','stop'],
-                    ['Inspect evaluator','inspect'],
+                    ['Restart evaluator','restart'],['Inspect evaluator','inspect'],
                 ]) {
                     const btn=button(label,()=>issueEvaluator(operation));
                     btn.disabled=evaluator?.status==='pending'&&
