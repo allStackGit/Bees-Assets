@@ -50,6 +50,7 @@ struct WireCounts {
     acknowledgments: u64,
     campaign_receipts: u64,
     battle_result_receipts: u64,
+    interrupted_battle_notices: u64,
     reconnect_attempts: u64,
     reconnect_transports_opened: u64,
     /// Render-only smoothing; no simulation or network side-effects.
@@ -506,6 +507,18 @@ impl PeerClient {
                     self.campaign_receipt = Some(receipt.clone());
                     self.notice = receipt;
                     self.metrics.campaign_receipts += 1;
+                }
+                Some("battle_interrupted") => {
+                    if !self.authenticated || message["protocol"].as_u64() != Some(1) ||
+                        message["viewer_side"].as_i64() != Some(i64::from(self.side)) ||
+                        message["reason"] != "Host ended before an authoritative battle result"
+                    {
+                        return Err(invalid("invalid authoritative battle interruption notice").into());
+                    }
+                    let notice = "Battle interrupted: no completed result".to_owned();
+                    self.battle_result_receipt = Some(notice.clone());
+                    self.notice = notice;
+                    self.metrics.interrupted_battle_notices += 1;
                 }
                 Some("battle_result") => {
                     if !self.authenticated || message["protocol"].as_u64() != Some(1) ||
@@ -2022,6 +2035,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "order_acknowledgments":peer.metrics.acknowledgments,
         "campaign_receipts":peer.metrics.campaign_receipts,
         "battle_result_receipts":peer.metrics.battle_result_receipts,
+        "interrupted_battle_notices":peer.metrics.interrupted_battle_notices,
         "reconnect_attempts":peer.metrics.reconnect_attempts,
         "reconnect_transports_opened":peer.metrics.reconnect_transports_opened,
         "connection_closed":!peer.connected,

@@ -5974,6 +5974,18 @@ fn run_battle(
             "weapon_range_candidates_culled": client.weapon_range_candidates_culled }));
     }
     if failed_window.is_some() || !cleanup_errors.is_empty() {
+        // A failed session has no committed success summary or completed
+        // replay footer. Its authenticated peers must not infer victory
+        // from a last, possibly stale world snapshot.
+        if let Some(server) = &mut remote {
+            server.publish_interrupted_battle();
+            server.drain_terminal_output(Duration::from_millis(350));
+            println!("{}", json!({
+                "kind": "native_remote_terminal_delivery",
+                "run_id": config.run_id,
+                "measurements": server.measurements(),
+            }));
+        }
         return Err(invalid(
             "headless rollout failed; run_final identifies the original failure and unresolved obligations",
         ).into());
@@ -6008,7 +6020,13 @@ fn run_battle(
     // finalization/summary boundary, including non-campaign battles.
     if let Some(server) = &mut remote {
         if let Some(world) = host.render_world(0) {
-            server.publish_battle_result(&world);
+            if world.terminal_result.is_some() {
+                server.publish_battle_result(&world);
+            } else {
+                server.publish_interrupted_battle();
+            }
+        } else {
+            server.publish_interrupted_battle();
         }
         server.drain_terminal_output(Duration::from_millis(350));
         // Final delivery occurs after the immutable run summary was

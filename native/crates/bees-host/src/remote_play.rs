@@ -195,6 +195,7 @@ pub struct RemotePlayMeasurements {
     /// Complete Level outcomes queued on the reliable channel after the
     /// battle finalization boundary, not inferred from presentation frames.
     pub battle_result_receipts: u64,
+    pub interrupted_battle_notices: u64,
     pub disconnected_peers: u64,
     pub held_fire_requests: u64,
     pub held_fire_rejected: u64,
@@ -687,6 +688,27 @@ impl NativeRemotePlay {
             }));
             if !peer.closed {
                 self.measurements.battle_result_receipts += 1;
+                self.measurements.state_bytes += peer.flush();
+            }
+        }
+        self.reap();
+    }
+
+    /// A failed or budget-exhausted host must explicitly distinguish its
+    /// interrupted lifecycle from the source Level's genuine terminal
+    /// outcome. Never manufacture a winner or campaign progression.
+    pub fn publish_interrupted_battle(&mut self) {
+        for peer in self.peers.iter_mut().filter(|peer|
+            !peer.closed && peer.side.is_some()
+        ) {
+            let _ = peer.enqueue(&json!({
+                "kind": "battle_interrupted",
+                "protocol": 1,
+                "viewer_side": peer.side,
+                "reason": "Host ended before an authoritative battle result",
+            }));
+            if !peer.closed {
+                self.measurements.interrupted_battle_notices += 1;
                 self.measurements.state_bytes += peer.flush();
             }
         }
