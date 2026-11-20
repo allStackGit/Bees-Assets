@@ -373,6 +373,9 @@ struct NativeBattleRecoveryCursor {
     gameplay_sha256: String,
     source_sha256: Vec<String>,
     rounds: u64,
+    elapsed_wall_seconds: f64,
+    elapsed_startup_seconds: f64,
+    elapsed_execution_seconds: f64,
     next_squad_item_id: i64,
     completed_episodes: Vec<u32>,
     counted_revisions: Vec<Option<u64>>,
@@ -4594,6 +4597,11 @@ fn run_battle(
             cursor.gameplay_sha256 != gameplay_digest ||
             cursor.source_sha256 != source_digests ||
             cursor.rounds > config.max_rounds ||
+            !cursor.elapsed_wall_seconds.is_finite() || cursor.elapsed_wall_seconds < 0.0 ||
+            !cursor.elapsed_startup_seconds.is_finite() || cursor.elapsed_startup_seconds < 0.0 ||
+            !cursor.elapsed_execution_seconds.is_finite() || cursor.elapsed_execution_seconds < 0.0 ||
+            cursor.elapsed_startup_seconds + cursor.elapsed_execution_seconds >
+                cursor.elapsed_wall_seconds + 0.001 ||
             cursor.next_model_update > config.model_updates.len() ||
             cursor.segment_generation != cursor.next_model_update as u64 ||
             cursor.segment_start_round > cursor.rounds ||
@@ -4887,6 +4895,12 @@ fn run_battle(
     }));
 
     let execution_start = Instant::now();
+    let prior_wall_seconds = resume_cursor.as_ref()
+        .map_or(0.0, |cursor| cursor.elapsed_wall_seconds);
+    let prior_startup_seconds = resume_cursor.as_ref()
+        .map_or(0.0, |cursor| cursor.elapsed_startup_seconds);
+    let prior_execution_seconds = resume_cursor.as_ref()
+        .map_or(0.0, |cursor| cursor.elapsed_execution_seconds);
     let status_every_rounds = config.status_every_rounds.unwrap_or(u64::from(window.get()));
     let mut successful_world_steps = 0_u64;
     let mut successful_policy_rows = 0_u64;
@@ -5019,7 +5033,13 @@ fn run_battle(
                 config_sha256: config_digest.clone(),
                 gameplay_sha256: gameplay_digest.clone(),
                 source_sha256: source_digests.clone(),
-                rounds, next_squad_item_id: next_id.load(Ordering::Relaxed),
+                rounds,
+                elapsed_wall_seconds: prior_wall_seconds + run_start.elapsed().as_secs_f64(),
+                elapsed_startup_seconds: prior_startup_seconds +
+                    execution_start.duration_since(run_start).as_secs_f64(),
+                elapsed_execution_seconds: prior_execution_seconds +
+                    execution_start.elapsed().as_secs_f64(),
+                next_squad_item_id: next_id.load(Ordering::Relaxed),
                 completed_episodes: completed_episodes.clone(),
                 counted_revisions: counted_revisions.clone(),
                 next_model_update,
@@ -5973,8 +5993,9 @@ fn run_battle(
     let captured_checkpoints = recorded_physical_checkpoints;
     drop(host.model_mut().resident.take());
     let run_end = Instant::now();
-    let wall_seconds = run_end.duration_since(run_start).as_secs_f64();
-    let execution_wall_seconds = finalization_start.duration_since(execution_start).as_secs_f64();
+    let wall_seconds = prior_wall_seconds + run_end.duration_since(run_start).as_secs_f64();
+    let execution_wall_seconds = prior_execution_seconds +
+        finalization_start.duration_since(execution_start).as_secs_f64();
     let rate = |count: u64, seconds: f64| {
         (seconds > 0.0).then(|| count as f64 / seconds)
     };
@@ -6173,7 +6194,8 @@ fn run_battle(
         "rounds": rounds,
         "throughput": {
             "wall_seconds": wall_seconds,
-            "startup_wall_seconds": execution_start.duration_since(run_start).as_secs_f64(),
+            "startup_wall_seconds": prior_startup_seconds +
+                execution_start.duration_since(run_start).as_secs_f64(),
             "execution_wall_seconds": execution_wall_seconds,
             "finalization_wall_seconds": run_end.duration_since(finalization_start).as_secs_f64(),
             "successful_world_steps": successful_world_steps,
