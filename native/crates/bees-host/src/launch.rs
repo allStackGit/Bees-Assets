@@ -4450,10 +4450,17 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
     // squad roster or the selected mission routes actually change.
     let mut tactic_source_cache: Option<(usize, Vec<bool>, Vec<NativeSavedSquadTactics>)> = None;
     loop {
+        // One interrupted World owns the original HiveMind command ledger
+        // and frozen FleetShip projection. The career menu must not offer
+        // another mission or mutable fleet edit until that World finishes.
+        let pending = pending_saved_campaign_mission(&catalog, output_root)?;
         let rows = catalog.battles.iter().map(|entry| {
             let unlocked = entry.mission.as_ref().is_none_or(|mission|
-                mission.requires.iter().all(|id| progress.completed(id)));
+                mission.requires.iter().all(|id| progress.completed(id))) &&
+                pending.as_deref().is_none_or(|id|
+                    entry.mission.as_ref().is_some_and(|mission| mission.id == id));
             let status = if !unlocked { "  [Locked]" }
+                else if pending.is_some() { "  [Resume original World]" }
                 else if entry.mission.as_ref().is_some_and(|mission| progress.completed(&mission.id)) {
                     "  [Complete]"
                 } else { "" };
@@ -4650,8 +4657,12 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
         }).collect::<Vec<_>>();
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
-            &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows,
-            &create_rows, &tactics_rows)?
+            &fleet_rows, &squad_rows,
+            if pending.is_some() { &[] } else { shop_rows.as_slice() },
+            available,
+            if pending.is_some() { &[] } else { transfer_rows.as_slice() },
+            if pending.is_some() { &[] } else { create_rows.as_slice() },
+            if pending.is_some() { &[] } else { tactics_rows.as_slice() })?
             else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
