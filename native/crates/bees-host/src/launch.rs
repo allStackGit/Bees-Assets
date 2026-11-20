@@ -5754,8 +5754,19 @@ fn run_battle(
     // either diagnostic stream. Only then may the sink discard frames
     // recorded after this committed World/Level checkpoint.
     if let Some(saved) = &saved_host_checkpoint {
-        saved.validate_connection_for_recovery(&connection)
+        let setup_only_reconciled = saved.validate_connection_for_recovery(&connection)
             .map_err(|error| contextual("native connection checkpoint boundary", error))?;
+        if setup_only_reconciled {
+            let (_, _, setup_attempts, run_identity, game_id) =
+                connection.connection().setup_checkpoint_position();
+            println!("{}", json!({
+                "kind": "native_hivemind_setup_checkpoint_reconciled",
+                "run_id": config.run_id,
+                "setup_attempts_total": setup_attempts,
+                "original_setup_run_identity": run_identity,
+                "server_game_id": game_id,
+            }));
+        }
     }
     for previous in &config.recover_notifications {
         let path = resolve(root, previous);
