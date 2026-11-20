@@ -223,6 +223,7 @@ internal sealed class RlLivePolicyModelUpdater : MonoBehaviour
             ? ConfigData.TestPort
             : ConfigData.Development ? ConfigData.DevelopmentPort : ConfigData.ProductionPort;
         string url = $"{scheme}://{hostname}:{port}";
+        Debug.Log($"Trying to connect to {url}");
         _socketOpen = false;
         _socketClosed = false;
         _socket = new WebSocket(url, "game");

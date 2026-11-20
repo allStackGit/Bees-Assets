@@ -1,14 +1,15 @@
-﻿using UnityEngine;
-using Newtonsoft.Json;
-using System.Collections.Generic;
-using System.Linq;
-using Assets.Scripts.Data;
+﻿using Assets.Scripts.Data;
+using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Levels;
 using Assets.Scripts.Levels.Commands;
-using Assets.Scripts.Entities.Ships;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Policy;
 using System.Threading;
+using UnityEngine;
 
 namespace Assets.Scripts.Server
 {
@@ -91,6 +92,7 @@ namespace Assets.Scripts.Server
 
         public async void MakeSocket()
         {
+            Debug.Log($"Trying to connect to {_websocketURL}");
             if (KeepClosed)
             {
                 return;
