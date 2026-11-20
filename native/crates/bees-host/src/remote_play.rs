@@ -223,6 +223,9 @@ pub struct NativeRemotePlay {
     peers: Vec<Peer>,
     next_peer: u64,
     last_state: Option<(u64, u64)>,
+    // A newly authenticated player needs the next authoritative snapshot
+    // immediately, even if the fixed tick is between normal state pulses.
+    force_initial_state: bool,
     // Cosmetic cues only, not a duplicate gameplay event store.
     pending_audio: HashMap<i32, Vec<Value>>,
     // Each authenticated side has only presentation vision masks; no
@@ -278,7 +281,7 @@ impl NativeRemotePlay {
         }));
         Ok(Some(Self {
             listener, side_tokens, peers: Vec::new(),
-            next_peer: 1, last_state: None,
+            next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
             music_location: None,
             held_fire: HashMap::new(), pending_releases: Vec::new(),
@@ -360,6 +363,7 @@ impl NativeRemotePlay {
             });
         }
 
+        let mut newly_authenticated = false;
         for peer in &mut self.peers {
             if peer.closed { continue; }
             let mut peer_orders = 0;
@@ -405,6 +409,7 @@ impl NativeRemotePlay {
                                 .then_some(side));
                         if let Some(side) = side {
                             peer.side = Some(side);
+                            newly_authenticated = true;
                             self.measurements.authenticated_peers += 1;
                             let _ = peer.enqueue(&json!({
                                 "kind": "welcome", "protocol": 1,
@@ -498,6 +503,9 @@ impl NativeRemotePlay {
             if start > 0 { peer.incoming.drain(..start); }
             if peer.incoming.len() > MAX_LINE { peer.closed = true; }
             if !peer.closed { self.measurements.state_bytes += peer.flush(); }
+        }
+        if newly_authenticated {
+            self.force_initial_state = true;
         }
         self.reap();
         // A peer that was already firing when it disconnected must release
@@ -600,8 +608,10 @@ impl NativeRemotePlay {
         }
         if self.last_state == Some(episode) &&
             view.tick % STATE_EVERY_TICKS != 0 &&
-            view.terminal_result.is_none() { return; }
+            view.terminal_result.is_none() &&
+            !self.force_initial_state { return; }
         self.last_state = Some(episode);
+        self.force_initial_state = false;
         // Audio is lossy presentation; authoritative orders and replies keep
         // their existing reliable, bounded channel.
         let pending_audio = std::mem::take(&mut self.pending_audio);
