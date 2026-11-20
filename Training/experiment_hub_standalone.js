@@ -10,7 +10,7 @@ const {ExperimentHub}=require('./experiment_hub_core');
 const {JobExporter}=require('./experiment_hub_job_export');
 const localServices=require('./experiment_hub_local_services');
 const {route:hubRoute}=require('./experiment_hub_admin');
-const {createAgentServer,AGENT_HOST,AGENT_PORT}=
+const {createAgentServer,AGENT_HOST,AGENT_PORT,activeTailnetAddress}=
     require('./experiment_hub_agent_listener');
 
 const HOST='127.0.0.1';
@@ -206,6 +206,9 @@ async function main(argv=process.argv.slice(2)) {
     if(argv.length!==2||argv[0]!=='--data-root')
         throw Error('Specify --data-root /absolute/private/hub-data.');
     process.umask(0o077);
+    // The optional private-network interface is never inferred or wildcard-bound.
+    const tailnet=process.env.EXPERIMENT_HUB_AGENT_TAILNET_IP
+        ?activeTailnetAddress(process.env.EXPERIMENT_HUB_AGENT_TAILNET_IP):null;
     const root=dataRoot(argv[1]);
     const registry=path.join(root,'hub-v1.json');
     const existed=fs.existsSync(registry);
@@ -220,18 +223,21 @@ async function main(argv=process.argv.slice(2)) {
     const ui=fs.readFileSync(path.join(__dirname,'experiment_hub_ui.js'),'utf8');
     const admin=createAdminServer(hub,{html,ui,dataRoot:root});
     const worker=createAgentServer(()=>hub);
+    const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet):null;
+    async function listen(server,port,host) {
+        await new Promise((resolve,reject)=>{
+            server.once('error',reject);
+            server.listen(port,host,resolve);
+        });
+    }
     try {
-        await new Promise((resolve,reject)=>{
-            admin.once('error',reject);
-            admin.listen(PORT,HOST,resolve);
-        });
-        await new Promise((resolve,reject)=>{
-            worker.once('error',reject);
-            worker.listen(AGENT_PORT,AGENT_HOST,resolve);
-        });
+        await listen(admin,PORT,HOST);
+        await listen(worker,AGENT_PORT,AGENT_HOST);
+        if(remoteWorker)await listen(remoteWorker,AGENT_PORT,tailnet);
     }catch(error) {
         if(admin.listening)admin.close();
         if(worker.listening)worker.close();
+        if(remoteWorker?.listening)remoteWorker.close();
         throw error;
     }
     const automationTimer=setInterval(()=>{
@@ -253,6 +259,7 @@ async function main(argv=process.argv.slice(2)) {
         clearInterval(automationTimer);
         admin.close();
         worker.close();
+        if(remoteWorker)remoteWorker.close();
         // Jobs and leases are intentionally retained; the coordinator
         // cannot infer whether native trainers remain alive.
     }
@@ -260,6 +267,7 @@ async function main(argv=process.argv.slice(2)) {
     process.once('SIGTERM',stop);
     console.log('Native-only Experiment Hub: http://'+HOST+':'+PORT);
     console.log('Machine-agent listener: http://'+AGENT_HOST+':'+AGENT_PORT);
+    if(tailnet)console.log('Tailnet machine-agent listener: http://'+tailnet+':'+AGENT_PORT);
     console.log('Private registry: '+root);
     console.log('Automation disarmed by default; no Bees or Unity operator loaded.');
 }
