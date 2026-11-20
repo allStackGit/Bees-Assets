@@ -405,10 +405,12 @@ impl NativeRemotePlay {
             "native remote session does not match the recovered World and side owners");
         if saved.schema_version != 1 ||
             saved.host_session_id.len() != 32 ||
-            !saved.host_session_id.bytes().all(|ch| ch.is_ascii_hexdigit()) ||
+            !saved.host_session_id.bytes().all(|ch|
+                ch.is_ascii_digit() || (b'a'..=b'f').contains(&ch)) ||
             saved.next_peer == 0 ||
             saved.next_peer == u64::MAX ||
             saved.connected_peers > MAX_PEERS ||
+            saved.held_fire.len() > saved.connected_peers ||
             saved.side_credentials_sha256 != credential_digest(&self.side_tokens) ||
             saved.held_fire.len() > MAX_PEERS ||
             saved.pending_releases.len() > MAX_ORDERS_PER_POLL
@@ -426,8 +428,10 @@ impl NativeRemotePlay {
                 return Err(invalid());
             }
         }
+        let mut released = HashSet::new();
         for order in &saved.pending_releases {
             if order.peer == 0 || order.peer >= saved.next_peer ||
+                !released.insert(order.peer) || previous.contains(&order.peer) ||
                 !self.side_tokens.contains_key(&order.side) ||
                 order.request_id != 0 ||
                 !matches!(&order.action,
