@@ -113,12 +113,20 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Unexpected GPU resources in a CPU-only Windows lease.');
     const predecessor=job.continuation_of_job_id||null,
         replacement=job.collector_replacement_of_job_id||null,
+        oldOptimizer=job.optimizer_restart_of_job_id||null,
         root=job.artifact_lineage_root_id||job.id;
     if(replacement!==null&&(
         job.project_id!=='bees_native_collect'||predecessor!==null||
         !UUID.test(String(replacement))||replacement===job.id||
         !UUID.test(String(root))||root===job.id))
         throw Error('Native collector replacement requires a distinct authorized job and original artifact lineage.');
+    if(oldOptimizer!==null&&(
+        !['bees_native','bees_native_optimizer_worker'].includes(job.project_id)||
+        job.frozen_parameters?.optimizer_group!==true||
+        !UUID.test(String(oldOptimizer))||oldOptimizer===job.id||
+        !UUID.test(String(job.optimizer_restart_of_bundle_id||''))||
+        !job.resource_bundle||predecessor!==null||replacement!==null))
+        throw Error('Windows synchronized optimizer restart needs new leased ranks and a pinned original group.');
     if(!UUID.test(String(root))||
         (predecessor!==null&&(!UUID.test(String(predecessor))||
             predecessor===job.id||root===job.id))||
@@ -133,6 +141,7 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         artifact_lineage_root_id:root,continuation_of_job_id:predecessor,
         collector_replacement_of_job_id:replacement,
+        optimizer_restart_of_job_id:oldOptimizer,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(gpu?{gpu_pci_address:gpu.pci_address,gpu_cuda_uuid:gpu.cuda_uuid,
@@ -469,6 +478,17 @@ class WindowsSupervisor {
                 observed.state!=='failed')
                 throw Error('Original Windows collector owner is not verified inactive and failed.');
         }
+        if(job.optimizer_restart_of_job_id) {
+            const prior=this.state.records.find(r=>
+                r.job_id===job.optimizer_restart_of_job_id);
+            if(!prior||prior.project_id!==job.project_id||
+                !['failed','stopped','finished'].includes(prior.state))
+                throw Error('Previous synchronized Windows optimizer rank has no terminal local owner.');
+            const observed=await this.observe(prior);
+            if(observed.active!==false||observed.owner_verified!==true||
+                !['failed','stopped','finished'].includes(observed.state))
+                throw Error('Previous native GPU rank still has active or unverified Windows Job Object ownership.');
+        }
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
@@ -504,6 +524,7 @@ class WindowsSupervisor {
             project_id:job.project_id,
             continuation_of_job_id:invocation.predecessor,
             collector_replacement_of_job_id:job.collector_replacement_of_job_id||null,
+            optimizer_restart_of_job_id:job.optimizer_restart_of_job_id||null,
             artifact_lineage_root_id:invocation.root,
             ...(invocation.stopFile?{checkpoint_stop_file:invocation.stopFile}:{}),
             token,cpus:invocation.cpus,host_cpus:invocation.hostCpus,
