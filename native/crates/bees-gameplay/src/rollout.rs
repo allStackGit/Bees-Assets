@@ -33,6 +33,11 @@ pub struct NativeBatchedStepCounts {
     /// Live worlds advanced without invoking a pointless observation
     /// builder because no policy controller is due on this physics tick.
     pub worlds_without_due_agents: usize,
+    /// Actual source controller membership transitions, not sampled
+    /// observations or inferred model rows.
+    pub controller_bindings: u64,
+    pub controller_rebindings: u64,
+    pub controller_retirements: u64,
     /// Number of actual CPU workers used by this round's physical phase.
     /// Zero denotes the ordinary serial path or no live worlds.
     pub parallel_physics_workers: usize,
@@ -279,7 +284,15 @@ where
                 !world.state.events.completed() {
                 let tick = world.tick();
                 let state = &mut world.state;
+                let before = state.decisions.measurements();
                 state.decisions.synchronize(&state.combat, tick);
+                let after = state.decisions.measurements();
+                counts.controller_bindings +=
+                    after.controller_bindings - before.controller_bindings;
+                counts.controller_rebindings +=
+                    after.controller_rebindings - before.controller_rebindings;
+                counts.controller_retirements +=
+                    after.controller_retirements - before.controller_retirements;
             }
         }
         let world = simulation.world(index)
