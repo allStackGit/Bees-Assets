@@ -84,8 +84,7 @@ function remoteCall(endpoint,machineId,token,jobId,file,snapshot,offset,bytes) {
     return new Promise((resolve,reject)=>{
         const request=http.request(url,{
             method:bytes?'PUT':'GET',timeout:30000,
-            headers:{Host:'127.0.0.1:7149',
-                'X-Hub-Agent-Token':token,
+            headers:{'X-Hub-Agent-Token':token,
                 ...(bytes?{'Content-Type':'application/octet-stream',
                     'Content-Length':bytes.length}:{})},
         },response=>{
