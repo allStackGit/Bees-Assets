@@ -4901,12 +4901,36 @@ class ExperimentHub {
             'pending_optimizer','awaiting_optimizer','needs_review','disarmed']
             .includes(plan.status))
             throw Error('Only an unresolved native training-round plan can be disarmed.');
+        const at=now(),bundles=[];
+        for(const stage of ['collectors','optimizer']) {
+            const bundleId=plan[stage+'_bundle_id'];
+            const ids=plan[stage+'_job_ids'];
+            if(bundleId==null&&ids==null)continue;
+            if(!UUID.test(String(bundleId||''))||
+                !Array.isArray(ids)||ids.length<2)
+                throw Error('Native training round has an incomplete '+stage+' resource bundle.');
+            const request={bundle_id:bundleId,expected_job_ids:ids,
+                confirm_stop:true};
+            const members=exactResourceBundle(next,request,'confirm_stop');
+            if(members.some((job,index)=>
+                job.assigned_machine_id!==plan[stage+'_members'][index]?.machine_id))
+                throw Error('Native training round '+stage+' machine ownership changed.');
+            // All old and active bundle Stops, cancellations and lease
+            // releases share this one registry transaction with the round
+            // decision. A failure leaves the live registry unchanged.
+            this.stopResourceBundleIn(next,request,at);
+            bundles.push(bundleId);
+        }
         plan.status='cancelled';
-        plan.reason='Future rounds disarmed. Existing native resource bundles and running jobs retain their own Stop owners.';
-        plan.updated_at=now();
+        plan.reason='Future native rounds disarmed; original resource bundles cancelled or sent Stop requests. Unverified and failed owners retain their leases for review.';
+        plan.updated_at=at;
         this.commit(next);
-        return {plan_id:plan.id,status:plan.status,
-            active_bundles:[plan.collectors_bundle_id,plan.optimizer_bundle_id].filter(Boolean)};
+        const members=next.jobs.filter(job=>bundles.includes(job.resource_bundle?.id));
+        return {plan_id:plan.id,status:plan.status,active_bundles:bundles,
+            stopped_pending:members.filter(job=>job.status==='stop_requested').map(job=>job.id),
+            needs_review:members.filter(job=>['failed','unverified'].includes(job.status)||
+                job.status==='finished'&&!job.capacity_released_at).map(job=>job.id),
+            note:'No active or uncertain native owner is released without a verified terminal receipt.'};
     }
     // An authenticated agent heartbeat advances at most one stage per plan.
     // The queue transaction also commits its stage ID, so a crash between
@@ -5689,13 +5713,12 @@ class ExperimentHub {
     // native owner. The native Stop intent and terminal-release policy both
     // survive a coordinator restart. A failed/unverified member remains
     // visible for inspection and cannot silently free capacity.
-    stopResourceBundle(value) {
+    stopResourceBundleIn(next,value,at) {
         if(!object(value)||Object.keys(value).some(key=>![
             'bundle_id','expected_job_ids','confirm_stop',
         ].includes(key)))
             throw Error('Select the exact resource bundle to stop.');
-        const members=exactResourceBundle(this.state,value,'confirm_stop');
-        const next=copy(this.state),at=now();
+        const members=exactResourceBundle(next,value,'confirm_stop');
         let changed=false;
         const planned=(next.bundle_start_plans||[]).find(plan=>
             plan.bundle_id===value.bundle_id&&
@@ -5751,6 +5774,16 @@ class ExperimentHub {
                 if(!job.dispatch_id||!job.execution_updated_at||!lease)
                     throw Error('Bundle member '+job.id+
                         ' has no verified terminal native ownership; no leases released.');
+                if(job.status==='finished'&&!nativeOptimizerTerminalProof(job)) {
+                    // Rank zero can be terminal before its resumable model
+                    // is verified. Keep the original lease and its native
+                    // Inspect owner until the exact checkpoint is proven.
+                    if(job.release_on_terminal!==true) {
+                        job.release_on_terminal=true;
+                        changed=true;
+                    }
+                    continue;
+                }
                 this.releaseIn(next,lease);
                 changed=true;
                 continue;
@@ -5760,6 +5793,10 @@ class ExperimentHub {
             if(job.status!=='failed')
                 throw Error('Bundle member '+job.id+' needs manual lifecycle review.');
         }
+        return changed;
+    }
+    stopResourceBundle(value) {
+        const next=copy(this.state),changed=this.stopResourceBundleIn(next,value,now());
         if(changed)this.commit(next);
         const current=this.state.jobs.filter(job=>job.resource_bundle?.id===value.bundle_id)
             .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
