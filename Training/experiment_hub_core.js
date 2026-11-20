@@ -1576,7 +1576,9 @@ class ExperimentHub {
         snapshot.hub_observation_archive_issue=this.observations.error;
         snapshot.native_round_plans=(snapshot.native_round_plans||[]).map(plan=>{
             const {agent_instances,...display}=plan;
-            return display;
+            return {...display,
+                training_summary:nativeBeesRoundTrainingSummary(plan),
+            };
         });
         snapshot.bundle_start_plans=(snapshot.bundle_start_plans||[]).map(plan=>{
             if(plan.status!=='pending')return plan;
