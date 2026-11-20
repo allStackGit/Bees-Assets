@@ -260,6 +260,7 @@ function boundedReport(value) {
     const remoteEndpoints=value.tinybrains_remote_rollout_endpoints??[];
     const remoteFingerprint=value.tinybrains_remote_key_fingerprint??null;
     const workerEndpoint=value.tinybrains_rollout_endpoint??null;
+    const workerSlots=value.tinybrains_rollout_slots??[];
     const workerFingerprint=value.tinybrains_rollout_key_fingerprint??null;
     const workerThreadLimit=value.tinybrains_rollout_thread_limit??0;
     const courierEndpoints=value.courier_remote_lineage_endpoints??[];
@@ -332,6 +333,17 @@ function boundedReport(value) {
         !Number.isSafeInteger(workerThreadLimit)||workerThreadLimit<0||workerThreadLimit>256||
         Boolean(workerThreadLimit)!==Boolean(workerEndpoint))
         throw Error('Remote rollout requires a compatible native TinyBrains learner adapter.');
+    if(!Array.isArray(workerSlots)||workerSlots.length>8||
+        (workerSlots.length>0&&
+            (!installed.includes('tinybrains_rollout')||workerEndpoint===null||
+             !workerSlots.some(item=>item?.endpoint===workerEndpoint)))||
+        workerSlots.some(item=>!object(item)||
+            Object.keys(item).sort().join(',')!=='endpoint,slot'||
+            !Number.isSafeInteger(item.slot)||item.slot<0||item.slot>7||
+            !rolloutEndpoint(item.endpoint))||
+        new Set(workerSlots.map(item=>item.slot)).size!==workerSlots.length||
+        new Set(workerSlots.map(item=>item.endpoint)).size!==workerSlots.length)
+        throw Error('TinyBrains remote collector slots require distinct trusted listener endpoints.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
         requiredImports.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
@@ -438,6 +450,7 @@ function boundedReport(value) {
         tinybrains_remote_rollout_endpoints:remoteEndpoints.slice(),
         tinybrains_remote_key_fingerprint:remoteFingerprint,
         tinybrains_rollout_endpoint:workerEndpoint,
+        tinybrains_rollout_slots:workerSlots.map(item=>({...item})),
         tinybrains_rollout_key_fingerprint:workerFingerprint,
         tinybrains_rollout_thread_limit:workerThreadLimit,
         courier_remote_lineage_endpoints:courierEndpoints.slice(),
@@ -1962,6 +1975,7 @@ class ExperimentHub {
                 machine.tinybrains_remote_rollout_endpoints=report.tinybrains_remote_rollout_endpoints.slice();
                 machine.tinybrains_remote_key_fingerprint=report.tinybrains_remote_key_fingerprint;
                 machine.tinybrains_rollout_endpoint=report.tinybrains_rollout_endpoint;
+                machine.tinybrains_rollout_slots=report.tinybrains_rollout_slots.map(item=>({...item}));
                 machine.tinybrains_rollout_key_fingerprint=report.tinybrains_rollout_key_fingerprint;
                 machine.tinybrains_rollout_thread_limit=report.tinybrains_rollout_thread_limit;
                 machine.courier_remote_lineage_endpoints=report.courier_remote_lineage_endpoints.slice();
