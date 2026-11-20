@@ -3400,7 +3400,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 (Number.isFinite(live.cpu_cores_used)
                     ?' · '+live.cpu_cores_used.toFixed(2)+' average CPU cores':'')
                 :'';
-            const lineage=j.collector_replacement_of_job_id
+            const lineage=j.optimizer_restart_of_job_id
+                ?' · Restarted native GPU rank from '+j.optimizer_restart_of_job_id.slice(-8)+
+                    ' with new synchronized group and fresh lease'
+                :j.collector_replacement_of_job_id
                 ?' · Replaces failed native collector '+
                     j.collector_replacement_of_job_id.slice(-8)+
                     ' on original machine with a new Hub lease'
@@ -3836,6 +3839,45 @@ document.addEventListener('DOMContentLoaded', () => {
                         }catch(e){feedback('hub-job-message',e.message);}
                     }));
                 }
+            }
+            if(j.resource_bundle?.index===1&&
+                j.frozen_parameters?.optimizer_group===true) {
+                const optimizerGroup=state.jobs.filter(member=>
+                    member.resource_bundle?.id===j.resource_bundle.id)
+                    .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+                const groupFailed=optimizerGroup.length===j.resource_bundle.size&&
+                    optimizerGroup.every((member,index)=>
+                        member.resource_bundle.index===index+1&&
+                        ['finished','failed','stopped'].includes(member.status)&&
+                        Boolean(member.capacity_released_at))&&
+                    optimizerGroup.some(member=>
+                        ['failed','stopped'].includes(member.status));
+                const alreadyRestarted=state.jobs.some(member=>
+                    member.optimizer_restart_of_bundle_id===j.resource_bundle.id&&
+                    member.status!=='cancelled');
+                if(groupFailed&&!alreadyRestarted)
+                    actions.append(button('Restart failed GPU optimizer group',async()=>{
+                        if(!confirm('Reserve a NEW complete native MA-POCA GPU group on the same '+
+                            optimizerGroup.length+' machines using the ORIGINAL input model, '+
+                            'physical collector receipts, training configuration and GPU budgets? '+
+                            'All old ranks must be proven inactive and their leases released. '+
+                            'No optimizer process starts until separately authorized. '+
+                            'An interrupted gradient update will be recomputed from its original checkpoint.'))
+                            return;
+                        try {
+                            const result=await action('hub/resource-bundles/restart-optimizer',{
+                                bundle_id:j.resource_bundle.id,
+                                expected_job_ids:optimizerGroup.map(member=>member.id),
+                                confirm_restart:true,
+                            });
+                            feedback('hub-job-message',
+                                'New synchronized optimizer group '+result.bundle_id+
+                                ' reserved. Authorize its group Start after fresh GPU admission.');
+                            await reload();
+                        }catch(error){
+                            feedback('hub-job-message',error.message);
+                        }
+                    }));
             }
             // A failed collector is not a resumable service and cannot
             // be restarted under its original Hub job/lease. Explicitly
