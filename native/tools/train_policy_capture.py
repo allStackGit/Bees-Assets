@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
 import time
 
@@ -17,10 +18,36 @@ import numpy as np
 from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spec, stream_sha256
 from read_policy_capture import capture_frames
 from native_training_outcomes import accumulate_training_outcome, record_combat_hit
+from native_training_artifacts import sync_directory
 from native_mission_contract import (
     OBJECTIVE_START as NATIVE_MISSION_ACTIVE_INDEX,
     OBJECTIVE_WIDTH, verified_policy_observations,
 )
+
+
+def publish_immutable_optimizer_artifact(destination, writer, *, binary=False):
+    """Commit a final optimizer artifact only after its bytes are durable.
+
+    An interrupted rank may leave a private staging file, never a partial
+    checkpoint, model manifest, node consensus or training metrics at the
+    authoritative path. Linking is create-only on Windows and Linux.
+    """
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w+b" if binary else "w+", encoding=None if binary else "utf-8",
+            prefix="." + destination.name + "-", suffix=".pending",
+            dir=destination.parent, delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            writer(stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, destination)
+        sync_directory(destination.parent)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 # Non-learner controllers need only lifetime/side validation. This
@@ -1571,18 +1598,23 @@ def main():
                         if worker["node_rank"] == args.learner_node_rank
                     ],
                 }
-                with (args.output / "node-result.json").open("x", encoding="utf-8") as sink:
-                    json.dump(node_receipt, sink, indent=2)
-                    sink.write("\n")
-                    sink.flush()
-                    os.fsync(sink.fileno())
+                def write_node_result(stream):
+                    json.dump(node_receipt, stream, indent=2)
+                    stream.write("\n")
+                publish_immutable_optimizer_artifact(
+                    args.output / "node-result.json", write_node_result,
+                )
             torch.distributed.destroy_process_group()
             return
     next_checkpoint = args.output / "checkpoint.pt"
-    with next_checkpoint.open("xb") as output:
-        torch.save({name: module.state_dict() for name, module in modules.items()}, output)
-        output.flush()
-        os.fsync(output.fileno())
+    publish_immutable_optimizer_artifact(
+        next_checkpoint,
+        lambda stream: torch.save(
+            {name: module.state_dict() for name, module in modules.items()},
+            stream,
+        ),
+        binary=True,
+    )
 
     # Default to pinned frozen opponents. An explicitly scheduled self-play
     # round can replace ONE chosen opponent with the just-completed learner
@@ -1642,11 +1674,10 @@ def main():
         entry["path"] = "opponents/" + expected + ".model"
     frozen_snapshot_wall_seconds = time.perf_counter() - frozen_snapshot_started
     next_manifest = args.output / "manifest.json"
-    with next_manifest.open("x", encoding="utf-8") as output:
-        json.dump(manifest, output, indent=2)
-        output.write("\n")
-        output.flush()
-        os.fsync(output.fileno())
+    def write_manifest(stream):
+        json.dump(manifest, stream, indent=2)
+        stream.write("\n")
+    publish_immutable_optimizer_artifact(next_manifest, write_manifest)
     metrics = {
         "schema_version": 1,
         "source": "bees-native-ma-poca-v1",
@@ -1749,19 +1780,14 @@ def main():
             ) if (capture_stats.get("training_outcomes", {}).get("head_to_head_episodes", 0)) else None,
         },
     }
-    pending_metrics = args.output / "metrics.json.pending"
-    with pending_metrics.open("x", encoding="utf-8") as output:
-        json.dump(metrics, output, indent=2)
-        output.write("\n")
-        output.flush()
-        os.fsync(output.fileno())
-    os.replace(pending_metrics, args.output / "metrics.json")
-    if os.name == "posix":
-        directory = os.open(args.output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+    def write_metrics(stream):
+        json.dump(metrics, stream, indent=2)
+        stream.write("\n")
+    # Metrics are the last commit record. Readers never infer complete
+    # distributed optimizer work from a checkpoint file alone.
+    publish_immutable_optimizer_artifact(
+        args.output / "metrics.json", write_metrics,
+    )
     if learner_workers > 1:
         torch.distributed.destroy_process_group()
     print(json.dumps(metrics))
