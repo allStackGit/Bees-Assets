@@ -731,7 +731,12 @@ impl RemoteFogSources {
                 left.0.x.total_cmp(&right.0.x));
             stats.fog_visibility_sources_indexed += sources.len() as u64;
         }
-        let grid = if sources.len() > 24 {
+        // The grid is an optimization of the exact squared-distance
+        // predicate. If that predicate overflows f32, even a far-away
+        // source can compare as infinity <= infinity; spatial culling
+        // would silently change the source fog rule. Use the direct scan
+        // in the same cases that prohibit X-indexed pruning.
+        let grid = if indexed && sources.len() > 24 {
             let mut buckets = HashMap::<(i64, i64), Vec<usize>>::new();
             let mut valid = true;
             for (index, (position, _)) in sources.iter().enumerate() {
