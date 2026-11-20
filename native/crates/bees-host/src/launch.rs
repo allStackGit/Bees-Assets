@@ -2129,6 +2129,18 @@ fn preflight_native_fleet_edit_with_squads(
                     }
                 }
             }
+            // Victory-created SavedSquads are persistent across all
+            // missions, including completed ones that remain replayable.
+            // Reject an award colliding with any route's original squad
+            // identity, even when that route is not part of today's fleet
+            // deployment preflight.
+            if new_squads.iter().any(|earned| source.source_squads.iter()
+                .any(|squad| squad.saved_squad_id == Some(earned.saved_squad_id)))
+            {
+                return Err(invalid(
+                    "victory SavedSquad identity collides with an authored campaign route",
+                ).into());
+            }
             if !relevant_for_deployment { continue; }
             let mut projected_squads = progress.created_squads_for_side(side);
             projected_squads.extend_from_slice(new_squads);
