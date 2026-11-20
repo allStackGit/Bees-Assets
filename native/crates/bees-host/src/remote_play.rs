@@ -224,6 +224,11 @@ pub struct RemotePlayMeasurements {
     pub battle_result_receipts: u64,
     pub interrupted_battle_notices: u64,
     pub disconnected_peers: u64,
+    /// A previously checkpointed host incarnation was resumed on this
+    /// authoritative World without reusing its dead TCP sockets.
+    pub recovered_sessions: u64,
+    pub recovered_peer_connections: u64,
+    pub recovered_held_fire_releases: u64,
     pub held_fire_requests: u64,
     pub held_fire_rejected: u64,
     pub held_fire_disconnect_releases: u64,
@@ -259,6 +264,7 @@ pub struct NativeRemotePlayRecoveryCheckpoint {
     host_session_id: String,
     side_credentials_sha256: [u8; 32],
     next_peer: u64,
+    connected_peers: usize,
     held_fire: Vec<HeldFireLease>,
     pending_releases: Vec<RemoteOrder>,
     measurements: RemotePlayMeasurements,
@@ -379,6 +385,7 @@ impl NativeRemotePlay {
             host_session_id: self.host_session_id.clone(),
             side_credentials_sha256: credential_digest(&self.side_tokens),
             next_peer: self.next_peer,
+            connected_peers: self.peers.iter().filter(|peer| !peer.closed).count(),
             held_fire,
             pending_releases: self.pending_releases.iter()
                 .filter(|order| order.action.episode() == (world_id, revision))
@@ -401,6 +408,7 @@ impl NativeRemotePlay {
             !saved.host_session_id.bytes().all(|ch| ch.is_ascii_hexdigit()) ||
             saved.next_peer == 0 ||
             saved.next_peer == u64::MAX ||
+            saved.connected_peers > MAX_PEERS ||
             saved.side_credentials_sha256 != credential_digest(&self.side_tokens) ||
             saved.held_fire.len() > MAX_PEERS ||
             saved.pending_releases.len() > MAX_ORDERS_PER_POLL
@@ -445,7 +453,10 @@ impl NativeRemotePlay {
         self.pending_releases = releases;
         self.measurements = saved.measurements;
         self.measurements.held_fire_disconnect_releases += previous.len() as u64;
-        self.measurements.disconnected_peers += previous.len() as u64;
+        self.measurements.disconnected_peers += saved.connected_peers as u64;
+        self.measurements.recovered_sessions += 1;
+        self.measurements.recovered_peer_connections += saved.connected_peers as u64;
+        self.measurements.recovered_held_fire_releases += previous.len() as u64;
         self.last_state = None;
         self.force_initial_state = true;
         Ok(())
