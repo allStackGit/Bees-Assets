@@ -2112,15 +2112,16 @@ fn preflight_native_fleet_edit_with_squads(
         entry.mission.as_ref()).any(|mission|
             mission.player_side == side && !progress.completed(&mission.id));
     for entry in &catalog.battles {
-        if !entry.mission.as_ref().is_some_and(|mission|
-            mission.player_side == side &&
-            (!progress.completed(&mission.id) || !has_upcoming)
-        ) {
-            continue;
-        }
+        let Some(mission) = entry.mission.as_ref().filter(|mission|
+            mission.player_side == side) else { continue };
+        let relevant_for_deployment = !progress.completed(&mission.id) || !has_upcoming;
         for config in entry.configurations() {
             let run_path = resolve(root, config).canonicalize()?;
             let mut source = load_native_fleet_edit_scene(&run_path)?;
+            // Purchase and victory-grant FleetShip IDs must remain unique
+            // across the entire authored campaign, including completed
+            // missions that can be replayed and alternate victory routes.
+            // A deployment preflight alone cannot reserve those identities.
             for entity in &source.entities {
                 if let NativeAuthoredEntity::Ship(ship) = entity {
                     if let Some(id) = ship.fleet_ship_id {
@@ -2128,6 +2129,7 @@ fn preflight_native_fleet_edit_with_squads(
                     }
                 }
             }
+            if !relevant_for_deployment { continue; }
             let mut projected_squads = progress.created_squads_for_side(side);
             projected_squads.extend_from_slice(new_squads);
             source.install_created_squads(
