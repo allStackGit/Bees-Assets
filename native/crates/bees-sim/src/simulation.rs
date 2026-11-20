@@ -78,6 +78,20 @@ pub struct WorldCheckpoint<S> {
     measurements: Measurements,
 }
 
+/// Recovering an authored state projection must not reset the World clock
+/// or RNG until the Level's own transaction has completed.
+#[derive(Debug)]
+pub enum WorldOwnersRestoreError<E> {
+    InvalidCheckpoint(&'static str),
+    State(E),
+}
+
+impl<T> WorldCheckpoint<T> {
+    pub fn tick(&self) -> u64 { self.tick }
+    pub fn world_id(&self) -> WorldId { self.id }
+    pub fn state(&self) -> &T { &self.state }
+}
+
 /// World-local state, owned by exactly one simulation. No Unity-style static
 /// registries or global RNG: independent arenas can later run concurrently.
 #[derive(Debug)]
@@ -126,13 +140,15 @@ impl<S> World<S> {
         self.measurements
     }
 
-    /// Capture all mutable world-owned state without copying ship arrays,
-    /// spatial grids, command ownership, or the model's native observations.
-    fn checkpoint(&self) -> WorldCheckpoint<&S> {
+    /// Project one authoritative state-owned checkpoint into the World
+    /// envelope. The state projection comes from the existing Level owner;
+    /// RNG, tick, episode revision and sampling counters are captured here.
+    /// Never serialize executable callbacks or an alternate simulation.
+    pub fn checkpoint_owner_state<T>(&self, state: T) -> WorldCheckpoint<T> {
         WorldCheckpoint {
             schema_version: 1,
             id: self.id,
-            state: &self.state,
+            state,
             random_state: self.random.state(),
             fixed_step_seconds: self.fixed_step_seconds,
             tick: self.tick,
@@ -140,6 +156,51 @@ impl<S> World<S> {
             failed: self.failed,
             measurements: self.measurements,
         }
+    }
+
+    /// The normal fully-serializable S path reuses the same World envelope.
+    fn checkpoint(&self) -> WorldCheckpoint<&S> {
+        self.checkpoint_owner_state(&self.state)
+    }
+
+    /// Restore a state-specific Level ownership projection while retaining
+    /// the existing executable state and its immutable source adapters.
+    /// The callback must use an atomic prepare/commit like native Level
+    /// recovery: rejected projections leave the game and World untouched.
+    pub fn restore_owner_state<T, E>(
+        &mut self,
+        snapshot: WorldCheckpoint<T>,
+        restore_level: impl FnOnce(&mut S, T, u64) -> Result<(), E>,
+    ) -> Result<(), WorldOwnersRestoreError<E>> {
+        if snapshot.schema_version != 1 ||
+            snapshot.id != self.id ||
+            snapshot.fixed_step_seconds.map(f32::to_bits) !=
+                self.fixed_step_seconds.map(f32::to_bits) ||
+            snapshot.fixed_step_seconds.is_some_and(|seconds|
+                !seconds.is_finite() || seconds <= 0.0
+            ) ||
+            snapshot.measurements.ticks != snapshot.tick ||
+            snapshot.measurements.sampled_ticks > snapshot.tick ||
+            snapshot.measurements.sampled_failed_steps >
+                snapshot.measurements.failed_steps
+        {
+            return Err(WorldOwnersRestoreError::InvalidCheckpoint(
+                "native World ownership checkpoint disagrees with source identity or clock",
+            ));
+        }
+        let WorldCheckpoint {
+            state, random_state, fixed_step_seconds, tick, episode_revision,
+            failed, measurements, ..
+        } = snapshot;
+        restore_level(&mut self.state, state, tick)
+            .map_err(WorldOwnersRestoreError::State)?;
+        self.random = RandomStream::new(random_state);
+        self.fixed_step_seconds = fixed_step_seconds;
+        self.tick = tick;
+        self.episode_revision = episode_revision;
+        self.failed = failed;
+        self.measurements = measurements;
+        Ok(())
     }
 
     fn from_checkpoint(snapshot: WorldCheckpoint<S>) -> Result<Self, &'static str> {
