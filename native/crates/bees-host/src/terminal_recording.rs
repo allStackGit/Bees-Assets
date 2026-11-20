@@ -58,11 +58,18 @@ pub(super) fn complete_committed_recording(run: &Path)
     let summary: Value = serde_json::from_reader(File::open(&summary_path)?)?;
     if summary["kind"] != "run_final" ||
         !summary["failed_window"].is_null() ||
-        summary["cleanup_errors"] != json!([]) ||
-        summary["user_closed"] != false ||
-        summary["player_input_playback"] != false
+        summary["cleanup_errors"] != json!([])
     {
-        return Err(invalid("native terminal receipt does not authorize replay completion").into());
+        return Err(invalid("native terminal receipt is not a completed game").into());
+    }
+    // A player explicitly quitting, or a finished WATCH replay, is an
+    // immutable completed session but never a new eligible recording.
+    // Do not block its next menu launch or manufacture a success footer.
+    if summary["user_closed"] == true || summary["player_input_playback"] == true {
+        return Ok(true);
+    }
+    if summary["user_closed"] != false || summary["player_input_playback"] != false {
+        return Err(invalid("native terminal receipt has ambiguous replay eligibility").into());
     }
 
     let trace_path = run.join("player-inputs.jsonl");
