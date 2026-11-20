@@ -178,6 +178,33 @@ evaluator generation takes `--hub-host 100.97.43.98 --port 7149 --env-file
 own enrollment token. Coordinator-local evaluators retain their existing
 localhost settings. Do not forward or expose dashboard port 7148.
 
+## Regenerating the Windows launcher
+
+The source of truth is `Training/experiment_hub_worker_install.ps1`; the
+checked-in `Training/experiment_hub_worker_install.cmd` is generated from
+that file. To update either installer:
+
+```bash
+node Training/generate_experiment_hub_worker_cmd.js --write
+node Training/generate_experiment_hub_worker_cmd.js --check
+```
+
+Commit the changed PowerShell source **and** generated CMD in the same branch.
+The CMD packages the installer for first use; it is not the live worker
+runtime.
+
+**Current deployment limitation:** Existing Windows/Linux workers are **not
+yet automatically upgraded** when a commit reaches these branches. Both
+installers have an explicit `update` operation, but it requires stopping the
+native agent first; automatic staging, safe-idle activation, private-repository
+distribution, and restart/recovery are not yet implemented. Do not assume
+that updating Halifax or pushing GitHub changes updates installed workers.
+For unattended updates, the Hub needs to publish authenticated versioned
+releases covering all three source repositories, let workers download them
+without GitHub credentials, and activate them only after the native
+supervisor has established an idle/drained state. Preserve machine
+enrollment, private keys, native journals and checkpoints throughout.
+
 ## Limits
 
 The installed software has not yet passed full real-machine qualification
