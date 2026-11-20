@@ -577,8 +577,8 @@ impl PeerClient {
                         message["viewer_side"].as_i64() != Some(i64::from(self.side)) ||
                         message["world_id"].as_u64().is_none() ||
                         message["episode_revision"].as_u64().is_none() ||
-                        !(message["winner_side"].is_null() ||
-                            message["winner_side"].as_i64().is_some())
+                        !message.get("winner_side").is_some_and(|winner|
+                            winner.is_null()||winner.as_i64().is_some())
                     {
                         return Err(invalid("native battle result belongs to another session or side").into());
                     }
@@ -2049,16 +2049,37 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 last_audio_snapshot=Some(key);
             }
         }
-        peer.input_suppressed=peer.state.as_ref().is_some_and(|state| {
-            state["terminal_outcome"].is_object() ||
-                peer.battle_result_receipt.is_some() ||
-                (state["campaign_dialogue"]["line_count"].as_u64()
-                    .is_some_and(|count|dialogue_line<count as usize) &&
-                serde_json::from_value::<CampaignCue>(
-                    state["campaign_dialogue"]["cue"].clone(),
-                ).ok().is_some_and(CampaignCue::is_briefing))
-        });
-        if peer.input_suppressed || selected.is_empty() {
+        let terminal=peer.battle_result_receipt.is_some() ||
+            peer.state.as_ref().is_some_and(|state|
+                state["terminal_outcome"].is_object());
+        let briefing=peer.state.as_ref().is_some_and(|state|
+            state["campaign_dialogue"]["line_count"].as_u64()
+                .is_some_and(|count|dialogue_line<count as usize) &&
+            serde_json::from_value::<CampaignCue>(
+                state["campaign_dialogue"]["cue"].clone(),
+            ).ok().is_some_and(CampaignCue::is_briefing));
+        peer.input_suppressed=terminal||briefing;
+        if peer.input_suppressed {
+            // A completed battle has no further physical input boundary,
+            // whereas a story briefing pauses only this commander's UI.
+            // Release an existing held-fire lease during a briefing using
+            // the original authenticated End input; never send Aim from a
+            // terminal overlay over a stale World snapshot.
+            if briefing&&!terminal&&held_fire_active {
+                if let Err(error)=peer.held_fire(&selected,"End",None) {
+                    let _=peer.socket.shutdown(std::net::Shutdown::Both);
+                    peer.connected=false;
+                    peer.notice=error.to_string();
+                }
+            }
+            held_fire_active=false;
+            held_fire_target=None;
+            mode=None;
+            patrol_start=None;
+            drag_start=None;
+            right_press=None;
+        }
+        if peer.input_suppressed||selected.is_empty() {
             shooting_menu=false;shooting_press=None;
         }
         if let Some(mut cam)=camera {
