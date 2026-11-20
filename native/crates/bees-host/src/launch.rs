@@ -4731,6 +4731,16 @@ fn run_battle(
                     }
                     recorded_physical_checkpoints += 1;
                 }
+                // These complete physical/gameplay signatures are the
+                // durable replay recovery boundary. Commit the whole
+                // sampled set before advancing another authoritative tick.
+                // Only opt-in interactive recording pays for this sync.
+                if let Err(error) = trace.sync_data() {
+                    failed_window = Some(format!(
+                        "persisting native physical checkpoint at round {rounds}: {error}"
+                    ));
+                    break 'battle;
+                }
                 last_physical_checkpoint_round = Some(rounds);
             }
         }
@@ -4863,14 +4873,18 @@ fn run_battle(
                 }
                 if let Some(trace) = &mut input_trace {
                     let tick = host.simulation().world(0).expect("checked remote World").tick();
-                    if let Err(error) = writeln!(trace, "{}", json!({
+                    let committed = writeln!(trace, "{}", json!({
                         "kind": "player_input", "round": rounds,
                         "tick": tick, "action": &order.action,
                         "remote_side": order.side,
-                    })) {
-                        failed_window = Some(format!("recording remote player input: {error}"));
+                    })).and_then(|_| trace.sync_data());
+                    if let Err(error) = committed {
+                        failed_window = Some(format!("persisting remote player input: {error}"));
                         break 'battle;
                     }
+                    // Do not modify the actual Level or send success to a
+                    // multiplayer peer before its authenticated command
+                    // has become a durable replay event.
                     recorded_player_inputs += 1;
                 }
                 match apply_remote_side_input(&mut host, order.action, order.side) {
@@ -4932,8 +4946,9 @@ fn run_battle(
                     "tick": tick, "action": input,
                 });
                 if let Some(side) = side { entry["remote_side"] = json!(side); }
-                if let Err(error) = writeln!(trace, "{entry}") {
-                    failed_window = Some(format!("recording player input: {error}"));
+                if let Err(error) = writeln!(trace, "{entry}")
+                    .and_then(|_| trace.sync_data()) {
+                    failed_window = Some(format!("persisting player input: {error}"));
                     break;
                 }
                 recorded_player_inputs += 1;
