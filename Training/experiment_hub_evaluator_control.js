@@ -7,6 +7,7 @@
 const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const os=require('node:os');
+const crypto=require('node:crypto');
 const run=promisify(execFile);
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 
@@ -14,8 +15,15 @@ function evaluatorServiceName(machineId,platform=os.platform()) {
     if(!ID.test(String(machineId||'')))throw Error('Invalid installed evaluator machine identity.');
     if(platform==='linux')
         return 'bees-experiment-hub-bees_native-'+machineId+'-evaluator.timer';
-    if(platform==='win32')
-        return 'Bees-ExperimentHub-bees_native-'+machineId+'-evaluator';
+    if(platform==='win32') {
+        // The installed Windows launcher only permits ASCII alphanumeric
+        // names and hyphens. Prefix + bounded slug + machine fingerprint
+        // also keeps distinct machine IDs with '-' and '_' unambiguous.
+        const slug=machineId.replaceAll('_','-').slice(0,24);
+        const digest=crypto.createHash('sha256').update(machineId)
+            .digest('hex').slice(0,8);
+        return 'Bees-ExperimentHub-native-'+slug+'-'+digest;
+    }
     throw Error('Native Bees evaluator service requires Linux or Windows.');
 }
 
@@ -70,6 +78,13 @@ async function control(command,machineId,platform=os.platform()) {
         if(platform==='linux')await invoke('systemctl',['--user','stop',name]);
         else await invoke('sc.exe',['stop',name]);
     }
-    return inspect(machineId,platform);
+    const observed=await inspect(machineId,platform);
+    if(command.action==='start'&&
+        !['active','activating'].includes(observed))
+        throw Error('Native evaluator OS service did not accept Start.');
+    if(command.action==='stop'&&
+        !['inactive','deactivating'].includes(observed))
+        throw Error('Native evaluator OS service did not accept Stop.');
+    return observed;
 }
 module.exports={control,evaluatorServiceName};
