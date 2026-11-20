@@ -12,7 +12,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use bees_gameplay::campaign_dialogue::CampaignCue;
-use bees_sim::collision::{Aabb, Pose, circle_overlaps_polygon, circles_overlap};
+use bees_sim::collision::{Aabb, Pose, circle_overlaps_polygon, circles_overlap, polygons_overlap};
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
@@ -820,18 +820,31 @@ fn point_from_wire(value: &Value) -> Option<Vec2> {
 /// The host sends the same bounded primary physics collider used for
 /// navigation, weapon collision and map interaction. Parse it once for both
 /// rendered outlines and cursor targeting. No remote simulation state.
-enum RemoteObstacleHull {
+enum RemotePrimaryHull {
     Circle { center: Vec2, radius: f32 },
     Polygon { vertices: [Vec2; 64], len: usize },
 }
 
-impl RemoteObstacleHull {
+impl RemotePrimaryHull {
     fn overlaps_cursor(&self, point: Vec2, radius: f32) -> bool {
         match self {
             Self::Circle { center, radius: hull_radius } =>
                 circles_overlap(point, radius, *center, *hull_radius),
             Self::Polygon { vertices, len } =>
                 circle_overlaps_polygon(point, radius, &vertices[..*len]),
+        }
+    }
+
+    fn overlaps_box(&self, bounds: Aabb) -> bool {
+        let rectangle=[
+            bounds.min,Vec2::new(bounds.max.x,bounds.min.y),
+            bounds.max,Vec2::new(bounds.min.x,bounds.max.y),
+        ];
+        match self {
+            Self::Circle{center,radius} =>
+                circle_overlaps_polygon(*center,*radius,&rectangle),
+            Self::Polygon{vertices,len} =>
+                polygons_overlap(&vertices[..*len],&rectangle),
         }
     }
 
@@ -859,8 +872,8 @@ impl RemoteObstacleHull {
     }
 }
 
-fn remote_obstacle_hull(item: &Value, center: Vec2,
-    rotation_degrees: f32) -> Option<RemoteObstacleHull>
+fn remote_primary_hull(item: &Value, center: Vec2,
+    rotation_degrees: f32) -> Option<RemotePrimaryHull>
 {
     let pose = Pose { position: center, rotation_degrees };
     let collider = &item["collider"];
@@ -869,7 +882,7 @@ fn remote_obstacle_hull(item: &Value, center: Vec2,
             let offset = point_from_wire(&collider["offset"])?;
             let radius = collider["radius"].as_f64().map(|r| r as f32)
                 .filter(|r| r.is_finite() && *r >= 0.0)?;
-            return Some(RemoteObstacleHull::Circle {
+            return Some(RemotePrimaryHull::Circle {
                 center: pose.transform_point(offset), radius,
             });
         }
@@ -884,7 +897,7 @@ fn remote_obstacle_hull(item: &Value, center: Vec2,
             ].into_iter().enumerate() {
                 vertices[index] = pose.transform_point(offset + corner);
             }
-            return Some(RemoteObstacleHull::Polygon { vertices, len: 4 });
+            return Some(RemotePrimaryHull::Polygon { vertices, len: 4 });
         }
         Some("polygon") => {
             let points = collider["vertices"].as_array()
@@ -893,7 +906,7 @@ fn remote_obstacle_hull(item: &Value, center: Vec2,
             for (index, source) in points.iter().enumerate() {
                 vertices[index] = pose.transform_point(point_from_wire(source)?);
             }
-            return Some(RemoteObstacleHull::Polygon {
+            return Some(RemotePrimaryHull::Polygon {
                 vertices, len: points.len(),
             });
         }
@@ -910,12 +923,12 @@ fn remote_obstacle_hull(item: &Value, center: Vec2,
         Vec2::new(min.x, min.y), Vec2::new(max.x, min.y),
         Vec2::new(max.x, max.y), Vec2::new(min.x, max.y),
     ]);
-    Some(RemoteObstacleHull::Polygon { vertices, len: 4 })
+    Some(RemotePrimaryHull::Polygon { vertices, len: 4 })
 }
 
 /// Draws the same collider the cursor can select. A cheap authoritative AABB
 /// cull avoids rasterizing large hulls outside the player's screen.
-fn draw_remote_obstacle_hull(
+fn draw_remote_primary_hull(
     pixels: &mut [u32], item: &Value, camera: NativeCamera,
     center: Vec2, rotation_degrees: f32,
 ) -> Option<bool> {
@@ -933,7 +946,7 @@ fn draw_remote_obstacle_hull(
             return Some(false);
         }
     }
-    let hull = remote_obstacle_hull(item, center, rotation_degrees)?;
+    let hull = remote_primary_hull(item, center, rotation_degrees)?;
     let color = if item["mining"] == true { GOLD } else { 0x7d92aa };
     hull.draw(pixels, camera, color);
     Some(true)
@@ -1052,26 +1065,30 @@ fn hit<'a>(state: &'a Value, camera: NativeCamera, x: i32, y: i32,
     -> Option<(&'static str, &'a Value)>
 {
     // A foreground ship wins over an obstacle underneath its hull.
-    let mut ship_hit = None;
-    let mut best_ship = 18 * 18;
+    let cursor=camera.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
+    let ship_pick_radius=18.0/camera.pixels_per_unit.max(0.001);
+    let mut ship_hit=None;
+    let mut best_ship=i32::MAX;
     for ship in state["ships"].as_array().into_iter().flatten() {
-        let Some(point) = visual.position(ship, 0, fraction) else { continue };
-        let (sx, sy) = screen(camera, point);
-        let distance = (sx - x).pow(2) + (sy - y).pow(2);
-        if distance < best_ship {
-            best_ship = distance;
-            ship_hit = Some(("ship", ship));
+        let Some(point)=visual.position(ship,0,fraction) else {continue};
+        let (sx,sy)=screen(camera,point);
+        let distance=(sx-x).pow(2)+(sy-y).pow(2);
+        if remote_primary_hull(
+            ship,point,visual.heading_for(ship,0,fraction),
+        ).is_some_and(|hull|hull.overlaps_cursor(cursor,ship_pick_radius))
+            &&distance<best_ship {
+            best_ship=distance;
+            ship_hit=Some(("ship",ship));
         }
     }
-    if ship_hit.is_some() { return ship_hit; }
+    if ship_hit.is_some() {return ship_hit;}
 
-    let cursor = camera.screen_to_world(x as f32, y as f32, FIELD, HEIGHT);
     let pick_radius = 10.0 / camera.pixels_per_unit.max(0.001);
     let mut selected = None;
     let mut nearest = i32::MAX;
     for obj in state["obstacles"].as_array().into_iter().flatten() {
         let Some(point) = visual.position(obj, 2, fraction) else { continue };
-        let overlap = remote_obstacle_hull(obj, point,
+        let overlap = remote_primary_hull(obj, point,
             visual.heading_for(obj, 2, fraction))
             .map_or_else(|| {
                 // Invalid/missing hull: preserve the existing point picker.
@@ -1348,7 +1365,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 if artwork.asteroids.contains(&obj["id"].as_i64().unwrap_or(-1)) {
                     continue;
                 }
-                match draw_remote_obstacle_hull(
+                match draw_remote_primary_hull(
                     pixels, obj, camera, point,
                     visual.heading_for(obj, 2, fraction),
                 ) {
@@ -2363,14 +2380,21 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                             if dragging {
                                 last_selection_press=None;
                                 double_left_press=false;
+                                let rectangle=Aabb {
+                                    min:cam.screen_to_world(
+                                        sx.min(x) as f32,sy.max(y) as f32,FIELD,HEIGHT),
+                                    max:cam.screen_to_world(
+                                        sx.max(x) as f32,sy.min(y) as f32,FIELD,HEIGHT),
+                                };
                                 for ship in state["ships"].as_array().into_iter().flatten(){
                                     if ship["owned"]!=true {continue;}
                                     let Some(p)=peer.visual.position(
-                                        ship, 0, peer.visual.fraction(),
+                                        ship,0,peer.visual.fraction(),
                                     ) else {continue;};
-                                    let (px,py)=screen(cam,p);
-                                    if px>=sx.min(x)&&px<=sx.max(x)&&
-                                        py>=sy.min(y)&&py<=sy.max(y) {
+                                    if remote_primary_hull(
+                                        ship,p,peer.visual.heading_for(
+                                            ship,0,peer.visual.fraction()),
+                                    ).is_some_and(|hull|hull.overlaps_box(rectangle)) {
                                         if let Some(squad)=squad_for_ship(state,
                                             ship["id"].as_i64().unwrap_or(-1),
                                             ship["side"].as_i64().unwrap_or(0))
