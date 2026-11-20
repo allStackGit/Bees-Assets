@@ -5405,6 +5405,12 @@ class ExperimentHub {
                         input_sha256:optimizerConsensus.input_sha256,
                         model_consensus_sha256:
                             optimizerConsensus.model_consensus_sha256,
+                        // Rank-zero's verified learner measurements have
+                        // one elapsed-time owner. Other GPU ranks overlap
+                        // and their work cannot be added as fleet wall time.
+                        ...(optimizerConsensus.learner_work?{
+                            learner_work:optimizerConsensus.learner_work,
+                        }:{}),
                         ranks:members.map((member,index)=>({
                             job_id:member.id,
                             machine_id:member.assigned_machine_id,
