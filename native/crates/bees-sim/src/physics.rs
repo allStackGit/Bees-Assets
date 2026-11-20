@@ -1406,20 +1406,35 @@ impl KinematicPhysics {
         }
         // Validate the three physical populations without constructing a
         // second collider engine or changing the live world on failure.
+        // KinematicPhysics admits separate identity namespaces for ships,
+        // projectiles and obstacles. CombatWorld may impose a stronger
+        // global allocator, but this shared physical owner must not invent
+        // that restriction when restoring valid standalone physics worlds.
         let mut ids = std::collections::HashSet::new();
-        if snapshot.ships.iter().any(|body| !ids.insert(body.id) ||
-            body.layer >= 32 || !body.motion.position.is_finite() ||
-            !body.motion.rotation_degrees.is_finite() || !body.collider.shape.valid()) ||
-            snapshot.projectiles.iter().any(|body| !ids.insert(body.id) ||
-                body.layer >= 32 || !body.motion.position.is_finite() ||
-                !body.rotation_degrees.is_finite() ||
-                body.collider.as_ref().is_some_and(|collider| !collider.shape.valid())) ||
-            snapshot.obstacles.iter().any(|body| !ids.insert(body.id) ||
-                body.layer >= 32 || !body.pose.position.is_finite() ||
-                !body.pose.rotation_degrees.is_finite() ||
-                !body.linear_velocity.is_finite() ||
-                !body.angular_velocity_degrees.is_finite() || !body.collider.shape.valid())
-        {
+        let ships_valid = snapshot.ships.iter().all(|body|
+            ids.insert(body.id) && body.layer < 32 &&
+            body.motion.position.is_finite() &&
+            body.motion.rotation_degrees.is_finite() &&
+            body.collider.shape.valid() &&
+            body.healing_zone.as_ref().is_none_or(|zone| zone.shape.valid()) &&
+            body.warp_zone.as_ref().is_none_or(|zone| zone.shape.valid()));
+        ids.clear();
+        let projectiles_valid = snapshot.projectiles.iter().all(|body|
+            ids.insert(body.id) && body.layer < 32 &&
+            body.motion.position.is_finite() &&
+            body.rotation_degrees.is_finite() &&
+            body.collider.as_ref().is_none_or(|collider| collider.shape.valid()));
+        ids.clear();
+        let obstacles_valid = snapshot.obstacles.iter().all(|body|
+            ids.insert(body.id) && body.layer < 32 &&
+            body.pose.position.is_finite() &&
+            body.pose.rotation_degrees.is_finite() &&
+            body.linear_velocity.is_finite() &&
+            body.angular_velocity_degrees.is_finite() &&
+            body.collider.shape.valid() &&
+            body.proximity_collider.as_ref().is_none_or(|zone| zone.shape.valid()) &&
+            body.clearance_collider.as_ref().is_none_or(|zone| zone.shape.valid()));
+        if !(ships_valid && projectiles_valid && obstacles_valid) {
             return Err(PhysicsError::InvalidCollider);
         }
         // No identity-bearing contact or state is recreated from source
