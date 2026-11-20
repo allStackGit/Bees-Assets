@@ -49,6 +49,20 @@ impl PolicyActionRecorder {
         Ok(Self(writer))
     }
 
+    /// The launcher has verified and truncated this file to the exact
+    /// byte offset in the committed World checkpoint before reopening it.
+    /// No header or policy action may be written a second time.
+    pub fn resume(file: File) -> Self { Self(BufWriter::new(file)) }
+
+    /// Capture only the already-written policy prefix at the same World
+    /// transaction as the launcher input trace. This is not a new learner
+    /// state; the resident worker checkpoints its own sampler separately.
+    pub fn checkpoint_position(&mut self) -> io::Result<u64> {
+        self.0.flush()?;
+        self.0.get_mut().sync_data()?;
+        self.0.get_mut().stream_position()
+    }
+
     pub fn record(
         &mut self, keys: &[PolicyAgentKey], routes: &[NativePolicyRoute],
         observations: &[f32], masks: &[PolicyActionMask], continuous: &[f32], discrete: &[u8],
