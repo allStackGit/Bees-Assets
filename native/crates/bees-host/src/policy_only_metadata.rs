@@ -930,6 +930,7 @@ impl NativePolicyOnlyMetadata {
     /// Unity policy group retains its episode team while reusing agents.
     fn queen_policy_controller(
         &self, world: &CombatWorld, queen_id: i64, side: i32,
+        grouped: bool,
     ) -> Option<&AuthoredPolicyAgent> {
         // Source-authored game Queen minions are autonomous unless the
         // Queen's physical minion template also authenticates its neural
@@ -939,13 +940,13 @@ impl NativePolicyOnlyMetadata {
             .is_some_and(|template| template.policy_weapon.is_some())
         { return None; }
         self.agents.get(&queen_id)
-            // A Queen that died this tick still owns the source frame
-            // until its last minion event has been captured. Once that
-            // Agent has been recycled onto another ship, its archived
-            // route is no longer an active policy controller; prefer a
-            // living same-side binding instead.
+            // In a group-owned episode, a Queen that died this tick
+            // retains its old Agent until retirement capture. After
+            // that Agent is recycled, do not claim its archived route
+            // over a live same-side binding. In ordinary gameplay,
+            // keep the original dead-Queen model route behavior.
             .filter(|agent| agent.side == side &&
-                (world.policy_frame(queen_id).is_some() ||
+                (!grouped || world.policy_frame(queen_id).is_some() ||
                     agent.source_group_agent_id.is_some()))
             .or_else(|| self.policy_side_representative.get(&side)
                 .filter(|&&id| world.policy_frame(id).is_some())
@@ -1079,7 +1080,9 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             // A non-policy faction retains its ordinary physical minions
             // and script/HiveMind/player command ownership. No model route
             // or policy-only Bomb observation is required for that faction.
-            let Some(parent_agent) = self.queen_policy_controller(world, queen_id, side) else {
+            let Some(parent_agent) = self.queen_policy_controller(
+                world, queen_id, side, events.group_delivery().is_some(),
+            ) else {
                 self.queen_controller_measurements.ordinary_minions_preserved += 1;
                 continue;
             };
