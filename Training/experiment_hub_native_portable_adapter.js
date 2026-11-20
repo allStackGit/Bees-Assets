@@ -236,6 +236,101 @@ function createNativeBeesPortableCollectorAdapter({
         return true;
     }
 
+    async function reconcileLearnerDelivery(context) {
+        // The receiver may have committed the upload while the collector's
+        // HTTP response or local acknowledgement was lost. Reconcile only
+        // this exact frozen collection via the already-authenticated learner
+        // endpoint; never launch another process or claim a new Hub lease.
+        const local=verifiedReceipt(context);
+        if(!local)return false;
+        if(verifiedLearnerDelivery(context))return true;
+        const frozen=context.frozen_parameters;
+        if(!/^[A-Za-z0-9_-]{1,96}$/.test(String(frozen.collector_id||''))||
+            !/^[A-Za-z0-9_-]{1,96}$/.test(String(frozen.bundle_directory||''))||
+            !SHA.test(String(frozen.collection_id||'')))
+            throw Error('Native collector has no frozen delivery identity.');
+        const credentialBytes=fs.readFileSync(credential,'utf8').trim();
+        if(credentialBytes.length<32||credentialBytes.length>256||
+            /[^\x21-\x7e]/.test(credentialBytes))
+            throw Error('Native learner delivery credential has an invalid format.');
+        const endpoint=new URL('/v1/bundles/'+frozen.collector_id,receiver);
+        const response=await fetch(endpoint,{
+            method:'GET',redirect:'error',
+            headers:{Authorization:'Bearer '+credentialBytes},
+            signal:AbortSignal.timeout(6000),
+        });
+        if(response.status===404)return false;
+        if(!response.ok)throw Error('Native learner delivery lookup failed: HTTP '+response.status);
+        let body='',size=0;
+        for await(const chunk of response.body) {
+            size+=chunk.length;
+            if(size>8192)throw Error('Native learner delivery response exceeds the bounded receipt.');
+            body+=Buffer.from(chunk).toString('utf8');
+        }
+        const accepted=JSON.parse(body);
+        const receiptFile=path.join(jobRoot(context),'rollout-bundle.json');
+        const bundleSha=sha256(fs.readFileSync(receiptFile));
+        if(!accepted||accepted.kind!=='native_bundle_received'||
+            accepted.collector_id!==frozen.collector_id||
+            accepted.bundle_sha256!==bundleSha||
+            !SHA.test(String(accepted.archive_sha256||''))||
+            !Number.isSafeInteger(accepted.archive_bytes)||
+            accepted.archive_bytes<1)
+            throw Error('Learner accepted a different or invalid native collection.');
+        const archive=path.join(scratch,
+            'native-collector-'+frozen.collection_id,frozen.bundle_directory+'.tar');
+        let stat;
+        try { stat=fs.lstatSync(archive); }
+        catch(error) {
+            if(error.code==='ENOENT')return false;
+            throw error;
+        }
+        if(!stat.isFile()||stat.isSymbolicLink()||
+            stat.size!==accepted.archive_bytes||
+            fs.realpathSync(archive)!==archive)
+            throw Error('Original native upload archive is unavailable or redirected.');
+        const hash=crypto.createHash('sha256');
+        for await(const chunk of fs.createReadStream(archive))hash.update(chunk);
+        if(hash.digest('hex')!==accepted.archive_sha256)
+            throw Error('Native upload archive differs from learner-accepted bytes.');
+
+        const proof={
+            schema_version:1,kind:'native_collector_upload_accepted',
+            hub_job_id:context.job_id,collector_id:frozen.collector_id,
+            collection_id:frozen.collection_id,
+            source_run_contract_sha256:frozen.source_run_contract_sha256,
+            bundle_sha256:bundleSha,archive_sha256:accepted.archive_sha256,
+            archive_bytes:accepted.archive_bytes,
+        };
+        const output=jobRoot(context);
+        const target=path.join(output,'delivery-acknowledgement.json');
+        const temporary=path.join(output,
+            '.delivery-acknowledgement-'+crypto.randomUUID()+'.pending');
+        let fd;
+        try {
+            fd=fs.openSync(temporary,'wx',0o600);
+            fs.writeFileSync(fd,JSON.stringify(proof)+'\n');
+            fs.fsyncSync(fd);
+        }finally {
+            if(fd!==undefined)fs.closeSync(fd);
+        }
+        try {
+            try { fs.linkSync(temporary,target); }
+            catch(error) {
+                if(error.code!=='EEXIST'||!verifiedLearnerDelivery(context))
+                    throw error;
+            }
+            if(process.platform!=='win32') {
+                const directory=fs.openSync(output,'r');
+                try { fs.fsyncSync(directory); }
+                finally { fs.closeSync(directory); }
+            }
+        }finally {
+            fs.unlinkSync(temporary);
+        }
+        return verifiedLearnerDelivery(context);
+    }
+
     function committedRolloutProgress(context) {
         const frozen=context?.frozen_parameters;
         if(!frozen||!SHA.test(String(frozen.collection_id||''))||
@@ -400,7 +495,7 @@ function createNativeBeesPortableCollectorAdapter({
         // bundle publication. The learner independently verifies all
         // captured bytes before admitting the same bundle for optimization.
         completion_ready(context) {
-            return verifiedLearnerDelivery(context);
+            return reconcileLearnerDelivery(context);
         },
         readProgress(context) {
             const completed=verifiedReceipt(context);
