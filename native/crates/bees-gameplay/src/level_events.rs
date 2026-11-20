@@ -16,7 +16,9 @@ use bees_sim::simulation::RandomStream;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
 use bees_sim::rl_discovery::DiscoveryKind;
 
-use crate::command_credit::{CommandCreditError, NativeCommandCreditLedger};
+use crate::command_credit::{
+    CommandCreditError, NativeCommandCreditLedger, NativeCommandCreditCheckpoint,
+};
 use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
     GameCommandError, NativeAggressiveCommandSnapshot,
@@ -36,11 +38,13 @@ use crate::episode::{
 };
 use crate::group_rewards::{
     GroupRewardError, GroupRewardEvent, GroupRewardMeasurements,
-    NativeGroupRewardDelivery,
+    NativeGroupRewardDelivery, NativeGroupRewardCheckpoint,
+    NativeGroupRewardRestoreError,
 };
 use crate::squads::{
     NativeSquadRoster, SquadEventBridgeError, SquadRosterChange,
     SquadRosterError, SquadRosterMeasurements,
+    NativeSquadRosterCheckpoint, SquadRosterRestoreError,
 };
 
 #[derive(Debug)]
@@ -261,6 +265,30 @@ impl NativeReinforcementArrivals {
     }
 }
 
+/// Recovery bundle for the event processor's three independently staged
+/// ownership ledgers. The outer Level must separately restore command
+/// timers, episode reward state, notification ACK cursors and all other
+/// event processing fields BEFORE resuming the single simulation.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeLevelEventRecoveryOwnersCheckpoint {
+    schema_version: u32,
+    next_tick: u64,
+    roster: NativeSquadRosterCheckpoint,
+    group_delivery: Option<NativeGroupRewardCheckpoint>,
+    credit: NativeCommandCreditCheckpoint,
+}
+
+#[derive(Debug)]
+pub enum NativeLevelEventRecoveryError {
+    InvalidVersion,
+    TickMismatch,
+    GroupModeMismatch,
+    Roster(SquadRosterRestoreError),
+    Group(NativeGroupRewardRestoreError),
+    Credit(CommandCreditError),
+}
+
 pub struct NativeLevelEventProcessor {
     roster: NativeSquadRoster,
     commands: NativeSquadCommandDirector,
@@ -305,6 +333,57 @@ pub struct NativeLevelEventProcessor {
 }
 
 impl NativeLevelEventProcessor {
+    /// One same-tick snapshot of roster, group participation and HiveMind
+    /// command credit. This is NOT a complete event/Level checkpoint: the
+    /// command director, episode rewards and unacknowledged outbox have
+    /// their own independent source lifecycle and must not be fabricated.
+    pub fn recovery_owners_checkpoint(&self)
+        -> NativeLevelEventRecoveryOwnersCheckpoint
+    {
+        NativeLevelEventRecoveryOwnersCheckpoint {
+            schema_version: 1,
+            next_tick: self.next_tick,
+            roster: self.roster.checkpoint(),
+            group_delivery: self.group_delivery.as_ref().map(|group| group.checkpoint()),
+            credit: self.credit.checkpoint(),
+        }
+    }
+
+    /// Stage all three independent ledgers before changing a live one.
+    /// Requiring the already-restored event clock to match the saved tick
+    /// prevents silently grafting a saved credit ledger or squad lifetime
+    /// onto a different command/outbox epoch.
+    pub fn restore_recovery_owners(
+        &mut self, checkpoint: NativeLevelEventRecoveryOwnersCheckpoint,
+        world: &CombatWorld, completed_ticks: u64,
+    ) -> Result<(), NativeLevelEventRecoveryError> {
+        use NativeLevelEventRecoveryError as Error;
+        if checkpoint.schema_version != 1 {
+            return Err(Error::InvalidVersion);
+        }
+        if completed_ticks.checked_add(1) != Some(checkpoint.next_tick) ||
+            self.next_tick != checkpoint.next_tick {
+            return Err(Error::TickMismatch);
+        }
+        let roster = NativeSquadRoster::prepare_restore(checkpoint.roster, world)
+            .map_err(Error::Roster)?;
+        let credit = NativeCommandCreditLedger::prepare_restore(checkpoint.credit)
+            .map_err(Error::Credit)?;
+        let group = match (self.group_delivery.as_ref(), checkpoint.group_delivery) {
+            (None, None) => None,
+            (Some(existing), Some(saved)) =>
+                Some(existing.prepare_restore(saved, completed_ticks)
+                    .map_err(Error::Group)?),
+            _ => return Err(Error::GroupModeMismatch),
+        };
+        // Infallible commit only after every authoritative ID and clock
+        // has passed preflight. Rejected snapshots change no live ledger.
+        self.roster = roster;
+        self.credit = credit;
+        self.group_delivery = group;
+        Ok(())
+    }
+
     pub fn new(episode: NativeEpisodeRewardCoordinator) -> Self {
         Self {
             roster: NativeSquadRoster::new(),
