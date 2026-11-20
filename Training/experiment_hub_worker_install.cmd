@@ -90,9 +90,6 @@ function Sync-Repo([string]$Name,[string]$Remote,[string]$Ref,[string]$SparseDir
 function Install-HubRelease([string]$Component,[string]$Name) {
     if($null -eq $Enrollment){throw 'Worker bootstrap must complete before downloading software.'}
     $destination=Join-Path $SourceRoot $Name
-    if(Test-Path -LiteralPath $destination){
-        throw "Refusing to overwrite existing worker source: $destination"
-    }
     $headers=@{ 'x-hub-agent-token'=[string]$Enrollment.agent_token }
     $base="http://$($HubTailnetIp):7149"
     $manifest=Invoke-RestMethod -Uri "$base/api/hub/agent/releases?machine_id=$MachineId" -Headers $headers
@@ -106,6 +103,17 @@ function Install-HubRelease([string]$Component,[string]$Name) {
         $hash -cnotmatch '^[0-9a-f]{64}$' -or $bytes -le 0 -or $bytes -gt 536870912){
         throw 'Invalid approved software release manifest.'
     }
+    # A rerun after a completed source extraction must not require cleanup.
+    if(Test-Path -LiteralPath $destination){
+        $marker=Join-Path $destination '.hub-release-version'
+        if((Test-Path -LiteralPath $marker -PathType Leaf) -and
+           ((Get-Content -LiteralPath $marker -Raw).Trim() -ceq [string]$entry.version)){
+            Write-Host "Resuming $Component from the previously installed release."
+            return $destination
+        }
+        throw "Refusing to overwrite unexpected worker source: $destination"
+    }
+    $staging=Join-Path $SourceRoot ('.'+$Name+'.staging-'+[guid]::NewGuid().ToString('N'))
     $archive=Join-Path $Private "$Component-source.tar"
     try {
         $bundle="$base/api/hub/agent/releases/bundle?machine_id=$MachineId&component=$Component&sha256=$hash"
@@ -123,25 +131,30 @@ function Install-HubRelease([string]$Component,[string]$Name) {
             @($details | Where-Object { $_ -match '^[lh]' }).Count -ne 0){
             throw 'Unsafe software release archive.'
         }
-        New-Item -ItemType Directory -Path $destination -Force | Out-Null
-        & tar.exe -xf $archive -C $destination
+        # Keep incomplete releases invisible to subsequent installer attempts.
+        New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
+        & tar.exe -xf $archive -C $staging
         Assert-Exit "Extract $Component release"
         if($Component -eq 'worker' -and
-            -not(Test-Path (Join-Path $destination 'Training\experiment_hub_agent.js'))){
+            -not(Test-Path (Join-Path $staging 'Training\experiment_hub_agent.js'))){
             throw 'Published Hub worker release has no agent entrypoint.'
         }
         if($Component -eq 'tinybrains' -and
-            -not(Test-Path (Join-Path $destination 'Ants-MAPOCA\pyproject.toml'))){
+            -not(Test-Path (Join-Path $staging 'Ants-MAPOCA\pyproject.toml'))){
             throw 'Published TinyBrains release has no simulation project.'
         }
         if($Component -eq 'courier' -and
-            -not(Test-Path (Join-Path $destination 'requirements.txt'))){
+            -not(Test-Path (Join-Path $staging 'requirements.txt'))){
             throw 'Published Courier release has no dependency contract.'
         }
         [IO.File]::WriteAllText(
-            (Join-Path $destination '.hub-release-version'),[string]$entry.version)
+            (Join-Path $staging '.hub-release-version'),[string]$entry.version)
+        Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop
     } finally {
         if(Test-Path -LiteralPath $archive){Remove-Item -LiteralPath $archive -Force}
+        if(Test-Path -LiteralPath $staging){
+            Remove-Item -LiteralPath $staging -Recurse -Force
+        }
     }
     return $destination
 }

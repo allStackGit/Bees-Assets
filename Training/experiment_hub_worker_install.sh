@@ -190,9 +190,7 @@ fi
 # Immutable SHA-256-checked archives come only from the Hub release publisher.
 # Worker GitHub credentials are never needed.
 install_release() {
-    local component=$1 dest=$2 manifest version sha bytes archive actual
-    [[ ! -e "$dest" ]] ||
-        { echo "Refusing to replace an existing source directory: $dest" >&2; return 1; }
+    local component=$1 dest=$2 manifest version sha bytes archive actual stage
     manifest=$(curl --noproxy '*' -fsS --max-time 30 \
         -H "x-hub-agent-token: $TOKEN" \
         "$HUB_URL/api/hub/agent/releases?machine_id=$MACHINE_ID")
@@ -209,6 +207,18 @@ install_release() {
     [[ "$version" =~ ^[0-9a-f]{40}$ && "$sha" =~ ^[0-9a-f]{64}$ &&
        "$bytes" =~ ^[0-9]+$ ]] ||
         { echo "Published $component release is unavailable." >&2; return 1; }
+    # An interrupted install may have already completed source extraction.
+    # Reuse only a completed directory matching the approved release.
+    if [[ -e "$dest" || -L "$dest" ]]; then
+        if [[ -d "$dest" && ! -L "$dest" &&
+              -f "$dest/.hub-release-version" &&
+              "$(cat "$dest/.hub-release-version")" == "$version" ]]; then
+            echo "Resuming $component from the previously installed release."
+            return 0
+        fi
+        echo "Refusing to replace unexpected source directory: $dest" >&2
+        return 1
+    fi
     archive="$PRIVATE/$component-$$.tar"
     curl --noproxy '*' -fsS --max-time 180 \
         -H "x-hub-agent-token: $TOKEN" \
@@ -221,10 +231,22 @@ install_release() {
         tar -tf "$archive" | grep -Eq '(^/|(^|/)\.\.(/|$)|\\|:)'; then
         rm -f "$archive"; echo "Unsafe release archive." >&2; return 1
     fi
-    mkdir -p "$dest"
-    tar -xf "$archive" -C "$dest"
-    printf '%s\n' "$version" > "$dest/.hub-release-version"
-    chmod 600 "$dest/.hub-release-version"
+    # Extract elsewhere, then publish the directory only after success.
+    # Interrupted extractions cannot block the next one-file attempt.
+    stage=$(mktemp -d "$SRC/.worker-release.XXXXXXXX")
+    if ! tar -xf "$archive" -C "$stage"; then
+        rm -rf -- "$stage"
+        rm -f -- "$archive"
+        echo "Failed to extract $component software release." >&2
+        return 1
+    fi
+    printf '%s\n' "$version" > "$stage/.hub-release-version"
+    chmod 600 "$stage/.hub-release-version"
+    if ! mv -- "$stage" "$dest"; then
+        rm -rf -- "$stage"
+        rm -f -- "$archive"
+        return 1
+    fi
     rm -f "$archive"
 }
 if [[ "$MODE" == install ]]; then
