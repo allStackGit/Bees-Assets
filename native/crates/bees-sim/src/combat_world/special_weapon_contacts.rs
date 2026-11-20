@@ -3,7 +3,7 @@
 use super::*;
 use super::weapon_ranges::{WeaponRangeContacts, refresh_circle_contacts};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativeSpecialWeaponSpec {
     pub weapon_id: i64,
     pub slot: usize,
@@ -16,15 +16,19 @@ pub struct NativeSpecialWeaponSpec {
     pub proximity: Option<NativeTurretRangeSpec>,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct SpecialWeaponContacts {
     spec: NativeSpecialWeaponSpec,
     charge: WeaponRangeContacts,
     proximity: WeaponRangeContacts,
     body: HashSet<i64>,
+    // Scratch rebuilt at the next physical overlap sweep.
+    #[serde(skip)]
     next_body: HashSet<i64>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct SpecialWeaponMeasurements {
     pub grid_rebuilds: u64,
     pub candidates: u64,
@@ -33,6 +37,23 @@ pub struct SpecialWeaponMeasurements {
     pub trigger_exits: u64,
     pub body_hull_tests: u64,
     pub body_entries: u64,
+}
+
+impl SpecialWeaponContacts {
+    pub(super) fn matches_source(&self, source: &Self) -> bool {
+        self.spec == source.spec
+    }
+
+    pub(super) fn valid_recovery(&self, ship_type: u8) -> bool {
+        self.spec.weapon_id > 0 && self.spec.slot < 5 &&
+        self.spec.power >= 0 && self.spec.mount_offset.is_finite() &&
+        self.spec.charge_range.is_none_or(|range| range.valid()) &&
+        self.spec.proximity.is_none_or(|range| range.valid()) &&
+        (ship_type == 0 && self.spec.charge_range.is_some() ||
+            ship_type != 0 && self.spec.proximity.is_some()) &&
+        self.charge.valid_recovery() && self.proximity.valid_recovery() &&
+        self.body.iter().all(|&id| id > 0)
+    }
 }
 
 impl CombatWorld {

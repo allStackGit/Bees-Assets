@@ -77,7 +77,7 @@ pub struct NativeTurretSpec {
 }
 
 /// The real authored child circle, relative to the turret piece origin and rotation.
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativeTurretRangeSpec {
     pub offset: Vec2,
     pub radius: f32,

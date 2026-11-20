@@ -876,6 +876,9 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     queen_measurements: QueenSpawnMeasurements,
     policy: CombatWorldPolicyCheckpoint,
     weapons: BTreeMap<i64, ShipWeapons>,
+    special_weapons: BTreeMap<i64, special_weapon_contacts::SpecialWeaponContacts>,
+    special_body_entries: Vec<(i64, i64)>,
+    special_weapon_measurements: SpecialWeaponMeasurements,
     pending_turret_shots: Vec<PendingTurretShot>,
     pending_weapon_range_exits: u64,
     asteroid_pools: CombatWorldAsteroidPoolCheckpoint,
@@ -1523,7 +1526,7 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 11,
+            schema_version: 12,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1540,6 +1543,9 @@ impl CombatWorld {
                 .collect(),
             queen_measurements: self.queen_spawn_measurements,
             weapons: self.ship_weapons.clone(),
+            special_weapons: self.special_weapons.clone(),
+            special_body_entries: self.special_body_entries.clone(),
+            special_weapon_measurements: self.special_weapon_measurements,
             pending_turret_shots: self.pending_turret_shots.clone(),
             pending_weapon_range_exits: self.pending_weapon_range_exits,
             policy: CombatWorldPolicyCheckpoint {
@@ -1631,7 +1637,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 11 {
+        if snapshot.schema_version != 12 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1814,6 +1820,24 @@ impl CombatWorld {
             !self.ship_by_id.contains_key(&pending.ship_id) ||
             !pending.valid_recovery(&self.projectile_assets)
         ) {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        // Bomb, Charge and proximity contact memory must continue from
+        // the original authored weapon, not a newly generated range.
+        if snapshot.special_weapons.len() != self.special_weapons.len() ||
+            snapshot.special_weapons.iter().any(|(&ship_id, contacts)| {
+                let Some(&index) = self.ship_by_id.get(&ship_id) else {
+                    return true;
+                };
+                !contacts.valid_recovery(snapshot.ships[index].ship_type) ||
+                self.special_weapons.get(&ship_id).is_none_or(|source|
+                    !contacts.matches_source(source)
+                )
+            }) ||
+            snapshot.special_body_entries.iter().any(|&(owner, target)|
+                target <= 0 || !snapshot.special_weapons.contains_key(&owner) ||
+                !self.ship_by_id.contains_key(&target)
+            ) {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let policy = &snapshot.policy;
@@ -2116,6 +2140,9 @@ impl CombatWorld {
         self.queen_spawn_measurements = snapshot.queen_measurements;
         self.queen_spawn_ids.clear();
         self.ship_weapons = snapshot.weapons;
+        self.special_weapons = snapshot.special_weapons;
+        self.special_body_entries = snapshot.special_body_entries;
+        self.special_weapon_measurements = snapshot.special_weapon_measurements;
         self.pending_turret_shots = snapshot.pending_turret_shots;
         self.pending_weapon_range_exits = snapshot.pending_weapon_range_exits;
         let policy = snapshot.policy;
