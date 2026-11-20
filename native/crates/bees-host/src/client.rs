@@ -482,7 +482,14 @@ impl NativeClient {
             self.held_fire_target = None;
         }
         self.renderer.selection.synchronize(&view);
-        let dialogue = view.campaign_dialogue.and_then(|(sequence, cue)| {
+        // Hot-seat changes only the local commander's view. A campaign's
+        // authored story belongs to its source player side, not whichever
+        // opposing commander is currently inspecting the shared World.
+        let dialogue_for_viewer = view.campaign_dialogue_side.is_none_or(|side|
+            view.player_authority.player_viewer_side() == Some(side));
+        let dialogue = view.campaign_dialogue
+            .filter(|_| dialogue_for_viewer)
+            .and_then(|(sequence, cue)| {
             if self.dialogue_sequence != Some(sequence) {
                 self.dialogue_sequence = Some(sequence);
                 self.dialogue_line = 0;
@@ -496,7 +503,14 @@ impl NativeClient {
             lines.get(self.dialogue_line).map(|&(speaker, line)| (cue, speaker, line))
         });
         self.dialogue_visible = dialogue.is_some();
-        let briefing = dialogue.is_some_and(|(cue, _, _)| cue.is_briefing());
+        // Hiding the owner's story from the opposite hot-seat must not
+        // advance the authoritative mission before the owner has read it.
+        let briefing = if dialogue_for_viewer {
+            dialogue.is_some_and(|(cue, _, _)| cue.is_briefing())
+        } else {
+            view.terminal_result.is_none() &&
+                view.campaign_dialogue.is_some_and(|(_, cue)| cue.is_briefing())
+        };
         if view.terminal_result.is_some() { self.held_fire_target = None; }
         self.bounds = bounds;
         if self.window.is_key_pressed(Key::Space, KeyRepeat::No) {
