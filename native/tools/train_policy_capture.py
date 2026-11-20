@@ -1464,7 +1464,14 @@ def main():
             "manifest": primary_manifest_sha,
             "trainer": file_sha256(args.config),
             "optimizer_group_id": args.learner_group_id,
+            "learner_nodes": args.learner_nodes,
+            "gpus_per_node": args.learner_gpus,
+            "collective_backend": torch.distributed.get_backend(),
             "learner_slot": args.learner_slot,
+            # A self-play opponent promotion is a group-level training
+            # decision. Different node flags must not share gradient work
+            # and then publish diverging manifests under one Hub bundle.
+            "refresh_opponent_slot": args.refresh_opponent_slot,
             "captures": [
                 (file_sha256(capture), file_sha256(journal), manifests[path][1])
                 for capture, journal, path in inputs
