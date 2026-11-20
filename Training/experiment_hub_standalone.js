@@ -54,6 +54,14 @@ function renderPage(html) {
         '<button type="button" id="hub-local-service-refresh">Refresh service status</button>'+
         '</div>'+
         '<p id="hub-local-service-message" class="hub-notice" role="status"></p>'+
+        '<h4>TinyBrains distributed collectors</h4>'+
+        '<p class="muted">Connect a fully installed, authenticated two-listener worker to the local TinyBrains learner. '+
+        'Uses the canonical private rollout key; preserves all existing jobs and refuses to reconfigure an active learner.</p>'+
+        '<div class="hub-controls">'+
+        '<select id="hub-local-tinybrains-worker" aria-label="TinyBrains collector machine"></select>'+
+        '<button type="button" id="hub-local-tinybrains-connect" disabled>Connect collector to Halifax learner</button>'+
+        '</div>'+
+        '<p id="hub-local-tinybrains-message" class="hub-notice" role="status"></p>'+
         '<h4>Independent evaluation services</h4>'+
         '<p class="muted">Set up missing frozen Nano/Micro suites and manage their timers here. '+
         'Starting a timer schedules evaluations; Run now requests one immediate evaluation. '+
@@ -163,6 +171,11 @@ function createAdminServer(hub,{html,ui,dataRoot,releases=null}={}) {
                     return json(res,400,{error:'Explicit restart confirmation required.'});
                 const request=await localServices.scheduleRestart(body.service,hub,res);
                 return json(res,202,request);
+            }
+            if(req.method==='POST'&&route==='/api/hub/local-services/tinybrains-collectors') {
+                const result=await localServices.configureTinyBrainsCollectors(hub,await readJson(req));
+                const requested=await localServices.scheduleRestart('agent',hub,res);
+                return json(res,202,{...result,restart_requested:requested.requested});
             }
             if(req.method==='POST'&&route==='/api/hub/local-services/evaluators') {
                 const body=await readJson(req);

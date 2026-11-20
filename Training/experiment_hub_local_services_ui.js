@@ -10,6 +10,9 @@
     const coordinator=$('hub-local-restart-coordinator');
     const agent=$('hub-local-restart-agent');
     const refresh=$('hub-local-service-refresh');
+    const tinyWorker=$('hub-local-tinybrains-worker');
+    const tinyConnect=$('hub-local-tinybrains-connect');
+    const tinyMessage=$('hub-local-tinybrains-message');
     const evaluatorRows=$('hub-local-evaluator-rows');
     const evaluatorSetup=$('hub-local-evaluator-setup');
     const courierSetup=$('hub-local-courier-evaluator-setup');
@@ -295,6 +298,21 @@
             state=data;
             renderEvaluators(data.evaluators);
             renderRemoteEvaluators(data.remote_evaluators);
+            const workerOptions=(data.tinybrains_collectors||[]);
+            if(tinyWorker) {
+                const former=tinyWorker.value;
+                tinyWorker.replaceChildren(...workerOptions.map(worker=>
+                    new Option(worker.name+' ('+worker.machine_id+')'+
+                        (worker.ready?' · 2 listeners ready':' · '+worker.reason),
+                        worker.machine_id)));
+                if(workerOptions.some(worker=>worker.machine_id===former))
+                    tinyWorker.value=former;
+            }
+            const selectedWorker=workerOptions.find(worker=>
+                worker.machine_id===tinyWorker?.value);
+            if(tinyConnect)tinyConnect.disabled=busy||
+                !selectedWorker?.ready||!data.agent.managed||
+                (data.agent_active_jobs??data.active_jobs)>0;
             const blocked=data.active_jobs>0;
             const localBlocked=(data.agent_active_jobs??data.active_jobs)>0;
             coordinator.disabled=busy||blocked||!data.coordinator.managed;
@@ -321,6 +339,7 @@
             if(courierSetup)courierSetup.disabled=true;
             coordinator.disabled=true;
             agent.disabled=true;
+            if(tinyConnect)tinyConnect.disabled=true;
             message.textContent='Could not reach coordinator: '+error.message;
         }
     }
@@ -352,6 +371,29 @@
             busy=false;
         }
     }
+    async function connectTinyBrains() {
+        if(!state||busy||!tinyWorker?.value||!tinyConnect||
+            tinyConnect.disabled)return;
+        const selected=(state.tinybrains_collectors||[])
+            .find(item=>item.machine_id===tinyWorker.value&&item.ready);
+        if(!selected||!confirm('Approve the two authenticated TinyBrains listeners on '+
+            selected.machine_id+' for Halifax learning, update its private agent configuration and restart ONLY the local agent? '+
+            'Native jobs on Halifax must be idle; this does not start training.'))return;
+        busy=true;tinyConnect.disabled=true;
+        try{
+            const response=await fetch('/api/hub/local-services/tinybrains-collectors',{
+                method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({machine_id:selected.machine_id,confirm_connect:true}),
+            });
+            const data=await response.json();
+            if(!response.ok)throw Error(data.error||'Collector configuration was rejected.');
+            tinyMessage.textContent=data.message+
+                (data.restart_requested?' Local agent restart requested.':'');
+            setTimeout(update,3000);setTimeout(update,9000);
+        }catch(error){tinyMessage.textContent='Collector setup: '+error.message;}
+        finally{busy=false;await update();}
+    }
+    if(tinyConnect)tinyConnect.addEventListener('click',connectTinyBrains);
     if(evaluatorSetup)evaluatorSetup.addEventListener('click',()=>manageEvaluator('setup'));
     if(courierSetup)courierSetup.addEventListener('click',()=>manageEvaluator('setup',undefined,'courier'));
     refresh.addEventListener('click',update);
