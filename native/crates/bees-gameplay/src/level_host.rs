@@ -877,9 +877,16 @@ impl NativeLevelBatchDriver {
         {
             return Err(fail(GameCommandError::InvalidSquad));
         }
-        apply_native_level_strategy_receipt(
+        let result = apply_native_level_strategy_receipt(
             world, receipt, &mut slot.activation,
-        )
+        );
+        // An accepted server command may change movement, targeting or
+        // command ownership before the next fixed simulation step. Its
+        // authoritative Level state must be visible to resident inference
+        // even when the decision boundary stays at the current tick.
+        // Invalidate on partial activation failures as well.
+        slot.perception.invalidate_environment();
+        result
     }
 
     /// Source-correct, allocation-free routing shared by the two HiveMind
@@ -1190,8 +1197,16 @@ impl NativeLevelBatchDriver {
                 &mut world.random, &mut self.worlds[world_index.expect("live owner")].activation.targeting,
             ).map_err(|error| failed(NativeTargetingApplicationError::Ranking(error)))?;
             let tick = world.tick();
-            world.state.events.install_targeting(tick, *owner, selection, selected_enemy)
-                .map_err(|error| failed(NativeTargetingApplicationError::Events(error)))?;
+            let installed = world.state.events.install_targeting(
+                tick, *owner, selection, selected_enemy,
+            );
+            // A successfully ranked enemy becomes the actual source
+            // target for the subsequent command. No stale observation or
+            // side registry may cross the same-tick network handoff.
+            self.worlds[world_index.expect("live owner")]
+                .perception.invalidate_environment();
+            installed.map_err(|error|
+                failed(NativeTargetingApplicationError::Events(error)))?;
             connection.retire_squad(*owner);
         }
         Ok(NativeLevelTargetingDelivery {

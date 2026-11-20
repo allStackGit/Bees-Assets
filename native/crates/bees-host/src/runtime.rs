@@ -1155,6 +1155,11 @@ where
         &mut self, index: usize, owner: SquadLifetime,
         members: &mut Vec<bees_sim::squad_movement::SquadFormationMember>,
     ) -> Result<bool, HostSourceCommandError> {
+        // Return-home is the same real movement mutation as a player
+        // command, but is issued on an external source timer. An inference
+        // boundary at this tick must see the updated navigation state.
+        self.driver.invalidate_environment(index)
+            .map_err(HostSourceCommandError::Driver)?;
         let world = self.simulation.world_mut(index)
             .expect("preflighted live world index");
         let state = &mut world.state;
