@@ -3453,14 +3453,26 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // In custom-fleet mode both source sides retain genuine player
     // permissions; the existing per-side token map authorizes their remote
     // orders, without inventing a scripted AI or a second lobby protocol.
-    let fleet = if custom_fleet {
+    let _generated_writer = if custom_fleet {
+        Some(battle_catalog::CampaignWriterLease::acquire(
+            &save_root.join("battles").join(&settings.game_id),
+        )?)
+    } else { None };
+    let generated_recovery = if custom_fleet {
+        recover_generated_library_battle(save_root, &settings.game_id, true)?
+    } else { None };
+    // A reconnect restores the same frozen fleet without asking the
+    // human to recreate it or replacing the original archived scenario.
+    let fleet = if custom_fleet && generated_recovery.is_none() {
         fleet_builder::choose_multiplayer()?
     } else { None };
-    if custom_fleet && fleet.is_none() { return Ok(()); }
+    if custom_fleet && generated_recovery.is_none() && fleet.is_none() {
+        return Ok(());
+    }
     // Keep one save writer for the entire child-host lifetime. The parent
     // selects an original checkpoint before launching the only gameplay
     // runtime; no second host may race its World or replay its inputs.
-    let quick_source = if campaign.is_none() && fleet.is_none() {
+    let quick_source = if campaign.is_none() && !custom_fleet {
         game_source.as_ref()
     } else { None };
     let _quick_writer = if quick_source.map(|source|
@@ -3478,17 +3490,27 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
             .arg("--output-dir").arg(career_root)
             .arg("--mission").arg(mission_id).arg("--serve");
     } else {
-        let output = if let Some(source) = quick_source {
-            select_library_quick_battle_output(save_root, &settings.game_id, source, true)?
-        } else {
-            new_library_battle_output(save_root, &settings.game_id)?
-        };
-        let source = if let Some(choice) = fleet {
+        let (source, output) = if let Some((source, output)) = generated_recovery {
+            println!("{}", json!({
+                "kind": "native_generated_battle_recovered",
+                "source": source, "run": output, "remote_host": true,
+            }));
+            (source, output)
+        } else if let Some(choice) = fleet {
+            let output = new_library_battle_output(save_root, &settings.game_id)?;
             let parent = output.parent().ok_or_else(||
                 invalid("custom multiplayer fleet has no archive directory"))?;
-            fleet_builder::archive(parent, choice)?
+            let source = fleet_builder::archive(parent, choice)?;
+            let start = QuickBattleStart::capture(&source, true)?
+                .ok_or_else(|| invalid("generated multiplayer fleet has no native recovery"))?;
+            save_native_quick_battle_start(&output, &start)?;
+            (source, output)
         } else {
-            game_source.expect("validated static or trained multiplayer source")
+            let source = game_source.expect("validated static or trained multiplayer source");
+            let output = select_library_quick_battle_output(
+                save_root, &settings.game_id, &source, true,
+            )?;
+            (source, output)
         };
         launch.arg("play").arg(source).arg("--output-dir").arg(output);
     }
@@ -3698,6 +3720,19 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         }));
         let result: Result<(), Box<dyn Error>> = if creating_fleet {
             (|| {
+                let _writer = battle_catalog::CampaignWriterLease::acquire(
+                    &save_root.join("battles").join(fleet_builder::GAME_ID),
+                )?;
+                if let Some((source, output)) = recover_generated_library_battle(
+                    save_root, fleet_builder::GAME_ID, false,
+                )? {
+                    println!("{}", json!({
+                        "kind": "native_generated_battle_recovered",
+                        "source": source, "run": output, "remote_host": false,
+                    }));
+                    return run_session(&source, true, true,
+                        Some(output), None, None, None);
+                }
                 let Some(choice) = fleet_builder::choose()? else {
                     return Ok::<(), Box<dyn Error>>(());
                 };
@@ -3705,6 +3740,9 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 let parent = output.parent().ok_or_else(||
                     invalid("custom skirmish has no archive directory"))?;
                 let source = fleet_builder::archive(parent, choice)?;
+                let start = QuickBattleStart::capture(&source, false)?
+                    .ok_or_else(|| invalid("generated playable fleet has no native recovery"))?;
+                save_native_quick_battle_start(&output, &start)?;
                 println!("{}", json!({
                     "kind": "native_fleet_skirmish_ready",
                     "source": source,
@@ -3793,6 +3831,19 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             // AI-vs-AI rollout, or become a human opponent on either
             // physical side without a training-only alternative game.
             (|| {
+                let _writer = battle_catalog::CampaignWriterLease::acquire(
+                    &save_root.join("battles").join(game_id),
+                )?;
+                if let Some((source, output)) = recover_generated_library_battle(
+                    save_root, game_id, false,
+                )? {
+                    println!("{}", json!({
+                        "kind": "native_generated_battle_recovered",
+                        "source": source, "run": output, "remote_host": false,
+                    }));
+                    return run_session(&source, true, true,
+                        Some(output), None, None, None);
+                }
                 let choices = [
                     BattleMenuRow {
                         title: "Fight trained policy as Bees (side 1)",
@@ -3843,6 +3894,9 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     // original episode, not a whole trainer world pool.
                     trained[trained_index].archive_playable(parent, level_index)?
                 };
+                let start = QuickBattleStart::capture(&source, false)?
+                    .ok_or_else(|| invalid("archived trained game has no native recovery"))?;
+                save_native_quick_battle_start(&output, &start)?;
                 println!("{}", json!({
                     "kind": "native_trained_game_mode",
                     "game_id": game_id,
