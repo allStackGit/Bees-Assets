@@ -1852,11 +1852,13 @@ fn launch_catalog_battle(
         .filter(|mission| mission.persist_fleet_losses)
         .map(|mission| progress.lost_player_fleet_ids(mission.player_side))
         .transpose()?;
-    if let (Some(purchased), Some(lost)) = (purchased.as_mut(), lost.as_ref()) {
-        // Previously bought but destroyed hulls stay in the account
-        // ledger, not the next game's entity pool.
-        purchased.retain(|ship| !lost.contains(&ship.fleet_ship_id) &&
-            ship.saved_squad_id > 0);
+    if let Some(purchased) = purchased.as_mut() {
+        // Reserve hulls always stay in the career ledger, never in the
+        // physical Level. Permanent casualties are excluded only when
+        // the authored mission enables their persistence, exactly as in
+        // the native fleet preflight.
+        purchased.retain(|ship| ship.saved_squad_id > 0 &&
+            lost.as_ref().is_none_or(|dead| !dead.contains(&ship.fleet_ship_id)));
     }
     if let (Some(authored), Some(lost)) = (authored.as_mut(), lost.as_ref()) {
         // A historical saved-squad transfer remains in the audit ledger
