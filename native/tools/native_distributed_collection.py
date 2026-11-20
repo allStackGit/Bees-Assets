@@ -25,6 +25,7 @@ from native_mission_contract import (
 
 COLLECTOR_ID = re.compile(r"[A-Za-z0-9_-]{1,48}\Z")
 HUB_JOB_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
+HUB_MACHINE_ID = re.compile(r"[a-z][a-z0-9_-]{0,47}\Z")
 
 
 def read_plan(path):
@@ -54,6 +55,7 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
             not len(entries) <= total_worlds <= len(entries) * 1024):
         raise ValueError("Hub resource plan requires 2..16 machines and 1..1024 worlds per machine")
     seen = set()
+    machines = set()
     cpus = []
     gpu_minima = []
     gpu_counts = []
@@ -63,9 +65,12 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
                 not COLLECTOR_ID.fullmatch(entry["id"]) or
                 entry["id"] in seen or
                 not isinstance(entry.get("machine_id"), str) or
+                not HUB_MACHINE_ID.fullmatch(entry["machine_id"]) or
+                entry["machine_id"] in machines or
                 not isinstance(entry.get("resources"), dict)):
             raise ValueError("Hub source plan needs distinct issued collector and machine IDs")
         seen.add(entry["id"])
+        machines.add(entry["machine_id"])
         cpu = entry["resources"].get("cpus")
         if type(cpu) is not int or not 1 <= cpu <= 32768:
             raise ValueError("Hub CPU resources must be positive finite quotas")
