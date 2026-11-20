@@ -6,6 +6,7 @@ module owns only frozen reference-model selection and source-result proof.
 """
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -74,19 +75,41 @@ def read_suite(source):
         not isinstance(levels, list) or not levels or
         count * len(levels) != raw["trials"]):
         raise ValueError("Native evaluation trials disagree with its authored physical Levels.")
-    # Suite fingerprints describe the SAME work across Windows and Linux.
-    # Source and reference paths belong to this trusted machine installation.
+    # Raw manifest/source hashes validate machine-local installation bytes.
+    # They may differ due to paths and line endings across Windows/Linux;
+    # the immutable cross-machine comparison identity is instead the native
+    # physical source contract and the reference model contents/ABI.
+    reference_models = json.loads(read_bounded(reference, 1024 * 1024))
+    entries = reference_models.get("models") if isinstance(reference_models, dict) else None
+    if not isinstance(entries, list) or not entries or any(
+        not isinstance(model, dict) or "path" not in model or
+        not isinstance(model.get("sha256"), str) or
+        not SHA256.fullmatch(model["sha256"]) for model in entries
+    ):
+        raise ValueError("Fixed native reference manifest has no pinned model entries.")
+    portable = copy.deepcopy(reference_models)
+    for model in portable["models"]:
+        del model["path"]
+    reference_identity = hashlib.sha256(
+        json.dumps(portable, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     definition = {key: value for key, value in raw.items()
-                  if key not in ("source_run_config", "reference_manifest")}
-    return definition, {"source": run, "reference": reference}
+                  if key not in ("source_run_config", "reference_manifest",
+                                 "source_run_config_sha256", "reference_manifest_sha256")}
+    definition["reference_policy_sha256"] = reference_identity
+    return definition, {
+        "source": run, "reference": reference,
+        "source_sha256": raw["source_run_config_sha256"],
+        "reference_sha256": raw["reference_manifest_sha256"],
+    }
 
 
 def fixed_reference_manifest(checkpoint, digest, installed, definition, workspace):
     """Use the exact learner model and fixed ORIGINAL opponent model slots."""
     source = installed["source"]
     reference_file = installed["reference"]
-    pinned_file(source, definition["source_run_config_sha256"])
-    pinned_file(reference_file, definition["reference_manifest_sha256"])
+    pinned_file(source, installed["source_sha256"])
+    pinned_file(reference_file, installed["reference_sha256"])
     if native_source_contract_sha256(source) != definition["source_contract_sha256"]:
         raise ValueError("Native evaluation source scene or policy worker changed.")
     if file_sha256(checkpoint) != digest:
@@ -155,13 +178,13 @@ def evaluate_checkpoint(job, checkpoint, digest, work, suite, installed, binary)
     successes = report.get(suite["success_metric"])
     if (published != report or report.get("episodes") != suite["trials"] or
         report.get("model_manifest_sha256") != file_sha256(manifest) or
-        report.get("source_run_config_sha256") != suite["source_run_config_sha256"] or
+        report.get("source_run_config_sha256") != installed["source_sha256"] or
         report.get("policy_sampling_seed") != suite["policy_seed"] or
         report.get("learner_side") != suite["learner_side"] or
         type(successes) is not int or not 0 <= successes <= suite["trials"]):
         raise ValueError("Native physical evaluation does not prove the pinned suite result.")
-    pinned_file(installed["source"], suite["source_run_config_sha256"])
-    pinned_file(installed["reference"], suite["reference_manifest_sha256"])
+    pinned_file(installed["source"], installed["source_sha256"])
+    pinned_file(installed["reference"], installed["reference_sha256"])
     if (native_source_contract_sha256(installed["source"]) != suite["source_contract_sha256"] or
         file_sha256(installed["candidate_manifest"]) != candidate_sha or
         file_sha256(binary) != binary_sha):
