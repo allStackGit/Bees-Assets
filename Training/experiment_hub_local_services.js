@@ -116,9 +116,13 @@ async function status(hub) {
     const localId=await enrolledLocalAgentMachine(hub);
     const remoteMachines=snapshot.machines.filter(machine=>
         machine.id!==localId&&
-        (machine.evaluator_services?.length||machine.evaluator_service_issue)).map(machine=>({
+        (machine.evaluator_services?.length||machine.evaluator_service_issue||
+            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.installed_projects?.some(project=>['tinybrains','courier'].includes(project)))).map(machine=>({
         id:machine.id,name:machine.name,status:machine.status,
         platform:machine.agent_platform||null,
+        installed_projects:(machine.installed_projects||[]).filter(project=>
+            ['tinybrains','courier'].includes(project)),
         issue:machine.evaluator_service_issue||null,
         services:(machine.evaluator_services||[]).map(entry=>({...entry})),
     }));
