@@ -794,16 +794,37 @@ function comparableCandidate(job) {
 function verifiedOptimizerCompletion(job,raw,state) {
     if(raw==null)return null;
     const bundle=job?.resource_bundle;
+    const keys=['group_id','node_rank','node_count','input_sha256',
+        'model_consensus_sha256',
+        ...(raw?.learner_work!==undefined?['learner_work']:[])];
     if(state!=='finished'||job?.frozen_parameters?.optimizer_group!==true||
         !bundle||!object(raw)||
-        Object.keys(raw).sort().join(',')!==
-            ['group_id','node_rank','node_count','input_sha256',
-                'model_consensus_sha256'].sort().join(',')||
+        Object.keys(raw).sort().join(',')!==keys.sort().join(',')||
         raw.group_id!==bundle.id||
         raw.node_rank!==bundle.index-1||raw.node_count!==bundle.size||
         !SHA256.test(String(raw.input_sha256||''))||
         !SHA256.test(String(raw.model_consensus_sha256||'')))
         throw Error('Native optimizer completion differs from its frozen Hub owner and verified collective.');
+    if(raw.learner_work!==undefined) {
+        const work=raw.learner_work;
+        const fields=['optimizer_input_steps','learner_wall_seconds',
+            'trajectory_processing_wall_seconds','optimizer_update_wall_seconds',
+            'learner_process_cpu_seconds','synchronized_minibatches'];
+        if(bundle.index!==1||!object(work)||
+            Object.keys(work).sort().join(',')!==fields.sort().join(',')||
+            !Number.isSafeInteger(work.optimizer_input_steps)||
+            work.optimizer_input_steps<1||
+            !Number.isSafeInteger(work.synchronized_minibatches)||
+            work.synchronized_minibatches<1||
+            fields.slice(1,5).some(name=>
+                typeof work[name]!=='number'||!Number.isFinite(work[name])||
+                work[name]<0||work[name]>1e12)||
+            work.learner_wall_seconds<=0||
+            work.optimizer_update_wall_seconds<=0||
+            work.trajectory_processing_wall_seconds+
+                work.optimizer_update_wall_seconds>work.learner_wall_seconds+0.01)
+            throw Error('Native publishing learner measurements differ from its synchronized completion.');
+    }
     return copy(raw);
 }
 
