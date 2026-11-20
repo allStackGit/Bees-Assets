@@ -3400,7 +3400,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 (Number.isFinite(live.cpu_cores_used)
                     ?' · '+live.cpu_cores_used.toFixed(2)+' average CPU cores':'')
                 :'';
-            const lineage=j.continuation_of_job_id
+            const lineage=j.collector_replacement_of_job_id
+                ?' · Replaces failed native collector '+
+                    j.collector_replacement_of_job_id.slice(-8)+
+                    ' on original machine with a new Hub lease'
+                :j.continuation_of_job_id
                 ?' · Resumes '+(state.jobs.find(p=>
                     p.id===j.continuation_of_job_id)?.configuration_name||
                     'prior experiment')+' on original machine'
