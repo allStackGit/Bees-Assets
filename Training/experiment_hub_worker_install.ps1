@@ -222,6 +222,25 @@ Private-Permissions $InstallRoot
 Service-Permissions $NativeRoot
 Service-Permissions $ServiceState
 Service-Permissions $CacheRoot
+# The Windows service must not depend on a Python installed only inside the
+# interactive administrator's user profile. Keep a pinned interpreter and
+# virtual environments under this protected machine-local installation root.
+$managedTools=Join-Path $InstallRoot 'Tooling'
+$uvSource=Join-Path $managedTools 'uv'
+$pythonRoot=Join-Path $managedTools 'Python'
+New-Item -ItemType Directory -Path $uvSource,$pythonRoot -Force | Out-Null
+if(-not (Test-Path (Join-Path $uvSource 'uv\__main__.py'))){
+    & (Tool 'py.exe') -3.11 -m pip install --disable-pip-version-check --target $uvSource 'uv==0.13.6'
+    Assert-Exit 'Install pinned uv bootstrap'
+}
+$env:PYTHONPATH=$uvSource
+& (Tool 'py.exe') -3.11 -m uv python install 3.11.18 --install-dir $pythonRoot --no-bin
+Assert-Exit 'Install pinned Python for LocalService'
+$managedCandidates=@(Get-ChildItem -LiteralPath $pythonRoot -Directory |
+    Where-Object { $_.Name -like 'cpython-3.11*windows-x86_64-none' })
+if($managedCandidates.Count -ne 1){throw 'Expected exactly one pinned Python 3.11 runtime.'}
+$managedPython=Join-Path $managedCandidates[0].FullName 'python.exe'
+if(-not(Test-Path $managedPython)){throw 'Pinned machine-local Python is missing.'}
 $assets=Sync-Repo 'Bees-Assets' 'https://github.com/allStackGit/Bees-Assets.git' $Branch 'Training'
 $Training=Join-Path $assets 'Training'
 $selected=$Projects.Split(',')
@@ -238,14 +257,16 @@ if('tinybrains' -in $selected){
     Service-Permissions $engineCache
     Install-TinyBrainsEngine $TinyBrainsRoot
     $tbEnv=Join-Path $VenvRoot 'tinybrains'
-    & (Tool 'py.exe') -3.11 -m venv $tbEnv
-    Assert-Exit 'Create TinyBrains virtual environment'
+    & (Tool 'py.exe') -3.11 -m uv venv --python $managedPython $tbEnv
+    Assert-Exit 'Create TinyBrains isolated Python 3.11 environment'
     $tbPython=Join-Path $tbEnv 'Scripts\python.exe'
-    & $tbPython -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu 'torch==2.6.0'
+    & (Tool 'py.exe') -3.11 -m uv pip install --python $tbPython `
+        --index-url https://download.pytorch.org/whl/cpu 'torch==2.6.0'
     Assert-Exit 'Install TinyBrains CPU PyTorch'
-    & $tbPython -m pip install --disable-pip-version-check -r (Join-Path $TinyBrainsRoot 'requirements-lock.txt')
+    & (Tool 'py.exe') -3.11 -m uv pip install --python $tbPython `
+        -r (Join-Path $TinyBrainsRoot 'requirements-lock.txt')
     Assert-Exit 'Install pinned TinyBrains Python packages'
-    & $tbPython -m pip install --disable-pip-version-check --no-deps `
+    & (Tool 'py.exe') -3.11 -m uv pip install --python $tbPython --no-deps `
         -e (Join-Path $TinyBrainsRoot 'upstream\ants\baselines') -e $TinyBrainsRoot
     Assert-Exit 'Install official TinyBrains baseline and runtime'
     Push-Location $TinyBrainsRoot
@@ -260,10 +281,11 @@ if('courier' -in $selected){
     }
     if(-not(Test-Path (Join-Path $CourierRoot 'requirements.txt'))){throw 'Courier project root missing.'}
     $courierEnv=Join-Path $VenvRoot 'courier'
-    & (Tool 'py.exe') -3.11 -m venv $courierEnv
-    Assert-Exit 'Create Courier virtual environment'
+    & (Tool 'py.exe') -3.11 -m uv venv --python $managedPython $courierEnv
+    Assert-Exit 'Create Courier isolated Python 3.11 environment'
     $courierPython=Join-Path $courierEnv 'Scripts\python.exe'
-    & $courierPython -m pip install --disable-pip-version-check -r (Join-Path $CourierRoot 'requirements.txt')
+    & (Tool 'py.exe') -3.11 -m uv pip install --python $courierPython `
+        -r (Join-Path $CourierRoot 'requirements.txt')
     Assert-Exit 'Install Courier CPU dependencies'
     Push-Location $CourierRoot
     try {
