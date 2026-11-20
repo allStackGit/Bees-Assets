@@ -2690,8 +2690,9 @@ fn run_campaign_mission(
 fn authored_menu_fleet(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>,
-) -> Vec<(i32, i64, i64)> {
+) -> (Vec<(i32, i64, i64)>, Vec<(i32, i64)>) {
     let mut listed = Vec::new();
+    let mut squads = HashSet::new();
     let mut seen_fleet = HashSet::new();
     let upcoming_sides = catalog.battles.iter().filter_map(|entry|
         entry.mission.as_ref().filter(|mission|
@@ -2709,6 +2710,10 @@ fn authored_menu_fleet(
             if squad.side != mission.player_side ||
                 !squad.player_permissions.user_controlled
             { continue; }
+            // Empty source squads still exist as persistent player-owned
+            // formation destinations. Their lack of an editable FleetShip
+            // must not hide them from between-mission fleet management.
+            squads.insert((mission.player_side, saved_squad_id));
             for &entity_id in &squad.members {
                 let Some(ship) = scene.entities.iter().find_map(|entity| match entity {
                     NativeAuthoredEntity::Ship(ship) if ship.entity_id == entity_id =>
@@ -2726,7 +2731,9 @@ fn authored_menu_fleet(
         }
     }
     listed.sort_unstable();
-    listed
+    let mut squads = squads.into_iter().collect::<Vec<_>>();
+    squads.sort_unstable();
+    (listed, squads)
 }
 
 #[cfg(feature = "client")]
@@ -3375,7 +3382,8 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
             break;
         }
-        let original_choices = authored_menu_fleet(&catalog, root, &progress);
+        let (original_choices, authored_squads) =
+            authored_menu_fleet(&catalog, root, &progress);
         for &(side, fleet_id, original_squad) in &original_choices {
             let current_squad = progress.authored_current_squad(fleet_id)
                 .unwrap_or(original_squad);
@@ -3393,7 +3401,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             let mut destinations = progress.saved_squad_ids_for_side(side);
             // Before the first battle there are no saved career receipts,
             // but the native authored scene already names its SavedSquads.
-            destinations.extend(original_choices.iter().filter_map(|&(owner, _, squad)|
+            destinations.extend(authored_squads.iter().filter_map(|&(owner, squad)|
                 (owner == side).then_some(squad)));
             destinations.sort_unstable();
             destinations.dedup();
@@ -3417,8 +3425,8 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
         }
         let mut templates = HashSet::new();
-        for &(side, _, original_squad) in &original_choices {
-            templates.insert((side, original_squad));
+        for &(side, saved_squad_id) in &authored_squads {
+            templates.insert((side, saved_squad_id));
         }
         for entry in &catalog.battles {
             if let Some(mission) = &entry.mission {
