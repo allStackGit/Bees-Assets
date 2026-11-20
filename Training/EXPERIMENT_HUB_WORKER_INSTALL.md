@@ -92,19 +92,25 @@ or overwrite keys already in use.
 
 ## Windows worker (for example, Exeter)
 
-Save only `Training/experiment_hub_worker_install.ps1` from this branch
-or run it from an approved checkout. In **elevated PowerShell**:
+Save the **single** `Training/experiment_hub_worker_install.cmd` file from
+this branch; no separate `.ps1` is needed. Open **PowerShell as Administrator**
+and run it. The CMD launcher extracts its embedded PowerShell script, checks
+its syntax, and uses a process-scoped execution-policy bypass without changing
+Windows security settings:
 
 ```powershell
-.\experiment_hub_worker_install.ps1 -Command install `
+.\experiment_hub_worker_install.cmd -Command install `
   -Projects 'tinybrains,courier' -InstallRoot 'B:\HubWorker' `
   -MachineId 'exeter' -HubTailnetIp '100.97.43.98' `
   -TinyBrainsKeyFile 'B:\Private\tinybrains-rollout.key' `
   -CourierKeyFile 'B:\Private\courier-rollout.key' -Start
 ```
 
-The installer obtains the Hub and training sources using authorized GitHub
-access. It provisions Python 3.11, Node 22+, .NET 8, separate project runtimes,
+The installer checks the selected machine and existing private rollout key
+files before provisioning. It installs missing prerequisites (including
+Tailscale), offers the one-time Tailscale sign-in, then obtains the Hub and
+training sources using authorized GitHub access. It provisions Python 3.11,
+Node 22+, .NET 8, separate project runtimes,
 and the native Windows LocalService Job Object owner. It does not install
 OpenSSH or create an SSH tunnel. Service installation is manual-start
 unless `-Start` is supplied. Existing owned jobs must finish or be reconciled
