@@ -102,7 +102,8 @@ function Install-HubRelease([string]$Component,[string]$Name) {
     }
     $hash=[string]$entry.sha256
     $bytes=[long]$entry.bytes
-    if($hash -cnotmatch '^[0-9a-f]{64}$' -or $bytes -le 0 -or $bytes -gt 536870912){
+    if([string]$entry.version -cnotmatch '^[0-9a-f]{40}$' -or
+        $hash -cnotmatch '^[0-9a-f]{64}$' -or $bytes -le 0 -or $bytes -gt 536870912){
         throw 'Invalid approved software release manifest.'
     }
     $archive=Join-Path $Private "$Component-source.tar"
@@ -137,6 +138,8 @@ function Install-HubRelease([string]$Component,[string]$Name) {
             -not(Test-Path (Join-Path $destination 'requirements.txt'))){
             throw 'Published Courier release has no dependency contract.'
         }
+        [IO.File]::WriteAllText(
+            (Join-Path $destination '.hub-release-version'),[string]$entry.version)
     } finally {
         if(Test-Path -LiteralPath $archive){Remove-Item -LiteralPath $archive -Force}
     }
