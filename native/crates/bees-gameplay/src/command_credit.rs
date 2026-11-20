@@ -91,8 +91,10 @@ impl FinishedCommandCheckpoint {
                 outcome_id,
             })
         }).transpose()?;
-        if !self.owner.valid() ||
-            (self.targeting_targeted_enemy && targeting.is_none()) {
+        // Targeting eligibility is a property of the executed command,
+        // not proof that a HiveMind targeting reservation was issued.
+        // Locally selected enemies can legitimately have no such selection.
+        if !self.owner.valid() {
             return Err(CommandCreditError::InvalidCheckpoint);
         }
         let selection = NativeCommandSelection::from_checkpoint(self.selection)
