@@ -17,12 +17,16 @@ const ROCM_UUID = /^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{
 const CUDA_UUID = /^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const sha256 = data => crypto.createHash('sha256').update(data).digest('hex');
 
-function trustedFile(file) {
+function trustedFile(file,{preserveInvocation=false}={}) {
     if (typeof file !== 'string' || !path.isAbsolute(file))
         throw Error('Native Bees requires absolute machine-local file paths.');
     const resolved = fs.realpathSync(file);
     if (!fs.statSync(resolved).isFile()) throw Error('Native Bees input is not a file.');
-    return resolved;
+    // A Python venv may expose bin/python as a symlink to a system binary.
+    // Executing the resolved target bypasses the venv's interpreter prefix
+    // and can load the wrong Torch/MA-POCA packages. Preserve only its
+    // approved invocation path; source, model and script pins stay canonical.
+    return preserveInvocation ? path.resolve(file) : resolved;
 }
 
 // The Hub job config owns the whole executable training task, not just the
@@ -706,7 +710,7 @@ function createNativeBeesAdapter({
         distributedOptimizer?.role === 'worker' ? 'bees_native_optimizer_worker' : PROJECT;
     if (collectOnly && (evaluationRoot != null || evaluationSuites != null))
         throw Error('Native Bees collection-only jobs cannot own learner evaluations.');
-    const executable = trustedFile(pythonPath);
+    const executable = trustedFile(pythonPath,{preserveInvocation:true});
     const run = trustedFile(runConfig);
     const trainer = trustedFile(trainerConfig);
     const input = trustedFile(checkpoint);
@@ -806,7 +810,8 @@ function createNativeBeesAdapter({
     const binary = bundleRound ? null : trustedFile(rolloutBinary);
     if (config.hivemind != null || config.recover_notifications?.length ||
         config.recover_outcome_journals?.length || config.model_updates?.length ||
-        !path.isAbsolute(config.python || '') || trustedFile(config.python) !== executable ||
+        !path.isAbsolute(config.python || '') ||
+        trustedFile(config.python,{preserveInvocation:true}) !== executable ||
         typeof config.model_manifest !== 'string' || !config.model_manifest)
         throw Error('Native Bees Hub runs require a model-only template and the installed interpreter.');
     const manifest = trustedFile(path.resolve(path.dirname(run), config.model_manifest));
