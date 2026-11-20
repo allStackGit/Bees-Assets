@@ -291,12 +291,19 @@ async function refreshSuite(hub,id) {
         '-B',path.join(o.hubRoot,'Training/experiment_hub_evaluation_runtime.py'),
         '--project','tinybrains','--engine-path',o.engine,
     ],{timeout:90000,maxBuffer:1024*1024});
-    const digest=JSON.parse(stdout).runtime_sha256;
-    if(typeof digest!=='string'||!/^[a-f0-9]{64}$/.test(digest))
-        throw Error('The installed TinyBrains evaluator runtime returned no valid digest.');
+    const report=JSON.parse(stdout),digest=report.runtime_sha256;
+    const modelSha=report.runtime?.files?.[id+'/model.onnx'];
+    const manifestSha=report.runtime?.files?.[id+'/manifest.json'];
+    if([digest,modelSha,manifestSha].some(value=>
+        typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value)))
+        throw Error('The installed TinyBrains runtime returned incomplete opponent fingerprints.');
     const oldSuite=JSON.parse(fs.readFileSync(suiteFiles(o)[id],'utf8'));
-    if(oldSuite.runtime_sha256===digest)
-        return {message:id+' suite is already pinned to this runtime.'};
+    if(oldSuite.opponent!==id)
+        throw Error('Frozen TinyBrains evaluator suite has a different opponent.');
+    if(oldSuite.runtime_sha256===digest&&
+        oldSuite.opponent_model_sha256===modelSha&&
+        oldSuite.opponent_manifest_sha256===manifestSha)
+        return {message:id+' suite is already pinned to this runtime and opponent.'};
     const pattern=new RegExp('^tinybrains_'+id+'_tiny_v((?:[3-9]|[1-9][0-9]{1,2}))\\.json$');
     const versions=fs.readdirSync(o.suites).map(name=>pattern.exec(name))
         .filter(Boolean).map(match=>Number(match[1]));
@@ -317,6 +324,8 @@ async function refreshSuite(hub,id) {
         // schedule changes, after explicit operator confirmation.
         fs.writeFileSync(suiteFile,JSON.stringify({
             ...oldSuite,suite_id:name,runtime_sha256:digest,
+            opponent_model_sha256:modelSha,
+            opponent_manifest_sha256:manifestSha,
         },null,2)+'\n',{flag:'wx',mode:0o600});
         const next=evaluatorDefinition({
             project:'tinybrains',machine:o.machine,
