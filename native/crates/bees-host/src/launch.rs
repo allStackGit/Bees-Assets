@@ -2275,6 +2275,76 @@ fn save_native_quick_battle_start(
     Ok(())
 }
 
+/// Locate the one still-live authoritative campaign World while the
+/// caller holds the exclusive campaign writer lease. A completed receipt
+/// is independently final: reconcile its replay footer without consulting
+/// today's source scene or current career. An unfinished World must retain
+/// its frozen start, even when another mission is selected.
+fn interrupted_campaign_world(
+    output_root: &Path, campaign_id: &str,
+) -> Result<Option<(PathBuf, CampaignReplaySetup)>, Box<dyn Error>> {
+    let entries = match fs::read_dir(output_root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let mut pending = None;
+    for entry in entries {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() { continue; }
+        let name = entry.file_name();
+        let Some(number) = name.to_str()
+            .and_then(|name| name.strip_prefix("battle-"))
+            .filter(|value| !value.is_empty() &&
+                value.bytes().all(|ch| ch.is_ascii_digit()))
+        else { continue };
+        if number.parse::<u64>().is_err() { continue; }
+        let root = entry.path();
+        let run = root.join("run");
+        let saved = root.join("campaign-replay-setup.json");
+        let checkpoint = run.join("native-host-checkpoint.json");
+        if !checkpoint.is_file() { continue; }
+        if run.is_symlink() || checkpoint.is_symlink() ||
+            saved.is_symlink() || !saved.is_file()
+        {
+            return Err(invalid(
+                "interrupted campaign World has no owned immutable start snapshot",
+            ).into());
+        }
+        // First read only start identity, before validating the source.
+        // The original authored scene may have changed after a completed
+        // mission, but its committed result still owns career progression.
+        let identity: CampaignReplaySetup =
+            serde_json::from_slice(&fs::read(&saved)?)?;
+        if identity.campaign_id != campaign_id { continue; }
+        if terminal_recording::complete_committed_recording(&run)? { continue; }
+        let frozen = CampaignReplaySetup::load(&saved)?;
+        if pending.replace((run, frozen)).is_some() {
+            return Err(invalid(
+                "multiple interrupted Worlds claim the same native campaign",
+            ).into());
+        }
+    }
+    Ok(pending)
+}
+
+/// Fleet edits must not advance the saved career while an earlier mission
+/// still owns an unfinished physical World. A file lease alone prevents
+/// simultaneous writers but cannot protect the interval after a crash.
+fn ensure_no_interrupted_campaign_edit(
+    catalog: &battle_catalog::BattleCatalog, output_root: &Path,
+) -> Result<(), Box<dyn Error>> {
+    if let Some(campaign_id) = catalog.campaign_id.as_deref() {
+        if let Some((_, prior)) = interrupted_campaign_world(output_root, campaign_id)? {
+            return Err(invalid(format!(
+                "finish or recover interrupted campaign mission {} before editing its persistent fleet",
+                prior.mission_id,
+            )).into());
+        }
+    }
+    Ok(())
+}
+
 fn launch_catalog_battle(
     catalog: &battle_catalog::BattleCatalog,
     entry: &battle_catalog::BattleEntry,
@@ -2418,56 +2488,23 @@ fn launch_catalog_battle(
         Some(setup)
     } else { None };
 
-    // Inspect checkpointed Worlds for this mission even if today's source
-    // configuration stopped enabling checkpoint recovery. Otherwise a
-    // changed project setting can bypass an unfinished original campaign
-    // and allocate a second battle with the same persistent fleet grants.
-    if let (Some(campaign_id), Some(authored_mission)) =
-        (catalog.campaign_id.as_deref(), entry.mission.as_ref())
-    {
-        let mut original_run: Option<(PathBuf, CampaignReplaySetup)> = None;
-        for entry in fs::read_dir(output_root)? {
-            let entry = entry?;
-            if !entry.file_type()?.is_dir() { continue; }
-            let name = entry.file_name();
-            let Some(number) = name.to_str()
-                .and_then(|value| value.strip_prefix("battle-"))
-                .filter(|value| !value.is_empty() &&
-                    value.bytes().all(|ch| ch.is_ascii_digit()))
-            else { continue };
-            if number.parse::<u64>().is_err() { continue; }
-            let root = entry.path();
-            let run = root.join("run");
-            let saved = root.join("campaign-replay-setup.json");
-            let checkpoint = run.join("native-host-checkpoint.json");
-            if !checkpoint.is_file() { continue; }
-            if run.is_symlink() || checkpoint.is_symlink() ||
-                saved.is_symlink() || !saved.is_file()
-            {
-                return Err(invalid(
-                    "interrupted campaign World has no owned immutable start snapshot",
-                ).into());
+    if let Some(campaign_id) = catalog.campaign_id.as_deref() {
+        if let Some((output, prior)) =
+            interrupted_campaign_world(output_root, campaign_id)?
+        {
+            let chosen = entry.mission.as_ref().ok_or_else(||
+                invalid("an unfinished campaign World must resume its original mission"))?;
+            if prior.mission_id != chosen.id {
+                return Err(invalid(format!(
+                    "campaign mission {} still owns an interrupted World; resume it before starting {}",
+                    prior.mission_id, chosen.id,
+                )).into());
             }
-            // First identify the mission using its immutable start
-            // metadata, without opening the original source scene. That
-            // scene may have been legitimately updated after the mission
-            // already committed its final campaign result.
-            let prior: CampaignReplaySetup = serde_json::from_slice(&fs::read(&saved)?)?;
-            if prior.campaign_id != campaign_id ||
-                prior.mission_id != authored_mission.id { continue; }
-            // A completed mission belongs to its committed battle receipt.
-            // Recover its unfinished replay footer without reopening the
-            // source or reconsidering its one-time career rewards.
-            if terminal_recording::complete_committed_recording(&run)? { continue; }
-            // Only an interrupted, still-recoverable World requires its
-            // exact original source, career and grant projection. Removing
-            // the recovery flag from a new source cannot waive that owner.
             if !recoverable {
                 return Err(invalid(
                     "unfinished campaign World requires its original checkpoint-enabled source configuration",
                 ).into());
             }
-            let prior = CampaignReplaySetup::load(&saved)?;
             if !setup.as_ref().expect("checkpointed campaign has a frozen start")
                 .matches_recovery_start(&prior)?
             {
@@ -2475,17 +2512,10 @@ fn launch_catalog_battle(
                     "interrupted campaign cannot resume after its source, saved career, or victory rewards changed",
                 ).into());
             }
-            if original_run.replace((run, prior)).is_some() {
-                return Err(invalid(
-                    "multiple interrupted campaigns claim the same native mission",
-                ).into());
-            }
-        }
-        if let Some((output, prior)) = original_run {
             println!("{}", json!({
                 "kind": "native_campaign_battle_recovered",
                 "campaign_id": campaign_id,
-                "mission_id": authored_mission.id,
+                "mission_id": chosen.id,
                 "run": output,
             }));
             run_session(&prior.source_config, interactive, interactive,
