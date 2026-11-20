@@ -171,7 +171,11 @@ async function dispatch(ordersFile,planFile,port) {
     }
     const discovered=allocations.map(row=>
         state.jobs.filter(job=>job.configuration_id===row.configuration.id&&
-            job.configuration_revision===row.configuration.revision));
+            job.configuration_revision===row.configuration.revision&&
+            !job.collector_replacement_of_job_id));
+    // The immutable original bundle roster remains the learner's round
+    // identity. Hub-approved replacements have new job/lease identities
+    // but do not create a second work order or rewrite this membership.
     if(discovered.some(matches=>matches.length>1))
         throw Error('Multiple Hub jobs already reference the same issued collector allocation.');
     const prior=discovered.filter(matches=>matches.length>0).length;
