@@ -96,6 +96,7 @@ class RemoteConsole:
         self.last_terminal_episode = None
         self.last_dialogue_cue = None
         self.last_campaign_receipt = None
+        self.last_battle_receipt = None
 
     def receive(self):
         try:
@@ -116,6 +117,7 @@ class RemoteConsole:
                                 self.held_scope = None
                                 self.held_begin_request = None
                                 self.last_campaign_receipt = None
+                                self.last_battle_receipt = None
                                 self.selected_scope = episode
                             self.latest = message
                         dialogue = message.get("campaign_dialogue")
@@ -142,6 +144,27 @@ class RemoteConsole:
                         with self.lock:
                             self.last_campaign_receipt = message
                         notice = self.campaign_receipt_summary(message)
+                        self.notifications.put(notice)
+                        if not self.silent:
+                            print(notice)
+                    elif kind in ("battle_result", "battle_interrupted"):
+                        # Reliable post-finalization evidence, independent
+                        # of the lossy render stream's last world_state.
+                        if (message.get("protocol") != 1 or
+                                message.get("viewer_side") not in (1, 2) or
+                                (self.expected_side is not None and
+                                 message["viewer_side"] != self.expected_side)):
+                            raise ValueError("invalid native multiplayer terminal receipt")
+                        with self.lock:
+                            current = self.latest
+                            if kind == "battle_result" and current is not None and (
+                                message.get("world_id"), message.get("episode_revision")
+                            ) != (current["world_id"], current["episode_revision"]):
+                                raise ValueError("native terminal receipt belongs to another episode")
+                            self.last_battle_receipt = message
+                        notice = (f"Battle finished: {message['label']} — {message['reason']}"
+                                  if kind == "battle_result" else
+                                  f"Battle interrupted: {message['reason']}")
                         self.notifications.put(notice)
                         if not self.silent:
                             print(notice)
@@ -194,6 +217,10 @@ class RemoteConsole:
     def campaign_receipt_snapshot(self):
         with self.lock:
             return self.last_campaign_receipt
+
+    def battle_receipt_snapshot(self):
+        with self.lock:
+            return self.last_battle_receipt
 
     @staticmethod
     def objective_summary(state):
@@ -358,9 +385,15 @@ class RemoteConsole:
                   f" tick {state['tick']} side {state['viewer_side']}"
                   f" ships visible {len(state['ships'])}"
                   f" squads selected {self.selected}")
+            final = self.battle_receipt_snapshot()
             outcome = state.get("terminal_outcome")
-            if outcome is not None:
-                print(f"Battle finished: {outcome['label']} — {outcome['reason']}")
+            if final is not None:
+                if final["kind"] == "battle_result":
+                    print(f"Battle finished: {final['label']} — {final['reason']}")
+                else:
+                    print(f"Battle interrupted: {final['reason']}")
+            elif outcome is not None:
+                print(f"Battle finished (awaiting durable receipt): {outcome['label']} — {outcome['reason']}")
             objective = self.objective_summary(state)
             if objective is not None:
                 print(f"Objective: {objective}")
