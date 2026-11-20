@@ -424,15 +424,18 @@ function linuxUv(root) {
         if(!names.includes('uv-x86_64-unknown-linux-gnu/uv')||
             names.length>24||names.some(name=>name.startsWith('/')||
                 name.includes('\\')||name.includes(':')||
-                name.split('/').includes('..')))
+                name.split('/').includes('..'))||
+            exec('tar',['-tvzf',archive]).split(/\r?\n/)
+                .some(line=>/^[lh]/.test(line)))
             throw Error('Pinned official Linux uv archive has unexpected paths.');
         fs.mkdirSync(temporary,{recursive:true,mode:0o700});
         exec('tar',['-xzf',archive,'-C',temporary]);
         const unpacked=path.join(temporary,'uv-x86_64-unknown-linux-gnu','uv');
         verifyWindowsUvVersion(unpacked);
-        fs.mkdirSync(target,{recursive:true,mode:0o700});
-        fs.copyFileSync(unpacked,binary,fs.constants.COPYFILE_EXCL);
-        fs.chmodSync(binary,0o700);
+        fs.chmodSync(unpacked,0o700);
+        // Publish the entire validated runtime atomically. A power loss
+        // never leaves a half-written executable at the installed path.
+        fs.renameSync(path.dirname(unpacked),target);
         return binary;
     }finally {
         for(const file of [archive,checksum]) {
