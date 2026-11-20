@@ -20,7 +20,7 @@ pub enum NavigationRequestError {
     IdExhausted,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NavigationRequest {
     pub ship_id: i64,
     pub lifecycle_id: u64,
@@ -50,7 +50,8 @@ pub enum NavigationCompletion {
     Discarded,
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ShipPathOwner {
     lifecycle_id: u64,
     request_id: u64,
@@ -60,6 +61,20 @@ struct ShipPathOwner {
     waiting: Option<NavigationRequest>,
     running: Option<NavigationRequest>,
     deferred: Option<NavigationRequest>,
+}
+
+/// All authoritative ship/path identity and source FIFO state at a fixed
+/// gameplay boundary. OS worker threads and search results are NOT saved:
+/// interrupted jobs must be reclaimed using each ship's restored position.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NavigationRequestsCheckpoint {
+    schema_version: u32,
+    next_lifecycle_id: u64,
+    next_request_id: u64,
+    ships: HashMap<i64, ShipPathOwner>,
+    waiting_ship_ids: VecDeque<(i64, u64)>,
+    claimable_waiting: usize,
 }
 
 /// The Level's path worker scheduler may run one or several requests at a
@@ -80,6 +95,121 @@ pub struct NavigationRequests {
 
 impl NavigationRequests {
     pub fn new() -> Self { Self::default() }
+
+    /// Persist true request/lifecycle ownership, including which searches
+    /// were already claimed, without copying the OS worker or path map.
+    /// Called only at the shared Level checkpoint boundary.
+    pub fn checkpoint(&self) -> NavigationRequestsCheckpoint {
+        NavigationRequestsCheckpoint {
+            schema_version: 1,
+            next_lifecycle_id: self.next_lifecycle_id,
+            next_request_id: self.next_request_id,
+            ships: self.ships.clone(),
+            waiting_ship_ids: self.waiting_ship_ids.clone(),
+            claimable_waiting: self.claimable_waiting,
+        }
+    }
+
+    /// Reclaim in-flight searches on a new host, preserving original
+    /// request/lifecycle IDs and pending FIFO tokens. An obsolete running
+    /// result is never accepted after restart; if a newer deferred request
+    /// exists it takes precedence and starts at the RESTORED ship position.
+    ///
+    /// The position callback must use the same authoritative CombatWorld
+    /// being restored at this fixed-tick boundary. Validate everything and
+    /// prepare a new queue before replacing any live scheduler state.
+    pub fn restore_checkpoint(
+        &mut self,
+        checkpoint: NavigationRequestsCheckpoint,
+        mut ship_position: impl FnMut(i64) -> Option<Vec2>,
+    ) -> Result<(), NavigationRequestError> {
+        if checkpoint.schema_version != 1 {
+            return Err(NavigationRequestError::InvalidRequest);
+        }
+        let valid_job = |ship_id: i64, owner: &ShipPathOwner,
+            job: &NavigationRequest, latest: bool| {
+            job.ship_id == ship_id && job.lifecycle_id == owner.lifecycle_id &&
+            job.request_id > 0 &&
+            job.request_id <= checkpoint.next_request_id &&
+            (!latest || job.request_id == owner.request_id) &&
+            job.start.is_finite() && job.destination.is_finite() &&
+            job.ship_clearance >= 0
+        };
+        for (&ship_id, owner) in &checkpoint.ships {
+            if ship_id <= 0 || owner.lifecycle_id == 0 ||
+                owner.lifecycle_id > checkpoint.next_lifecycle_id ||
+                owner.request_id > checkpoint.next_request_id ||
+                owner.waiting.is_some() && owner.running.is_some() ||
+                owner.deferred.is_some() && owner.running.is_none()
+            {
+                return Err(NavigationRequestError::InvalidRequest);
+            }
+            if owner.waiting.as_ref().is_some_and(|job|
+                !valid_job(ship_id, owner, job, true)) ||
+               owner.running.as_ref().is_some_and(|job|
+                !valid_job(ship_id, owner, job, false)) ||
+               owner.deferred.as_ref().is_some_and(|job|
+                !valid_job(ship_id, owner, job, true)) {
+                return Err(NavigationRequestError::InvalidRequest);
+            }
+        }
+
+        // Keep surviving waiting jobs in their original source FIFO order.
+        // Stale queue tokens are disposable; a previously claimed running
+        // job is appended after still-waiting jobs for the new worker pool.
+        let mut owners = checkpoint.ships;
+        let mut queue = VecDeque::new();
+        let mut claimed = std::collections::HashSet::new();
+        for (ship_id, lifecycle_id) in checkpoint.waiting_ship_ids {
+            if let Some(owner) = owners.get(&ship_id) {
+                if owner.lifecycle_id == lifecycle_id && owner.queued &&
+                    owner.waiting.is_some() && claimed.insert(ship_id)
+                {
+                    queue.push_back((ship_id, lifecycle_id));
+                }
+            }
+        }
+        let mut recovered = Vec::new();
+        for (&ship_id, owner) in &mut owners {
+            if let Some(running) = owner.running.take() {
+                let latest = owner.deferred.take().or_else(||
+                    (running.request_id == owner.request_id).then_some(running));
+                if let Some(mut job) = latest {
+                    job.start = ship_position(ship_id)
+                        .filter(|position| position.is_finite())
+                        .ok_or(NavigationRequestError::InvalidRequest)?;
+                    owner.waiting = Some(job);
+                    recovered.push((job.request_id, ship_id, owner.lifecycle_id));
+                }
+            }
+            owner.queued = claimed.contains(&ship_id);
+            if owner.waiting.is_some() && !owner.queued {
+                recovered.push((
+                    owner.waiting.expect("present").request_id,
+                    ship_id,
+                    owner.lifecycle_id,
+                ));
+            }
+        }
+        recovered.sort_unstable();
+        for (_, ship_id, lifecycle_id) in recovered {
+            if !claimed.insert(ship_id) {
+                continue;
+            }
+            owners.get_mut(&ship_id).expect("validated owner").queued = true;
+            queue.push_back((ship_id, lifecycle_id));
+        }
+        let waiting = owners.values().filter(|owner| owner.waiting.is_some()).count();
+        if waiting != queue.len() {
+            return Err(NavigationRequestError::InvalidRequest);
+        }
+        self.next_lifecycle_id = checkpoint.next_lifecycle_id;
+        self.next_request_id = checkpoint.next_request_id;
+        self.ships = owners;
+        self.waiting_ship_ids = queue;
+        self.claimable_waiting = waiting;
+        Ok(())
+    }
 
     /// Starting a new ship instance creates a lifecycle identity that cannot
     /// accept a completion belonging to any earlier pooled object.
