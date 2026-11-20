@@ -856,6 +856,9 @@ def publish_receipt(output, filename, receipt, *, announce=True):
                 raise ValueError(
                     f"completed native training receipt differs from the prior committed artifact: {destination}"
                 )
+            # A prior incarnation may have linked the identical receipt but
+            # died before synchronizing its parent directory.
+            sync_directory(output)
     finally:
         if pending is not None:
             pending.unlink(missing_ok=True)
