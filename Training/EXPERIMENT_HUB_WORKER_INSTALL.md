@@ -57,9 +57,12 @@ simulation is provided.
 
 ## Windows remote worker, such as Exeter
 
-Open **elevated PowerShell** in a local checkout of the Hub branch. Replace
-the placeholders with the actual machine ID, Halifax Tailscale IP and
-pre-transferred private key file paths:
+Save only `Training/experiment_hub_worker_install.ps1` from this branch
+onto the worker (or use an existing checkout). The script fetches the trusted
+Hub and training sources itself using the operator's GitHub access. Open
+**elevated PowerShell** in the saved file's directory. Replace the placeholders
+with the actual machine ID, Halifax Tailscale IP and pre-transferred private
+key file paths:
 
 ```powershell
 .\Training\experiment_hub_worker_install.ps1 -Command install `
@@ -87,7 +90,8 @@ terminated and the agent is stopped.
 
 ## Linux remote worker
 
-On Debian/Ubuntu, from a checkout of this branch:
+On Debian/Ubuntu, save `Training/experiment_hub_worker_install.sh`
+from this branch (or use the checked-out copy):
 
 ```bash
 bash Training/experiment_hub_worker_install.sh install \
