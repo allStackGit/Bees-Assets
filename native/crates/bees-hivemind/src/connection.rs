@@ -155,6 +155,7 @@ impl NativeHiveMindConnection {
             !PreparedOutcomeBatch::valid_journal_id(id) || !valid_prefix_digest(&cursor.prefix_sha256)) {
             return Err(HiveMindProtocolError::InvalidRequest);
         }
+        snapshot.stores.validate_checkpoint()?;
         if !snapshot.stores.owned_request_hashes()
             .all(|hash| snapshot.hashes.has_issued(hash))
         {

@@ -334,6 +334,37 @@ pub struct PendingStoreCommands {
 impl PendingStoreCommands {
     pub fn new() -> Self { Self::default() }
 
+    /// Restore is the only boundary that reads externally stored
+    /// StoreCommands payloads. The allocator alone proves which Hashes
+    /// were issued; it cannot prove that persisted reservation rows,
+    /// discard markers or terminal 409 records still agree. Reuse the
+    /// one authoritative batch validator, off the gameplay hot path.
+    pub fn validate_checkpoint(&self) -> Result<(), HiveMindProtocolError> {
+        for (&hash, request) in &self.submissions {
+            if hash != request.hash ||
+                request.message_type != crate::protocol::STORE_COMMANDS_TYPE ||
+                self.reconciliation.contains_key(&hash) {
+                return Err(HiveMindProtocolError::InvalidRequest);
+            }
+            let mut batch = OutcomeBatch {
+                seen: HashSet::new(),
+                strategic: request.commands.clone(),
+                shooting: request.shooting_commands.clone(),
+                targeting: request.targeting_commands.clone(),
+                discarded: request.discarded_outcome_ids.clone(),
+            };
+            batch.validate_journal()?;
+        }
+        for stale_ids in self.reconciliation.values() {
+            let mut unique = HashSet::with_capacity(stale_ids.len());
+            if stale_ids.is_empty() ||
+                stale_ids.iter().any(|&id| id <= 0 || !unique.insert(id)) {
+                return Err(HiveMindProtocolError::InvalidReservation);
+            }
+        }
+        Ok(())
+    }
+
     pub fn queue(
         &mut self,
         request: StoreCommandsRequest,
