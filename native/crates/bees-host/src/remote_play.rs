@@ -362,6 +362,9 @@ pub struct NativeRemotePlay {
     // physical World just because it uses the same player-side tokens.
     host_session_id: String,
     recovered_session: bool,
+    // Read-only terminal listener: authenticate old session identities but
+    // never admit new gameplay commands without an authoritative World.
+    archive_only: bool,
     /// A graphical local host already owns its own briefing pacing.
     /// Only dedicated LAN hosting needs remote viewer acknowledgment.
     dedicated_briefing_gate: bool,
@@ -437,7 +440,7 @@ impl NativeRemotePlay {
         }));
         Ok(Some(Self {
             listener, host_session_id, recovered_session: false,
-            dedicated_briefing_gate: dedicated,
+            archive_only: false, dedicated_briefing_gate: dedicated,
             side_tokens, archived_receipts: HashMap::new(), peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
@@ -456,6 +459,12 @@ impl NativeRemotePlay {
     /// receipt. A subsequent LAN host must not invent an old session ID.
     pub fn session_id(&self) -> &str {
         &self.host_session_id
+    }
+
+    /// Reuse the authenticated nonblocking LAN protocol for committed
+    /// results even when no battle is running. No World is created here.
+    pub fn serve_archived_only(&mut self) {
+        self.archive_only = true;
     }
 
     /// The launcher supplies only committed results from this game's own
@@ -713,6 +722,15 @@ impl NativeRemotePlay {
                             constant_time_matches(secret.as_bytes(), token.as_bytes())
                                 .then_some(side));
                         if let Some(side) = side {
+                            // In the results-only listener there is no
+                            // active World to authenticate into. Only a
+                            // previously committed session can join.
+                            if self.archive_only && resume_session_id.as_deref()
+                                .is_none_or(|id| !self.archived_receipts.contains_key(id))
+                            {
+                                peer.closed = true;
+                                break;
+                            }
                             peer.side = Some(side);
                             self.measurements.authenticated_peers += 1;
                             if let Some(original) = resume_session_id.as_deref()
