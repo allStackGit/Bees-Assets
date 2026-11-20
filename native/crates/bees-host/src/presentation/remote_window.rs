@@ -388,6 +388,10 @@ struct PeerClient {
     queued_bytes: usize,
     next_request: u64,
     last_response_request: u64,
+    /// Confirmed by the same authenticated input-result request stream.
+    /// Never restored when the TCP connection or host identity changes.
+    briefing_pending: Option<(u64,u64,u8,u64)>,
+    briefing_approved: Option<(u64,u64,u8)>,
     authenticated: bool,
     connected: bool,
     /// UI-only control gate, computed from the authoritative story cue
@@ -434,7 +438,9 @@ impl PeerClient {
         Ok(Self {
             socket, incoming: Vec::new(), queued: VecDeque::new(),
             written: 0, queued_bytes: 0, next_request: 1,
-            last_response_request: 0, authenticated: false, connected: true, input_suppressed: false, side,
+            last_response_request: 0,
+            briefing_pending: None, briefing_approved: None,
+            authenticated: false, connected: true, input_suppressed: false, side,
             host_session_id: None, expected_host_session_id: None,
             state: None, visual: RemoteVisual::default(),
             notice: "Authenticating with native host".to_owned(),
@@ -615,6 +621,14 @@ impl PeerClient {
                         return Err(invalid("out-of-order native host command acknowledgment").into());
                     }
                     self.last_response_request=request;
+                    if let Some((world,revision,sequence,id))=self.briefing_pending {
+                        if id==request {
+                            self.briefing_pending=None;
+                            if processed {
+                                self.briefing_approved=Some((world,revision,sequence));
+                            }
+                        }
+                    }
                     self.metrics.acknowledgments+=1;
                     if processed {self.metrics.orders_accepted+=1;}
                     else {self.metrics.orders_rejected+=1;}
@@ -660,11 +674,32 @@ impl PeerClient {
         {
             return Err(invalid("orders unavailable during briefing or after battle").into());
         }
-        let next = self.next_request.checked_add(1)
+        self.enqueue_request(json!({"kind":"input","action":action}),notice)
+    }
+
+    /// Presentation-only, per-cue acknowledgment. It never impersonates a
+    /// gameplay command, advances a private clock, or changes a roster.
+    fn briefing_ready(&mut self, world:u64, revision:u64, sequence:u8)
+        -> Result<(),Box<dyn Error>>
+    {
+        if !self.authenticated || !self.connected {
+            return Err(invalid("cannot acknowledge briefing before authentication").into());
+        }
+        let id=self.next_request;
+        self.enqueue_request(json!({"kind":"briefing_ready",
+            "world_id":world,"episode_revision":revision,
+            "sequence":sequence}),"Campaign briefing ready".into())?;
+        self.briefing_pending=Some((world,revision,sequence,id));
+        Ok(())
+    }
+
+    fn enqueue_request(&mut self, mut frame:Value, notice:String)
+        -> Result<(),Box<dyn Error>>
+    {
+        let next=self.next_request.checked_add(1)
             .ok_or_else(|| invalid("native multiplayer request ID exhausted"))?;
-        let mut packet = serde_json::to_vec(&json!({
-            "kind": "input", "request_id": self.next_request, "action": action,
-        }))?;
+        frame["request_id"]=json!(self.next_request);
+        let mut packet = serde_json::to_vec(&frame)?;
         packet.push(b'\n');
         if self.queued_bytes + packet.len() > MAX_OUTGOING {
             return Err(invalid("outgoing native orders exceed pending network budget").into());
@@ -2052,13 +2087,37 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         let terminal=peer.battle_result_receipt.is_some() ||
             peer.state.as_ref().is_some_and(|state|
                 state["terminal_outcome"].is_object());
-        let briefing=peer.state.as_ref().is_some_and(|state|
-            state["campaign_dialogue"]["line_count"].as_u64()
-                .is_some_and(|count|dialogue_line<count as usize) &&
-            serde_json::from_value::<CampaignCue>(
-                state["campaign_dialogue"]["cue"].clone(),
-            ).ok().is_some_and(CampaignCue::is_briefing));
-        peer.input_suppressed=terminal||briefing;
+        let story_briefing=peer.state.as_ref().and_then(|state| {
+            let cue=serde_json::from_value::<CampaignCue>(
+                state["campaign_dialogue"]["cue"].clone()).ok()?;
+            if !cue.is_briefing(){return None;}
+            Some((state["world_id"].as_u64()?,
+                state["episode_revision"].as_u64()?,
+                u8::try_from(state["campaign_dialogue"]["sequence"].as_u64()?).ok()?))
+        });
+        let briefing=story_briefing.is_some() &&
+            peer.state.as_ref().is_some_and(|state|
+                state["campaign_dialogue"]["line_count"].as_u64()
+                    .is_some_and(|count|dialogue_line<count as usize));
+        // A completed K/L dialogue is not an accepted host release until
+        // its separate authenticated acknowledgment returns. This prevents
+        // gameplay inputs racing the paused server's final briefing tick.
+        if !briefing&&!terminal {
+            if let Some((world,revision,sequence))=story_briefing {
+                let pending=peer.briefing_pending.is_some_and(|(w,r,s,_)|
+                    (w,r,s)==(world,revision,sequence));
+                if peer.briefing_approved!=story_briefing && !pending &&
+                    peer.connected && peer.authenticated
+                {
+                    if let Err(error)=peer.briefing_ready(world,revision,sequence) {
+                        peer.notice=error.to_string();
+                    }
+                }
+            }
+        }
+        let awaiting_briefing=story_briefing.is_some() &&
+            peer.briefing_approved!=story_briefing;
+        peer.input_suppressed=terminal||briefing||awaiting_briefing;
         if peer.input_suppressed {
             // A completed battle has no further physical input boundary,
             // whereas a story briefing pauses only this commander's UI.
