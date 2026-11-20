@@ -268,12 +268,18 @@ def main():
             "worlds": job["world_count"],
         }), flush=True)
     if args.archive_output is not None or args.upload_url:
-        # A recovered shared-inbox receipt has no old scratch parent, while
-        # a recovered portable receipt already has its original parent.
-        if recovered is not None and previous_parent is None and args.archive_output is None:
-            parent.mkdir()
+        # The verified inbox may be durable even when the collector process
+        # crashed before uploading an archive. The original scratch parent
+        # can therefore already exist. Acquire its same OS-owned writer
+        # lease before making or reusing a portable artifact; never create a
+        # second unlocked archive publisher under the same work order.
+        if attempt_lease is None and args.archive_output is None:
+            if parent.is_symlink():
+                raise ValueError("collector recovery directory is a symlink")
+            parent.mkdir(exist_ok=True)
+            attempt_lease = acquire_collector_lease(parent)
         # Direct upload keeps its own immutable archive in the collector's
-        # already unique scratch attempt; no shared filesystem is required.
+        # existing work-order-owned scratch attempt.
         archive_path = args.archive_output or (parent / (job["bundle_directory"] + ".tar"))
         if (recovered is not None and args.upload_url and
                 archive_path.is_file() and not archive_path.is_symlink()):
