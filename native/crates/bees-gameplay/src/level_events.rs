@@ -36,6 +36,7 @@ use bees_hivemind::protocol::StrategyIdentity;
 use crate::episode::{
     NativeEpisodeFinal, NativeEpisodeRewardCoordinator,
     NativeEpisodeRewardError, NativeEpisodeRewardMeasurements,
+    NativeEpisodeRewardCheckpoint, NativeEpisodeRestoreError,
 };
 use crate::group_rewards::{
     GroupRewardError, GroupRewardEvent, GroupRewardMeasurements,
@@ -353,6 +354,7 @@ pub struct NativeLevelEventRecoveryOwnersCheckpoint {
     next_tick: u64,
     roster: NativeSquadRosterCheckpoint,
     commands: NativeCommandDirectorCheckpoint,
+    episode: NativeEpisodeRewardCheckpoint,
     group_delivery: Option<NativeGroupRewardCheckpoint>,
     credit: NativeCommandCreditCheckpoint,
     delivery: NativeLevelDeliveryCheckpoint,
@@ -365,6 +367,7 @@ pub enum NativeLevelEventRecoveryError {
     GroupModeMismatch,
     Roster(SquadRosterRestoreError),
     Command(GameCommandError),
+    Episode(NativeEpisodeRestoreError),
     Group(NativeGroupRewardRestoreError),
     Credit(CommandCreditError),
     Delivery(NativeLevelDeliveryRestoreError),
@@ -422,10 +425,11 @@ impl NativeLevelEventProcessor {
         -> NativeLevelEventRecoveryOwnersCheckpoint
     {
         NativeLevelEventRecoveryOwnersCheckpoint {
-            schema_version: 3,
+            schema_version: 4,
             next_tick: self.next_tick,
             roster: self.roster.checkpoint(),
             commands: self.commands.checkpoint(),
+            episode: self.episode.checkpoint(),
             group_delivery: self.group_delivery.as_ref().map(|group| group.checkpoint()),
             credit: self.credit.checkpoint(),
             delivery: NativeLevelDeliveryCheckpoint {
@@ -455,7 +459,7 @@ impl NativeLevelEventProcessor {
         world: &CombatWorld, completed_ticks: u64,
     ) -> Result<(), NativeLevelEventRecoveryError> {
         use NativeLevelEventRecoveryError as Error;
-        if checkpoint.schema_version != 3 {
+        if checkpoint.schema_version != 4 {
             return Err(Error::InvalidVersion);
         }
         if completed_ticks.checked_add(1) != Some(checkpoint.next_tick) ||
@@ -471,6 +475,16 @@ impl NativeLevelEventProcessor {
         ).map_err(Error::Command)?;
         let credit = NativeCommandCreditLedger::prepare_restore(checkpoint.credit)
             .map_err(Error::Credit)?;
+        let episode = self.episode.prepare_restore(
+            checkpoint.episode, completed_ticks,
+        ).map_err(Error::Episode)?;
+        if delivery.last_finalized.is_some_and(|finalized|
+            episode.result() != Some(finalized.result)
+        ) {
+            return Err(Error::Delivery(
+                NativeLevelDeliveryRestoreError::InvalidLifecycle,
+            ));
+        }
         let group = match (self.group_delivery.as_ref(), checkpoint.group_delivery) {
             (None, None) => None,
             (Some(existing), Some(saved)) =>
@@ -483,6 +497,7 @@ impl NativeLevelEventProcessor {
         self.roster = roster;
         self.commands = commands;
         self.credit = credit;
+        self.episode = episode;
         self.group_delivery = group;
         self.pending_session_retirements = delivery.pending_session_retirements;
         self.pending_notifications = delivery.pending_notifications;
