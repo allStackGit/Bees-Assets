@@ -617,6 +617,9 @@ impl BattleCatalog {
     /// A purchased ship can join a different SavedSquad between missions.
     /// Preserve its FleetShip identity, type, TSV cost and career totals;
     /// never modify a historical battle or the original purchase receipt.
+    /// The caller has already validated this destination against the
+    /// authoritative native Stage and all relevant mission variants.
+    /// An unplayed but source-authored SavedSquad has no career row yet.
     pub fn transfer_purchased_ship(
         &self, progress: &CampaignProgress<'_>, output: &Path,
         fleet_ship_id: i64, to_saved_squad_id: i64,
@@ -627,10 +630,7 @@ impl BattleCatalog {
             .ok_or_else(|| invalid("only previously purchased hulls can be transferred"))?;
         if to_saved_squad_id < 0 || to_saved_squad_id == ship.saved_squad_id ||
             progress.fleet.get(&fleet_ship_id)
-                .is_none_or(|fleet| fleet.is_dead || fleet.side != side) ||
-            (to_saved_squad_id != 0 &&
-                !progress.saved_squad_ids_for_side(side)
-                    .contains(&to_saved_squad_id))
+                .is_none_or(|fleet| fleet.is_dead || fleet.side != side)
         {
             return Err(invalid("transfer needs a live purchased hull and a different owned SavedSquad"));
         }

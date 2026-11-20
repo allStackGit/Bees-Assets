@@ -2247,12 +2247,13 @@ fn run_transfer_ship(
     let progress = catalog.load_progress(output_root)?;
     let (side, ship) = progress.purchased_ship(fleet_ship_id)
         .ok_or_else(|| invalid("only purchased FleetShips can be reassigned"))?;
-    if destination_squad_id == ship.saved_squad_id || destination_squad_id < 0 ||
-        (destination_squad_id != 0 &&
-            !progress.saved_squad_ids_for_side(side).contains(&destination_squad_id))
-    {
+    if destination_squad_id == ship.saved_squad_id || destination_squad_id < 0 {
         return Err(invalid("destination must be the reserve or another owned SavedSquad").into());
     }
+    // The account's career rows exclude authored SavedSquads which have
+    // not deployed a ship yet. Physical scene preflight below is the
+    // authoritative ownership and destination-capacity check for both
+    // those squads and previously used saved squads.
     let dead = progress.lost_player_fleet_ids(side)?;
     if dead.contains(&fleet_ship_id) {
         return Err(invalid("a lost FleetShip cannot be moved to another squad").into());
@@ -3320,9 +3321,25 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         let fleet_rows = progress.fleet_rows();
         let squad_rows = progress.squad_rows();
         let available = progress.unspent_minerals()?;
+        let (original_choices, authored_squads) =
+            authored_menu_fleet(&catalog, root, &progress);
+        // All authorized source SavedSquads, including empty ones, are
+        // legitimate physical fleet destinations before their first career
+        // receipt. Reuse this list for buying and both transfer workflows.
+        let mut squad_destinations = HashMap::<i32, Vec<i64>>::new();
+        for side in [1, 2] {
+            let mut ids = progress.saved_squad_ids_for_side(side);
+            ids.extend(authored_squads.iter().filter_map(|&(owner, id)|
+                (owner == side).then_some(id)));
+            ids.sort_unstable();
+            ids.dedup();
+            squad_destinations.insert(side, ids);
+        }
         let mut shop_rows = Vec::new();
         for ship in catalog.buildable_ships.iter().filter(|ship| ship.purchasable) {
-            for squad_id in progress.saved_squad_ids_for_side(ship.player_side) {
+            for &squad_id in squad_destinations.get(&ship.player_side)
+                .into_iter().flatten()
+            {
                 let unlocked = progress.is_ship_unlocked(ship);
                 shop_rows.push(NativeShopMenuRow {
                     title: format!(
@@ -3343,7 +3360,8 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         let mut transfer_rows = Vec::new();
         for ship_type in &catalog.buildable_ships {
             let side = ship_type.player_side;
-            let squads = progress.saved_squad_ids_for_side(side);
+            let squads = squad_destinations.get(&side)
+                .expect("populated authorized squad destinations");
             // A legacy receipt with unknown loss evidence does not qualify
             // for reassignment. The existing career screens remain readable.
             let Ok(lost) = progress.lost_player_fleet_ids(side) else { continue };
@@ -3382,8 +3400,6 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
             break;
         }
-        let (original_choices, authored_squads) =
-            authored_menu_fleet(&catalog, root, &progress);
         for &(side, fleet_id, original_squad) in &original_choices {
             let current_squad = progress.authored_current_squad(fleet_id)
                 .unwrap_or(original_squad);
@@ -3398,14 +3414,9 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                     authored_from: Some((side, current_squad)),
                 });
             }
-            let mut destinations = progress.saved_squad_ids_for_side(side);
-            // Before the first battle there are no saved career receipts,
-            // but the native authored scene already names its SavedSquads.
-            destinations.extend(authored_squads.iter().filter_map(|&(owner, squad)|
-                (owner == side).then_some(squad)));
-            destinations.sort_unstable();
-            destinations.dedup();
-            for destination in destinations {
+            for &destination in squad_destinations.get(&side)
+                .expect("populated authorized squad destinations")
+            {
                 if current_squad == destination { continue; }
                 transfer_rows.push(NativeTransferMenuRow {
                     title: format!(
