@@ -49,6 +49,50 @@ function Sync-Repo([string]$Name,[string]$Remote,[string]$Ref) {
     }
     return $dest
 }
+# Pin the official simulator and baseline code; never substitute a Python
+# recreation of game mechanics for the published TinyBrains engine.
+function Install-TinyBrainsEngine([string]$Project) {
+    $release='https://github.com/Tiny-Brains/cli/releases/download/v0.5.0'
+    $archive='tinybrains-x86_64-pc-windows-msvc.zip'
+    $downloads=Join-Path $Project 'downloads'
+    $cli=Join-Path $Project 'tools\tinybrains-0.5.0\tinybrains.exe'
+    New-Item -ItemType Directory -Path $downloads -Force | Out-Null
+    $bundle=Join-Path $downloads $archive
+    if(-not(Test-Path -LiteralPath $bundle)){
+        Invoke-WebRequest "$release/$archive" -OutFile $bundle
+    }
+    $checks=Join-Path $downloads 'SHA256SUMS'
+    Invoke-WebRequest "$release/SHA256SUMS" -OutFile $checks
+    $line=@(Get-Content -LiteralPath $checks | Where-Object {
+        $_ -match " $([regex]::Escape($archive))$"
+    })
+    if($line.Count -ne 1){throw 'Official TinyBrains CLI checksum is absent or ambiguous.'}
+    $expected=($line[0] -split '\s+')[0].ToLowerInvariant()
+    $actual=(Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
+    if($actual -cne $expected){throw 'Official TinyBrains CLI archive hash mismatch.'}
+    if(-not(Test-Path -LiteralPath $cli)){
+        $directory=Split-Path -Parent $cli
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        Expand-Archive -LiteralPath $bundle -DestinationPath $directory
+    }
+    if(-not(Test-Path -LiteralPath $cli)){throw 'Verified TinyBrains CLI was not installed.'}
+    $pinned=@{
+        'ants'='54edfab12469b432041658ec80bcdf5931ae23e4'
+        'ants-starter'='a9610c693c0559286e4f5a96efec511b024bd573'
+    }
+    foreach($name in $pinned.Keys){
+        $upstream=Join-Path $Project "upstream\$name"
+        if(-not(Test-Path -LiteralPath (Join-Path $upstream '.git'))){
+            Exec-Git @('clone',"https://github.com/Tiny-Brains/$name.git",$upstream)
+            Exec-Git @('-C',$upstream,'checkout','--detach',$pinned[$name])
+        }
+        $revision=(& (Tool 'git.exe') -C $upstream rev-parse HEAD).Trim()
+        Assert-Exit 'Inspect pinned TinyBrains dependency'
+        if($revision -cne $pinned[$name]){
+            throw "Refusing unexpected official TinyBrains upstream $name version."
+        }
+    }
+}
 function Copy-Private([string]$From,[string]$To) {
     if(-not (Test-Path -LiteralPath $From -PathType Leaf)) {
         throw "The approved local secret source does not exist: $From"
@@ -149,16 +193,23 @@ if('tinybrains' -in $selected){
         $TinyBrainsRoot=Join-Path $tiny 'Ants-MAPOCA'
     }
     if(-not(Test-Path (Join-Path $TinyBrainsRoot 'pyproject.toml'))){throw 'TinyBrains project root missing.'}
+    Install-TinyBrainsEngine $TinyBrainsRoot
     $tbEnv=Join-Path $VenvRoot 'tinybrains'
     & (Tool 'py.exe') -3.11 -m venv $tbEnv
     Assert-Exit 'Create TinyBrains virtual environment'
     $tbPython=Join-Path $tbEnv 'Scripts\python.exe'
     & $tbPython -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu 'torch==2.6.0'
     Assert-Exit 'Install TinyBrains CPU PyTorch'
-    & $tbPython -m pip install --disable-pip-version-check -e $TinyBrainsRoot
-    Assert-Exit 'Install TinyBrains runtime'
-    & $tbPython -B -c 'import ants_mapoca.remote_rollout'
-    Assert-Exit 'TinyBrains remote protocol import'
+    & $tbPython -m pip install --disable-pip-version-check -r (Join-Path $TinyBrainsRoot 'requirements-lock.txt')
+    Assert-Exit 'Install pinned TinyBrains Python packages'
+    & $tbPython -m pip install --disable-pip-version-check --no-deps `
+        -e (Join-Path $TinyBrainsRoot 'upstream\ants\baselines') -e $TinyBrainsRoot
+    Assert-Exit 'Install official TinyBrains baseline and runtime'
+    Push-Location $TinyBrainsRoot
+    try{
+        & $tbPython -B -c 'import ants_mapoca.remote_rollout; from ants_mapoca.env import Engine'
+        Assert-Exit 'TinyBrains official engine and remote protocol imports'
+    }finally{Pop-Location}
 }
 if('courier' -in $selected){
     if(-not $CourierRoot){
