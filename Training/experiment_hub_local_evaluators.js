@@ -91,7 +91,7 @@ function localOptions(hub) {
         throw Error('The local enrolled machine does not advertise TinyBrains.');
 
     const ai=path.join(home,'ai');
-    const project=path.join(ai,'projects/training-efficiency/TinyBrains-latest/Ants-MAPOCA');
+    const project=path.join(ai,'projects/tinybrains/Ants-MAPOCA');
     const hubRoot=path.resolve(__dirname,'..');
     const suites=path.join(home,'evaluation-audits/tinybrains/suites');
     return {
