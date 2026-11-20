@@ -139,15 +139,15 @@ mkdir -p "$PRIVATE" "$SRC" "$VENV" "$ROOT/cache/tinybrains" "$ROOT/cache/courier
 chmod 700 "$PRIVATE"
 # The installer invokes Tailscale itself. The browser sign-in link is the
 # only user action; a previously signed-in machine skips the login.
-[[ "$HUB_IP" =~ ^100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.[0-9]{1,3}\\.[0-9]{1,3}$ ]] ||
+[[ "$HUB_IP" =~ ^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}$ ]] ||
     { echo "Halifax must be addressed by its private Tailscale IPv4." >&2; exit 1; }
 TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
-if [[ ! "$TAILNET_IP" =~ ^100\\. ]]; then
+if [[ ! "$TAILNET_IP" =~ ^100\. ]]; then
     echo "Sign in using the Tailscale URL below:"
     sudo tailscale up
     TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
 fi
-[[ "$TAILNET_IP" =~ ^100\\. ]] ||
+[[ "$TAILNET_IP" =~ ^100\. ]] ||
     { echo "Tailscale authentication is required." >&2; exit 1; }
 HUB_URL="http://$HUB_IP:7149"
 
@@ -158,7 +158,7 @@ if [[ "$MODE" == install ]]; then
       const os=require("node:os");const projects=process.argv[1].split(",");
       process.stdout.write(JSON.stringify({projects,cpus:os.cpus().length,
         ram_mb:Math.floor(os.totalmem()/1048576)}));' "$PROJECTS")
-    BOOT_REPLY=$(curl --noproxy '*' -fsS --max-time 30 -H 'Content-Type: application/json' \\
+    BOOT_REPLY=$(curl --noproxy '*' -fsS --max-time 30 -H 'Content-Type: application/json' \
         --data "$BOOT_BODY" "$HUB_URL/api/hub/agent/bootstrap")
     bootstrap_value() {
         printf '%s' "$BOOT_REPLY" | node -e '
@@ -187,8 +187,8 @@ install_release() {
     local component=$1 dest=$2 manifest sha bytes archive actual
     [[ ! -e "$dest" ]] ||
         { echo "Refusing to replace an existing source directory: $dest" >&2; return 1; }
-    manifest=$(curl --noproxy '*' -fsS --max-time 30 \\
-        -H "x-hub-agent-token: $TOKEN" \\
+    manifest=$(curl --noproxy '*' -fsS --max-time 30 \
+        -H "x-hub-agent-token: $TOKEN" \
         "$HUB_URL/api/hub/agent/releases?machine_id=$MACHINE_ID")
     read -r sha bytes < <(printf '%s' "$manifest" | node -e '
       let data="";process.stdin.on("data",x=>data+=x);
@@ -197,20 +197,20 @@ install_release() {
         if(!v||!v.activation_ready||!/^[0-9a-f]{64}$/.test(v.sha256)||
            !Number.isSafeInteger(v.bytes)||v.bytes<1||v.bytes>536870912)
           process.exitCode=1;
-        else process.stdout.write(v.sha256+" "+v.bytes+"\\n");
+        else process.stdout.write(v.sha256+" "+v.bytes+"\n");
       });' "$component")
     [[ "$sha" =~ ^[0-9a-f]{64}$ && "$bytes" =~ ^[0-9]+$ ]] ||
         { echo "Published $component release is unavailable." >&2; return 1; }
     archive="$PRIVATE/$component-$$.tar"
-    curl --noproxy '*' -fsS --max-time 180 \\
-        -H "x-hub-agent-token: $TOKEN" \\
-        "$HUB_URL/api/hub/agent/releases/bundle?machine_id=$MACHINE_ID&component=$component&sha256=$sha" \\
+    curl --noproxy '*' -fsS --max-time 180 \
+        -H "x-hub-agent-token: $TOKEN" \
+        "$HUB_URL/api/hub/agent/releases/bundle?machine_id=$MACHINE_ID&component=$component&sha256=$sha" \
         -o "$archive"
     actual=$(sha256sum "$archive" | cut -d' ' -f1)
     [[ "$actual" == "$sha" && "$(stat -c %s "$archive")" == "$bytes" ]] ||
         { rm -f "$archive"; echo "$component release checksum mismatch." >&2; return 1; }
     if tar -tvf "$archive" | grep -Eq '^[lh]' ||
-        tar -tf "$archive" | grep -Eq '(^/|(^|/)\\.\\.(/|$)|\\\\|:)'; then
+        tar -tf "$archive" | grep -Eq '(^/|(^|/)\.\.(/|$)|\\|:)'; then
         rm -f "$archive"; echo "Unsafe release archive." >&2; return 1
     fi
     mkdir -p "$dest"
