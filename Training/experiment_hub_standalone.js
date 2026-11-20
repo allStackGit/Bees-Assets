@@ -232,7 +232,7 @@ async function main(argv=process.argv.slice(2)) {
     const releases=new ReleaseStore(root);
     const admin=createAdminServer(hub,{html,ui,dataRoot:root,releases});
     const worker=createAgentServer(()=>hub,AGENT_HOST,releases);
-    const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet,releases):null;
+    const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet,releases,root):null;
     async function listen(server,port,host) {
         await new Promise((resolve,reject)=>{
             server.once('error',reject);
