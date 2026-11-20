@@ -859,6 +859,9 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     queens: BTreeMap<i64, queen::QueenRuntimeCheckpoint>,
     queen_measurements: QueenSpawnMeasurements,
     asteroid_pools: CombatWorldAsteroidPoolCheckpoint,
+    weapon_rank_history: weapon_rank_history::WeaponRankHistory,
+    combat_activity: HashMap<i64, NativeCombatActivity>,
+    automatic_weapon_measurements: AutomaticWeaponMeasurements,
     movement: CombatWorldMovementCheckpoint,
     game_specials: CombatWorldGameSpecialsCheckpoint,
     discovery: LevelDiscovery,
@@ -1500,7 +1503,7 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 8,
+            schema_version: 9,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1530,6 +1533,9 @@ impl CombatWorld {
                 pending_breakups: self.pending_asteroid_breakups.clone(),
                 expired_asteroid_ids: self.expired_asteroid_ids.clone(),
             },
+            weapon_rank_history: self.weapon_rank_history.clone(),
+            combat_activity: self.combat_activity.clone(),
+            automatic_weapon_measurements: self.automatic_weapon_measurements,
             movement: CombatWorldMovementCheckpoint {
                 steering: self.game_ship_steering.clone(),
                 point_orders_pending: self.pending_game_point_orders.clone(),
@@ -1592,7 +1598,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 8 {
+        if snapshot.schema_version != 9 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1747,6 +1753,13 @@ impl CombatWorld {
         // Imported steering and registration indexes must reference
         // authentic dense slots, and every deferred order stays on its
         // original ship. Do not substitute a fresh A* plan at restore.
+        if !snapshot.weapon_rank_history.valid_recovery(
+            &self.ship_by_id, snapshot.movement.events.len(),
+        ) || snapshot.combat_activity.iter().any(|(&id, timer)|
+            !self.ship_by_id.contains_key(&id) || !timer.valid()
+        ) {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
         // Pooled asteroid prototypes are sampled once at Create, not
         // redrawn when an old ID/slot returns to the active Stage pool.
         // Preserve ordered reuse and any delayed collision-retirement
@@ -2024,6 +2037,9 @@ impl CombatWorld {
         self.game_queens = game_queens;
         self.queen_spawn_measurements = snapshot.queen_measurements;
         self.queen_spawn_ids.clear();
+        self.weapon_rank_history = snapshot.weapon_rank_history;
+        self.combat_activity = snapshot.combat_activity;
+        self.automatic_weapon_measurements = snapshot.automatic_weapon_measurements;
         let pools = snapshot.asteroid_pools;
         self.active_full_asteroid_profiles = pools.active_full;
         self.pooled_full_asteroid_profiles = pools.pooled_full;

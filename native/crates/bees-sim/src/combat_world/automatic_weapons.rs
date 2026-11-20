@@ -21,7 +21,7 @@ pub trait NativeAutomaticWeaponContext {
     fn prefers(&self, ship_id: i64, target_id: i64) -> bool;
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct AutomaticWeaponMeasurements {
     pub target_queries: u64,
     pub queue_builds: u64,

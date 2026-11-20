@@ -5,14 +5,15 @@
 use super::*;
 use crate::targeting::NativeEnemyTargetStats;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeWeaponRankSource {
     pub stats: NativeEnemyTargetStats,
     /// Existing source ship representing the shared FleetShip object at import.
     pub fleet_owner_ship_id: i64,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WeaponRankHistory {
     pub(super) frame: Option<i32>,
     pub(super) ships: HashMap<i64, NativeWeaponRankSource>,
@@ -20,6 +21,27 @@ pub(super) struct WeaponRankHistory {
     killers: HashMap<i64, i64>,
     pub(super) kill_revisions: HashMap<i64, u64>,
     consumed_events: usize,
+}
+
+impl WeaponRankHistory {
+    /// Validate the exact fleet aliases and progress cursor without
+    /// rebuilding damage history from the current physical world.
+    pub(super) fn valid_recovery(
+        &self, ship_ids: &HashMap<i64, usize>, event_count: usize,
+    ) -> bool {
+        self.consumed_events <= event_count &&
+        self.ships.iter().all(|(&id, source)|
+            id == source.stats.ship_id && source.stats.valid() &&
+            ship_ids.contains_key(&id) &&
+            ship_ids.contains_key(&source.fleet_owner_ship_id) &&
+            self.fleet_damage.contains_key(&source.fleet_owner_ship_id)
+        ) &&
+        self.fleet_damage.keys().all(|id| ship_ids.contains_key(id)) &&
+        self.killers.iter().all(|(&ship, &killer)|
+            ship_ids.contains_key(&ship) && ship_ids.contains_key(&killer)
+        ) &&
+        self.kill_revisions.keys().all(|id| ship_ids.contains_key(id))
+    }
 }
 
 impl CombatWorld {
