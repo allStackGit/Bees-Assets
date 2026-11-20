@@ -2074,6 +2074,100 @@ fn run_session(
     Ok(())
 }
 
+/// Immutable source identity for an interrupted non-campaign World.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QuickBattleStart {
+    schema_version: u32,
+    kind: String,
+    source_config: PathBuf,
+    source_sha256: String,
+}
+
+impl QuickBattleStart {
+    fn capture(source: &Path) -> Result<Option<Self>, Box<dyn Error>> {
+        let source = source.canonicalize()?;
+        let bytes = fs::read(&source)?;
+        let run: RunConfig = serde_json::from_slice(&bytes)?;
+        // Replay-only games retain their input trace. Only sessions that
+        // already opted into the host's authoritative World checkpoint
+        // may resume a prior output directory.
+        if run.host_recovery_checkpoint.is_none() { return Ok(None); }
+        Ok(Some(Self {
+            schema_version: 1,
+            kind: "native_quick_battle_start".to_owned(),
+            source_config: source,
+            source_sha256: format!("{:x}", Sha256::digest(bytes)),
+        }))
+    }
+
+    fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
+        let start: Self = serde_json::from_slice(&fs::read(path)?)?;
+        if start.schema_version != 1 ||
+            start.kind != "native_quick_battle_start" ||
+            !start.source_config.is_absolute() ||
+            start.source_sha256.len() != 64 ||
+            !start.source_sha256.bytes().all(|ch|
+                ch.is_ascii_digit() || (b'a'..=b'f').contains(&ch))
+        {
+            return Err(invalid("invalid native quick battle start identity").into());
+        }
+        Ok(start)
+    }
+}
+
+/// Only resume the original World when its exact source and committed
+/// host checkpoint both survive. Never revive a battle with a changed
+/// source or let a replay-only game silently inherit checkpoint semantics.
+/// Callers own a writer lease across this selection and the entire battle.
+fn recover_native_quick_battle(
+    output_root: &Path, start: &QuickBattleStart,
+) -> Result<Option<PathBuf>, Box<dyn Error>> {
+    let mut original: Option<PathBuf> = None;
+    for entry in fs::read_dir(output_root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() { continue; }
+        let name = entry.file_name();
+        let Some(number) = name.to_str().and_then(|value|
+            value.strip_prefix("battle-")).filter(|value|
+                !value.is_empty() && value.bytes().all(|ch| ch.is_ascii_digit()))
+        else { continue };
+        if number.parse::<u64>().is_err() { continue; }
+        let root = entry.path();
+        let run = root.join("run");
+        if run.join("rollout-summary.json").exists() ||
+            !run.join("native-host-checkpoint.json").is_file() { continue; }
+        let saved_path = root.join("native-quick-battle-start.json");
+        if !saved_path.exists() { continue; }
+        if run.is_symlink() ||
+            saved_path.is_symlink() ||
+            run.join("native-host-checkpoint.json").is_symlink()
+        {
+            return Err(invalid("native quick battle recovery path is a symlink").into());
+        }
+        let saved = QuickBattleStart::load(&saved_path)?;
+        if saved.source_config != start.source_config { continue; }
+        if saved.source_sha256 != start.source_sha256 {
+            return Err(invalid(
+                "interrupted native battle cannot resume after its source configuration changed",
+            ).into());
+        }
+        if original.replace(run).is_some() {
+            return Err(invalid("multiple interrupted Worlds claim one quick battle").into());
+        }
+    }
+    Ok(original)
+}
+
+fn save_native_quick_battle_start(
+    output: &Path, start: &QuickBattleStart,
+) -> Result<(), Box<dyn Error>> {
+    let parent = output.parent().ok_or_else(||
+        invalid("native quick battle has no archive parent"))?;
+    persist_new_json(&parent.join("native-quick-battle-start.json"), start)?;
+    Ok(())
+}
+
 fn launch_catalog_battle(
     catalog: &battle_catalog::BattleCatalog,
     entry: &battle_catalog::BattleEntry,
@@ -2092,6 +2186,21 @@ fn launch_catalog_battle(
         return Err(invalid("the chosen campaign mission is no longer unlocked").into());
     }
     let config = resolve(catalog_root, entry.config_for(&progress));
+    let quick_start = if entry.mission.is_none() {
+        QuickBattleStart::capture(&config)?
+    } else { None };
+    if let Some(start) = &quick_start {
+        if let Some(output) = recover_native_quick_battle(output_root, start)? {
+            println!("{}", json!({
+                "kind": "native_quick_battle_recovered",
+                "source": start.source_config,
+                "run": output,
+            }));
+            run_session(&start.source_config, interactive, interactive,
+                Some(output.clone()), None, None, None)?;
+            return Ok(output);
+        }
+    }
     let mut purchased = entry.mission.as_ref()
         .map(|mission| progress.purchases_for_side(mission.player_side));
     let created = entry.mission.as_ref()
@@ -2249,6 +2358,9 @@ fn launch_catalog_battle(
             Err(error) => return Err(error.into()),
         }
     };
+    if let Some(start) = &quick_start {
+        save_native_quick_battle_start(&output, start)?;
+    }
     if let Some(setup) = setup {
         let path = output.parent().expect("created campaign battle directory")
             .join("campaign-replay-setup.json");
@@ -3153,6 +3265,40 @@ fn new_library_battle_output(save_root: &Path, game_id: &str)
     }
 }
 
+/// The library and LAN host both pick a checkpointed quick battle under
+/// the same exclusive per-game save owner. A new output remains create-only.
+#[cfg(feature = "client")]
+fn select_library_quick_battle_output(
+    save_root: &Path, game_id: &str, config: &Path,
+) -> Result<PathBuf, Box<dyn Error>> {
+    if let Some(start) = QuickBattleStart::capture(config)? {
+        let root = save_root.join("battles").join(game_id);
+        if let Some(output) = recover_native_quick_battle(&root, &start)? {
+            println!("{}", json!({
+                "kind": "native_quick_battle_recovered",
+                "source": start.source_config,
+                "run": output,
+            }));
+            return Ok(output);
+        }
+        let output = new_library_battle_output(save_root, game_id)?;
+        save_native_quick_battle_start(&output, &start)?;
+        Ok(output)
+    } else {
+        new_library_battle_output(save_root, game_id)
+    }
+}
+
+#[cfg(feature = "client")]
+fn run_library_quick_battle(
+    save_root: &Path, game_id: &str, config: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let root = save_root.join("battles").join(game_id);
+    let _writer = battle_catalog::CampaignWriterLease::acquire(&root)?;
+    let output = select_library_quick_battle_output(save_root, game_id, config)?;
+    run_session(config, true, true, Some(output), None, None, None)
+}
+
 #[cfg(feature = "client")]
 fn run_library_host(settings_path: &Path, save_root: &Path,
     library: &NativeLibrary, games: &[PathBuf],
@@ -3627,8 +3773,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         } else if game_kind == "campaign" {
             run_menu(&games[index], &save_root.join("campaigns").join(game_id))
         } else {
-            let run_root=new_library_battle_output(save_root,game_id)?;
-            run_session(&games[index], true, true, Some(run_root), None, None, None)
+            run_library_quick_battle(save_root, game_id, &games[index])
         };
         launch_failed = result.is_err();
         println!("{}", json!({
