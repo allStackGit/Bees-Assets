@@ -393,6 +393,9 @@ function windowsUv(root) {
     }
 }
 function preparePythonRuntimes(root,changes) {
+    // The permanent Hub worker has no Python requirement. Only simulation
+    // releases create or update Python environments.
+    if(!changes.tinybrains&&!changes.courier)return {};
     const env={...process.env};
     const windows=process.platform==='win32';
     // The timer is independent of the interactive shell's PATH on Linux.
