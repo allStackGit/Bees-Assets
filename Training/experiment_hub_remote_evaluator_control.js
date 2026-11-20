@@ -44,15 +44,8 @@ async function execute(machine,order) {
             ],{timeout:15000,maxBuffer:16384,windowsHide:true});
         }else if(service.executor==='windows-service'&&process.platform==='win32') {
             if(!/^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$/.test(order.unit)||
-                order.action==='run')
-                throw Error('This Windows evaluator supports only installed service lifecycle control.');
-            if(order.action==='restart') {
-                await run('sc.exe',['stop',order.unit],
-                    {timeout:15000,maxBuffer:16384,windowsHide:true});
-                // A completed SCM stop request is not proof of STOPPED.
-                // Avoid starting another process before ownership is released.
-                throw Error('Windows restart needs a confirmed stopped service; use Start after SCM reports stopped.');
-            }
+                !['start','stop'].includes(order.action))
+                throw Error('Windows evaluators support Start and Stop; restart requires a confirmed stopped service.');
             await run('sc.exe',[order.action,order.unit],
                 {timeout:15000,maxBuffer:16384,windowsHide:true});
         }else throw Error('Evaluator is not supported by this machine service manager.');
