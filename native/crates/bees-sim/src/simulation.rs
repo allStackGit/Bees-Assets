@@ -7,6 +7,7 @@
 
 use rayon::prelude::*;
 use std::num::{NonZeroU32, NonZeroUsize};
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -56,6 +57,27 @@ impl RandomStream {
     }
 }
 
+/// Complete fixed-step world state at a checkpoint boundary. The caller
+/// supplies the EXACT same authoritative gameplay state type S on restore:
+/// no physics-only snapshot, synthetic command layer or reinitialization of
+/// reward ownership may masquerade as a resumed game.
+///
+/// Borrowed S permits direct serialization without cloning CombatWorld;
+/// owned S permits deserialization back into the same World<S>.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorldCheckpoint<S> {
+    schema_version: u32,
+    id: WorldId,
+    state: S,
+    random_state: u64,
+    fixed_step_seconds: Option<f32>,
+    tick: u64,
+    episode_revision: u64,
+    failed: bool,
+    measurements: Measurements,
+}
+
 /// World-local state, owned by exactly one simulation. No Unity-style static
 /// registries or global RNG: independent arenas can later run concurrently.
 #[derive(Debug)]
@@ -102,6 +124,44 @@ impl<S> World<S> {
 
     pub fn measurements(&self) -> Measurements {
         self.measurements
+    }
+
+    /// Capture all mutable world-owned state without copying ship arrays,
+    /// spatial grids, command ownership, or the model's native observations.
+    pub fn checkpoint(&self) -> WorldCheckpoint<&S> {
+        WorldCheckpoint {
+            schema_version: 1,
+            id: self.id,
+            state: &self.state,
+            random_state: self.random.state(),
+            fixed_step_seconds: self.fixed_step_seconds,
+            tick: self.tick,
+            episode_revision: self.episode_revision,
+            failed: self.failed,
+            measurements: self.measurements,
+        }
+    }
+
+    pub fn from_checkpoint(snapshot: WorldCheckpoint<S>) -> Result<Self, &'static str> {
+        if snapshot.schema_version != 1 ||
+            snapshot.fixed_step_seconds.is_some_and(|seconds|
+                !seconds.is_finite() || seconds <= 0.0) ||
+            snapshot.measurements.ticks != snapshot.tick ||
+            snapshot.measurements.sampled_ticks > snapshot.tick ||
+            snapshot.measurements.sampled_failed_steps > snapshot.measurements.failed_steps
+        {
+            return Err("invalid native fixed-step World checkpoint");
+        }
+        Ok(Self {
+            id: snapshot.id,
+            state: snapshot.state,
+            random: RandomStream::new(snapshot.random_state),
+            fixed_step_seconds: snapshot.fixed_step_seconds,
+            tick: snapshot.tick,
+            episode_revision: snapshot.episode_revision,
+            failed: snapshot.failed,
+            measurements: snapshot.measurements,
+        })
     }
 
     /// Explicit episode reset clears a failed/finished world; simply calling
@@ -231,6 +291,20 @@ pub struct ParallelSelectedStep<E> {
     pub serialized_arenas: usize,
 }
 
+/// Full scheduler checkpoint: the fixed timestep, sampling policy, lifetime
+/// measurements and EACH World<S> are restored atomically. Runtime worker
+/// threads and empty action buffers are deliberately recreated lazily; they
+/// contain no authoritative game state and are never replay substitutes.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SimulationCheckpoint<S> {
+    schema_version: u32,
+    dt_seconds: f32,
+    sample_every: Option<NonZeroU32>,
+    measurements: Measurements,
+    worlds: Vec<WorldCheckpoint<S>>,
+}
+
 /// A single world scheduler defaults to the cheapest serial path. Long
 /// independent rollout windows and model-batched physics reuse one bounded,
 /// lazily initialized CPU pool across rounds. One-world dispatch stays inline.
@@ -280,6 +354,54 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             .map_err(|_| "unable to initialize native physics worker pool")?;
         self.physics_pool = Some((workers, pool));
         Ok(())
+    }
+
+    /// One consistent read-only checkpoint of the SAME world's real state
+    /// used for rendering, multiplayer, training and evaluation. No model,
+    /// game, or hidden network state is inferred by this scheduler.
+    pub fn checkpoint(&self) -> SimulationCheckpoint<&S> {
+        SimulationCheckpoint {
+            schema_version: 1,
+            dt_seconds: self.dt_seconds,
+            sample_every: self.sample_every,
+            measurements: self.measurements,
+            worlds: self.worlds.iter().map(World::checkpoint).collect(),
+        }
+    }
+
+    /// Restore one complete simulation with the existing stateless GameRules
+    /// implementation. The caller must also restore any outer host state
+    /// (durable HiveMind connection, resident policy, client presentation)
+    /// at the SAME checkpoint boundary before accepting new commands.
+    pub fn from_checkpoint(
+        rules: R, snapshot: SimulationCheckpoint<S>,
+    ) -> Result<Self, &'static str> {
+        if snapshot.schema_version != 1 ||
+            !snapshot.dt_seconds.is_finite() || snapshot.dt_seconds <= 0.0 {
+            return Err("invalid native Simulation checkpoint");
+        }
+        let mut worlds = Vec::with_capacity(snapshot.worlds.len());
+        let mut identities = HashSet::with_capacity(snapshot.worlds.len());
+        for item in snapshot.worlds {
+            let world = World::from_checkpoint(item)?;
+            if !identities.insert(world.id) {
+                return Err("duplicate World ID in native Simulation checkpoint");
+            }
+            worlds.push(world);
+        }
+        if worlds.iter().map(|world| world.measurements.ticks)
+            .sum::<u64>() > snapshot.measurements.ticks {
+            return Err("native Simulation checkpoint omits cumulative steps");
+        }
+        Ok(Self {
+            rules,
+            worlds,
+            dt_seconds: snapshot.dt_seconds,
+            sample_every: snapshot.sample_every,
+            measurements: snapshot.measurements,
+            physics_pool: None,
+            window_action_buffers: Vec::new(),
+        })
     }
 
     pub fn set_timing_sample_period(&mut self, every: Option<NonZeroU32>) {

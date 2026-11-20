@@ -73,7 +73,7 @@ pub struct StepCounts {
     pub weapon_range_projectile_exits: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Measurements {
     pub ticks: u64,
     pub decisions: u64,
@@ -143,6 +143,7 @@ pub struct Measurements {
     /// Log2 nanosecond histogram, recorded only on opted-in sampled steps.
     /// Values are counts, not timings from every individual tick.
     /// Exporting it permits approximate p50/p95/p99 without per-tick logs.
+    #[serde(with = "sampled_latency_histogram")]
     pub sampled_step_latency_log2_ns: [u64; 64],
     pub last_active_ships: u32,
     pub last_active_projectiles: u32,
@@ -211,6 +212,25 @@ impl Default for Measurements {
             last_active_ships: 0,
             last_active_projectiles: 0,
         }
+    }
+}
+
+// Serde's fixed-size array support varies across toolchains. Persist all
+// 64 latency buckets with an exact-length check, off the physics hot path.
+mod sampled_latency_histogram {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::de::Error;
+
+    pub fn serialize<S>(values: &[u64; 64], serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        values.as_slice().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u64; 64], D::Error>
+    where D: Deserializer<'de> {
+        let values = Vec::<u64>::deserialize(deserializer)?;
+        values.try_into().map_err(|values: Vec<u64>|
+            D::Error::custom(format!("expected 64 timing buckets, got {}", values.len())))
     }
 }
 
