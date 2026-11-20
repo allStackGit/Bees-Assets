@@ -1685,6 +1685,13 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         if !window.is_key_down(Key::J) {
             peer.held_fire_rejected = false;
         }
+        // K is a dialogue skip (not a Beacon) only when a real line was
+        // visible at the start of this input frame. Capture that edge
+        // before presentation advances its local line index.
+        let dialogue_skip_key=peer.state.as_ref().is_some_and(|state|
+            state["campaign_dialogue"]["line_count"].as_u64()
+                .is_some_and(|count|dialogue_line < count as usize)) &&
+            window.is_key_pressed(Key::K,KeyRepeat::No);
         if let Some(state)=peer.state.as_ref() {
             let cue=state["campaign_dialogue"]["sequence"].as_u64().map(|sequence|(
                 state["world_id"].as_u64().unwrap_or(0),
@@ -1817,8 +1824,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     }))),
                     Key::Y=>Some(("match_speed",json!({"match_speed":true}))),
                     Key::U=>Some(("match_speed",json!({"match_speed":false}))),
-                    Key::K if peer.state.as_ref().is_some_and(|state|
-                        state["campaign_dialogue"]["cue"].is_object())=>None,
+                    Key::K if dialogue_skip_key=>None,
                     Key::K=>Some(("special",json!({"kind":"DropBeacon"}))),
                     Key::D=>Some(("special",json!({"kind":"Detonate"}))),
                     Key::Q=>Some(("special",json!({"kind":"Charge"}))),
@@ -1875,9 +1881,14 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     !minimap.is_some_and(|layout| layout.world_at(x, y).is_some()))
                     .then_some((x as i32,y as i32))
             });
+            // Begin is an edge-triggered gesture, just as on the local
+            // native commander. Keeping J held after X cancels fire must
+            // not immediately begin another weapon lease in this frame.
+            // An already active gesture still sends Aim and End as usual.
             let holding=window.is_active() && window.is_key_down(Key::J)
                 && !peer.held_fire_rejected && mode.is_none() && within.is_some() &&
-                (held_fire_active || !selected.is_empty());
+                (held_fire_active || (!selected.is_empty() &&
+                    window.is_key_pressed(Key::J,KeyRepeat::No)));
             match (held_fire_active,holding,within) {
                 (false,true,Some((x,y))) => {
                     let point=cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
