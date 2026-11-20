@@ -2970,6 +2970,13 @@ service to the public Internet.
    without individual `machine_id` fields. The Hub checks current lease
    capacity and keeps the learner's approved endpoint order, including
    any fixed rollout weights or Courier lineage slots.
+   For independent remote Courier lineages, the same frozen
+   `training.*` PPO Design overrides now apply to both learner-local and
+   remote policies. Install the companion Basic-Training branch
+   `feat/hub-independent-courier-ppo-20261119` on every participating
+   Courier host and restart its approved agent. Each remote worker
+   acknowledges a SHA-256 fingerprint of the settings after policy
+   initialization; an older worker cannot silently ignore the overrides.
 4. Allow each host's authenticated agent to acknowledge its offered claim,
    and qualify the learner's GPU access before launch. In **Train**, use
    **Start collectors only** to authorize all remote native Starts atomically
