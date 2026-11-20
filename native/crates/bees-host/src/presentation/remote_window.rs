@@ -60,6 +60,8 @@ struct WireCounts {
     frames_rendered: u64,
     orders_sent: u64,
     acknowledgments: u64,
+    orders_accepted: u64,
+    orders_rejected: u64,
     campaign_receipts: u64,
     battle_result_receipts: u64,
     interrupted_battle_notices: u64,
@@ -385,6 +387,7 @@ struct PeerClient {
     written: usize,
     queued_bytes: usize,
     next_request: u64,
+    last_response_request: u64,
     authenticated: bool,
     connected: bool,
     /// UI-only control gate, computed from the authoritative story cue
@@ -431,7 +434,7 @@ impl PeerClient {
         Ok(Self {
             socket, incoming: Vec::new(), queued: VecDeque::new(),
             written: 0, queued_bytes: 0, next_request: 1,
-            authenticated: false, connected: true, input_suppressed: false, side,
+            last_response_request: 0, authenticated: false, connected: true, input_suppressed: false, side,
             host_session_id: None, expected_host_session_id: None,
             state: None, visual: RemoteVisual::default(),
             notice: "Authenticating with native host".to_owned(),
@@ -594,21 +597,38 @@ impl PeerClient {
                     self.metrics.battle_result_receipts += 1;
                 }
                 Some("input_result") => {
-                    self.metrics.acknowledgments += 1;
-                    let request = message["request_id"].as_u64().unwrap_or(0);
-                    let feedback = message["feedback"].as_str()
-                        .unwrap_or("host acknowledgment");
+                    if !self.authenticated {
+                        return Err(invalid("native host acknowledged an unauthenticated order").into());
+                    }
+                    let request=message["request_id"].as_u64()
+                        .ok_or_else(||invalid("native host acknowledgment has no request ID"))?;
+                    let processed=message["processed"].as_bool()
+                        .ok_or_else(||invalid("native host acknowledgment has no result"))?;
+                    let feedback=message["feedback"].as_str()
+                        .filter(|text|!text.is_empty())
+                        .ok_or_else(||invalid("native host acknowledgment has no feedback"))?;
+                    // Replies for this one TCP peer are serialized at
+                    // authoritative input-tick boundaries. They must not
+                    // acknowledge a future or already settled request.
+                    if request<=self.last_response_request ||
+                        request>=self.next_request {
+                        return Err(invalid("out-of-order native host command acknowledgment").into());
+                    }
+                    self.last_response_request=request;
+                    self.metrics.acknowledgments+=1;
+                    if processed {self.metrics.orders_accepted+=1;}
+                    else {self.metrics.orders_rejected+=1;}
                     if self.held_fire_begin_request == Some(request) {
                         self.held_fire_begin_request = None;
                         // A rejected Begin must not cause 30 new attempts
                         // per second while the player holds J. Require one
                         // release before requesting a different gesture.
-                        if message["processed"] != true ||
+                        if !processed ||
                             feedback == "No selected weapons accepted held fire" {
                             self.held_fire_rejected = true;
                         }
                     }
-                    self.notice = format!("Order {request}: {feedback}");
+                    self.notice=format!("Order {request}: {feedback}");
                 }
                 _ => return Err(invalid("unexpected native multiplayer protocol message").into()),
             }
@@ -2621,6 +2641,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "audio":audio.measurements(),
         "orders_sent":peer.metrics.orders_sent,
         "order_acknowledgments":peer.metrics.acknowledgments,
+        "orders_accepted":peer.metrics.orders_accepted,
+        "orders_rejected":peer.metrics.orders_rejected,
         "campaign_receipts":peer.metrics.campaign_receipts,
         "battle_result_receipts":peer.metrics.battle_result_receipts,
         "interrupted_battle_notices":peer.metrics.interrupted_battle_notices,
