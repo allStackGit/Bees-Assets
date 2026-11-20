@@ -15,7 +15,7 @@ use crate::movement::{MotionUpdate, ShipMotion};
 use crate::navigation_search::NavigationPath;
 use crate::timer::ScaledTimer;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GameMovementProfile {
     /// ConfigData.ShipTurningRadius, calculated from RotationMultiplier.
     pub turning_radius: f32,
@@ -39,7 +39,8 @@ impl GameMovementProfile {
 
 /// Route and direct orders are per-ship. The underlying ShipMotion remains
 /// the source of truth for pose, velocity, turning rate and speed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GameShipSteering {
     pub profile: GameMovementProfile,
     pub final_destination: Option<Vec2>,
@@ -55,6 +56,19 @@ pub struct GameShipSteering {
 }
 
 impl GameShipSteering {
+    /// Command recovery requires the actual path cursor, deferral and
+    /// one-second replan clock, not a new route from the current position.
+    pub fn valid_recovery(&self) -> bool {
+        self.profile.valid() &&
+        self.final_destination.is_none_or(|point| point.is_finite()) &&
+        self.next_waypoints.iter().all(|point| point.is_finite()) &&
+        self.target_direction.is_none_or(|angle| angle.is_finite()) &&
+        self.deferred_direct_destination.is_none_or(|point| point.is_finite()) &&
+        self.failed_path_retry_timer.is_none_or(|timer| timer.valid_recovery()) &&
+        self.tracked_replan_wait_seconds.is_finite() &&
+        self.tracked_replan_wait_seconds >= 0.0
+    }
+
     pub fn new(profile: GameMovementProfile) -> Option<Self> {
         if !profile.valid() { return None; }
         Some(Self {

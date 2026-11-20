@@ -224,7 +224,7 @@ pub struct CombatShip {
 /// The original Unity ship SizeClass is a float (unlike asteroid SizeClass).
 /// OriginalHealth comes from ConfigData.GetShipInfo and survives reductions
 /// of MaxHealth in training; it cannot be inferred from current ShipVitals.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ShipCollisionProfile {
     pub size_class: f32,
     pub original_health: i32,
@@ -241,7 +241,7 @@ impl ShipCollisionProfile {
 /// are supplied explicitly from the Level, rather than inferred from the
 /// broadphase grid or the RL curriculum. Coordinates must already share
 /// the native physics world's map frame.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GamePointOrder {
     pub destination: Vec2,
     pub ship_clearance: i32,
@@ -700,7 +700,7 @@ pub struct FullAsteroidPoolMeasurements {
     pub exhausted_destination_searches: u64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AsteroidBorderState {
     pub has_touched_map_border: bool,
     pub has_entered_map: bool,
@@ -755,6 +755,37 @@ struct EnemyShipContact {
     exact_tests: u64,
 }
 
+/// Durable source movement orders and collision callback state.
+/// Derived broadphase scratch remains outside the checkpoint: the
+/// physics owner rebuilds it after the next authoritative fixed step.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CombatWorldMovementCheckpoint {
+    steering: HashMap<i64, GameShipSteering>,
+    point_orders_pending: HashMap<i64, GamePointOrder>,
+    point_orders_latest: HashMap<i64, GamePointOrder>,
+    ship_bounds_overrides: HashSet<i64>,
+    collision_profiles: HashMap<i64, ShipCollisionProfile>,
+    original_ship_health: HashMap<i64, i32>,
+    fleet_ids: HashMap<i64, i64>,
+    target_front_offsets: HashMap<i64, f32>,
+    support_zones: HashMap<(u8, i32), Vec<i64>>,
+    mining_obstacle_ids: Vec<i64>,
+    nearby_asteroids_by_ship: HashMap<i64, Vec<i64>>,
+    asteroid_navigation_refresh: HashMap<i64, ScaledTimer>,
+    asteroid_border_states: HashMap<i64, AsteroidBorderState>,
+    nearby_asteroid_pairs: HashSet<(i64, i64)>,
+    static_navigation_revision: u64,
+    moving_static_navigation_obstacles: bool,
+    pending_contacts: Vec<TriggerEnter>,
+    processing_contacts: Vec<TriggerEnter>,
+    pending_obstacle_contacts: Vec<ObstacleTriggerEnter>,
+    processing_obstacle_contacts: Vec<ObstacleTriggerEnter>,
+    processed_this_tick: HashSet<i64>,
+    processed_obstacles_this_tick: HashSet<i64>,
+    events: Vec<CombatEvent>,
+}
+
 /// World-owned source game command specials, shared by local play,
 /// HiveMind and native headless use. All physical hulls, damage and
 /// movement remain owned by the same CombatWorld.
@@ -804,6 +835,7 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     map_objects: HashMap<i64, CombatMapObject>,
     range_visible_map_objects: HashSet<i64>,
     reserved_ship_ids: HashMap<i32, HashSet<i64>>,
+    movement: CombatWorldMovementCheckpoint,
     game_specials: CombatWorldGameSpecialsCheckpoint,
     discovery: LevelDiscovery,
     navigation: NavigationRequestsCheckpoint,
@@ -1444,7 +1476,7 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 5,
+            schema_version: 6,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1457,6 +1489,31 @@ impl CombatWorld {
             map_objects: self.map_objects.clone(),
             range_visible_map_objects: self.range_visible_map_objects.clone(),
             reserved_ship_ids: self.reserved_ship_ids.clone(),
+            movement: CombatWorldMovementCheckpoint {
+                steering: self.game_ship_steering.clone(),
+                point_orders_pending: self.pending_game_point_orders.clone(),
+                point_orders_latest: self.latest_game_point_orders.clone(),
+                ship_bounds_overrides: self.ship_bounds_overrides.clone(),
+                collision_profiles: self.ship_collision_profiles.clone(),
+                original_ship_health: self.authored_original_ship_health.clone(),
+                fleet_ids: self.fleet_id_by_ship.clone(),
+                target_front_offsets: self.ship_target_front_offsets.clone(),
+                support_zones: self.support_zone_ids.clone(),
+                mining_obstacle_ids: self.mining_obstacle_ids.clone(),
+                nearby_asteroids_by_ship: self.nearby_asteroids_by_ship.clone(),
+                asteroid_navigation_refresh: self.asteroid_navigation_refresh.clone(),
+                asteroid_border_states: self.asteroid_border_states.clone(),
+                nearby_asteroid_pairs: self.nearby_asteroid_pairs.clone(),
+                static_navigation_revision: self.static_navigation_revision,
+                moving_static_navigation_obstacles: self.moving_static_navigation_obstacles,
+                pending_contacts: self.pending_contacts.clone(),
+                processing_contacts: self.processing_contacts.clone(),
+                pending_obstacle_contacts: self.pending_obstacle_contacts.clone(),
+                processing_obstacle_contacts: self.processing_obstacle_contacts.clone(),
+                processed_this_tick: self.processed_this_tick.clone(),
+                processed_obstacles_this_tick: self.processed_obstacles_this_tick.clone(),
+                events: self.events.clone(),
+            },
             game_specials: CombatWorldGameSpecialsCheckpoint {
                 strikers: self.game_strikers.clone(),
                 scouts: self.game_scout_runtime.clone(),
@@ -1494,7 +1551,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 5 {
+        if snapshot.schema_version != 6 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1645,6 +1702,54 @@ impl CombatWorld {
                     *live_mobile_ships_by_side.entry(ship.side).or_insert(0) += 1;
                 }
             }
+        }
+        // Imported steering and registration indexes must reference
+        // authentic dense slots, and every deferred order stays on its
+        // original ship. Do not substitute a fresh A* plan at restore.
+        let movement = &snapshot.movement;
+        let registered_ship = |id: i64| {
+            id > 0 && self.ship_by_id.contains_key(&id)
+        };
+        if movement.steering.iter().any(|(&id, steer)|
+            !registered_ship(id) || !steer.valid_recovery()
+        ) ||
+            movement.point_orders_pending.iter().any(|(&id, order)|
+                !registered_ship(id) || !order.valid()
+            ) ||
+            movement.point_orders_latest.iter().any(|(&id, order)|
+                !registered_ship(id) || !order.valid()
+            ) ||
+            movement.ship_bounds_overrides.iter().any(|&id| !registered_ship(id)) ||
+            movement.collision_profiles.iter().any(|(&id, profile)|
+                !registered_ship(id) || !profile.valid()
+            ) ||
+            movement.original_ship_health.iter().any(|(&id, &value)|
+                !registered_ship(id) || value <= 0
+            ) ||
+            movement.fleet_ids.iter().any(|(&id, &fleet)| !registered_ship(id) || fleet == 0) ||
+            movement.target_front_offsets.iter().any(|(&id, &offset)|
+                !registered_ship(id) || !offset.is_finite()
+            ) ||
+            movement.support_zones.iter().any(|(&(kind, side), ids)|
+                side <= 0 || ids.windows(2).any(|pair| pair[0] >= pair[1]) ||
+                ids.iter().any(|id|
+                    !registered_ship(*id) ||
+                    snapshot.ships[self.ship_by_id[id]].ship_type != kind ||
+                    snapshot.ships[self.ship_by_id[id]].side != side
+                )
+            ) ||
+            movement.asteroid_navigation_refresh.iter().any(|(&id, timer)|
+                !registered_ship(id) || !timer.valid_recovery()
+            ) ||
+            movement.nearby_asteroids_by_ship.keys().any(|id| !registered_ship(*id)) ||
+            movement.pending_contacts.iter().chain(&movement.processing_contacts).any(|pair|
+                pair.ship_id <= 0 || pair.projectile_id <= 0
+            ) ||
+            movement.pending_obstacle_contacts.iter().chain(
+                &movement.processing_obstacle_contacts,
+            ).any(|pair| pair.projectile_id <= 0 || pair.obstacle_id <= 0)
+        {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         // Command-owned timers and capability reservations belong to the
         // exact recovered source ship identities; they must not migrate
@@ -1798,6 +1903,30 @@ impl CombatWorld {
         self.map_objects = snapshot.map_objects;
         self.range_visible_map_objects = snapshot.range_visible_map_objects;
         self.reserved_ship_ids = snapshot.reserved_ship_ids;
+        let movement = snapshot.movement;
+        self.game_ship_steering = movement.steering;
+        self.pending_game_point_orders = movement.point_orders_pending;
+        self.latest_game_point_orders = movement.point_orders_latest;
+        self.ship_bounds_overrides = movement.ship_bounds_overrides;
+        self.ship_collision_profiles = movement.collision_profiles;
+        self.authored_original_ship_health = movement.original_ship_health;
+        self.fleet_id_by_ship = movement.fleet_ids;
+        self.ship_target_front_offsets = movement.target_front_offsets;
+        self.support_zone_ids = movement.support_zones;
+        self.mining_obstacle_ids = movement.mining_obstacle_ids;
+        self.nearby_asteroids_by_ship = movement.nearby_asteroids_by_ship;
+        self.asteroid_navigation_refresh = movement.asteroid_navigation_refresh;
+        self.asteroid_border_states = movement.asteroid_border_states;
+        self.nearby_asteroid_pairs = movement.nearby_asteroid_pairs;
+        self.static_navigation_revision = movement.static_navigation_revision;
+        self.moving_static_navigation_obstacles = movement.moving_static_navigation_obstacles;
+        self.pending_contacts = movement.pending_contacts;
+        self.processing_contacts = movement.processing_contacts;
+        self.pending_obstacle_contacts = movement.pending_obstacle_contacts;
+        self.processing_obstacle_contacts = movement.processing_obstacle_contacts;
+        self.processed_this_tick = movement.processed_this_tick;
+        self.processed_obstacles_this_tick = movement.processed_obstacles_this_tick;
+        self.events = movement.events;
         let special = snapshot.game_specials;
         self.game_strikers = special.strikers;
         self.game_scout_runtime = special.scouts;
