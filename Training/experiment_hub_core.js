@@ -3631,6 +3631,18 @@ class ExperimentHub {
                     }
                     accepted.set(report.job_id,{progress:null,evaluation:null,
                         evaluationIssue:null,resources:null});
+                    // A verified later Inspect supersedes an earlier
+                    // checkpoint-unavailable diagnostic. Keep the original
+                    // terminal process state while recording that its
+                    // checkpoint became publishable under this same dispatch.
+                    if(job.status==='finished'&&
+                        job.frozen_parameters?.optimizer_group===true&&
+                        nativeOptimizerTerminalProof(job)&&
+                        (job.execution_diagnostic||null)!==(report.diagnostic||null)) {
+                        job.execution_diagnostic=report.diagnostic||null;
+                        job.execution_updated_at=observedAt;
+                        changed=true;
+                    }
                     if(job.release_on_terminal&&job.status==='finished'&&
                         job.frozen_parameters?.optimizer_group===true&&
                         nativeOptimizerTerminalProof(job)) {
