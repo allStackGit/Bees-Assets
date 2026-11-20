@@ -1209,6 +1209,13 @@ impl RunNetwork {
                 recorded_this_poll = true;
             }
         }
+        // The transport can finish without another event (for example,
+        // after a graceful close). Setup readiness cannot then become true.
+        // Do not spin at round zero or advance an uninitialized HiveMind
+        // Level indefinitely if its authoritative socket has closed.
+        if self.next_level < self.levels.len() && self.worker.closed() {
+            return Err(invalid("HiveMind socket closed before all native Levels finished setup"));
+        }
         // A single sync amortizes disk barriers across up to sixteen
         // authenticated HiveMind ingress events at this fixed boundary.
         // The actual Level and durable request ledger already own their
@@ -6438,13 +6445,15 @@ fn run_battle(
                 break;
             }
         }
-        // The first physical tick must not precede the first durable
-        // World/connection/launcher checkpoint. HiveMind setup may need
-        // several network polls before its Game ID and pending requests
-        // can be captured atomically. Continue that existing setup here
-        // without admitting player commands or stepping the simulation.
-        // The next iteration will commit round zero before gameplay.
-        if host_checkpoint_file.is_some() && checkpointed_round.is_none() {
+        // Setup acknowledgment owns the original server Game ID and each
+        // imported Level. Never advance physics while only some Levels
+        // have joined HiveMind, even for non-checkpointed native training.
+        // For recoverable gameplay, the same initial zero-round checkpoint
+        // must also be durable before the first player command or tick.
+        if network.as_ref().is_some_and(|session|
+            session.next_level != session.levels.len()) ||
+            host_checkpoint_file.is_some() && checkpointed_round.is_none()
+        {
             std::thread::sleep(Duration::from_millis(1));
             continue 'battle;
         }
