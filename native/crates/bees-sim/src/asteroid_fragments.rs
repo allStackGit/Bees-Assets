@@ -82,7 +82,7 @@ impl AsteroidFragmentPalette {
 /// Stage.AsteroidMaxSpeed, Level.HalfMapWidth/Height and strict map bounds
 /// when assigning an asteroid's movement. Keep these explicit rather than
 /// using the broader spatial-grid bounds as a substitute.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FragmentSpawnSettings {
     pub map_bounds: Aabb,
     pub half_map_extents: Vec2,

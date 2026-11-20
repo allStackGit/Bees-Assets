@@ -756,6 +756,31 @@ struct EnemyShipContact {
     exact_tests: u64,
 }
 
+/// Authored, immutable source inputs for future asteroid creation.
+/// These are small contracts against the already-loaded catalogs,
+/// not duplicate prefab assets or a second random/spawn pipeline.
+#[derive(PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CombatWorldSpawnConfigurationCheckpoint {
+    full_asteroid_stage: Option<FullAsteroidStageSource>,
+    fragments: Option<FragmentSource>,
+}
+
+#[derive(PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FullAsteroidStageSource {
+    ordered_prefabs: Vec<u8>,
+    settings: FragmentSpawnSettings,
+}
+
+#[derive(PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FragmentSource {
+    shard_prefabs: Vec<u8>,
+    piece_prefabs: Vec<u8>,
+    settings: FragmentSpawnSettings,
+}
+
 /// One policy-controller registry shared by rendering, gameplay and
 /// headless RL. Agent clocks use these same binding revisions, never
 /// an independently reconstructed policy roster.
@@ -876,6 +901,7 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     queen_measurements: QueenSpawnMeasurements,
     policy: CombatWorldPolicyCheckpoint,
     weapons: BTreeMap<i64, ShipWeapons>,
+    source_spawn_configuration: CombatWorldSpawnConfigurationCheckpoint,
     special_weapons: BTreeMap<i64, special_weapon_contacts::SpecialWeaponContacts>,
     special_body_entries: Vec<(i64, i64)>,
     special_weapon_measurements: SpecialWeaponMeasurements,
@@ -1524,9 +1550,27 @@ impl CombatWorld {
     /// Capture these actual CombatWorld owners at a fixed-tick boundary.
     /// Callers must also checkpoint the other CombatWorld/Level ownership
     /// before claiming that the battle is recoverable.
+    fn source_spawn_configuration_checkpoint(&self)
+        -> CombatWorldSpawnConfigurationCheckpoint
+    {
+        CombatWorldSpawnConfigurationCheckpoint {
+            full_asteroid_stage: self.full_asteroid_stage.as_ref().map(|stage|
+                FullAsteroidStageSource {
+                    ordered_prefabs: stage.prefabs.clone(),
+                    settings: stage.settings,
+                },
+            ),
+            fragments: self.fragmentation.as_ref().map(|source| FragmentSource {
+                shard_prefabs: source.palette.shard_prefabs().to_vec(),
+                piece_prefabs: source.palette.piece_prefabs().to_vec(),
+                settings: source.settings,
+            }),
+        }
+    }
+
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 12,
+            schema_version: 13,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1543,6 +1587,7 @@ impl CombatWorld {
                 .collect(),
             queen_measurements: self.queen_spawn_measurements,
             weapons: self.ship_weapons.clone(),
+            source_spawn_configuration: self.source_spawn_configuration_checkpoint(),
             special_weapons: self.special_weapons.clone(),
             special_body_entries: self.special_body_entries.clone(),
             special_weapon_measurements: self.special_weapon_measurements,
@@ -1637,7 +1682,10 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 12 {
+        if snapshot.schema_version != 13 {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        if snapshot.source_spawn_configuration != self.source_spawn_configuration_checkpoint() {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
