@@ -242,6 +242,9 @@ async function main(argv=process.argv.slice(2)) {
     }
     const automationTimer=setInterval(()=>{
         try {
+            // A lost worker heartbeat is a durable observation, never a
+            // native Stop or a reason to release its reserved capacity.
+            hub.noteExpiredAgents();
             const current=hub.automationStatus();
             if(!current.enabled&&!current.restart_rearm_pending)return;
             const status=hub.tickAutomation();
