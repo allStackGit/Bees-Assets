@@ -11,8 +11,8 @@
 //! deliberately remain the responsibility of the consuming application.
 
 use std::ffi::OsString;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, BufWriter, Write};
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -70,12 +70,17 @@ pub fn canonical_writer_checkpoint_path(
     }
 }
 
-/// One active checkpoint writer across native games and offline review.
-/// Mirrors the campaign-writer lease. A crash leaves an explicit lock
-/// requiring confirmation that the original process has stopped.
+/// Cross-platform, crash-released writer ownership for HiveMind and native
+/// Worlds. The stable lock inode is NEVER removed: deleting a locked file
+/// could allow another process to lock a replacement inode concurrently.
+/// File::try_lock uses OS locks on Windows and Unix (Rust 1.89+).
+///
+/// The old create_new sentinel cannot share ownership safely with OS locks.
+/// Leave a permanent, versioned sentinel at the historical filename to
+/// prevent older binaries from opening a parallel unprotected writer.
+/// A legacy pid= sentinel requires explicit one-time owner confirmation.
 pub struct ConnectionCheckpointWriterLease {
-    path: PathBuf,
-    file: Option<File>,
+    _file: File,
 }
 
 impl ConnectionCheckpointWriterLease {
@@ -84,34 +89,59 @@ impl ConnectionCheckpointWriterLease {
             return Err(CheckpointFileError::InvalidPath);
         }
         let mut name = OsString::from(checkpoint.as_os_str());
-        name.push(".writer.lock");
-        let path = PathBuf::from(name);
-        let mut file = match OpenOptions::new().write(true)
-            .create_new(true).open(&path)
-        {
-            Ok(file) => file,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists =>
-                return Err(CheckpointFileError::Io(io::Error::new(
-                    io::ErrorKind::AlreadyExists,
-                    format!("HiveMind checkpoint is already owned ({}); verify the previous owner has stopped before removing a stale writer lock", path.display()),
-                ))),
+        name.push(".writer.lease");
+        let lease_path = PathBuf::from(name);
+        match fs::symlink_metadata(&lease_path) {
+            Ok(metadata) if !metadata.file_type().is_file() =>
+                return Err(CheckpointFileError::InvalidPath),
+            Ok(_) => {},
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {},
             Err(error) => return Err(error.into()),
-        };
-        if let Err(error) = writeln!(file, "pid={}", std::process::id())
-            .and_then(|_| file.sync_all())
-        {
-            drop(file);
-            let _ = fs::remove_file(&path);
-            return Err(error.into());
         }
-        Ok(Self { path, file: Some(file) })
-    }
-}
+        // This file persists after normal exit and after crashes. Opening
+        // read+write also permits a real exclusive LockFileEx on Windows.
+        let file = OpenOptions::new().read(true).write(true).create(true)
+            .open(&lease_path)?;
+        match file.try_lock() {
+            Ok(()) => {},
+            Err(TryLockError::WouldBlock) =>
+                return Err(CheckpointFileError::Io(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    format!("native checkpoint already has an active writer: {}",
+                        checkpoint.display()),
+                ))),
+            Err(TryLockError::Error(error)) => return Err(error.into()),
+        }
 
-impl Drop for ConnectionCheckpointWriterLease {
-    fn drop(&mut self) {
-        drop(self.file.take());
-        let _ = fs::remove_file(&self.path);
+        let mut marker_name = OsString::from(checkpoint.as_os_str());
+        marker_name.push(".writer.lock");
+        let marker_path = PathBuf::from(marker_name);
+        const OS_OWNED_MARKER: &str = "native-os-writer-v1\n";
+        match fs::symlink_metadata(&marker_path) {
+            Ok(metadata) if !metadata.file_type().is_file() =>
+                return Err(CheckpointFileError::InvalidPath),
+            Ok(_) => {
+                let mut marker = String::new();
+                File::open(&marker_path)?.take(64).read_to_string(&mut marker)?;
+                if marker != OS_OWNED_MARKER {
+                    return Err(CheckpointFileError::Io(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        format!(
+                            "legacy HiveMind checkpoint writer marker ({}) requires verification that the old process stopped before its one-time removal",
+                            marker_path.display(),
+                        ),
+                    )));
+                }
+            },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let mut marker = OpenOptions::new().write(true).create_new(true)
+                    .open(&marker_path)?;
+                marker.write_all(OS_OWNED_MARKER.as_bytes())?;
+                marker.sync_all()?;
+            },
+            Err(error) => return Err(error.into()),
+        }
+        Ok(Self { _file: file })
     }
 }
 
