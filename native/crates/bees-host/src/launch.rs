@@ -5807,6 +5807,9 @@ fn run_battle(
             if let Some(file) = &host_checkpoint_file {
                 // A stable boundary follows the previous round's episode
                 // accounting, model transition and journal ACK.
+                if let Some(server) = &mut remote {
+                    server.record_input_checkpoint(pending_remote_successes.len());
+                }
                 let saved = capture_native_progress!()?;
                 if let Err(error) = host.persist_recovery_checkpoint_with_launcher(file, saved) {
                     failed_window = Some(format!(
@@ -6027,7 +6030,9 @@ fn run_battle(
                         if matches!(&input.action,
                             bees_gameplay::player_inputs::NativeHeldFireAction::End))
                 {
-                    remote.as_mut().expect("remote listener").reply(
+                    let server = remote.as_mut().expect("remote listener");
+                    server.record_checkpoint_backpressure();
+                    server.reply(
                         order.peer, order.request_id,
                         Err("native host checkpoint pending; retry command"));
                     continue;
@@ -6544,6 +6549,9 @@ fn run_battle(
             // the immutable run receipt is assembled.
             if let Some(file) = &host_checkpoint_file {
                 if host.connection_mut().connection().pending_request_count() == 0 {
+                    if let Some(server) = &mut remote {
+                        server.record_input_checkpoint(pending_remote_successes.len());
+                    }
                     let saved = capture_native_progress!()?;
                     if let Err(error) = host.persist_recovery_checkpoint_with_launcher(file, saved) {
                         failed_window = Some(format!(
