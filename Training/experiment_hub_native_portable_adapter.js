@@ -198,6 +198,83 @@ function createNativeBeesPortableCollectorAdapter({
         return {receipt,stat};
     }
 
+    function committedRolloutProgress(context) {
+        const frozen=context?.frozen_parameters;
+        if(!frozen||!SHA.test(String(frozen.collection_id||''))||
+            !/^[A-Za-z0-9_-]{1,96}$/.test(String(frozen.bundle_directory||''))||
+            !Number.isSafeInteger(frozen.rollout_workers)||
+            frozen.rollout_workers<1||frozen.rollout_workers>256)
+            return null;
+        const attempt=path.join(scratch,
+            'native-collector-'+frozen.collection_id,frozen.bundle_directory);
+        const measurements=[];
+        const validCount=value=>Number.isSafeInteger(value)&&value>=0;
+        const regularFile=file=>{
+            let stat;
+            try { stat=fs.lstatSync(file); }
+            catch(error) { if(error.code==='ENOENT')return null; throw error; }
+            if(!stat.isFile()||stat.isSymbolicLink()||
+                !fs.realpathSync(file).startsWith(scratch+path.sep))
+                throw Error('Native progress file is not an owned collector artifact.');
+            return stat;
+        };
+        for(let index=0;index<frozen.rollout_workers;index++) {
+            const directory=frozen.rollout_workers===1?attempt:
+                path.join(attempt,'rollout-'+index);
+            const progressFile=path.join(directory,'native-host-checkpoint.progress.json');
+            const stat=regularFile(progressFile);
+            if(!stat)continue;
+            if(stat.size<1||stat.size>8192)
+                throw Error('Native host progress exceeds its bounded projection.');
+            const runFile=path.join(directory,'run.json');
+            const sourceStat=regularFile(runFile);
+            if(!sourceStat||sourceStat.size<1||sourceStat.size>512*1024)
+                throw Error('Native host progress has no immutable run identity.');
+            const run=JSON.parse(fs.readFileSync(runFile,'utf8'));
+            const row=JSON.parse(fs.readFileSync(progressFile,'utf8'));
+            if(row?.schema_version!==1||
+                row.kind!=='native_host_checkpoint_progress'||
+                !run||typeof run!=='object'||run.run_id!==row.run_id||
+                typeof row.run_id!=='string'||!row.run_id||
+                run.host_recovery_checkpoint!==path.join(directory,'native-host-checkpoint.json')||
+                !['rounds','successful_world_steps','successful_policy_rows',
+                    'completed_episodes','model_generation'].every(key=>validCount(row[key]))||
+                typeof row.elapsed_wall_seconds!=='number'||
+                !Number.isFinite(row.elapsed_wall_seconds)||
+                row.elapsed_wall_seconds<0)
+                throw Error('Native host progress is detached from its committed run identity.');
+            measurements.push({row,stat});
+        }
+        if(!measurements.length)return null;
+        const sum=key=>measurements.reduce((total,item)=>total+item.row[key],0);
+        const steps=sum('successful_policy_rows'),worldSteps=sum('successful_world_steps');
+        if(!validCount(steps)||!validCount(worldSteps))
+            throw Error('Native collector progress exceeds its safe integer range.');
+        const seconds=measurements.reduce(
+            (largest,item)=>Math.max(largest,item.row.elapsed_wall_seconds),0);
+        const newest=measurements.reduce((latest,item)=>
+            item.stat.mtime>latest?item.stat.mtime:latest,
+            new Date(0));
+        return validateProgress({
+            schema_version:1,source:'hub-metrics-v1',
+            experiment_id:context.job_id,segment_id:'collection',
+            source_modified_at:newest.toISOString(),
+            steps_completed:steps,
+            metrics:{
+                rollout_world_steps:{value:worldSteps,unit:'count'},
+                rollout_policy_rows:{value:steps,unit:'count'},
+                rollout_completed_episodes:{
+                    value:sum('completed_episodes'),unit:'count',
+                },
+                rollout_committed_rounds:{value:sum('rounds'),unit:'count'},
+                rollout_checkpointed_workers:{
+                    value:measurements.length,unit:'count',
+                },
+                rollout_elapsed_wall_seconds:{value:seconds,unit:'seconds'},
+            },
+        },PROJECT);
+    }
+
     return {
         executable,
         cwd:tools,
@@ -282,7 +359,7 @@ function createNativeBeesPortableCollectorAdapter({
         },
         readProgress(context) {
             const completed=verifiedReceipt(context);
-            if(!completed)return null;
+            if(!completed)return committedRolloutProgress(context);
             const {receipt,stat}=completed,metrics=receipt.rollout_metrics;
             return validateProgress({
                 schema_version:1,source:'hub-metrics-v1',
