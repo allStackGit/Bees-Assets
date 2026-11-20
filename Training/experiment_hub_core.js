@@ -5641,8 +5641,6 @@ class ExperimentHub {
                 job.optimizer_restart_of_bundle_id=value.restart_optimizer_bundle_id;
                 job.optimizer_restart_of_job_id=predecessor.id;
             }
-            if(collectors)
-                job.optimizer_source_collector_job_ids=value.collector_job_ids.slice();
             jobs.push(job);
             leases.push(lease);
         }
