@@ -164,11 +164,19 @@ def main():
                         help="stream completed verified archive to a native learner bundle receiver")
     parser.add_argument("--hub-artifact-job-id",
                         help="Hub's separate immutable job UUID for local verified artifact publication")
+    parser.add_argument("--previous-hub-artifact-job-id",
+                        help="approved failed native collector's original local Hub artifact owner")
     args = parser.parse_args()
     if args.leased_gpu_inference and args.hub_artifact_job_id is None:
         parser.error("--leased-gpu-inference requires the approved Hub artifact job")
     if args.hub_artifact_job_id is not None and args.upload_url is None:
         parser.error("Hub collectors require a learner receiver to confirm actual delivery")
+    if args.previous_hub_artifact_job_id is not None and (
+            args.hub_artifact_job_id is None or
+            args.previous_hub_artifact_job_id == args.hub_artifact_job_id or
+            re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                         args.previous_hub_artifact_job_id) is None):
+        parser.error("collector replacement requires its original authorized Hub job identity")
     if args.leased_gpu_count not in (1, 2) or (
             args.leased_gpu_count != 1 and not args.leased_gpu_inference):
         parser.error("dual-GPU collector needs authorized Hub GPU placement")
@@ -317,7 +325,30 @@ def main():
             output / "rollout-bundle.json", job, orders,
             args.leased_gpu_inference, args.leased_gpu_count,
         ) if resume and inbox is not None else None)
-        if local_complete is not None:
+        previous_complete = None
+        if local_complete is None and args.previous_hub_artifact_job_id is not None:
+            old_directory = inbox / args.previous_hub_artifact_job_id
+            previous_complete = reusable_collection(
+                old_directory / "rollout-bundle.json", job, orders,
+                args.leased_gpu_inference, args.leased_gpu_count,
+            )
+        if previous_complete is not None:
+            from train_policy_round import deliver_bundle
+            old_receipt = json.loads(
+                (old_directory / "rollout-bundle.json").read_text(encoding="utf-8")
+            )
+            deliver_bundle(
+                old_directory, inbox, old_receipt, delivered_name,
+                preserve_delivery=True,
+            )
+            print(json.dumps({
+                "kind": "native_distributed_collector_prior_job_republished",
+                "collector": job["id"], "round": orders["round"],
+                "replaced_hub_job_id": args.previous_hub_artifact_job_id,
+                "new_hub_job_id": delivered_name,
+                "prior_receipt_sha256": previous_complete["sha256"],
+            }), flush=True)
+        elif local_complete is not None:
             from train_policy_round import deliver_bundle
             previous = json.loads(
                 (output / "rollout-bundle.json").read_text(encoding="utf-8")
