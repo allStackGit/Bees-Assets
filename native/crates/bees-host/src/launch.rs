@@ -6011,6 +6011,15 @@ fn run_battle(
             server.publish_battle_result(&world);
         }
         server.drain_terminal_output(Duration::from_millis(350));
+        // Final delivery occurs after the immutable run summary was
+        // committed. Report the actual post-drain counters separately:
+        // the earlier run_final snapshot cannot truthfully include bytes,
+        // client receipts or stalls that happened after its commit.
+        println!("{}", json!({
+            "kind": "native_remote_terminal_delivery",
+            "run_id": config.run_id,
+            "measurements": server.measurements(),
+        }));
     }
     // Publish replay eligibility last. Every prior error, including
     // final sink/capture cleanup and the atomic campaign summary commit,
