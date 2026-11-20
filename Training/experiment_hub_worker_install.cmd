@@ -462,8 +462,21 @@ if($Start){
     if($current.Status -eq 'Running'){
         throw 'Agent is already running; stop any active Hub jobs before a restart.'
     }
+    Set-Service -Name $ServiceName -StartupType Automatic
     Start-Service -Name $ServiceName
 }
-Write-Host "Hub worker installed. Service: $ServiceName (manual startup unless -Start)."
+# A SYSTEM scheduled task must outlive the native agent to activate an
+# update. It cannot depend on the interactive operator's Git credentials.
+$updateDir=Join-Path $InstallRoot 'Update'
+New-Item -ItemType Directory -Path $updateDir -Force | Out-Null
+$updater=Join-Path $updateDir 'experiment_hub_worker_updater.js'
+Copy-Item -LiteralPath (Join-Path $Training 'experiment_hub_worker_updater.js') -Destination $updater -Force
+& "$env:SystemRoot\System32\icacls.exe" $updateDir /grant 'NT AUTHORITY\SYSTEM:(OI)(CI)F' | Out-Null
+Assert-Exit 'Set updater service permissions'
+$taskName='Bees Experiment Hub Worker Updates'
+$taskCommand='"'+$node+'" "'+$updater+'" --root "'+$InstallRoot+'"'
+& "$env:SystemRoot\System32\schtasks.exe" /Create /F /SC MINUTE /MO 2 /TN $taskName /TR $taskCommand /RU SYSTEM /RL HIGHEST
+Assert-Exit 'Install two-minute authenticated software update task'
+Write-Host "Hub worker installed. Service: $ServiceName (automatic startup when -Start was selected)."
 Write-Host 'Enabled collector ports: TinyBrains 12134/12135, Courier 13134/13135.'
 Write-Host 'Review this machine in the Hub Machines tab before authorizing experiments.'
