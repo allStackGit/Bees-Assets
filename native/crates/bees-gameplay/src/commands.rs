@@ -191,7 +191,7 @@ impl NativeSquadOrder<'_> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HiveMindCommandSettings {
     /// From server-loaded ConfigData.StandardMaxCommandTime.
     pub max_command_seconds: f32,

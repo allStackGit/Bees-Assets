@@ -118,7 +118,7 @@ pub struct NativeLevelStrategyInputs {
 /// or target rankings are introduced by the host.
 /// Authored Squad.Setup inputs only. The current command, members, movement,
 /// targeting and request state remain owned by the live Level and socket.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeHiveMindSquadSource {
     pub opponent_id: u64,
     pub hivemind_controlled: bool,
