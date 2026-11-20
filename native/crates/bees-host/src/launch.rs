@@ -2117,15 +2117,23 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         // model reloads and asynchronous navigation still lack replayable
         // scheduling, so reject those before creating durable outputs.
         let config: RunConfig = serde_json::from_slice(&fs::read(&config_path)?)?;
-        if config.levels.len() != 1 || config.episodes_per_world != 1 ||
-            !config.model_updates.is_empty() || config.navigation_workers.is_some()
-        {
-            return Err(invalid(
-                "serve requires one Level/episode with a fixed model manifest and no background navigation",
-            ).into());
-        }
+        require_replayable_remote_host(&config)?;
     }
     run_session(&config_path, play, view, output, capture, replay_inputs, None)
+}
+
+/// A single authoritative rule for recoverable LAN sessions, whether
+/// launched directly, from the battle library, or from a campaign catalog.
+/// Reject asynchronous systems whose scheduling is not in the input trace.
+fn require_replayable_remote_host(config: &RunConfig) -> io::Result<()> {
+    if config.levels.len() != 1 || config.episodes_per_world != 1 ||
+        !config.model_updates.is_empty() || config.navigation_workers.is_some()
+    {
+        return Err(invalid(
+            "remote hosting requires one Level/episode, a fixed model manifest, and no background navigation",
+        ));
+    }
+    Ok(())
 }
 
 fn run_session(
@@ -2371,13 +2379,7 @@ fn launch_catalog_battle(
         // preflight a different configuration than the one we actually
         // launch after another player's persistent fleet edit.
         let selected: RunConfig = serde_json::from_slice(&fs::read(&config)?)?;
-        if selected.levels.len() != 1 || selected.episodes_per_world != 1 ||
-            !selected.model_updates.is_empty() || selected.navigation_workers.is_some()
-        {
-            return Err(invalid(
-                "remote menu battles require one Level/episode, a fixed model manifest, and no background navigation",
-            ).into());
-        }
+        require_replayable_remote_host(&selected)?;
     }
     let quick_start = if entry.mission.is_none() {
         QuickBattleStart::capture(&config,
