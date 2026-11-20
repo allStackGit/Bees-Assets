@@ -5678,6 +5678,13 @@ fn run_battle(
     // Do not rehash or fsync a large journal while a window is paused and
     // polling UI/network with no authoritative simulation progress.
     let mut checkpointed_round = resume_cursor.as_ref().map(|cursor| cursor.rounds);
+    // Native remote input replies are intentionally transient. A successful
+    // command is acknowledged only AFTER the same World, authentic peer
+    // leases and synced replay prefix have been durably checkpointed.
+    // If the host crashes first, recovery discards both the uncommitted
+    // World changes and these unsent replies. Batch one tick's commands
+    // into one checkpoint instead of serializing a World per input.
+    let mut pending_remote_successes = Vec::<(u64, u64, &'static str)>::new();
     // One typed source of every launcher-owned progress field, reused for
     // regular and terminal persistence. The World and network journal
     // themselves remain owned by the native host runtime.
@@ -5791,7 +5798,8 @@ fn run_battle(
         let recovery_due = checkpointed_round.is_none_or(|previous|
             previous != rounds &&
                 rounds.saturating_sub(previous) >= recovery_interval);
-        if host_checkpoint_file.is_some() && recovery_due &&
+        if host_checkpoint_file.is_some() &&
+            (recovery_due || !pending_remote_successes.is_empty()) &&
             network.as_ref().is_none_or(|session| session.server_game_id.is_some() &&
                 session.next_level == session.levels.len()) &&
             host.connection_mut().connection().pending_request_count() == 0
@@ -5813,6 +5821,15 @@ fn run_battle(
                     break 'battle;
                 }
                 checkpointed_round = Some(rounds);
+                // This is the first boundary at which a remote player may
+                // be told its input took effect. A previously acknowledged
+                // command cannot disappear when replay and the World are
+                // restored from the same committed checkpoint.
+                if let Some(server) = &mut remote {
+                    for (peer, request, feedback) in pending_remote_successes.drain(..) {
+                        server.reply(peer, request, Ok(feedback));
+                    }
+                }
             }
         }
         if let Some(trace) = &mut input_trace {
@@ -5970,14 +5987,17 @@ fn run_battle(
         // Network co-op enters through precisely the same authoritative
         // command dispatcher as the local window and recorded input replay.
         // Process it at this fixed-tick boundary, never during physics.
-        if let Some(server) = &mut remote {
+        if remote.is_some() {
             let world = host.simulation().world(0).expect("remote play has one Level");
             let world_id = world.id;
             let revision = world.episode_revision();
             let live_held_controllers: Vec<_> =
                 world.state.live_held_fire_controllers().collect();
-            for order in server.poll(world_id, revision, &live_held_controllers,
-                if play { None } else { remote_briefing }) {
+            let orders = remote.as_mut().expect("checked remote listener").poll(
+                world_id, revision, &live_held_controllers,
+                if play { None } else { remote_briefing },
+            );
+            for order in orders {
                 // A story briefing blocks physical orders from both player
                 // sides until its authored viewer releases the real Level.
                 // End still frees an existing peer-owned held-fire gesture.
@@ -5985,12 +6005,14 @@ fn run_battle(
                     !matches!(&order.action, NativePlayerInput::HeldFire(input)
                         if matches!(input.action,
                             bees_gameplay::player_inputs::NativeHeldFireAction::End)) {
-                    server.reply(order.peer, order.request_id,
+                    remote.as_mut().expect("remote listener").reply(
+                        order.peer, order.request_id,
                         Err("campaign briefing is still being presented"));
                     continue;
                 }
                 if !remote_side_owns_input(&host, &order.action, order.side) {
-                    server.reply(order.peer, order.request_id,
+                    remote.as_mut().expect("remote listener").reply(
+                        order.peer, order.request_id,
                         Err("stale world, unauthorized side, or unavailable squad"));
                     continue;
                 }
@@ -6018,11 +6040,26 @@ fn run_battle(
                     recorded_player_inputs += 1;
                 }
                 match apply_remote_side_input(&mut host, order.action, order.side) {
-                    Ok(feedback) => server.reply(order.peer, order.request_id,
-                        if feedback.accepted { Ok(feedback.message) }
-                        else { Err(feedback.message) }),
+                    Ok(feedback) if feedback.accepted => {
+                        if host_checkpoint_file.is_some() {
+                            pending_remote_successes.push((
+                                order.peer, order.request_id, feedback.message,
+                            ));
+                        } else {
+                            remote.as_mut().expect("remote listener").reply(
+                                order.peer, order.request_id, Ok(feedback.message),
+                            );
+                        }
+                    }
+                    Ok(feedback) => {
+                        remote.as_mut().expect("remote listener").reply(
+                            order.peer, order.request_id, Err(feedback.message),
+                        );
+                    }
                     Err(error) => {
-                        server.reply(order.peer, order.request_id, Err("authoritative input failed"));
+                        remote.as_mut().expect("remote listener").reply(
+                            order.peer, order.request_id, Err("authoritative input failed"),
+                        );
                         failed_window = Some(error);
                         break 'battle;
                     }
@@ -6033,7 +6070,8 @@ fn run_battle(
             // peers without advancing physics to make a snapshot.
             if remote_briefing.is_some() {
                 if let Some(view) = host.render_world(0) {
-                    server.broadcast_initial_if_pending(&view, client_bounds[0]);
+                    remote.as_mut().expect("remote listener")
+                        .broadcast_initial_if_pending(&view, client_bounds[0]);
                 }
             }
         }
