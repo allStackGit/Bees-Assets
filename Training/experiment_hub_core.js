@@ -5284,9 +5284,28 @@ class ExperimentHub {
                             ?{collection_id:members[index].frozen_parameters.collection_id}
                             :{}),
                     }));
+                    const work=receipts.map((receipt,index)=>({
+                        job_id:members[index].id,
+                        ...receipt.work,
+                    }));
+                    const totals={
+                        scope:'sum_of_independent_native_collectors',
+                        collector_count:work.length,
+                        successful_world_steps:work.reduce((sum,row)=>
+                            sum+row.successful_world_steps,0),
+                        successful_policy_rows:work.reduce((sum,row)=>
+                            sum+row.successful_policy_rows,0),
+                        sum_collector_wall_seconds:work.reduce((sum,row)=>
+                            sum+row.collector_wall_seconds,0),
+                        verified_gpu_model_forwards:work.reduce((sum,row)=>
+                            sum+(row.verified_gpu_model_forwards||0),0),
+                        verified_gpu_agent_rows:work.reduce((sum,row)=>
+                            sum+(row.verified_gpu_agent_rows||0),0),
+                    };
                     update('pending_optimizer',
                         'Fresh completed physical experience ready for synchronized MA-POCA.',
-                        {collector_world_partitions:partitions});
+                        {collector_world_partitions:partitions,
+                            collector_work:work,collector_work_totals:totals});
                 }else {
                     const owner=members[0];
                     if(!checkpointContinuationComplete(owner)||
@@ -5326,6 +5345,10 @@ class ExperimentHub {
                         ...(plan.collector_world_partitions?{
                             collector_world_partitions:plan.collector_world_partitions,
                         }:{}),
+                        ...(plan.collector_work?{
+                            collector_work:plan.collector_work,
+                            collector_work_totals:plan.collector_work_totals,
+                        }:{}),
                         optimizer_job_ids:members.map(job=>job.id),
                         collector_bundle_id:plan.collectors_bundle_id,
                         optimizer_bundle_id:bundleId,
@@ -5362,6 +5385,7 @@ class ExperimentHub {
                             source_model_sha256:owner.checkpoint_model_sha256,
                             collectors_bundle_id:null,collectors_job_ids:null,
                             collector_world_partitions:null,
+                            collector_work:null,collector_work_totals:null,
                             optimizer_bundle_id:null,optimizer_job_ids:null,
                         });
                 }
