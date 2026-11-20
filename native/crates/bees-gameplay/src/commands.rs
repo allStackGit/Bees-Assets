@@ -1130,13 +1130,17 @@ impl NativeSquadCommandDirector {
         // target-strategy replies after that lifetime disappears, even if
         // another squad has already reused the same numeric ID. Attack
         // timers independently validate the same captured lifetime.
+        // A physically retired enemy can still have its original squad
+        // identity in this tick's cached order. No attack or special should
+        // install against that dead target or fail the entire Level while
+        // waiting for an asynchronous server response.
         if matches!(resolved.local_command,
             LocalCommandKind::Retreat | LocalCommandKind::Aggressive |
             LocalCommandKind::CircleSquad | LocalCommandKind::RightSwipe |
             LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut |
             LocalCommandKind::BombingRun | LocalCommandKind::Charge
-        ) && (enemy_owner.is_none() ||
-            squad.enemy.map(|enemy| enemy.owner) != enemy_owner)
+        ) && !squad.enemy.is_some_and(|enemy|
+            Some(enemy.owner) == enemy_owner && enemy.is_alive)
         {
             return Ok(StrategyReceiptAction::DiscardReservations(vec![
                 selection.command_outcome_id,
