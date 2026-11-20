@@ -176,13 +176,11 @@ class RemoteBattleWindow:
         # Explicit reconnection only: an old TCP peer and its held weapons
         # never survive host recovery. The server must present the SAME
         # durable host_session_id or the new console refuses its World.
-        if (self.console.alive or self.connect_recovered_host is None or
-                self.console.host_session_id is None):
+        session = self.console.host_session_id or self.console.expected_session_id
+        if self.console.alive or self.connect_recovered_host is None or session is None:
             return
         try:
-            connection, console = self.connect_recovered_host(
-                self.console.host_session_id
-            )
+            connection, console = self.connect_recovered_host(session)
         except OSError as error:
             self.notice(f"Recovered host is not reachable: {error}")
             return
@@ -343,7 +341,9 @@ class RemoteBattleWindow:
         if self.console.alive:
             self.root.after(50, self.poll)
         else:
-            if self.connect_recovered_host and self.console.host_session_id:
+            if self.connect_recovered_host and (
+                self.console.host_session_id or self.console.expected_session_id
+            ):
                 self.rejoin_button.state(["!disabled"])
             campaign = self.console.campaign_receipt_snapshot()
             final = self.console.battle_receipt_snapshot()
