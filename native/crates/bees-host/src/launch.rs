@@ -6016,6 +6016,22 @@ fn run_battle(
                         Err("stale world, unauthorized side, or unavailable squad"));
                     continue;
                 }
+                // HiveMind may keep a request outstanding for several
+                // ticks, preventing an atomic host checkpoint. Do not
+                // retain an unbounded backlog of successful yet uncommitted
+                // player replies. The client may retry a busy command;
+                // End must still release real weapons even when full.
+                if host_checkpoint_file.is_some() &&
+                    pending_remote_successes.len() >= 256 &&
+                    !matches!(&order.action, NativePlayerInput::HeldFire(input)
+                        if matches!(&input.action,
+                            bees_gameplay::player_inputs::NativeHeldFireAction::End))
+                {
+                    remote.as_mut().expect("remote listener").reply(
+                        order.peer, order.request_id,
+                        Err("native host checkpoint pending; retry command"));
+                    continue;
+                }
                 if let Some(trace) = &mut input_trace {
                     let tick = host.simulation().world(0).expect("checked remote World").tick();
                     let committed = writeln!(trace, "{}", json!({
@@ -6537,6 +6553,16 @@ fn run_battle(
                         failed_window = Some(format!(
                             "native terminal Hub progress could not be persisted: {error:?}"
                         ));
+                    } else {
+                        checkpointed_round = Some(rounds);
+                        // A completed Level has no next loop iteration.
+                        // Its final, accepted remote player commands still
+                        // need the same checkpoint-before-ACK guarantee.
+                        if let Some(server) = &mut remote {
+                            for (peer, request, feedback) in pending_remote_successes.drain(..) {
+                                server.reply(peer, request, Ok(feedback));
+                            }
+                        }
                     }
                 }
             }
