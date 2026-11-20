@@ -708,23 +708,9 @@ async function main(argv=process.argv.slice(2)) {
             save(activeFile,JSON.stringify(active,null,2)+'\n');
             for(const item of Object.values(plan))
                 await status(base,env,item.entry,'active');
-            // Self-updater is copied only from an authenticated verified worker
-            // release after the running invocation has completed its work.
-            if(changes.worker) {
-                fs.mkdirSync(path.join(root,'Update'),{recursive:true,mode:0o700});
-                const replacement=path.join(changes.worker,'Training',
-                    'experiment_hub_worker_updater.js');
-                if(fs.existsSync(replacement))
-                    save(path.join(root,'Update','experiment_hub_worker_updater.js'),
-                        fs.readFileSync(replacement));
-                if(process.platform==='win32') {
-                    const installer=path.join(changes.worker,'Training',
-                        'experiment_hub_worker_install.cmd');
-                    if(fs.existsSync(installer))
-                        save(path.join(root,'Update','experiment_hub_worker_install.cmd'),
-                            fs.readFileSync(installer));
-                }
-            }
+            // The stable scheduler bootstrap retains verified, versioned
+            // updater engines and their last-good pointer. Never overwrite the
+            // fallback updater in-place from a replaceable updater process.
         }catch(error) {
             for(const item of Object.values(plan))
                 await status(base,env,item.entry,'failed',error.message);
