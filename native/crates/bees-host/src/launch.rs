@@ -1569,6 +1569,9 @@ struct CampaignReplaySetup {
     // Historical replay-only setups intentionally have no such digest.
     #[serde(default)]
     career_sha256: Option<String>,
+    // The immutable start can precede the first committed World checkpoint.
+    #[serde(default)]
+    host_recovery_enabled: bool,
     campaign_id: String,
     mission_id: String,
     player_side: i32,
@@ -1593,12 +1596,15 @@ impl CampaignReplaySetup {
         -> Result<Self, Box<dyn Error>>
     {
         let source = source.canonicalize()?;
+        let bytes = fs::read(&source)?;
+        let config: RunConfig = serde_json::from_slice(&bytes)?;
         Ok(Self {
-            schema_version: 2,
+            schema_version: 3,
             kind: "native_campaign_replay_setup".to_owned(),
-            source_config_sha256: format!("{:x}", Sha256::digest(fs::read(&source)?)),
+            source_config_sha256: format!("{:x}", Sha256::digest(&bytes)),
             source_config: source,
             career_sha256: None,
+            host_recovery_enabled: config.host_recovery_checkpoint.is_some(),
             campaign_id: mission.campaign_id.to_owned(),
             mission_id: mission.mission_id.to_owned(),
             player_side: mission.player_side,
@@ -1616,7 +1622,7 @@ impl CampaignReplaySetup {
 
     fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
         let setup: Self = serde_json::from_slice(&fs::read(path)?)?;
-        if !(1..=2).contains(&setup.schema_version) ||
+        if !(1..=3).contains(&setup.schema_version) ||
             setup.kind != "native_campaign_replay_setup" ||
             setup.campaign_id.is_empty() || setup.mission_id.is_empty() ||
             !(1..=2).contains(&setup.player_side) ||
@@ -2451,21 +2457,46 @@ fn interrupted_campaign_world(
         let run = root.join("run");
         let saved = root.join("campaign-replay-setup.json");
         let checkpoint = run.join("native-host-checkpoint.json");
-        if !checkpoint.is_file() { continue; }
-        if run.is_symlink() || checkpoint.is_symlink() ||
-            saved.is_symlink() || !saved.is_file()
+        if !saved.exists() && !checkpoint.exists() { continue; }
+        if run.is_symlink() || checkpoint.is_symlink() || saved.is_symlink() ||
+            (checkpoint.exists() && !checkpoint.is_file()) ||
+            (saved.exists() && !saved.is_file())
         {
+            return Err(invalid("interrupted campaign has an unsafe recovery owner").into());
+        }
+        if !saved.is_file() {
             return Err(invalid(
                 "interrupted campaign World has no owned immutable start snapshot",
             ).into());
         }
-        // First read only start identity, before validating the source.
-        // The original authored scene may have changed after a completed
-        // mission, but its committed result still owns career progression.
         let identity: CampaignReplaySetup =
             serde_json::from_slice(&fs::read(&saved)?)?;
         if identity.campaign_id != campaign_id { continue; }
+        // A committed result can outlive its old source or checkpoint.
         if terminal_recording::complete_committed_recording(&run)? { continue; }
+        if !checkpoint.is_file() {
+            // Earlier setup schemas lack the explicit startup intent.
+            // Read their original pinned source rather than silently
+            // treating an unfinished World as a completed match.
+            let required = if identity.schema_version >= 3 {
+                identity.host_recovery_enabled
+            } else {
+                let bytes = fs::read(&identity.source_config)?;
+                if format!("{:x}", Sha256::digest(&bytes)) != identity.source_config_sha256 {
+                    return Err(invalid(
+                        "unfinished legacy campaign has changed source and no checkpoint",
+                    ).into());
+                }
+                let config: RunConfig = serde_json::from_slice(&bytes)?;
+                config.host_recovery_checkpoint.is_some()
+            };
+            if required {
+                return Err(invalid(
+                    "interrupted campaign lacks its first durable World checkpoint; refusing a replacement battle",
+                ).into());
+            }
+            continue;
+        }
         let frozen = CampaignReplaySetup::load(&saved)?;
         if pending.replace((run, frozen)).is_some() {
             return Err(invalid(
