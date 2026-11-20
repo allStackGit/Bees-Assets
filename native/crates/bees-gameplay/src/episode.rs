@@ -80,6 +80,23 @@ pub struct NativeEpisodeFinal {
 /// Returned slices refer to the adapter's reused scratch memory. Consume
 /// before the next tick or copy into the ML-Agents group-reward delivery
 /// buffer; they are NOT automatically delivered to an agent.
+/// Complete authoritative reward and mission termination state. This
+/// does not contain a model, inference trajectory, or transport ACK.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeEpisodeRewardCheckpoint {
+    schema_version: u32,
+    episode: NativeEpisodeRewardCoordinator,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeEpisodeRestoreError {
+    InvalidVersion,
+    WrongEpisode,
+    InvalidClock,
+    InvalidReward,
+}
+
 pub struct NativeTickReward<'a> {
     pub emissions: &'a [RewardEmission],
     pub finalized: Option<NativeEpisodeFinal>,
@@ -122,6 +139,60 @@ struct TrainingRewards {
 }
 
 impl NativeEpisodeRewardCoordinator {
+    pub fn checkpoint(&self) -> NativeEpisodeRewardCheckpoint {
+        NativeEpisodeRewardCheckpoint {
+            schema_version: 1,
+            episode: self.clone(),
+        }
+    }
+
+    /// Validate the original mission, team sides and training-start
+    /// denominators before staging reward restoration. The snapshot is
+    /// not replayed through the shaping budget, economic ledger or
+    /// terminal callbacks: it replaces the exact accumulated owner.
+    pub fn prepare_restore(
+        &self, checkpoint: NativeEpisodeRewardCheckpoint, completed_ticks: u64,
+    ) -> Result<Self, NativeEpisodeRestoreError> {
+        use NativeEpisodeRestoreError as Error;
+        if checkpoint.schema_version != 1 {
+            return Err(Error::InvalidVersion);
+        }
+        let restored = checkpoint.episode;
+        if self.bee_side != restored.bee_side ||
+            self.human_side != restored.human_side ||
+            !self.terminal.recovery_contract_matches(&restored.terminal) {
+            return Err(Error::WrongEpisode);
+        }
+        let correct_mode = match (&self.mode, &restored.mode) {
+            (EpisodeMode::Game(_), EpisodeMode::Game(_)) => true,
+            (EpisodeMode::Training(current), EpisodeMode::Training(saved)) =>
+                current.bee_starting_tsv == saved.bee_starting_tsv &&
+                current.human_starting_tsv == saved.human_starting_tsv,
+            _ => false,
+        };
+        if !correct_mode {
+            return Err(Error::WrongEpisode);
+        }
+        if !restored.terminal.valid_recovery_clock(completed_ticks) {
+            return Err(Error::InvalidClock);
+        }
+        if restored.merged_emissions.iter().any(|emission|
+            ![restored.bee_side, restored.human_side].contains(&emission.side) ||
+            !emission.amount.is_finite()
+        ) {
+            return Err(Error::InvalidReward);
+        }
+        Ok(restored)
+    }
+
+    pub fn restore_checkpoint(
+        &mut self, checkpoint: NativeEpisodeRewardCheckpoint, completed_ticks: u64,
+    ) -> Result<(), NativeEpisodeRestoreError> {
+        let staged = self.prepare_restore(checkpoint, completed_ticks)?;
+        *self = staged;
+        Ok(())
+    }
+
     pub fn new(
         bee_side: i32,
         human_side: i32,

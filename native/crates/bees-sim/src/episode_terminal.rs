@@ -299,6 +299,47 @@ pub struct NativeEpisodeTerminal {
 }
 
 impl NativeEpisodeTerminal {
+    /// Compare immutable source mission/timeout identity, not elapsed
+    /// combat time. Restarting a different authored mission against an
+    /// old terminal clock must fail before any Level owner is mutated.
+    pub fn recovery_contract_matches(&self, recovered: &Self) -> bool {
+        self.bee_side == recovered.bee_side &&
+        self.human_side == recovered.human_side &&
+        self.timeout_seconds == recovered.timeout_seconds &&
+        self.survival.as_ref().map(|v| (
+            v.objective.defending_side, v.objective.protected_ship_id,
+            v.objective.seconds, v.deadline_tick,
+        )) == recovered.survival.as_ref().map(|v| (
+            v.objective.defending_side, v.objective.protected_ship_id,
+            v.objective.seconds, v.deadline_tick,
+        )) &&
+        self.demolition.as_ref().map(|v| (
+            v.objective.attacking_side, v.objective.target_map_object_id,
+            v.objective.seconds, v.deadline_tick,
+        )) == recovered.demolition.as_ref().map(|v| (
+            v.objective.attacking_side, v.objective.target_map_object_id,
+            v.objective.seconds, v.deadline_tick,
+        )) &&
+        self.escort.as_ref().map(|v| (
+            v.objective.escorting_side, v.objective.escorted_ship_id,
+            v.objective.seconds, v.deadline_tick,
+        )) == recovered.escort.as_ref().map(|v| (
+            v.objective.escorting_side, v.objective.escorted_ship_id,
+            v.objective.seconds, v.deadline_tick,
+        ))
+    }
+
+    pub fn valid_recovery_clock(&self, completed_ticks: u64) -> bool {
+        self.elapsed_seconds.is_finite() &&
+        self.elapsed_seconds >= 0.0 &&
+        self.measurements.ticks_observed <= completed_ticks &&
+        self.completed.is_none_or(|result|
+            result.duration_seconds.is_finite() &&
+            result.duration_seconds >= 0.0 &&
+            [0, self.bee_side, self.human_side].contains(&result.winner_side)
+        )
+    }
+
     pub fn new(
         bee_side: i32, human_side: i32, timeout_seconds: f32,
     ) -> Result<Self, EpisodeTerminalError> {
