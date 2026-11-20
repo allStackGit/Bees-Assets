@@ -1928,6 +1928,49 @@ class ExperimentHub {
                 this.recordMachineConnectivity(machine.id,'offline',observedAt);
         }
     }
+    machineUpdatePolicy(machineId) {
+        return this.state.machine_update_policies?.[machineId]||'defer';
+    }
+    configureMachineUpdate(value) {
+        if(!object(value)||!ID.test(String(value.machine_id||''))||
+            !this.state.machines.some(machine=>machine.id===value.machine_id)||
+            !['defer','override'].includes(value.mode)||
+            (value.mode==='override'&&value.confirm_override!==true))
+            throw Error('Select an enrolled machine and explicitly confirm a mid-job update override.');
+        const next=copy(this.state);
+        next.machine_update_policies=next.machine_update_policies||{};
+        next.machine_update_policies[value.machine_id]=value.mode;
+        this.commit(next);
+        return {machine_id:value.machine_id,mode:value.mode};
+    }
+    reportMachineSoftware(value,token) {
+        if(!object(value)||!ID.test(String(value.machine_id||''))||
+            !['worker','tinybrains','courier','bees'].includes(value.component)||
+            !['staged','waiting','activating','active','failed'].includes(value.status)||
+            !SHA256.test(String(value.sha256||''))||
+            !/^[0-9a-f]{40}$/.test(String(value.version||''))||
+            (value.message!==undefined&&
+                (typeof value.message!=='string'||value.message.length>250)))
+            throw Error('Invalid worker software status.');
+        this.authenticateAgent(value.machine_id,token);
+        const next=copy(this.state);
+        next.machine_software=next.machine_software||{};
+        next.machine_software[value.machine_id]=next.machine_software[value.machine_id]||{};
+        const item={component:value.component,status:value.status,
+            version:value.version,sha256:value.sha256,at:now(),
+            ...(value.message?{message:value.message}:{})};
+        next.machine_software[value.machine_id][value.component]=item;
+        next.machine_software_events=next.machine_software_events||[];
+        const previous=this.state.machine_software?.[value.machine_id]?.[value.component];
+        if(!previous||previous.status!==item.status||
+            previous.version!==item.version||previous.message!==item.message) {
+            next.machine_software_events.push({machine_id:value.machine_id,...item});
+            if(next.machine_software_events.length>1000)
+                next.machine_software_events=next.machine_software_events.slice(-1000);
+        }
+        this.commit(next);
+        return {accepted:true};
+    }
     // Publish in-memory changes only after the complete registry is durably
     // written. A full disk must not leave the API believing a draft was saved.
     commit(next) {
@@ -2067,6 +2110,9 @@ class ExperimentHub {
             return machine;
         });
         snapshot.machine_connection_events=copy(snapshot.machine_connection_events||[]);
+        snapshot.machine_software=copy(snapshot.machine_software||{});
+        snapshot.machine_software_events=copy(snapshot.machine_software_events||[]);
+        snapshot.machine_update_policies=copy(snapshot.machine_update_policies||{});
         snapshot.machine_connectivity=copy(snapshot.machine_connectivity||{});
         snapshot.jobs = snapshot.jobs.map(job=>{
             const observed=this.executionTelemetry.get(job.id);
