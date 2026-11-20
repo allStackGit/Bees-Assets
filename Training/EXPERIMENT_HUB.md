@@ -2540,7 +2540,7 @@ Reuse the native training source-contract command `python -B native/tools/native
 /absolute/eval-run.json` to obtain `source_contract_sha256`.
 
 The Hub **Machines** table now supports **Start evaluator**, **Stop evaluator**,
-and **Inspect evaluator** when the same enrolled machine advertises the installed
+**Restart evaluator**, and **Inspect evaluator** when the same enrolled machine advertises the installed
 `bees_native` adapter and its approved evaluation suites. These buttons
 control only an **already installed** OS-owned native Bees evaluator, not
 training jobs or arbitrary services. Each action requires confirmation, travels
@@ -2558,7 +2558,7 @@ when installing the existing evaluator service (the Hub does not install
 Windows services or elevate permissions):
 
 ```powershell
-node -e "console.log(require('./Training/experiment_hub_evaluator_control').evaluatorServiceName('YOUR_MACHINE_ID','win32'))"
+node -e "console.log(require('./Training/experiment_hub_evaluator_control').evaluatorServiceName('exeter','win32'))"
 ```
 
 Use that output as the Windows installer's `-Name`. The installer, agent
