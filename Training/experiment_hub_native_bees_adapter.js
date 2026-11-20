@@ -190,6 +190,56 @@ function synchronizedOptimizerEvidence(metrics) {
     return {totalThreads,totalInteropThreads,perNode};
 }
 
+// A local native round owns one elapsed rollout and one sequential MA-POCA
+// learner. In a distributed imported round each collector has its OWN wall
+// clock: the aggregation is occupied collector time, not fleet elapsed time.
+// Only the native session's signed order-to-last-receipt window can supply
+// fleet SPS. Preserve both valid scopes as separate typed Hub metrics.
+function roundThroughputMeasurements(receipt, rollout, learner) {
+    const result = {};
+    if (!rollout) return result;
+    const seconds = rollout.wall_seconds;
+    const steps = rollout.successful_world_steps;
+    const rows = rollout.successful_policy_rows;
+    if (!Number.isFinite(seconds) || seconds <= 0 ||
+        !Number.isSafeInteger(steps) || steps <= 0 ||
+        !Number.isSafeInteger(rows) || rows <= 0)
+        throw Error('Native round has invalid verified rollout timing.');
+    const distributed = receipt.collection_orders != null ||
+        rollout.collector_count != null;
+    if (distributed) {
+        result.rollout_independent_collector_wall_seconds_sum = {
+            value: seconds, unit: 'seconds',
+        };
+        result.rollout_world_steps_per_collector_wall_second = {
+            value: steps / seconds, unit: 'rate',
+        };
+        result.rollout_policy_rows_per_collector_wall_second = {
+            value: rows / seconds, unit: 'rate',
+        };
+        // Collector seconds can overlap and are NOT the end-to-end fleet
+        // denominator. Do not manufacture a training-round throughput.
+    } else {
+        result.rollout_world_steps_per_second = {
+            value: steps / seconds, unit: 'rate',
+        };
+        result.rollout_policy_rows_per_second = {
+            value: rows / seconds, unit: 'rate',
+        };
+        if (Number.isFinite(learner.total_wall_seconds) &&
+            learner.total_wall_seconds > 0) {
+            const total = seconds + learner.total_wall_seconds;
+            result.training_round_input_steps_per_second = {
+                value: learner.optimizer_input_steps / total, unit: 'rate',
+            };
+            result.training_round_world_steps_per_second = {
+                value: steps / total, unit: 'rate',
+            };
+        }
+    }
+    return result;
+}
+
 function learnerMeasurements(metrics) {
     const report = {};
     const add = (name, unit, value = metrics[name]) => {
