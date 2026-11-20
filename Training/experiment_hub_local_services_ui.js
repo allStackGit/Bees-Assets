@@ -94,6 +94,30 @@
                 (machine.issue?' · '+machine.issue:'')));
             remoteRows.append(heading);
             if(machine.platform==='linux'&&machine.status==='connected') {
+                const last=actions.filter(item=>
+                    item.machine_id===machine.id&&item.unit==='@agent').at(-1);
+                const unresolved=last&&
+                    ['pending','dispatched','awaiting_restart','unverified'].includes(last.status);
+                const controls=document.createElement('div');
+                controls.className='hub-controls';
+                const detail=document.createElement('span');
+                detail.textContent='Machine agent'+(machine.native_restart_blocked
+                    ?' · native jobs need reconciliation first':'')+
+                    (last?' · '+last.status+(last.reason?' ('+last.reason+')':''):'');
+                controls.append(detail,evaluatorButtonRemote('Restart remote agent',
+                    'restart-agent',machine.id,'@agent',
+                    busy||machine.native_restart_blocked||Boolean(unresolved)));
+                if(unresolved) {
+                    const review=document.createElement('button');
+                    review.type='button';
+                    review.textContent=last.status==='pending'?'Cancel pending':'Mark reviewed';
+                    review.disabled=busy||
+                        (last.status!=='pending'&&
+                            Date.now()-Date.parse(last.dispatched_at||'')<120000);
+                    review.addEventListener('click',()=>reconcileRemote(last));
+                    controls.append(review);
+                }
+                remoteRows.append(controls);
                 for(const project of machine.installed_projects||[]) {
                     const previous=actions.filter(item=>
                         item.machine_id===machine.id&&
@@ -189,11 +213,14 @@
         return button;
     }
     async function manageRemoteEvaluator(machine_id,unit,action) {
-        if(busy||!confirm('Request '+action+' for evaluator '+unit+
-            ' on '+machine_id+'? The enrolled agent independently verifies all fixed local '+
-            'paths and approvals. Initial setup or suite refresh requires a safe agent '+
-            'restart before new suite identities are advertised. This one-use action '+
-            'will not be automatically replayed.'))return;
+        const warning=action==='restart-agent'
+            ?'Restart the enrolled remote agent only after local native jobs are idle? '+
+                'Its own user-systemd service must be confirmed, and the restart is '+
+                'requested only after the Hub accepts the one-use preflight receipt.'
+            :'Request '+action+' for evaluator '+unit+' on '+machine_id+
+                '? The enrolled agent verifies fixed local paths and approvals. '+
+                'A safe agent restart is required after suite setup or refresh.';
+        if(busy||!confirm(warning+' No action is automatically replayed.'))return;
         busy=true;
         try {
             const result=await fetch('/api/hub/local-services/remote-evaluator',{
