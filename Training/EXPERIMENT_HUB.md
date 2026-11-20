@@ -774,15 +774,18 @@ integration is **not yet qualified on Halifax**.
 
 The standalone Hub also exposes local evaluator lifecycle controls under
 **Machines → Local service control**, alongside coordinator and agent restart.
-For the approved Halifax Nano/Micro v3 TinyBrains suites, **Set up and start**
-creates separate fixed-budget user-systemd evaluation timers using the existing
-local Docker image, frozen suite files and private receipt/scratch directories.
+For the approved Halifax Nano/Micro TinyBrains suites, **Set up and start**
+creates any missing initial v3 frozen suites using the trusted local generator
+inside the existing read-only Docker runtime, then installs separate fixed-budget
+user-systemd evaluation timers and private receipt/scratch directories.
+Existing suite files and versioned approvals are never overwritten.
 **Start**, **Restart** and **Stop** manage each timer; **Run now** requests
 one immediate one-shot evaluation without interrupting an ongoing run.
 Stopping a schedule never stops its training job. Arbitrary executable paths,
 Docker arguments and unit names cannot be submitted from the dashboard.
-Setup requires the approved suite files, TinyBrains installation, local agent
-enrollment, image and existing noninteractive Docker authorization. Actual
+Setup requires a trusted TinyBrains installation, local agent enrollment,
+the approved local image, installed game/opponents and existing noninteractive
+Docker authorization. It creates missing initial suites without CLI commands. Actual
 evaluation results still require the frozen evaluator runtime fingerprint to
 match; a timer being active alone does not qualify any checkpoint. **Refresh
 suite** creates a new immutable Nano/Micro suite ID pinned to the installed
