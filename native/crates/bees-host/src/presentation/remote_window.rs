@@ -41,6 +41,16 @@ enum TargetMode {
     Guard, Mine, Heal, Retreat, Patrol,
 }
 
+// Same 250 ms movement cadence and captured input surface as the local
+// native client. The host receives only canonical move/attack/fire inputs.
+struct RemoteRightPress {
+    next_move_at: Instant,
+    last_move_pixel: Option<Vec2>,
+    minimap: bool,
+}
+
+const RIGHT_DRAG_INTERVAL: Duration=Duration::from_millis(250);
+
 #[derive(Default)]
 struct WireCounts {
     bytes_received: u64,
@@ -74,6 +84,8 @@ struct WireCounts {
     minimap_ship_markers: u64,
     minimap_objective_markers: u64,
     minimap_camera_moves: u64,
+    minimap_move_orders_submitted: u64,
+    right_drag_move_orders_submitted: u64,
     /// Local and LAN share the exact fog circle raster; pixels outside the
     /// host-authenticated current/decaying vision are not presented.
     fog_circle_stamps: u64,
@@ -1443,7 +1455,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     let instructions=[
         "Left: select  Ctrl+A: select all",
         "Drag: select multiple",
-        "Right: move/attack/mine",
+        "Right click: order  drag: move",
         "1-0 select Tab / PgUp-Dn cycle",
         "T fire X stop J held fire",
         "Shift+T attack Shift+I circle",
@@ -1601,6 +1613,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut patrol_start:Option<Vec2>=None;
     let mut last_left=false;
     let mut last_right=false;
+    let mut right_press:Option<RemoteRightPress>=None;
     let mut minimap_dragging=false;
     let mut drag_start:Option<(i32,i32)>=None;
     let mut last_middle:Option<(f32,f32)>=None;
@@ -1676,6 +1689,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             selected.clear();
             mode=None;patrol_start=None;drag_start=None;
             last_left=false;last_right=false;
+            right_press=None;
             last_middle=None;minimap_dragging=false;
             camera=None;
             current_episode=(0,0);
@@ -1737,6 +1751,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     mode=None;
                     patrol_start=None;
                     minimap_dragging=false;
+                    right_press=None;
                     // The server forgets this lease at the same authoritative
                     // episode boundary; the client never aims old ships.
                     held_fire_active=false;
@@ -2073,9 +2088,70 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                         }
                     }
                 }
-                if right&&!last_right&&minimap_point.is_none() {
-                    if let Err(error)=order_at(&mut peer,&selected,cam,x,y,None) {
-                        peer.notice=error.to_string();
+            }
+            // Capture the origin of a right-button gesture. Its minimap
+            // and World coordinates must never swap halfway through a drag.
+            // A right-click while aiming a support order cancels that mode,
+            // as in the source local client, without issuing a new command.
+            if right&&!last_right {
+                if mode.is_some() {
+                    mode=None;patrol_start=None;right_press=None;
+                    peer.notice="Target selection cancelled".into();
+                } else if !selected.is_empty() {
+                    if let Some((x,y))=mouse {
+                        let on_minimap=minimap_point.is_some();
+                        if on_minimap||(x>=0.0&&x<FIELD as f32&&
+                            y>=0.0&&y<HEIGHT as f32) {
+                            right_press=Some(RemoteRightPress {
+                                next_move_at:now+RIGHT_DRAG_INTERVAL,
+                                last_move_pixel:None,minimap:on_minimap,
+                            });
+                        }
+                    }
+                }
+            }
+            if right {
+                if let (Some(press),Some((x,y)))=(right_press.as_mut(),mouse) {
+                    let pixel=Vec2::new(x,y);
+                    if now>=press.next_move_at &&
+                        !press.last_move_pixel.is_some_and(|last|
+                            (pixel-last).length_squared()<=25.0)
+                    {
+                        let destination=if press.minimap {minimap_point}
+                            else if minimap_point.is_none()&&x>=0.0&&
+                                x<FIELD as f32&&y>=0.0&&y<HEIGHT as f32
+                            {Some(cam.screen_to_world(x,y,FIELD,HEIGHT))}
+                            else {None};
+                        if let Some(point)=destination {
+                            press.next_move_at=now+RIGHT_DRAG_INTERVAL;
+                            press.last_move_pixel=Some(pixel);
+                            match peer.order(&selected,"move",json!({
+                                "destination":{"x":point.x,"y":point.y}
+                            })) {
+                                Ok(())=>peer.metrics.right_drag_move_orders_submitted+=1,
+                                Err(error)=>peer.notice=error.to_string(),
+                            }
+                        }
+                    }
+                }
+            } else if last_right {
+                if let (Some(press),Some((x,y)))=(right_press.take(),mouse) {
+                    if press.minimap {
+                        if let Some(point)=minimap_point {
+                            match peer.order(&selected,"move",json!({
+                                "destination":{"x":point.x,"y":point.y}
+                            })) {
+                                Ok(())=>peer.metrics.minimap_move_orders_submitted+=1,
+                                Err(error)=>peer.notice=error.to_string(),
+                            }
+                        }
+                    } else if minimap_point.is_none()&&x>=0.0&&
+                        x<FIELD as f32&&y>=0.0&&y<HEIGHT as f32
+                    {
+                        if let Err(error)=order_at(&mut peer,&selected,cam,
+                            x as i32,y as i32,None) {
+                            peer.notice=error.to_string();
+                        }
                     }
                 }
             }
@@ -2148,6 +2224,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "minimap_ship_markers":peer.metrics.minimap_ship_markers,
         "minimap_objective_markers":peer.metrics.minimap_objective_markers,
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
+        "minimap_move_orders_submitted":peer.metrics.minimap_move_orders_submitted,
+        "right_drag_move_orders_submitted":peer.metrics.right_drag_move_orders_submitted,
         "fog_circle_stamps":peer.metrics.fog_circle_stamps,
         "fog_masked_pixels":peer.metrics.fog_masked_pixels,
         "source_art_enabled":show_art,
