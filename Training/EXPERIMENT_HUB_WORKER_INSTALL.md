@@ -11,7 +11,7 @@ Each enrolled Windows or Linux worker has **one agent** and may provide:
 - `tinybrains,courier`: both, in separate pinned Python environments
   under one machine's native CPU/RAM ledger and process supervisor
 
-The installer fetches this Hub branch and the corresponding TinyBrains
+The coordinator publishes this Hub branch and the corresponding TinyBrains
 `feat/linux-tinybrains-runtime` and Courier
 `feat/hub-independent-courier-ppo-20261119` branches. It installs CPU-only
 Torch per project; the official TinyBrains CLI v0.5.0 and original simulation
@@ -34,7 +34,7 @@ The listener rejects wildcard, public and unrelated LAN addresses. Its remote
 HTTP routes remain limited to machine-token-authenticated heartbeats, leases,
 independent evaluation worklists and bounded artifact transfers; it does not
 expose administrative routes. Tailscale supplies the encrypted transport;
-the Hub still validates each enrolled worker's separate machine credential.
+the Hub also validates each enrolled worker's separate machine credential.
 Restrict access to Halifax TCP 7149 to approved workers in the Tailscale policy
 and, where appropriate, the host firewall. Tailscale membership alone is not
 an authorization to execute experiments.
@@ -66,72 +66,62 @@ The Tailscale address must actually belong to the local `tailscale0`
 interface. If it is unavailable or incorrectly configured, standalone
 startup fails instead of opening another interface.
 
-## One-time worker approvals
+## One-file worker installation
 
-1. Log in to Tailscale on the worker. The installer installs the client if
-   absent but does not sign the machine into your private network.
-2. In **Hub → Machines**, register the worker with its real CPU/RAM and
-   click **Enroll**. The installer prompts privately for its one-time
-   64-character machine token; it never takes a dashboard administrator token.
-3. Generate and privately transfer matching TinyBrains and/or Courier HMAC
-   rollout keys from Halifax. Keep them out of Git, chat and Hub experiment
-   configuration. If no approved keys exist, generate them on Halifax:
+Use one installer per machine. It installs Tailscale if needed and displays the
+normal Tailscale browser sign-in link. **Completing that link is the only manual
+enrollment step.** Sign in as the same Tailscale user as Halifax.
 
-```bash
-umask 077
-mkdir -p "$HOME/ai/experiments/experiment-hub/private-rollouts/tinybrains"
-openssl rand -hex 32 > "$HOME/ai/experiments/experiment-hub/private-rollouts/tinybrains/rollout.key"
-openssl rand -hex 32 > "$HOME/ai/experiments/experiment-hub/private-rollouts/courier.key"
-chmod 600 "$HOME/ai/experiments/experiment-hub/private-rollouts/"*.key \
-  "$HOME/ai/experiments/experiment-hub/private-rollouts/tinybrains/rollout.key"
-```
+The coordinator verifies the new node through its local Tailscale daemon
+(`tailscale whois` and `tailscale status`), automatically registers its
+machine inventory, generates a private machine token and securely provisions
+TinyBrains/Courier HMAC rollout credentials. Only the verified same-owner node
+may receive them. A previously registered or active machine is never silently
+reassigned; an interrupted first install may retry from the same node.
 
-The TinyBrains private directory must contain `rollout.key`; the Courier
-key file must contain exactly 64 hexadecimal characters. Do not regenerate
-or overwrite keys already in use.
+The worker downloads the current approved, SHA-256-checked private software
+archives directly from Halifax's Tailscale listener. **No SSH keys or tunnels,
+GitHub login on the worker, Hub enrollment token, pre-copied key files,
+manual Machine registration, or install-time project setup are required.**
 
-## Windows worker (for example, Exeter)
+Halifax stores rollout secrets in its private data directory:
+`private-rollouts/tinybrains/rollout.key` and `private-rollouts/courier.key`.
+The coordinator initializes a missing secret once and never overwrites one in
+use. The local learner must use these same secrets (or configure the corresponding
+`EXPERIMENT_HUB_TINYBRAINS_KEY_DIRECTORY` and
+`EXPERIMENT_HUB_COURIER_REMOTE_KEY_PATH` coordinator environment variables
+to point to the learner's existing approved secrets).
 
-Save the **single** `Training/experiment_hub_worker_install.cmd` file from
-this branch; no separate `.ps1` is needed. Open **PowerShell as Administrator**
-and run it. The CMD launcher extracts its embedded PowerShell script, checks
-its syntax, and uses a process-scoped execution-policy bypass without changing
-Windows security settings:
+### Windows worker (Exeter, Warwick, Northumberland, Seagrams)
+
+Download the one-file `Training/experiment_hub_worker_install.cmd` from this
+branch, open PowerShell as Administrator in its directory and run:
 
 ```powershell
-.\experiment_hub_worker_install.cmd -Command install `
-  -Projects 'tinybrains,courier' -InstallRoot 'B:\HubWorker' `
-  -MachineId 'exeter' -HubTailnetIp '100.97.43.98' `
-  -TinyBrainsKeyFile 'B:\Private\tinybrains-rollout.key' `
-  -CourierKeyFile 'B:\Private\courier-rollout.key' -Start
+.\experiment_hub_worker_install.cmd
 ```
 
-The installer checks the selected machine and existing private rollout key
-files before provisioning. It installs missing prerequisites (including
-Tailscale), offers the one-time Tailscale sign-in, then obtains the Hub and
-training sources using authorized GitHub access. It provisions Python 3.11,
-Node 22+, .NET 8, separate project runtimes,
-and the native Windows LocalService Job Object owner. It does not install
-OpenSSH or create an SSH tunnel. Service installation is manual-start
-unless `-Start` is supplied. Existing owned jobs must finish or be reconciled
-before changing the service.
+Follow the Tailscale browser sign-in link if shown. The installer automatically
+enrolls using the signed-in node name (for example `exeter`), installs the
+machine-local Python/Node/.NET runtimes, approved projects, Windows service,
+native job owner and update task, and starts the agent.
 
-## Linux worker
+### Linux worker
 
-On Debian/Ubuntu, save `Training/experiment_hub_worker_install.sh`:
+On Debian/Ubuntu download the one-file
+`Training/experiment_hub_worker_install.sh` and run:
 
 ```bash
-bash ./experiment_hub_worker_install.sh install \
-  --projects tinybrains,courier --root "$HOME/ai/experiment-hub-worker" \
-  --machine-id remote_machine --hub-tailnet-ip 100.97.43.98 \
-  --tinybrains-key /private/tinybrains-rollout.key \
-  --courier-key /private/courier-rollout.key --start
+bash ./experiment_hub_worker_install.sh
 ```
 
-The script installs Git, Node, Tailscale if missing, a pinned isolated Python
-3.11.18 via uv, approved project packages, the private agent environment and
-one user-systemd service. It does not enable reboot startup automatically,
-install SSH or alter a separately enrolled Hub agent.
+Follow the Tailscale browser sign-in link if shown. The script installs the
+required software, provisions the agent and creates a user-systemd service with
+lingering and an automatic two-minute update timer. It starts the agent without
+additional arguments.
+
+The optional installer flags still allow selecting only one project or changing
+the installation directory; the default installs **both TinyBrains and Courier**.
 
 ### Update an existing SSH-forwarded worker
 
@@ -204,8 +194,8 @@ data intact. Installed versions and update states appear in **Machines**.
 A worker code change regenerates Windows's native owner/service binaries
 from reviewed source; Python simulation releases get separate environments.
 A failed activation restores the previous service configuration and reports
-the failure. Neither installed worker needs private-repository Git credentials
-for subsequent source updates.
+the failure. No installed worker needs private-repository Git credentials, even during
+initial setup.
 
 **Coordinator setup:** The Hub's release publisher pulls approved Git refs
 using Halifax's GitHub access. Without additional configuration it publishes
@@ -224,7 +214,7 @@ to JSON mapping approved existing **local Git checkout paths** and branches:
     "branch": "feat/linux-tinybrains-runtime"
   },
   "courier": {
-    "path": "/absolute/path/to/Basic-Training",
+    "path": "/home/halifax/ai/projects/basic-training",
     "branch": "feat/hub-independent-courier-ppo-20261119"
   }
 }
