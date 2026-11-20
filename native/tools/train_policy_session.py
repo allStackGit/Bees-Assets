@@ -92,6 +92,105 @@ class NativeHubCollectionBarrier:
         self.checks = 0
         self.coordinator_unavailable = 0
         self.last_reported_unavailable = False
+        # Transient authenticated Hub observations are sampled alongside the
+        # existing receipt barrier, not by a second monitoring owner.
+        # Store constant-size aggregates per native job attempt.
+        self.resource_observations = {}
+
+    @staticmethod
+    def _observe_metric(target, key, value):
+        if (type(value) not in (int, float) or not math.isfinite(value) or
+                value < 0 or value > 1e12):
+            return
+        metric = target.setdefault(key, {"count": 0, "sum": 0.0, "peak": 0.0})
+        metric["count"] += 1
+        metric["sum"] += value
+        metric["peak"] = max(metric["peak"], value)
+
+    def _observe_resources(self, collector, job, snapshot):
+        """Sample fresh Hub-owned process counters and physical-host devices.
+
+        A replacement job receives its own summary; observations never span
+        different native process identities or pretend GPUs are job-isolated.
+        """
+        live = job.get("live_execution")
+        if (not isinstance(live, dict) or
+                live.get("state") not in ("running", "stop_requested") or
+                live.get("dispatch_id") != job.get("dispatch_id")):
+            return
+        machine_id = job.get("assigned_machine_id")
+        machine = next((item for item in snapshot.get("machines", [])
+                        if item.get("id") == machine_id), None)
+        if not isinstance(machine, dict) or machine.get("status") != "connected":
+            return
+        attempts = self.resource_observations.setdefault(collector, {})
+        attempt = attempts.setdefault(job["id"], {
+            "hub_job_id": job["id"], "machine_id": machine_id,
+            "authenticated_observation_count": 0,
+            "job_process": {}, "physical_host": {}, "physical_gpus": {},
+        })
+        attempt["authenticated_observation_count"] += 1
+        add = self._observe_metric
+        process = attempt["job_process"]
+        add(process, "cpu_core_equivalents", live.get("cpu_cores_used"))
+        add(process, "memory_current_mb", live.get("memory_current_mb"))
+        add(process, "process_tasks", live.get("process_tasks"))
+        add(process, "cpu_throttled_seconds_cumulative",
+            live.get("cpu_throttled_seconds"))
+        add(process, "cpu_throttle_events_cumulative",
+            live.get("cpu_throttle_events"))
+        peak_memory = live.get("peak_job_memory_bytes")
+        if type(peak_memory) in (int, float):
+            add(process, "peak_job_memory_mb", peak_memory / 1048576)
+        add(attempt["physical_host"], "cpu_busy_pct",
+            machine.get("host_cpu_busy_pct"))
+
+        # Only devices physically bound to this exact Hub lease are sampled.
+        # GPU busy and VRAM occupancy describe the WHOLE device, including
+        # other processes; they do not measure this job's GPU consumption.
+        lease = next((item for item in snapshot.get("reservations", [])
+                      if item.get("id") == job.get("lease_id") and
+                         item.get("job_id") == job["id"] and
+                         item.get("machine_id") == machine_id and
+                         item.get("status") in ("offered", "acknowledged")), None)
+        if not isinstance(lease, dict):
+            return
+        devices = machine.get("verified_gpus", [])
+        for binding in lease.get("gpu_bindings", []):
+            pci = binding.get("pci_address") if isinstance(binding, dict) else None
+            device = next((item for item in devices
+                           if item.get("pci_address") == pci), None)
+            if not pci or device is None:
+                continue
+            gpu = attempt["physical_gpus"].setdefault(pci, {})
+            add(gpu, "host_busy_pct", device.get("gpu_busy_pct"))
+            add(gpu, "host_used_vram_mb", device.get("used_vram_mb"))
+            add(gpu, "host_power_w", device.get("power_w"))
+
+    def observed_resource_summary(self):
+        def summarize(samples):
+            return {
+                key: {
+                    "sample_count": item["count"],
+                    "sample_mean": item["sum"] / item["count"],
+                    "sample_peak": item["peak"],
+                } for key, item in samples.items() if item["count"]
+            }
+        return {
+            collector: [{
+                "hub_job_id": attempt["hub_job_id"],
+                "machine_id": attempt["machine_id"],
+                "authenticated_observation_count":
+                    attempt["authenticated_observation_count"],
+                "job_process": summarize(attempt["job_process"]),
+                "physical_host": summarize(attempt["physical_host"]),
+                "physical_gpus": {
+                    pci: summarize(values)
+                    for pci, values in attempt["physical_gpus"].items()
+                },
+            } for attempt in attempts.values()]
+            for collector, attempts in self.resource_observations.items()
+        }
 
     def __call__(self, missing):
         now = time.monotonic()
