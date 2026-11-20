@@ -109,7 +109,7 @@ impl FragmentSpawnSettings {
 
 /// Unity creates a pooled object only once; its randomly selected prefab
 /// and Speed are retained when the same pooled object is reused.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FragmentPrototype {
     pub prefab_number: u8,
     pub speed: i32,
@@ -208,7 +208,8 @@ fn random_coordinate(rng: &mut RandomStream, half_extent: f32) -> f32 {
 /// from KinematicPhysics but remains accessible to rendering and snapshots.
 /// The 0.5-second timer starts immediately; its ninth invocation removes
 /// the piece, matching AsteroidPiece.DeathTimer at HalfSeconds == 8.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AsteroidPieceState {
     pub entity_id: i64,
     pub prototype: FragmentPrototype,
@@ -221,6 +222,16 @@ pub struct AsteroidPieceState {
 }
 
 impl AsteroidPieceState {
+    pub fn valid_recovery(&self) -> bool {
+        self.entity_id > 0 && self.prototype.prefab_number > 0 &&
+        self.prototype.prefab_number <= 18 && self.prototype.speed >= 2 &&
+        self.pose.position.is_finite() &&
+        self.pose.rotation_degrees.is_finite() &&
+        self.velocity.is_finite() &&
+        self.angular_velocity_degrees.is_finite() &&
+        self.half_seconds <= 9 && self.timer.valid_recovery()
+    }
+
     pub fn new(
         entity_id: i64,
         prototype: FragmentPrototype,

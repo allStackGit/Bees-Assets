@@ -690,7 +690,7 @@ pub struct ObstacleStorageMetrics {
 /// Stage-owned ordinary asteroid prefab pool and setup workload. The
 /// canonical CombatWorld owns active instances and source-derived events;
 /// these are compact counters, never per-asteroid telemetry records.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FullAsteroidPoolMeasurements {
     pub active: usize,
     pub inactive: usize,
@@ -736,7 +736,8 @@ impl AsteroidFragmentationConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PendingAsteroidBreakup {
     parent_id: i64,
     size_class: u8,
@@ -753,6 +754,26 @@ struct EnemyShipContact {
     candidates: u64,
     distance_rejections: u64,
     exact_tests: u64,
+}
+
+/// The Stage's mutable prefab pools, delayed asteroid kills and separate
+/// cosmetic-but-timed piece lifecycles. Immutable authored catalogs stay
+/// in the owning Level configuration; no new prefab RNG is consumed.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CombatWorldAsteroidPoolCheckpoint {
+    active_full: HashMap<i64, FullAsteroidPrototype>,
+    pooled_full: Vec<FullAsteroidPrototype>,
+    full_work: FullAsteroidPoolMeasurements,
+    active_shards: HashMap<i64, FragmentPrototype>,
+    pooled_shards: Vec<FragmentPrototype>,
+    shard_families: HashMap<i64, i64>,
+    pieces: Vec<AsteroidPieceState>,
+    free_piece_slots: Vec<usize>,
+    pooled_pieces: Vec<FragmentPrototype>,
+    delayed_kills: HashMap<i64, ScaledTimer>,
+    pending_breakups: Vec<PendingAsteroidBreakup>,
+    expired_asteroid_ids: Vec<i64>,
 }
 
 /// Durable source movement orders and collision callback state.
@@ -837,6 +858,7 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     reserved_ship_ids: HashMap<i32, HashSet<i64>>,
     queens: BTreeMap<i64, queen::QueenRuntimeCheckpoint>,
     queen_measurements: QueenSpawnMeasurements,
+    asteroid_pools: CombatWorldAsteroidPoolCheckpoint,
     movement: CombatWorldMovementCheckpoint,
     game_specials: CombatWorldGameSpecialsCheckpoint,
     discovery: LevelDiscovery,
@@ -1478,7 +1500,7 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 7,
+            schema_version: 8,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1494,6 +1516,20 @@ impl CombatWorld {
             queens: self.game_queens.iter().map(|(&id, state)| (id, state.checkpoint()))
                 .collect(),
             queen_measurements: self.queen_spawn_measurements,
+            asteroid_pools: CombatWorldAsteroidPoolCheckpoint {
+                active_full: self.active_full_asteroid_profiles.clone(),
+                pooled_full: self.pooled_full_asteroid_profiles.clone(),
+                full_work: self.full_asteroid_pool_work,
+                active_shards: self.active_shard_prototypes.clone(),
+                pooled_shards: self.pooled_shard_prototypes.clone(),
+                shard_families: self.asteroid_shard_family.clone(),
+                pieces: self.pieces.clone(),
+                free_piece_slots: self.free_piece_slots.clone(),
+                pooled_pieces: self.pooled_piece_prototypes.clone(),
+                delayed_kills: self.asteroid_delayed_kills.clone(),
+                pending_breakups: self.pending_asteroid_breakups.clone(),
+                expired_asteroid_ids: self.expired_asteroid_ids.clone(),
+            },
             movement: CombatWorldMovementCheckpoint {
                 steering: self.game_ship_steering.clone(),
                 point_orders_pending: self.pending_game_point_orders.clone(),
@@ -1556,7 +1592,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 7 {
+        if snapshot.schema_version != 8 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1711,6 +1747,59 @@ impl CombatWorld {
         // Imported steering and registration indexes must reference
         // authentic dense slots, and every deferred order stays on its
         // original ship. Do not substitute a fresh A* plan at restore.
+        // Pooled asteroid prototypes are sampled once at Create, not
+        // redrawn when an old ID/slot returns to the active Stage pool.
+        // Preserve ordered reuse and any delayed collision-retirement
+        // timer. The matching immutable catalog must already be loaded.
+        let pools = &snapshot.asteroid_pools;
+        let full_valid = |profile: FullAsteroidPrototype| {
+            profile.prefab_number > 0 && profile.prefab_number <= 28 &&
+            profile.speed >= 2
+        };
+        let shard_valid = |profile: FragmentPrototype| {
+            profile.prefab_number > 0 && profile.prefab_number <= 28 &&
+            profile.speed >= 2
+        };
+        if (!pools.active_full.is_empty() || !pools.pooled_full.is_empty()) &&
+            self.full_asteroid_stage.is_none() ||
+            (!pools.active_shards.is_empty() || !pools.pooled_shards.is_empty() ||
+                !pools.pieces.is_empty() || !pools.pooled_pieces.is_empty() ||
+                !pools.pending_breakups.is_empty()) && self.fragmentation.is_none() ||
+            pools.active_full.iter().any(|(&id, &profile)|
+                !obstacle_by_id.contains_key(&id) || !full_valid(profile)
+            ) ||
+            pools.pooled_full.iter().any(|&profile| !full_valid(profile)) ||
+            pools.active_shards.iter().any(|(&id, &profile)|
+                !obstacle_by_id.contains_key(&id) || !shard_valid(profile)
+            ) ||
+            pools.pooled_shards.iter().any(|&profile| !shard_valid(profile)) ||
+            pools.pooled_pieces.iter().any(|&profile|
+                profile.prefab_number == 0 || profile.prefab_number > 18 ||
+                profile.speed < 2
+            ) ||
+            pools.pieces.iter().any(|piece| !piece.valid_recovery()) ||
+            pools.delayed_kills.iter().any(|(&id, timer)|
+                id <= 0 || !obstacle_by_id.contains_key(&id) ||
+                !timer.valid_recovery()
+            ) ||
+            pools.shard_families.iter().any(|(&id, &parent)|
+                id <= 0 || parent <= 0 || !pools.active_shards.contains_key(&id)
+            ) ||
+            pools.pending_breakups.iter().any(|entry|
+                entry.parent_id <= 0 || !entry.position.is_finite() ||
+                !entry.angular_velocity_degrees.is_finite()
+            ) ||
+            pools.expired_asteroid_ids.iter().any(|&id| id <= 0)
+        {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        let mut free_pieces = HashSet::new();
+        if pools.free_piece_slots.iter().any(|&index|
+            index >= pools.pieces.len() || pools.pieces[index].active ||
+            !free_pieces.insert(index)
+        ) {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
         // Queen waves use authored immutable templates, never serialized
         // new copies of assets. Both delayed waves and their source
         // registration order survive a native game/headless restart.
@@ -1933,6 +2022,19 @@ impl CombatWorld {
         self.game_queens = game_queens;
         self.queen_spawn_measurements = snapshot.queen_measurements;
         self.queen_spawn_ids.clear();
+        let pools = snapshot.asteroid_pools;
+        self.active_full_asteroid_profiles = pools.active_full;
+        self.pooled_full_asteroid_profiles = pools.pooled_full;
+        self.full_asteroid_pool_work = pools.full_work;
+        self.active_shard_prototypes = pools.active_shards;
+        self.pooled_shard_prototypes = pools.pooled_shards;
+        self.asteroid_shard_family = pools.shard_families;
+        self.pieces = pools.pieces;
+        self.free_piece_slots = pools.free_piece_slots;
+        self.pooled_piece_prototypes = pools.pooled_pieces;
+        self.asteroid_delayed_kills = pools.delayed_kills;
+        self.pending_asteroid_breakups = pools.pending_breakups;
+        self.expired_asteroid_ids = pools.expired_asteroid_ids;
         let movement = snapshot.movement;
         self.game_ship_steering = movement.steering;
         self.pending_game_point_orders = movement.point_orders_pending;

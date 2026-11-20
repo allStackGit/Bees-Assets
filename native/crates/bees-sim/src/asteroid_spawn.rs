@@ -35,7 +35,7 @@ pub enum FullAsteroidSpawnError {
 /// Pooled prefab identity and Create-time randomized Speed. The owning Level
 /// selects an actual prefab from its Stage.Pool; we do not invent a new
 /// distribution of asteroid types.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FullAsteroidPrototype {
     pub prefab_number: u8,
     pub speed: i32,
