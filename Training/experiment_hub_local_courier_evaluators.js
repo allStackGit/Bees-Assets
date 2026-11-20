@@ -212,11 +212,10 @@ async function setup(hub) {
     o.unitId='survival_'+version;
     o.suiteFile=path.join(o.suiteRoot,o.suiteId+'.json');
     frozenSuite(o,true);
-    // One explicit operator approval. At the next agent restart, even a
-    // private preexisting Courier adapter can recognize these exact,
-    // immutable local evaluation paths without editing its source.
+
     const approval=JSON.stringify({schema_version:1,
         config_sha256:o.hash,suite_id:o.suiteId},null,2)+'\n';
+    let oldTimer=null,approvalChanged=true;
     if(fs.existsSync(o.approvalFile)) {
         const stat=fs.lstatSync(o.approvalFile);
         if(!stat.isFile()||stat.isSymbolicLink()||
@@ -228,25 +227,67 @@ async function setup(hub) {
         if(!SHA.test(String(current.config_sha256||''))||
             !/^courier_survival_(?:[a-f0-9]{12}|[a-f0-9]{8}_[a-f0-9]{8})$/.test(current.suite_id))
             throw Error('Existing Courier evaluator approval is malformed.');
-        if(current.suite_id!==o.suiteId) {
-            // Each runtime/configuration pair has an immutable suite and
-            // service identity. Old evidence remains available for history.
-            const oldTimer='bees-experiment-hub-courier-'+o.machine+
+        approvalChanged=current.suite_id!==o.suiteId;
+        if(!approvalChanged&&current.config_sha256!==o.hash)
+            throw Error('Existing Courier evaluator suite identity has a different environment.');
+        if(approvalChanged) {
+            const previous='bees-experiment-hub-courier-'+o.machine+
                 '-evaluator-survival_'+
                 current.suite_id.slice('courier_survival_'.length)+'.timer';
-            if(fs.existsSync(path.join(o.unitDir,oldTimer)))
-                await systemctl(['stop',oldTimer]);
-            const temporary=o.approvalFile+'.new';
-            fs.writeFileSync(temporary,approval,{flag:'wx',mode:0o600});
-            fs.renameSync(temporary,o.approvalFile);
+            if(fs.existsSync(path.join(o.unitDir,previous)))
+                oldTimer=previous;
         }
-    }else fs.writeFileSync(o.approvalFile,approval,{flag:'wx',mode:0o600});
+    }
+
+    // Validate or install the replacement before touching the old schedule or
+    // its approval. Failed preflight leaves the previous evaluator intact.
     const def=definition(o),unit=unitPaths(o);
     if(fs.existsSync(unit.serviceFile)||fs.existsSync(unit.timerFile))
         approvedUnits(o,def);
     else installEvaluatorUnits(def,o.home);
     await systemctl(['daemon-reload']);
-    await systemctl(['start',unit.timer]);
+
+    let oldStopped=false,newStartAttempted=false,temporary=null;
+    try {
+        if(oldTimer) {
+            const previous=await state(oldTimer);
+            if(previous.ActiveState==='active') {
+                await systemctl(['stop',oldTimer]);
+                oldStopped=true;
+            }
+        }
+        newStartAttempted=true;
+        await systemctl(['start',unit.timer]);
+
+        // Publish the new immutable suite only after its schedule is running.
+        // The agent advertises this private marker on its next safe restart.
+        if(approvalChanged) {
+            temporary=o.approvalFile+'.'+crypto.randomUUID()+'.new';
+            fs.writeFileSync(temporary,approval,{flag:'wx',mode:0o600});
+            fs.renameSync(temporary,o.approvalFile);
+            temporary=null;
+        }
+    }catch(error) {
+        const failures=[];
+        if(newStartAttempted&&approvalChanged) {
+            try { await systemctl(['stop',unit.timer]); }
+            catch(rollback) { failures.push('new timer: '+rollback.message); }
+        }
+        if(oldStopped) {
+            try { await systemctl(['start',oldTimer]); }
+            catch(rollback) { failures.push('old timer: '+rollback.message); }
+        }
+        if(failures.length)
+            throw Error('Courier evaluator setup failed: '+error.message+
+                '; schedule rollback needs operator review ('+
+                failures.join('; ')+').');
+        throw error;
+    }finally {
+        if(temporary) {
+            try { fs.unlinkSync(temporary); }
+            catch { /* A failed temporary cleanup cannot hide the setup error. */ }
+        }
+    }
     return {message:'Courier fixed-survival evaluation schedule installed and started. Restart the local agent from this panel so it advertises the new suite.'};
 }
 async function action(hub,value) {
