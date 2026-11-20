@@ -3200,15 +3200,12 @@ fn run_campaign_mission(
     }
     let root = catalog_path.parent().ok_or_else(|| invalid("missing catalog directory"))?;
     fs::create_dir_all(output_root)?;
-    let progress = catalog.load_progress(output_root)?;
     let entry = catalog.battles.iter().find(|entry| entry.mission.as_ref()
         .is_some_and(|mission| mission.id == mission_id))
         .ok_or_else(|| invalid("unknown campaign mission ID"))?;
-    if !entry.mission.as_ref().expect("validated mission").requires.iter()
-        .all(|id| progress.completed(id))
-    {
-        return Err(invalid("campaign mission is still locked").into());
-    }
+    // Launch performs the only unlock check after acquiring the career
+    // writer lease. No unlocked-state snapshot from before that lease may
+    // reject a newly unlocked mission or select stale fleet/source routes.
     if serve && env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_none() {
         return Err(invalid(
             "campaign --serve requires BEES_NATIVE_REMOTE_LISTEN and authentication tokens",
