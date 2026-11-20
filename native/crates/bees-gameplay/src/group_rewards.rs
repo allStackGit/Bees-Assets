@@ -30,7 +30,7 @@ pub enum GroupRewardError {
     MissingOrRepeatedTick { expected: u64, actual: u64 },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GroupRewardKind {
     /// Real tactical/economic shaping already normalized by the coordinator.
     Immediate,
@@ -41,7 +41,8 @@ pub enum GroupRewardKind {
     EndEpisode,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GroupRewardEvent {
     pub side: i32,
     pub team_id: u8,
@@ -50,7 +51,8 @@ pub struct GroupRewardEvent {
     pub amount: f32,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GroupRewardMeasurements {
     pub registered_agents: u64,
     pub unregistered_agents: u64,
@@ -78,6 +80,30 @@ pub fn team_id_for_side(
     } else {
         Err(GroupRewardError::UnknownSide)
     }
+}
+
+/// The group membership and delivery-clock owner at a committed Level tick.
+/// Sparse reward notifications remain in NativeLevelEventProcessor's
+/// acknowledgement outbox; this is not a second delivery journal.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeGroupRewardCheckpoint {
+    schema_version: u32,
+    sides: [i32; 2],
+    episode_number: u32,
+    participants: [BTreeSet<u64>; 2],
+    next_tick: u64,
+    completed: bool,
+    measurements: GroupRewardMeasurements,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeGroupRewardRestoreError {
+    InvalidVersion,
+    WrongEpisode,
+    InvalidClock,
+    InvalidParticipants,
+    InvalidMeasurements,
 }
 
 pub struct NativeGroupRewardDelivery {
@@ -108,6 +134,84 @@ impl NativeGroupRewardDelivery {
             events: Vec::new(),
             measurements: GroupRewardMeasurements::default(),
         })
+    }
+
+    /// Capture exact group participation, team assignment identity and
+    /// next expected fixed tick. The last consumed tick's events are
+    /// transient scratch already copied into the Level's durable outbox.
+    pub fn checkpoint(&self) -> NativeGroupRewardCheckpoint {
+        NativeGroupRewardCheckpoint {
+            schema_version: 1,
+            sides: self.sides,
+            episode_number: self.episode_number,
+            participants: self.participants.clone(),
+            next_tick: self.next_tick,
+            completed: self.completed,
+            measurements: self.measurements,
+        }
+    }
+
+    /// Preflight group recovery before the outer Level commits any owner.
+    /// Both rendered gameplay and headless rollouts share this contract:
+    /// the exact episode/team seed and completed fixed-step clock must
+    /// match the Level, never be guessed from the recovered participant IDs.
+    pub fn prepare_restore(
+        &self,
+        checkpoint: NativeGroupRewardCheckpoint,
+        completed_ticks: u64,
+    ) -> Result<Self, NativeGroupRewardRestoreError> {
+        use NativeGroupRewardRestoreError as Error;
+        if checkpoint.schema_version != 1 {
+            return Err(Error::InvalidVersion);
+        }
+        if checkpoint.sides != self.sides ||
+            checkpoint.episode_number != self.episode_number {
+            return Err(Error::WrongEpisode);
+        }
+        if completed_ticks.checked_add(1) != Some(checkpoint.next_tick) ||
+            (!checkpoint.completed && checkpoint.next_tick == 0) ||
+            (checkpoint.completed && completed_ticks == 0) {
+            return Err(Error::InvalidClock);
+        }
+        if checkpoint.participants.iter()
+            .any(|group| group.contains(&0)) ||
+            !checkpoint.participants[0].is_disjoint(&checkpoint.participants[1]) {
+            return Err(Error::InvalidParticipants);
+        }
+        let active_count = checkpoint.participants.iter().map(|group|
+            group.len() as u64
+        ).sum::<u64>();
+        if checkpoint.measurements.registered_agents < active_count ||
+            checkpoint.measurements.unregistered_agents >
+                checkpoint.measurements.registered_agents ||
+            checkpoint.measurements.terminal_groups > 2 ||
+            (!checkpoint.completed && checkpoint.measurements.terminal_groups != 0) {
+            return Err(Error::InvalidMeasurements);
+        }
+        Ok(Self {
+            sides: self.sides,
+            teams: self.teams,
+            episode_number: self.episode_number,
+            participants: checkpoint.participants,
+            next_tick: checkpoint.next_tick,
+            completed: checkpoint.completed,
+            // Group events are already published as Level notifications;
+            // replaying this one-tick scratch would pay a reward twice.
+            events: Vec::new(),
+            measurements: checkpoint.measurements,
+        })
+    }
+
+    /// Atomic owner replacement after the Level's other recovery ledgers
+    /// have been validated; failed preflight preserves the live group.
+    pub fn restore_checkpoint(
+        &mut self,
+        checkpoint: NativeGroupRewardCheckpoint,
+        completed_ticks: u64,
+    ) -> Result<(), NativeGroupRewardRestoreError> {
+        let prepared = self.prepare_restore(checkpoint, completed_ticks)?;
+        *self = prepared;
+        Ok(())
     }
 
     pub fn measurements(&self) -> GroupRewardMeasurements {
