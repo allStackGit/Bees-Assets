@@ -298,6 +298,9 @@ pub struct NativeRemotePlay {
     // physical World just because it uses the same player-side tokens.
     host_session_id: String,
     recovered_session: bool,
+    /// A graphical local host already owns its own briefing pacing.
+    /// Only dedicated LAN hosting needs remote viewer acknowledgment.
+    dedicated_briefing_gate: bool,
     side_tokens: HashMap<i32, String>,
     peers: Vec<Peer>,
     next_peer: u64,
@@ -319,7 +322,8 @@ pub struct NativeRemotePlay {
 }
 
 impl NativeRemotePlay {
-    pub fn from_environment(local_side: i32) -> io::Result<Option<Self>> {
+    pub fn from_environment(local_side: i32, dedicated: bool)
+        -> io::Result<Option<Self>> {
         let Ok(address) = std::env::var("BEES_NATIVE_REMOTE_LISTEN") else {
             return Ok(None);
         };
@@ -368,6 +372,7 @@ impl NativeRemotePlay {
         }));
         Ok(Some(Self {
             listener, host_session_id, recovered_session: false,
+            dedicated_briefing_gate: dedicated,
             side_tokens, peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
@@ -880,6 +885,9 @@ impl NativeRemotePlay {
         // their existing reliable, bounded channel.
         let pending_audio = std::mem::take(&mut self.pending_audio);
         let music_location = self.music_location;
+        let requires_briefing_ack=self.dedicated_briefing_gate &&
+            view.tick==0 && view.terminal_result.is_none() &&
+            view.campaign_dialogue.is_some_and(|(_,cue)|cue.is_briefing());
         let mut snapshots = HashMap::<i32, Vec<u8>>::new();
         let measurements = &mut self.measurements;
         for peer in &mut self.peers {
@@ -890,6 +898,7 @@ impl NativeRemotePlay {
                 let payload = serde_json::to_vec(&current_state(
                     view, bounds, side, music_location, cues,
                     vision.get(&side).expect("authenticated side has sight"),
+                    requires_briefing_ack && view.campaign_dialogue_side==Some(side),
                     measurements,
                 )).unwrap_or_default();
                 measurements.snapshot_projection_wall_seconds +=
@@ -1400,7 +1409,8 @@ fn wire_primary_hull(shape: &ShipShape) -> Value {
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
     music_location: Option<NativeMusicLocation>, audio_events: &[Value],
-    sources: &RemoteFogSources, measurements: &mut RemotePlayMeasurements,
+    sources: &RemoteFogSources, requires_briefing_ack: bool,
+    measurements: &mut RemotePlayMeasurements,
 ) -> Value {
     let viewer = Some(side);
     let fog = view.player_authority.player_fog_of_war_enabled();
@@ -1550,6 +1560,9 @@ fn current_state(
         "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
         "music_location": music_location, "audio_events": audio_events,
         "viewer_side": viewer,
+        // Source-owned initial story pacing; never required for local
+        // hosts or after this World has taken its first physical step.
+        "briefing_requires_ack": requires_briefing_ack,
         // Only authenticated side-owned vision and its authored fading
         // masks are sent. The remote window reuses the native pixel stencil
         // instead of revealing old sprites outside the current host sight.
