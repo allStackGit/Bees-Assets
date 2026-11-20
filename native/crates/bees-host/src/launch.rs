@@ -4609,6 +4609,7 @@ fn run_battle(
         .map(|file| file.load()).transpose()
         .map_err(|error| contextual("native host checkpoint load", error))?
         .flatten();
+    let recovered_existing_host = saved_host_checkpoint.is_some();
     let resume_cursor: Option<NativeBattleRecoveryCursor> =
         saved_host_checkpoint.as_ref().map(|snapshot|
             serde_json::from_value(snapshot.launcher().clone())
@@ -6516,7 +6517,48 @@ fn run_battle(
         // Crash-safe for ordinary native rollouts and campaigns alike.
         // A terminal checkpoint may already be durable, but no unfinished
         // run_final is allowed to block its authenticated continuation.
-        let commit = persist_new_json(&summary_path, &final_summary);
+        let commit: Result<(), Box<dyn Error>> =
+            if summary_path.exists() || summary_path.is_symlink() {
+                (|| {
+                    // A process can terminate after committing the exact
+                    // battle/career receipt but before returning to its
+                    // caller. Never duplicate campaign grants, and never
+                    // overwrite a different battle's immutable receipt.
+                    if !recovered_existing_host ||
+                        !fs::symlink_metadata(&summary_path)?.file_type().is_file() ||
+                        fs::metadata(&summary_path)?.len() > 16 * 1024 * 1024
+                    {
+                        return Err(invalid("native terminal receipt already belongs to another session").into());
+                    }
+                    let committed: Value = serde_json::from_slice(&fs::read(&summary_path)?)?;
+                    const FIELDS: &[&str] = &[
+                        "kind", "run_id", "rounds", "completed_episodes",
+                        "policy_generation", "policy_manifest_sha256",
+                        "final_physical_worlds", "final_gameplay_worlds",
+                        "campaign_outcome", "campaign_fleet", "campaign_squads",
+                        "campaign_banked_minerals",
+                    ];
+                    if FIELDS.iter().any(|&field|
+                        committed.get(field) != final_summary.get(field)) ||
+                        committed["kind"] != "run_final" ||
+                        !committed["failed_window"].is_null() ||
+                        committed["cleanup_errors"] != json!([]) ||
+                        committed["user_closed"] != false
+                    {
+                        return Err(invalid("native terminal receipt differs from the recovered authoritative battle").into());
+                    }
+                    println!("{}", json!({
+                        "kind": "native_terminal_receipt_reused",
+                        "run_id": config.run_id,
+                        "rounds": rounds,
+                        "campaign": campaign_outcome.is_some(),
+                    }));
+                    Ok(())
+                })()
+            } else {
+                persist_new_json(&summary_path, &final_summary)
+                    .map_err(Into::into)
+            };
         if let Err(error) = commit {
             // The original session cannot claim completed progress if its
             // final summary was not durably committed. The same terminal
