@@ -5097,15 +5097,15 @@ class ExperimentHub {
             throw Error('An online enrolled agent must approve the exact evaluator service and action.');
         const all=this.state.evaluator_actions||[];
         if(all.some(action=>action.machine_id===host.id&&action.project===project&&
-            ['pending','dispatched','unverified'].includes(action.status))) {
+            ['pending','dispatched','awaiting_restart','unverified'].includes(action.status))) {
             const error=Error('A previous evaluator action needs completion or manual reconciliation.');
             error.status=409;throw error;
         }
         const next=copy(this.state);
         next.evaluator_actions=(next.evaluator_actions||[]).filter(action=>
-            ['pending','dispatched','unverified'].includes(action.status)).concat(
+            ['pending','dispatched','awaiting_restart','unverified'].includes(action.status)).concat(
             (next.evaluator_actions||[]).filter(action=>
-                !['pending','dispatched','unverified'].includes(action.status)).slice(-63));
+                !['pending','dispatched','awaiting_restart','unverified'].includes(action.status)).slice(-63));
         if(next.evaluator_actions.length>=64)
             throw Error('Too many unresolved evaluator operations; reconcile them first.');
         const action={id:crypto.randomUUID(),machine_id:host.id,
@@ -5123,9 +5123,9 @@ class ExperimentHub {
             value.confirm_reconcile!==true||!UUID.test(String(value.id||'')))
             throw Error('Explicit remote evaluator reconciliation is required.');
         const entry=(this.state.evaluator_actions||[]).find(a=>a.id===value.id);
-        if(!entry||!['pending','dispatched','unverified'].includes(entry.status))
+        if(!entry||!['pending','dispatched','awaiting_restart','unverified'].includes(entry.status))
             throw Error('No outstanding evaluator operation has this identity.');
-        if(entry.status==='dispatched'&&
+        if(['dispatched','awaiting_restart'].includes(entry.status)&&
             Date.now()-Date.parse(entry.dispatched_at||'')<120000)
             throw Error('Wait for the agent result before reconciling a dispatched operation.');
         if(entry.status!=='pending') {
@@ -5167,8 +5167,9 @@ class ExperimentHub {
                 item.unit===report.unit);
             if(!saved||saved.status!=='dispatched'||
                 saved.agent_instance_id!==instance)continue;
-            saved.status=report.status;
-            saved.finished_at=now();
+            saved.status=saved.action==='restart-agent'&&report.status==='completed'
+                ?'awaiting_restart':report.status;
+            if(saved.status!=='awaiting_restart')saved.finished_at=now();
             if(report.diagnostic)saved.reason=report.diagnostic;
             changed=true;
         }
@@ -5224,7 +5225,11 @@ class ExperimentHub {
              !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(instance)))
             throw Error('Native execution agent requires a process instance identity.');
         const previous=this.agentReports.get(machine.id);
-        if(previous&&previous.local_executor&&
+        const restartApproval=(this.state.evaluator_actions||[]).find(action=>
+            action.machine_id===machine.id&&action.action==='restart-agent'&&
+            action.status==='awaiting_restart'&&action.agent_instance_id!==instance&&
+            UUID.test(String(instance||'')));
+        if(previous&&previous.local_executor&&!restartApproval&&
             (received<previous.received_ms||
                 received-previous.received_ms<AGENT_HEARTBEAT_TTL_MS)&&
             instance!==previous.instance_id) {
@@ -5239,12 +5244,18 @@ class ExperimentHub {
         // Only this authenticated machine may acknowledge its own offers.
         // No lease is evidence of OS resource enforcement.
         const next=copy(this.state);
+        if(restartApproval) {
+            const completed=next.evaluator_actions.find(item=>item.id===restartApproval.id);
+            completed.status='completed';
+            completed.finished_at=now();
+            completed.reason='A fresh authenticated agent instance confirmed the requested restart.';
+        }
         // Receipt IDs are based on the agent's previous offer response,
         // while this heartbeat reports the current host capacity. Reject
         // carried-over IDs if *all* outstanding claims no longer fit.
         const withinCapacity=claimsFitCpuRam(next.reservations,machine,report.cpus,report.ram_mb);
         const acknowledgedIds=new Set();
-        let changed=false;
+        let changed=Boolean(restartApproval);
         for (const id of ids) {
             if(!withinCapacity)break;
             const lease=next.reservations.find(x=>x.id===id &&
