@@ -357,6 +357,13 @@ function createNativeBeesPortableCollectorAdapter({
                 throw Error('Invalid native portable collector artifact identity.');
             return path.join(artifacts,jobId);
         },
+        // Service exit is not collection completion. The executable may
+        // have terminated after its World checkpoint but before durable
+        // bundle publication. The learner independently verifies all
+        // captured bytes before admitting the same bundle for optimization.
+        completion_ready(context) {
+            return verifiedReceipt(context)!==null;
+        },
         readProgress(context) {
             const completed=verifiedReceipt(context);
             if(!completed)return committedRolloutProgress(context);
