@@ -6700,6 +6700,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }catch(e){feedback('hub-enrollment-message',e.message);}
             }));
+            if(m.status==='connected'&&m.local_executor_enabled) {
+                // Software installation is an independent, authenticated
+                // machine action; no job is launched by this button.
+                const requested=new Set(state.machine_software_requests?.[m.id]||[]);
+                for(const project of ['tinybrains','courier']) {
+                    const installed=(m.installed_projects||[]).includes(
+                        project==='tinybrains'?'tinybrains_rollout':'courier_lineage');
+                    const already=requested.has(project);
+                    if(!installed&&!already)
+                        actions.append(button('Install '+(project==='tinybrains'?'TinyBrains':'Courier'),async()=>{
+                            try{
+                                await action('hub/machines/install',{
+                                    machine_id:m.id,projects:[project],confirm_install:true,
+                                });
+                                feedback('hub-enrollment-message',
+                                    project+' installation requested for '+m.id+
+                                    '. The worker updater will install it without stopping existing jobs.');
+                                await reload();
+                            }catch(error){feedback('hub-enrollment-message',error.message);}
+                        }));
+                }
+            }
             if(m.agent_enrolled) {
                 const overriding=state.machine_update_policies?.[m.id]==='override';
                 actions.append(button(overriding?'Wait for jobs':'Override update',async()=>{
