@@ -584,6 +584,10 @@ impl PeerClient {
             }
         }
         if start > 0 { self.incoming.drain(..start); }
+        // A rejected host session must not send previously queued player
+        // commands to a different battle, or overwrite the reconnect
+        // identity warning with a generic broken-pipe status.
+        if !self.connected { return Ok(()); }
         if let Err(error) = self.flush() {
             if link_disconnected(&error) {
                 self.connected = false;
