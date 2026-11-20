@@ -1932,7 +1932,9 @@ fn saved_remote_session(
     {
         return Err(invalid("invalid saved native multiplayer session identity").into());
     }
-    if value["address"] != address || value["side"] != side {
+    if value["address"].as_str() != Some(address) ||
+        value["side"].as_i64() != Some(i64::from(side))
+    {
         return Ok(None);
     }
     Ok(value["host_session_id"].as_str().map(str::to_owned))
@@ -1948,10 +1950,12 @@ fn persist_remote_session(
     let parent = path.parent().ok_or_else(||
         invalid("saved multiplayer session has no parent"))?;
     fs::create_dir_all(parent)?;
-    if let Ok(existing) = fs::symlink_metadata(path) {
-        if !existing.file_type().is_file() {
-            return Err(invalid("saved multiplayer session must be a regular file").into());
-        }
+    match fs::symlink_metadata(path) {
+        Ok(existing) if !existing.file_type().is_file() =>
+            return Err(invalid("saved multiplayer session must be a regular file").into()),
+        Ok(_) => {},
+        Err(error) if error.kind() == ErrorKind::NotFound => {},
+        Err(error) => return Err(error.into()),
     }
     let temporary = parent.join(format!(
         ".multiplayer-session-{}-{session_id}.tmp", std::process::id(),
