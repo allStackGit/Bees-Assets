@@ -87,8 +87,12 @@ node Training/experiment_hub_standalone.js \
 
 The explicit data root must be an absolute private directory (mode 0700)
 outside the checkout. The coordinator binds the administrator dashboard
-only to `127.0.0.1:7148` and the authenticated, machine-scoped agent listener
-only to `127.0.0.1:7149`. It serves the existing Hub Design, Train,
+only to `127.0.0.1:7148` and the authenticated machine-agent listener by
+default to `127.0.0.1:7149`. Setting
+`EXPERIMENT_HUB_AGENT_TAILNET_IP=100.97.43.98` in this standalone
+coordinator's environment adds a listener **only** on Halifax's verified
+Tailscale interface at `100.97.43.98:7149`. The admin listener and local
+Halifax agents retain their original loopback ports. It serves the existing Hub Design, Train,
 Monitor, Compare and Machines controls but **does not import Bees training,
 Unity or the Bees manager**, and Bees operator actions are unavailable. A
 fresh registry starts with inert TinyBrains and Courier project definitions;
@@ -663,19 +667,17 @@ per-device measurement and platform-level isolation are implemented.
    system, and read-only native resource-control discovery.
    Set `EXPERIMENT_HUB_AGENT_TOKEN` from the enrollment output. Do not
    commit it or include it in logs or an unprotected shell history.
-4. The Hub administrator dashboard listens at `127.0.0.1:7148` but
-   **machine agents connect only to the separate `127.0.0.1:7149` listener**.
-   This agent-only port accepts authenticated heartbeat/lease-receipt POSTs
-   plus a machine-scoped, read-only independent-evaluation worklist GET.
-   It cannot access any administrator or training route. A remote worker
-   needs a trusted SSH local forwarding tunnel, for example mapping its
-   local port 17149 to the coordinator's `127.0.0.1:7149`. Set
-   `EXPERIMENT_HUB_URL=http://127.0.0.1:17149` on the worker. The agent
-   defaults to `127.0.0.1:7149` when running alongside the coordinator.
-   **Never forward port 7148 to worker machines**: it controls Bees
-   training and the Hub's registration/credentials. The agent accepts
-   only loopback HTTP destinations, and neither port should be exposed
-   directly on the LAN or Internet.
+4. The administrator dashboard listens only at `127.0.0.1:7148`.
+   Machines use the separate token-authenticated agent listener at
+   `127.0.0.1:7149` (on Halifax) or, when the standalone coordinator
+   is explicitly configured with `EXPERIMENT_HUB_AGENT_TAILNET_IP`, at
+   `100.97.43.98:7149` (remote Tailscale workers). Set
+   `EXPERIMENT_HUB_URL=http://100.97.43.98:7149` for remote workers.
+   No SSH tunnel or public port-forwarding is required. Only machine-scoped
+   heartbeats, leases, evaluation worklists and artifact sync are accepted;
+   no privileged administration routes are available. Keep TCP 7149
+   restricted to authorized peers by tailnet policy and host firewall,
+   and never publish or forward dashboard port 7148.
 5. **Connected** means a correctly authenticated process reported recently,
    not that the process has exclusive control of the host. After 45 seconds
    without a heartbeat, it is **offline**. Last-seen time is retained in
@@ -836,10 +838,10 @@ runs of the same one-shot service and enforces the specified CPU and RAM caps.
 The evaluator still needs its approved project dependencies and access to
 the model/receipt directories. On a coordinator-local machine the generator
 defaults to the historical dashboard loopback port 7148; this must **never**
-be forwarded to a remote worker. For a remote worker, add
-`--env-file /absolute/private/hub-agent.env --port 17149` (the port of
-the already established, trusted SSH forward to the coordinator's agent
-listener at 7149). The file must be owned by the service user, mode 0600,
+be forwarded to a remote worker. For a remote worker, use
+`--env-file /absolute/private/hub-agent.env --hub-host 100.97.43.98
+--port 7149` to reach Halifax's authenticated Tailscale agent listener.
+The file must be owned by the service user, mode 0600,
 and contain that worker's enrolled `EXPERIMENT_HUB_AGENT_TOKEN`. The
 generator passes the file through the systemd `EnvironmentFile` directive;
 the Python evaluator sends the token only as an HTTP request header to the
@@ -958,19 +960,13 @@ EXPERIMENT_HUB_EVALUATOR_CONFIG=C:\Hub\Private\tinybrains-evaluator.json
 All paths must already exist. The artifact, scratch and receipt directories
 must be separate. For Courier, use `"project":"courier"` and add
 `project_root` and `snapshot_root`, also separate; omit `engine_path`.
-The optional loopback `port` defaults to 7148 **only for a trusted
-evaluator running beside the coordinator**. For a Windows worker on a
-separate machine, set `"port":17149` (or the worker's actual local SSH
-forward to the coordinator's restricted agent listener on 7149), and
-include `EXPERIMENT_HUB_AGENT_TOKEN=<that worker's enrolled token>` in
-the private service environment file. An `EXPERIMENT_HUB_MACHINE_ID`
-entry, if present, must match the evaluator JSON's `machine`. The
-Windows evaluator checks the token's format and machine identity
-before beginning its polling loop; the coordinator independently
-authenticates every worklist query and returns only that worker's
-eligible jobs. Never forward the privileged 7148 dashboard listener to
-ordinary worker hosts. The service account needs access to its private
-environment file and the existing SSH forward, not the dashboard.
+The optional `port` defaults to 7148 only for a trusted evaluator running
+beside the coordinator. A Windows evaluator on a remote machine instead sets
+`"hub_host":"100.97.43.98"` and `"port":7149`, and has its own enrolled
+`EXPERIMENT_HUB_AGENT_TOKEN` in its private service environment file.
+The evaluator checks the token's format and machine identity; the coordinator
+independently authenticates each worklist query. Remote evaluators never
+receive administrator credentials or access to dashboard port 7148.
 
 Supply 1–8 distinct suite paths; multiple suites run in one
 same-checkpoint batch. Intervals and timeouts accept 60–86,400 seconds.
@@ -2099,7 +2095,7 @@ Set `EXPERIMENT_HUB_SYNC_ARTIFACTS=1` on a machine already configured with
 TinyBrains adapter. The adapter—not the Hub or a saved configuration—selects
 the job's private artifact directory. After the local native owner reaches a
 terminal state, the agent sends approved log snapshots to the existing
-loopback/SSH-forwarded machine endpoint on port 7149. Heartbeats and native
+localhost or Tailscale-bound authenticated machine endpoint on port 7149. Heartbeats and native
 Stop/Inspect commands are independent of this lower-priority transfer.
 Each HTTP chunk is limited to 1 MiB, a single file snapshot to 500 MB,
 and the receiving Hub to 256 files / 5 GB per job. The Hub also
@@ -2575,10 +2571,11 @@ evaluates one explicit checkpoint. For scheduled evaluation, run
 For a multi-suite gate, pass `--suite short.json --suite long.json`
 in one invocation instead of launching independent pollers. The poller
 queries the local coordinator (port 7148 by default when running beside
-the coordinator). On a remote worker, use `--port 17149` and provide
-`EXPERIMENT_HUB_AGENT_TOKEN` from the private agent environment through
-the scheduled evaluator's `--env-file`; only the restricted 7149 agent
-port should be forwarded. It selects a completed numbered checkpoint for
+the coordinator). On a remote worker, use `--hub-host 100.97.43.98 --port 7149`, with the
+machine's `EXPERIMENT_HUB_AGENT_TOKEN` supplied by the scheduled evaluator's
+private `--env-file`. The Tailscale listener is authenticated and remote
+workers never use the dashboard port.
+It selects a completed numbered checkpoint for
 an eligible running dispatch, and evaluates at most
 one checkpoint batch per invocation. Set the profile's `training.checkpoint_every` so a
 numbered checkpoint appears while the job is still running. The poller
@@ -2587,8 +2584,8 @@ checkpoint watermarks across temporary worker disconnects (up to
 1,000 dispatches), and retry publication independently of coordinator availability
 once a completed evaluation is recorded. The trusted adapter and Hub
 accept the receipt only for the exact running dispatch and suite.
-A separate host needs a trusted loopback forward and read access to the
-training artifacts.
+A separate host needs Tailscale access and read access to the training
+artifacts; SSH forwarding is not required.
 
 For reproducible comparisons, pin the evaluation runtime as well as the
 scenario. Run the following with the evaluator's Python environment and its
@@ -2864,7 +2861,7 @@ older completed history.
 For a new Windows or Linux worker supporting TinyBrains collectors and
 Courier lineages together, see
 [`EXPERIMENT_HUB_WORKER_INSTALL.md`](EXPERIMENT_HUB_WORKER_INSTALL.md).
-The installer provisions private tailnet/SSH access, pinned native owners,
+The installer provisions direct private Tailscale access, pinned native owners,
 official TinyBrains simulation binaries, separate project Python runtimes and
 one authenticated Hub agent. It never takes over the original Bees worker
 launcher or starts an experiment without an explicit Hub reservation.
@@ -3163,6 +3160,6 @@ must not create a second owner of the Bees training lifecycle or treat
 reporting a worker as proof of exclusive host ownership.
 
 No arbitrary commands from saved project configurations are executed. The
-dashboard remains loopback-only; remote access requires a separate trusted
-transport. Production multi-machine / Unity behavior has not been validated
+dashboard remains loopback-only; remote machine agents communicate through
+the explicitly enabled Tailscale agent listener. Production multi-machine / Unity behavior has not been validated
 by the development environment.
