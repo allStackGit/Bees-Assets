@@ -622,7 +622,7 @@ impl NativeRemotePlay {
                         if request_id <= peer.last_request_id {
                             self.measurements.briefing_rejected_acks += 1;
                             let _ = peer.enqueue(&json!({
-                                "kind":"input_result","request_id":request_id,
+                                "kind":"briefing_result","request_id":request_id,
                                 "processed":false,
                                 "feedback":"duplicate or out-of-order briefing acknowledgment",
                             }));
@@ -645,7 +645,7 @@ impl NativeRemotePlay {
                             self.measurements.briefing_rejected_acks += 1;
                         }
                         let _ = peer.enqueue(&json!({
-                            "kind":"input_result","request_id":request_id,
+                            "kind":"briefing_result","request_id":request_id,
                             "processed":valid,
                             "feedback":if valid {
                                 "Campaign briefing acknowledged"
