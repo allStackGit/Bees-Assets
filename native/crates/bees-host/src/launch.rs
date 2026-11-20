@@ -5467,7 +5467,8 @@ fn run_battle(
             if let (Some(owner),Some((_,cue))) =
                 (view.campaign_dialogue_side,view.campaign_dialogue)
             {
-                if cue.is_briefing() &&
+                if view.tick==0 && view.terminal_result.is_none() &&
+                    cue.is_briefing() &&
                     !server.configured_sides().any(|side|side==owner) {
                     return Err(invalid(
                         "hosted campaign briefing requires an authenticated token for its authored player side",
