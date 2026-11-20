@@ -67,7 +67,7 @@ function bootstrap(hub,root,ip,request) {
         Object.keys(request).some(k=>!['projects','cpus','ram_mb'].includes(k)))
         throw Error('Invalid bootstrap request.');
     const projects=request.projects;
-    if(!Array.isArray(projects)||projects.length<1||projects.length>2||
+    if(!Array.isArray(projects)||projects.length>2||
         projects.some(p=>!['tinybrains','courier'].includes(p))||
         new Set(projects).size!==projects.length)
         throw Error('Unknown worker project selection.');
