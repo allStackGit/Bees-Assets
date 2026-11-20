@@ -2309,15 +2309,16 @@ fn reset_uncommitted_native_start(run: &Path) -> Result<(), Box<dyn Error>> {
     let marker = run.join("native-initial-world-committed.json");
     let lease = NativeHostCheckpointFile::open(checkpoint.clone())
         .map_err(|error| contextual("original native start owner", error))?;
-    if checkpoint.exists() || marker.exists() {
-        return Err(invalid(
-            "original native battle has already committed a World; missing recovery bytes cannot be discarded",
-        ).into());
-    }
-    // Never delete a completed or failed receipt. Its terminal settlement
-    // belongs to the original run, not a reconstructed opening Level.
-    if run.join("rollout-summary.json").exists() {
-        return Err(invalid("original native battle has a terminal receipt without its World checkpoint").into());
+    // symlink_metadata, not exists(): an unsafe dangling symlink must not
+    // disguise a previously committed checkpoint/marker as absent.
+    for path in [&checkpoint, &marker, &run.join("rollout-summary.json")] {
+        match fs::symlink_metadata(path) {
+            Ok(_) => return Err(invalid(
+                "original native battle has durable or unsafe terminal/World state; refusing to discard it",
+            ).into()),
+            Err(error) if error.kind() == ErrorKind::NotFound => {},
+            Err(error) => return Err(error.into()),
+        }
     }
     // The outer saved-game writer remains held through the next launch.
     // Release this run's OS file lock before deleting its transient lease
