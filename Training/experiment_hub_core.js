@@ -5095,16 +5095,20 @@ class ExperimentHub {
                     // native Stop owners and surface manual review now.
                     if(members.some(job=>['failed','unverified','stopped','cancelled']
                         .includes(job.status))) {
-                        if(phase==='collectors') {
-                            this.stopResourceBundle({
-                                bundle_id:bundleId,
-                                expected_job_ids:members.map(job=>job.id),
-                                confirm_stop:true,
-                            });
-                        }
+                        // A failed GPU optimizer rank cannot finish a
+                        // collective: remaining ranks may otherwise wait
+                        // indefinitely while retaining live leases. Use the
+                        // SAME durable, machine-owned group Stop as physical
+                        // collection. The failed owner remains held for
+                        // review; only verified terminal siblings release.
+                        this.stopResourceBundle({
+                            bundle_id:bundleId,
+                            expected_job_ids:members.map(job=>job.id),
+                            confirm_stop:true,
+                        });
                         throw Error(phase==='collectors'
                             ?'A native collector failed; sibling Stop and terminal lease reconciliation are required.'
-                            :'A synchronized native optimizer rank failed; the existing group Stop and checkpoint consensus need review.');
+                            :'A synchronized native optimizer rank failed; sibling Stops and checkpoint consensus require review.');
                     }
                 }
                 const machines=Object.entries(plan.agent_instances);
