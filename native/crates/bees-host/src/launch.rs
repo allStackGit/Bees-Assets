@@ -2692,11 +2692,12 @@ fn run_campaign_mission(
 fn authored_menu_fleet(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>,
-) -> (Vec<(i32, i64, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>) {
+) -> (Vec<(i32, i64, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>) {
     let mut listed = Vec::new();
     let mut seen_fleet = HashSet::new();
     let mut common_destinations = HashMap::<i32, HashSet<i64>>::new();
     let mut common_templates = HashMap::<i32, HashSet<i64>>::new();
+    let mut common_tactics = HashMap::<i32, HashSet<i64>>::new();
     let upcoming_sides = catalog.battles.iter().filter_map(|entry|
         entry.mission.as_ref().filter(|mission|
             !progress.completed(&mission.id)).map(|mission| mission.player_side))
@@ -2710,6 +2711,7 @@ fn authored_menu_fleet(
         for config in entry.configurations() {
             let mut destinations = HashSet::new();
             let mut templates = HashSet::new();
+            let mut tactics = HashSet::new();
             // Keep this read-only probe on the same source scene and
             // installer used by campaign preflight and actual gameplay.
             if let Ok(path) = resolve(root, config).canonicalize() {
@@ -2726,6 +2728,11 @@ fn authored_menu_fleet(
                             destinations.insert(saved_id);
                             if squad.hivemind.is_none() {
                                 templates.insert(saved_id);
+                            }
+                            if !squad.hivemind.as_ref()
+                                .is_some_and(|hivemind| hivemind.hivemind_controlled)
+                            {
+                                tactics.insert(saved_id);
                             }
                             if !active || config != selected { continue; }
                             for &entity_id in &squad.members {
@@ -2754,6 +2761,9 @@ fn authored_menu_fleet(
             common_templates.entry(side)
                 .and_modify(|ids| ids.retain(|id| templates.contains(id)))
                 .or_insert(templates);
+            common_tactics.entry(side)
+                .and_modify(|ids| ids.retain(|id| tactics.contains(id)))
+                .or_insert(tactics);
         }
     }
     listed.sort_unstable();
@@ -2765,7 +2775,11 @@ fn authored_menu_fleet(
         .flat_map(|(side, ids)| ids.into_iter().map(move |id| (side, id)))
         .collect::<Vec<_>>();
     templates.sort_unstable();
-    (listed, destinations, templates)
+    let mut tactics = common_tactics.into_iter()
+        .flat_map(|(side, ids)| ids.into_iter().map(move |id| (side, id)))
+        .collect::<Vec<_>>();
+    tactics.sort_unstable();
+    (listed, destinations, templates, tactics)
 }
 
 #[cfg(feature = "client")]
@@ -3352,7 +3366,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         let fleet_rows = progress.fleet_rows();
         let squad_rows = progress.squad_rows();
         let available = progress.unspent_minerals()?;
-        let (original_choices, authored_squads, squad_templates) =
+        let (original_choices, authored_squads, squad_templates, editable_tactics) =
             authored_menu_fleet(&catalog, root, &progress);
         // The same set of persistent player SavedSquads must exist in
         // every replayable physical mission configuration, not only the
@@ -3520,7 +3534,10 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         }
         let tactics_rows = tactic_source_cache.as_ref()
             .expect("saved tactics source cache initialized").2
-            .iter().copied().map(|original| {
+            .iter().copied()
+            .filter(|original| editable_tactics.binary_search(
+                &(original.side, original.saved_squad_id)).is_ok())
+            .map(|original| {
             let tactics = progress.tactics_for_squad(original.side, original.saved_squad_id)
                 .unwrap_or(original);
             NativeTacticsMenuRow {
