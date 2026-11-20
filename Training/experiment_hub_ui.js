@@ -1085,7 +1085,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ]:[]),
                     ...(measured?.independent_evaluations?.map(suite=>
                         'Independent frozen suite '+suite.suite_id+' ('+
-                        suite.suite_sha256.slice(0,12)+'): '+suite.measured_rounds+
+                        suite.suite_sha256.slice(0,12)+', '+
+                        suite.trials_per_checkpoint+' trials): '+suite.measured_rounds+
                         ' completed checkpoints; latest '+(100*suite.latest_success_rate).toFixed(1)+
                         '% at round '+suite.latest_round+
                         ', best '+(100*suite.best_success_rate).toFixed(1)+'%'+
