@@ -3876,18 +3876,26 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
             serde_json::from_slice(&fs::read(&games[index])?)?;
         catalog.validate()?;
         let career_root = save_root.join("campaigns").join(&settings.game_id);
+        let pending = pending_saved_campaign_mission(&catalog, &career_root)?;
         let progress = catalog.load_progress(&career_root)?;
         let available = catalog.battles.iter().filter_map(|entry| {
             let mission = entry.mission.as_ref()?;
-            mission.requires.iter().all(|id| progress.completed(id))
+            (mission.requires.iter().all(|id| progress.completed(id)) &&
+                pending.as_deref().is_none_or(|id| id == mission.id))
                 .then_some((entry, mission))
         }).collect::<Vec<_>>();
         if available.is_empty() {
-            return Err(invalid("no unlocked native campaign mission can be hosted").into());
+            return Err(invalid(if pending.is_some() {
+                "interrupted native campaign mission no longer matches an unlocked authored mission"
+            } else {
+                "no unlocked native campaign mission can be hosted"
+            }).into());
         }
         let rows = available.iter().map(|(entry, mission)| BattleMenuRow {
             title: entry.title.trim(),
-            status: if progress.completed(&mission.id) { "  [Complete]" } else { "" },
+            status: if pending.is_some() { "  [Resume original World]" }
+                else if progress.completed(&mission.id) { "  [Complete]" }
+                else { "" },
             unlocked: true,
         }).collect::<Vec<_>>();
         let mut selected = 0_usize;
