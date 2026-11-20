@@ -234,6 +234,9 @@ impl Peer {
 /// longer exist in this process, and the immutable run_final is the owner.
 pub struct NativeArchivedBattleReceipt {
     pub session_id: String,
+    /// Player sides authenticated in the ORIGINAL committed battle, not
+    /// merely sides for which the new LAN host has a credential.
+    pub authorized_sides: Vec<i32>,
     pub battle_result: Value,
     pub campaign_outcome: Option<Value>,
     pub banked_minerals: Option<u64>,
@@ -461,6 +464,14 @@ impl NativeRemotePlay {
         &self.host_session_id
     }
 
+    /// Persist original player-side membership next to the authoritative
+    /// final receipt; later hosts must not invent earlier participants.
+    pub fn authenticated_sides(&self) -> Vec<i32> {
+        let mut sides = self.side_tokens.keys().copied().collect::<Vec<_>>();
+        sides.sort_unstable();
+        sides
+    }
+
     /// Reuse the authenticated nonblocking LAN protocol for committed
     /// results even when no battle is running. No World is created here.
     pub fn serve_archived_only(&mut self) {
@@ -474,7 +485,13 @@ impl NativeRemotePlay {
         &mut self, receipts: Vec<NativeArchivedBattleReceipt>,
     ) -> io::Result<()> {
         for receipt in receipts {
-            if receipt.session_id == self.host_session_id ||
+            if receipt.authorized_sides.is_empty() ||
+                receipt.authorized_sides.len() > 2 ||
+                receipt.authorized_sides.iter().any(|side|
+                    !(1..=2).contains(side)) ||
+                receipt.authorized_sides.windows(2).any(|pair|
+                    pair[0] >= pair[1]) ||
+                receipt.session_id == self.host_session_id ||
                 self.archived_receipts.contains_key(&receipt.session_id)
             {
                 return Err(io::Error::new(io::ErrorKind::InvalidData,
@@ -740,7 +757,9 @@ impl NativeRemotePlay {
                                 // match, not this process's replacement
                                 // World. Only a committed same-game receipt
                                 // may satisfy that session identity.
-                                let Some(receipt) = self.archived_receipts.get(original) else {
+                                let Some(receipt) = self.archived_receipts.get(original)
+                                    .filter(|receipt| receipt.authorized_sides.contains(&side))
+                                else {
                                     peer.closed = true;
                                     break;
                                 };
