@@ -250,6 +250,7 @@ install_release() {
 }
 if [[ "$MODE" == install ]]; then
     install_release worker "$SRC/Bees-Assets"
+fi
 if [[ "$MODE" == install ]]; then
     [[ "$MACHINE_ID" =~ ^[a-z][a-z0-9_-]{0,47}$ && "$TOKEN" =~ ^[0-9a-f]{64}$ ]] ||
         { echo "Tailscale bootstrap did not return valid enrollment credentials." >&2; exit 1; }
