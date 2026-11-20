@@ -1800,7 +1800,11 @@ class ExperimentHub {
             plan.status==='pending');
         const resetQueuedDistributed=(s.distributed_group_plans||[]).some(plan=>
             plan.status==='pending');
-        if(resetBundles||resetDistributed||resetQueuedDistributed) {
+        // An interrupted evaluator action is never replayed after a
+        // coordinator restart. A dispatched operation may have run.
+        const resetEvaluators=(s.evaluator_actions||[]).some(action=>
+            ['pending','dispatched'].includes(action.status));
+        if(resetBundles||resetDistributed||resetQueuedDistributed||resetEvaluators) {
             const next=copy(s);
             for(const plan of next.bundle_start_plans||[])
                 if(plan.status==='pending'&&plan.resume_after_restart!==true) {
@@ -1819,6 +1823,15 @@ class ExperimentHub {
                         plan.resolved_at=now();
                     }
                 }
+            for(const action of next.evaluator_actions||[]) {
+                if(action.status==='pending') {
+                    action.status='cancelled';
+                    action.reason='Coordinator restarted before evaluator dispatch.';
+                }else if(action.status==='dispatched') {
+                    action.status='unverified';
+                    action.reason='Coordinator restarted after evaluator dispatch; inspect the remote service before retrying.';
+                }
+            }
             for(const plan of next.distributed_group_plans||[])
                 if(plan.status==='pending') {
                     if(plan.resume_after_restart===true) {
@@ -5042,6 +5055,90 @@ class ExperimentHub {
     authenticatedEvaluationTargets(machineId,token,projectId,suiteId) {
         const machine=this.authenticateAgent(machineId,token);
         return this.evaluationTargets(projectId,machine.id,suiteId);
+    }
+    // The loopback administrator may schedule only actions on units
+    // already observed by the enrolled agent. No command, path, or
+    // executable supplied by the browser crosses this trust boundary.
+    queueEvaluatorAction(value) {
+        if(!object(value)||Object.keys(value).some(key=>
+            !['machine_id','unit','action','confirm_action'].includes(key))||
+            value.confirm_action!==true||!ID.test(String(value.machine_id||''))||
+            typeof value.unit!=='string'||value.unit.length>160||
+            !['start','stop','restart','run'].includes(value.action))
+            throw Error('Confirm a bounded action for an enrolled evaluator service.');
+        const host=this.snapshot().machines.find(m=>m.id===value.machine_id);
+        const row=host?.evaluator_services?.find(item=>item.unit===value.unit);
+        if(!host||host.status!=='connected'||!row||
+            !['tinybrains','courier'].includes(row.project)||
+            !['systemd-user','windows-service'].includes(row.executor)||
+            (row.executor==='systemd-user'&&host.agent_platform!=='linux')||
+            (row.executor==='windows-service'&&host.agent_platform!=='win32')||
+            (value.action==='run'&&row.executor!=='systemd-user'))
+            throw Error('An online enrolled agent must advertise the exact approved evaluator service.');
+        const all=this.state.evaluator_actions||[];
+        if(all.some(action=>action.machine_id===host.id&&action.unit===value.unit&&
+            ['pending','dispatched','unverified'].includes(action.status))) {
+            const error=Error('A previous evaluator action needs completion or manual reconciliation.');
+            error.status=409;throw error;
+        }
+        const next=copy(this.state);
+        next.evaluator_actions=(next.evaluator_actions||[]).filter(action=>
+            ['pending','dispatched','unverified'].includes(action.status)).concat(
+            (next.evaluator_actions||[]).filter(action=>
+                !['pending','dispatched','unverified'].includes(action.status)).slice(-63));
+        if(next.evaluator_actions.length>=64)
+            throw Error('Too many unresolved evaluator operations; reconcile them first.');
+        const action={id:crypto.randomUUID(),machine_id:host.id,
+            unit:value.unit,project:row.project,executor:row.executor,
+            action:value.action,status:'pending',created_at:now()};
+        next.evaluator_actions.push(action);
+        this.commit(next);
+        return copy(action);
+    }
+    evaluatorActionReport(next,machine,items,instance) {
+        if(!Array.isArray(items)||items.length>1)
+            throw Error('Invalid evaluator result batch.');
+        let changed=false;
+        for(const report of items) {
+            if(!object(report)||Object.keys(report).some(key=>
+                    !['id','unit','status','diagnostic'].includes(key))||
+                !UUID.test(String(report.id||''))||
+                typeof report.unit!=='string'||
+                !['completed','failed'].includes(report.status)||
+                (report.diagnostic!==undefined&&
+                    (typeof report.diagnostic!=='string'||report.diagnostic.length>200)))
+                throw Error('Invalid authenticated evaluator action report.');
+            const saved=(next.evaluator_actions||[]).find(item=>
+                item.id===report.id&&item.machine_id===machine.id&&
+                item.unit===report.unit);
+            if(!saved||saved.status!=='dispatched'||
+                saved.agent_instance_id!==instance)continue;
+            saved.status=report.status;
+            saved.finished_at=now();
+            if(report.diagnostic)saved.reason=report.diagnostic;
+            changed=true;
+        }
+        return changed;
+    }
+    offerEvaluatorAction(machine,instance) {
+        const snapshot=this.state;
+        const item=(snapshot.evaluator_actions||[]).find(action=>
+            action.machine_id===machine.id&&action.status==='pending');
+        if(!item)return [];
+        const observed=this.agentReports.get(machine.id);
+        if(!observed||observed.instance_id!==instance||
+            !observed.evaluator_services?.some(service=>
+                service.unit===item.unit&&service.project===item.project&&
+                service.executor===item.executor))return [];
+        const next=copy(this.state);
+        const pending=next.evaluator_actions.find(action=>action.id===item.id);
+        pending.status='dispatched';
+        pending.dispatched_at=now();
+        pending.agent_instance_id=instance;
+        // Commit before sending. A lost HTTP response or restart can only
+        // leave an unverified operation, never trigger an automatic replay.
+        this.commit(next);
+        return [{id:item.id,unit:item.unit,action:item.action}];
     }
     heartbeat(value, token) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
