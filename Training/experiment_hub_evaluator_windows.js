@@ -15,7 +15,7 @@ const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const NAME=/^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$/;
 const FIELDS=new Set(['schema_version','project','machine','python','port','suites',
     'project_root','artifact_root','snapshot_root','scratch','receipt_root',
-    'engine_path','interval_seconds','timeout_seconds']);
+    'engine_path','rollout_binary','interval_seconds','timeout_seconds']);
 
 function local(value,label,directory=false) {
     if(typeof value!=='string'||!path.isAbsolute(value)||
@@ -44,7 +44,7 @@ function readConfiguration(file) {
     const value=JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/,''));
     if(!value||typeof value!=='object'||Array.isArray(value)||
         Object.keys(value).some(key=>!FIELDS.has(key))||value.schema_version!==1||
-        !['tinybrains','courier'].includes(value.project)||
+        !['tinybrains','courier','bees_native'].includes(value.project)||
         typeof value.machine!=='string'||!ID.test(value.machine))
         throw Error('Select a supported evaluator project, machine and schema version.');
     if(!Array.isArray(value.suites)||value.suites.length<1||value.suites.length>8)
@@ -74,8 +74,13 @@ function readConfiguration(file) {
     }
     if(value.project==='tinybrains'&&value.engine_path)
         args.push('--engine-path',local(value.engine_path,'TinyBrains engine'));
-    if(value.project==='courier'&&value.engine_path||
-        value.project==='tinybrains'&&(value.project_root||value.snapshot_root))
+    if(value.project==='bees_native')
+        args.push('--rollout-binary',local(value.rollout_binary,'Native Bees rollout binary'));
+    if(value.project==='courier'&&(value.engine_path||value.rollout_binary)||
+        value.project==='tinybrains'&&(value.project_root||value.snapshot_root||
+            value.rollout_binary)||
+        value.project==='bees_native'&&(value.project_root||value.snapshot_root||
+            value.engine_path))
         throw Error('Configuration contains paths for a different evaluator project.');
     return {project:value.project,machine:value.machine,python,args,
         port:integer(value.port??7148,1,65535,'Port'),
