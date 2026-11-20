@@ -7,7 +7,7 @@ param(
     [string]$Projects='tinybrains,courier',
     [string]$InstallRoot='C:\ProgramData\BeesExperimentHubWorker',
     [string]$MachineId='',
-    [string]$HubSshTarget='',
+    [string]$HubTailnetIp='',
     [string]$TinyBrainsKeyFile='',
     [string]$CourierKeyFile='',
     [string]$TinyBrainsRoot='',
@@ -29,6 +29,17 @@ function Tool([string]$Name) {
 }
 function Assert-Exit([string]$Task) {
     if($LASTEXITCODE -ne 0){throw "$Task failed (exit $LASTEXITCODE)."}
+}
+function Assert-TailnetIP([string]$Value) {
+    if($Value -notmatch '^([0-9]{1,3}\\.){3}[0-9]{1,3}$') {
+        throw 'Hub address must be a literal Tailscale IPv4 in 100.64.0.0/10.'
+    }
+    $parts=@($Value.Split('.') | ForEach-Object { [int]$_ })
+    if($parts[0] -ne 100 -or $parts[1] -lt 64 -or $parts[1] -gt 127 -or
+        @($parts | Where-Object { $_ -gt 255 }).Count -ne 0 -or
+        ($parts -join '.') -cne $Value) {
+        throw 'Hub address must be a literal Tailscale IPv4 in 100.64.0.0/10.'
+    }
 }
 function Exec-Git([string[]]$GitArguments) {
     & (Tool 'git.exe') @GitArguments
@@ -182,7 +193,16 @@ if($Command -eq 'update'){
     if(-not $CourierRoot){
         $CourierRoot=$saved['EXPERIMENT_HUB_COURIER_PROJECT_ROOT']
     }
+    if(-not $HubTailnetIp){
+        $oldUrl=$saved['EXPERIMENT_HUB_URL']
+        if($oldUrl -match '^http://(100\.[0-9.]+):7149$'){
+            $HubTailnetIp=$Matches[1]
+        }else{
+            throw 'Supply -HubTailnetIp to migrate the saved SSH-forwarded worker endpoint.'
+        }
+    }
 }
+Assert-TailnetIP $HubTailnetIp
 
 if($Command -eq 'install'){
     Ensure-Winget 'git.exe' 'Git.Git'
@@ -200,11 +220,8 @@ if($Command -eq 'install'){
     if(-not (Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe")){
         Ensure-Winget 'tailscale.exe' 'Tailscale.Tailscale'
     }
-    if(-not (Get-Command ssh.exe -ErrorAction SilentlyContinue)){
-        Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
-    }
 }
-foreach($tool in @('git.exe','node.exe','dotnet.exe','ssh.exe','ssh-keygen.exe','ssh-keyscan.exe')){
+foreach($tool in @('git.exe','node.exe','dotnet.exe')){
     $null=Tool $tool
 }
 $node=Tool 'node.exe'
@@ -311,9 +328,6 @@ if($Command -eq 'install'){
     if($MachineId -cnotmatch '^[a-z][a-z0-9_-]{0,47}$'){
         throw 'Supply the exact enrolled Hub machine ID using -MachineId.'
     }
-    if($HubSshTarget -notmatch '^[A-Za-z_][A-Za-z0-9_.-]*@100\.'){
-        throw 'Supply -HubSshTarget user@Halifax-Tailscale-IP.'
-    }
     if(('tinybrains' -in $selected) -and -not $TinyBrainsKeyFile){
         throw 'Supply an existing TinyBrains rollout key identical to the Halifax learner key.'
     }
@@ -326,44 +340,12 @@ if($Command -eq 'install'){
     finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)}
     if($token -cnotmatch '^[0-9a-f]{64}$'){throw 'Invalid token; enroll the machine in the Hub first.'}
 
-    $sshKey=Join-Path $Private 'ssh_ed25519'
-    $hosts=Join-Path $Private 'known_hosts'
-    if(-not(Test-Path $sshKey)){
-        & (Tool 'ssh-keygen.exe') -q -t ed25519 -N '' -f $sshKey
-        Assert-Exit 'Generate worker-only private SSH identity'
-    }
-    if(-not(Test-Path $hosts)){
-        $peer=$HubSshTarget.Split('@')[-1]
-        $candidate=Join-Path $Private 'known_hosts.candidate'
-        & (Tool 'ssh-keyscan.exe') -T 10 -t ed25519 $peer 2>$null |
-            Set-Content -LiteralPath $candidate -Encoding ascii
-        if(-not (Test-Path $candidate) -or (Get-Item $candidate).Length -eq 0){
-            throw 'Halifax SSH host key unavailable; enable tailnet SSH access before continuing.'
-        }
-        Write-Host 'Compare fingerprint with ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub on Halifax:'
-        & (Tool 'ssh-keygen.exe') -lf $candidate
-        if((Read-Host 'Type VERIFIED after matching the fingerprint') -cne 'VERIFIED'){
-            Remove-Item -LiteralPath $candidate -Force; throw 'Host key verification was not approved.'
-        }
-        Move-Item -LiteralPath $candidate -Destination $hosts
-    }
-    Write-Host 'Authorizing this worker public SSH key on Halifax (may request an SSH password):'
-    Get-Content -LiteralPath "$sshKey.pub" |
-        & (Tool 'ssh.exe') -o "UserKnownHostsFile=$hosts" -o StrictHostKeyChecking=yes `
-            $HubSshTarget 'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys'
-    Assert-Exit 'Authorize worker SSH key'
-    & (Tool 'ssh.exe') -o BatchMode=yes -o StrictHostKeyChecking=yes `
-        -o "UserKnownHostsFile=$hosts" -i $sshKey $HubSshTarget true
-    Assert-Exit 'Check unattended SSH authentication'
-
     $tailscale=if(Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe"){
         "$env:ProgramFiles\Tailscale\tailscale.exe"
     }else{Tool 'tailscale.exe'}
     $ipLines=@(& $tailscale ip -4 2>$null)
     $tailnetIp=if($ipLines.Count){([string]$ipLines[0]).Trim()}else{''}
-    if($tailnetIp -notmatch '^100\.'){
-        throw 'Sign Exeter into Tailscale and rerun this installer.'
-    }
+    try{Assert-TailnetIP $tailnetIp}catch{throw 'Sign this worker into Tailscale before installing.'}
     $lines=[System.Collections.Generic.List[string]]::new()
     Add-Line $lines 'EXPERIMENT_HUB_MACHINE_ID' $MachineId
     Add-Line $lines 'EXPERIMENT_HUB_AGENT_TOKEN' $token
@@ -372,10 +354,7 @@ if($Command -eq 'install'){
     Add-Line $lines 'EXPERIMENT_HUB_LOCAL_ROOT' $NativeRoot
     Add-Line $lines 'EXPERIMENT_HUB_WINDOWS_HELPER' $owner
     Add-Line $lines 'EXPERIMENT_HUB_WINDOWS_HELPER_SHA256' $ownerSha
-    Add-Line $lines 'EXPERIMENT_HUB_URL' 'http://127.0.0.1:17149'
-    Add-Line $lines 'EXPERIMENT_HUB_SSH_TARGET' $HubSshTarget
-    Add-Line $lines 'EXPERIMENT_HUB_SSH_KEY' $sshKey
-    Add-Line $lines 'EXPERIMENT_HUB_SSH_KNOWN_HOSTS' $hosts
+    Add-Line $lines 'EXPERIMENT_HUB_URL' "http://$($HubTailnetIp):7149"
     Add-Line $lines 'EXPERIMENT_HUB_TAILNET_IP' $tailnetIp
     Add-Line $lines 'EXPERIMENT_HUB_WORKER_PROJECTS' $Projects
     if('tinybrains' -in $selected){
@@ -397,11 +376,17 @@ if($Command -eq 'install'){
 }else{
     $lines=Get-Content -LiteralPath $EnvFile
     $new=[System.Collections.Generic.List[string]]::new()
+    $hadUrl=$false
     foreach($line in $lines){
-        if($line.StartsWith('EXPERIMENT_HUB_WINDOWS_HELPER_SHA256=')){
+        if($line.StartsWith('EXPERIMENT_HUB_SSH_')){continue}
+        if($line.StartsWith('EXPERIMENT_HUB_URL=')){
+            $new.Add("EXPERIMENT_HUB_URL=http://$($HubTailnetIp):7149")
+            $hadUrl=$true
+        }elseif($line.StartsWith('EXPERIMENT_HUB_WINDOWS_HELPER_SHA256=')){
             $new.Add("EXPERIMENT_HUB_WINDOWS_HELPER_SHA256=$ownerSha")
         }else{$new.Add($line)}
     }
+    if(-not $hadUrl){$new.Add("EXPERIMENT_HUB_URL=http://$($HubTailnetIp):7149")}
     $new | Set-Content -LiteralPath $EnvFile -Encoding ascii
 }
 # Secrets stay readable only by this installer account, administrators,
