@@ -47,7 +47,7 @@ const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum WireInput {
-    Hello { token: String },
+    Hello { token: String, #[serde(default)] resume_session_id: Option<String> },
     Input { request_id: u64, action: NativePlayerInput },
     /// UI acknowledgment only, without an alternative gameplay clock.
     BriefingReady { request_id: u64, world_id: u64,
@@ -112,6 +112,8 @@ struct Peer {
     // because successful gameplay commands require a durable World checkpoint.
     // Hold each result behind its preceding unresolved input on THIS peer.
     input_replies: VecDeque<(u64, Option<Value>)>,
+    archived_terminal: bool,
+    close_after_flush: bool,
     closed: bool,
     accepted_at: Instant,
 }
@@ -207,6 +209,7 @@ impl Peer {
                     self.outgoing = state;
                     self.writing_state = true;
                 } else {
+                    if self.close_after_flush { self.closed = true; }
                     break;
                 }
             }
@@ -225,6 +228,15 @@ impl Peer {
         }
         bytes
     }
+}
+
+/// Terminal delivery is read-only. The original World and checkpoint no
+/// longer exist in this process, and the immutable run_final is the owner.
+pub struct NativeArchivedBattleReceipt {
+    pub session_id: String,
+    pub battle_result: Value,
+    pub campaign_outcome: Option<Value>,
+    pub banked_minerals: Option<u64>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -346,6 +358,7 @@ pub struct NativeRemotePlay {
     /// Only dedicated LAN hosting needs remote viewer acknowledgment.
     dedicated_briefing_gate: bool,
     side_tokens: HashMap<i32, String>,
+    archived_receipts: HashMap<String, NativeArchivedBattleReceipt>,
     peers: Vec<Peer>,
     next_peer: u64,
     last_state: Option<(u64, u64)>,
@@ -417,7 +430,7 @@ impl NativeRemotePlay {
         Ok(Some(Self {
             listener, host_session_id, recovered_session: false,
             dedicated_briefing_gate: dedicated,
-            side_tokens, peers: Vec::new(),
+            side_tokens, archived_receipts: HashMap::new(), peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
             music_location: None,
@@ -435,6 +448,24 @@ impl NativeRemotePlay {
     /// receipt. A subsequent LAN host must not invent an old session ID.
     pub fn session_id(&self) -> &str {
         &self.host_session_id
+    }
+
+    /// The launcher supplies only committed results from this game's own
+    /// battle archive. No recipient can retrieve one without its original
+    /// session ID and an authenticated side token for the current host.
+    pub fn install_archived_receipts(
+        &mut self, receipts: Vec<NativeArchivedBattleReceipt>,
+    ) -> io::Result<()> {
+        for receipt in receipts {
+            if receipt.session_id == self.host_session_id ||
+                self.archived_receipts.contains_key(&receipt.session_id)
+            {
+                return Err(io::Error::new(io::ErrorKind::InvalidData,
+                    "duplicate or active native terminal session identity"));
+            }
+            self.archived_receipts.insert(receipt.session_id.clone(), receipt);
+        }
+        Ok(())
     }
 
     /// Called before serializing the same host checkpoint that will own
@@ -616,6 +647,7 @@ impl NativeRemotePlay {
                 outgoing: Vec::new(), written: 0, writing_state: false,
                 reliable: VecDeque::new(), reliable_bytes: 0,
                 newest_state: None, input_replies: VecDeque::new(),
+                archived_terminal: false, close_after_flush: false,
                 closed: false, accepted_at: Instant::now(),
             });
         }
@@ -623,6 +655,12 @@ impl NativeRemotePlay {
         let mut newly_authenticated = false;
         for peer in &mut self.peers {
             if peer.closed { continue; }
+            // An old session receives only its immutable terminal result.
+            // It may not submit orders into the replacement live World.
+            if peer.archived_terminal {
+                self.measurements.state_bytes += peer.flush();
+                continue;
+            }
             let mut peer_orders = 0;
             // Never allow an unauthenticated socket to occupy a slot forever.
             if peer.side.is_none() && peer.accepted_at.elapsed().as_secs() > 10 {
@@ -660,7 +698,8 @@ impl NativeRemotePlay {
                     serde_json::from_slice(&peer.incoming[start..end]);
                 start = end + 1;
                 match message {
-                    Ok(WireInput::Hello { token }) if peer.side.is_none() => {
+                    Ok(WireInput::Hello { token, resume_session_id })
+                        if peer.side.is_none() => {
                         let side = self.side_tokens.iter().find_map(|(&side, secret)|
                             constant_time_matches(secret.as_bytes(), token.as_bytes())
                                 .then_some(side));
