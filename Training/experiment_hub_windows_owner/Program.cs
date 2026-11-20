@@ -512,20 +512,25 @@ internal static class Program
             Cpus=1,HostCpus=Native.SystemLogicalProcessors(),
             RamMb=256,ReceiptPath=Path.Combine(Path.GetTempPath(),
                 "unused-"+Guid.NewGuid().ToString("N")+".json")};
-        using var owned=new OwnedJob(spec);
-        var deadline=DateTime.UtcNow.AddSeconds(10);
-        while(owned.IsActive()&&DateTime.UtcNow<deadline)
-            Thread.Sleep(100);
-        if(owned.IsActive()||!owned.SuccessfulExit())
-            throw new InvalidOperationException("Native preflight child did not exit successfully");
+        // Release the first job's named handle before creating a second
+        // ownership probe. Reusing a live identity must fail on Windows.
+        using(var owned=new OwnedJob(spec))
+        {
+            var deadline=DateTime.UtcNow.AddSeconds(10);
+            while(owned.IsActive()&&DateTime.UtcNow<deadline)
+                Thread.Sleep(100);
+            if(owned.IsActive()||!owned.SuccessfulExit())
+                throw new InvalidOperationException("Native preflight child did not exit successfully");
+        }
         // A second inert child proves that the native Job Object owner
         // preserves the exact ordered multi-device CUDA selector, rather
         // than exposing an unleased device or inheriting host visibility.
+        spec.JobId=Guid.NewGuid().ToString("D");
         spec.GpuUuid=ProbeGpuUuid+","+ProbeOtherGpuUuid;
         spec.Args=new[]{"--probe-multi-child"};
         using(var multi=new OwnedJob(spec))
         {
-            deadline=DateTime.UtcNow.AddSeconds(10);
+            var deadline=DateTime.UtcNow.AddSeconds(10);
             while(multi.IsActive()&&DateTime.UtcNow<deadline)
                 Thread.Sleep(100);
             if(multi.IsActive()||!multi.SuccessfulExit())
