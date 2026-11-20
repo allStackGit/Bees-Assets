@@ -15,7 +15,11 @@ use bees_gameplay::level_host::{
 };
 use bees_gameplay::level_rules::{
     NativeLevelRewardMetadata, NativeLevelRules, NativeLevelState,
+    NativeLevelWorldRecoveryCheckpoint, NativeLevelRecoveryError,
+    NativeLevelRecoveryPrepared, checkpoint_native_level_world,
 };
+use bees_gameplay::level_host::NativeLevelDriverRecoveryCheckpoint;
+use sha2::{Digest, Sha256};
 use bees_gameplay::squads::SquadRosterError;
 use bees_gameplay::squad_targeting::{NativeSourceTargetingBatch, NativeTargetingSourceError};
 use bees_hivemind::outcomes::OutcomeBatch;
@@ -23,7 +27,9 @@ use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, StoreCommandsRequest,
 };
 use bees_hivemind::session::{SquadLifetime, TargetingReceipt};
-use bees_sim::simulation::{RandomStream, Simulation, World};
+use bees_sim::simulation::{
+    RandomStream, Simulation, World, WorldCheckpoint,
+};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
 use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
 use crate::presentation::NativeRenderWorldView;
@@ -151,6 +157,34 @@ pub enum HostSourceCommandError {
     Driver(NativeLevelRoutingError),
 }
 
+/// One durable host-owned fixed-step checkpoint spanning every registered
+/// authoritative native Level and the real model/connection identities.
+/// A separate socket writer persists the exact connection journal; the
+/// digest binds it to this checkpoint without duplicating request storage.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeHostRecoveryCheckpoint {
+    schema_version: u32,
+    worlds: Vec<NativeLevelWorldRecoveryCheckpoint>,
+    driver: NativeLevelDriverRecoveryCheckpoint,
+    model_generation: u64,
+    model_sha256: [u8; 32],
+    connection_sha256: [u8; 32],
+}
+
+#[derive(Debug)]
+pub enum HostRecoveryError {
+    Unavailable,
+    ModelIdentityUnavailable,
+    ModelChanged,
+    ConnectionChanged,
+    ConnectionEncoding(serde_json::Error),
+    WorldCountMismatch,
+    World { index: usize, error: &'static str },
+    Level { index: usize, error: NativeLevelRecoveryError },
+    Driver(NativeLevelDriverError),
+}
+
 /// Accepts actual authored Level metadata and a loaded, real inference
 /// backend. Its one notification sink must commit accepted notifications
 /// durably before returning Ok to the shared Level driver.
@@ -187,6 +221,107 @@ where
             simulation, driver, model, connection, sink,
             sampler: NativeStatusSampler::new(baseline),
         })
+    }
+
+    fn connection_recovery_digest(&self) -> Result<[u8; 32], HostRecoveryError> {
+        // Convert maps to canonical JSON objects before hashing, so their
+        // insertion iteration order never changes durable identity.
+        let value = serde_json::to_value(self.connection.connection().checkpoint())
+            .map_err(HostRecoveryError::ConnectionEncoding)?;
+        let bytes = serde_json::to_vec(&value)
+            .map_err(HostRecoveryError::ConnectionEncoding)?;
+        Ok(Sha256::digest(&bytes).into())
+    }
+
+    /// Capture every live World and its one native inference driver at a
+    /// synchronous host boundary. Do not snapshot in-flight, uncorrelated
+    /// strategy/targeting requests: the connection cannot revive them.
+    pub fn recovery_checkpoint(&self) -> Result<NativeHostRecoveryCheckpoint, HostRecoveryError> {
+        if !self.connection.is_available() {
+            return Err(HostRecoveryError::Unavailable);
+        }
+        if self.connection.connection().pending_request_count() != 0 {
+            return Err(HostRecoveryError::ConnectionChanged);
+        }
+        let model_sha256 = self.model.checkpoint_model_digest()
+            .ok_or(HostRecoveryError::ModelIdentityUnavailable)?;
+        if self.driver.registered_world_count() != self.simulation.world_count() {
+            return Err(HostRecoveryError::WorldCountMismatch);
+        }
+        let worlds = (0..self.simulation.world_count()).map(|index|
+            checkpoint_native_level_world(
+                self.simulation.world(index).expect("bounded world index"),
+            )
+        ).collect();
+        Ok(NativeHostRecoveryCheckpoint {
+            schema_version: 1, worlds,
+            driver: self.driver.recovery_checkpoint(),
+            model_generation: self.model.model_generation(),
+            model_sha256,
+            connection_sha256: self.connection_recovery_digest()?,
+        })
+    }
+
+    /// Preflight *every* world, complete gameplay Level, inference driver,
+    /// model artifact/generation and independently persisted HiveMind ledger.
+    /// No owner changes until the complete cohort has passed validation.
+    pub fn restore_recovery_checkpoint(
+        &mut self, checkpoint: NativeHostRecoveryCheckpoint,
+    ) -> Result<(), HostRecoveryError> {
+        if checkpoint.schema_version != 1 ||
+            checkpoint.worlds.len() != self.simulation.world_count() ||
+            self.driver.registered_world_count() != self.simulation.world_count() {
+            return Err(HostRecoveryError::WorldCountMismatch);
+        }
+        if !self.connection.is_available() ||
+            self.connection.connection().pending_request_count() != 0 {
+            return Err(HostRecoveryError::Unavailable);
+        }
+        let model_sha256 = self.model.checkpoint_model_digest()
+            .ok_or(HostRecoveryError::ModelIdentityUnavailable)?;
+        if checkpoint.model_sha256 != model_sha256 ||
+            checkpoint.model_generation != self.model.model_generation() {
+            return Err(HostRecoveryError::ModelChanged);
+        }
+        if checkpoint.connection_sha256 != self.connection_recovery_digest()? {
+            return Err(HostRecoveryError::ConnectionChanged);
+        }
+
+        let mut staged = Vec::with_capacity(checkpoint.worlds.len());
+        let mut layout = Vec::with_capacity(checkpoint.worlds.len());
+        for (index, snapshot) in checkpoint.worlds.into_iter().enumerate() {
+            let world = self.simulation.world(index)
+                .ok_or(HostRecoveryError::WorldCountMismatch)?;
+            world.validate_owner_checkpoint(&snapshot)
+                .map_err(|error| HostRecoveryError::World { index, error })?;
+            layout.push((snapshot.world_id(), snapshot.episode_revision()));
+            let (clock, owners) = snapshot.split_state();
+            let level = world.state.prepare_recovery_owners(owners, clock.tick())
+                .map_err(|error| HostRecoveryError::Level { index, error })?;
+            staged.push((clock, level));
+        }
+        let driver = NativeLevelBatchDriver::prepare_recovery_for_layout(
+            checkpoint.driver, layout,
+        ).map_err(HostRecoveryError::Driver)?;
+
+        // No fallible operation below. Reuse the original World instances,
+        // native game engine and model process; do not restart either the
+        // physics simulation or the resident policy by inference alone.
+        for (index, (clock, level)) in staged.into_iter().enumerate() {
+            let world = self.simulation.world_mut(index)
+                .expect("validated registered world index");
+            world.state.commit_recovery_owners(level);
+            world.commit_owner_checkpoint(clock);
+        }
+        self.driver = driver;
+        // Rebase the status delta against the newly installed counters;
+        // failure to sample must not roll back a committed game owner.
+        if let Ok(status) = self.driver.runtime_status(
+            &self.simulation, self.connection.connection(),
+        ) {
+            self.sampler = NativeStatusSampler::new(status);
+        }
+        Ok(())
     }
 
     /// Add an independently seeded authored Level after runtime startup.
