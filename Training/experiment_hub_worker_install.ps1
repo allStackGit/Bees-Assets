@@ -34,10 +34,13 @@ function Exec-Git([string[]]$GitArguments) {
     & (Tool 'git.exe') @GitArguments
     Assert-Exit 'Git'
 }
-function Sync-Repo([string]$Name,[string]$Remote,[string]$Ref) {
+function Sync-Repo([string]$Name,[string]$Remote,[string]$Ref,[string]$SparseDirectory='') {
     $dest=Join-Path $SourceRoot $Name
     if(-not (Test-Path -LiteralPath (Join-Path $dest '.git'))) {
-        Exec-Git @('clone','--filter=blob:none','--depth=1','--branch',$Ref,$Remote,$dest)
+        Exec-Git @('clone','--filter=blob:none','--depth=1','--sparse','--branch',$Ref,$Remote,$dest)
+        if($SparseDirectory){
+            Exec-Git @('-C',$dest,'sparse-checkout','set',$SparseDirectory)
+        }
     }else{
         $dirty=& (Tool 'git.exe') -C $dest status --porcelain --untracked-files=no
         Assert-Exit 'Git status'
@@ -200,12 +203,12 @@ Private-Permissions $InstallRoot
 Service-Permissions $NativeRoot
 Service-Permissions $ServiceState
 Service-Permissions $CacheRoot
-$assets=Sync-Repo 'Bees-Assets' 'https://github.com/allStackGit/Bees-Assets.git' $Branch
+$assets=Sync-Repo 'Bees-Assets' 'https://github.com/allStackGit/Bees-Assets.git' $Branch 'Training'
 $Training=Join-Path $assets 'Training'
 $selected=$Projects.Split(',')
 if('tinybrains' -in $selected){
     if(-not $TinyBrainsRoot){
-        $tiny=Sync-Repo 'TinyBrains' 'https://github.com/allStackGit/TinyBrains.git' $TinyBrainsBranch
+        $tiny=Sync-Repo 'TinyBrains' 'https://github.com/allStackGit/TinyBrains.git' $TinyBrainsBranch 'Ants-MAPOCA'
         $TinyBrainsRoot=Join-Path $tiny 'Ants-MAPOCA'
     }
     if(-not(Test-Path (Join-Path $TinyBrainsRoot 'pyproject.toml'))){throw 'TinyBrains project root missing.'}
