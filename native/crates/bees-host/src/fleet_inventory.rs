@@ -12,7 +12,8 @@ use bees_sim::rl_shaping::DamageRewardMetadata;
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeFleetShipValue {
     pub ship_id: i64,
     pub has_persistent_fleet_value: bool,
@@ -62,7 +63,8 @@ pub struct NativeFleetCombatStats {
 /// registry, including temporary/minion ships with persistent=false.
 /// A killed ship's record stays available for deferred damage/economics
 /// until the Level itself is retired.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeFleetInventory {
     entries: HashMap<i64, NativeFleetShipValue>,
     /// Fatal losses for the current Level. A successful extraction or
@@ -72,7 +74,81 @@ pub struct NativeFleetInventory {
     career_tracking: bool,
 }
 
+/// Durable FleetShip career/mining credit, distinct from physical hull TSV.
+/// Does not serialize a second physics representation or episode reward.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeFleetInventoryCheckpoint {
+    schema_version: u32,
+    source: NativeFleetInventory,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeFleetRestoreError {
+    InvalidVersion,
+    MissingSourceShip,
+    ChangedFleetOwnership,
+    InvalidEntry,
+    InvalidCombatCredit,
+}
+
 impl NativeFleetInventory {
+    pub fn checkpoint(&self) -> NativeFleetInventoryCheckpoint {
+        NativeFleetInventoryCheckpoint {
+            schema_version: 1,
+            source: self.clone(),
+        }
+    }
+
+    /// Stage source career history at the same fixed tick as CombatWorld.
+    /// Spawned minions may add genuine new nonpersistent FleetShips, but
+    /// neither an original ship's persistent ownership nor its history may
+    /// disappear/relabel under recovery.
+    pub fn prepare_restore(
+        &self, checkpoint: NativeFleetInventoryCheckpoint,
+    ) -> Result<Self, NativeFleetRestoreError> {
+        use NativeFleetRestoreError as Error;
+        if checkpoint.schema_version != 1 {
+            return Err(Error::InvalidVersion);
+        }
+        let restored = checkpoint.source;
+        if self.career_tracking != restored.career_tracking {
+            return Err(Error::ChangedFleetOwnership);
+        }
+        for (&ship, old) in &self.entries {
+            let saved = restored.entries.get(&ship).ok_or(Error::MissingSourceShip)?;
+            if old.has_persistent_fleet_value != saved.has_persistent_fleet_value {
+                return Err(Error::ChangedFleetOwnership);
+            }
+        }
+        if restored.entries.iter().any(|(&id, entry)|
+            id <= 0 || entry.ship_id != id ||
+            entry.minerals_mined_this_level < 0 ||
+            (!self.entries.contains_key(&id) &&
+                entry.has_persistent_fleet_value)
+        ) {
+            return Err(Error::InvalidEntry);
+        }
+        if restored.killed.iter().any(|id|
+            !restored.entries.contains_key(id)
+        ) || restored.combat.iter().any(|(id, _)|
+            !restored.entries.get(id).is_some_and(|entry|
+                entry.has_persistent_fleet_value
+            )
+        ) || (!restored.career_tracking && !restored.combat.is_empty()) {
+            return Err(Error::InvalidCombatCredit);
+        }
+        Ok(restored)
+    }
+
+    pub fn restore_checkpoint(
+        &mut self, checkpoint: NativeFleetInventoryCheckpoint,
+    ) -> Result<(), NativeFleetRestoreError> {
+        let restored = self.prepare_restore(checkpoint)?;
+        *self = restored;
+        Ok(())
+    }
+
     pub fn from_source(
         values: impl IntoIterator<Item = NativeFleetShipValue>,
     ) -> Result<Self, NativeFleetInventoryError> {
