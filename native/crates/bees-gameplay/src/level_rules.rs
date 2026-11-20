@@ -664,6 +664,9 @@ pub struct NativeDecisionCadence {
     /// changes; observation iteration visits only the due phase.
     due_by_phase: BTreeMap<u64, Vec<(i64, u64)>>,
     latest_binding_tick: u64,
+    /// Reused exact-set validation for externally supplied policy decisions.
+    /// A duplicate due agent must not conceal a missing different agent.
+    validated_decision_ids: HashSet<i64>,
     observed_roster_revision: Option<u64>,
     measurements: NativeDecisionCadenceMeasurements,
 }
@@ -675,6 +678,7 @@ impl NativeDecisionCadence {
             bound_at_tick: BTreeMap::new(),
             due_by_phase: BTreeMap::new(),
             latest_binding_tick: 0,
+            validated_decision_ids: HashSet::new(),
             observed_roster_revision: None,
             measurements: NativeDecisionCadenceMeasurements::default(),
         }
@@ -751,6 +755,7 @@ impl NativeDecisionCadence {
         self.bound_at_tick = checkpoint.bound_at_tick;
         self.due_by_phase = due;
         self.latest_binding_tick = latest;
+        self.validated_decision_ids.clear();
         self.observed_roster_revision = checkpoint.observed_roster_revision;
         self.measurements = checkpoint.measurements;
         Ok(())
@@ -835,6 +840,31 @@ impl NativeDecisionCadence {
             ).map_or(0, Vec::len);
         }
         self.due_agent_ids(next_tick).count()
+    }
+
+    /// Validate the exact due-controller set, not just the number of
+    /// decisions and membership of each ID. Direct game clients and
+    /// inference adapters both enter through LevelRules::step; accepting
+    /// [A, A] instead of [A, B] silently skips B's source action. Reuse
+    /// the membership table across physics ticks without requiring the
+    /// supplied decisions to be ordered or allocating per frame.
+    pub fn accepts_decisions(
+        &mut self, next_tick: u64, decisions: &[Decision],
+    ) -> bool {
+        self.validated_decision_ids.clear();
+        if decisions.len() != self.due_count(next_tick) {
+            return false;
+        }
+        for decision in decisions {
+            let Ok(id) = i64::try_from(decision.agent_id) else {
+                return false;
+            };
+            if !self.is_due(id, next_tick) ||
+                !self.validated_decision_ids.insert(id) {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -1330,13 +1360,7 @@ where
             ));
         }
         state.decisions.synchronize(&state.combat, prior_tick);
-        let due = state.decisions.due_count(completed_tick);
-        if due != decisions.len() || decisions.iter().any(|decision| {
-            let Ok(id) = i64::try_from(decision.agent_id) else {
-                return true;
-            };
-            !state.decisions.is_due(id, completed_tick)
-        }) {
+        if !state.decisions.accepts_decisions(completed_tick, decisions) {
             return Err(NativeLevelStepError::InvalidDecisionCadence);
         }
         state.navigation_jobs_completed +=
