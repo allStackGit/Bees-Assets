@@ -77,7 +77,7 @@ impl CampaignCue {
 #[serde(deny_unknown_fields)]
 enum DialogueMode {
     Minesweeper { tracked_tank: Option<i64> },
-    Beenoculars { next_milestone: usize },
+    Beenoculars { under_heavy_fire: bool, next_milestone: usize },
 }
 
 /// Exact authored campaign progress at the shared fixed-step recovery
@@ -115,7 +115,7 @@ impl CampaignDialogue {
                 CampaignCue::MinesweeperBriefing,
             ),
             CampaignDialogueSpec::TitaniaBeenoculars { under_heavy_fire, .. } => (
-                DialogueMode::Beenoculars { next_milestone: 0 },
+                DialogueMode::Beenoculars { under_heavy_fire, next_milestone: 0 },
                 CampaignCue::BeenocularsBriefing { under_heavy_fire },
             ),
         };
@@ -146,9 +146,15 @@ impl CampaignDialogue {
         if schema_version != 1 {
             return Err(CampaignDialogueRestoreError::InvalidVersion);
         }
-        if player_side != self.player_side ||
-            std::mem::discriminant(&mode) != std::mem::discriminant(&self.mode)
-        {
+        let same_authored_story = match (&mode, &self.mode) {
+            (DialogueMode::Minesweeper { .. }, DialogueMode::Minesweeper { .. }) =>
+                true,
+            (DialogueMode::Beenoculars { under_heavy_fire: saved, .. },
+                DialogueMode::Beenoculars { under_heavy_fire: authored, .. }) =>
+                saved == authored,
+            _ => false,
+        };
+        if player_side != self.player_side || !same_authored_story {
             return Err(CampaignDialogueRestoreError::WrongStory);
         }
         let valid = match (&mode, cue) {
@@ -166,14 +172,16 @@ impl CampaignDialogue {
             (DialogueMode::Minesweeper { tracked_tank: Some(id) },
                 CampaignCue::MinesweeperVictory | CampaignCue::MinesweeperDefeat) =>
                 *id > 0 && (2..=3).contains(&sequence),
-            (DialogueMode::Beenoculars { next_milestone: 0 },
-                CampaignCue::BeenocularsBriefing { .. }) => sequence == 0,
-            (DialogueMode::Beenoculars { next_milestone },
+            (DialogueMode::Beenoculars {
+                under_heavy_fire: authored, next_milestone: 0,
+            }, CampaignCue::BeenocularsBriefing { under_heavy_fire }) =>
+                sequence == 0 && *authored == under_heavy_fire,
+            (DialogueMode::Beenoculars { next_milestone, .. },
                 CampaignCue::BeenocularsUpload(milestone)) =>
                 *next_milestone > 0 &&
                 UploadMilestone::ORDERED.get(*next_milestone - 1) == Some(&milestone) &&
                 usize::from(sequence) == *next_milestone,
-            (DialogueMode::Beenoculars { next_milestone },
+            (DialogueMode::Beenoculars { next_milestone, .. },
                 CampaignCue::BeenocularsVictory | CampaignCue::BeenocularsDefeat) =>
                 *next_milestone <= UploadMilestone::ORDERED.len() &&
                 usize::from(sequence) == *next_milestone + 1,
@@ -204,7 +212,7 @@ impl CampaignDialogue {
     }
 
     pub(crate) fn take_upload_cue(&mut self, survival: SurvivalStatus) -> Option<CampaignCue> {
-        let DialogueMode::Beenoculars { next_milestone } = &mut self.mode else { return None };
+        let DialogueMode::Beenoculars { next_milestone, .. } = &mut self.mode else { return None };
         let milestone = *UploadMilestone::ORDERED.get(*next_milestone)?;
         // Unity samples upload progress on each whole second of the defense.
         let due_seconds = (f64::from(survival.duration_seconds) * f64::from(milestone.percent()) / 100.0).ceil();

@@ -953,6 +953,18 @@ impl<M, A> NativeLevelState<M, A> {
             .map_err(NativeLevelRecoveryError::Combat)?;
         self.decisions = decisions;
         self.campaign_dialogue = dialogue;
+        // These are reused per-tick projections, never durable gameplay
+        // owners. Rebuild them from the recovered authoritative world on
+        // the next step rather than retaining stale pre-restore entries.
+        self.command_friendlies.clear();
+        self.command_bomber_contacts.clear();
+        self.hivemind_observers.clear();
+        self.first_sightings.clear();
+        self.formation_changed_squads.clear();
+        self.formation_changed_seen.clear();
+        self.survivor_offsets.clear();
+        self.mining_credit_totals.clear();
+        self.mining_credit_order.clear();
         Ok(())
     }
 
