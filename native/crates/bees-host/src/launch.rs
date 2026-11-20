@@ -2327,7 +2327,7 @@ fn archived_native_remote_receipts_from_root(
             !entry.file_name().to_str().and_then(|name|
                 name.strip_prefix("battle-")).is_some_and(|number|
                     !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())) ||
-            active_battle.is_some_and(|active| active == entry.path()) { continue; }
+            active_battle.is_some_and(|active| active == entry.path().as_path()) { continue; }
         let run = entry.path().join("run");
         let file = run.join("rollout-summary.json");
         let metadata = match fs::symlink_metadata(&file) {
