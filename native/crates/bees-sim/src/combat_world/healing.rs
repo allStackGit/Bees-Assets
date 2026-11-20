@@ -11,7 +11,7 @@ const BEEHIVE_COMMAND_HEALING_SLOTS: u8 = 4;
 const HEAL_HEALTH: i32 = 50;
 const HEAL_COOLDOWN_SECONDS: f32 = 1.0;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct PolicyHealingRuntime {
     pub(super) cooldown_remaining: f32,
 }

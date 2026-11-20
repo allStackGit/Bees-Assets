@@ -40,7 +40,7 @@ pub(super) struct GameStrikerRuntime {
 
 /// The RL special repeatedly attempts an actual contact drop. There is no
 /// BombingRun command in native policy control, just as in Unity's RL path.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct PolicyStrikerRuntime {
     /// The original CarrierShip.Carrier reference can become null when
     /// the last same-side Carrier dies.

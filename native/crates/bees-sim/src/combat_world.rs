@@ -590,7 +590,7 @@ pub struct TrackedOrderMeasurements {
 
 /// Per-world, allocation-free special-action workload counters. Snapshot
 /// and subtract values to measure experiment windows without per-step logs.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PolicySpecialMeasurements {
     pub requests: u64,
     pub striker_hull_checks: u64,
@@ -756,6 +756,22 @@ struct EnemyShipContact {
     exact_tests: u64,
 }
 
+/// One policy-controller registry shared by rendering, gameplay and
+/// headless RL. Agent clocks use these same binding revisions, never
+/// an independently reconstructed policy roster.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CombatWorldPolicyCheckpoint {
+    roster_revision: u64,
+    controllers: BTreeMap<i64, PolicyShipRuntime>,
+    decision_seen: HashSet<u64>,
+    pending_specials: Vec<i64>,
+    pending_mining: Vec<i64>,
+    pending_healing: Vec<i64>,
+    pending_warp: Vec<i64>,
+    special_measurements: PolicySpecialMeasurements,
+}
+
 /// The Stage's mutable prefab pools, delayed asteroid kills and separate
 /// cosmetic-but-timed piece lifecycles. Immutable authored catalogs stay
 /// in the owning Level configuration; no new prefab RNG is consumed.
@@ -858,6 +874,7 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     reserved_ship_ids: HashMap<i32, HashSet<i64>>,
     queens: BTreeMap<i64, queen::QueenRuntimeCheckpoint>,
     queen_measurements: QueenSpawnMeasurements,
+    policy: CombatWorldPolicyCheckpoint,
     asteroid_pools: CombatWorldAsteroidPoolCheckpoint,
     weapon_rank_history: weapon_rank_history::WeaponRankHistory,
     combat_activity: HashMap<i64, NativeCombatActivity>,
@@ -1503,7 +1520,7 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 9,
+            schema_version: 10,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1519,6 +1536,16 @@ impl CombatWorld {
             queens: self.game_queens.iter().map(|(&id, state)| (id, state.checkpoint()))
                 .collect(),
             queen_measurements: self.queen_spawn_measurements,
+            policy: CombatWorldPolicyCheckpoint {
+                roster_revision: self.policy_roster_revision,
+                controllers: self.policy_ship_runtime.clone(),
+                decision_seen: self.policy_decision_seen.clone(),
+                pending_specials: self.policy_pending_ship_specials.clone(),
+                pending_mining: self.policy_pending_mining.clone(),
+                pending_healing: self.policy_pending_healing.clone(),
+                pending_warp: self.policy_pending_warp.clone(),
+                special_measurements: self.policy_special_measurements,
+            },
             asteroid_pools: CombatWorldAsteroidPoolCheckpoint {
                 active_full: self.active_full_asteroid_profiles.clone(),
                 pooled_full: self.pooled_full_asteroid_profiles.clone(),
@@ -1598,7 +1625,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 9 {
+        if snapshot.schema_version != 10 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1758,6 +1785,28 @@ impl CombatWorld {
         ) || snapshot.combat_activity.iter().any(|(&id, timer)|
             !self.ship_by_id.contains_key(&id) || !timer.valid()
         ) {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        let policy = &snapshot.policy;
+        if policy.controllers.iter().any(|(&id, controller)|
+            !self.ship_by_id.get(&id).is_some_and(|&index|
+                physics.ships()[index].active &&
+                !snapshot.ships[index].vitals.is_dead() &&
+                controller.valid_recovery(
+                    snapshot.ships[index].ship_type, policy.roster_revision,
+                )
+            ) ||
+            matches!(controller.special, Some(
+                policy::PolicyShipSpecial::Scout(_),
+            )) && !self.scout_beacon_specs.contains_key(&id)
+        ) ||
+            policy.decision_seen.iter().any(|&id|
+                id == 0 || i64::try_from(id).is_err()
+            ) ||
+            policy.pending_specials.iter().chain(&policy.pending_mining)
+                .chain(&policy.pending_healing).chain(&policy.pending_warp)
+                .any(|id| !policy.controllers.contains_key(id))
+        {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         // Pooled asteroid prototypes are sampled once at Create, not
@@ -2037,6 +2086,15 @@ impl CombatWorld {
         self.game_queens = game_queens;
         self.queen_spawn_measurements = snapshot.queen_measurements;
         self.queen_spawn_ids.clear();
+        let policy = snapshot.policy;
+        self.policy_roster_revision = policy.roster_revision;
+        self.policy_ship_runtime = policy.controllers;
+        self.policy_decision_seen = policy.decision_seen;
+        self.policy_pending_ship_specials = policy.pending_specials;
+        self.policy_pending_mining = policy.pending_mining;
+        self.policy_pending_healing = policy.pending_healing;
+        self.policy_pending_warp = policy.pending_warp;
+        self.policy_special_measurements = policy.special_measurements;
         self.weapon_rank_history = snapshot.weapon_rank_history;
         self.combat_activity = snapshot.combat_activity;
         self.automatic_weapon_measurements = snapshot.automatic_weapon_measurements;

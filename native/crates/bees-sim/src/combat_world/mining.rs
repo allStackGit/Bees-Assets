@@ -15,7 +15,7 @@ pub fn is_mining_ship_type(ship_type: u8) -> bool {
 const MINING_ACTION_RATE: i32 = 5;
 const MINING_COOLDOWN_SECONDS: f32 = 5.0;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct PolicyMiningRuntime {
     pub(super) cooldown_remaining: f32,
 }

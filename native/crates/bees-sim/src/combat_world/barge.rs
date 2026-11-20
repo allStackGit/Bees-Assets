@@ -11,7 +11,7 @@ const COOLDOWN: f32 = 10.0;
 const CHARGE_SPEED: f32 = 80.0;
 const FINISH_DAMAGE: i32 = 200;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct PolicyBargeCharge {
     pub(super) power: i32,
     /// 0 ready; 1 wind-up; 2 charging; 3 cooldown (Unity RlChargePhase).

@@ -37,7 +37,7 @@ impl PolicySpecialObservations {
 }
 
 /// Exactly one authored ship special can own an agent at a time.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) enum PolicyShipSpecial {
     Striker(PolicyStrikerRuntime),
     FireBarge,
@@ -46,7 +46,7 @@ pub(super) enum PolicyShipSpecial {
     Scout(PolicyScoutRuntime),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct PolicyShipRuntime {
     pub(super) frame: PolicyFrame,
     /// Unique controller bind generation from this CombatWorld's roster
@@ -62,6 +62,46 @@ pub(super) struct PolicyShipRuntime {
     pub(super) mining: Option<PolicyMiningRuntime>,
     /// Source human-side Warp action can coexist with a ship special.
     pub(super) warp_enabled: bool,
+}
+
+impl PolicyShipRuntime {
+    /// The restored controller retains its real bind generation, frame,
+    /// aim/communication memory and authored special timers. A different
+    /// ship type cannot acquire a stale policy action at the same ID.
+    pub(super) fn valid_recovery(&self, ship_type: u8, roster_revision: u64) -> bool {
+        if self.bind_revision == 0 || self.bind_revision > roster_revision ||
+            self.frame.quarter_turns() >= 4 || !self.control.valid_recovery() ||
+            self.healing.is_some_and(|state|
+                !state.cooldown_remaining.is_finite() ||
+                state.cooldown_remaining < 0.0
+            ) ||
+            self.mining.is_some_and(|state|
+                !is_mining_ship_type(ship_type) ||
+                !state.cooldown_remaining.is_finite() ||
+                state.cooldown_remaining < 0.0
+            )
+        {
+            return false;
+        }
+        match self.special {
+            None => true,
+            Some(PolicyShipSpecial::Striker(runtime)) =>
+                ship_type == 19 && runtime.bomb_power >= 0 &&
+                runtime.carrier_id.is_none_or(|id| id > 0) &&
+                runtime.reload_timer.valid_recovery(),
+            Some(PolicyShipSpecial::FireBarge) => ship_type == 10,
+            Some(PolicyShipSpecial::YellowJacket { bomb_power }) =>
+                ship_type == 22 && bomb_power >= 0,
+            Some(PolicyShipSpecial::Barge(runtime)) =>
+                ship_type == 0 && runtime.power >= 0 &&
+                runtime.phase <= 3 && runtime.elapsed.is_finite() &&
+                runtime.elapsed >= 0.0,
+            Some(PolicyShipSpecial::Scout(runtime)) =>
+                ship_type == 18 && runtime.dropped <= 5 &&
+                runtime.remaining_cooldown.is_finite() &&
+                runtime.remaining_cooldown >= 0.0,
+        }
+    }
 }
 
 impl CombatWorld {

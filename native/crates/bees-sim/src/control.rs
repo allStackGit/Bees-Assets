@@ -12,7 +12,7 @@ use crate::policy::{Action, ActionError, COMMUNICATION_ACTION_OFFSET, WEAPON_SLO
 pub const MOVEMENT_DEAD_ZONE_SQUARED: f32 = 0.2 * 0.2;
 pub const AIM_DEAD_ZONE_SQUARED: f32 = 0.1 * 0.1;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PolicyFrame {
     quarter_turns: u8,
 }
@@ -101,7 +101,7 @@ pub struct DecodedPolicyAction {
 
 /// Each controlled ship owns its aim memory. Unity retains the last aim
 /// through the policy's 0.1 dead zone rather than resetting aim each step.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PolicyControl {
     held_weapon_aim: [Vec2; WEAPON_SLOTS],
     communication: [f32; 4],
@@ -117,6 +117,11 @@ impl Default for PolicyControl {
 }
 
 impl PolicyControl {
+    pub fn valid_recovery(&self) -> bool {
+        self.held_weapon_aim.iter().all(|value| value.is_finite()) &&
+        self.communication.iter().all(|value| value.is_finite())
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
