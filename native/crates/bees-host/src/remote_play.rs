@@ -248,6 +248,10 @@ pub struct RemotePlayMeasurements {
 
 pub struct NativeRemotePlay {
     listener: TcpListener,
+    // Identifies this one authoritative host session across TCP reconnects.
+    // A restarted process cannot silently claim to resume a different
+    // physical World just because it uses the same player-side tokens.
+    host_session_id: String,
     side_tokens: HashMap<i32, String>,
     peers: Vec<Peer>,
     next_peer: u64,
@@ -296,6 +300,12 @@ impl NativeRemotePlay {
             return Err(io::Error::new(io::ErrorKind::InvalidInput,
                 "remote player sides must be 1 or 2 with unique 24-256 character tokens"));
         }
+        let mut session_nonce = [0u8; 16];
+        getrandom::getrandom(&mut session_nonce)
+            .map_err(|error| io::Error::new(io::ErrorKind::Other,
+                format!("native multiplayer host session entropy unavailable: {error}")))?;
+        let host_session_id = session_nonce.iter()
+            .map(|byte| format!("{byte:02x}")).collect::<String>();
         let listener = TcpListener::bind(&address)?;
         listener.set_nonblocking(true)?;
         let mut configured_sides = side_tokens.keys().copied().collect::<Vec<_>>();
@@ -309,7 +319,7 @@ impl NativeRemotePlay {
             "configured_sides": configured_sides,
         }));
         Ok(Some(Self {
-            listener, side_tokens, peers: Vec::new(),
+            listener, host_session_id, side_tokens, peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
             music_location: None,
@@ -444,6 +454,7 @@ impl NativeRemotePlay {
                             let _ = peer.enqueue(&json!({
                                 "kind": "welcome", "protocol": 1,
                                 "mode": "authenticated_player_side", "side": side,
+                                "host_session_id": self.host_session_id,
                             }));
                         } else {
                             peer.closed = true;

@@ -369,6 +369,8 @@ struct PeerClient {
     authenticated: bool,
     connected: bool,
     side: i32,
+    host_session_id: Option<String>,
+    expected_host_session_id: Option<String>,
     state: Option<Value>,
     visual: RemoteVisual,
     notice: String,
@@ -408,6 +410,7 @@ impl PeerClient {
             socket, incoming: Vec::new(), queued: VecDeque::new(),
             written: 0, queued_bytes: 0, next_request: 1,
             authenticated: false, connected: true, side,
+            host_session_id: None, expected_host_session_id: None,
             state: None, visual: RemoteVisual::default(),
             notice: "Authenticating with native host".to_owned(),
             held_fire_begin_request: None, held_fire_rejected: false,
@@ -454,6 +457,23 @@ impl PeerClient {
                         message["side"].as_i64() != Some(i64::from(self.side)) {
                         return Err(invalid("native host authenticated the wrong player side or protocol").into());
                     }
+                    let host_id = message["host_session_id"].as_str()
+                        .filter(|id| id.len() == 32 && id.bytes().all(|byte|
+                            byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+                        .ok_or_else(|| invalid("native host omitted its stable session identity"))?;
+                    if self.expected_host_session_id.as_deref()
+                        .is_some_and(|original| original != host_id)
+                    {
+                        // This is a fresh authoritative process, NOT a
+                        // resumed game. Leave all old command and physical
+                        // ownership behind rather than accept a substituted
+                        // battle under the same side token.
+                        self.connected = false;
+                        self.notice = "Host restarted: original battle cannot be resumed".into();
+                        let _ = self.socket.shutdown(std::net::Shutdown::Both);
+                        break;
+                    }
+                    self.host_session_id = Some(host_id.to_owned());
                     self.authenticated = true;
                     self.notice = format!("Connected as player side {}", self.side);
                 }
@@ -1597,6 +1617,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             peer.metrics.reconnect_attempts+=1;
             match PeerClient::connect(address,token,expected_side) {
                 Ok(mut replacement) => {
+                    replacement.expected_host_session_id = peer.host_session_id.clone()
+                        .or_else(|| peer.expected_host_session_id.clone());
                     replacement.metrics=std::mem::take(&mut peer.metrics);
                     replacement.metrics.reconnect_transports_opened+=1;
                     peer=replacement;
