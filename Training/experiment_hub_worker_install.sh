@@ -147,7 +147,11 @@ TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
 if [[ ! "$TAILNET_IP" =~ ^100\. ]]; then
     echo "Sign in using the Tailscale URL below:"
     sudo tailscale up
-    TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
+    for attempt in $(seq 1 120); do
+        TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
+        [[ "$TAILNET_IP" =~ ^100\. ]] && break
+        sleep 2
+    done
 fi
 [[ "$TAILNET_IP" =~ ^100\. ]] ||
     { echo "Tailscale authentication is required." >&2; exit 1; }
