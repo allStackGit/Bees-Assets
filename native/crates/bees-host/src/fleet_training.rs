@@ -1098,14 +1098,50 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
                 ));
             }
         }
-        let optimize = measurement["sum_round_optimizer_wall_seconds"]
-            .as_f64().unwrap_or(0.0);
-        let collect = measurement["sum_round_rollout_wall_seconds"]
-            .as_f64().unwrap_or(0.0);
-        details.push((
-            format!("Optimizer: {optimize:.1}s  |  Rollout: {collect:.1}s"),
-            "  [Total measured workload]".to_string(), false,
-        ));
+        let composition = &measurement["useful_training_throughput"]
+            ["critical_path_phase_composition"];
+        if let (Some(collection), Some(processing), Some(update)) = (
+            composition["collection_wall_fraction"].as_f64(),
+            composition["learner_trajectory_processing_wall_fraction"].as_f64(),
+            composition["learner_ppo_update_wall_fraction"].as_f64(),
+        ) {
+            if [collection, processing, update].iter().all(|value|
+                value.is_finite() && *value >= 0.0 && *value <= 1.0)
+            {
+                details.push((
+                    format!("Training time: {:.1}% collection | {:.1}% trajectory | {:.1}% PPO",
+                        collection * 100.0, processing * 100.0, update * 100.0),
+                    "  [Measured critical path; excludes holdout and setup]".to_string(),
+                    false,
+                ));
+            }
+        } else {
+            let optimize = measurement["sum_round_optimizer_wall_seconds"]
+                .as_f64().unwrap_or(0.0);
+            let collect = measurement["sum_round_rollout_wall_seconds"]
+                .as_f64().unwrap_or(0.0);
+            let distributed = measurement["rollout_wall_seconds_scope"].as_str() ==
+                Some("sum_of_independent_collector_wall_seconds");
+            details.push((
+                format!("Learner: {optimize:.1}s | {}: {collect:.1}s",
+                    if distributed { "Summed collector work" } else { "Local rollout" }),
+                if distributed {
+                    "  [Collector seconds overlap; not fleet elapsed time]"
+                } else {
+                    "  [Measured local work]"
+                }.to_string(), false,
+            ));
+        }
+        if let Some(rate) = measurement["learner_pipeline_wall_time"]
+            ["optimizer_input_steps_per_update_wall_second"].as_f64()
+            .filter(|value| value.is_finite() && *value > 0.0)
+        {
+            details.push((
+                format!("PPO optimizer throughput: {rate:.0} input rows/s"),
+                "  [Measured PPO update time; excludes trajectory ingest]".to_string(),
+                false,
+            ));
+        }
         if let Some(rate) = measurement["latest_holdout"]["side_win_rate"]
             .as_f64().filter(|number| number.is_finite())
         {
