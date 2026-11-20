@@ -2030,7 +2030,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 .to_string_lossy().parse()?;
             if args.next().is_some() { return Err(invalid(USAGE).into()); }
             return bees_host::presentation::connect_remote(
-                &address.to_string_lossy(), &token_file, side,
+                &address.to_string_lossy(), &token_file, side, None,
             );
         }
         #[cfg(not(feature = "client"))]
@@ -4339,6 +4339,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 };
                 bees_host::presentation::connect_remote(
                     &connection.address, &token_file, connection.side,
+                    Some(&save_root.join("multiplayer-session.json")),
                 )
             })()
         } else if hosting {
