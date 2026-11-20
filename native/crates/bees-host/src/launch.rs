@@ -5687,7 +5687,7 @@ fn run_battle(
     let mut pending_remote_successes = Vec::<(u64, u64, &'static str)>::new();
     // Local gameplay uses the same durable World/trace boundary. Its UI
     // feedback must not promise a recoverable command before the checkpoint.
-    let mut pending_local_successes = Vec::<&'static str>::new();
+    let mut pending_local_feedback: Option<&'static str> = None;
     // One typed source of every launcher-owned progress field, reused for
     // regular and terminal persistence. The World and network journal
     // themselves remain owned by the native host runtime.
@@ -5803,7 +5803,7 @@ fn run_battle(
                 rounds.saturating_sub(previous) >= recovery_interval);
         if host_checkpoint_file.is_some() &&
             (recovery_due || !pending_remote_successes.is_empty() ||
-                !pending_local_successes.is_empty()) &&
+                pending_local_feedback.is_some()) &&
             network.as_ref().is_none_or(|session| session.server_game_id.is_some() &&
                 session.next_level == session.levels.len()) &&
             host.connection_mut().connection().pending_request_count() == 0
@@ -5839,7 +5839,7 @@ fn run_battle(
                 }
                 #[cfg(feature = "client")]
                 if let Some(client) = &mut client {
-                    for feedback in pending_local_successes.drain(..) {
+                    if let Some(feedback) = pending_local_feedback.take() {
                         client.report_move(feedback);
                     }
                 }
@@ -6140,19 +6140,9 @@ fn run_battle(
                 failed_window = Some("selected Level disappeared".to_owned());
                 break;
             };
-            // A stalled HiveMind obligation can delay checkpoints. Keep
-            // the local UI responsive without allocating an unbounded
-            // queue of uncommitted accepted commands or trace events.
-            if host_checkpoint_file.is_some() && pending_local_successes.len() >= 256 &&
-                matches!(&action, Ok(bees_host::client::NativeClientAction::Input {
-                    action: input, ..
-                }) if !matches!(input, NativePlayerInput::HeldFire(gesture)
-                    if matches!(&gesture.action,
-                        bees_gameplay::player_inputs::NativeHeldFireAction::End)))
-            {
-                client.report_move("Native host checkpoint pending; retry command");
-                continue;
-            }
+            // A window shows one status message. Coalesce uncommitted
+            // success feedback without rejecting a held-fire transition:
+            // its gestures are already owned by the native game window.
             if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input { action: input, .. })) =
                 (&mut input_trace, &action)
             {
@@ -6192,8 +6182,9 @@ fn run_battle(
                         apply_remote_side_input(&mut host, input, side)
                     } else { apply_player_input(&mut host, input) };
                     match result {
-                        Ok(feedback) if feedback.accepted && host_checkpoint_file.is_some() =>
-                            pending_local_successes.push(feedback.message),
+                        Ok(feedback) if feedback.accepted && host_checkpoint_file.is_some() => {
+                            pending_local_feedback = Some(feedback.message);
+                        },
                         Ok(feedback) => client.report_move(feedback.message),
                         Err(error) => {
                             failed_window = Some(error);
@@ -6598,7 +6589,7 @@ fn run_battle(
                         }
                         #[cfg(feature = "client")]
                         if let Some(client) = &mut client {
-                            for feedback in pending_local_successes.drain(..) {
+                            if let Some(feedback) = pending_local_feedback.take() {
                                 client.report_move(feedback);
                             }
                         }
