@@ -419,7 +419,7 @@ async function main() {
             if(command!=null) {
                 if(!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(
                         String(command.command_id||''))||
-                    !['start','stop','inspect'].includes(command.action)||
+                    !['start','stop','restart','inspect'].includes(command.action)||
                     !executor?.projects.includes('bees_native'))
                     throw Error('Unrecognized native evaluator control for this machine.');
                 executingNative=true;
