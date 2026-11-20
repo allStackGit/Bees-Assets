@@ -1146,7 +1146,20 @@ fn remote_tactical_action(
     shooting_menu: &mut bool, shooting_focus: &mut u8,
     action: HudAction,
 ) -> Result<(),Box<dyn Error>> {
-    if peer.input_suppressed && action!=HudAction::StopFire {
+    // End releases a peer-owned weapon lease, not a command for the
+    // currently selected squads. An eliminated squad or new terminal
+    // snapshot may clear selection before the player releases J/X.
+    if action==HudAction::StopFire && *held_fire_active {
+        if let Err(error)=peer.held_fire(selected,"End",None) {
+            let _=peer.socket.shutdown(std::net::Shutdown::Both);
+            peer.connected=false;
+            return Err(error);
+        }
+        *held_fire_active=false;
+        *held_fire_target=None;
+        return Ok(());
+    }
+    if peer.input_suppressed {
         return Err(invalid("orders unavailable during briefing or after battle").into());
     }
     if action==HudAction::SelectAll {
@@ -1199,15 +1212,6 @@ fn remote_tactical_action(
                 .and_then(|s|s["shooting"].as_u64())
                 .unwrap_or(1).clamp(1,40) as u8;
             *shooting_menu=!*shooting_menu;
-            return Ok(());
-        }
-        HudAction::StopFire if *held_fire_active=>{
-            if let Err(error)=peer.held_fire(selected,"End",None) {
-                let _=peer.socket.shutdown(std::net::Shutdown::Both);
-                peer.connected=false;
-                return Err(error);
-            }
-            *held_fire_active=false;*held_fire_target=None;
             return Ok(());
         }
         HudAction::StopFire=>peer.order(selected,"fire",json!({"target":null})),
