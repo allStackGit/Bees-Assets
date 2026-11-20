@@ -793,7 +793,10 @@ on future training configurations. The runtime now fingerprints **both** Nano
 and Micro opponent model/manifest files. After updating an earlier Hub checkout,
 refresh each installed Nano/Micro suite from this panel before relying on its
 evaluation schedule: the previous suite remains immutable and its older runtime
-pin is intentionally not silently reused.
+pin is intentionally not silently reused. Because the shared runtime describer
+is itself fingerprinted, the same Hub source update also changes Courier's
+runtime identity. Use **Set up / refresh Courier evaluation** to approve its
+new immutable suite before expecting new Courier evaluation receipts.
 
 The same Machines service panel provides **Set up / refresh Courier evaluation**.
 When a local trusted Courier adapter is installed, this action creates a private
