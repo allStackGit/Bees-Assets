@@ -373,6 +373,18 @@ pub enum NativeLevelEventRecoveryError {
     Delivery(NativeLevelDeliveryRestoreError),
 }
 
+/// Fully validated, uncommitted event owners. A Level may preflight this
+/// alongside policy clocks before the authoritative CombatWorld transaction.
+pub(crate) struct NativeLevelEventRecoveryPrepared {
+    next_tick: u64,
+    roster: NativeSquadRoster,
+    commands: NativeSquadCommandDirector,
+    episode: NativeEpisodeRewardCoordinator,
+    group: Option<NativeGroupRewardDelivery>,
+    credit: NativeCommandCreditLedger,
+    delivery: NativeLevelDeliveryCheckpoint,
+}
+
 pub struct NativeLevelEventProcessor {
     roster: NativeSquadRoster,
     commands: NativeSquadCommandDirector,
@@ -450,20 +462,19 @@ impl NativeLevelEventProcessor {
         }
     }
 
-    /// Stage all four independent ledgers before changing a live one.
-    /// Requiring the already-restored event clock to match the saved tick
-    /// prevents silently grafting a saved credit ledger or squad lifetime
-    /// onto a different command/outbox epoch.
-    pub fn restore_recovery_owners(
-        &mut self, checkpoint: NativeLevelEventRecoveryOwnersCheckpoint,
+    /// Prepare every source event owner without touching the current
+    /// episode. A fresh host may still have its initial event clock:
+    /// the checkpoint fixes the target tick, and the enclosing World
+    /// must independently restore that very same completed tick.
+    pub(crate) fn prepare_recovery_owners(
+        &self, checkpoint: NativeLevelEventRecoveryOwnersCheckpoint,
         world: &CombatWorld, completed_ticks: u64,
-    ) -> Result<(), NativeLevelEventRecoveryError> {
+    ) -> Result<NativeLevelEventRecoveryPrepared, NativeLevelEventRecoveryError> {
         use NativeLevelEventRecoveryError as Error;
         if checkpoint.schema_version != 4 {
             return Err(Error::InvalidVersion);
         }
-        if completed_ticks.checked_add(1) != Some(checkpoint.next_tick) ||
-            self.next_tick != checkpoint.next_tick {
+        if completed_ticks.checked_add(1) != Some(checkpoint.next_tick) {
             return Err(Error::TickMismatch);
         }
         let delivery = checkpoint.delivery.prepare(world, completed_ticks)
@@ -492,31 +503,51 @@ impl NativeLevelEventProcessor {
                     .map_err(Error::Group)?),
             _ => return Err(Error::GroupModeMismatch),
         };
-        // Infallible commit only after every authoritative ID and clock
-        // has passed preflight. Rejected snapshots change no live ledger.
-        self.roster = roster;
-        self.commands = commands;
-        self.credit = credit;
-        self.episode = episode;
-        self.group_delivery = group;
-        self.pending_session_retirements = delivery.pending_session_retirements;
-        self.pending_notifications = delivery.pending_notifications;
-        self.acknowledged_notification_count = delivery.acknowledged_notification_count;
-        self.peak_pending_notifications = delivery.peak_pending_notifications;
-        self.reinforcement_arrivals = delivery.reinforcement_arrivals;
-        self.last_reinforcement_tick = delivery.last_reinforcement_tick;
-        self.next_local_command_sequence = delivery.next_local_command_sequence;
-        self.last_advanced_command_tick = delivery.last_advanced_command_tick;
-        self.last_published_timed_tick = delivery.last_published_timed_tick;
-        self.failed = delivery.failed;
-        self.failed_commands_drained = delivery.failed_commands_drained;
-        self.last_finalized = delivery.last_finalized;
-        self.fire_barge_killers = delivery.fire_barge_killers;
-        // Scratch snapshots from before recovery have no delivery identity.
+        Ok(NativeLevelEventRecoveryPrepared {
+            next_tick: checkpoint.next_tick,
+            roster, commands, episode, group, credit, delivery,
+        })
+    }
+
+    /// Infallible commit after the complete enclosing Level has validated
+    /// its fixed-step world and decision-clock owners.
+    pub(crate) fn commit_recovery_owners(
+        &mut self, staged: NativeLevelEventRecoveryPrepared,
+    ) {
+        self.roster = staged.roster;
+        self.commands = staged.commands;
+        self.credit = staged.credit;
+        self.episode = staged.episode;
+        self.group_delivery = staged.group;
+        self.next_tick = staged.next_tick;
+        self.pending_session_retirements = staged.delivery.pending_session_retirements;
+        self.pending_notifications = staged.delivery.pending_notifications;
+        self.acknowledged_notification_count = staged.delivery.acknowledged_notification_count;
+        self.peak_pending_notifications = staged.delivery.peak_pending_notifications;
+        self.reinforcement_arrivals = staged.delivery.reinforcement_arrivals;
+        self.last_reinforcement_tick = staged.delivery.last_reinforcement_tick;
+        self.next_local_command_sequence = staged.delivery.next_local_command_sequence;
+        self.last_advanced_command_tick = staged.delivery.last_advanced_command_tick;
+        self.last_published_timed_tick = staged.delivery.last_published_timed_tick;
+        self.failed = staged.delivery.failed;
+        self.failed_commands_drained = staged.delivery.failed_commands_drained;
+        self.last_finalized = staged.delivery.last_finalized;
+        self.fire_barge_killers = staged.delivery.fire_barge_killers;
+        // Reusable per-tick scratch never represents a pending ACK.
         self.changes.clear();
         self.finished.clear();
         self.timed_finished.clear();
         self.core_damage_owners.clear();
+    }
+
+    pub fn restore_recovery_owners(
+        &mut self, checkpoint: NativeLevelEventRecoveryOwnersCheckpoint,
+        world: &CombatWorld, completed_ticks: u64,
+    ) -> Result<(), NativeLevelEventRecoveryError> {
+        let staged = self.prepare_recovery_owners(
+            checkpoint, world, completed_ticks,
+        )?;
+        self.commit_recovery_owners(staged);
         Ok(())
     }
 
