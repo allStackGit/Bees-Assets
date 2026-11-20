@@ -19,7 +19,7 @@ pub enum EpisodeTerminalError {
     InvalidStep,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeTerminalResult {
     pub winner_side: i32,
     pub timed_out: bool,
@@ -32,7 +32,7 @@ pub struct EpisodeTerminalResult {
 
 /// Exactly RlOneVsOneReward.CalculateTerminalReward and
 /// CalculateTimePenalty, before economic or tactical shaping.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeTerminalRewards {
     pub bee_terminal: f32,
     pub human_terminal: f32,
@@ -43,7 +43,7 @@ pub struct EpisodeTerminalRewards {
 /// Source GetRetainedMiningTsvForWinningSide and
 /// RlOneVsOneReward.CalculateEconomicValueReward. This economic channel is
 /// uncapped and separate from the 0.2 tactical-shaping budget.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeEconomicRewards {
     pub bee_retained_mined_tsv: i32,
     pub human_retained_mined_tsv: i32,
@@ -239,7 +239,7 @@ pub struct EscortStatus {
 }
 
 /// Finished native authored mission, distinct from ordinary faction victory.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EpisodeMissionKind {
     Survival,
     Demolition,
@@ -268,7 +268,7 @@ impl EpisodeMissionKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeMissionOutcome {
     pub kind: EpisodeMissionKind,
     pub objective_side: i32,

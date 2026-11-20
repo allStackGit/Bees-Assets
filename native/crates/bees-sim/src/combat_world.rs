@@ -295,7 +295,7 @@ pub struct ShotOwner {
     pub self_detonation: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum CombatEvent {
     Hit(HitEvent),
     UnattributedDamage { target_id: i64, delta: crate::combat::DamageDelta },

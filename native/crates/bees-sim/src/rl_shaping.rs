@@ -59,7 +59,7 @@ impl TacticalShaping {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RewardEmission {
     pub side: i32,
     pub amount: f32,

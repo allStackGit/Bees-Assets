@@ -7,7 +7,7 @@ use crate::matchup_targeting::{NativeMatchupCandidate, LiveMatchupResolutionErro
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeTargetingContext { pub has_player: bool, pub user_side: i32 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeInstalledTargeting {
     pub selection: ValidatedTargetingSelection,
     pub enemy: Option<SquadLifetime>,

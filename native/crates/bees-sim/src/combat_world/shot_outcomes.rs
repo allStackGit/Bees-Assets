@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 /// Source RlOneVsOneReward.NearMissDistance.
 pub(super) const NEAR_MISS_DISTANCE: f32 = 2.0;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectileRootOutcome {
     pub root_shot_id: i64,
     pub shooter_id: i64,

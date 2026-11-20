@@ -15,7 +15,7 @@ pub enum CombatError {
     NegativeDamage,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DamageDelta {
     pub health_before: i32,
     pub health_after: i32,
@@ -170,7 +170,7 @@ impl ShipVitals {
 /// Disambiguate actual source and credit owner before allocating rewards.
 /// These kinds correspond to existing RL diagnostics; they do not change
 /// the historical command-owner snapshot attached to each shot.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DamageSource {
     Gun,
     Bomb,
@@ -180,7 +180,7 @@ pub enum DamageSource {
     Unattributed,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HitEvent {
     pub projectile_id: i64,
     pub root_shot_id: i64,

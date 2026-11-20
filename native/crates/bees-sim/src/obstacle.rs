@@ -32,7 +32,7 @@ pub struct ObstacleVitals {
     pub is_dead: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AsteroidDamage {
     pub health_before: i32,
     pub health_after: i32,
@@ -158,7 +158,7 @@ pub fn resolve_asteroid_ship_damage(
 /// Exact spawn counts from CollisionAsteroid.SpawnBreakAwayAsteroids.
 /// CombatWorld consumes these counts with its scene-specific prefab palette,
 /// pooled shard/piece identities and shared collision/lifecycle rules.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AsteroidBreakup {
     pub collision_asteroid_shards: u8,
     pub asteroid_pieces: u16,

@@ -45,7 +45,7 @@ pub enum SquadRosterError {
     FailedRoster,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SquadRosterChange {
     /// Unity RemoveShip -> RefreshCompositionCommandBans, SetOffsets and
     /// MoveSquadBox on surviving combat squads. The Level adapter owns

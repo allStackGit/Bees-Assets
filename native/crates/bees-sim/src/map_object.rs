@@ -33,7 +33,7 @@ pub struct FireTankConfig {
     pub target_obstacle_id: Option<i64>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MapObjectDamage {
     pub before: i32,
     pub after: i32,

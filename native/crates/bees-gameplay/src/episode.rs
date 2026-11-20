@@ -69,7 +69,7 @@ impl From<DiscoveryError> for NativeEpisodeRewardError {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativeEpisodeFinal {
     pub result: EpisodeTerminalResult,
     pub terminal_rewards: EpisodeTerminalRewards,
