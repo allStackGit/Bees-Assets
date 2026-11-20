@@ -672,6 +672,17 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_
             result.get("inference_device_override") != inference_device or
             result.get("rollout_summary_sha256") != file_sha256(summary_path)):
         raise ValueError(f"holdout evaluation does not match its pinned inputs: {directory}")
+    # New standalone evaluation receipts carry the same pinned physical
+    # dependencies as a training session. Completed holdouts reused after
+    # interruption must still refer to that original scene and policy code,
+    # not only to a matching top-level run.json hash.
+    if "source_dependencies" in result:
+        source_path = result.get("source_run_config")
+        if not isinstance(source_path, str) or not source_path:
+            raise ValueError(f"holdout has no original physical source: {directory}")
+        current = native_input_dependencies({"path": source_path})
+        if result["source_dependencies"] != current:
+            raise ValueError(f"holdout source assets differ from committed evaluation: {directory}")
     summary = read_json(summary_path)
     if (summary.get("run_id") != result.get("run_id") or
             summary.get("policy_manifest_sha256") != manifest_sha or
