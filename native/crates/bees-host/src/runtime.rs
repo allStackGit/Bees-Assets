@@ -166,6 +166,11 @@ pub trait NativeHostRecoverableMetadata {
     fn prepare_metadata_recovery(
         &self, snapshot: serde_json::Value,
     ) -> Result<Self::Prepared, &'static str>;
+    fn validate_staged_combat(
+        &self,
+        prepared: &Self::Prepared,
+        combat: &dyn bees_sim::combat_world::CombatRecoveryView,
+    ) -> Result<(), &'static str>;
     fn commit_metadata_recovery(&mut self, prepared: Self::Prepared);
 }
 
@@ -356,6 +361,9 @@ where
                 .map_err(|error| HostRecoveryError::Level { index, error })?;
             let metadata = world.state.metadata.prepare_metadata_recovery(metadata)
                 .map_err(|error| HostRecoveryError::Metadata { index, error })?;
+            world.state.metadata.validate_staged_combat(
+                &metadata, level.staged_combat(),
+            ).map_err(|error| HostRecoveryError::Metadata { index, error })?;
             staged.push((clock, level, metadata));
         }
         let driver = NativeLevelBatchDriver::prepare_recovery_for_layout(

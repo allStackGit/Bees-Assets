@@ -1900,6 +1900,37 @@ impl crate::runtime::NativeHostRecoverableMetadata for NativePolicyOnlyMetadata 
             .map_err(|_| "native authored source ledger failed recovery preflight")
     }
 
+    fn validate_staged_combat(
+        &self,
+        prepared: &Self::Prepared,
+        combat: &dyn bees_sim::combat_world::CombatRecoveryView,
+    ) -> Result<(), &'static str> {
+        // Originally imported policy participants may be deferred. Only
+        // source-created children, not-yet-retired dynamic controllers,
+        // and dynamically added physical metadata must be in this saved
+        // World. Historical dead children still have original ship slots.
+        let dynamic_agent = |id: i64| {
+            combat.ship(id).is_some_and(|ship|
+                prepared.agents.get(&id).is_some_and(|agent|
+                    agent.side == ship.side
+                )
+            )
+        };
+        if prepared.dynamic_policy_ships.iter().any(|&id| !dynamic_agent(id)) ||
+            prepared.agents.keys().filter(|id| !self.agents.contains_key(id))
+                .any(|&id| !dynamic_agent(id)) ||
+            prepared.authored_ships.keys().filter(|id|
+                !self.authored_ships.contains_key(id)
+            ).any(|&id| combat.ship(id).is_none()) ||
+            prepared.player.ships.keys().filter(|id|
+                !self.player.ships.contains_key(id)
+            ).any(|&id| combat.ship(id).is_none())
+        {
+            return Err("native source agents do not match recovered physical ships");
+        }
+        Ok(())
+    }
+
     fn commit_metadata_recovery(&mut self, prepared: Self::Prepared) {
         self.commit_source_ledger_recovery(prepared);
     }

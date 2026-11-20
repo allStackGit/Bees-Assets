@@ -934,6 +934,14 @@ pub struct NativeLevelRecoveryPrepared {
     navigation_jobs_completed: u64,
 }
 
+impl NativeLevelRecoveryPrepared {
+    /// The authentic staged physical owner is available to the source
+    /// metadata preflight, before any state is committed.
+    pub fn staged_combat(&self) -> &CombatWorldRecoveryPrepared {
+        &self.combat
+    }
+}
+
 pub struct NativeLevelState<M, A> {
     pub combat: CombatWorld,
     pub events: NativeLevelEventProcessor,
