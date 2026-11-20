@@ -427,7 +427,8 @@ fn link_disconnected(error: &io::Error) -> bool {
 }
 
 impl PeerClient {
-    fn connect(address: &str, token: &str, side: i32) -> Result<Self, Box<dyn Error>> {
+    fn connect(address: &str, token: &str, side: i32,
+        resume_session_id: Option<&str>) -> Result<Self, Box<dyn Error>> {
         let mut connection = None;
         for candidate in address.to_socket_addrs()? {
             match TcpStream::connect_timeout(&candidate, Duration::from_secs(5)) {
@@ -437,7 +438,9 @@ impl PeerClient {
         }
         let mut socket = connection.ok_or_else(|| invalid("native multiplayer server unreachable"))?;
         socket.set_nodelay(true)?;
-        let mut hello = serde_json::to_vec(&json!({"kind": "hello", "token": token}))?;
+        let mut hello = serde_json::to_vec(&json!({
+            "kind": "hello", "token": token, "resume_session_id": resume_session_id,
+        }))?;
         hello.push(b'\n');
         socket.write_all(&hello)?;
         socket.set_nonblocking(true)?;
@@ -448,7 +451,8 @@ impl PeerClient {
             briefing_pending: None, briefing_approved: None,
             briefing_rejected: None,
             authenticated: false, connected: true, input_suppressed: false, side,
-            host_session_id: None, expected_host_session_id: None,
+            host_session_id: None,
+            expected_host_session_id: resume_session_id.map(str::to_owned),
             state: None, visual: RemoteVisual::default(),
             notice: "Authenticating with native host".to_owned(),
             held_fire_begin_request: None, held_fire_rejected: false,
@@ -463,7 +467,12 @@ impl PeerClient {
         while read < READ_BUDGET && self.connected {
             let limit = buffer.len().min(READ_BUDGET - read);
             match self.socket.read(&mut buffer[..limit]) {
-                Ok(0) => { self.connected = false; self.notice = "Host disconnected".into(); break; }
+                Ok(0) => {
+                    self.connected = false;
+                    self.notice = self.battle_result_receipt.clone()
+                        .unwrap_or_else(|| "Host disconnected".into());
+                    break;
+                }
                 Ok(n) => {
                     read += n;
                     self.metrics.bytes_received += n as u64;
@@ -476,7 +485,8 @@ impl PeerClient {
                 Err(error) if error.kind() == ErrorKind::Interrupted => continue,
                 Err(error) if link_disconnected(&error) => {
                     self.connected = false;
-                    self.notice = "Host disconnected".into();
+                    self.notice = self.battle_result_receipt.clone()
+                        .unwrap_or_else(|| "Host disconnected".into());
                     break;
                 },
                 Err(error) => return Err(error.into()),
@@ -1918,7 +1928,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     if !(24..=256).contains(&token.len()) ||token.chars().any(char::is_control) {
         return Err(invalid("invalid native multiplayer token").into());
     }
-    let mut peer=PeerClient::connect(address,token,expected_side)?;
+    let mut peer=PeerClient::connect(address,token,expected_side,None)?;
     let mut window=Window::new("Bees | Native Multiplayer",WIDTH,HEIGHT,
         WindowOptions::default())?;
     window.set_target_fps(30);
@@ -1991,10 +2001,10 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         let mut rejoined=false;
         if window.is_key_pressed(Key::F5, KeyRepeat::No) {
             peer.metrics.reconnect_attempts+=1;
-            match PeerClient::connect(address,token,expected_side) {
+            let original = peer.host_session_id.as_deref()
+                .or(peer.expected_host_session_id.as_deref());
+            match PeerClient::connect(address,token,expected_side,original) {
                 Ok(mut replacement) => {
-                    replacement.expected_host_session_id = peer.host_session_id.clone()
-                        .or_else(|| peer.expected_host_session_id.clone());
                     replacement.metrics=std::mem::take(&mut peer.metrics);
                     replacement.metrics.reconnect_transports_opened+=1;
                     peer=replacement;
@@ -2052,7 +2062,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             // those cosmetic frames from the previous authoritative host.
             artwork=RemoteArtwork::new()?;
             audio.select_location(None);
-            if !peer.connected &&
+            if !peer.connected && peer.battle_result_receipt.is_none() &&
                 peer.notice != "Host restarted: original battle cannot be resumed" {
                 peer.notice="Host disconnected; press F5 to reconnect".into();
             }
