@@ -79,10 +79,15 @@ function bootstrap(hub,root,ip,request) {
     const secrets=Object.fromEntries(projects.map(p=>[p,keyFile(root,p)]));
     let registered=hub.state.machines.find(m=>m.id===peer.machineId);
     if(registered) {
-        // Existing manual registration is intentionally not silently upgraded.
-        if(registered.tailnet_node_id!==peer.nodeId||
-            registered.agent_key_sha256||
-            hub.state.jobs.some(j=>j.assigned_machine_id===peer.machineId))
+        // Re-running an interrupted first install is allowed only from the
+        // SAME Tailscale node, before its first heartbeat or native job.
+        // Never rotate an existing active or legacy machine's identity.
+        if((registered.tailnet_node_id&&
+             registered.tailnet_node_id!==peer.nodeId)||
+            hub.agentReports.has(peer.machineId)||
+            hub.state.jobs.some(j=>j.assigned_machine_id===peer.machineId)||
+            hub.state.reservations.some(r=>r.machine_id===peer.machineId)||
+            (registered.agent_key_sha256&&!registered.tailnet_node_id))
             throw Error('Machine already enrolled; use its existing installation.');
     } else {
         hub.addMachine({id:peer.machineId,name:peer.machineId,cpus,ram_mb:ram,gpus:[]});
@@ -96,6 +101,7 @@ function bootstrap(hub,root,ip,request) {
     hub.commit(next);
     const enrolled=hub.enrollMachine({
         machine_id:peer.machineId,confirm_enroll:true,
+        confirm_rotate:Boolean(registered.agent_key_sha256),
     });
     return {machine_id:peer.machineId,agent_token:enrolled.agent_token,
         rollout_keys:secrets};
