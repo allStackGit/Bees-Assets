@@ -242,9 +242,9 @@ async function setup(hub) {
     // Validate or install the replacement before touching the old schedule or
     // its approval. Failed preflight leaves the previous evaluator intact.
     const def=definition(o),unit=unitPaths(o);
-    if(fs.existsSync(unit.serviceFile)||fs.existsSync(unit.timerFile))
+    if(fs.existsSync(unit.serviceFile)&&fs.existsSync(unit.timerFile))
         approvedUnits(o,def);
-    else installEvaluatorUnits(def,o.home);
+    else installEvaluatorUnits(def,o.home,{repairPartial:true});
     await systemctl(['daemon-reload']);
 
     let oldRestoreNeeded=false,newStartAttempted=false,temporary=null;
