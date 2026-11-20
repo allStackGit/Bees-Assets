@@ -4365,8 +4365,16 @@ fn run_battle(
     }
     let local_player_side = host.render_world(0)
         .and_then(|view| view.player_authority.player_viewer_side()).unwrap_or(0);
-    if remote_step_interval.is_some() && !(1..=2).contains(&local_player_side) {
-        return Err(invalid("remote play requires an authored local player side").into());
+    // A dedicated authoritative host may have no local window/player side.
+    // Explicit per-side tokens already select the authenticated remote
+    // players, with each source squad verified below. Only the legacy
+    // single-token cooperative mode needs an authored local player side.
+    if remote_step_interval.is_some() && !(1..=2).contains(&local_player_side) &&
+        env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS").is_none()
+    {
+        return Err(invalid(
+            "cooperative remote play requires an authored local player side; dedicated hosts must provide BEES_NATIVE_REMOTE_SIDE_TOKENS",
+        ).into());
     }
     let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(local_player_side)?;
     if let Some(server) = &mut remote {
