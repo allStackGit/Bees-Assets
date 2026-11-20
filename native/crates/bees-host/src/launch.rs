@@ -3474,16 +3474,22 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     let custom_fleet = settings.game_id == fleet_builder::GAME_ID;
     let campaign_index = library.games.iter().position(|entry|
         entry.id == settings.game_id && entry.kind == "campaign");
-    let game_source = if custom_fleet || campaign_index.is_some() {
+    let static_battle = library.games.iter().position(|entry|
+        entry.id == settings.game_id && entry.kind == "battle");
+    let trained_model = if custom_fleet || campaign_index.is_some() ||
+        static_battle.is_some()
+    {
         None
-    } else if let Some(index)=library.games.iter().position(|entry|
-        entry.id==settings.game_id && entry.kind=="battle") {
-        Some(games[index].clone())
     } else {
-        Some(trained.iter().find(|model| model.id==settings.game_id)
-            .ok_or_else(|| invalid("multiplayer host game ID is not a native campaign, battle or registered checkpoint"))?
-            .verified_run()?)
+        Some(trained.iter().find(|model| model.id == settings.game_id)
+            .ok_or_else(|| invalid(
+                "multiplayer host game ID is not a native campaign, battle or registered checkpoint",
+            ))?)
     };
+    // Static game sources can be launched directly. A trained publication
+    // must FIRST be projected to the original physical single-Level human
+    // challenge, exactly as the existing local trained-game picker does.
+    let game_source = static_battle.map(|index| games[index].clone());
     let token_file=if settings.tokens_file.is_absolute(){
         settings.tokens_file
     }else{save_root.join(settings.tokens_file)};
@@ -3548,12 +3554,13 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // In custom-fleet mode both source sides retain genuine player
     // permissions; the existing per-side token map authorizes their remote
     // orders, without inventing a scripted AI or a second lobby protocol.
-    let _generated_writer = if custom_fleet {
+    let generated_game = custom_fleet || trained_model.is_some();
+    let _generated_writer = if generated_game {
         Some(battle_catalog::CampaignWriterLease::acquire(
             &save_root.join("battles").join(&settings.game_id),
         )?)
     } else { None };
-    let generated_recovery = if custom_fleet {
+    let generated_recovery = if generated_game {
         recover_generated_library_battle(save_root, &settings.game_id, true)?
     } else { None };
     // A reconnect restores the same frozen fleet without asking the
@@ -3567,7 +3574,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // Keep one save writer for the entire child-host lifetime. The parent
     // selects an original checkpoint before launching the only gameplay
     // runtime; no second host may race its World or replay its inputs.
-    let quick_source = if campaign.is_none() && !custom_fleet {
+    let quick_source = if campaign.is_none() && !generated_game {
         game_source.as_ref()
     } else { None };
     let _quick_writer = if quick_source.map(|source|
@@ -3600,8 +3607,42 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
                 .ok_or_else(|| invalid("generated multiplayer fleet has no native recovery"))?;
             save_native_quick_battle_start(&output, &start)?;
             (source, output)
+        } else if let Some(model) = trained_model {
+            use bees_host::presentation::{BattleMenuRow, select_library};
+            if tokens.len() != 1 {
+                return Err(invalid(
+                    "trained-policy multiplayer challenge requires one authenticated player side",
+                ).into());
+            }
+            let side: i32 = tokens.keys().next()
+                .expect("verified nonempty side token map").parse()?;
+            let levels = model.playable_levels()?;
+            if levels.is_empty() {
+                return Err(invalid("trained multiplayer challenge has no playable Levels").into());
+            }
+            let level_index = if levels.len() > 1 {
+                let titles = levels.iter().enumerate().map(|(index, (world, level))|
+                    format!("Scenario {}  |  Level {}  |  World {}",
+                        index + 1, level, world)
+                ).collect::<Vec<_>>();
+                let rows = titles.iter().map(|title| BattleMenuRow {
+                    title, status: "  [Trained source Level]", unlocked: true,
+                }).collect::<Vec<_>>();
+                let mut selected = 0_usize;
+                let Some(level) = select_library(&rows, &mut selected, false)?
+                    else { return Ok(()) };
+                level
+            } else { 0 };
+            let output = new_library_battle_output(save_root, &settings.game_id)?;
+            let parent = output.parent().ok_or_else(||
+                invalid("hosted trained game has no archive directory"))?;
+            let source = model.archive_challenge(parent, side, level_index)?;
+            let start = QuickBattleStart::capture(&source, true)?
+                .ok_or_else(|| invalid("hosted trained game has no native recovery"))?;
+            save_native_quick_battle_start(&output, &start)?;
+            (source, output)
         } else {
-            let source = game_source.expect("validated static or trained multiplayer source");
+            let source = game_source.expect("validated static multiplayer source");
             let output = select_library_quick_battle_output(
                 save_root, &settings.game_id, &source, true,
             )?;
