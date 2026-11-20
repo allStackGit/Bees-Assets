@@ -68,9 +68,10 @@ impl PolicyCapture {
                 "invalid native policy capture checkpoint"));
         }
         let mut file = File::open(path)?;
-        if file.metadata()?.len() != saved.bytes {
+        let length = file.metadata()?.len();
+        if length < saved.bytes {
             return Err(io::Error::new(io::ErrorKind::InvalidData,
-                "native policy capture size differs from its host checkpoint"));
+                "native policy capture is shorter than its committed host checkpoint"));
         }
         let mut header = [0_u8; 40];
         file.read_exact(&mut header)?;
@@ -81,14 +82,28 @@ impl PolicyCapture {
         let mut digest = Sha256::new();
         digest.update(header);
         let mut buffer = [0_u8; 64 * 1024];
-        loop {
-            let size = file.read(&mut buffer)?;
-            if size == 0 { break; }
+        let mut remaining = saved.bytes - header.len() as u64;
+        while remaining > 0 {
+            let limit = remaining.min(64 * 1024) as usize;
+            let size = file.read(&mut buffer[..limit])?;
+            if size == 0 {
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof,
+                    "native policy capture checkpoint prefix was truncated"));
+            }
             digest.update(&buffer[..size]);
+            remaining -= size as u64;
         }
         if <[u8; 32]>::from(digest.clone().finalize()) != saved.sha256 {
             return Err(io::Error::new(io::ErrorKind::InvalidData,
                 "native policy capture differs from its committed host checkpoint"));
+        }
+        // The corresponding durable connection was verified before either
+        // journal is opened. The restored World will regenerate these later
+        // action frames from the saved resident model sampler.
+        if length > saved.bytes {
+            let trimmed = OpenOptions::new().write(true).open(path)?;
+            trimmed.set_len(saved.bytes)?;
+            trimmed.sync_all()?;
         }
         Ok(Self {
             writer: CaptureWriter {
