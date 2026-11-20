@@ -1,7 +1,7 @@
 //! Source Ship.SetCombatTimer / CombatTimer, shared by every native weapon.
 use super::*;
 
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativeCombatActivity {
     pub enabled: bool,
     pub window_seconds: f32,

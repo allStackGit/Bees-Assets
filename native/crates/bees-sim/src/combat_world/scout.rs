@@ -17,7 +17,7 @@ pub const SCOUT_TYPE: u8 = 18;
 /// Level-supplied real prefab metadata. ship-colliders.json intentionally
 /// has no health or movement stats; never invent those from the hull.
 /// A None side cap is ordinary campaign/Free Play semantics.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ScoutBeaconSpec {
     pub combat_activity: Option<NativeCombatActivity>,
     pub beacon_asset: ShipAsset,
@@ -32,7 +32,7 @@ pub struct ScoutBeaconSpec {
 }
 
 /// Actual prefab inputs for newly created Beacons, independent of presentation.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativeBeaconTargetSource {
     pub front_offset: f32,
     pub ship_type_letter: u8,

@@ -53,7 +53,7 @@ const SHIP_SPRITE_SIZES: [Vec2; SHIP_TYPE_COUNT] = [
     Vec2::new(32.0, 32.0), // 23: HumanTarget (256x256 pixels)
 ];
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ShipAsset {
     pub name: String,
     pub ship_type: u8,

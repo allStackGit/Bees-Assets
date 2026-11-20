@@ -187,7 +187,7 @@ impl CollisionMatrix {
 /// Shared authored ship collider. Offset and dimensions are imported from
 /// the actual Entity.Collider reference, not arbitrary nearby vision/range
 /// sensor colliders in Unity prefabs.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ShipShape {
     Polygon(Arc<[Vec2]>),
     Circle { offset: Vec2, radius: f32 },

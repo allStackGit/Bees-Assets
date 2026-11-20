@@ -764,6 +764,9 @@ struct EnemyShipContact {
 struct CombatWorldSpawnConfigurationCheckpoint {
     full_asteroid_stage: Option<FullAsteroidStageSource>,
     fragments: Option<FragmentSource>,
+    // Source prefab shapes and movement/health settings for future Beacons.
+    // Stored only at the recovery boundary, never copied per physics step.
+    scout_beacon_specs: HashMap<i64, ScoutBeaconSpec>,
 }
 
 #[derive(PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1565,12 +1568,13 @@ impl CombatWorld {
                 piece_prefabs: source.palette.piece_prefabs().to_vec(),
                 settings: source.settings,
             }),
+            scout_beacon_specs: self.scout_beacon_specs.clone(),
         }
     }
 
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 13,
+            schema_version: 14,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1682,7 +1686,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 13 {
+        if snapshot.schema_version != 14 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         if snapshot.source_spawn_configuration != self.source_spawn_configuration_checkpoint() {
