@@ -251,6 +251,13 @@ function runningService() {
     try{return exec('systemctl',['--user','is-active',SERVICE])==='active';}
     catch{return false;}
 }
+function shouldRunService() {
+    if(process.platform==='win32')
+        return /START_TYPE\s*:\s*2\s+AUTO_START/.test(
+            exec('sc.exe',['qc',SERVICE]));
+    try{return exec('systemctl',['--user','is-enabled',SERVICE])==='enabled';}
+    catch{return false;}
+}
 function awaitWindowsState(wanted) {
     // SCM stop/start requests are asynchronous, unlike systemctl.
     for(let count=0;count<60;count++) {
@@ -401,20 +408,21 @@ async function apply(root,envFile,previous,changes) {
     const pythonPaths=preparePythonRuntimes(root,changes);
     if(pythonPaths.courier)entries.EXPERIMENT_HUB_COURIER_PYTHON=pythonPaths.courier;
     if(pythonPaths.tinybrains)entries.EXPERIMENT_HUB_TINYBRAINS_PYTHON=pythonPaths.tinybrains;
-    let rollbackService=null,original=null,wasRunning=false;
+    let rollbackService=null,original=null,wasRunning=false,shouldStart=false;
     try {
         wasRunning=runningService();
+        shouldStart=wasRunning||shouldRunService();
         if(wasRunning)stopService();
         if(hasWorker)rollbackService=configureService(root,
             path.join(changes.worker,'Training'),nativeServiceBinary);
         original=updateEnv(envFile,entries);
-        if(wasRunning)startService();
-        if(wasRunning&&!runningService())throw Error('Updated agent did not restart.');
+        if(shouldStart)startService();
+        if(shouldStart&&!runningService())throw Error('Updated agent did not restart.');
     }catch(error) {
         try {
             if(original!==null)save(envFile,original);
             if(rollbackService)rollbackService();
-            if(wasRunning&&!runningService())startService();
+            if(shouldStart&&!runningService())startService();
         }catch(rollbackError) {
             throw Error('Activation failed: '+error.message+
                 '; rollback requires inspection: '+rollbackError.message);
