@@ -15,6 +15,8 @@ const {syncNativeBundles,syncNativeModels}=
     require('./experiment_hub_native_bundle_transfer');
 const {MAX_BODY_BYTES}=require('./experiment_hub_agent_listener');
 const {request: resourceRequest}=require('./experiment_hub_resources');
+const {control:controlNativeEvaluatorService}=
+    require('./experiment_hub_evaluator_control');
 
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const TOKEN = /^[0-9a-f]{64}$/;
@@ -189,7 +191,8 @@ function observedOffers(offers,observation) {
 
 function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
     executionReports=[],advertisement={},gpuQualificationReports=[],
-    requestExecutionOrders=true,closeAgentSession=false) {
+    requestExecutionOrders=true,closeAgentSession=false,
+    evaluatorServiceReport=null) {
     if(typeof requestExecutionOrders!=='boolean')
         return Promise.reject(Error('Native instruction request preference must be boolean.'));
     if(typeof closeAgentSession!=='boolean'||
@@ -213,6 +216,9 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         close_agent_session:closeAgentSession,
         execution_reports:executionReports,
         gpu_qualification_reports:gpuQualificationReports,
+        ...(evaluatorServiceReport?{
+            evaluator_service_report:evaluatorServiceReport,
+        }:{}),
         local_executor:advertisement.local_executor===true,
         installed_projects:advertisement.installed_projects||[],
         evaluation_suites:advertisement.evaluation_suites||{},
@@ -310,7 +316,8 @@ async function main() {
         instance_id:crypto.randomUUID(),
     };
     let active=false,executingNative=false,busyHeartbeat=null,
-        last='initial',receipts=[],pendingReports=[],pendingGpuReports=[];
+        last='initial',receipts=[],pendingReports=[],pendingGpuReports=[],
+        pendingEvaluatorReport=null;
     const artifactCache=new Map();
     let artifactSync=null;
     const collectArtifacts=()=>{
@@ -342,11 +349,13 @@ async function main() {
         active=true;
         try{
             const response=await sendHeartbeat(url,id,token,receipts,
-                pendingReports,advertisement,pendingGpuReports);
+                pendingReports,advertisement,pendingGpuReports,
+                true,false,pendingEvaluatorReport);
             // The coordinator accepted these reports. Any subsequent agent
             // crash is reconciled using the native service journal.
             pendingReports=[];
             pendingGpuReports=[];
+            pendingEvaluatorReport=null;
             // A corrupt advisory offer must not prevent this worker from
             // executing an independent native Stop or Inspect instruction.
             // Reject all lease receipts for this poll, but keep native
@@ -406,6 +415,31 @@ async function main() {
                         setTimeout(collectArtifacts,0);
                 }
             }
+            const command=response.evaluator_service_command;
+            if(command!=null) {
+                if(!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(
+                        String(command.command_id||''))||
+                    !['start','stop','inspect'].includes(command.action)||
+                    !executor?.projects.includes('bees_native'))
+                    throw Error('Unrecognized native evaluator control for this machine.');
+                executingNative=true;
+                try {
+                    let state='failed',diagnostic=null;
+                    try {
+                        state=await controlNativeEvaluatorService(command,id);
+                    }catch(error) {
+                        diagnostic=String(error.message||error).slice(0,180);
+                    }
+                    pendingEvaluatorReport={
+                        command_id:command.command_id,action:command.action,
+                        state,...(diagnostic?{diagnostic}:{}),
+                    };
+                }finally {
+                    executingNative=false;
+                    if(busyHeartbeat)await busyHeartbeat;
+                }
+                if(expedite)setTimeout(()=>poll(true),0);
+            }
             if(last!=='connected')
                 console.log('[experiment-hub-agent] connected ('+id+
                     (executor
@@ -442,7 +476,7 @@ async function main() {
                 // still tells the coordinator that this process will exit:
                 // it must not keep this instance connected for another TTL.
                 await sendHeartbeat(url,id,token,receipts,pendingReports,
-                    advertisement,pendingGpuReports,false,true);
+                    advertisement,pendingGpuReports,false,true,pendingEvaluatorReport);
             }catch(error) {
                 console.error('[experiment-hub-agent] Final sign-off failed: '+error.message);
                 process.exitCode=1;
