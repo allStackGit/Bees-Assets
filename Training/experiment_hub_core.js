@@ -2167,10 +2167,10 @@ class ExperimentHub {
             }
             return machine;
         });
-        snapshot.machine_connection_events=copy(snapshot.machine_connection_events||[]);
+        snapshot.machine_connection_events=copy((snapshot.machine_connection_events||[]).slice(-100));
         snapshot.machine_software=copy(snapshot.machine_software||{});
         snapshot.machine_active_software=copy(snapshot.machine_active_software||{});
-        snapshot.machine_software_events=copy(snapshot.machine_software_events||[]);
+        snapshot.machine_software_events=copy((snapshot.machine_software_events||[]).slice(-100));
         snapshot.machine_update_policies=copy(snapshot.machine_update_policies||{});
         snapshot.machine_connectivity=copy(snapshot.machine_connectivity||{});
         snapshot.jobs = snapshot.jobs.map(job=>{
