@@ -326,8 +326,14 @@ def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot,
                 raise ValueError(f"missing committed round {number} before a later attempt")
             next_attempt = max((index for index, _ in candidates), default=0) + 1
             break
-        expected_source = (selected_curriculum_run(base_run, curriculum, number)[0]["sha256"]
-                           if curriculum is not None else None)
+        # Source identity is part of every optimizer round, not only
+        # curriculum transitions. Reject a different native Level even
+        # when the model/manifest checkpoint lineage happens to match.
+        expected_source = (
+            selected_curriculum_run(base_run, curriculum, number)[0]["sha256"]
+            if curriculum is not None else
+            base_run["sha256"] if base_run is not None else None
+        )
         record, manifest, checkpoint = verify_round(
             valid[0], manifest_sha, checkpoint_sha, learner_slot,
             scheduled_opponent_slot(self_play, number), expected_source,
@@ -1817,8 +1823,7 @@ def main():
             check_native_input_dependencies(recipe)
             record, next_manifest, next_checkpoint = verify_round(
                 directory, file_sha256(next_manifest), file_sha256(next_checkpoint),
-                args.learner_slot, refreshing,
-                stage_run["sha256"] if curriculum is not None else None,
+                args.learner_slot, refreshing, stage_run["sha256"],
             )
             completed.append((directory, record))
             latest_playable = publish_latest_playable(
