@@ -461,7 +461,7 @@ impl NativePolicyOnlyMetadata {
     /// duplicate physical health or inferred command result.
     pub fn source_ledger_checkpoint(&self) -> NativePolicySourceLedgerCheckpoint {
         NativePolicySourceLedgerCheckpoint {
-            schema_version: 3,
+            schema_version: 4,
             fleet: self.fleet.checkpoint(),
             authored_ships: self.authored_ships.clone(),
             effective_vision: self.effective_vision.clone(),
@@ -493,7 +493,7 @@ impl NativePolicyOnlyMetadata {
         &self, saved: NativePolicySourceLedgerCheckpoint,
     ) -> Result<NativePolicySourceLedgerPrepared, NativePolicySourceLedgerRestoreError> {
         use NativePolicySourceLedgerRestoreError as Error;
-        if saved.schema_version != 3 {
+        if saved.schema_version != 4 {
             return Err(Error::InvalidVersion);
         }
         if saved.exploration.len() != self.sides.len() ||
@@ -555,11 +555,17 @@ impl NativePolicyOnlyMetadata {
         {
             return Err(Error::InvalidPolicyAgents);
         }
+        let (player, hivemind_squads) = saved.player.prepare_restore(
+            &self.player, &self.hivemind_squads,
+        )?;
         let known_queues = self.scripted_queues.iter().map(|queue|
             queue.owner
         ).collect::<HashSet<_>>();
         if saved.scripted_queues.iter().any(|queue|
-            !queue.valid_recovery() || !known_queues.contains(&queue.owner)
+            !queue.valid_recovery() ||
+            (!known_queues.contains(&queue.owner) &&
+                (!player.squads.contains_key(&queue.owner) ||
+                    !queue.valid_queen_minion_recovery()))
         ) || {
             let mut unique = HashSet::new();
             saved.scripted_queues.iter().any(|queue|
@@ -591,9 +597,6 @@ impl NativePolicyOnlyMetadata {
         {
             return Err(Error::InvalidReinforcementQueue);
         }
-        let (player, hivemind_squads) = saved.player.prepare_restore(
-            &self.player, &self.hivemind_squads,
-        )?;
         let fleet = self.fleet.prepare_restore(saved.fleet).map_err(Error::Fleet)?;
         if saved.authored_ships.keys().any(|id| fleet.get(*id).is_none()) {
             return Err(Error::InvalidPolicyAgents);

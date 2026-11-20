@@ -291,6 +291,16 @@ impl NativeScriptedQueueState {
         !(self.on_deployment && self.wait_for_entry) &&
         self.ready_tick < u64::MAX
     }
+
+    /// Only the source Queen child admission path appends queues after
+    /// Level setup. It uses a fixed BombingNearest script; do not accept
+    /// arbitrary restored commands as an invented dynamic mission.
+    pub(super) fn valid_queen_minion_recovery(&self) -> bool {
+        matches!(self.orders.as_slice(), [NativeScriptedOrder::BombingNearest]) &&
+        self.cursor <= 1 && self.repeat && self.ready_tick == 1 &&
+        !self.on_deployment && !self.wait_for_entry &&
+        self.required_event.is_none() && self.event_armed && self.claimed
+    }
 }
 
 impl NativePolicyOnlyMetadata {
