@@ -155,6 +155,9 @@ if($Command -eq 'update' -and -not (Test-Path -LiteralPath $EnvFile)){
     throw 'No installed Hub agent; run -Command install first.'
 }
 $existing=Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if($Command -eq 'install' -and $existing){
+    throw 'A Hub agent service already exists. Do not enroll a second agent on the same machine.'
+}
 if($Command -eq 'update' -and $existing -and $existing.Status -eq 'Running'){
     throw 'A running Hub agent may own live jobs. Stop the jobs through the Hub before updating and restarting.'
 }
@@ -165,6 +168,9 @@ if($Command -eq 'install'){
     Ensure-Winget 'dotnet.exe' 'Microsoft.DotNet.SDK.8'
     Ensure-Winget 'py.exe' 'Python.Python.3.11'
     Ensure-Winget 'tailscale.exe' 'Tailscale.Tailscale'
+    if(-not (Get-Command ssh.exe -ErrorAction SilentlyContinue)){
+        Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
+    }
 }
 foreach($tool in @('git.exe','node.exe','dotnet.exe','ssh.exe','ssh-keygen.exe','ssh-keyscan.exe')){
     $null=Tool $tool
@@ -294,7 +300,8 @@ if($Command -eq 'install'){
     $tailscale=if(Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe"){
         "$env:ProgramFiles\Tailscale\tailscale.exe"
     }else{Tool 'tailscale.exe'}
-    $tailnetIp=(& $tailscale ip -4 | Select-Object -First 1).Trim()
+    $ipLines=@(& $tailscale ip -4 2>$null)
+    $tailnetIp=if($ipLines.Count){([string]$ipLines[0]).Trim()}else{''}
     if($tailnetIp -notmatch '^100\.'){
         throw 'Sign Exeter into Tailscale and rerun this installer.'
     }
