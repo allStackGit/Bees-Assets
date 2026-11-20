@@ -11,6 +11,8 @@ import os
 import re
 from pathlib import Path
 
+from native_training_artifacts import native_headless_environment
+
 
 GPU_MASK_ENVIRONMENTS = (
     "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES",
@@ -175,7 +177,7 @@ def rollout_worker_environment(
     leased_gpu_inference: bool = False,
     leased_gpu_count: int = 1,
 ) -> dict[str, str] | None:
-    env = os.environ.copy()
+    env = native_headless_environment()
     # Never inherit an unrecorded developer override into a measured
     # training round. Only the frozen allocation selects model placement.
     env.pop("BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE", None)
