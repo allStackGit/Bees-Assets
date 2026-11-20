@@ -1576,7 +1576,15 @@ class ExperimentHub {
     snapshot() {
         const snapshot = copy(this.state);
         snapshot.evaluator_services=(snapshot.evaluator_services||[]).map(
-            ({agent_instance_id,...item})=>item);
+            ({agent_instance_id,...item})=>({
+                ...item,
+                // A coordinator/agent restart cannot replay a prior
+                // machine-owned service command. The dashboard may request
+                // a NEW explicit command once its fresh agent reconnects.
+                pending_fresh:item.status==='pending'&&
+                    this.agentReports.get(item.machine_id)?.instance_id===
+                        agent_instance_id,
+            }));
         snapshot.hub_observation_archive_issue=this.observations.error;
         snapshot.native_round_plans=(snapshot.native_round_plans||[]).map(plan=>{
             const {agent_instances,...display}=plan;
