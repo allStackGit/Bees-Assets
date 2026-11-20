@@ -5956,9 +5956,10 @@ fn run_battle(
                 break;
             }
         }
-        // This presentation gate uses the original source Level cue:
-        // never add another story clock or alter the shared simulation.
-        let remote_briefing = if !play && remote.is_some() {
+        // Both graphical and dedicated LAN hosts must withhold orders
+        // until the original campaign briefing has finished. Only a
+        // dedicated host needs remote acknowledgments to advance time.
+        let remote_briefing = if remote.is_some() {
             host.render_world(0).filter(|view|view.tick==0 &&
                 view.terminal_result.is_none()).and_then(|view|
                 view.campaign_dialogue
@@ -5976,7 +5977,7 @@ fn run_battle(
             let live_held_controllers: Vec<_> =
                 world.state.live_held_fire_controllers().collect();
             for order in server.poll(world_id, revision, &live_held_controllers,
-                remote_briefing) {
+                if play { None } else { remote_briefing }) {
                 // A story briefing blocks physical orders from both player
                 // sides until its authored viewer releases the real Level.
                 // End still frees an existing peer-owned held-fire gesture.
@@ -6025,6 +6026,14 @@ fn run_battle(
                         failed_window = Some(error);
                         break 'battle;
                     }
+                }
+            }
+            // The local window may still be displaying its own briefing;
+            // deliver the initial paused state to newly authenticated LAN
+            // peers without advancing physics to make a snapshot.
+            if remote_briefing.is_some() {
+                if let Some(view) = host.render_world(0) {
+                    server.broadcast_initial_if_pending(&view, client_bounds[0]);
                 }
             }
         }
@@ -6119,15 +6128,12 @@ fn run_battle(
         // briefing, keep polling its normal nonblocking network transport
         // but do not step a shadow World or change the fixed-step clock.
         if let (Some(server),Some((owner,sequence))) =
-            (remote.as_mut(),remote_briefing)
+            (remote.as_mut().filter(|_| !play),remote_briefing)
         {
             let world=host.simulation().world(0).expect("hosted briefing Level");
             if server.briefing_waiting(world.id,world.episode_revision(),
                 owner,sequence)
             {
-                if let Some(view)=host.render_world(0) {
-                    server.broadcast_initial_if_pending(&view,client_bounds[0]);
-                }
                 std::thread::sleep(std::time::Duration::from_millis(16));
                 remote_deadline=Instant::now();
                 continue 'battle;
