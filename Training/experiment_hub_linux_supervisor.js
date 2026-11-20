@@ -176,12 +176,20 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         throw Error('Unknown locally installed native stop policy.');
     const predecessor=job.continuation_of_job_id||null;
     const replaced=job.collector_replacement_of_job_id||null;
+    const oldOptimizer=job.optimizer_restart_of_job_id||null;
     const lineageRoot=job.artifact_lineage_root_id||job.id;
     if(replaced!==null&&(
         job.project_id!=='bees_native_collect'||predecessor!==null||
         !UUID.test(String(replaced))||replaced===job.id||
         !UUID.test(String(lineageRoot))||lineageRoot===job.id))
         throw Error('Native collector replacement requires a separate authorized job and existing artifact root.');
+    if(oldOptimizer!==null&&(
+        !['bees_native','bees_native_optimizer_worker'].includes(job.project_id)||
+        !job.frozen_parameters?.optimizer_group||
+        !UUID.test(String(oldOptimizer))||oldOptimizer===job.id||
+        !UUID.test(String(job.optimizer_restart_of_bundle_id||''))||
+        !job.resource_bundle||predecessor!==null||replaced!==null))
+        throw Error('Synchronized optimizer restart requires a separately leased new rank and an exact old group.');
     if(!UUID.test(String(lineageRoot))||
         (predecessor!==null&&(!UUID.test(String(predecessor))||
             predecessor===job.id||lineageRoot===job.id))||
@@ -196,6 +204,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         continuation_of_job_id:predecessor,
         collector_replacement_of_job_id:replaced,
+        optimizer_restart_of_job_id:oldOptimizer,
         artifact_lineage_root_id:lineageRoot,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
@@ -827,6 +836,19 @@ class LinuxSupervisor {
                 !(physical.state==='failed'||physical.unit_exists===false))
                 throw Error('Original native collector unit is still active or cannot be proven inactive.');
         }
+        if(job.optimizer_restart_of_job_id) {
+            const prior=this.state.records.find(r=>
+                r.job_id===job.optimizer_restart_of_job_id);
+            if(!prior||prior.project_id!==job.project_id||
+                !['failed','stopped','finished'].includes(prior.state)||
+                prior.job_id===job.id)
+                throw Error('New optimizer rank has no original terminal machine-local owner.');
+            const physical=await this.inspectUnit(prior);
+            if(physical.active!==false||
+                !(physical.unit_exists===false||
+                  ['failed','stopped','finished'].includes(physical.state)))
+                throw Error('Previous synchronized optimizer rank is active or has unverified OS ownership.');
+        }
         if(job.continuation_of_job_id) {
             const parent=this.state.records.find(r=>
                 r.job_id===job.continuation_of_job_id);
@@ -888,6 +910,7 @@ class LinuxSupervisor {
                 {gpu_pci_addresses:selectedPci}):{}),
             continuation_of_job_id:job.continuation_of_job_id||null,
             collector_replacement_of_job_id:job.collector_replacement_of_job_id||null,
+            optimizer_restart_of_job_id:job.optimizer_restart_of_job_id||null,
             artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
             unit:unitFor(job.id),state:'launch_requested',
             cpus:invocation.cpus,ram_mb:invocation.ram_mb,
