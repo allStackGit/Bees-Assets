@@ -8,6 +8,7 @@ suite ranks completed models, not training rewards or optimizer loss.
 
 import json
 import math
+import os
 from pathlib import Path
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256
@@ -126,7 +127,12 @@ def _playable_run(source_path, selected):
     if not isinstance(python, str) or not python:
         raise ValueError("best native gameplay run requires a Python interpreter")
     if Path(python).is_absolute() or len(Path(python).parts) > 1:
-        source["python"] = str((base / python).resolve(strict=True))
+        # A virtual environment may expose its Python through a symlink.
+        # Retain that invocation path instead of selecting system Python.
+        executable = base / python
+        if not executable.is_file():
+            raise ValueError("selected native policy Python interpreter is missing")
+        source["python"] = os.path.abspath(executable)
 
     # Derive an immutable model identity while retaining the original native
     # map, command, reward and simulation contracts. Gameplay never uses a

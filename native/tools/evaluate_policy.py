@@ -70,7 +70,9 @@ def setup_config(source_path, manifest, output, physics_workers=None):
     if not isinstance(python, str) or not python:
         raise ValueError("evaluation requires native policy Python")
     if Path(python).is_absolute() or len(Path(python).parts) > 1:
-        source["python"] = resolved(source_path.parent, python)
+        # Resolve the location relative to this authored run, but preserve
+        # a virtual-environment Python symlink's launch path.
+        source["python"] = os.path.abspath(source_path.parent / python)
     source["run_id"] = f"{source['run_id']}-holdout-{uuid.uuid4().hex}"
     source["model_manifest"] = str(manifest)
     if physics_workers is not None:

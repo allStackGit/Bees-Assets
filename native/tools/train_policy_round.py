@@ -79,7 +79,9 @@ def source_config(path: Path, manifest: Path, output: Path) -> dict:
     if interpreter == "auto":
         config["python"] = "python" if os.name == "nt" else "python3"
     elif Path(interpreter).is_absolute() or len(Path(interpreter).parts) > 1:
-        config["python"] = resolved(base, interpreter)
+        # Keep venv/bin/python as the executable, not its resolved system
+        # target. Asset and model inputs still use canonical source paths.
+        config["python"] = os.path.abspath(base / interpreter)
     levels = config.get("levels")
     if not isinstance(levels, list) or not levels:
         raise ValueError("run configuration requires at least one Level")

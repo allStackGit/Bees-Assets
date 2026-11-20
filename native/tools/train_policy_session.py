@@ -1276,7 +1276,10 @@ def main():
     if not isinstance(python_value, str) or not python_value.strip():
         parser.error("native run configuration must specify its Python interpreter")
     python_path = Path(python_value)
-    round_python = (str((Path(run["path"]).parent / python_path).resolve())
+    # Keep the interpreter's invocation path: a venv's python executable
+    # may be a symlink to the system binary, and resolving the last link
+    # bypasses the venv prefix used to import PyTorch and MA-POCA.
+    round_python = (os.path.abspath(Path(run["path"]).parent / python_path)
                     if python_path.is_absolute() or len(python_path.parts) > 1
                     else python_value)
     manifest_value = args.model_manifest or config.get("model_manifest")
