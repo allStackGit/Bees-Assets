@@ -5456,7 +5456,9 @@ fn run_battle(
             "cooperative remote play requires an authored local player side; dedicated hosts must provide BEES_NATIVE_REMOTE_SIDE_TOKENS",
         ).into());
     }
-    let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(local_player_side)?;
+    let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(
+        local_player_side,!play,
+    )?;
     // Dedicated hosted campaigns have no local window to advance the
     // opening story. Their authenticated campaign owner must be able to
     // receive the briefing before the first physical tick is released.
@@ -5956,7 +5958,8 @@ fn run_battle(
         // This presentation gate uses the original source Level cue:
         // never add another story clock or alter the shared simulation.
         let remote_briefing = if !play && remote.is_some() {
-            host.render_world(0).and_then(|view|
+            host.render_world(0).filter(|view|view.tick==0 &&
+                view.terminal_result.is_none()).and_then(|view|
                 view.campaign_dialogue
                     .filter(|(_,cue)|cue.is_briefing())
                     .and_then(|(sequence,_)|
