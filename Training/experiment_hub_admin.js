@@ -17,6 +17,7 @@ const POST_ACTIONS={
     '/api/hub/machines/gpus':[200,'bindMachineGpus'],
     '/api/hub/machines/enroll':[201,'enrollMachine'],
     '/api/hub/machines/revoke':[200,'revokeMachine'],
+    '/api/hub/machines/update':[200,'configureMachineUpdate'],
     '/api/hub/leases':[201,'requestLease'],
     '/api/hub/leases/release':[200,'releaseLease'],
     '/api/hub/jobs':[201,'queueConfiguration'],
