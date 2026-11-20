@@ -1714,7 +1714,23 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     } else {
         text::draw_at(pixels,WIDTH,30,30,"Waiting for authoritative battle state",2,TEXT);
     }
-    if let Some(state)=state {draw_campaign_dialogue(pixels,state,dialogue_line);}
+    if let Some(state)=state {
+        draw_campaign_dialogue(pixels,state,dialogue_line);
+        if state["briefing_paused"]==true {
+            let is_owner=state["briefing_requires_ack"]==true;
+            let line_count=state["campaign_dialogue"]["line_count"]
+                .as_u64().unwrap_or(0);
+            let message=if is_owner && dialogue_line<(line_count as usize) {
+                "CAMPAIGN BRIEFING - complete dialogue to begin"
+            }else if is_owner {
+                "CAMPAIGN BRIEFING - waiting for other connected commanders"
+            }else {
+                "CAMPAIGN BRIEFING - waiting for the mission commander"
+            };
+            text::draw_at(pixels,WIDTH,16,HEIGHT-44,
+                text::fit(message,FIELD-32),1,[255,221,151]);
+        }
+    }
     if held_fire_active {
         text::draw_at(pixels,WIDTH,15,HEIGHT-44,
             "MANUAL FIRE - release J to stop",1,[255,221,151]);
