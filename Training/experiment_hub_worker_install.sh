@@ -341,6 +341,11 @@ Unit=bees-experiment-hub-worker-update.service
 WantedBy=timers.target
 EOF
 chmod 600 "$UPDATER_UNIT" "$UPDATER_TIMER"
+# Persist the user service manager on headless Linux worker machines;
+# otherwise neither agent nor update timer runs until an interactive login.
+if command -v loginctl >/dev/null 2>&1; then
+    sudo loginctl enable-linger "$(id -un)"
+fi
 systemctl --user daemon-reload
 systemctl --user enable --now bees-experiment-hub-worker-update.timer
 
