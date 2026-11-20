@@ -1810,6 +1810,10 @@ class ExperimentHub {
         // Heartbeats are ephemeral. After a coordinator restart, a machine is
         // not considered connected until it authenticates again.
         this.agentReports = new Map();
+        // A planned software switch can briefly replace the agent process.
+        // Pause queue automation while the new OS owner re-authenticates;
+        // unrelated unplanned disconnects still disarm for safety.
+        this.updateRecovery=new Map();
         // Receipt freshness is process-local, never inferred after restart.
         // Persisted leases remain capacity-blocking until explicitly released.
         this.leaseReceipts = new Map();
@@ -1962,6 +1966,8 @@ class ExperimentHub {
         const item={component:value.component,status:value.status,
             version:value.version,sha256:value.sha256,at:now(),
             ...(value.message?{message:value.message}:{})};
+        if(value.status==='activating')
+            this.updateRecovery.set(value.machine_id,Date.now());
         next.machine_software[value.machine_id][value.component]=item;
         next.machine_software_events=next.machine_software_events||[];
         const previous=this.state.machine_software?.[value.machine_id]?.[value.component];
@@ -2357,6 +2363,13 @@ class ExperimentHub {
                 report.native_preflight_passed!==true||report.local_executor!==true)
             {
                 const message='Machine '+id+' lost qualified agent continuity.';
+                const pending=this.updateRecovery.get(id);
+                if(pending!==undefined&&observedAt-pending<180000) {
+                    this.automation.waiting_reason=message+
+                        ' Paused for the authenticated software update and new native preflight.';
+                    return false;
+                }
+                if(pending!==undefined)this.updateRecovery.delete(id);
                 if(this.state.automation_restart?.agent_restart===true) {
                     // Keep only the separately authorized CPU recovery intent.
                     // No dispatch resumes until the existing restoration path
@@ -5169,8 +5182,12 @@ class ExperimentHub {
             if(job.assigned_machine_id===machineId)
                 this.executionTelemetry.delete(job.id);
         if((this.automation.enabled&&this.automation.machine_ids.includes(machineId))||
-            this.state.automation_restart?.machine_ids?.includes(machineId))
-            this.disarmUnsafeAutomation(Error(reason));
+            this.state.automation_restart?.machine_ids?.includes(machineId)) {
+            if(this.updateRecovery.has(machineId)) {
+                this.automation.waiting_reason=
+                    'Machine '+machineId+' is applying an authenticated update; native jobs remain owned.';
+            }else this.disarmUnsafeAutomation(Error(reason));
+        }
     }
     // The worker-only listener uses the same machine-scoped credential
     // for heartbeat and read-only evaluation scheduling. Never authorize
@@ -5556,6 +5573,14 @@ class ExperimentHub {
         this.agentReports.set(machine.id,{
             ...report,instance_id:instance||null,received_ms:received,
         });
+        if(this.updateRecovery.has(machine.id)&&
+            report.local_executor===true&&report.native_preflight_passed===true) {
+            if(this.automation.enabled&&
+                this.automation.machine_ids.includes(machine.id))
+                this.automation.agent_instances[machine.id]=instance;
+            this.updateRecovery.delete(machine.id);
+            this.automation.waiting_reason=null;
+        }
         this.recordMachineConnectivity(machine.id,'connected',received);
         // A successful heartbeat supersedes the previous receipt set for
         // this machine. Missing IDs, reduced CPU/RAM capacity, or changed GPU
