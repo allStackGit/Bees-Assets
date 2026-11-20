@@ -867,8 +867,50 @@ function nativeModelSourceBlock(snapshot,job) {
     return nativeOptimizerGroupBlock(snapshot,source);
 }
 
+// A failed collector resumes its already issued physical work order with
+// a new Hub job/lease. This is not a model checkpoint continuation: the
+// captured World belongs to the immutable collection ID and same machine.
+function collectorReplacementBlock(snapshot,job) {
+    if(!job?.collector_replacement_of_job_id)return null;
+    const parent=snapshot.jobs.find(item=>
+        item.id===job.collector_replacement_of_job_id);
+    if(job.project_id!=='bees_native_collect'||!parent||
+        parent.id===job.id||parent.project_id!==job.project_id||
+        parent.status!=='failed'||!parent.capacity_released_at||
+        !parent.dispatch_id||!parent.start_first_offered_at||
+        !parent.execution_updated_at||!parent.assigned_machine_id||
+        parent.configuration_id!==job.configuration_id||
+        parent.configuration_revision!==job.configuration_revision||
+        parent.configuration_sha256!==job.configuration_sha256||
+        JSON.stringify(parent.frozen_parameters)!==
+            JSON.stringify(job.frozen_parameters)||
+        parent.resources?.gpu_count!==job.resources?.gpu_count||
+        parent.resources?.gpu_mode!==job.resources?.gpu_mode||
+        job.continuation_machine_id!==parent.assigned_machine_id||
+        job.artifact_lineage_root_id!==(parent.artifact_lineage_root_id||parent.id)||
+        job.assigned_machine_id&&
+            job.assigned_machine_id!==parent.assigned_machine_id||
+        !snapshot.reservations.some(lease=>
+            lease.id===parent.lease_id&&lease.job_id===parent.id&&
+            lease.project_id===parent.project_id&&
+            lease.machine_id===parent.assigned_machine_id&&
+            lease.issued_by==='experiment-hub'&&
+            lease.status==='released'&&Boolean(lease.released_at))||
+        snapshot.jobs.some(other=>other.id!==job.id&&
+            other.collector_replacement_of_job_id===parent.id&&
+            other.status!=='cancelled'))
+        return 'Collector replacement requires a failed, released, same-machine physical predecessor and identical frozen work order.';
+    if(job.resources.cpus<
+        job.frozen_parameters.rollout_workers*
+        job.frozen_parameters.physics_workers)
+        return 'Replacement CPU lease cannot execute its pinned native rollout allocation.';
+    return null;
+}
+
 // Shared by planning, capacity claims, automation and native Start.
 function predecessorBlock(snapshot,job) {
+    const replacement=collectorReplacementBlock(snapshot,job);
+    if(replacement)return replacement;
     if(job.continuation_of_job_id&&job.after_job_id)
         return 'A job cannot both continue a checkpoint and follow an independent predecessor.';
     if(job.continuation_of_job_id) {
@@ -2459,6 +2501,10 @@ class ExperimentHub {
         const host=machine||this.snapshot().machines.find(m=>m.id===machineId);
         if(!distributedRolloutHost({jobs:next.jobs,machines:this.snapshot().machines},job,host))
             throw Error('Remote collector must be placed on its learner-approved endpoint and distinct host.');
+        if(job.collector_replacement_of_job_id&&
+            (machineId!==job.continuation_machine_id||
+             collectorReplacementBlock(next,job)))
+            throw Error('Replacement native collector cannot move from its original inactive owner.');
         const lease=this.offerIn(next,job.project_id,machineId,
             resourceRequest(job.resources),job.id,host);
         job.lease_id=lease.id;
@@ -6214,6 +6260,15 @@ class ExperimentHub {
         const afterId=value.after_job_id==null?null:value.after_job_id;
         const sourceId=value.model_source_job_id==null
             ?null:value.model_source_job_id;
+        const replacementId=value.collector_replacement_of_job_id??null;
+        if(replacementId!==null&&
+            (project.id!=='bees_native_collect'||
+             value.confirm_collector_replacement!==true||
+             !UUID.test(String(replacementId))||
+             ancestorId!==null||afterId!==null))
+            throw Error('Explicitly approve a failed native collector replacement with no checkpoint or stage dependency.');
+        if(replacementId===null&&value.confirm_collector_replacement!==undefined)
+            throw Error('Collector replacement approval requires a selected failed native job.');
         if(sourceId!==null&&(
             !UUID.test(String(sourceId))||
             !['bees_native','bees_native_collect','bees_native_optimizer_worker']
@@ -6249,6 +6304,25 @@ class ExperimentHub {
             throw Error('TinyBrains checkpoint imports initialize a new lineage only. Select a continuation configuration without import_checkpoint.');
         let parent=null,dependency=null,waitingPredecessor=false;
         let dependencyReady=false;
+        let failedCollector=null;
+        if(replacementId!==null) {
+            failedCollector=next.jobs.find(job=>job.id===replacementId);
+            if(!failedCollector||
+                failedCollector.project_id!=='bees_native_collect'||
+                failedCollector.configuration_id!==selected.id||
+                failedCollector.configuration_revision!==selected.revision||
+                JSON.stringify(failedCollector.frozen_parameters)!==JSON.stringify(frozen)||
+                failedCollector.status!=='failed'||
+                !failedCollector.capacity_released_at||
+                !failedCollector.assigned_machine_id||
+                !failedCollector.dispatch_id||
+                !failedCollector.execution_updated_at||
+                resources.gpu_count!==failedCollector.resources.gpu_count||
+                resources.gpu_mode!==failedCollector.resources.gpu_mode||
+                next.jobs.some(job=>job.collector_replacement_of_job_id===replacementId&&
+                    job.status!=='cancelled'))
+                throw Error('Only a released, failed collector with the same immutable configuration can be replaced.');
+        }
         if(ancestorId!==null) {
             if(!['tinybrains','courier','bees_native'].includes(project.id))
                 throw Error('Checkpoint continuation requires a verified supported learner adapter.');
@@ -6336,7 +6410,13 @@ class ExperimentHub {
             after_job_id:dependency?.id||null,
             predecessor_ready_at:dependencyReady?now():null,
             artifact_lineage_root_id:parent
-                ?(parent.artifact_lineage_root_id||parent.id):jobId,
+                ?(parent.artifact_lineage_root_id||parent.id)
+                :failedCollector
+                    ?(failedCollector.artifact_lineage_root_id||failedCollector.id)
+                    :jobId,
+            ...(failedCollector?{
+                collector_replacement_of_job_id:failedCollector.id,
+            }:{}),
             ...(sourceId?{
                 model_source_job_id:sourceId,
                 expected_parent_model_sha256:next.jobs.find(
@@ -6344,7 +6424,8 @@ class ExperimentHub {
             }:{}),
             continuation_machine_id:parent
                 ?(parent.continuation_machine_id||
-                    (parent.dispatch_id?parent.assigned_machine_id:null)):null,
+                    (parent.dispatch_id?parent.assigned_machine_id:null))
+                :failedCollector?failedCollector.assigned_machine_id:null,
             configuration_id:selected.id,
             configuration_revision:selected.revision,
             configuration_name:selected.name,
@@ -6364,6 +6445,8 @@ class ExperimentHub {
         };
         const modelSourceBlock=nativeModelSourceBlock(next,job);
         if(modelSourceBlock)throw Error(modelSourceBlock);
+        const replacementBlock=collectorReplacementBlock(next,job);
+        if(replacementBlock)throw Error(replacementBlock);
         next.jobs.push(job);
         return job;
     }
