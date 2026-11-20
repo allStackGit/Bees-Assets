@@ -6084,7 +6084,7 @@ fn run_battle(
                 world.state.live_held_fire_controllers().collect();
             let orders = remote.as_mut().expect("checked remote listener").poll(
                 world_id, revision, &live_held_controllers,
-                if play { None } else { remote_briefing },
+                if view { None } else { remote_briefing },
             );
             for order in orders {
                 // A story briefing blocks physical orders from both player
