@@ -5335,6 +5335,85 @@ class ExperimentHub {
         }
     }
 
+    // Restart an incomplete synchronized PPO collective as a NEW complete
+    // Hub group. No old torchrun process, GPU lease, checkpoint, artifact
+    // directory or optimizer state is reused. The source model and accepted
+    // physical gameplay remain pinned to the exact prior inputs.
+    restartNativeOptimizerBundle(value) {
+        if(!object(value)||value.confirm_restart!==true||
+            !UUID.test(String(value.bundle_id||''))||
+            !Array.isArray(value.expected_job_ids)||
+            value.expected_job_ids.length<2||value.expected_job_ids.length>8||
+            value.expected_job_ids.some(id=>!UUID.test(String(id)))||
+            Object.keys(value).some(key=>![
+                'bundle_id','expected_job_ids','confirm_restart',
+            ].includes(key)))
+            throw Error('Confirm the exact failed synchronized native optimizer group.');
+        const snapshot=this.snapshot();
+        const previous=snapshot.jobs.filter(job=>
+            job.resource_bundle?.id===value.bundle_id)
+            .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+        if(previous.length!==value.expected_job_ids.length||
+            previous.some((job,index)=>job.id!==value.expected_job_ids[index]||
+                job.resource_bundle?.index!==index+1||
+                job.resource_bundle?.size!==previous.length||
+                job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
+                job.frozen_parameters?.optimizer_group!==true||
+                !['finished','failed','stopped'].includes(job.status)||
+                !job.capacity_released_at||!job.dispatch_id||
+                !job.start_first_offered_at||!job.execution_updated_at||
+                !snapshot.reservations.some(lease=>
+                    lease.id===job.lease_id&&lease.job_id===job.id&&
+                    lease.project_id===job.project_id&&
+                    lease.machine_id===job.assigned_machine_id&&
+                    lease.issued_by==='experiment-hub'&&
+                    lease.status==='released'&&Boolean(lease.released_at)))||
+            !previous.some(job=>['failed','stopped'].includes(job.status))||
+            !nativeOptimizerGroupBlock(snapshot,previous[0]))
+            throw Error('A full synchronized optimizer restart requires every original rank to terminate, release its lease, and leave an incomplete group.');
+        if(snapshot.jobs.some(job=>
+            job.optimizer_restart_of_bundle_id===value.bundle_id&&
+            job.status!=='cancelled'))
+            throw Error('This failed optimizer group already has an unresolved restarted owner group.');
+        const original=previous[0];
+        const expectedPins=original.frozen_parameters.rollout_bundles;
+        if(!Array.isArray(expectedPins)||!expectedPins.length||
+            !SHA256.test(String(original.frozen_parameters.optimizer_inputs_sha256||'')))
+            throw Error('Failed optimizer group lacks exact source gameplay and optimizer pins.');
+        const candidateIds=new Map();
+        for(const job of snapshot.jobs.filter(job=>
+            job.project_id==='bees_native_collect'&&job.status==='finished'&&
+            job.capacity_released_at)) {
+            let pin;
+            try { pin=verifiedNativeCollectorPin(this,job.id).pin; }
+            catch { continue; }
+            const key=JSON.stringify(pin);
+            if(!candidateIds.has(key))candidateIds.set(key,[]);
+            candidateIds.get(key).push(job.id);
+        }
+        const collectorIds=expectedPins.map(pin=>{
+            const matches=candidateIds.get(JSON.stringify(pin))||[];
+            if(matches.length!==1)
+                throw Error('Original native optimizer collector pin cannot be recovered uniquely from authenticated artifacts.');
+            return matches[0];
+        });
+        const members=previous.map(job=>({
+            configuration_id:job.configuration_id,
+            expected_revision:job.configuration_revision,
+            machine_id:job.assigned_machine_id,
+            resources:copy(job.resources),
+            ...(job.metric_selection?{metric_selection:copy(job.metric_selection)}:{}),
+        }));
+        return this.queueResourceBundle({
+            confirm_queue:true,members,
+            ...(original.model_source_job_id?
+                {model_source_job_id:original.model_source_job_id}:{}),
+            collector_job_ids:collectorIds,
+            restart_optimizer_bundle_id:value.bundle_id,
+            confirm_optimizer_restart:true,
+        });
+    }
+
     // Atomically reserve fixed resources for independently executable jobs
     // across projects and machines. This is the common *control-plane*
     // foundation for distributed workloads, not a data-plane protocol or a
@@ -5344,7 +5423,12 @@ class ExperimentHub {
         if(!object(value)||value.confirm_queue!==true||
             Object.keys(value).some(key=>
                 !['confirm_queue','members','model_source_job_id',
-                    'collector_job_ids'].includes(key))||
+                    'collector_job_ids','restart_optimizer_bundle_id',
+                    'confirm_optimizer_restart'].includes(key))||
+            (value.restart_optimizer_bundle_id===undefined
+                ?value.confirm_optimizer_restart!==undefined
+                :value.confirm_optimizer_restart!==true||
+                    !UUID.test(String(value.restart_optimizer_bundle_id)))||
             (value.model_source_job_id!==undefined&&
                 !UUID.test(String(value.model_source_job_id)))||
             (value.collector_job_ids!==undefined&&(
@@ -5392,6 +5476,21 @@ class ExperimentHub {
         }
         const machines=this.snapshot().machines;
         const next=copy(this.state);
+        const restartGroup=value.restart_optimizer_bundle_id===undefined?null:
+            next.jobs.filter(job=>
+                job.resource_bundle?.id===value.restart_optimizer_bundle_id)
+                .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+        if(restartGroup&&(
+            restartGroup.length!==value.members.length||
+            restartGroup.some((old,index)=>old.resource_bundle?.index!==index+1||
+                old.resource_bundle.size!==restartGroup.length||
+                old.status!=='finished'&&old.status!=='failed'&&old.status!=='stopped'||
+                !old.capacity_released_at||!old.dispatch_id)||
+            !restartGroup.some(old=>['failed','stopped'].includes(old.status))||
+            next.jobs.some(job=>
+                job.optimizer_restart_of_bundle_id===value.restart_optimizer_bundle_id&&
+                job.status!=='cancelled')))
+            throw Error('Original synchronized optimizer group is not terminal, released and available for one replacement.');
         const approvedRound=roundPlan
             ?(next.native_round_plans||[]).find(item=>
                 item.id===roundPlan.id&&item.status===roundPlan.status)
@@ -5507,6 +5606,26 @@ class ExperimentHub {
             // any failure abandons the draft without queued jobs or leases.
             const lease=this.claimJobIn(next,job,machine.id,machine);
             job.resource_bundle={id:bundleId,index:index+1,size:value.members.length};
+            if(restartGroup) {
+                const predecessor=restartGroup[index];
+                if(!predecessor||job.project_id!==predecessor.project_id||
+                    job.assigned_machine_id!==predecessor.assigned_machine_id||
+                    job.configuration_id!==predecessor.configuration_id||
+                    job.configuration_revision!==predecessor.configuration_revision||
+                    JSON.stringify(job.resources)!==JSON.stringify(predecessor.resources)||
+                    JSON.stringify(job.frozen_parameters)!==
+                        JSON.stringify(predecessor.frozen_parameters)||
+                    job.configuration_sha256!==predecessor.configuration_sha256||
+                    (job.model_source_job_id||null)!==
+                        (predecessor.model_source_job_id||null)||
+                    (job.expected_parent_model_sha256||null)!==
+                        (predecessor.expected_parent_model_sha256||null))
+                    throw Error('Native restart changed the pinned optimizer source, machine, GPU budget or rank.');
+                job.optimizer_restart_of_bundle_id=value.restart_optimizer_bundle_id;
+                job.optimizer_restart_of_job_id=predecessor.id;
+            }
+            if(collectors)
+                job.optimizer_source_collector_job_ids=value.collector_job_ids.slice();
             jobs.push(job);
             leases.push(lease);
         }
@@ -5559,6 +5678,29 @@ class ExperimentHub {
         if(collectors&&!(jobs[0]?.project_id==='bees_native'&&
             jobs[0].frozen_parameters?.optimizer_group===true))
             throw Error('Physical native collector pins require an authorized synchronized Bees optimizer group.');
+        if(restartGroup) {
+            const oldId=value.restart_optimizer_bundle_id;
+            const plan=(next.native_round_plans||[]).find(item=>
+                item.optimizer_bundle_id===oldId);
+            if(plan) {
+                if(!['awaiting_optimizer','needs_review'].includes(plan.status)||
+                    !Array.isArray(plan.optimizer_job_ids)||
+                    JSON.stringify(plan.optimizer_job_ids)!==
+                        JSON.stringify(restartGroup.map(job=>job.id))||
+                    plan.status==='needs_review'&&
+                        plan.restart_phase!=='awaiting_optimizer')
+                    throw Error('Original native round must be reviewed before replacing its failed GPU owner group.');
+                plan.optimizer_bundle_id=bundleId;
+                plan.optimizer_job_ids=jobs.map(job=>job.id);
+                // Reusing the existing native round reauthorization path
+                // preserves operator approval and prevents an unsolicited
+                // automatic Start from the next coordinator heartbeat.
+                plan.status='needs_review';
+                plan.restart_phase='awaiting_optimizer';
+                plan.reason='Failed synchronized PPO group replaced with new machine-owned GPU claims; reauthorize the native round before any Start.';
+                plan.updated_at=now();
+            }
+        }
         if(roundPlan) {
             const plan=(next.native_round_plans||[]).find(item=>
                 item.id===roundPlan.id&&item.status===roundPlan.status);
