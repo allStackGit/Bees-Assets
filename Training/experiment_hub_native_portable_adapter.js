@@ -198,6 +198,44 @@ function createNativeBeesPortableCollectorAdapter({
         return {receipt,stat};
     }
 
+    function verifiedLearnerDelivery(context) {
+        const completed=verifiedReceipt(context);
+        if(!completed)return false;
+        const output=jobRoot(context);
+        const target=path.join(output,'delivery-acknowledgement.json');
+        let stat;
+        try { stat=fs.lstatSync(target); }
+        catch(error) {
+            if(error.code==='ENOENT')return false;
+            throw error;
+        }
+        if(!stat.isFile()||stat.isSymbolicLink()||stat.size<1||
+            stat.size>4096||fs.realpathSync(target)!==target)
+            throw Error('Native collector learner delivery proof is not a bounded owned file.');
+        const proof=JSON.parse(fs.readFileSync(target,'utf8'));
+        const frozen=context.frozen_parameters;
+        const fields=[
+            'schema_version','kind','hub_job_id','collector_id','collection_id',
+            'source_run_contract_sha256','bundle_sha256','archive_sha256','archive_bytes',
+        ];
+        if(!proof||typeof proof!=='object'||Array.isArray(proof)||
+            Object.keys(proof).length!==fields.length||
+            fields.some(field=>!Object.hasOwn(proof,field))||
+            proof.schema_version!==1||
+            proof.kind!=='native_collector_upload_accepted'||
+            proof.hub_job_id!==context.job_id||
+            proof.collector_id!==frozen.collector_id||
+            proof.collection_id!==frozen.collection_id||
+            proof.source_run_contract_sha256!==frozen.source_run_contract_sha256||
+            !SHA.test(String(proof.bundle_sha256||''))||
+            proof.bundle_sha256!==sha256(fs.readFileSync(
+                path.join(output,'rollout-bundle.json')))||
+            !SHA.test(String(proof.archive_sha256||''))||
+            !Number.isSafeInteger(proof.archive_bytes)||proof.archive_bytes<1)
+            throw Error('Native collector learner delivery does not match the issued Hub work.');
+        return true;
+    }
+
     function committedRolloutProgress(context) {
         const frozen=context?.frozen_parameters;
         if(!frozen||!SHA.test(String(frozen.collection_id||''))||
@@ -362,7 +400,7 @@ function createNativeBeesPortableCollectorAdapter({
         // bundle publication. The learner independently verifies all
         // captured bytes before admitting the same bundle for optimization.
         completion_ready(context) {
-            return verifiedReceipt(context)!==null;
+            return verifiedLearnerDelivery(context);
         },
         readProgress(context) {
             const completed=verifiedReceipt(context);
