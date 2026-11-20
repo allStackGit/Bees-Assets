@@ -368,6 +368,9 @@ struct PeerClient {
     next_request: u64,
     authenticated: bool,
     connected: bool,
+    /// UI-only control gate, computed from the authoritative story cue
+    /// and terminal result; no independent battle simulation.
+    input_suppressed: bool,
     side: i32,
     host_session_id: Option<String>,
     expected_host_session_id: Option<String>,
@@ -409,7 +412,7 @@ impl PeerClient {
         Ok(Self {
             socket, incoming: Vec::new(), queued: VecDeque::new(),
             written: 0, queued_bytes: 0, next_request: 1,
-            authenticated: false, connected: true, side,
+            authenticated: false, connected: true, input_suppressed: false, side,
             host_session_id: None, expected_host_session_id: None,
             state: None, visual: RemoteVisual::default(),
             notice: "Authenticating with native host".to_owned(),
@@ -604,6 +607,15 @@ impl PeerClient {
     fn send_action(&mut self, action: Value, notice: String) -> Result<(), Box<dyn Error>> {
         if !self.authenticated || !self.connected {
             return Err(invalid("not connected to native host").into());
+        }
+        // The local native window withholds player commands while its
+        // authored campaign briefing is visible and after a terminal
+        // outcome. The LAN window must obey the same presentation rule.
+        // End is still allowed to release a live held-fire gesture.
+        if self.input_suppressed &&
+            !(action["kind"]=="held_fire" && action["input"]["action"]=="End")
+        {
+            return Err(invalid("orders unavailable during briefing or after battle").into());
         }
         let next = self.next_request.checked_add(1)
             .ok_or_else(|| invalid("native multiplayer request ID exhausted"))?;
@@ -1685,13 +1697,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         if !window.is_key_down(Key::J) {
             peer.held_fire_rejected = false;
         }
-        // K is a dialogue skip (not a Beacon) only when a real line was
-        // visible at the start of this input frame. Capture that edge
-        // before presentation advances its local line index.
-        let dialogue_skip_key=peer.state.as_ref().is_some_and(|state|
-            state["campaign_dialogue"]["line_count"].as_u64()
-                .is_some_and(|count|dialogue_line < count as usize)) &&
-            window.is_key_pressed(Key::K,KeyRepeat::No);
+        // A newly delivered campaign cue resets this presentation-only
+        // dialogue cursor BEFORE K's meaning is determined.
+        let mut dialogue_skip_key=false;
         if let Some(state)=peer.state.as_ref() {
             let cue=state["campaign_dialogue"]["sequence"].as_u64().map(|sequence|(
                 state["world_id"].as_u64().unwrap_or(0),
@@ -1702,9 +1710,10 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 .as_u64().unwrap_or(0).min(100) as usize;
             if count>0 {
                 // Source campaign dialogue uses K to skip and L to advance.
-                // The same K must not activate a Beacon while a briefing is
-                // visible; narrative selection is presentation-only.
-                if window.is_key_pressed(Key::K,KeyRepeat::No) {
+                // A skip must not activate a Beacon in the same frame.
+                dialogue_skip_key=dialogue_line<count &&
+                    window.is_key_pressed(Key::K,KeyRepeat::No);
+                if dialogue_skip_key {
                     dialogue_line=count;
                 } else if window.is_key_pressed(Key::L,KeyRepeat::No) ||
                     window.is_key_pressed(Key::Enter,KeyRepeat::No) {
@@ -1751,6 +1760,14 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 last_audio_snapshot=Some(key);
             }
         }
+        peer.input_suppressed=peer.state.as_ref().is_some_and(|state| {
+            !state["terminal_result"].is_null() ||
+                (state["campaign_dialogue"]["line_count"].as_u64()
+                    .is_some_and(|count|dialogue_line<count as usize) &&
+                serde_json::from_value::<CampaignCue>(
+                    state["campaign_dialogue"]["cue"].clone(),
+                ).ok().is_some_and(CampaignCue::is_briefing))
+        });
         if let Some(mut cam)=camera {
             let keys=window.get_keys_pressed(KeyRepeat::No);
             let shift=window.is_key_down(Key::LeftShift)||
