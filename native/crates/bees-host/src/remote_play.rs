@@ -237,6 +237,10 @@ pub struct NativeArchivedBattleReceipt {
     /// Player sides authenticated in the ORIGINAL committed battle, not
     /// merely sides for which the new LAN host has a credential.
     pub authorized_sides: Vec<i32>,
+    /// Old receipts predate the side list. Their original checkpoint
+    /// already binds the COMPLETE token map; only exact matching
+    /// credentials can authenticate those legacy participants.
+    pub legacy_credentials_sha256: Option<[u8; 32]>,
     pub battle_result: Value,
     pub campaign_outcome: Option<Value>,
     pub banked_minerals: Option<u64>,
@@ -485,7 +489,8 @@ impl NativeRemotePlay {
         &mut self, receipts: Vec<NativeArchivedBattleReceipt>,
     ) -> io::Result<()> {
         for receipt in receipts {
-            if receipt.authorized_sides.is_empty() ||
+            if (receipt.authorized_sides.is_empty() !=
+                    receipt.legacy_credentials_sha256.is_some()) ||
                 receipt.authorized_sides.len() > 2 ||
                 receipt.authorized_sides.iter().any(|side|
                     !(1..=2).contains(side)) ||
@@ -758,7 +763,10 @@ impl NativeRemotePlay {
                                 // World. Only a committed same-game receipt
                                 // may satisfy that session identity.
                                 let Some(receipt) = self.archived_receipts.get(original)
-                                    .filter(|receipt| receipt.authorized_sides.contains(&side))
+                                    .filter(|receipt|
+                                        receipt.authorized_sides.contains(&side) ||
+                                        receipt.legacy_credentials_sha256.is_some_and(|prior|
+                                            prior == credential_digest(&self.side_tokens)))
                                 else {
                                     peer.closed = true;
                                     break;
