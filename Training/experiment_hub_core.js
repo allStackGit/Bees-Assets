@@ -266,6 +266,8 @@ function boundedReport(value) {
     const courierSubset=value.courier_lineage_subset??false;
     const courierSharedMaps=value.courier_shared_policy_maps??0;
     const courierSharedCollector=value.courier_shared_policy_collector??false;
+    const courierPpoSettings=value.courier_remote_ppo_settings??false;
+    const courierWorkerPpoSettings=value.courier_lineage_remote_ppo_settings??false;
     const courierKey=value.courier_remote_key_fingerprint??null;
     const courierShards=value.courier_remote_max_shards??[];
     const courierWorkerEndpoint=value.courier_lineage_endpoint??null;
@@ -276,6 +278,10 @@ function boundedReport(value) {
         typeof courierSubset!=='boolean'||(courierSubset&&!courierEndpoints.length)||
         ![0,4,32,64].includes(courierSharedMaps)||(courierSharedMaps>0&&!courierSubset)||
         typeof courierSharedCollector!=='boolean'||(courierSharedCollector&&!courierWorkerEndpoint)||
+        typeof courierPpoSettings!=='boolean'||
+        (courierPpoSettings&&(!installed.includes('courier')||!courierEndpoints.length))||
+        typeof courierWorkerPpoSettings!=='boolean'||
+        (courierWorkerPpoSettings&&(!installed.includes('courier_lineage')||!courierWorkerEndpoint))||
         courierEndpoints.some(endpoint=>!rolloutEndpoint(endpoint))||
         new Set(courierEndpoints).size!==courierEndpoints.length||
         !Array.isArray(courierShards)||courierShards.length!==courierEndpoints.length||
@@ -438,6 +444,8 @@ function boundedReport(value) {
         courier_lineage_subset:courierSubset,
         courier_shared_policy_maps:courierSharedMaps,
         courier_shared_policy_collector:courierSharedCollector,
+        courier_remote_ppo_settings:courierPpoSettings,
+        courier_lineage_remote_ppo_settings:courierWorkerPpoSettings,
         courier_remote_key_fingerprint:courierKey,
         courier_remote_max_shards:courierShards.slice(),
         courier_lineage_endpoint:courierWorkerEndpoint,
@@ -1947,6 +1955,8 @@ class ExperimentHub {
                 machine.courier_lineage_subset=report.courier_lineage_subset;
                 machine.courier_shared_policy_maps=report.courier_shared_policy_maps;
                 machine.courier_shared_policy_collector=report.courier_shared_policy_collector;
+                machine.courier_remote_ppo_settings=report.courier_remote_ppo_settings;
+                machine.courier_lineage_remote_ppo_settings=report.courier_lineage_remote_ppo_settings;
                 machine.courier_remote_key_fingerprint=report.courier_remote_key_fingerprint;
                 machine.courier_remote_max_shards=report.courier_remote_max_shards.slice();
                 machine.courier_lineage_endpoint=report.courier_lineage_endpoint;
@@ -6175,6 +6185,23 @@ class ExperimentHub {
                     const budget=sidecarBudget(selection);
                     return {budget,eligible:host=>eligibleLineages(host.courier_lineage_endpoint,budget)};
                 },allowLocal));
+        }
+        // Fail before creating any learner/sidecar job or reserving capacity.
+        // Otherwise an old remote worker could ignore frozen PPO controls
+        // and the operator would only discover the mismatch at native Start.
+        const frozenOverrides=config?.parameters?.design_overrides;
+        const requiresPpoSettings=!shared&&frozenOverrides&&
+            typeof frozenOverrides==='object'&&!Array.isArray(frozenOverrides)&&
+            Object.keys(frozenOverrides).some(key=>key.startsWith('training.'));
+        if(requiresPpoSettings) {
+            if(machine?.courier_remote_ppo_settings!==true)
+                throw Error('Courier learner has not advertised authenticated remote PPO settings support. Install the updated training backend and restart its agent.');
+            for(const selection of selections) {
+                const worker=snapshot.machines.find(item=>item.id===selection.machine_id);
+                if(worker?.courier_lineage_remote_ppo_settings!==true)
+                    throw Error('Courier remote machine '+selection.machine_id+
+                        ' has not advertised PPO settings support. Update its worker backend and restart the agent.');
+            }
         }
         const remotePlan=approved.plan?.filter(item=>endpoints.includes(item.endpoint));
         const shards=remotePlan?.map(item=>item.maxShards);
