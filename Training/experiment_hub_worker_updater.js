@@ -461,18 +461,29 @@ async function main(argv=process.argv.slice(2)) {
             !['defer','override'].includes(manifest.mode))
             throw Error('Invalid authenticated Hub software manifest.');
         const installed=new Set((env.EXPERIMENT_HUB_WORKER_PROJECTS||'').split(','));
-        const plan={};let dirty=false;
+        const plan={};let dirty=false,baselineSaved=false;
         for(const [name,entry] of Object.entries(manifest.components)) {
             if(!['worker','tinybrains','courier','bees'].includes(name)||
                 (name!=='worker'&&!installed.has(name)))continue;
             validRelease(entry,name);
             const baseline=active[name]?.version||initialVersion(root,name,env);
-            if(baseline===entry.version)continue;
+            if(baseline===entry.version) {
+                if(active[name]&&active[name].sha256!==entry.sha256)
+                    throw Error('Immutable software version changed its archive hash: '+name);
+                if(!active[name]) {
+                    active[name]={version:entry.version,sha256:entry.sha256,
+                        activated_at:new Date().toISOString()};
+                    baselineSaved=true;
+                    await status(base,env,entry,'active','Initial installed version recognized.');
+                }
+                continue;
+            }
             const directory=await stage(base,env,root,name,entry);
             plan[name]={directory,entry};
             dirty=true;
             await status(base,env,entry,'staged');
         }
+        if(baselineSaved)save(activeFile,JSON.stringify(active,null,2)+'\n');
         if(!dirty)return;
         let busy;
         try{busy=journalActive(root)||manifest.pending_native_jobs.length>0;}catch(error) {
