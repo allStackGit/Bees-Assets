@@ -5064,21 +5064,32 @@ class ExperimentHub {
             !['machine_id','unit','action','confirm_action'].includes(key))||
             value.confirm_action!==true||!ID.test(String(value.machine_id||''))||
             typeof value.unit!=='string'||value.unit.length>160||
-            !['start','stop','restart','run'].includes(value.action))
+            !['start','stop','restart','run','setup','refresh'].includes(value.action))
             throw Error('Confirm a bounded action for an enrolled evaluator service.');
         const host=this.snapshot().machines.find(m=>m.id===value.machine_id);
+        const setup=value.action==='setup'&&
+            ['@setup:tinybrains','@setup:courier'].includes(value.unit);
         const row=host?.evaluator_services?.find(item=>item.unit===value.unit);
-        if(!host||host.status!=='connected'||!row||
-            !['tinybrains','courier'].includes(row.project)||
-            !['systemd-user','windows-service'].includes(row.executor)||
-            (row.executor==='systemd-user'&&host.agent_platform!=='linux')||
-            (row.executor==='windows-service'&&host.agent_platform!=='win32')||
-            (row.executor==='windows-service'&&
-                !['start','stop'].includes(value.action))||
-            (value.action==='run'&&row.executor!=='systemd-user'))
-            throw Error('An online enrolled agent must advertise the exact approved evaluator service.');
+        const project=setup?value.unit.slice('@setup:'.length):row?.project;
+        const executor=setup?'systemd-user':row?.executor;
+        if(!host||host.status!=='connected'||
+            !['tinybrains','courier'].includes(project)||
+            !['systemd-user','windows-service'].includes(executor)||
+            (setup&&(!host.installed_projects?.includes(project)||
+                host.agent_platform!=='linux'))||
+            (!setup&&(!row||
+                (row.executor==='systemd-user'&&host.agent_platform!=='linux')||
+                (row.executor==='windows-service'&&host.agent_platform!=='win32')))||
+            (!setup&&value.action==='setup')||
+            (value.action==='refresh'&&
+                (project!=='tinybrains'||executor!=='systemd-user'||
+                    !new RegExp('^bees-experiment-hub-tinybrains-'+
+                        host.id+'-evaluator-(nano|micro)\\.service$').test(value.unit)))||
+            (executor==='windows-service'&&!['start','stop'].includes(value.action))||
+            (value.action==='run'&&executor!=='systemd-user'))
+            throw Error('An online enrolled agent must approve the exact evaluator service and action.');
         const all=this.state.evaluator_actions||[];
-        if(all.some(action=>action.machine_id===host.id&&action.unit===value.unit&&
+        if(all.some(action=>action.machine_id===host.id&&action.project===project&&
             ['pending','dispatched','unverified'].includes(action.status))) {
             const error=Error('A previous evaluator action needs completion or manual reconciliation.');
             error.status=409;throw error;
@@ -5091,7 +5102,7 @@ class ExperimentHub {
         if(next.evaluator_actions.length>=64)
             throw Error('Too many unresolved evaluator operations; reconcile them first.');
         const action={id:crypto.randomUUID(),machine_id:host.id,
-            unit:value.unit,project:row.project,executor:row.executor,
+            unit:value.unit,project,executor,
             action:value.action,status:'pending',created_at:now()};
         next.evaluator_actions.push(action);
         this.commit(next);
@@ -5112,8 +5123,11 @@ class ExperimentHub {
             throw Error('Wait for the agent result before reconciling a dispatched operation.');
         if(entry.status!=='pending') {
             const host=this.snapshot().machines.find(m=>m.id===entry.machine_id);
-            if(host?.status!=='connected'||!host.evaluator_services?.some(service=>
-                service.unit===entry.unit&&service.executor===entry.executor))
+            if(host?.status!=='connected'||
+                (entry.action==='setup'
+                    ?!host.installed_projects?.includes(entry.project)
+                    :!host.evaluator_services?.some(service=>
+                        service.unit===entry.unit&&service.executor===entry.executor)))
                 throw Error('Refresh the enrolled agent service observation before reconciling.');
         }
         const next=copy(this.state);
@@ -5159,9 +5173,12 @@ class ExperimentHub {
         if(!item)return [];
         const observed=this.agentReports.get(machine.id);
         if(!observed||observed.instance_id!==instance||
-            !observed.evaluator_services?.some(service=>
-                service.unit===item.unit&&service.project===item.project&&
-                service.executor===item.executor))return [];
+            (item.action==='setup'
+                ?!(observed.platform==='linux'&&
+                    observed.installed_projects?.includes(item.project))
+                :!observed.evaluator_services?.some(service=>
+                    service.unit===item.unit&&service.project===item.project&&
+                    service.executor===item.executor)))return [];
         const next=copy(this.state);
         const pending=next.evaluator_actions.find(action=>action.id===item.id);
         pending.status='dispatched';
