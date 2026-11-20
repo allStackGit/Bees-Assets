@@ -934,10 +934,9 @@ impl<M, A> NativeLevelState<M, A> {
         }
     }
 
-    /// Preflight the policy, story and event owners before changing the
-    /// authoritative CombatWorld. The five physical ledgers commit as
-    /// one transaction; all already-prepared Level owners then install
-    /// without executing a command or publishing a reward twice.
+    /// Stage the combat world, policy clocks, campaign story and event
+    /// ownership before changing the live Level. Commits are infallible
+    /// and never replay commands, physical hits or delivered rewards.
     pub fn restore_recovery_owners(
         &mut self,
         checkpoint: NativeLevelRecoveryOwnersCheckpoint,
@@ -962,6 +961,10 @@ impl<M, A> NativeLevelState<M, A> {
                 CampaignDialogueRestoreError::WrongStory,
             )),
         };
+        // Stage physical, entity and gameplay owners before the Level
+        // commits any of its independent event or decision owners.
+        let staged_combat = self.combat.prepare_recovery_owners(checkpoint.combat)
+            .map_err(NativeLevelRecoveryError::Combat)?;
         let staged_events = self.events.prepare_recovery_owners(
             checkpoint.events, &self.combat, completed_ticks,
         ).map_err(NativeLevelRecoveryError::Events)?;
@@ -969,8 +972,8 @@ impl<M, A> NativeLevelState<M, A> {
         decisions.restore_checkpoint(
             checkpoint.decisions, &self.combat, completed_ticks,
         ).map_err(NativeLevelRecoveryError::DecisionClock)?;
-        self.combat.restore_recovery_owners(checkpoint.combat)
-            .map_err(NativeLevelRecoveryError::Combat)?;
+        // All stages succeeded; install without another fallible phase.
+        self.combat.commit_recovery_owners(staged_combat);
         self.events.commit_recovery_owners(staged_events);
         self.decisions = decisions;
         self.held_fire_ships = checkpoint.held_fire_ships;
