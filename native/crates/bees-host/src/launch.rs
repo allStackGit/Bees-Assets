@@ -4390,10 +4390,20 @@ fn run_battle(
         file.write_all(&bytes)?;
         file.sync_all()?;
     }
-    let mut connection = if config.recover_notifications.is_empty() && config.recover_outcome_journals.is_empty() {
+    // Reconnecting to an existing server Game must also resume the original
+    // hash allocator and pending StoreCommands ledger. A journal-free
+    // reconnect is still recovery: creating a fresh checkpoint would lose
+    // unresolved command credits while claiming the old Game identity.
+    let restoring_connection =
+        !config.recover_notifications.is_empty() ||
+        !config.recover_outcome_journals.is_empty() ||
+        config.hivemind.as_ref().is_some_and(|network|
+            network.reconnect_game_id.is_some());
+    let mut connection = if restoring_connection {
+        DurableHiveMindConnection::open_existing(&checkpoint)
+    } else {
         DurableHiveMindConnection::open(&checkpoint)
-    } else { DurableHiveMindConnection::open_existing(&checkpoint) }
-        .map_err(|error| contextual("HiveMind checkpoint", error))?;
+    }.map_err(|error| contextual("HiveMind checkpoint", error))?;
     for previous in &config.recover_notifications {
         let path = resolve(root, previous);
         if path == notifications || path == checkpoint {
