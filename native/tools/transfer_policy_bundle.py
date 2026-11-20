@@ -149,6 +149,67 @@ def export_bundle_archive(receipt_path, job, orders, archive_path):
     }
 
 
+
+def verified_existing_bundle_archive(receipt_path, job, orders, archive_path):
+    """Reuse an immutable completed export without reallocating a collector.
+
+    A durable export may have reached its final path immediately before the
+    collector or its network connection died. Re-read the archived receipt
+    and every captured artifact through the established work-order hashes;
+    a matching filename or a tar checksum alone is not proof of lineage.
+    This rare recovery path streams bytes with bounded memory.
+    """
+    archive = Path(archive_path).absolute()
+    if archive.is_symlink() or not archive.is_file():
+        raise ValueError("prior collector archive is not an owned regular file")
+    source_receipt = Path(receipt_path).resolve(strict=True)
+    verified = verify_bundle(source_receipt, job, orders)
+    raw = source_receipt.read_bytes()
+    if not 0 < len(raw) <= MAX_RECEIPT_BYTES:
+        raise ValueError("original collector receipt exceeds archive limit")
+    expected = artifact_paths(json.loads(raw))
+    seen = set()
+    capture_bytes = 0
+    with tarfile.open(archive, mode="r|") as stream:
+        for index, member in enumerate(stream):
+            if not member.isfile():
+                raise ValueError("existing native archive contains a non-file entry")
+            reader = stream.extractfile(member)
+            if reader is None:
+                raise ValueError("existing native archive has a missing file stream")
+            if index == 0:
+                if (member.name != "rollout-bundle.json" or
+                        member.size != len(raw) or
+                        reader.read(MAX_RECEIPT_BYTES + 1) != raw):
+                    raise ValueError("existing native archive has a different rollout receipt")
+                continue
+            name = member.name
+            if name not in expected or name in seen:
+                raise ValueError("existing native archive has an unexpected or duplicate artifact")
+            digest = hashlib.sha256()
+            length = 0
+            while True:
+                block = reader.read(CHUNK)
+                if not block:
+                    break
+                digest.update(block)
+                length += len(block)
+            if length != member.size or digest.hexdigest() != expected[name]:
+                raise ValueError(f"existing native archive changed captured artifact: {name}")
+            seen.add(name)
+            capture_bytes += length
+    if seen != set(expected):
+        raise ValueError("existing native archive is missing captured artifacts")
+    return {
+        "archive": str(archive),
+        "archive_sha256": file_sha256(archive),
+        "archive_bytes": archive.stat().st_size,
+        "capture_files": len(seen),
+        "capture_bytes": capture_bytes,
+        "recovered_archive": True,
+        "bundle_sha256": verified["sha256"],
+    }
+
 def import_bundle_archive(archive_path, job, orders, inbox, *,
                           archive_sha256=None, archive_bytes=None):
     # The receiver supplies the checksum of bytes it already verified. Store
