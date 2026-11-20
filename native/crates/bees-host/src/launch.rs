@@ -2273,6 +2273,13 @@ fn native_start_asset_digests(
     if let Some(path) = &run.model_manifest {
         files.insert("model_manifest".to_owned(), resolve(root, path));
     }
+    // A checkpointed local battle can install an authored policy update
+    // after an episode boundary. Its already-declared future artifacts
+    // belong to the same immutable start even before the first World tick.
+    for (index, update) in run.model_updates.iter().enumerate() {
+        files.insert(format!("model_update:{index}"),
+            resolve(root, &update.manifest));
+    }
     if let Some(path) = &run.policy_worker {
         files.insert("policy_worker".to_owned(), resolve(root, path));
     }
