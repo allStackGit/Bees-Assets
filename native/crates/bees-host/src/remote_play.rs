@@ -431,6 +431,12 @@ impl NativeRemotePlay {
         &self.measurements
     }
 
+    /// Immutable identity persisted alongside an authoritative terminal
+    /// receipt. A subsequent LAN host must not invent an old session ID.
+    pub fn session_id(&self) -> &str {
+        &self.host_session_id
+    }
+
     /// Called before serializing the same host checkpoint that will own
     /// these commands. If persistence fails, no successful reply is sent.
     /// If persistence succeeds, these counters recover with the World.
@@ -1010,26 +1016,33 @@ impl NativeRemotePlay {
         self.reap();
     }
 
+    /// This is the same immutable source result sent on the wire and
+    /// recorded in the completed run summary; it is not a shadow outcome.
+    pub fn authoritative_battle_receipt(view: &NativeRenderWorldView<'_>) -> Option<Value> {
+        let result = view.terminal_result?;
+        Some(json!({
+            "kind": "battle_result",
+            "protocol": 1,
+            "world_id": view.world_id.0,
+            "episode_revision": view.episode_revision,
+            "winner_side": result.winner_side,
+            "label": crate::presentation::battle_outcome_label(result),
+            "reason": crate::presentation::battle_outcome_reason(view, result),
+        }))
+    }
+
     /// Deliver the Level's existing terminal result independently of lossy
     /// world snapshots. This is called only AFTER successful finalization
     /// and the durable summary commit, alongside the campaign receipt.
     /// The same actual Level result and source labels used by local play
     /// remain authoritative for both authenticated opposing commanders.
     pub fn publish_battle_result(&mut self, view: &NativeRenderWorldView<'_>) {
-        let Some(result) = view.terminal_result else { return };
+        let Some(mut receipt) = Self::authoritative_battle_receipt(view) else { return };
         for peer in self.peers.iter_mut().filter(|peer|
             !peer.closed && peer.side.is_some()
         ) {
-            let _ = peer.enqueue(&json!({
-                "kind": "battle_result",
-                "protocol": 1,
-                "viewer_side": peer.side,
-                "world_id": view.world_id.0,
-                "episode_revision": view.episode_revision,
-                "winner_side": result.winner_side,
-                "label": crate::presentation::battle_outcome_label(result),
-                "reason": crate::presentation::battle_outcome_reason(view, result),
-            }));
+            receipt["viewer_side"] = json!(peer.side);
+            let _ = peer.enqueue(&receipt);
             if !peer.closed {
                 self.measurements.battle_result_receipts += 1;
                 self.measurements.state_bytes += peer.flush();
