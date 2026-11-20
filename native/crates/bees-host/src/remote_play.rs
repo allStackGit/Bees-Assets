@@ -1220,10 +1220,10 @@ fn current_state(
         // Present the SAME authored Level cue as local play. Story text is
         // restricted to its campaign player's view, never broadcast to an
         // independently authenticated opposing side.
-        "campaign_dialogue": if view.player_authority.player_viewer_side() == Some(side) {
-            // The local and LAN clients read the same source-authored
-            // dialogue table; no Python copy of campaign story text.
-            // The existing side-authority check protects this content.
+        "campaign_dialogue": if view.campaign_dialogue_side == Some(side) {
+            // Dedicated multiplayer hosts have no local viewer. Protect
+            // the source-authored story with its own immutable campaign
+            // owner, never with a temporary local/remote input override.
             view.campaign_dialogue.map(|(sequence, cue)| json!({
                 "sequence": sequence,
                 "cue": cue,

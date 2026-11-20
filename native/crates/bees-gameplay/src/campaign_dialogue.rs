@@ -102,6 +102,10 @@ impl CampaignDialogue {
 
     pub fn current(&self) -> (u8, CampaignCue) { (self.sequence, self.cue) }
 
+    /// Authored story owner, independent of the current local viewer or
+    /// any authenticated remote commander's temporary input scope.
+    pub fn player_side(&self) -> i32 { self.player_side }
+
     pub(crate) fn set_cue(&mut self, cue: CampaignCue) {
         self.sequence += 1;
         self.cue = cue;
