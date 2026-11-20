@@ -23,7 +23,12 @@ use bees_sim::policy::{CONTINUOUS_ACTIONS, DISCRETE_BRANCHES, OBSERVATION_FLOATS
 use bees_sim::policy_batch::{PolicyActionMask, PolicyAgentKey};
 use bees_sim::policy::{validate_model_abi, PolicyAbiError};
 
-const PROTOCOL_VERSION: u32 = 3;
+const PROTOCOL_VERSION: u32 = 4;
+const SAMPLER_SNAPSHOT_REQUEST: &[u8; 4] = b"BRNG";
+const SAMPLER_SNAPSHOT_RESPONSE: &[u8; 4] = b"BRNS";
+const SAMPLER_RESTORE_REQUEST: &[u8; 4] = b"BWNG";
+const SAMPLER_RESTORE_RESPONSE: &[u8; 4] = b"BRNA";
+const MAX_SAMPLER_CHECKPOINT_BYTES: usize = 1_048_576;
 const CONTROL_RELOAD_MAGIC: &[u8; 4] = b"BMOD";
 const CONTROL_RELOAD_ACK: &[u8; 4] = b"MACK";
 const CONTROL_RELOAD_REJECTED: &[u8; 4] = b"MNOK";
@@ -322,6 +327,81 @@ impl ResidentPolicyProcess {
         }
     }
 
+    /// Read exact Python, NumPy and PyTorch sampler state between completed
+    /// model batches. Checkpointing is infrequent and never touches the
+    /// per-agent forward hot path.
+    pub fn sampler_checkpoint(&mut self) -> Result<Vec<u8>, PolicyProcessError> {
+        if self.unavailable {
+            return Err(PolicyProcessError::Unavailable);
+        }
+        let seq = self.sequence.checked_add(1)
+            .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
+        let result = (|| -> Result<Vec<u8>, PolicyProcessError> {
+            self.input.write_all(SAMPLER_SNAPSHOT_REQUEST)?;
+            self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+            self.input.write_all(&seq.to_le_bytes())?;
+            self.input.write_all(&0_u32.to_le_bytes())?;
+            self.input.flush()?;
+            let mut response = [0_u8; 20];
+            self.output.read_exact(&mut response)?;
+            let length = u32::from_le_bytes(response[16..20].try_into().unwrap()) as usize;
+            if &response[..4] != SAMPLER_SNAPSHOT_RESPONSE ||
+                u32::from_le_bytes(response[4..8].try_into().unwrap()) != PROTOCOL_VERSION ||
+                u64::from_le_bytes(response[8..16].try_into().unwrap()) != seq ||
+                length == 0 || length > MAX_SAMPLER_CHECKPOINT_BYTES
+            {
+                return Err(PolicyProcessError::WrongResponse);
+            }
+            let mut snapshot = vec![0_u8; length];
+            self.output.read_exact(&mut snapshot)?;
+            Ok(snapshot)
+        })();
+        self.sequence = seq;
+        if result.is_err() {
+            self.unavailable = true;
+        }
+        result
+    }
+
+    /// Restore the worker RNG before any resumed model forward. A rejected
+    /// or partial restore poisons this process: no uncheckpointed actions
+    /// can be applied to the recovered physical world.
+    pub fn restore_sampler_checkpoint(
+        &mut self, snapshot: &[u8],
+    ) -> Result<(), PolicyProcessError> {
+        if self.unavailable {
+            return Err(PolicyProcessError::Unavailable);
+        }
+        if snapshot.is_empty() || snapshot.len() > MAX_SAMPLER_CHECKPOINT_BYTES {
+            return Err(PolicyProcessError::InvalidBatch);
+        }
+        let seq = self.sequence.checked_add(1)
+            .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
+        let result = (|| -> Result<(), PolicyProcessError> {
+            self.input.write_all(SAMPLER_RESTORE_REQUEST)?;
+            self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+            self.input.write_all(&seq.to_le_bytes())?;
+            self.input.write_all(&(snapshot.len() as u32).to_le_bytes())?;
+            self.input.write_all(snapshot)?;
+            self.input.flush()?;
+            let mut response = [0_u8; 20];
+            self.output.read_exact(&mut response)?;
+            if &response[..4] != SAMPLER_RESTORE_RESPONSE ||
+                u32::from_le_bytes(response[4..8].try_into().unwrap()) != PROTOCOL_VERSION ||
+                u64::from_le_bytes(response[8..16].try_into().unwrap()) != seq ||
+                u32::from_le_bytes(response[16..20].try_into().unwrap()) != 0
+            {
+                return Err(PolicyProcessError::WrongResponse);
+            }
+            Ok(())
+        })();
+        self.sequence = seq;
+        if result.is_err() {
+            self.unavailable = true;
+        }
+        result
+    }
+
     pub fn model_generation(&self) -> u64 { self.model_generation }
 
     pub fn model_manifest_sha256(&self) -> String {
@@ -347,6 +427,15 @@ impl NativePolicyInference for ResidentPolicyProcess {
     fn checkpoint_model_digest(&self) -> Option<[u8; 32]> {
         (!self.unavailable && self.manifest_digest != [0_u8; 32])
             .then_some(self.manifest_digest)
+    }
+
+    fn checkpoint_sampling_state(&mut self) -> Result<Option<Vec<u8>>, Self::Error> {
+        self.sampler_checkpoint().map(Some)
+    }
+
+    fn restore_sampling_state(&mut self, saved: &[u8]) -> Result<bool, Self::Error> {
+        self.restore_sampler_checkpoint(saved)?;
+        Ok(true)
     }
 
     fn forward(
