@@ -12,7 +12,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use bees_host::checkpoint_file::NativeHostCheckpointFile;
+use bees_host::checkpoint_file::{CheckpointFileError, NativeHostCheckpointFile};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -121,9 +121,18 @@ pub(super) fn complete_committed_recording(run: &Path)
     // No mutable gameplay owner is created. Acquire the SAME host writer
     // lock that protected the original World before checking its cursor or
     // touching recording bytes; a still-live host may never be finalized.
-    let checkpoint = NativeHostCheckpointFile::open(
+    let checkpoint = match NativeHostCheckpointFile::open(
         run.join("native-host-checkpoint.json"),
-    ).map_err(|error| contextual("terminal replay host writer lease", error))?;
+    ) {
+        Ok(file) => file,
+        // The original process may have committed the receipt but still
+        // own the socket/recorder during its short terminal drain. Leave
+        // its bytes untouched; the normal next menu refresh can discover
+        // the footer once that owner releases the host checkpoint lock.
+        Err(CheckpointFileError::Io(error))
+            if error.kind() == io::ErrorKind::WouldBlock => return Ok(true),
+        Err(error) => return Err(contextual("terminal replay host writer lease", error).into()),
+    };
     let snapshot = checkpoint.load()
         .map_err(|error| contextual("terminal replay original World", error))?
         .ok_or_else(||
