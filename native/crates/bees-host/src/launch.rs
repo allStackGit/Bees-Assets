@@ -5073,6 +5073,21 @@ fn run_battle(
                 .map_err(|error| contextual("native run cursor encoding", error))
         }};
     }
+    // Derived from the same committed physical/learner cursor. This is a
+    // small dashboard projection, never an alternative recovery authority.
+    macro_rules! checkpoint_dashboard_progress {
+        () => { json!({
+            "schema_version": 1,
+            "kind": "native_host_checkpoint_progress",
+            "run_id": config.run_id,
+            "rounds": rounds,
+            "successful_world_steps": successful_world_steps,
+            "successful_policy_rows": successful_policy_rows,
+            "completed_episodes": completed_episodes.iter().map(|&count| u64::from(count)).sum::<u64>(),
+            "model_generation": segment_generation,
+            "elapsed_wall_seconds": prior_wall_seconds + run_start.elapsed().as_secs_f64(),
+        }) };
+    }
     'battle: loop {
         let recovery_due = checkpointed_round.is_none_or(|previous|
             previous != rounds && (policy_capture.is_none() ||
@@ -5089,6 +5104,12 @@ fn run_battle(
                 if let Err(error) = host.persist_recovery_checkpoint_with_launcher(file, saved) {
                     failed_window = Some(format!(
                         "native host checkpoint could not be committed: {error:?}"
+                    ));
+                    break 'battle;
+                }
+                if let Err(error) = file.persist_progress(&checkpoint_dashboard_progress!()) {
+                    failed_window = Some(format!(
+                        "native Hub progress could not be persisted: {error:?}"
                     ));
                     break 'battle;
                 }
@@ -5727,6 +5748,10 @@ fn run_battle(
                     if let Err(error) = host.persist_recovery_checkpoint_with_launcher(file, saved) {
                         failed_window = Some(format!(
                             "native terminal host checkpoint could not be committed: {error:?}"
+                        ));
+                    } else if let Err(error) = file.persist_progress(&checkpoint_dashboard_progress!()) {
+                        failed_window = Some(format!(
+                            "native terminal Hub progress could not be persisted: {error:?}"
                         ));
                     }
                 }
