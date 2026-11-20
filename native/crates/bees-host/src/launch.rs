@@ -3731,7 +3731,10 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
             )?;
             (source, output)
         };
-        launch.arg("play").arg(source).arg("--output-dir").arg(output);
+        // The library's LAN host is a dedicated authoritative server.
+        // A windowed 'play' child would bypass remote story acknowledgments
+        // and require a local display for an independently hosted match.
+        launch.arg("serve").arg(source).arg("--output-dir").arg(output);
     }
     let outcome = launch
         .env("BEES_NATIVE_REMOTE_LISTEN",&settings.listen)
@@ -5530,12 +5533,12 @@ fn run_battle(
         ).into());
     }
     let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(
-        local_player_side,!play,
+        local_player_side, !view,
     )?;
     // Dedicated hosted campaigns have no local window to advance the
     // opening story. Their authenticated campaign owner must be able to
     // receive the briefing before the first physical tick is released.
-    if !play {
+    if !view {
         if let (Some(server), Some(view)) = (remote.as_ref(),host.render_world(0)) {
             if let (Some(owner),Some((_,cue))) =
                 (view.campaign_dialogue_side,view.campaign_dialogue)
@@ -6276,7 +6279,7 @@ fn run_battle(
         // briefing, keep polling its normal nonblocking network transport
         // but do not step a shadow World or change the fixed-step clock.
         if let (Some(server),Some((owner,sequence))) =
-            (remote.as_mut().filter(|_| !play),remote_briefing)
+            (remote.as_mut().filter(|_| !view),remote_briefing)
         {
             let world=host.simulation().world(0).expect("hosted briefing Level");
             if server.briefing_waiting(world.id,world.episode_revision(),
