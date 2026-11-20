@@ -400,7 +400,11 @@ async function confirmAgentReplacement(base,env,priorInstance) {
             const observed=await request(base,env,'GET','');
             if(observed.agent_instance_id&&
                 observed.agent_instance_id!==priorInstance&&
-                observed.agent_preflight_passed===true&&
+                (observed.agent_preflight_passed===true||
+                    // A brand-new base-only worker has no simulation to
+                    // qualify yet; keep its authenticated recovery agent.
+                    Array.isArray(observed.agent_installed_projects)&&
+                    observed.agent_installed_projects.length===0)&&
                 Number.isFinite(observed.agent_report_age_ms)&&
                 observed.agent_report_age_ms>=0&&observed.agent_report_age_ms<45000)
                 return;

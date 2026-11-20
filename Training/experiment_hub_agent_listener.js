@@ -131,6 +131,7 @@ function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null,bootstrapRoo
                         mode:hub.machineUpdatePolicy(identity),
                         agent_instance_id:live?.instance_id||null,
                         agent_preflight_passed:live?.native_preflight_passed===true,
+                        agent_installed_projects:live?.installed_projects||[],
                         agent_report_age_ms:live?Date.now()-live.received_ms:null,
                         pending_native_jobs:hub.state.jobs.filter(job=>
                             job.assigned_machine_id===identity&&job.dispatch_id&&
