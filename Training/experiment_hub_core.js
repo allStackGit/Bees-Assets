@@ -5311,6 +5311,21 @@ class ExperimentHub {
                     if(!checkpointContinuationComplete(owner)||
                         nativeOptimizerGroupBlock(this.state,owner))
                         continue;
+                    // A verified rank-zero receipt does not mean its model
+                    // package is already available for the next round or
+                    // eventual continuation. Do not declare a final native
+                    // round complete until the original authenticated Hub
+                    // mirror holds the checkpoint, manifest and opponents.
+                    try {
+                        verifiedNativeModelMirror(this,owner);
+                    }catch(error) {
+                        if(error.status===409) {
+                            const reason='Awaiting the completed synchronized PPO checkpoint, manifest and frozen-opponent mirror before accepting this native round.';
+                            if(plan.reason!==reason)update(plan.status,reason);
+                            continue;
+                        }
+                        throw error;
+                    }
                     // One already-registered native evaluator owns the
                     // fixed-reference holdout. Unlike training SPS, its
                     // checkpoint-bound receipts may decide whether further
