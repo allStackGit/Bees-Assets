@@ -820,6 +820,14 @@ struct CombatWorldAsteroidPoolCheckpoint {
     expired_asteroid_ids: Vec<i64>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SupportZoneCheckpoint {
+    ship_type: u8,
+    side: i32,
+    ship_ids: Vec<i64>,
+}
+
 /// Durable source movement orders and collision callback state.
 /// Derived broadphase scratch remains outside the checkpoint: the
 /// physics owner rebuilds it after the next authoritative fixed step.
@@ -835,7 +843,9 @@ struct CombatWorldMovementCheckpoint {
     fleet_ids: HashMap<i64, i64>,
     beacon_parent_by_id: HashMap<i64, i64>,
     target_front_offsets: HashMap<i64, f32>,
-    support_zones: HashMap<(u8, i32), Vec<i64>>,
+    // JSON object keys cannot be tuple-valued: preserve the same
+    // exact authoritative index as sorted source entries on disk.
+    support_zones: Vec<SupportZoneCheckpoint>,
     mining_obstacle_ids: Vec<i64>,
     nearby_asteroids_by_ship: HashMap<i64, Vec<i64>>,
     asteroid_navigation_refresh: HashMap<i64, ScaledTimer>,
@@ -1651,7 +1661,7 @@ impl CombatWorld {
 
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 16,
+            schema_version: 17,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1719,7 +1729,13 @@ impl CombatWorld {
                 fleet_ids: self.fleet_id_by_ship.clone(),
                 beacon_parent_by_id: self.beacon_parent_by_id.clone(),
                 target_front_offsets: self.ship_target_front_offsets.clone(),
-                support_zones: self.support_zone_ids.clone(),
+                support_zones: {
+                    let mut entries = self.support_zone_ids.iter().map(|(&(ship_type, side), ids)|
+                        SupportZoneCheckpoint { ship_type, side, ship_ids: ids.clone() }
+                    ).collect::<Vec<_>>();
+                    entries.sort_unstable_by_key(|entry| (entry.ship_type, entry.side));
+                    entries
+                },
                 mining_obstacle_ids: self.mining_obstacle_ids.clone(),
                 nearby_asteroids_by_ship: self.nearby_asteroids_by_ship.clone(),
                 asteroid_navigation_refresh: self.asteroid_navigation_refresh.clone(),
@@ -1772,7 +1788,7 @@ impl CombatWorld {
     pub fn prepare_recovery_owners(
         &self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<CombatWorldRecoveryPrepared, CombatWorldError> {
-        if snapshot.schema_version != 16 {
+        if snapshot.schema_version != 17 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         if snapshot.level_geometry != self.level_geometry ||
@@ -2116,12 +2132,17 @@ impl CombatWorld {
             movement.target_front_offsets.iter().any(|(&id, &offset)|
                 !registered_ship(id) || !offset.is_finite()
             ) ||
-            movement.support_zones.iter().any(|(&(kind, side), ids)|
-                side <= 0 || ids.windows(2).any(|pair| pair[0] >= pair[1]) ||
-                ids.iter().any(|id|
+            movement.support_zones.windows(2).any(|pair|
+                (pair[0].ship_type, pair[0].side) >=
+                    (pair[1].ship_type, pair[1].side)
+            ) ||
+            movement.support_zones.iter().any(|entry|
+                entry.side <= 0 ||
+                entry.ship_ids.windows(2).any(|pair| pair[0] >= pair[1]) ||
+                entry.ship_ids.iter().any(|id|
                     !registered_ship(*id) ||
-                    snapshot.ships[self.ship_by_id[id]].ship_type != kind ||
-                    snapshot.ships[self.ship_by_id[id]].side != side
+                    snapshot.ships[self.ship_by_id[id]].ship_type != entry.ship_type ||
+                    snapshot.ships[self.ship_by_id[id]].side != entry.side
                 )
             ) ||
             movement.asteroid_navigation_refresh.iter().any(|(&id, timer)|
@@ -2357,7 +2378,9 @@ impl CombatWorld {
         self.fleet_id_by_ship = movement.fleet_ids;
         self.beacon_parent_by_id = movement.beacon_parent_by_id;
         self.ship_target_front_offsets = movement.target_front_offsets;
-        self.support_zone_ids = movement.support_zones;
+        self.support_zone_ids = movement.support_zones.into_iter().map(|entry|
+            ((entry.ship_type, entry.side), entry.ship_ids)
+        ).collect();
         self.mining_obstacle_ids = movement.mining_obstacle_ids;
         self.nearby_asteroids_by_ship = movement.nearby_asteroids_by_ship;
         self.asteroid_navigation_refresh = movement.asteroid_navigation_refresh;
