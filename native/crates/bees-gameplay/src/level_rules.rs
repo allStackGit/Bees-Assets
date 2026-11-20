@@ -13,7 +13,7 @@ use std::num::NonZeroU32;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{
     CombatEvent, CombatWorld, CombatWorldError, CombatWorldRecoveryOwnersCheckpoint,
-    CombatRecoveryView,
+    CombatRecoveryView, CombatWorldRecoveryPrepared,
     NativeAutomaticWeaponContext, NativeAutomaticWeaponInputs,
 };
 use bees_sim::combat_perception_bridge::CombatPerceptionError;
@@ -39,6 +39,7 @@ use crate::commands::{
 use crate::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor,
     NativeLevelEventRecoveryOwnersCheckpoint, NativeLevelEventRecoveryError,
+    NativeLevelEventRecoveryPrepared,
 };
 use crate::squads::{
     NativeSquadEntry, NativeSquadRoster, SquadRosterChange, SquadRosterError,
@@ -920,6 +921,19 @@ pub fn restore_native_level_world<M, A>(
     )
 }
 
+/// Infallible staged Level transaction. Physical hulls, command
+/// ownership, notification delivery, policy clocks and authored mission
+/// dialogue have already passed preflight together.
+pub struct NativeLevelRecoveryPrepared {
+    combat: CombatWorldRecoveryPrepared,
+    events: NativeLevelEventRecoveryPrepared,
+    decisions: NativeDecisionCadence,
+    dialogue: Option<crate::campaign_dialogue::CampaignDialogue>,
+    held_fire_ships: HashMap<u64, Vec<i64>>,
+    command_input_measurements: NativeCommandInputMeasurements,
+    navigation_jobs_completed: u64,
+}
+
 pub struct NativeLevelState<M, A> {
     pub combat: CombatWorld,
     pub events: NativeLevelEventProcessor,
@@ -978,11 +992,11 @@ impl<M, A> NativeLevelState<M, A> {
     /// Stage the combat world, policy clocks, campaign story and event
     /// ownership before changing the live Level. Commits are infallible
     /// and never replay commands, physical hits or delivered rewards.
-    pub fn restore_recovery_owners(
-        &mut self,
+    pub fn prepare_recovery_owners(
+        &self,
         checkpoint: NativeLevelRecoveryOwnersCheckpoint,
         completed_ticks: u64,
-    ) -> Result<(), NativeLevelRecoveryError> {
+    ) -> Result<NativeLevelRecoveryPrepared, NativeLevelRecoveryError> {
         if checkpoint.schema_version != 4 {
             return Err(NativeLevelRecoveryError::InvalidVersion);
         }
@@ -1016,14 +1030,34 @@ impl<M, A> NativeLevelState<M, A> {
             staged_combat.policy_bindings(),
             completed_ticks,
         ).map_err(NativeLevelRecoveryError::DecisionClock)?;
-        // All stages succeeded; install without another fallible phase.
+        Ok(NativeLevelRecoveryPrepared {
+            combat: staged_combat,
+            events: staged_events,
+            decisions,
+            dialogue,
+            held_fire_ships: checkpoint.held_fire_ships,
+            command_input_measurements: checkpoint.command_input_measurements,
+            navigation_jobs_completed: checkpoint.navigation_jobs_completed,
+        })
+    }
+
+    /// Install all fully checked owners at a single authoritative boundary.
+    /// No callback, damage evaluation or network notification is replayed.
+    pub fn commit_recovery_owners(
+        &mut self, staged: NativeLevelRecoveryPrepared,
+    ) {
+        let NativeLevelRecoveryPrepared {
+            combat: staged_combat, events: staged_events, decisions, dialogue,
+            held_fire_ships, command_input_measurements,
+            navigation_jobs_completed,
+        } = staged;
         self.combat.commit_recovery_owners(staged_combat);
         self.events.commit_recovery_owners(staged_events);
         self.decisions = decisions;
-        self.held_fire_ships = checkpoint.held_fire_ships;
+        self.held_fire_ships = held_fire_ships;
         self.campaign_dialogue = dialogue;
-        self.command_input_measurements = checkpoint.command_input_measurements;
-        self.navigation_jobs_completed = checkpoint.navigation_jobs_completed;
+        self.command_input_measurements = command_input_measurements;
+        self.navigation_jobs_completed = navigation_jobs_completed;
         // These are reused per-tick projections, never durable gameplay
         // owners. Rebuild them from the recovered authoritative world on
         // the next step rather than retaining stale pre-restore entries.
@@ -1036,6 +1070,15 @@ impl<M, A> NativeLevelState<M, A> {
         self.survivor_offsets.clear();
         self.mining_credit_totals.clear();
         self.mining_credit_order.clear();
+    }
+
+    pub fn restore_recovery_owners(
+        &mut self,
+        checkpoint: NativeLevelRecoveryOwnersCheckpoint,
+        completed_ticks: u64,
+    ) -> Result<(), NativeLevelRecoveryError> {
+        let staged = self.prepare_recovery_owners(checkpoint, completed_ticks)?;
+        self.commit_recovery_owners(staged);
         Ok(())
     }
 
