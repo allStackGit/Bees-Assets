@@ -11,7 +11,7 @@ use crate::geometry::Vec2;
 
 /// Penetration budget for a Flagship PowerShot or a continuous LaserBeam.
 /// The source records the hit target *before* mutating the remaining power.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PiercingType {
     PowerShot,
     LaserBeam,
@@ -26,6 +26,8 @@ pub struct PiercingContact {
     pub ends_projectile: bool,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PiercingShot {
     kind: PiercingType,
     remaining_power: i32,
@@ -33,6 +35,12 @@ pub struct PiercingShot {
 }
 
 impl PiercingShot {
+    pub fn valid_recovery(&self, kind: PiercingType, original_power: i32) -> bool {
+        self.kind == kind && original_power >= 0 &&
+        (0..=original_power).contains(&self.remaining_power) &&
+        self.ships_hit.iter().all(|&ship| ship > 0)
+    }
+
     pub fn new(kind: PiercingType, power: i32) -> Self {
         Self { kind, remaining_power: power, ships_hit: HashSet::new() }
     }
@@ -116,6 +124,8 @@ pub fn rocket_accelerated_velocity(current: Vec2, max_speed: f32) -> Vec2 {
 
 /// Tracks distinct ships/obstacles in the same explosion. A rocket explosion
 /// does not die on impact and may affect several targets on the same tick.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExplosionContacts {
     pub harmless: bool,
     ships_hit: HashSet<i64>,
@@ -123,6 +133,11 @@ pub struct ExplosionContacts {
 }
 
 impl ExplosionContacts {
+    pub fn valid_recovery(&self) -> bool {
+        self.ships_hit.iter().all(|&id| id > 0) &&
+        self.obstacles_hit.iter().all(|&id| id > 0)
+    }
+
     pub fn new() -> Self {
         Self {
             harmless: false,

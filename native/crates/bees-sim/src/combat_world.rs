@@ -288,7 +288,7 @@ pub enum GamePointOrderResult {
 /// Per-projectile immutable owner information follows the shot after its
 /// shooter's death, even if a pooled ship wrapper is reused for another unit.
 /// Attribution IDs are carried from Projectile.Setup/Inheritance.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ShotOwner {
     pub shooter_id: i64,
     pub shooter_side: i32,
@@ -435,6 +435,7 @@ pub enum CombatEvent {
     GameWeaponFired { ship_id: i64, slot: u8, projectile_id: i64 },
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 enum ImpactBehavior {
     Direct,
     Splitter { split_count: u8 },
@@ -484,6 +485,8 @@ impl ImpactBehavior {
     }
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CombatProjectile {
     pub entity_id: i64,
     pub projectile_type: u8,

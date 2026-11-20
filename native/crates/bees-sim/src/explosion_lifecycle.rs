@@ -15,20 +15,22 @@
 
 use std::sync::Arc;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ExplosionAction {
     SetRadius(f32),
     SetHarmless,
     Kill,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ExplosionEvent {
     pub time_seconds: f32,
     pub action: ExplosionAction,
 }
 
 /// Immutable animation events are shared between all explosions of a type.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExplosionTimeline {
     events: Arc<[ExplosionEvent]>,
     elapsed_seconds: f32,
@@ -36,6 +38,14 @@ pub struct ExplosionTimeline {
 }
 
 impl ExplosionTimeline {
+    /// The saved clip events must be the original prefab events. A
+    /// checkpoint may advance the clock, never redefine blast radii.
+    pub fn valid_recovery(&self, authored: &[ExplosionEvent]) -> bool {
+        self.elapsed_seconds.is_finite() && self.elapsed_seconds >= 0.0 &&
+        self.next_event <= self.events.len() &&
+        self.events.as_ref() == authored
+    }
+
     pub fn new(events: Arc<[ExplosionEvent]>) -> Self {
         Self {
             events,

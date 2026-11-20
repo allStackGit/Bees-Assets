@@ -13,7 +13,7 @@
 use crate::timer::ScaledTimer;
 use crate::geometry::Vec2;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BombStage {
     Fuse,
     PendingDamage,
@@ -28,6 +28,8 @@ pub enum BombAction {
     EndWithoutDamage,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StrikerBombFuse {
     contacted_ship_id: i64,
     shooter_fleet_ship_id: i64,
@@ -37,6 +39,14 @@ pub struct StrikerBombFuse {
 }
 
 impl StrikerBombFuse {
+    /// Preserve an attached fuse's original target and its exact timer
+    /// generation instead of rearming a new bomb after recovery.
+    pub fn valid_recovery(&self) -> bool {
+        self.contacted_ship_id > 0 && self.shooter_fleet_ship_id != 0 &&
+        self.local_attachment_offset.is_finite() &&
+        self.timer.valid_recovery()
+    }
+
     pub fn new(contacted_ship_id: i64, shooter_fleet_ship_id: i64) -> Self {
         Self {
             contacted_ship_id,
