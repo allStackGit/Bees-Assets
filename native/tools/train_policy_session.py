@@ -1470,6 +1470,7 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         **({"distributed_collection_wall_time": fleet_window}
            if fleet_window is not None else {}),
         "sum_round_optimizer_wall_seconds": optimizer_seconds,
+        "learner_pipeline_wall_time": measured_learner_pipeline(completed),
         "useful_training_throughput": {
             "scope": training_wall_scope,
             "complete_round_coverage": fully_measured,
