@@ -5073,6 +5073,8 @@ class ExperimentHub {
             !['systemd-user','windows-service'].includes(row.executor)||
             (row.executor==='systemd-user'&&host.agent_platform!=='linux')||
             (row.executor==='windows-service'&&host.agent_platform!=='win32')||
+            (row.executor==='windows-service'&&
+                !['start','stop'].includes(value.action))||
             (value.action==='run'&&row.executor!=='systemd-user'))
             throw Error('An online enrolled agent must advertise the exact approved evaluator service.');
         const all=this.state.evaluator_actions||[];
