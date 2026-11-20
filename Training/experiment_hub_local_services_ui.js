@@ -93,12 +93,45 @@
             heading.append(title,document.createTextNode(' · '+machine.status+
                 (machine.issue?' · '+machine.issue:'')));
             remoteRows.append(heading);
+            if(machine.platform==='linux'&&machine.status==='connected') {
+                for(const project of machine.installed_projects||[]) {
+                    const previous=actions.filter(item=>
+                        item.machine_id===machine.id&&
+                        item.unit==='@setup:'+project).at(-1);
+                    const unresolved=actions.some(item=>
+                        item.machine_id===machine.id&&item.project===project&&
+                        ['pending','dispatched','unverified'].includes(item.status));
+                    const line=document.createElement('div');
+                    line.className='hub-controls';
+                    const title=document.createElement('span');
+                    title.textContent=project+' setup'+(previous
+                        ?' · '+previous.status+(previous.reason
+                            ?' ('+previous.reason+')':''):'');
+                    line.append(title,evaluatorButtonRemote(
+                        project==='courier'?'Set up / reapprove Courier':'Set up TinyBrains',
+                        'setup',machine.id,'@setup:'+project,busy||unresolved));
+                    if(previous&&['pending','dispatched','unverified'].includes(previous.status)) {
+                        const review=document.createElement('button');
+                        review.type='button';
+                        review.textContent=previous.status==='pending'
+                            ?'Cancel pending':'Mark reviewed';
+                        review.disabled=busy||
+                            (previous.status==='dispatched'&&
+                                Date.now()-Date.parse(previous.dispatched_at||'')<120000);
+                        review.addEventListener('click',()=>reconcileRemote(previous));
+                        line.append(review);
+                    }
+                    remoteRows.append(line);
+                }
+            }
             for(const service of machine.services||[]) {
                 const line=document.createElement('div');
                 line.className='hub-controls';
                 const prior=actions.filter(item=>
                     item.machine_id===machine.id&&item.unit===service.unit).at(-1);
-                const unresolved=prior&&['pending','dispatched','unverified'].includes(prior.status);
+                const unresolved=actions.some(item=>
+                    item.machine_id===machine.id&&item.project===service.project&&
+                    ['pending','dispatched','unverified'].includes(item.status));
                 const detail=document.createElement('span');
                 detail.textContent=service.project+' · '+service.unit+' · '+
                     (service.executor==='systemd-user'
@@ -119,6 +152,11 @@
                         evaluatorButtonRemote('Run now','run',machine.id,service.unit,
                             !allowed||service.service_state==='running')
                     );
+                    if(service.project==='tinybrains'&&
+                        /-evaluator-(nano|micro)\.service$/.test(service.unit))
+                        line.append(evaluatorButtonRemote('Refresh suite','refresh',
+                            machine.id,service.unit,
+                            !allowed||service.service_state==='running'));
                 }else if(service.executor==='windows-service') {
                     line.append(
                         evaluatorButtonRemote('Start','start',machine.id,service.unit,
@@ -127,7 +165,7 @@
                             !allowed||service.service_state!=='running')
                     );
                 }
-                if(unresolved) {
+                if(prior&&['pending','dispatched','unverified'].includes(prior.status)) {
                     const button=document.createElement('button');
                     button.type='button';
                     button.textContent=prior.status==='pending'?'Cancel pending action':'Mark reviewed';
@@ -151,9 +189,11 @@
         return button;
     }
     async function manageRemoteEvaluator(machine_id,unit,action) {
-        if(busy||!confirm('Request '+action+' for the installed evaluator '+unit+
-            ' on '+machine_id+'? The enrolled agent must independently verify the service. '+
-            'This is a one-use action and will not be automatically replayed.'))return;
+        if(busy||!confirm('Request '+action+' for evaluator '+unit+
+            ' on '+machine_id+'? The enrolled agent independently verifies all fixed local '+
+            'paths and approvals. Initial setup or suite refresh requires a safe agent '+
+            'restart before new suite identities are advertised. This one-use action '+
+            'will not be automatically replayed.'))return;
         busy=true;
         try {
             const result=await fetch('/api/hub/local-services/remote-evaluator',{
