@@ -5183,10 +5183,23 @@ class ExperimentHub {
                         snapshot.jobs.find(job=>job.id===jobId));
                     bundleId=plan[phase+'_bundle_id'];
                     if(!UUID.test(String(bundleId||''))||
-                        !members.length||members.some((job,index)=>
-                            !job||job.resource_bundle?.id!==bundleId||
-                            job.resource_bundle.index!==index+1))
-                        throw Error('Frozen native round resource bundle ownership changed.');
+                        members.length!==plan[phase+'_members'].length||
+                        members.some((job,index)=>{
+                            const approved=plan[phase+'_members'][index];
+                            return !job||!approved||
+                                job.resource_bundle?.id!==bundleId||
+                                job.resource_bundle.index!==index+1||
+                                job.resource_bundle.size!==members.length||
+                                job.configuration_id!==approved.configuration_id||
+                                job.configuration_revision!==approved.expected_revision||
+                                job.assigned_machine_id!==approved.machine_id||
+                                JSON.stringify(job.resources)!==
+                                    JSON.stringify(approved.resources)||
+                                job.model_source_job_id!==plan.source_job_id||
+                                job.expected_parent_model_sha256!==
+                                    plan.source_model_sha256;
+                        }))
+                        throw Error('Frozen native round resource bundle, machine or model ownership changed.');
                     // A known terminal failure cannot be repaired by waiting
                     // for an unrelated offline machine. Settle surviving
                     // native Stop owners and surface manual review now.
