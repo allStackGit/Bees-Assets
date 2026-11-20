@@ -21,6 +21,44 @@ def file_sha256(path: Path) -> str:
 
 
 
+
+def native_input_dependencies(*runs):
+    """Pin the original physical scenes, Stage files and inference code.
+
+    One dependency list is shared by native training sessions and direct
+    holdout evaluations. It identifies immutable source bytes, not
+    machine-local output paths, mutable checkpoint artifacts or policy
+    weights (which the native manifest/worker already verify).
+    """
+    paths = set()
+    for source in runs:
+        if source is None:
+            continue
+        base = Path(source["path"]).parent
+        config = json.loads(Path(source["path"]).read_text(encoding="utf-8"))
+        if not isinstance(config, dict) or not isinstance(config.get("levels"), list):
+            raise ValueError("native source run must contain Levels")
+        for level in config["levels"]:
+            if not isinstance(level, dict) or not isinstance(level.get("scene"), str) or not level["scene"]:
+                raise ValueError("native source Level has no scene path")
+            paths.add((base / level["scene"]).resolve(strict=True))
+        for key in ("policy_worker", "collision_matrix", "stage_palette"):
+            value = config.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"native source has an invalid {key} path")
+            paths.add((base / value).resolve(strict=True))
+    return [{"path": str(path), "sha256": file_sha256(path)}
+            for path in sorted(paths)]
+
+
+def check_native_input_dependencies(recipe):
+    for item in recipe.get("source_dependencies", []):
+        if file_sha256(Path(item["path"])) != item["sha256"]:
+            raise ValueError(f"native source changed during run: {item['path']}")
+
+
 def normalized_python_source_sha256(path: Path) -> str:
     """Fingerprint policy code independently of Git CRLF checkout policy.
 
