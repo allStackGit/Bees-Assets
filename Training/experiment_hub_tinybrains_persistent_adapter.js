@@ -1199,7 +1199,7 @@ function createTinyBrainsPersistentDockerAdapter({
             for(const id of ['nano','micro']) {
                 const name=approval[id];
                 if(typeof name!=='string'||
-                    !new RegExp('^tinybrains_'+id+'_tiny_v[3-9][0-9]*$').test(name))
+                    !new RegExp('^tinybrains_'+id+'_tiny_v(?:[3-9]|[1-9][0-9]{1,2})$').test(name))
                     throw Error('Invalid approved TinyBrains suite identity.');
                 const file=path.join(root,name+'.json');
                 if(fs.realpathSync(file)!==file||
