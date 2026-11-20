@@ -1072,6 +1072,15 @@ impl RunNetwork {
         // The connection ledger can accept the original Game ID before
         // its first World checkpoint. Never launch another Game if a saved
         // connection or launcher identifies a different original Game.
+        if connection.connection().has_ambiguous_initial_setup(run_identity) {
+            // The first setup request may already have created a server
+            // Game. Without its acknowledged ID no authenticated reconnect
+            // can prove which Game owns this original physical World.
+            // Refuse before opening any new socket or issuing another setup.
+            return Err(invalid(
+                "original HiveMind initial setup is unresolved; refusing to create a duplicate server Game",
+            ));
+        }
         let accepted_game_id = connection.connection().setup_game_id(run_identity);
         let game_id = recovered_game_id.or(config.reconnect_game_id)
             .or(accepted_game_id);
