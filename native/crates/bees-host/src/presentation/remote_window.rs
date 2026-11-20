@@ -84,6 +84,7 @@ struct WireCounts {
     minimap_ship_markers: u64,
     minimap_objective_markers: u64,
     minimap_camera_moves: u64,
+    ship_type_multiselections: u64,
     minimap_move_orders_submitted: u64,
     right_drag_move_orders_submitted: u64,
     /// Local and LAN share the exact fog circle raster; pixels outside the
@@ -1110,6 +1111,23 @@ fn cycle_numbered_squad(state: &Value, selected: &[i64], forward: bool) -> Optio
     Some(numbered[next].1)
 }
 
+/// Double-click selects every controllable squad containing a surviving
+/// ship of this source type, in the host's canonical squad order. The LAN
+/// window only projects authenticated roster membership already on the
+/// wire; the host validates every later command against those lifetimes.
+fn squads_with_ship_type(state: &Value, ship_type: u64) -> Vec<i64> {
+    let matching: HashSet<i64> = state["ships"].as_array().into_iter().flatten()
+        .filter(|ship|ship["owned"]==true &&
+            ship["ship_type"].as_u64()==Some(ship_type))
+        .filter_map(|ship|ship["id"].as_i64()).collect();
+    state["squads"].as_array().into_iter().flatten()
+        .filter(|squad|squad["controllable"]==true &&
+            squad["members"].as_array().is_some_and(|members|
+                members.iter().any(|id|id.as_i64()
+                    .is_some_and(|id|matching.contains(&id)))))
+        .filter_map(|squad|squad["owner"]["squad_id"].as_i64()).collect()
+}
+
 fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
     let squad=state["squads"].as_array()?.iter().find(|s|
         s["controllable"]==true && s["owner"]["squad_id"].as_i64()==Some(squad_id))?;
@@ -1612,6 +1630,8 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut mode:Option<TargetMode>=None;
     let mut patrol_start:Option<Vec2>=None;
     let mut last_left=false;
+    let mut last_selection_press:Option<Instant>=None;
+    let mut double_left_press=false;
     let mut last_right=false;
     let mut right_press:Option<RemoteRightPress>=None;
     let mut minimap_dragging=false;
@@ -1689,6 +1709,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             selected.clear();
             mode=None;patrol_start=None;drag_start=None;
             last_left=false;last_right=false;
+            last_selection_press=None;double_left_press=false;
             right_press=None;
             last_middle=None;minimap_dragging=false;
             camera=None;
@@ -1752,6 +1773,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     patrol_start=None;
                     minimap_dragging=false;
                     right_press=None;
+                    last_selection_press=None;double_left_press=false;
                     // The server forgets this lease at the same authoritative
                     // episode boundary; the client never aims old ships.
                     held_fire_active=false;
@@ -2013,7 +2035,14 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             }else{last_middle=None;}
             if let Some((x,y))=mouse {
                 let (x,y)=(x as i32,y as i32);
-                if left&&!last_left&&!minimap_dragging&&x>=0&&x<FIELD as i32 {
+                if left&&!last_left&&!minimap_dragging&&
+                    x>=0&&x<FIELD as i32&&y>=0&&y<HEIGHT as i32 {
+                    // Source double-click is a second completed selection
+                    // press within 250 ms. The release still must be prompt;
+                    // a long drag cannot turn into a ship-type selection.
+                    double_left_press=last_selection_press.is_some_and(|previous|
+                        now.duration_since(previous)<=Duration::from_millis(250));
+                    last_selection_press=Some(now);
                     drag_start=Some((x,y));
                 }
                 if !left&&last_left&&!minimap_release {
@@ -2046,9 +2075,14 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     } else if let Some((sx,sy))=drag_start.take() {
                         if let Some(state)=peer.state.as_ref() {
                             let additive=window.is_key_down(Key::LeftShift)||
-                                window.is_key_down(Key::RightShift);
+                                window.is_key_down(Key::RightShift)||
+                                window.is_key_down(Key::LeftCtrl)||
+                                window.is_key_down(Key::RightCtrl);
                             let mut additions=Vec::new();
-                            if (x-sx).abs()+(y-sy).abs()>8 {
+                            let dragging=(x-sx).abs()+(y-sy).abs()>8;
+                            if dragging {
+                                last_selection_press=None;
+                                double_left_press=false;
                                 for ship in state["ships"].as_array().into_iter().flatten(){
                                     if ship["owned"]!=true {continue;}
                                     let Some(p)=peer.visual.position(
@@ -2071,7 +2105,15 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                                 state,cam,x,y,&peer.visual,peer.visual.fraction(),
                             ) {
                                 if ship["owned"]==true {
-                                    if let Some(squad)=squad_for_ship(state,
+                                    if double_left_press && !additive &&
+                                        last_selection_press.is_some_and(|pressed|
+                                            now.duration_since(pressed)<=Duration::from_millis(250))
+                                    {
+                                        if let Some(ship_type)=ship["ship_type"].as_u64() {
+                                            additions=squads_with_ship_type(state,ship_type);
+                                            peer.metrics.ship_type_multiselections+=1;
+                                        }
+                                    } else if let Some(squad)=squad_for_ship(state,
                                         ship["id"].as_i64().unwrap_or(-1),
                                         ship["side"].as_i64().unwrap_or(0))
                                         .filter(|squad| squad["controllable"]==true) {
@@ -2081,6 +2123,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                                     }
                                 }
                             }
+                            double_left_press=false;
                             if !additive {selected.clear();}
                             for id in additions {
                                 if !selected.contains(&id){selected.push(id);}
@@ -2224,6 +2267,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "minimap_ship_markers":peer.metrics.minimap_ship_markers,
         "minimap_objective_markers":peer.metrics.minimap_objective_markers,
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
+        "ship_type_multiselections":peer.metrics.ship_type_multiselections,
         "minimap_move_orders_submitted":peer.metrics.minimap_move_orders_submitted,
         "right_drag_move_orders_submitted":peer.metrics.right_drag_move_orders_submitted,
         "fog_circle_stamps":peer.metrics.fog_circle_stamps,
