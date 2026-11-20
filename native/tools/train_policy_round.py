@@ -393,12 +393,24 @@ def rollout_metrics(summary_path, config, manifest_sha):
     return metrics
 
 
-def prepare_rollout(config, directory):
-    config["run_id"] = f"{config['run_id']}-{uuid.uuid4().hex}"
+def prepare_rollout(config, directory, *, resume=False):
+    original_id = config["run_id"]
     config["notifications"] = str(directory / "events.jsonl")
     config["policy_capture"] = str(directory / "decisions.bin")
     config["rollout_summary"] = str(directory / "rollout-summary.json")
     config_path = directory / "run.json"
+    if resume and config_path.exists():
+        if config_path.is_symlink() or not config_path.is_file():
+            raise ValueError("previous native rollout config is not an owned file")
+        previous = json.loads(config_path.read_text(encoding="utf-8"))
+        previous_id = previous.get("run_id") if isinstance(previous, dict) else None
+        if (not isinstance(previous_id, str) or
+                re.fullmatch(re.escape(original_id) + r"-[0-9a-f]{32}", previous_id) is None or
+                previous != {**config, "run_id": previous_id}):
+            raise ValueError("previous native rollout is not the same immutable collector shard")
+        config["run_id"] = previous_id
+        return config_path
+    config["run_id"] = f"{original_id}-{uuid.uuid4().hex}"
     with config_path.open("x", encoding="utf-8") as stream:
         json.dump(config, stream, indent=2)
         stream.write("\n")
@@ -645,6 +657,9 @@ def verified_gpu_forwards(log_path):
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if row.get("kind") == "native_rollout_worker_restart":
+                evidence = None
+                continue
             if row.get("kind") != "native_policy_inference_efficiency":
                 continue
             calls = row.get("gpu_forward_calls")
@@ -675,7 +690,7 @@ def verified_gpu_forwards(log_path):
 
 def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                           gpu_ids=None, gpu_mask=None, leased_gpu_inference=False,
-                          leased_gpu_count=1):
+                          leased_gpu_count=1, resume=False):
     """Supervise one immutable rollout subprocess per process allocation.
 
     Any failed exit OR invalid completed summary makes the collection
@@ -683,7 +698,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
     CPU/GPU budget and accepting an incomplete aggregate.
     """
     started = time.perf_counter()
-    processes = []
+    processes = [None] * len(shards)
     metrics = {}
     gpu_proofs = {}
     gpu_requested = gpu_ids is not None or leased_gpu_inference
@@ -691,10 +706,23 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
     with ExitStack() as files:
         try:
             for index, (shard, config_path) in enumerate(shards):
+                previous_summary = Path(shard["rollout_summary"])
+                if resume and previous_summary.exists():
+                    metrics[index] = rollout_metrics(previous_summary, shard, manifest_sha)
+                    if gpu_requested:
+                        gpu_proofs[index] = verified_gpu_forwards(
+                            config_path.with_name("rollout.log")
+                        )
+                    settled.add(index)
+                    continue
+                log_path = config_path.with_name("rollout.log")
                 log = (files.enter_context(
-                    config_path.with_name("rollout.log").open("x", encoding="utf-8")
+                    log_path.open("a" if resume else "x", encoding="utf-8")
                 ) if diagnostics or gpu_requested else None)
-                processes.append(subprocess.Popen(
+                if resume and log is not None:
+                    log.write('{"kind":"native_rollout_worker_restart"}\\n')
+                    log.flush()
+                processes[index] = subprocess.Popen(
                     [*command, str(config_path)],
                     stdout=log, stderr=subprocess.STDOUT if log is not None else None,
                     env=rollout_worker_environment(
@@ -703,7 +731,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     ),
                     start_new_session=os.name != "nt",
                     creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
-                ))
+                )
             while len(metrics) != len(shards):
                 for index, (shard, _) in enumerate(shards):
                     if index in settled:
@@ -785,7 +813,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
             # eventually be reused while a much slower worker is running.
             stop_parallel_rollout_workers([
                 process for index, process in enumerate(processes)
-                if index not in settled
+                if index not in settled and process is not None
             ])
             raise
 
@@ -1032,6 +1060,8 @@ def main() -> None:
                         help="capture stage output in separate files for supervised execution")
     parser.add_argument("--collect-only", action="store_true",
                         help="publish a portable rollout bundle without running the optimizer")
+    parser.add_argument("--resume-rollout", action="store_true",
+                        help="continue the exact previously allocated distributed collector shard")
     parser.add_argument("--bundle-inbox", type=Path,
                         help="also deliver the collected bundle to an existing shared inbox")
     parser.add_argument("--collection-id",
@@ -1043,6 +1073,8 @@ def main() -> None:
     parser.add_argument("--collection-orders", type=Path,
                         help="verify every imported bundle against one distributed session order")
     args = parser.parse_args()
+    if args.resume_rollout and (not args.collect_only or args.collection_id is None):
+        parser.error("--resume-rollout requires one pinned distributed collection")
     if args.collection_id is not None and (
         len(args.collection_id) != 64 or any(
             char not in "0123456789abcdef" for char in args.collection_id
@@ -1305,15 +1337,19 @@ def main() -> None:
     for index, level in enumerate(levels):
         buckets[assignments[index]].append(level)
 
-    output.mkdir(parents=True, exist_ok=False)
+    output.mkdir(parents=True, exist_ok=args.resume_rollout)
     shards = []
     for index, allocated_levels in enumerate(buckets):
         directory = output if workers == 1 else output / f"rollout-{index}"
         shard = {**config, "levels": allocated_levels}
         if workers > 1:
-            directory.mkdir()
+            directory.mkdir(exist_ok=args.resume_rollout)
             shard["connection_checkpoint"] = str(directory / "connection-checkpoint.json")
-        shards.append((shard, prepare_rollout(shard, directory)))
+        if args.collect_only:
+            # Every native worker owns one authoritative World/model/event
+            # checkpoint, never a separate training-only simulation.
+            shard["host_recovery_checkpoint"] = str(directory / "native-host-checkpoint.json")
+        shards.append((shard, prepare_rollout(shard, directory, resume=args.resume_rollout)))
     first, config_path = shards[0]
 
     print(json.dumps({"kind": "native_training_round_started", "run_config": str(config_path),
@@ -1330,7 +1366,7 @@ def main() -> None:
     rollout = run_parallel_rollouts(
         shards, command, input_manifest_sha, args.stage_diagnostics,
         rollout_gpus, gpu_mask, args.leased_gpu_inference,
-        args.leased_gpu_count,
+        args.leased_gpu_count, resume=args.resume_rollout,
     )
     if args.collect_only:
         captures = []
