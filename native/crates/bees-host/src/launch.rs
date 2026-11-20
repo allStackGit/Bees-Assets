@@ -1,6 +1,6 @@
 //! Shared launcher for native gameplay, headless rollouts, and evaluation.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -2244,6 +2244,55 @@ fn run_session(
     Ok(())
 }
 
+/// Frozen launch input identity for the physical source Level and the
+/// model loader. The manifest already pins every policy weight by SHA-256;
+/// the resident worker checks those bytes when loading. Do not rehash large
+/// weights here or maintain another policy-model verification pipeline.
+fn native_start_asset_digests(
+    source: &Path, run: &RunConfig,
+) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+    let root = source.parent().ok_or_else(||
+        invalid("native run source has no asset directory"))?;
+    let mut files = BTreeMap::new();
+    for (index, level) in run.levels.iter().enumerate() {
+        files.insert(format!("scene:{index}"), resolve(root, &level.scene));
+    }
+    if let Some(path) = &run.collision_matrix {
+        files.insert("collision_matrix".to_owned(), resolve(root, path));
+    }
+    if let Some(path) = &run.stage_palette {
+        files.insert("stage_palette".to_owned(), resolve(root, path));
+    }
+    if let Some(path) = &run.model_manifest {
+        files.insert("model_manifest".to_owned(), resolve(root, path));
+    }
+    if let Some(path) = &run.policy_worker {
+        files.insert("policy_worker".to_owned(), resolve(root, path));
+    }
+    let mut digests = BTreeMap::new();
+    let mut cache = HashMap::<PathBuf, String>::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    for (role, path) in files {
+        let canonical = path.canonicalize()?;
+        let digest = if let Some(value) = cache.get(&canonical) {
+            value.clone()
+        } else {
+            let mut source = fs::File::open(&canonical)?;
+            let mut hasher = Sha256::new();
+            loop {
+                let size = source.read(&mut buffer)?;
+                if size == 0 { break; }
+                hasher.update(&buffer[..size]);
+            }
+            let value = format!("{:x}", hasher.finalize());
+            cache.insert(canonical, value.clone());
+            value
+        };
+        digests.insert(role, digest);
+    }
+    Ok(digests)
+}
+
 /// Immutable source identity for an interrupted non-campaign World.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2252,6 +2301,11 @@ struct QuickBattleStart {
     kind: String,
     source_config: PathBuf,
     source_sha256: String,
+    /// Verified before an uncommitted opening World is reconstructed.
+    /// Older saved games have no such evidence and cannot discard startup
+    /// output if their first World checkpoint is missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    assets_sha256: Option<BTreeMap<String, String>>,
     #[serde(default)]
     remote_host: bool,
 }
@@ -2266,8 +2320,9 @@ impl QuickBattleStart {
         // may resume a prior output directory.
         if run.host_recovery_checkpoint.is_none() { return Ok(None); }
         Ok(Some(Self {
-            schema_version: 2,
+            schema_version: 3,
             kind: "native_quick_battle_start".to_owned(),
+            assets_sha256: Some(native_start_asset_digests(&source, &run)?),
             source_config: source,
             source_sha256: format!("{:x}", Sha256::digest(bytes)),
             remote_host,
@@ -2276,7 +2331,9 @@ impl QuickBattleStart {
 
     fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
         let start: Self = serde_json::from_slice(&fs::read(path)?)?;
-        if !(1..=2).contains(&start.schema_version) ||
+        if !(1..=3).contains(&start.schema_version) ||
+            (start.schema_version >= 3 && start.assets_sha256.as_ref()
+                .is_none_or(|assets| assets.is_empty())) ||
             start.kind != "native_quick_battle_start" ||
             !start.source_config.is_absolute() ||
             start.source_sha256.len() != 64 ||
@@ -2369,14 +2426,19 @@ fn recover_native_quick_battle(
         // any interrupted terminal replay footer without resimulating,
         // then skip that old run BEFORE comparing it to today's source.
         if terminal_recording::complete_committed_recording(&run)? { continue; }
-        if !checkpoint.is_file() && saved.schema_version < 2 {
+        if !checkpoint.is_file() && saved.schema_version < 3 {
             return Err(invalid(
-                "legacy interrupted quick battle lacks its first durable World checkpoint",
+                "older interrupted quick battle has no pinned asset identities or first World checkpoint",
             ).into());
         }
         if saved.source_sha256 != start.source_sha256 {
             return Err(invalid(
                 "interrupted native battle cannot resume after its source configuration changed",
+            ).into());
+        }
+        if !checkpoint.is_file() && saved.assets_sha256 != start.assets_sha256 {
+            return Err(invalid(
+                "original quick battle scene or policy assets changed before initial World recovery",
             ).into());
         }
         if original.replace(run).is_some() {
