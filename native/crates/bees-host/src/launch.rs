@@ -20,7 +20,7 @@ use bees_host::durable_connection::DurableHiveMindConnection;
 use bees_host::socket_worker::NativeSocketWorker;
 use bees_host::socket::{SetupKind, SetupLevelIdentity};
 use bees_host::runtime::{NativeHostRuntime, NativeHostSocketEvent};
-use bees_host::checkpoint_file::NativeHostCheckpointFile;
+use bees_host::checkpoint_file::{NativeHostCheckpointFile, persist_new_json};
 use bees_host::source_command_scheduler::{NativeSourceCommandScheduler, NativeSourceCommandSchedulerCheckpoint};
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
 use bees_host::fleet_inventory::NativeFleetCombatStats;
@@ -6474,21 +6474,10 @@ fn run_battle(
         ).into());
     }
     if let Some(summary_path) = summary {
-        let commit = (|| -> Result<(), Box<dyn Error>> {
-            let file_path = if campaign_outcome.is_some() { summary_path.with_extension("tmp") }
-                else { summary_path.clone() };
-            let file = fs::OpenOptions::new().write(true).create_new(true)
-                .open(&file_path)?;
-            serde_json::to_writer(&file, &final_summary)?;
-            file.sync_all()?;
-            drop(file);
-            if file_path != summary_path {
-                fs::rename(file_path, &summary_path)?;
-                #[cfg(unix)]
-                fs::File::open(summary_path.parent().ok_or_else(|| invalid("missing summary directory"))?)?.sync_all()?;
-            }
-            Ok(())
-        })();
+        // Crash-safe for ordinary native rollouts and campaigns alike.
+        // A terminal checkpoint may already be durable, but no unfinished
+        // run_final is allowed to block its authenticated continuation.
+        let commit = persist_new_json(&summary_path, &final_summary);
         if let Err(error) = commit {
             // The original session cannot claim completed progress if its
             // final summary was not durably committed. The same terminal
