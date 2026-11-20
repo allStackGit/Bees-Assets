@@ -120,11 +120,15 @@ additional arguments.
 The base installer does not accept a project selection. Optional flags can
 change its installation directory. For a CPU-only independent job, assign
 the machine in Train or a resource bundle: this requests the missing
-simulation. Start remains gated on the completed installation, the fresh
-authenticated lease and native preflight. A resource bundle can use
+simulation. For one independent CPU-only job, **Start native job** can be
+approved once while installation is pending; the Hub saves that exact
+machine/lease/configuration approval and issues the native Start only after
+installation, fresh authenticated lease and all native preflight checks
+pass. This approval expires after 24 hours and is disarmed on coordinator
+restart; it can also be cancelled in Train. A resource bundle can use
 **Schedule auto-start when ready** to launch its approved members after
-those gates pass. On a resource-constrained machine, unrequested simulations
-are not downloaded.
+those same gates pass. On a resource-constrained machine, unrequested
+simulations are not downloaded.
 
 Native Bees execution is not yet supported by this worker: the unfinished
 Unity-independent Bees runtime does not yet expose a trusted Hub training
