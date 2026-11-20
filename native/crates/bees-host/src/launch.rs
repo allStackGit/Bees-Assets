@@ -6519,7 +6519,7 @@ fn run_battle(
         // run_final is allowed to block its authenticated continuation.
         let commit: Result<(), Box<dyn Error>> =
             if summary_path.exists() || summary_path.is_symlink() {
-                (|| {
+                (|| -> Result<(), Box<dyn Error>> {
                     // A process can terminate after committing the exact
                     // battle/career receipt but before returning to its
                     // caller. Never duplicate campaign grants, and never
