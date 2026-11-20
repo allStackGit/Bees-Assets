@@ -6,6 +6,7 @@
 const fs=require('node:fs');
 const http=require('node:http');
 const path=require('node:path');
+const {spawn,spawnSync}=require('node:child_process');
 const {ExperimentHub}=require('./experiment_hub_core');
 const {JobExporter}=require('./experiment_hub_job_export');
 const localServices=require('./experiment_hub_local_services');
@@ -248,12 +249,56 @@ async function main(argv=process.argv.slice(2)) {
         if(remoteWorker?.listening)remoteWorker.close();
         throw error;
     }
-    // Publish HEADs from the coordinator's configured trusted Git checkouts.
-    // Private GitHub credentials never leave Halifax or reach machine agents.
-    releases.refresh().catch(error=>console.error('[hub-updates] '+error.message));
-    const releaseTimer=setInterval(()=>{
-        releases.refresh().catch(error=>console.error('[hub-updates] '+error.message));
-    },120000);
+    // Private GitHub credentials stay on Halifax. Remote workers stage new
+    // commits immediately, but their manifest's activation_ready flag remains
+    // false until the learner checkout and running coordinator generation
+    // are both updated at an idle native-job boundary.
+    let closing=false,releaseBusy=false;
+    async function releaseCycle() {
+        if(closing||releaseBusy)return;
+        releaseBusy=true;
+        try {
+            await releases.refresh();
+            const active=hub.state.jobs.some(job=>job.dispatch_id&&
+                !job.capacity_released_at&&
+                !['finished','failed','stopped','cancelled'].includes(job.status));
+            if(active)return;
+            // Do not silently bypass the queue automation's explicit
+            // restart re-arm authorization and native ownership checks.
+            if(hub.automation.enabled&&!hub.state.automation_restart)return;
+            hub.softwareMaintenance=true;
+            const result=await releases.applyLocalWhenIdle(hub);
+            if(!result.changed.length)return;
+            console.log('[hub-updates] Local fast-forwarded software: '+
+                result.changed.join(', '));
+            // A service restart refreshes adapter catalogs and protocol
+            // modules after safe local source activation. No native job is
+            // stopped; this path runs only with no unresolved native jobs.
+            const agent=spawnSync('systemctl',
+                ['--user','is-active','--quiet','bees-experiment-hub-agent.service'],
+                {timeout:5000,windowsHide:true});
+            if(agent.status===0) {
+                const restart=spawnSync('systemctl',
+                    ['--user','restart','bees-experiment-hub-agent.service'],
+                    {timeout:60000,windowsHide:true});
+                if(restart.status!==0)
+                    throw Error('Learner source activated but local agent restart failed.');
+            }
+            // Restart the coordinator from systemd; reloaded module versions
+            // are necessary before remote release activation is authorized.
+            const proc=spawn('systemctl',
+                ['--user','restart','bees-experiment-hub-standalone.service'],
+                {detached:true,stdio:'ignore',windowsHide:true});
+            proc.unref();
+        }catch(error) {
+            console.error('[hub-updates] Local activation: '+String(error.message||error));
+        }finally {
+            hub.softwareMaintenance=false;
+            releaseBusy=false;
+        }
+    }
+    releaseCycle();
+    const releaseTimer=setInterval(releaseCycle,120000);
     const automationTimer=setInterval(()=>{
         try {
             // A lost worker heartbeat is a durable observation, never a
@@ -269,7 +314,6 @@ async function main(argv=process.argv.slice(2)) {
             console.error('[hub] Native automation disarmed: '+String(error.message||error));
         }
     },10000);
-    let closing=false;
     function stop() {
         if(closing)return;
         closing=true;
