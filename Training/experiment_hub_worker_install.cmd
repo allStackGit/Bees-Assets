@@ -29,7 +29,7 @@ param(
     [string]$Projects='tinybrains,courier',
     [string]$InstallRoot='C:\ProgramData\BeesExperimentHubWorker',
     [string]$MachineId='',
-    [string]$HubTailnetIp='',
+    [string]$HubTailnetIp='100.97.43.98',
     [string]$TinyBrainsKeyFile='',
     [string]$CourierKeyFile='',
     [string]$TinyBrainsRoot='',
@@ -84,6 +84,63 @@ function Sync-Repo([string]$Name,[string]$Remote,[string]$Ref,[string]$SparseDir
         Exec-Git @('-C',$dest,'pull','--ff-only','origin',$Ref)
     }
     return $dest
+}
+# Download immutable private software from Halifax after tailnet enrollment.
+# Initial installation never needs private-repository Git credentials.
+function Install-HubRelease([string]$Component,[string]$Name) {
+    if($null -eq $Enrollment){throw 'Worker bootstrap must complete before downloading software.'}
+    $destination=Join-Path $SourceRoot $Name
+    if(Test-Path -LiteralPath $destination){
+        throw "Refusing to overwrite existing worker source: $destination"
+    }
+    $headers=@{ 'x-hub-agent-token'=[string]$Enrollment.agent_token }
+    $base="http://$($HubTailnetIp):7149"
+    $manifest=Invoke-RestMethod -Uri "$base/api/hub/agent/releases?machine_id=$MachineId" -Headers $headers
+    $entry=$manifest.components.PSObject.Properties[$Component].Value
+    if($null -eq $entry -or $entry.activation_ready -ne $true){
+        throw "Hub has not published an active $Component release."
+    }
+    $hash=[string]$entry.sha256
+    $bytes=[long]$entry.bytes
+    if($hash -cnotmatch '^[0-9a-f]{64}$' -or $bytes -le 0 -or $bytes -gt 536870912){
+        throw 'Invalid approved software release manifest.'
+    }
+    $archive=Join-Path $Private "$Component-source.tar"
+    try {
+        $bundle="$base/api/hub/agent/releases/bundle?machine_id=$MachineId&component=$Component&sha256=$hash"
+        Invoke-WebRequest -UseBasicParsing -Uri $bundle -Headers $headers -OutFile $archive
+        if((Get-Item -LiteralPath $archive).Length -ne $bytes -or
+           (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash){
+            throw "$Component release SHA-256 or length did not match Halifax."
+        }
+        $names=@(& tar.exe -tf $archive)
+        Assert-Exit 'Inspect downloaded release paths'
+        $details=@(& tar.exe -tvf $archive)
+        Assert-Exit 'Inspect downloaded release types'
+        if(-not $names.Count -or
+            @($names | Where-Object { $_ -match '(^/|(^|/)\.\.(/|$)|\\|:)' }).Count -ne 0 -or
+            @($details | Where-Object { $_ -match '^[lh]' }).Count -ne 0){
+            throw 'Unsafe software release archive.'
+        }
+        New-Item -ItemType Directory -Path $destination -Force | Out-Null
+        & tar.exe -xf $archive -C $destination
+        Assert-Exit "Extract $Component release"
+        if($Component -eq 'worker' -and
+            -not(Test-Path (Join-Path $destination 'Training\experiment_hub_agent.js'))){
+            throw 'Published Hub worker release has no agent entrypoint.'
+        }
+        if($Component -eq 'tinybrains' -and
+            -not(Test-Path (Join-Path $destination 'Ants-MAPOCA\pyproject.toml'))){
+            throw 'Published TinyBrains release has no simulation project.'
+        }
+        if($Component -eq 'courier' -and
+            -not(Test-Path (Join-Path $destination 'requirements.txt'))){
+            throw 'Published Courier release has no dependency contract.'
+        }
+    } finally {
+        if(Test-Path -LiteralPath $archive){Remove-Item -LiteralPath $archive -Force}
+    }
+    return $destination
 }
 # Pin the official simulator and baseline code; never substitute a Python
 # recreation of game mechanics for the published TinyBrains engine.
@@ -227,20 +284,6 @@ if($Command -eq 'update'){
 Assert-TailnetIP $HubTailnetIp
 
 if($Command -eq 'install'){
-    # Catch missing enrollment and shared rollout-key inputs before costly
-    # package installation, runtime setup or native helper compilation.
-    if($MachineId -cnotmatch '^[a-z][a-z0-9_-]{0,47}$'){
-        throw 'Enroll this worker in Hub Machines and supply its exact -MachineId.'
-    }
-    foreach($selection in $Projects.Split(',')){
-        $source=if($selection -eq 'tinybrains'){$TinyBrainsKeyFile}else{$CourierKeyFile}
-        if(-not $source -or -not(Test-Path -LiteralPath $source -PathType Leaf)){
-            throw "Supply an existing private $selection rollout key file before installing."
-        }
-    }
-}
-
-if($Command -eq 'install'){
     Ensure-Winget 'git.exe' 'Git.Git'
     Ensure-Winget 'node.exe' 'OpenJS.NodeJS.LTS'
     Ensure-Winget 'dotnet.exe' 'Microsoft.DotNet.SDK.8'
@@ -275,6 +318,24 @@ if($Command -eq 'install'){
         Assert-TailnetIP (([string]$ipLines[0]).Trim())
     }
 }
+# Complete the Tailscale browser login once; Halifax verifies this node
+# belongs to the same Tailscale owner and returns machine-scoped credentials.
+$Enrollment=$null
+if($Command -eq 'install'){
+    $stats=Get-CimInstance -ClassName Win32_ComputerSystem
+    $payload=@{
+        projects=@($Projects.Split(','))
+        cpus=[Environment]::ProcessorCount
+        ram_mb=[int][Math]::Floor([double]$stats.TotalPhysicalMemory/1MB)
+    } | ConvertTo-Json -Compress
+    $Enrollment=Invoke-RestMethod -Method Post -ContentType 'application/json' `
+        -Uri "http://$($HubTailnetIp):7149/api/hub/agent/bootstrap" -Body $payload
+    $MachineId=[string]$Enrollment.machine_id
+    if($MachineId -cnotmatch '^[a-z][a-z0-9_-]{0,47}$' -or
+        [string]$Enrollment.agent_token -cnotmatch '^[0-9a-f]{64}$'){
+        throw 'Invalid authenticated Hub enrollment response.'
+    }
+}
 foreach($tool in @('git.exe','node.exe','dotnet.exe')){
     $null=Tool $tool
 }
@@ -290,6 +351,18 @@ foreach($dir in @($InstallRoot,$Private,$SourceRoot,$VenvRoot,$NativeRoot,$Servi
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
 }
 Private-Permissions $InstallRoot
+if($Command -eq 'install'){
+    if('tinybrains' -in $Projects.Split(',')){
+        $key=[string]$Enrollment.rollout_keys.tinybrains
+        if($key -cnotmatch '^[0-9a-f]{64}$'){throw 'Invalid TinyBrains rollout credential.'}
+        [IO.File]::WriteAllText((Join-Path $Private 'tinybrains-rollout.key'),$key)
+    }
+    if('courier' -in $Projects.Split(',')){
+        $key=[string]$Enrollment.rollout_keys.courier
+        if($key -cnotmatch '^[0-9a-f]{64}$'){throw 'Invalid Courier rollout credential.'}
+        [IO.File]::WriteAllText((Join-Path $Private 'courier-rollout.key'),$key)
+    }
+}
 Service-Permissions $NativeRoot
 Service-Permissions $ServiceState
 Service-Permissions $CacheRoot
@@ -312,12 +385,14 @@ $managedCandidates=@(Get-ChildItem -LiteralPath $pythonRoot -Directory |
 if($managedCandidates.Count -ne 1){throw 'Expected exactly one pinned Python 3.11 runtime.'}
 $managedPython=Join-Path $managedCandidates[0].FullName 'python.exe'
 if(-not(Test-Path $managedPython)){throw 'Pinned machine-local Python is missing.'}
-$assets=Sync-Repo 'Bees-Assets' 'https://github.com/allStackGit/Bees-Assets.git' $Branch 'Training'
+$assets=if($Command -eq 'install'){Install-HubRelease 'worker' 'Bees-Assets'}
+    else {Join-Path $SourceRoot 'Bees-Assets'}
 $Training=Join-Path $assets 'Training'
 $selected=$Projects.Split(',')
 if('tinybrains' -in $selected){
     if(-not $TinyBrainsRoot){
-        $tiny=Sync-Repo 'TinyBrains' 'https://github.com/allStackGit/TinyBrains.git' $TinyBrainsBranch 'Ants-MAPOCA'
+        $tiny=if($Command -eq 'install'){Install-HubRelease 'tinybrains' 'TinyBrains'}
+            else {Join-Path $SourceRoot 'TinyBrains'}
         $TinyBrainsRoot=Join-Path $tiny 'Ants-MAPOCA'
     }
     if(-not(Test-Path (Join-Path $TinyBrainsRoot 'pyproject.toml'))){throw 'TinyBrains project root missing.'}
@@ -348,7 +423,8 @@ if('tinybrains' -in $selected){
 }
 if('courier' -in $selected){
     if(-not $CourierRoot){
-        $CourierRoot=Sync-Repo 'Basic-Training' 'https://github.com/allStackGit/Basic-Training.git' $CourierBranch
+        $CourierRoot=if($Command -eq 'install'){Install-HubRelease 'courier' 'Basic-Training'}
+            else {Join-Path $SourceRoot 'Basic-Training'}
     }
     if(-not(Test-Path (Join-Path $CourierRoot 'requirements.txt'))){throw 'Courier project root missing.'}
     $courierEnv=Join-Path $VenvRoot 'courier'
@@ -379,20 +455,7 @@ $launcher=Join-Path $serviceOut 'ExperimentHubWindowsService.exe'
 $ownerSha=(Get-FileHash -LiteralPath $owner -Algorithm SHA256).Hash.ToLowerInvariant()
 
 if($Command -eq 'install'){
-    if($MachineId -cnotmatch '^[a-z][a-z0-9_-]{0,47}$'){
-        throw 'Supply the exact enrolled Hub machine ID using -MachineId.'
-    }
-    if(('tinybrains' -in $selected) -and -not $TinyBrainsKeyFile){
-        throw 'Supply an existing TinyBrains rollout key identical to the Halifax learner key.'
-    }
-    if(('courier' -in $selected) -and -not $CourierKeyFile){
-        throw 'Supply an existing Courier HMAC key identical to the learner key.'
-    }
-    $secure=Read-Host 'One-time 64-character Hub enrollment token (not echoed)' -AsSecureString
-    $ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-    try{$token=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)}
-    finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)}
-    if($token -cnotmatch '^[0-9a-f]{64}$'){throw 'Invalid token; enroll the machine in the Hub first.'}
+    $token=[string]$Enrollment.agent_token
 
     $tailscale=if(Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe"){
         "$env:ProgramFiles\Tailscale\tailscale.exe"
@@ -412,7 +475,6 @@ if($Command -eq 'install'){
     Add-Line $lines 'EXPERIMENT_HUB_TAILNET_IP' $tailnetIp
     Add-Line $lines 'EXPERIMENT_HUB_WORKER_PROJECTS' $Projects
     if('tinybrains' -in $selected){
-        Copy-Private $TinyBrainsKeyFile (Join-Path $Private 'tinybrains-rollout.key')
         Add-Line $lines 'EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT' ([IO.Path]::GetFullPath($TinyBrainsRoot))
         Add-Line $lines 'EXPERIMENT_HUB_TINYBRAINS_PYTHON' $tbPython
         Add-Line $lines 'EXPERIMENT_HUB_TINYBRAINS_CACHE' (Join-Path $CacheRoot 'tinybrains')
@@ -420,7 +482,6 @@ if($Command -eq 'install'){
         Add-Line $lines 'EXPERIMENT_HUB_TINYBRAINS_THREAD_LIMIT' ([string][Environment]::ProcessorCount)
     }
     if('courier' -in $selected){
-        Copy-Private $CourierKeyFile (Join-Path $Private 'courier-rollout.key')
         Add-Line $lines 'EXPERIMENT_HUB_COURIER_PROJECT_ROOT' ([IO.Path]::GetFullPath($CourierRoot))
         Add-Line $lines 'EXPERIMENT_HUB_COURIER_PYTHON' $courierPython
         Add-Line $lines 'EXPERIMENT_HUB_COURIER_CACHE' (Join-Path $CacheRoot 'courier')
@@ -457,7 +518,7 @@ if(-not $existing){
         -EnvironmentFile $EnvFile -Name $ServiceName -Install
     if(-not $?){throw 'Windows Hub service installation failed.'}
 }
-if($Start){
+if($Start -or $Command -eq 'install'){
     $current=Get-Service -Name $ServiceName
     if($current.Status -eq 'Running'){
         throw 'Agent is already running; stop any active Hub jobs before a restart.'
@@ -479,4 +540,4 @@ $taskCommand='"'+$node+'" "'+$updater+'" --root "'+$InstallRoot+'"'
 Assert-Exit 'Install two-minute authenticated software update task'
 Write-Host "Hub worker installed. Service: $ServiceName (automatic startup when -Start was selected)."
 Write-Host 'Enabled collector ports: TinyBrains 12134/12135, Courier 13134/13135.'
-Write-Host 'Review this machine in the Hub Machines tab before authorizing experiments.'
+Write-Host 'Automatically enrolled via Tailscale; Hub Machines will display native capabilities.'
