@@ -1508,6 +1508,18 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
                 sample["optimizer_gpu_update_wall_seconds_max"]
                 for _, sample in synchronized_gpu_rounds
             ),
+            # Host-side collective submission is already measured by each
+            # rank. Sum of ranks overlaps and cannot be added to update wall
+            # time or interpreted as actual NCCL/RCCL/Gloo device wait.
+            "sum_rank_gradient_submission_wall_seconds": sum(
+                sample["optimizer_gradient_submission_wall_seconds_sum"]
+                for _, sample in synchronized_gpu_rounds
+            ),
+            "sum_rank_masked_loss_submission_wall_seconds": sum(
+                sample["optimizer_masked_loss_submission_wall_seconds_sum"]
+                for _, sample in synchronized_gpu_rounds
+            ),
+            "collective_submission_is_overlapping_host_time": True,
             "per_gpu_process_memory_peak_bytes": {
                 str(rank): max(
                     sample["optimizer_gpu_per_device"][rank][
@@ -1539,6 +1551,10 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
                     sample["optimizer_synchronized_minibatches"],
                 "max_rank_update_wall_seconds":
                     sample["optimizer_gpu_update_wall_seconds_max"],
+                "sum_rank_gradient_submission_wall_seconds":
+                    sample["optimizer_gradient_submission_wall_seconds_sum"],
+                "sum_rank_masked_loss_submission_wall_seconds":
+                    sample["optimizer_masked_loss_submission_wall_seconds_sum"],
             } for number, sample in synchronized_gpu_rounds],
         }} if synchronized_gpu_rounds else {}),
         "self_play_opponent_promotions": sum(
