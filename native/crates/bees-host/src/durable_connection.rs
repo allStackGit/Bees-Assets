@@ -172,6 +172,29 @@ impl DurableHiveMindConnection {
         Ok(hash)
     }
 
+    /// Reserve the same canonical Hash and original server Game identity
+    /// in one atomic connection checkpoint before transmitting Level setup.
+    pub fn begin_setup(
+        &mut self, run_identity: &str, requested_game_id: i64,
+    ) -> Result<i64, DurableConnectionError> {
+        self.ensure_available()?;
+        let hash = self.connection.begin_setup(run_identity, requested_game_id)
+            .map_err(DurableConnectionError::Protocol)?;
+        self.persist_or_poison()?;
+        Ok(hash)
+    }
+
+    /// A validated server setup acknowledgement becomes durable before
+    /// another Level can join or the original physical World can tick.
+    pub fn accept_setup(
+        &mut self, run_identity: &str, request_hash: i64, game_id: i64,
+    ) -> Result<(), DurableConnectionError> {
+        self.ensure_available()?;
+        self.connection.accept_setup(run_identity, request_hash, game_id)
+            .map_err(DurableConnectionError::Protocol)?;
+        self.persist_or_poison()
+    }
+
     pub fn request_strategy(
         &mut self,
         owner: SquadLifetime,
