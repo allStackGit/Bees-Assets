@@ -117,8 +117,9 @@
             state=data;
             renderEvaluators(data.evaluators);
             const blocked=data.active_jobs>0;
+            const localBlocked=(data.agent_active_jobs??data.active_jobs)>0;
             coordinator.disabled=busy||blocked||!data.coordinator.managed;
-            agent.disabled=busy||blocked||!data.agent.managed;
+            agent.disabled=busy||localBlocked||!data.agent.managed;
             const unavailable=[
                 !data.evaluators?.tinybrains_available
                     ?'TinyBrains: '+(data.evaluators?.tinybrains_reason||'unavailable'):null,
@@ -127,8 +128,13 @@
             ].filter(Boolean);
             message.textContent=label('Coordinator',data.coordinator)+'; '+
                 label('Local agent',data.agent)+'.'+
-                (blocked?' Restart disabled while '+data.active_jobs+
+                (blocked?' Coordinator restart disabled while '+data.active_jobs+
                     ' native job(s) are active or unverified.':'')+
+                (data.agent_restart_scope==='local'
+                    ?(localBlocked?' Local agent restart disabled while '+
+                        data.agent_active_jobs+' local job(s) are active or unverified.':
+                        ' Local agent restart is available independently of remote jobs.')
+                    :(blocked?' Local agent restart also requires all jobs to be idle because its machine identity was not verified.':''))+
                 (unavailable.length?' Evaluator readiness — '+unavailable.join('; ')+'.':'');
         }catch(error){
             state=null;
@@ -143,7 +149,9 @@
         if(!state||busy||!state[service]?.managed)return;
         if(!confirm('Restart the '+(service==='coordinator'?'local coordinator':
             'local machine agent')+'? This temporarily interrupts its Hub connection. '+
-            'Native jobs must be stopped or reconciled first.'))return;
+            (service==='agent'&&state.agent_restart_scope==='local'
+                ?' Native jobs on this machine must be stopped or reconciled first.'
+                :' Native jobs must be stopped or reconciled first.')))return;
         busy=true;
         coordinator.disabled=true;
         agent.disabled=true;
