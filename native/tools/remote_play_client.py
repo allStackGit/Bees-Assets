@@ -81,10 +81,17 @@ ENEMY_MANEUVERS = {
 
 
 class RemoteConsole:
-    def __init__(self, connection, *, silent=False, expected_side=None):
+    def __init__(self, connection, *, silent=False, expected_side=None,
+                 expected_session_id=None):
         self.socket = connection
         self.silent = silent
         self.expected_side = expected_side
+        # One host_session_id belongs to the original authoritative World
+        # across native checkpoint recovery. Rejoining an unrelated host
+        # with the same tokens must never carry old player authority.
+        self.expected_session_id = expected_session_id
+        self.host_session_id = None
+        self.authenticated_side = None
         self.notifications = SimpleQueue()
         self.lock = threading.Lock()
         self.latest = None
@@ -107,6 +114,9 @@ class RemoteConsole:
                     message = json.loads(line)
                     kind = message.get("kind")
                     if kind == "world_state":
+                        if (self.host_session_id is None or
+                                message.get("viewer_side") != self.authenticated_side):
+                            raise ValueError("unauthenticated or misrouted native World state")
                         episode = (message.get("world_id"),
                                    message.get("episode_revision"))
                         with self.lock:
@@ -206,16 +216,28 @@ class RemoteConsole:
                             print(notice)
                     elif kind == "welcome":
                         side = message.get("side")
-                        if self.expected_side is not None and side != self.expected_side:
-                            self.notifications.put(f"Authenticated as side {side}, expected {self.expected_side}; disconnecting")
-                            try:
-                                self.socket.shutdown(socket.SHUT_RDWR)
-                            except OSError:
-                                pass
-                            break
-                        self.notifications.put(f"Authenticated; player side {side} ready")
+                        session = message.get("host_session_id")
+                        if (message.get("protocol") != 1 or
+                                side not in (1, 2) or
+                                self.host_session_id is not None or
+                                not isinstance(session, str) or len(session) != 32 or
+                                any(ch not in "0123456789abcdef" for ch in session) or
+                                (self.expected_side is not None and
+                                 side != self.expected_side) or
+                                (self.expected_session_id is not None and
+                                 session != self.expected_session_id)):
+                            raise ValueError(
+                                "native multiplayer authority or recovered host session differs"
+                            )
+                        with self.lock:
+                            self.host_session_id = session
+                            self.authenticated_side = side
+                        note = ("Rejoined recovered native host"
+                                if message.get("recovered_host") is True
+                                else "Connected to native host")
+                        self.notifications.put(f"{note}; player side {side} ready")
                         if not self.silent:
-                            print(f"Authenticated; player side {side} ready")
+                            print(f"{note}; player side {side} ready")
                     elif kind == "held_fire_released":
                         self.held_scope = None
                         self.held_begin_request = None
@@ -244,6 +266,10 @@ class RemoteConsole:
                 print(f"Connection failed: {error}")
         finally:
             self.alive = False
+            try:
+                self.socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             self.notifications.put("Connection closed")
 
     def snapshot(self):
