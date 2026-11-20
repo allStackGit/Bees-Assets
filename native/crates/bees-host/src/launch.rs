@@ -2351,6 +2351,20 @@ fn archived_native_remote_receipts_from_root(
         // Older local-only receipts contain no LAN identity. They cannot
         // be offered as another player's original authenticated session.
         let Some(id) = summary["remote_session_id"].as_str() else { continue };
+        // Older archives lack trustworthy original side membership.
+        // Do not reinterpret the replacement host's newer credentials
+        // as proof that those players joined the earlier physical World.
+        let Some(original_sides) = summary["remote_authorized_sides"].as_array()
+        else { continue };
+        let sides = original_sides.iter().map(Value::as_i64)
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| invalid("archived LAN player side identity is malformed"))?;
+        if sides.is_empty() || sides.len() > 2 ||
+            sides.iter().any(|side| !(1..=2).contains(side)) ||
+            sides.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Err(invalid("archived LAN player sides do not match a real native host").into());
+        }
         if id.len() != 32 || !id.bytes().all(|byte|
             byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) ||
             !seen.insert(id.to_owned())
@@ -2382,6 +2396,7 @@ fn archived_native_remote_receipts_from_root(
         }
         receipts.push(bees_host::remote_play::NativeArchivedBattleReceipt {
             session_id: id.to_owned(),
+            authorized_sides: sides.into_iter().map(|side| side as i32).collect(),
             battle_result: result.clone(),
             campaign_outcome: campaign,
             banked_minerals: summary["campaign_banked_minerals"].as_u64(),
@@ -7307,9 +7322,11 @@ fn run_battle(
         .and_then(|view|
             bees_host::remote_play::NativeRemotePlay::authoritative_battle_receipt(&view));
     let remote_session_id = remote.as_ref().map(|server| server.session_id().to_owned());
+    let remote_authorized_sides = remote.as_ref().map(|server| server.authenticated_sides());
     let mut final_summary = json!({
         "kind": "run_final",
         "remote_session_id": remote_session_id,
+        "remote_authorized_sides": remote_authorized_sides,
         "remote_terminal_receipt": remote_terminal_receipt,
         "source_scene_template_cache": {
             "distinct_source_documents": unique_source_documents,
@@ -7637,7 +7654,8 @@ fn run_battle(
                         "final_physical_worlds", "final_gameplay_worlds",
                         "campaign_outcome", "campaign_fleet", "campaign_squads",
                         "campaign_banked_minerals",
-                        "remote_session_id", "remote_terminal_receipt",
+                        "remote_session_id", "remote_authorized_sides",
+                        "remote_terminal_receipt",
                     ];
                     if FIELDS.iter().any(|&field|
                         committed.get(field) != final_summary.get(field)) ||
