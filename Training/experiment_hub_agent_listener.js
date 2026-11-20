@@ -89,6 +89,9 @@ function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null) {
                     return respond(res,200,{
                         components:releases.manifest(live?.installed_projects||[]),
                         mode:hub.machineUpdatePolicy(identity),
+                        agent_instance_id:live?.instance_id||null,
+                        agent_preflight_passed:live?.native_preflight_passed===true,
+                        agent_report_age_ms:live?Date.now()-live.received_ms:null,
                         pending_native_jobs:hub.state.jobs.filter(job=>
                             job.assigned_machine_id===identity&&job.dispatch_id&&
                             !job.capacity_released_at&&
