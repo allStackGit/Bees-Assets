@@ -146,6 +146,19 @@ class NativeHubCollectionBarrier:
         process = attempt["job_process"]
         add(process, "cpu_core_equivalents", live.get("cpu_cores_used"))
         add(process, "memory_current_mb", live.get("memory_current_mb"))
+        # Normalize only against this job's frozen Hub lease. The ratio
+        # measures observed process usage, not host-wide utilization.
+        reserved = job.get("resources", {})
+        cpu = live.get("cpu_cores_used")
+        if type(reserved.get("cpus")) is int and reserved["cpus"] > 0 and (
+                type(cpu) in (int, float)):
+            add(process, "cpu_lease_utilization_pct",
+                100 * cpu / reserved["cpus"])
+        memory = live.get("memory_current_mb")
+        if type(reserved.get("ram_mb")) is int and reserved["ram_mb"] > 0 and (
+                type(memory) in (int, float)):
+            add(process, "memory_lease_utilization_pct",
+                100 * memory / reserved["ram_mb"])
         add(process, "process_tasks", live.get("process_tasks"))
         add(process, "cpu_throttled_seconds_cumulative",
             live.get("cpu_throttled_seconds"))
@@ -182,11 +195,17 @@ class NativeHubCollectionBarrier:
     def observed_resource_summary(self):
         def summarize(samples):
             return {
-                key: {
+                key: ({
+                    "sample_count": item["count"],
+                    # Already cumulative/high-water counters must not be
+                    # presented as average instantaneous usage.
+                    "observed_high_water": item["peak"],
+                } if key.endswith("_cumulative") or key == "peak_job_memory_mb"
+                else {
                     "sample_count": item["count"],
                     "sample_mean": item["sum"] / item["count"],
                     "sample_peak": item["peak"],
-                } for key, item in samples.items() if item["count"]
+                }) for key, item in samples.items() if item["count"]
             }
         return {
             collector: [{
