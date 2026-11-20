@@ -186,22 +186,24 @@ fi
 # Immutable SHA-256-checked archives come only from the Hub release publisher.
 # Worker GitHub credentials are never needed.
 install_release() {
-    local component=$1 dest=$2 manifest sha bytes archive actual
+    local component=$1 dest=$2 manifest version sha bytes archive actual
     [[ ! -e "$dest" ]] ||
         { echo "Refusing to replace an existing source directory: $dest" >&2; return 1; }
     manifest=$(curl --noproxy '*' -fsS --max-time 30 \
         -H "x-hub-agent-token: $TOKEN" \
         "$HUB_URL/api/hub/agent/releases?machine_id=$MACHINE_ID")
-    read -r sha bytes < <(printf '%s' "$manifest" | node -e '
+    read -r version sha bytes < <(printf '%s' "$manifest" | node -e '
       let data="";process.stdin.on("data",x=>data+=x);
       process.stdin.on("end",()=>{
         const v=JSON.parse(data).components?.[process.argv[1]];
-        if(!v||!v.activation_ready||!/^[0-9a-f]{64}$/.test(v.sha256)||
+        if(!v||!v.activation_ready||!/^[0-9a-f]{40}$/.test(v.version)||
+           !/^[0-9a-f]{64}$/.test(v.sha256)||
            !Number.isSafeInteger(v.bytes)||v.bytes<1||v.bytes>536870912)
           process.exitCode=1;
-        else process.stdout.write(v.sha256+" "+v.bytes+"\n");
+        else process.stdout.write(v.version+" "+v.sha256+" "+v.bytes+"\n");
       });' "$component")
-    [[ "$sha" =~ ^[0-9a-f]{64}$ && "$bytes" =~ ^[0-9]+$ ]] ||
+    [[ "$version" =~ ^[0-9a-f]{40}$ && "$sha" =~ ^[0-9a-f]{64}$ &&
+       "$bytes" =~ ^[0-9]+$ ]] ||
         { echo "Published $component release is unavailable." >&2; return 1; }
     archive="$PRIVATE/$component-$$.tar"
     curl --noproxy '*' -fsS --max-time 180 \
@@ -217,6 +219,8 @@ install_release() {
     fi
     mkdir -p "$dest"
     tar -xf "$archive" -C "$dest"
+    printf '%s\n' "$version" > "$dest/.hub-release-version"
+    chmod 600 "$dest/.hub-release-version"
     rm -f "$archive"
 }
 if [[ "$MODE" == install ]]; then
