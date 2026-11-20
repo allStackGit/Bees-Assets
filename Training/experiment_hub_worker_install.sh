@@ -71,6 +71,8 @@ if [[ "$MODE" == status ]]; then
     echo "Agent environment: $ENVFILE (private; contents suppressed)"
     exit 0
 fi
+# A one-file installation starts its agent and update timer automatically.
+if [[ "$MODE" == install ]]; then START=1; fi
 if [[ "$MODE" == install && -f "$HOME/.config/systemd/user/$SERVICE" ]]; then
     echo "An existing Hub agent already owns this Linux user. Do not install a second agent." >&2
     exit 1
