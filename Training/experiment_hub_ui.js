@@ -3833,6 +3833,42 @@ document.addEventListener('DOMContentLoaded', () => {
                     }));
                 }
             }
+            // A failed collector is not a resumable service and cannot
+            // be restarted under its original Hub job/lease. Explicitly
+            // queue a different job against the same frozen collection and
+            // original machine, then claim fresh resources and approve Start.
+            if(j.project_id==='bees_native_collect'&&j.status==='failed'&&
+                j.capacity_released_at&&!state.jobs.some(child=>
+                    child.collector_replacement_of_job_id===j.id&&
+                    child.status!=='cancelled')&&
+                state.configurations.some(c=>c.id===j.configuration_id&&
+                    c.revision===j.configuration_revision&&
+                    JSON.stringify(c.parameters)===JSON.stringify(j.frozen_parameters)))
+                actions.append(button('Replace failed collector',async()=>{
+                    if(!confirm('Create a NEW native collector Hub job for '+
+                        j.configuration_name+' on its original machine '+
+                        j.assigned_machine_id+'? The old service must be verified inactive. '+
+                        'The physical collection, scene, model, and artifact lineage stay unchanged. '+
+                        'The replacement still requires a new Hub capacity claim and an explicit Start; '+
+                        'no native process launches now.'))return;
+                    try {
+                        const successor=await action('hub/jobs',{
+                            configuration_id:j.configuration_id,
+                            expected_revision:j.configuration_revision,
+                            resources:structuredClone(j.resources),
+                            collector_replacement_of_job_id:j.id,
+                            confirm_collector_replacement:true,
+                            ...(j.model_source_job_id?{
+                                model_source_job_id:j.model_source_job_id,
+                            }:{}),
+                        });
+                        feedback('hub-job-message','Replacement '+successor.id+
+                            ' queued. Allocate its original machine and authorize a fresh native Start.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-job-message',error.message);
+                    }
+                }));
             if(['finished','failed','stopped'].includes(j.status)&&linked)
                 actions.append(button('Release completed capacity',async()=>{
                     if(!confirm('Release the native job’s Hub capacity after its terminal service report? The job history is preserved. This does not stop a process.'))return;
