@@ -1511,6 +1511,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees menu <catalog.json> --output-dir <battle-runs>
        bees library <library.json> --output-dir <player-save-root>
        bees connect <host:port> --token-file <private-file> --side <1|2>
+       bees serve-receipts <saved-game-battle-root>
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
        bees campaign <catalog.json> --output-dir <battle-runs> --all
@@ -1524,6 +1525,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
   play  Open the native battle window (requires the client feature)
   serve  Host headless authenticated multiplayer with deterministic input recording
          (requires --output-dir, BEES_NATIVE_REMOTE_LISTEN and remote token)
+  serve-receipts  Host committed results only, with the same authenticated LAN protocol
   library  Open packaged native campaigns and quick battles
   connect  Join authoritative native multiplayer without Python
   run   Run the battle headlessly (default)
@@ -2024,6 +2026,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_campaign_mission(&catalog_path, &output,
             &mission_id.to_string_lossy(), serve);
+    }
+    if first == "serve-receipts" {
+        #[cfg(feature = "client")]
+        {
+            let game_root = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+            if args.next().is_some() { return Err(invalid(USAGE).into()); }
+            return serve_native_archived_receipts(&game_root);
+        }
+        #[cfg(not(feature = "client"))]
+        return Err(invalid("Saved multiplayer receipt hosting requires --features client").into());
     }
     if first == "connect" {
         #[cfg(feature = "client")]
