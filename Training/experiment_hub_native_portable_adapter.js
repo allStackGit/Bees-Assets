@@ -474,6 +474,9 @@ function createNativeBeesPortableCollectorAdapter({
                 '--scratch',scratch,'--rollout-binary',binary,
                 '--bundle-inbox',artifacts,'--token-file',credential,
                 '--hub-job-id',context.job_id,
+                ...(context.collector_replacement_of_job_id
+                    ?['--replaced-hub-job-id',context.collector_replacement_of_job_id]
+                    :[]),
                 '--cpu-quota',String(context.cpu_quota),
                 '--expected-collection-id',parameters.collection_id,
                 '--expected-bundle-directory',parameters.bundle_directory,
