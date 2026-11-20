@@ -172,15 +172,28 @@ impl CombatWorld {
         }
         let rotation = self.physics.ships()[index].motion.rotation_degrees;
         self.bump_policy_roster_revision();
-        self.ship_weapons.insert(ship_id, ShipWeapons::new(rotation));
-        self.policy_ship_runtime.insert(ship_id, PolicyShipRuntime {
-            frame, bind_revision: self.policy_roster_revision,
-            movement_disabled, control: PolicyControl::new(),
-            special: None,
-            healing: None,
-            mining: None,
-            warp_enabled: false,
-        });
+        if let Some(bound) = self.policy_ship_runtime.get_mut(&ship_id) {
+            // Replacing an Agent on the same live hull resets only its
+            // controller-owned actions and decision clock. The hull's
+            // real turret mounts, reload/cooldown, mining, healing and
+            // special-action state belong to CombatWorld and must survive
+            // the rebind. Recreating ShipWeapons here previously erased
+            // physical weapon state without a gameplay event.
+            bound.frame = frame;
+            bound.bind_revision = self.policy_roster_revision;
+            bound.movement_disabled = movement_disabled;
+            bound.control = PolicyControl::new();
+        } else {
+            self.ship_weapons.insert(ship_id, ShipWeapons::new(rotation));
+            self.policy_ship_runtime.insert(ship_id, PolicyShipRuntime {
+                frame, bind_revision: self.policy_roster_revision,
+                movement_disabled, control: PolicyControl::new(),
+                special: None,
+                healing: None,
+                mining: None,
+                warp_enabled: false,
+            });
+        }
         Ok(())
     }
 
