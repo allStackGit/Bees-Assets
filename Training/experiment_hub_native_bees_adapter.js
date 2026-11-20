@@ -765,6 +765,12 @@ function createNativeBeesAdapter({
             artifacts.startsWith(modelsInbox+path.sep))
             throw Error('Native Bees model packages need a separate existing private inbox.');
     }
+    // Every non-publishing optimizer rank in a Hub continuation consumes
+    // the predecessor's authenticated model package from the Hub mirror,
+    // not an arbitrarily installed local model. Reject an installation
+    // that cannot receive those bytes before it advertises GPU capacity.
+    if (distributedOptimizer?.role === 'worker' && !modelsInbox)
+        throw Error('Native Bees distributed optimizer workers need a trusted model inbox for checkpoint continuation.');
     if (learnerSlot !== undefined &&
         (!Number.isSafeInteger(learnerSlot) || learnerSlot < 0 || learnerSlot > 0xffffffff))
         throw Error('Invalid native Bees learner slot.');
