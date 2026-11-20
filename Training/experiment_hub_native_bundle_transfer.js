@@ -346,6 +346,22 @@ function verifiedNativeCollectorPin(hub,collectorId) {
         learner_slot:receipt.learner_slot,
         seed_offset:receipt.seed_offset,
         partition:receipt.partition,
+        // These are authenticated collector-receipt measurements, not a
+        // fleet-wide wall clock. Distinct machines execute concurrently;
+        // consumers must not divide summed steps by summed wall seconds
+        // and call the result distributed training throughput.
+        work:{
+            successful_world_steps:rollout.successful_world_steps,
+            successful_policy_rows:rollout.successful_policy_rows,
+            collector_wall_seconds:rollout.wall_seconds,
+            rollout_processes:workerCount,
+            physics_workers_per_process:physicsCount,
+            leased_gpu_count:gpuCount,
+            ...(gpuCount>0?{
+                verified_gpu_model_forwards:proof.model_forwards,
+                verified_gpu_agent_rows:proof.agent_rows,
+            }:{}),
+        },
     };
 }
 
