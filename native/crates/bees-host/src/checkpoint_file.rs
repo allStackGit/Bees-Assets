@@ -21,6 +21,7 @@ use bees_hivemind::connection::{
 };
 use bees_hivemind::protocol::HiveMindProtocolError;
 use bees_gameplay::level_rules::NativeLevelWorldRecoveryCheckpoint;
+use crate::runtime::NativeHostRecoveryCheckpoint;
 
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 const MAX_TEMP_NAME_ATTEMPTS: usize = 64;
@@ -211,6 +212,41 @@ impl NativeLevelWorldCheckpointFile {
     /// responsibility; neither is silently inferred from this snapshot.
     pub fn persist(
         &self, checkpoint: &NativeLevelWorldRecoveryCheckpoint,
+    ) -> Result<(), CheckpointFileError> {
+        persist_atomic(&self.path, |writer| {
+            serde_json::to_writer(writer, checkpoint)?;
+            Ok(())
+        })
+    }
+}
+
+/// Exclusive, crash-safe writer for the complete host cohort (all native
+/// Worlds, policy driver and exact network/model binding). Never overwrite
+/// a corrupt checkpoint with fresh gameplay during recovery.
+pub struct NativeHostCheckpointFile {
+    path: PathBuf,
+    _writer_lease: ConnectionCheckpointWriterLease,
+}
+
+impl NativeHostCheckpointFile {
+    pub fn open(path: impl Into<PathBuf>) -> Result<Self, CheckpointFileError> {
+        let path = canonical_writer_checkpoint_path(path.into())?;
+        let writer_lease = ConnectionCheckpointWriterLease::acquire(&path)?;
+        Ok(Self { path, _writer_lease: writer_lease })
+    }
+
+    pub fn path(&self) -> &Path { &self.path }
+
+    pub fn load(&self) -> Result<Option<NativeHostRecoveryCheckpoint>, CheckpointFileError> {
+        match File::open(&self.path) {
+            Ok(file) => Ok(Some(serde_json::from_reader(BufReader::new(file))?)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub fn persist(
+        &self, checkpoint: &NativeHostRecoveryCheckpoint,
     ) -> Result<(), CheckpointFileError> {
         persist_atomic(&self.path, |writer| {
             serde_json::to_writer(writer, checkpoint)?;

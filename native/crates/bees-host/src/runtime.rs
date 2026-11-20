@@ -16,7 +16,7 @@ use bees_gameplay::level_host::{
 use bees_gameplay::level_rules::{
     NativeLevelRewardMetadata, NativeLevelRules, NativeLevelState,
     NativeLevelWorldRecoveryCheckpoint, NativeLevelRecoveryError,
-    NativeLevelRecoveryPrepared, checkpoint_native_level_world,
+    checkpoint_native_level_world,
 };
 use bees_gameplay::level_host::NativeLevelDriverRecoveryCheckpoint;
 use sha2::{Digest, Sha256};
@@ -27,9 +27,8 @@ use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, StoreCommandsRequest,
 };
 use bees_hivemind::session::{SquadLifetime, TargetingReceipt};
-use bees_sim::simulation::{
-    RandomStream, Simulation, World, WorldCheckpoint,
-};
+use bees_sim::simulation::{RandomStream, Simulation, World};
+use crate::checkpoint_file::{CheckpointFileError, NativeHostCheckpointFile};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
 use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
 use crate::presentation::NativeRenderWorldView;
@@ -179,6 +178,8 @@ pub enum HostRecoveryError {
     ModelChanged,
     ConnectionChanged,
     ConnectionEncoding(serde_json::Error),
+    File(CheckpointFileError),
+    MissingCheckpoint,
     WorldCountMismatch,
     World { index: usize, error: &'static str },
     Level { index: usize, error: NativeLevelRecoveryError },
@@ -221,6 +222,25 @@ where
             simulation, driver, model, connection, sink,
             sampler: NativeStatusSampler::new(baseline),
         })
+    }
+
+    /// Store all registered worlds at one completed host boundary. The
+    /// HiveMind socket ledger remains independently write-ahead persisted.
+    pub fn persist_recovery_checkpoint(
+        &self, checkpoint_file: &NativeHostCheckpointFile,
+    ) -> Result<(), HostRecoveryError> {
+        let snapshot = self.recovery_checkpoint()?;
+        checkpoint_file.persist(&snapshot).map_err(HostRecoveryError::File)
+    }
+
+    /// Resume only from a committed cohort file. Missing or malformed
+    /// data is fatal for recovery, never interpreted as a fresh episode.
+    pub fn restore_recovery_file(
+        &mut self, checkpoint_file: &NativeHostCheckpointFile,
+    ) -> Result<(), HostRecoveryError> {
+        let saved = checkpoint_file.load().map_err(HostRecoveryError::File)?
+            .ok_or(HostRecoveryError::MissingCheckpoint)?;
+        self.restore_recovery_checkpoint(saved)
     }
 
     fn connection_recovery_digest(&self) -> Result<[u8; 32], HostRecoveryError> {
