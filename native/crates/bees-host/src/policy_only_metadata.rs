@@ -121,6 +121,9 @@ pub struct NativeQueenControllerMeasurements {
     pub ungrouped_policy_minions_bound: u64,
     pub ordinary_minions_preserved: u64,
     pub retired_policy_routes_reclaimed: u64,
+    /// An existing group Agent acquired a new physical ship binding.
+    #[serde(default)]
+    pub recycled_group_agent_bindings: u64,
 }
 
 impl NativeQueenControllerMeasurements {
@@ -129,6 +132,7 @@ impl NativeQueenControllerMeasurements {
         self.ungrouped_policy_minions_bound += other.ungrouped_policy_minions_bound;
         self.ordinary_minions_preserved += other.ordinary_minions_preserved;
         self.retired_policy_routes_reclaimed += other.retired_policy_routes_reclaimed;
+        self.recycled_group_agent_bindings += other.recycled_group_agent_bindings;
     }
 }
 
@@ -207,6 +211,10 @@ pub struct NativePolicyOnlyMetadata {
     /// Reclaim one fixed step after retirement, after the mandatory
     /// boundary observation has been journaled by the training sink.
     retired_dynamic_pending: Vec<i64>,
+    /// Source Agent slots that ended a physical trajectory and may now
+    /// bind another ship on the same side. Entries are recycled only
+    /// after their final physical observation has reached the sink.
+    recycled_group_agent_ids: BTreeMap<i32, BTreeSet<u64>>,
     /// Separate from physical ship IDs. The source ML-Agents runtime
     /// allocates fresh participant identities for newborn ship agents.
     next_dynamic_group_agent_id: u64,
@@ -405,6 +413,8 @@ pub struct NativePolicySourceLedgerCheckpoint {
     policy_side_representative: HashMap<i32, i64>,
     dynamic_policy_ships: HashSet<i64>,
     retired_dynamic_pending: Vec<i64>,
+    #[serde(default)]
+    recycled_group_agent_ids: BTreeMap<i32, BTreeSet<u64>>,
     next_dynamic_group_agent_id: u64,
     player: NativePlayerSourceCheckpoint,
     exploration: BTreeMap<i32, TeamExplorationGrid>,
@@ -440,6 +450,7 @@ pub struct NativePolicySourceLedgerPrepared {
     policy_side_representative: HashMap<i32, i64>,
     dynamic_policy_ships: HashSet<i64>,
     retired_dynamic_pending: Vec<i64>,
+    recycled_group_agent_ids: BTreeMap<i32, BTreeSet<u64>>,
     next_dynamic_group_agent_id: u64,
     player: NativeSourcePlayerInputs,
     hivemind_squads: HashMap<SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource>,
@@ -469,6 +480,7 @@ impl NativePolicyOnlyMetadata {
             policy_side_representative: self.policy_side_representative.clone(),
             dynamic_policy_ships: self.dynamic_policy_ships.clone(),
             retired_dynamic_pending: self.retired_dynamic_pending.clone(),
+            recycled_group_agent_ids: self.recycled_group_agent_ids.clone(),
             next_dynamic_group_agent_id: self.next_dynamic_group_agent_id,
             player: NativePlayerSourceCheckpoint::capture(&self.player, &self.hivemind_squads),
             exploration: self.sides.iter().map(|(&side, value)|
@@ -549,7 +561,18 @@ impl NativePolicyOnlyMetadata {
                 !saved.agents.contains_key(id)
             ) || saved.retired_dynamic_pending.iter().any(|id|
                 !saved.dynamic_policy_ships.contains(id)
-            ) || saved.policy_side_representative.iter().any(|(&side, &id)|
+            ) || saved.recycled_group_agent_ids.iter().any(|(&side, ids)|
+                !self.sides.contains_key(&side) ||
+                ids.iter().any(|&id|
+                    id == 0 || id >= saved.next_dynamic_group_agent_id ||
+                    group_ids.contains(&id)
+                )
+            ) || {
+                let mut seen_recycled = HashSet::new();
+                saved.recycled_group_agent_ids.values()
+                    .flat_map(|ids| ids.iter())
+                    .any(|&id| !seen_recycled.insert(id))
+            } || saved.policy_side_representative.iter().any(|(&side, &id)|
                 !saved.agents.get(&id).is_some_and(|agent| agent.side == side)
             )
         {
@@ -609,6 +632,7 @@ impl NativePolicyOnlyMetadata {
             policy_side_representative: saved.policy_side_representative,
             dynamic_policy_ships: saved.dynamic_policy_ships,
             retired_dynamic_pending: saved.retired_dynamic_pending,
+            recycled_group_agent_ids: saved.recycled_group_agent_ids,
             next_dynamic_group_agent_id: saved.next_dynamic_group_agent_id,
             player,
             hivemind_squads,
@@ -636,6 +660,7 @@ impl NativePolicyOnlyMetadata {
         self.policy_side_representative = staged.policy_side_representative;
         self.dynamic_policy_ships = staged.dynamic_policy_ships;
         self.retired_dynamic_pending = staged.retired_dynamic_pending;
+        self.recycled_group_agent_ids = staged.recycled_group_agent_ids;
         self.next_dynamic_group_agent_id = staged.next_dynamic_group_agent_id;
         self.player = staged.player;
         self.hivemind_squads = staged.hivemind_squads;
@@ -848,6 +873,7 @@ impl NativePolicyOnlyMetadata {
             agents: agent_map, policy_side_representative,
             dynamic_policy_ships: HashSet::new(),
             retired_dynamic_pending: Vec::new(),
+            recycled_group_agent_ids: BTreeMap::new(),
             next_dynamic_group_agent_id,
             sides: side_map, beacon_templates,
             queen_templates: HashMap::new(),
@@ -999,11 +1025,21 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         // obsolete per-ship inference route before admitting new children.
         for old_id in self.retired_dynamic_pending.drain(..) {
             if !self.dynamic_policy_ships.remove(&old_id) ||
-                self.agents.remove(&old_id).is_none() ||
-                self.authored_ships.remove(&old_id).is_none() ||
-                self.effective_vision.remove(&old_id).is_none()
+                !self.authored_ships.contains_key(&old_id) ||
+                !self.effective_vision.contains_key(&old_id)
             {
                 return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+            }
+            let old_agent = self.agents.remove(&old_id)
+                .ok_or(CombatPerceptionError::InvalidAuthoredMetadata)?;
+            self.authored_ships.remove(&old_id);
+            self.effective_vision.remove(&old_id);
+            if let Some(group_id) = old_agent.source_group_agent_id {
+                // The old binding has already emitted ShipDied and its
+                // terminal observation. Preserve its group membership
+                // while freeing the same ML-Agents Agent for a later hull.
+                self.recycled_group_agent_ids.entry(old_agent.side)
+                    .or_default().insert(group_id);
             }
             // A child that died on its birth tick may never have acquired
             // player formation metadata. The original source fleet and
@@ -1074,16 +1110,18 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             // Training has an authenticated MA-POCA group; an ordinary
             // native game can play a trained checkpoint without one. Only
             // group-owned episodes allocate/register an agent identity.
+            let recycled = self.recycled_group_agent_ids.get(&side)
+                .and_then(|available| available.first().copied());
             let group_id = if let Some(group) = events.group_delivery_mut() {
                 if group.team_id(side) != Some(route.team_id) ||
                     parent_agent.source_group_agent_id.is_none()
                 { return Err(invalid()); }
-                Some(self.next_dynamic_group_agent_id)
+                Some(recycled.unwrap_or(self.next_dynamic_group_agent_id))
             } else { None };
             if self.agents.contains_key(&minion_id) { return Err(invalid()); }
-            let next_group_id = group_id.map(|id|
-                id.checked_add(1).ok_or_else(invalid)
-            ).transpose()?;
+            let next_group_id = (group_id.is_some() && recycled.is_none())
+                .then(|| self.next_dynamic_group_agent_id.checked_add(1)
+                    .ok_or_else(invalid)).transpose()?;
             let mut own_weapons = [None; 5];
             let slot = template.physical.minion.special_weapon.slot;
             let mut weapon = bomb;
@@ -1108,14 +1146,27 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
                     self.player.human_side).map_err(|_| invalid())?;
             }
             if let Some(group_id) = group_id {
-                events.group_delivery_mut().ok_or_else(invalid)?
-                    .register_agent(side, group_id).map_err(|_| invalid())?;
+                let group = events.group_delivery_mut().ok_or_else(invalid)?;
+                if recycled.is_some() {
+                    if !group.is_registered(side, group_id) {
+                        return Err(invalid());
+                    }
+                } else {
+                    group.register_agent(side, group_id).map_err(|_| invalid())?;
+                }
                 let binding_revision = world.policy_binding_revision(minion_id)
                     .ok_or_else(invalid)?;
                 events.record_policy_controller_admitted(
                     completed_tick, minion_id, binding_revision, side, group_id,
                 ).map_err(|_| invalid())?;
-                self.next_dynamic_group_agent_id = next_group_id.ok_or_else(invalid)?;
+                if recycled.is_some() {
+                    self.recycled_group_agent_ids.get_mut(&side)
+                        .ok_or_else(invalid)?.remove(&group_id);
+                    self.queen_controller_measurements.recycled_group_agent_bindings += 1;
+                } else {
+                    self.next_dynamic_group_agent_id =
+                        next_group_id.ok_or_else(invalid)?;
+                }
             } else {
                 self.queen_controller_measurements.ungrouped_policy_minions_bound += 1;
             }
