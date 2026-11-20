@@ -2138,8 +2138,83 @@ fn launch_catalog_battle(
             victory_grants: &grants,
             victory_squads: &grant_squads,
         });
-    // Reserve a unique parent before invoking the shared gameplay runtime.
-    // Failed/interrupted launches never overwrite an earlier career receipt.
+    // The original career snapshot is already needed for replay. Reuse
+    // that SAME frozen input projection for live campaign continuation,
+    // rather than rebuilding purchases/grants from a changed save ledger.
+    let (recoverable, save_setup) = if mission.is_some() {
+        let run_config: RunConfig = serde_json::from_slice(&fs::read(&config)?)?;
+        let replayable = run_config.navigation_workers.is_none() &&
+            run_config.model_updates.is_empty();
+        (run_config.host_recovery_checkpoint.is_some(),
+         run_config.host_recovery_checkpoint.is_some() ||
+            replayable && (interactive ||
+                env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some()))
+    } else { (false, false) };
+    let setup = if save_setup {
+        let mut setup = CampaignReplaySetup::capture(
+            &config, mission.expect("saved campaign setup has an authored mission"),
+        )?;
+        let status = catalog.status(&progress);
+        setup.career_sha256 = Some(format!("{:x}", Sha256::digest(
+            serde_json::to_vec(&status)?,
+        )));
+        Some(setup)
+    } else { None };
+
+    if recoverable {
+        let expected = setup.as_ref().expect("recoverable campaign has a saved setup");
+        let mut original_run: Option<PathBuf> = None;
+        for entry in fs::read_dir(output_root)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() { continue; }
+            let name = entry.file_name();
+            let Some(number) = name.to_str()
+                .and_then(|value| value.strip_prefix("battle-"))
+                .filter(|value| !value.is_empty() &&
+                    value.bytes().all(|ch| ch.is_ascii_digit()))
+            else { continue };
+            if number.parse::<u64>().is_err() { continue; }
+            let root = entry.path();
+            let run = root.join("run");
+            let saved = root.join("campaign-replay-setup.json");
+            let checkpoint = run.join("native-host-checkpoint.json");
+            if !checkpoint.is_file() ||
+                run.join("rollout-summary.json").exists() { continue; }
+            if run.is_symlink() || checkpoint.is_symlink() ||
+                saved.is_symlink() || !saved.is_file()
+            {
+                return Err(invalid(
+                    "interrupted campaign World has no owned immutable start snapshot",
+                ).into());
+            }
+            let prior = CampaignReplaySetup::load(&saved)?;
+            if prior.campaign_id != expected.campaign_id ||
+                prior.mission_id != expected.mission_id { continue; }
+            if !expected.matches_recovery_start(&prior)? {
+                return Err(invalid(
+                    "interrupted campaign cannot resume after its source or saved career changed",
+                ).into());
+            }
+            if original_run.replace(run).is_some() {
+                return Err(invalid(
+                    "multiple interrupted campaigns claim the same native mission",
+                ).into());
+            }
+        }
+        if let Some(output) = original_run {
+            println!("{}", json!({
+                "kind": "native_campaign_battle_recovered",
+                "campaign_id": expected.campaign_id,
+                "mission_id": expected.mission_id,
+                "run": output,
+            }));
+            run_session(&config, interactive, interactive,
+                Some(output.clone()), None, None, mission)?;
+            return Ok(output);
+        }
+    }
+    // No existing original World was recoverable: allocate a fresh,
+    // unique battle and persist its career inputs BEFORE gameplay begins.
     let output = loop {
         *next_number = next_number.checked_add(1)
             .ok_or_else(|| invalid("battle count exhausted"))?;
@@ -2150,29 +2225,14 @@ fn launch_catalog_battle(
             Err(error) => return Err(error.into()),
         }
     };
-    if interactive || env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
-        if let Some(mission) = mission {
-            let run_config: RunConfig = serde_json::from_slice(&fs::read(&config)?)?;
-            // Live HiveMind replies are now captured in the same
-            // versioned player trace with the original connection
-            // allocator and source command clock. Asynchronous path
-            // completion and mid-episode model switching still cannot
-            // be reproduced by that trace.
-            let replayable = run_config.navigation_workers.is_none() &&
-                run_config.model_updates.is_empty();
-            if replayable {
-                let setup = CampaignReplaySetup::capture(&config, mission)?;
-                let path = output.parent().expect("created campaign battle directory")
-                    .join("campaign-replay-setup.json");
-                // The source career projection was read under the writer
-                // lease; save it before gameplay, not after the career changes.
-                let file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
-                serde_json::to_writer(&file, &setup)?;
-                file.sync_all()?;
-                #[cfg(unix)]
-                fs::File::open(path.parent().expect("campaign battle parent"))?.sync_all()?;
-            }
-        }
+    if let Some(setup) = setup {
+        let path = output.parent().expect("created campaign battle directory")
+            .join("campaign-replay-setup.json");
+        let file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+        serde_json::to_writer(&file, &setup)?;
+        file.sync_all()?;
+        #[cfg(unix)]
+        fs::File::open(path.parent().expect("campaign battle parent"))?.sync_all()?;
     }
     run_session(&config, interactive, interactive, Some(output.clone()), None, None, mission)?;
     Ok(output)
