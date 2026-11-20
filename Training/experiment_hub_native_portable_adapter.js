@@ -551,6 +551,9 @@ function createNativeBeesPortableCollectorAdapter({
                             value:receipt.delivery.copy_wall_seconds,unit:'seconds',
                         },
                     }:{}),
+                    ...(verifiedLearnerDelivery(context)?{
+                        rollout_learner_upload_accepted:{value:1,unit:'count'},
+                    }:{}),
                 },
             },PROJECT);
         },
