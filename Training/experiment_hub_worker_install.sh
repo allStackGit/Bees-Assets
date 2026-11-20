@@ -305,6 +305,44 @@ if (( START )); then
         systemctl --user start "$SERVICE"
     fi
 fi
+# A separate user-systemd timer survives agent restarts. It contacts only
+# Halifax's authenticated tailnet release API, never the private GitHub repos.
+UPDATER_DIR="$ROOT/Update"
+UPDATER_UNIT="$HOME/.config/systemd/user/bees-experiment-hub-worker-update.service"
+UPDATER_TIMER="$HOME/.config/systemd/user/bees-experiment-hub-worker-update.timer"
+mkdir -p "$UPDATER_DIR"
+install -m 600 "$TRAINING/experiment_hub_worker_updater.js" \
+    "$UPDATER_DIR/experiment_hub_worker_updater.js"
+NODE_BIN=$(command -v node)
+[[ "$ROOT" =~ ^/[A-Za-z0-9._/@:+-]+$ && "$NODE_BIN" =~ ^/[A-Za-z0-9._/@:+-]+$ ]] || {
+    echo "Updater systemd paths contain unsupported characters." >&2
+    exit 1
+}
+cat > "$UPDATER_UNIT" <<EOF
+[Unit]
+Description=Experiment Hub authenticated worker release updates
+After=network.target
+[Service]
+Type=oneshot
+ExecStart=$NODE_BIN $UPDATER_DIR/experiment_hub_worker_updater.js --root $ROOT
+WorkingDirectory=$ROOT
+UMask=0077
+EOF
+cat > "$UPDATER_TIMER" <<EOF
+[Unit]
+Description=Poll approved Experiment Hub software releases
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=2min
+Persistent=true
+Unit=bees-experiment-hub-worker-update.service
+[Install]
+WantedBy=timers.target
+EOF
+chmod 600 "$UPDATER_UNIT" "$UPDATER_TIMER"
+systemctl --user daemon-reload
+systemctl --user enable --now bees-experiment-hub-worker-update.timer
+
 echo "Worker prepared. No native experiment was started."
 echo "Tailscale listeners: TinyBrains 12134/12135; Courier 13134/13135 (enabled projects only)."
 echo "In Hub Machines, register/enroll this exact worker and confirm its authenticated native capability report."
