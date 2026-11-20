@@ -2443,13 +2443,20 @@ fn launch_catalog_battle(
                     "interrupted campaign World has no owned immutable start snapshot",
                 ).into());
             }
-            let prior = CampaignReplaySetup::load(&saved)?;
+            // First identify the mission using its immutable start
+            // metadata, without opening the original source scene. That
+            // scene may have been legitimately updated after the mission
+            // already committed its final campaign result.
+            let prior: CampaignReplaySetup = serde_json::from_slice(&fs::read(&saved)?)?;
             if prior.campaign_id != expected.campaign_id ||
                 prior.mission_id != expected.mission_id { continue; }
-            // A completed mission is already claimed by its immutable
-            // receipt. Its frozen start need not match the CURRENT career
-            // after rewards were applied: only complete its missing trace.
+            // A completed mission belongs to its committed battle receipt.
+            // Recover its unfinished replay footer without reopening the
+            // source or reconsidering its one-time career rewards.
             if terminal_recording::complete_committed_recording(&run)? { continue; }
+            // Only an interrupted, still-recoverable World requires its
+            // exact original source, career and grant projection.
+            let prior = CampaignReplaySetup::load(&saved)?;
             if !expected.matches_recovery_start(&prior)? {
                 return Err(invalid(
                     "interrupted campaign cannot resume after its source, saved career, or victory rewards changed",
