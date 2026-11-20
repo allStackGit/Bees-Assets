@@ -2418,8 +2418,13 @@ fn launch_catalog_battle(
         Some(setup)
     } else { None };
 
-    if recoverable {
-        let expected = setup.as_ref().expect("recoverable campaign has a saved setup");
+    // Inspect checkpointed Worlds for this mission even if today's source
+    // configuration stopped enabling checkpoint recovery. Otherwise a
+    // changed project setting can bypass an unfinished original campaign
+    // and allocate a second battle with the same persistent fleet grants.
+    if let (Some(campaign_id), Some(authored_mission)) =
+        (catalog.campaign_id.as_deref(), entry.mission.as_ref())
+    {
         let mut original_run: Option<(PathBuf, CampaignReplaySetup)> = None;
         for entry in fs::read_dir(output_root)? {
             let entry = entry?;
@@ -2448,16 +2453,24 @@ fn launch_catalog_battle(
             // scene may have been legitimately updated after the mission
             // already committed its final campaign result.
             let prior: CampaignReplaySetup = serde_json::from_slice(&fs::read(&saved)?)?;
-            if prior.campaign_id != expected.campaign_id ||
-                prior.mission_id != expected.mission_id { continue; }
+            if prior.campaign_id != campaign_id ||
+                prior.mission_id != authored_mission.id { continue; }
             // A completed mission belongs to its committed battle receipt.
             // Recover its unfinished replay footer without reopening the
             // source or reconsidering its one-time career rewards.
             if terminal_recording::complete_committed_recording(&run)? { continue; }
             // Only an interrupted, still-recoverable World requires its
-            // exact original source, career and grant projection.
+            // exact original source, career and grant projection. Removing
+            // the recovery flag from a new source cannot waive that owner.
+            if !recoverable {
+                return Err(invalid(
+                    "unfinished campaign World requires its original checkpoint-enabled source configuration",
+                ).into());
+            }
             let prior = CampaignReplaySetup::load(&saved)?;
-            if !expected.matches_recovery_start(&prior)? {
+            if !setup.as_ref().expect("checkpointed campaign has a frozen start")
+                .matches_recovery_start(&prior)?
+            {
                 return Err(invalid(
                     "interrupted campaign cannot resume after its source, saved career, or victory rewards changed",
                 ).into());
@@ -2471,8 +2484,8 @@ fn launch_catalog_battle(
         if let Some((output, prior)) = original_run {
             println!("{}", json!({
                 "kind": "native_campaign_battle_recovered",
-                "campaign_id": expected.campaign_id,
-                "mission_id": expected.mission_id,
+                "campaign_id": campaign_id,
+                "mission_id": authored_mission.id,
                 "run": output,
             }));
             run_session(&prior.source_config, interactive, interactive,
