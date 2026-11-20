@@ -20,6 +20,7 @@ use bees_hivemind::connection::{
     NativeConnectionCheckpoint, NativeHiveMindConnection,
 };
 use bees_hivemind::protocol::HiveMindProtocolError;
+use bees_gameplay::level_rules::NativeLevelWorldRecoveryCheckpoint;
 
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 const MAX_TEMP_NAME_ATTEMPTS: usize = 64;
@@ -169,35 +170,86 @@ impl ConnectionCheckpointFile {
         &self,
         connection: &NativeHiveMindConnection,
     ) -> Result<(), CheckpointFileError> {
-        let parent = self.path.parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        let name = self.path.file_name().ok_or(CheckpointFileError::InvalidPath)?;
-        let (temp_path, file) = create_unique_temporary_file(parent, name)?;
-        let mut renamed = false;
-        let result = (|| -> Result<(), CheckpointFileError> {
-            let mut writer = BufWriter::new(file);
-            connection.write_checkpoint(&mut writer)?;
-            writer.flush()?;
-            let file = writer.into_inner()
-                .map_err(|error| error.into_error())?;
-            file.sync_all()?;
-            drop(file);
-            fs::rename(&temp_path, &self.path)?;
-            renamed = true;
-            // The rename's directory entry also needs to survive a crash
-            // on Unix. On Windows, portable std::fs has no such API.
-            #[cfg(unix)]
-            File::open(parent)?.sync_all()?;
+        persist_atomic(&self.path, |writer| {
+            connection.write_checkpoint(writer)?;
             Ok(())
-        })();
-        if !renamed {
-            // Preserve the earlier committed checkpoint after any failure.
-            // Best effort: a stale temporary file is never a valid restore.
-            let _ = fs::remove_file(&temp_path);
-        }
-        result
+        })
     }
+}
+
+/// The owning World and native Level have one durable fixed-step snapshot.
+/// This is deliberately not a second combat journal. The host must also
+/// recover the connection, resident model and authored source metadata
+/// at the same boundary before it resumes simulation or accepts input.
+#[derive(Clone, Debug)]
+pub struct NativeLevelWorldCheckpointFile {
+    path: PathBuf,
+}
+
+impl NativeLevelWorldCheckpointFile {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    pub fn path(&self) -> &Path { &self.path }
+
+    /// A malformed or incomplete committed checkpoint is an error, not a
+    /// new episode. The same exact writer-lease convention as HiveMind's
+    /// checkpoint prevents competing native process owners.
+    pub fn load(&self)
+        -> Result<Option<NativeLevelWorldRecoveryCheckpoint>, CheckpointFileError>
+    {
+        match File::open(&self.path) {
+            Ok(file) => Ok(Some(serde_json::from_reader(BufReader::new(file))?)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Flush, fsync and atomically rename the SAME World+Level ownership
+    /// projection. Saving the model and connection is a distinct host
+    /// responsibility; neither is silently inferred from this snapshot.
+    pub fn persist(
+        &self, checkpoint: &NativeLevelWorldRecoveryCheckpoint,
+    ) -> Result<(), CheckpointFileError> {
+        persist_atomic(&self.path, |writer| {
+            serde_json::to_writer(writer, checkpoint)?;
+            Ok(())
+        })
+    }
+}
+
+/// One durable checkpoint write path for both network connection identity
+/// and native World+Level state. No extra file rewriting strategy or
+/// duplicate temporary-file allocator exists for gameplay persistence.
+fn persist_atomic(
+    path: &Path,
+    write: impl FnOnce(&mut BufWriter<File>) -> Result<(), CheckpointFileError>,
+) -> Result<(), CheckpointFileError> {
+    let parent = path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = path.file_name().ok_or(CheckpointFileError::InvalidPath)?;
+    let (temp_path, file) = create_unique_temporary_file(parent, name)?;
+    let mut renamed = false;
+    let result = (|| -> Result<(), CheckpointFileError> {
+        let mut writer = BufWriter::new(file);
+        write(&mut writer)?;
+        writer.flush()?;
+        let file = writer.into_inner()
+            .map_err(|error| error.into_error())?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temp_path, path)?;
+        renamed = true;
+        #[cfg(unix)]
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if !renamed {
+        let _ = fs::remove_file(&temp_path);
+    }
+    result
 }
 
 fn create_unique_temporary_file(
