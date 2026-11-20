@@ -233,15 +233,32 @@ class RemoteBattleWindow:
         lines = dialogue.get("lines", [])
         return lines[self.dialogue_line] if self.dialogue_line < len(lines) else None
 
+    def finish_briefing(self):
+        # Only dedicated hosted campaigns require a reply. The source
+        # host verifies this viewer's side and the exact cue/episode; no
+        # local game clock or campaign progression is reproduced here.
+        try:
+            if self.console.acknowledge_briefing():
+                self.notice("Campaign briefing acknowledged; awaiting other viewers")
+        except (OSError, ValueError) as error:
+            self.notice(f"Campaign briefing acknowledgment failed: {error}")
+
     def advance_dialogue(self, _event=None):
         if self.visible_dialogue() is not None:
             self.dialogue_line += 1
+            if self.visible_dialogue() is None:
+                self.finish_briefing()
             self.draw()
+        elif self.state and self.state.get("briefing_requires_ack"):
+            # A rejected acknowledgment leaves the same source cue
+            # visible until the host actually advances the Level.
+            self.finish_briefing()
 
     def skip_dialogue(self, _event=None):
         dialogue = self.state.get("campaign_dialogue") if self.state else None
         if dialogue is not None:
             self.dialogue_line = len(dialogue.get("lines", []))
+            self.finish_briefing()
             self.draw()
 
     def poll(self):
