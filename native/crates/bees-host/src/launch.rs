@@ -2351,20 +2351,50 @@ fn archived_native_remote_receipts_from_root(
         // Older local-only receipts contain no LAN identity. They cannot
         // be offered as another player's original authenticated session.
         let Some(id) = summary["remote_session_id"].as_str() else { continue };
-        // Older archives lack trustworthy original side membership.
-        // Do not reinterpret the replacement host's newer credentials
-        // as proof that those players joined the earlier physical World.
-        let Some(original_sides) = summary["remote_authorized_sides"].as_array()
-        else { continue };
-        let sides = original_sides.iter().map(Value::as_i64)
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| invalid("archived LAN player side identity is malformed"))?;
-        if sides.is_empty() || sides.len() > 2 ||
-            sides.iter().any(|side| !(1..=2).contains(side)) ||
-            sides.windows(2).any(|pair| pair[0] >= pair[1])
-        {
-            return Err(invalid("archived LAN player sides do not match a real native host").into());
-        }
+        // Current archives explicitly persist the original authenticated
+        // sides. Older ones can still be delivered when the original host
+        // checkpoint proves the EXACT prior side-token mapping. Neither
+        // path treats newer host credentials as retroactive participation.
+        let (sides, legacy_credentials_sha256) =
+            if let Some(original_sides) = summary["remote_authorized_sides"].as_array() {
+                let sides = original_sides.iter().map(Value::as_i64)
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| invalid("archived LAN player side identity is malformed"))?;
+                if sides.is_empty() || sides.len() > 2 ||
+                    sides.iter().any(|side| !(1..=2).contains(side)) ||
+                    sides.windows(2).any(|pair| pair[0] >= pair[1])
+                {
+                    return Err(invalid(
+                        "archived LAN player sides do not match a real native host",
+                    ).into());
+                }
+                (sides.into_iter().map(|side| side as i32).collect(), None)
+            } else {
+                let checkpoint = run.join("native-host-checkpoint.json");
+                let metadata = match fs::symlink_metadata(&checkpoint) {
+                    Ok(metadata) => metadata,
+                    Err(error) if error.kind() == ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error.into()),
+                };
+                if !metadata.file_type().is_file() || run.is_symlink() {
+                    return Err(invalid("legacy LAN checkpoint is not an owned regular file").into());
+                }
+                let saved: bees_host::runtime::NativeHostRecoveryCheckpoint =
+                    serde_json::from_reader(fs::File::open(&checkpoint)?)?;
+                let cursor = saved.launcher();
+                if cursor["run_id"] != summary["run_id"] ||
+                    cursor["rounds"] != summary["rounds"] ||
+                    cursor["remote_play"]["host_session_id"] != id
+                {
+                    return Err(invalid(
+                        "legacy LAN session differs from its original physical World",
+                    ).into());
+                }
+                let original_digest: [u8; 32] = serde_json::from_value(
+                    cursor["remote_play"]["side_credentials_sha256"].clone(),
+                )?;
+                (Vec::new(), Some(original_digest))
+            };
         if id.len() != 32 || !id.bytes().all(|byte|
             byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) ||
             !seen.insert(id.to_owned())
@@ -2396,7 +2426,8 @@ fn archived_native_remote_receipts_from_root(
         }
         receipts.push(bees_host::remote_play::NativeArchivedBattleReceipt {
             session_id: id.to_owned(),
-            authorized_sides: sides.into_iter().map(|side| side as i32).collect(),
+            authorized_sides: sides,
+            legacy_credentials_sha256,
             battle_result: result.clone(),
             campaign_outcome: campaign,
             banked_minerals: summary["campaign_banked_minerals"].as_u64(),
