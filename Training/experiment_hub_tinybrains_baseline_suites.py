@@ -18,7 +18,9 @@ def digest(file):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument("--out-dir", type=Path)
+    parser.add_argument("--stdout-json", action="store_true",
+                        help="Emit frozen suites for an approved Hub setup without writing files")
     parser.add_argument("--seed-start", type=int, default=813001)
     parser.add_argument("--seeds", type=int, default=50)
     parser.add_argument("--max-turns", type=int, default=300)
@@ -26,6 +28,8 @@ def main():
     parser.add_argument("--map", default="basic-tiny-2p")
     args = parser.parse_args()
 
+    if args.stdout_json == (args.out_dir is not None):
+        parser.error("Specify exactly one of --out-dir and --stdout-json.")
     if not 1 <= args.seeds <= 128 or not 0 <= args.seed_start < 2**32 \
             or args.seed_start + args.seeds > 2**32:
         parser.error("Use 1–128 valid distinct uint32 seeds.")
@@ -41,8 +45,10 @@ def main():
     from ants_mapoca.runtime import STARTER
 
     method_sha256 = suite_digest(describe("tinybrains"))
-    output = args.out_dir.expanduser().resolve()
-    output.mkdir(parents=True, exist_ok=True, mode=0o700)
+    output = args.out_dir.expanduser().resolve() if args.out_dir is not None else None
+    if output is not None:
+        output.mkdir(parents=True, exist_ok=True, mode=0o700)
+    suites = []
     for opponent in ("nano", "micro"):
         source = STARTER / "models" / f"{opponent}-bc"
         suite = {
@@ -55,6 +61,9 @@ def main():
             "opponent_manifest_sha256": digest(source / "manifest.json"),
             "runtime_sha256": method_sha256,
         }
+        if args.stdout_json:
+            suites.append(suite)
+            continue
         destination = output / (suite["suite_id"] + ".json")
         body = json.dumps(suite, sort_keys=True, indent=2) + "\n"
         # A saved suite is an immutable experiment definition. Never silently
@@ -67,6 +76,8 @@ def main():
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 stream.write(body)
         print(f"{destination}: {2 * args.seeds} balanced matches; SHA-256 {suite_digest(suite)}")
+    if args.stdout_json:
+        print(json.dumps({"suites": suites}, sort_keys=True))
 
 
 if __name__ == "__main__":
