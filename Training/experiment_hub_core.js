@@ -4828,10 +4828,10 @@ class ExperimentHub {
         this.advanceNativeBeesRounds();
         return copy((this.state.native_round_plans||[]).find(item=>item.id===plan.id));
     }
-    // An explicit operator approval is the only way to resume a GPU round
-    // plan disarmed by a coordinator restart. Reuse the original frozen
-    // work, reserved jobs, resource bundle and verified checkpoint source;
-    // never replace a machine or recreate an in-flight optimizer.
+    // Explicit operator approval is required after either a coordinator
+    // restart or a newly reserved replacement for a failed optimizer.
+    // Keep the original frozen physical work and exact machine-owned
+    // resource claims; this never relaunches a stopped rank.
     resumeNativeBeesRounds(value) {
         if(!object(value)||Object.keys(value).some(key=>![
             'plan_id','confirm_resume','confirm_gpu_start',
@@ -4841,9 +4841,13 @@ class ExperimentHub {
             throw Error('Explicitly reauthorize the exact native round plan and GPU Starts.');
         const plan=(this.state.native_round_plans||[])
             .find(item=>item.id===value.plan_id);
-        if(plan?.status!=='disarmed'||
-            !plan.reason?.startsWith('Coordinator restarted;'))
-            throw Error('Only a native training sequence disarmed by coordinator restart can resume.');
+        const coordinatorRestart=plan?.status==='disarmed'&&
+            plan.reason?.startsWith('Coordinator restarted;');
+        const optimizerReplacement=plan?.status==='needs_review'&&
+            plan.reason==='Failed synchronized PPO group replaced with new machine-owned GPU claims; reauthorize the native round before any Start.'&&
+            plan.restart_phase==='awaiting_optimizer';
+        if(!coordinatorRestart&&!optimizerReplacement)
+            throw Error('Only a disarmed native round or an explicitly reviewed replacement optimizer bundle may resume.');
         // Older persisted plans did not retain the suspended stage. Their
         // durable bundle/job identities identify it without inventing work.
         let phase=plan.restart_phase;
@@ -4860,7 +4864,8 @@ class ExperimentHub {
                 phase='pending_collectors';
         }
         if(!['pending_collectors','awaiting_collectors',
-            'pending_optimizer','awaiting_optimizer'].includes(phase))
+            'pending_optimizer','awaiting_optimizer'].includes(phase)||
+            (optimizerReplacement&&phase!=='awaiting_optimizer'))
             throw Error('Original native training phase cannot be recovered safely.');
         const source=this.state.jobs.find(job=>job.id===plan.source_job_id);
         if(source?.status!=='finished'||!checkpointContinuationComplete(source)||
@@ -4906,6 +4911,35 @@ class ExperimentHub {
                 job.resource_bundle?.size!==ids.length||
                 job.assigned_machine_id!==plan[stage+'_members'][index].machine_id))
                 throw Error('Original native round job and machine ownership changed.');
+            if(optimizerReplacement) {
+                // A reviewed replacement is a NEW whole synchronized
+                // optimizer, never a revived rank of the failed group.
+                // Reconcile each replacement with its immutable predecessor
+                // and the released original claim before permitting Start.
+                const original=jobs.map(job=>this.state.jobs.find(old=>
+                    old.id===job.optimizer_restart_of_job_id));
+                const previousBundle=original[0]?.resource_bundle?.id;
+                if(!UUID.test(String(previousBundle||''))||
+                    previousBundle===bundleId||
+                    new Set(original.map(job=>job?.id)).size!==jobs.length||
+                    original.some((old,index)=>
+                        !old||old.resource_bundle?.id!==previousBundle||
+                        old.resource_bundle?.index!==index+1||
+                        old.resource_bundle?.size!==jobs.length||
+                        old.project_id!==jobs[index].project_id||
+                        jobs[index].optimizer_restart_of_bundle_id!==previousBundle||
+                        old.assigned_machine_id!==jobs[index].assigned_machine_id||
+                        JSON.stringify(old.resources)!==JSON.stringify(jobs[index].resources)||
+                        JSON.stringify(old.frozen_parameters)!==
+                            JSON.stringify(jobs[index].frozen_parameters)||
+                        !['finished','failed','stopped'].includes(old.status)||
+                        !old.capacity_released_at||
+                        !this.state.reservations.some(lease=>
+                            lease.id===old.lease_id&&
+                            lease.job_id===old.id&&
+                            lease.status==='released'&&lease.released_at)))
+                    throw Error('Replacement native optimizer rank is not the exact released original owner.');
+            }
             // A restored registry status is not evidence that its native
             // CPU/RAM/GPU claim is still present. Match every original
             // bundle member against its durable Hub-issued lease before
@@ -4958,7 +4992,9 @@ class ExperimentHub {
         resumed.agent_instances=instances;
         delete resumed.restart_phase;
         resumed.updated_at=now();
-        resumed.reason='Native training reauthorized after coordinator restart; original jobs and claims retained.';
+        resumed.reason=optimizerReplacement
+            ?'Replacement synchronized optimizer group explicitly reauthorized; new GPU owners retain the original verified physical inputs.'
+            :'Native training reauthorized after coordinator restart; original jobs and claims retained.';
         this.commit(next);
         // The normal heartbeat workflow owns all further resource decisions.
         // It will reissue a Start plan only for an entirely unstarted
