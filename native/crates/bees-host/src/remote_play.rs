@@ -205,6 +205,16 @@ pub struct RemotePlayMeasurements {
     pub orders_received: u64,
     pub orders_processed: u64,
     pub orders_rejected: u64,
+    /// Input receipts covered by a single authoritative host checkpoint,
+    /// not merely synced to an independently replayable player trace.
+    #[serde(default)]
+    pub committed_input_checkpoint_batches: u64,
+    #[serde(default)]
+    pub committed_input_checkpoint_commands: u64,
+    /// Commands refused before gameplay because the last batch still lacks
+    /// a safe checkpoint boundary (for example, during HiveMind inflight).
+    #[serde(default)]
+    pub checkpoint_backpressure_rejections: u64,
     #[serde(default)]
     pub briefing_ready_acks: u64,
     #[serde(default)]
@@ -389,6 +399,19 @@ impl NativeRemotePlay {
 
     pub fn measurements(&self) -> &RemotePlayMeasurements {
         &self.measurements
+    }
+
+    /// Called before serializing the same host checkpoint that will own
+    /// these commands. If persistence fails, no successful reply is sent.
+    /// If persistence succeeds, these counters recover with the World.
+    pub fn record_input_checkpoint(&mut self, accepted_commands: usize) {
+        if accepted_commands == 0 { return; }
+        self.measurements.committed_input_checkpoint_batches += 1;
+        self.measurements.committed_input_checkpoint_commands += accepted_commands as u64;
+    }
+
+    pub fn record_checkpoint_backpressure(&mut self) {
+        self.measurements.checkpoint_backpressure_rejections += 1;
     }
 
     /// Save only transport-side command ownership and cumulative counters;
