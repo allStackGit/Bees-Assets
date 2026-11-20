@@ -207,7 +207,6 @@ if(-not [IO.Path]::IsPathRooted($InstallRoot) -or $InstallRoot.StartsWith('\\'))
 $InstallRoot=[IO.Path]::GetFullPath($InstallRoot)
 $Private=Join-Path $InstallRoot 'Private'
 $SourceRoot=Join-Path $InstallRoot 'Sources'
-$VenvRoot=Join-Path $InstallRoot 'Venvs'
 $NativeRoot=Join-Path $InstallRoot 'NativeState'
 $ServiceState=Join-Path $InstallRoot 'ServiceState'
 $CacheRoot=Join-Path $InstallRoot 'Cache'
@@ -255,15 +254,6 @@ if($Command -eq 'install'){
     if($Projects){throw 'Install project software through Experiment Hub, not the base worker installer.'}
     Ensure-Winget 'node.exe' 'OpenJS.NodeJS.LTS'
     Ensure-Winget 'dotnet.exe' 'Microsoft.DotNet.SDK.8'
-    Ensure-Winget 'py.exe' 'Python.Python.3.11'
-    $python311=Get-Command py.exe -ErrorAction SilentlyContinue
-    if($python311){
-        & $python311.Source -3.11 --version 2>$null
-        if($LASTEXITCODE -ne 0){
-            & (Tool 'winget.exe') install --id Python.Python.3.11 -e --scope machine --accept-package-agreements --accept-source-agreements
-            Assert-Exit 'Install pinned Python 3.11'
-        }
-    }
     if(-not (Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe")){
         Ensure-Winget 'tailscale.exe' 'Tailscale.Tailscale'
     }
@@ -317,36 +307,16 @@ $node=Tool 'node.exe'
 $major=& $node -p 'parseInt(process.versions.node)'
 Assert-Exit 'Node runtime inspection'
 if([int]$major -lt 22){throw 'The Windows native Hub agent service requires Node.js 22 or newer.'}
-& (Tool 'py.exe') -3.11 --version
-Assert-Exit 'Python 3.11 runtime inspection'
-
-foreach($dir in @($InstallRoot,$Private,$SourceRoot,$VenvRoot,$NativeRoot,$ServiceState,
-    $CacheRoot,(Join-Path $CacheRoot 'tinybrains'),(Join-Path $CacheRoot 'courier'))){
+foreach($dir in @($InstallRoot,$Private,$SourceRoot,$NativeRoot,$ServiceState,
+    $CacheRoot)){
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
 }
 Private-Permissions $InstallRoot
 Service-Permissions $NativeRoot
 Service-Permissions $ServiceState
 Service-Permissions $CacheRoot
-# The Windows service must not depend on a Python installed only inside the
-# interactive administrator's user profile. Keep a pinned interpreter and
-# virtual environments under this protected machine-local installation root.
-$managedTools=Join-Path $InstallRoot 'Tooling'
-$uvSource=Join-Path $managedTools 'uv'
-$pythonRoot=Join-Path $managedTools 'Python'
-New-Item -ItemType Directory -Path $uvSource,$pythonRoot -Force | Out-Null
-if(-not (Test-Path (Join-Path $uvSource 'uv\__main__.py'))){
-    & (Tool 'py.exe') -3.11 -m pip install --disable-pip-version-check --target $uvSource 'uv==0.13.6'
-    Assert-Exit 'Install pinned uv bootstrap'
-}
-$env:PYTHONPATH=$uvSource
-& (Tool 'py.exe') -3.11 -m uv python install 3.11.18 --install-dir $pythonRoot --no-bin
-Assert-Exit 'Install pinned Python for LocalService'
-$managedCandidates=@(Get-ChildItem -LiteralPath $pythonRoot -Directory |
-    Where-Object { $_.Name -like 'cpython-3.11*windows-x86_64-none' })
-if($managedCandidates.Count -ne 1){throw 'Expected exactly one pinned Python 3.11 runtime.'}
-$managedPython=Join-Path $managedCandidates[0].FullName 'python.exe'
-if(-not(Test-Path $managedPython)){throw 'Pinned machine-local Python is missing.'}
+# Python and uv are installed by the machine-local updater only when
+# a specific TinyBrains or Courier simulation is requested.
 $assets=if($Command -eq 'install'){Install-HubRelease 'worker' 'Bees-Assets'}
     else {Join-Path $SourceRoot 'Bees-Assets'}
 $Training=Join-Path $assets 'Training'

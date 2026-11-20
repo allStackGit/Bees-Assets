@@ -100,8 +100,11 @@ needed.
 Follow the Tailscale browser sign-in link if shown. The installer automatically
 enrolls using the signed-in node name (for example `exeter`), installs the
 base agent prerequisites, native Windows service and update task, and starts
-the agent. It does **not** install a TinyBrains or Courier simulation during
-enrollment. Each is installed when selected in the Hub or assigned a job.
+the agent. It does **not** install Python, uv, TinyBrains or Courier during
+enrollment. When the Hub requests one of those simulations, the machine's
+updater installs a pinned, machine-local Python 3.11.18 using a checksum-verified
+standalone uv executable and prepares the simulation independently. No Git
+or machine-wide Python installation is necessary.
 
 ### Linux worker
 

@@ -343,22 +343,76 @@ function configureService(root,training,serviceBinary=null) {
         exec('systemctl',['--user','daemon-reload']);
     };
 }
+// uv is a self-contained executable: project-specific Python provisioning
+// must not depend on the Windows py launcher or a machine-wide interpreter.
+const UV_WINDOWS_VERSION='0.13.6';
+const UV_WINDOWS_SHA256='a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f';
+function windowsUv(root) {
+    const tools=path.join(root,'Tooling');
+    const directory=path.join(tools,'uv-'+UV_WINDOWS_VERSION);
+    const uv=path.join(directory,'uv.exe');
+    if(fs.existsSync(uv)) {
+        if(exec(uv,['--version'])!=='uv '+UV_WINDOWS_VERSION)
+            throw Error('Pinned Windows uv executable changed unexpectedly.');
+        return uv;
+    }
+    fs.mkdirSync(tools,{recursive:true,mode:0o700});
+    const archive=path.join(tools,'uv-'+UV_WINDOWS_VERSION+'.'+process.pid+'.zip');
+    const temporary=directory+'.'+process.pid+'.staging';
+    try {
+        const url='https://github.com/astral-sh/uv/releases/download/'+
+            UV_WINDOWS_VERSION+'/uv-x86_64-pc-windows-msvc.zip';
+        exec('curl.exe',['--fail','--location','--silent','--show-error',
+            '--max-time','200','--output',archive,url]);
+        if(fs.statSync(archive).size>48*1024*1024||
+            crypto.createHash('sha256').update(fs.readFileSync(archive))
+                .digest('hex')!==UV_WINDOWS_SHA256)
+            throw Error('Pinned Windows uv archive checksum mismatch.');
+        const names=exec('tar.exe',['-tf',archive]).split(/\r?\n/).filter(Boolean);
+        if(!names.includes('uv.exe')||names.length>12||
+            names.some(name=>name.includes('/')||name.includes('\\')||
+                name==='.'||name==='..'||name.includes(':')))
+            throw Error('Pinned Windows uv archive contains unexpected paths.');
+        fs.mkdirSync(temporary,{recursive:true,mode:0o700});
+        exec('tar.exe',['-xf',archive,'-C',temporary]);
+        if(exec(path.join(temporary,'uv.exe'),['--version'])!==
+            'uv '+UV_WINDOWS_VERSION)
+            throw Error('Pinned Windows uv runtime version mismatch.');
+        fs.renameSync(temporary,directory);
+        return uv;
+    }finally{
+        try{fs.unlinkSync(archive);}catch{}
+        if(fs.existsSync(temporary))
+            fs.rmSync(temporary,{recursive:true,force:true});
+    }
+}
 function preparePythonRuntimes(root,changes) {
     const env={...process.env};
     const windows=process.platform==='win32';
-    // User-systemd timers do not inherit the installer's interactive PATH.
+    // The timer is independent of the interactive shell's PATH on Linux.
     const localUv=path.join(require('node:os').homedir(),'.local','bin','uv');
-    let command=windows?'py.exe':fs.existsSync(localUv)?localUv:'uv';
-    let prefix=windows?['-3.11','-m','uv']:[];
+    let command=windows?null:fs.existsSync(localUv)?localUv:'uv';
+    const prefix=[];
     let pythonVersion='3.11.18';
     if(windows) {
-        env.PYTHONPATH=path.join(root,'Tooling','uv');
+        command=windowsUv(root);
         const managed=path.join(root,'Tooling','Python');
+        fs.mkdirSync(managed,{recursive:true,mode:0o700});
+        env.UV_PYTHON_INSTALL_DIR=managed;
+        env.UV_CACHE_DIR=path.join(root,'Tooling','Cache');
+        env.UV_NO_PROGRESS='1';
+        env.UV_NO_CONFIG='1';
+        fs.mkdirSync(env.UV_CACHE_DIR,{recursive:true,mode:0o700});
+        // Use an immutable machine-local interpreter, not "py.exe -3.11".
+        // The latter may be installed even with no Python runtime available.
+        exec(command,['python','install','3.11.18',
+            '--install-dir',managed,'--no-bin'],{env});
         const matches=fs.readdirSync(managed,{withFileTypes:true})
-            .filter(item=>item.isDirectory()&&item.name.startsWith('cpython-3.11'))
+            .filter(item=>item.isDirectory()&&item.name.startsWith('cpython-3.11.18-'))
             .map(item=>path.join(managed,item.name,'python.exe'))
             .filter(file=>fs.existsSync(file));
-        if(matches.length!==1)throw Error('Pinned machine-local Python is missing.');
+        if(matches.length!==1)
+            throw Error('Pinned machine-local Python 3.11.18 installation failed.');
         pythonVersion=matches[0];
     }
     const pythonPaths={};
