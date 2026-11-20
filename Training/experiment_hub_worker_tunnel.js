@@ -64,14 +64,23 @@ async function withAgentTunnel(run,env=process.env) {
         if(await checkListening(17149)){connected=true;break;}
         await new Promise(resolve=>setTimeout(resolve,250));
     }
-    if(!connected) {
+    if(!connected||ended) {
         if(!ended)child.kill();
         throw Error('Private Hub tunnel was not established: '+reason);
     }
+    let shuttingDown=false;
     child.once('exit',()=>{
+        if(shuttingDown)return;
         console.error('[experiment-hub-agent] Private SSH forward lost; service restart required.');
         process.exit(1);
     });
-    return run();
+    try {
+        return await run();
+    }finally {
+        // One-shot agents must release their port, too. No separate
+        // unmanaged SSH daemon or logon task remains after termination.
+        shuttingDown=true;
+        if(!ended)child.kill();
+    }
 }
 module.exports={withAgentTunnel};
