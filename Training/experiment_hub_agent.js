@@ -13,7 +13,7 @@ const {fromEnvironment}=require('./experiment_hub_execution');
 const {syncArtifacts}=require('./experiment_hub_artifact_agent');
 const {evaluatorHealth}=require('./experiment_hub_evaluator_health');
 const remoteEvaluator=require('./experiment_hub_remote_evaluator_control');
-const {MAX_BODY_BYTES}=require('./experiment_hub_agent_listener');
+const {MAX_BODY_BYTES,isTailnetIPv4}=require('./experiment_hub_agent_listener');
 const {request: resourceRequest}=require('./experiment_hub_resources');
 
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
@@ -60,10 +60,11 @@ function hostCpuBusyPct(hostOs=os,nowMs=Date.now()) {
 function endpoint(input) {
     const url = new URL(input || 'http://127.0.0.1:7149');
     if (url.protocol !== 'http:' ||
-        !['127.0.0.1','localhost'].includes(url.hostname) ||
+        (!['127.0.0.1','localhost'].includes(url.hostname)&&
+            !isTailnetIPv4(url.hostname)) || url.port!=='7149' ||
         url.username || url.password || url.search || url.hash ||
         !['','/'].includes(url.pathname)) {
-        throw Error('Agent endpoint must be a local HTTP address; use a trusted SSH tunnel for remote machines.');
+        throw Error('Agent endpoint must use the local or Tailscale-only HTTP listener on port 7149.');
     }
     url.pathname='/api/hub/agent/heartbeat';
     return url;
@@ -267,9 +268,6 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         const req=http.request(url,{
             method:'POST',timeout:10000,
             headers:{
-                // The manager remains loopback-bound and expects its own
-                // origin. This works with a local SSH forwarded port.
-                Host:'127.0.0.1:7149',
                 'Content-Type':'application/json',
                 'Content-Length':Buffer.byteLength(payload),
                 'X-Hub-Agent-Token':token,
@@ -500,13 +498,8 @@ async function main() {
     }
 }
 
-if(require.main===module) {
-    // Remote workers keep coordinator traffic on a locally authenticated
-    // SSH forward; the agent itself still refuses any non-loopback HTTP.
-    const {withAgentTunnel}=require('./experiment_hub_worker_tunnel');
-    withAgentTunnel(main).catch(error=>{
-        console.error('[experiment-hub-agent] '+error.message);
-        process.exitCode=1;
-    });
-}
+if(require.main===module)main().catch(error=>{
+    console.error('[experiment-hub-agent] '+error.message);
+    process.exitCode=1;
+});
 module.exports={endpoint,observations,observedOffers,sendHeartbeat};
