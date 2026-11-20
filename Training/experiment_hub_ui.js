@@ -4167,7 +4167,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             return false;
                         const host=(state.machines||[]).find(
                             machine=>machine.id===worker.assigned_machine_id);
-                        return host?.tinybrains_rollout_endpoint===endpoint&&
+                        const listener=host?.tinybrains_rollout_slots?.find(item=>
+                            item.slot===worker.frozen_parameters?.listener_slot);
+                        return (worker.rollout_endpoint||listener?.endpoint||
+                            host?.tinybrains_rollout_endpoint)===endpoint&&
                             host.tinybrains_rollout_key_fingerprint===
                                 learner.tinybrains_remote_key_fingerprint;
                     });
@@ -6714,9 +6717,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             :' · local only; no remote collectors pinned'));
                 if(installed.has('tinybrains_rollout'))
                     capabilities.push('TinyBrains collector'+
-                        (machine.tinybrains_rollout_endpoint
-                            ?' · '+machine.tinybrains_rollout_endpoint
-                            :' · no approved endpoint'));
+                        (machine.tinybrains_rollout_slots?.length
+                            ?' · '+machine.tinybrains_rollout_slots.length+
+                                ' private listener slots: '+
+                                machine.tinybrains_rollout_slots.map(s=>s.endpoint).join(', ')
+                            :machine.tinybrains_rollout_endpoint
+                                ?' · '+machine.tinybrains_rollout_endpoint
+                                :' · no approved endpoint'));
                 if(installed.has('courier'))
                     capabilities.push('Courier learner'+
                         (machine.courier_remote_lineage_endpoints?.length
@@ -7638,8 +7645,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const budgetRequest=distributedBudgetRequest(budgets.map(item=>{
                 if(!item||typeof item!=='object'||Array.isArray(item))
                     throw Error('Each collector budget must be a JSON object.');
-                const {machine_id,threads,...resources}=item;
-                return {resources,machine_id,...(threads===undefined?{}:{threads})};
+                const {machine_id,threads,endpoint,...resources}=item;
+                return {resources,machine_id,
+                    ...(endpoint===undefined?{}:{endpoint}),
+                    ...(threads===undefined?{}:{threads})};
             }),matching,'collectors');
             if(!confirm(newLineageWarning(predecessor,selected.parameters)+
                 'Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
@@ -7923,32 +7932,67 @@ document.addEventListener('DOMContentLoaded', () => {
         if(machines.some(m=>m.id===prior))distributedMachine.value=prior;
         const machine=machines.find(m=>m.id===distributedMachine.value);
         const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
-        const workers=endpoints.map(endpoint=>state.machines.filter(m=>
-            m.status==='connected'&&m.id!==machine.id&&
-            m.tinybrains_rollout_endpoint===endpoint&&
-            m.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
-            m.installed_projects?.includes('tinybrains_rollout')));
         const subset=machine?.tinybrains_rollout_subset===true;
-        distributedMatch.label.hidden=!subset;
-        const available=workers.filter(items=>items.length===1).map(items=>items[0]);
-        const budgetHost=machine?machine.id+':'+subset:null;
+        const offers=endpoints.map(endpoint=>({endpoint,hosts:state.machines.filter(host=>
+            host.status==='connected'&&host.id!==machine.id&&
+            (host.tinybrains_rollout_endpoint===endpoint||
+                host.tinybrains_rollout_slots?.some(slot=>slot.endpoint===endpoint))&&
+            host.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
+            host.installed_projects?.includes('tinybrains_rollout'))}));
+        const occupied=new Set(),uncertainHosts=new Set();
+        for(const job of state.jobs||[]) {
+            if(job.project_id!=='tinybrains_rollout'||!job.assigned_machine_id||
+                ['cancelled','finished','stopped'].includes(job.status)||
+                job.status==='failed'&&job.capacity_released_at)continue;
+            const host=state.machines.find(m=>m.id===job.assigned_machine_id);
+            const listener=host?.tinybrains_rollout_slots?.find(item=>
+                item.slot===job.frozen_parameters?.listener_slot);
+            const endpoint=job.rollout_endpoint||listener?.endpoint||
+                host?.tinybrains_rollout_endpoint;
+            if(endpoint)occupied.add(endpoint);
+            else uncertainHosts.add(job.assigned_machine_id);
+        }
+        const free=offers.filter(item=>item.hosts.length===1&&
+            !occupied.has(item.endpoint)&&!uncertainHosts.has(item.hosts[0].id));
+        // A single distributed run still has one collector per remote host.
+        // Two independent runs may use different idle ports on that host.
+        const chosen=new Set();
+        const available=free.filter(item=>{
+            const id=item.hosts[0].id;
+            if(chosen.has(id))return false;
+            chosen.add(id);
+            return true;
+        });
+        const slotsUsed=available.some(item=>
+            item.hosts[0].tinybrains_rollout_slots?.length);
+        distributedMatch.label.hidden=!subset||slotsUsed;
+        if(distributedMatch.label.hidden)distributedMatch.input.checked=false;
+        const budgetHost=machine?machine.id+':'+subset+':'+
+            available.map(item=>item.endpoint).join('|'):null;
         if(distributedBudgetHost!==budgetHost) {
             distributedMatch.input.checked=false;
             distributedBudgetHost=budgetHost;
-            distributedBudgets.value=JSON.stringify((subset?available:workers).map(worker=>
-                ({...(subset?{machine_id:worker.id}:{}),cpus:2,ram_mb:4096,gpu_count:0})),null,2);
-            if(subset&&!available.length)distributedBudgetHost=null;
+            distributedBudgets.value=JSON.stringify((subset?available:offers).map(item=>{
+                const host=item.hosts[0];
+                if(!host)return {cpus:2,ram_mb:4096,gpu_count:0};
+                return {
+                    ...(subset?{machine_id:host.id}:{}),
+                    ...(slotsUsed?{endpoint:item.endpoint}:{}),
+                    cpus:2,ram_mb:4096,gpu_count:0,
+                };
+            }),null,2);
         }
         const ready=Boolean(machine&&
             state.projects.some(p=>p.id==='tinybrains_rollout')&&
-            available.length>0&&new Set(available.map(m=>m.id)).size===available.length&&
-            (subset||available.length===workers.length));
+            available.length>0&&(subset||available.length===endpoints.length));
         distributedQueue.disabled=!ready;
         distributedDetails.textContent=ready
-            ?'Available collectors: '+available.map(worker=>worker.id).join(', ')+
-                (subset?'. Keep the machines you want to allocate.':'. Supply one budget per collector in the listed order.')+
-                ' Set each CPU/RAM budget and any exclusive GPU allocation.'
-            :'Register the TinyBrains rollout project and connect the approved workers.';
+            ?'Available collectors: '+available.map(item=>
+                item.hosts[0].id+' ['+item.endpoint+']').join(', ')+
+                (subset?'. One free listener per selected machine is proposed. ':
+                    '. All approved endpoints must be reserved. ')+
+                'Adjust CPU/RAM budgets; different learners can reserve other free ports on the same host.'
+            :'No eligible unreserved TinyBrains collector listener. Check the rollout project, enrolled workers, endpoints and existing group reservations.';
     }
     $('hub-job-configuration').addEventListener('change',()=>{
         renderJobMetricSelection();
