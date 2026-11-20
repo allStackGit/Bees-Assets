@@ -39,7 +39,7 @@ function Sync-Repo([string]$Name,[string]$Remote,[string]$Ref) {
     if(-not (Test-Path -LiteralPath (Join-Path $dest '.git'))) {
         Exec-Git @('clone','--filter=blob:none','--depth=1','--branch',$Ref,$Remote,$dest)
     }else{
-        $dirty=& (Tool 'git.exe') -C $dest status --porcelain
+        $dirty=& (Tool 'git.exe') -C $dest status --porcelain --untracked-files=no
         Assert-Exit 'Git status'
         if($dirty){throw "Refusing to overwrite local changes at $dest"}
         $branchName=& (Tool 'git.exe') -C $dest branch --show-current
