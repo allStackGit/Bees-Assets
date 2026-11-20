@@ -184,6 +184,50 @@ pub trait NativeHostRecoverableNotifications: NativeLevelNotificationSink {
     ) -> Result<(), String>;
 }
 
+/// Only the identity and allocation count of authenticated HiveMind Level
+/// setup may advance beyond a committed World. Every other change to the
+/// canonical connection ledger still prevents recovery of that World.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeConnectionSetupRecovery {
+    ledger_sha256: [u8; 32],
+    allocator_prefix: u32,
+    allocator_counter: u32,
+    setup_attempts: u64,
+    run_identity: Option<String>,
+    game_id: Option<i64>,
+}
+
+/// Hash the one canonical connection checkpoint. The reduced fingerprint is
+/// solely a proof that StoreCommands, journal progress and reconciliation
+/// are unchanged; it does not replace or duplicate their durable ownership.
+fn connection_recovery_identity(
+    connection: &DurableHiveMindConnection,
+) -> Result<([u8; 32], NativeConnectionSetupRecovery), HostRecoveryError> {
+    let (prefix, counter, attempts, run_identity, game_id) =
+        connection.connection().setup_checkpoint_position();
+    let mut canonical = serde_json::to_value(connection.connection().checkpoint())
+        .map_err(HostRecoveryError::ConnectionEncoding)?;
+    let exact = <[u8; 32]>::from(Sha256::digest(
+        serde_json::to_vec(&canonical)
+            .map_err(HostRecoveryError::ConnectionEncoding)?,
+    ));
+    let fields = canonical.as_object_mut()
+        .ok_or(HostRecoveryError::ConnectionChanged)?;
+    fields.remove("hashes");
+    fields.remove("setup_binding");
+    fields.remove("setup_attempts");
+    let ledger_sha256 = Sha256::digest(
+        serde_json::to_vec(&canonical)
+            .map_err(HostRecoveryError::ConnectionEncoding)?,
+    ).into();
+    Ok((exact, NativeConnectionSetupRecovery {
+        ledger_sha256, allocator_prefix: prefix, allocator_counter: counter,
+        setup_attempts: attempts, run_identity: run_identity.map(str::to_owned),
+        game_id,
+    }))
+}
+
 /// One durable host-owned fixed-step checkpoint spanning every registered
 /// authoritative native Level and the real model/connection identities.
 /// A separate socket writer persists the exact connection journal; the
@@ -202,6 +246,11 @@ pub struct NativeHostRecoveryCheckpoint {
     /// Empty only for an explicitly model-free inference backend.
     sampling_state: Vec<u8>,
     connection_sha256: [u8; 32],
+    // Optional for checkpoint compatibility. A new checkpoint records only
+    // enough evidence to distinguish setup-only Hash advances from changed
+    // gameplay/StoreCommands/journal state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    connection_setup_recovery: Option<NativeConnectionSetupRecovery>,
     notifications: serde_json::Value,
     /// Authoritative launcher-owned round/allocator/campaign progress.
     /// The host does not interpret the concrete owner's schema.
@@ -224,11 +273,29 @@ impl NativeHostRecoveryCheckpoint {
         {
             return Err(HostRecoveryError::Unavailable);
         }
-        let canonical = serde_json::to_value(connection.connection().checkpoint())
-            .map_err(HostRecoveryError::ConnectionEncoding)?;
-        let encoded = serde_json::to_vec(&canonical)
-            .map_err(HostRecoveryError::ConnectionEncoding)?;
-        if <[u8; 32]>::from(Sha256::digest(&encoded)) != self.connection_sha256 {
+        let (exact, current) = connection_recovery_identity(connection)?;
+        if exact == self.connection_sha256 {
+            return Ok(());
+        }
+        let saved = self.connection_setup_recovery.as_ref()
+            .ok_or(HostRecoveryError::ConnectionChanged)?;
+        // Require the same original Game, the same unchanged durable
+        // StoreCommands/journal ledger and the same client Hash prefix.
+        // Every additional Hash must be accounted for by exactly one
+        // persisted Level setup. Strategy, targeting or StoreCommands
+        // allocations therefore cannot be misclassified as setup-only.
+        let hash_advance = current.allocator_counter
+            .checked_sub(saved.allocator_counter).map(u64::from);
+        let setup_advance = current.setup_attempts
+            .checked_sub(saved.setup_attempts);
+        if current.ledger_sha256 != saved.ledger_sha256 ||
+            current.allocator_prefix != saved.allocator_prefix ||
+            current.run_identity != saved.run_identity ||
+            current.run_identity.is_none() ||
+            current.game_id != saved.game_id ||
+            current.game_id.is_none() ||
+            hash_advance.is_none() || hash_advance != setup_advance
+        {
             return Err(HostRecoveryError::ConnectionChanged);
         }
         Ok(())
@@ -336,16 +403,6 @@ where
         self.restore_recovery_checkpoint(saved)
     }
 
-    fn connection_recovery_digest(&self) -> Result<[u8; 32], HostRecoveryError> {
-        // Convert maps to canonical JSON objects before hashing, so their
-        // insertion iteration order never changes durable identity.
-        let value = serde_json::to_value(self.connection.connection().checkpoint())
-            .map_err(HostRecoveryError::ConnectionEncoding)?;
-        let bytes = serde_json::to_vec(&value)
-            .map_err(HostRecoveryError::ConnectionEncoding)?;
-        Ok(Sha256::digest(&bytes).into())
-    }
-
     /// Capture every live World and its one native inference driver at a
     /// synchronous host boundary. Do not snapshot in-flight, uncorrelated
     /// strategy/targeting requests: the connection cannot revive them.
@@ -381,13 +438,16 @@ where
             metadata.push(world.state.metadata.recovery_metadata_checkpoint()
                 .map_err(|error| HostRecoveryError::Metadata { index, error })?);
         }
+        let (connection_sha256, connection_setup_recovery) =
+            connection_recovery_identity(&self.connection)?;
         Ok(NativeHostRecoveryCheckpoint {
             schema_version: 5, worlds, metadata,
             driver: self.driver.recovery_checkpoint(),
             simulation_measurements: self.simulation.measurements(),
             model_generation: self.model.model_generation(),
             model_sha256, sampling_state,
-            connection_sha256: self.connection_recovery_digest()?,
+            connection_sha256,
+            connection_setup_recovery: Some(connection_setup_recovery),
             notifications, launcher: serde_json::Value::Null,
         })
     }
@@ -418,9 +478,7 @@ where
             checkpoint.model_generation != self.model.model_generation() {
             return Err(HostRecoveryError::ModelChanged);
         }
-        if checkpoint.connection_sha256 != self.connection_recovery_digest()? {
-            return Err(HostRecoveryError::ConnectionChanged);
-        }
+        checkpoint.validate_connection_for_recovery(&self.connection)?;
 
         // The cumulative Simulation counters span retired episodes; the
         // current Worlds cannot have contributed more successful ticks
