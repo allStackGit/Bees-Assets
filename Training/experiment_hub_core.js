@@ -663,8 +663,23 @@ function retainNativeBaselineEvaluation(next,job,report,evaluationSuites) {
 // 24 hours after its last contender releases verified native capacity.
 function finalEvaluationPending(snapshot,job,observedAt) {
     if(!missingFinalEvaluationRules(job).length)return false;
-    const releasedAt=Date.parse(job.capacity_released_at);
+    let releasedAt=Date.parse(job.capacity_released_at);
     if(!Number.isFinite(releasedAt)||observedAt<releasedAt)return false;
+    if(job.project_id==='bees_native'&&
+        job.frozen_parameters?.optimizer_group===true) {
+        // Rank zero can publish a verified checkpoint while other GPU
+        // machines still hold their original leases. Independent holdout
+        // evaluation belongs to the completed synchronized optimizer, not
+        // just its checkpoint-writing process. Start the grace period only
+        // after the final original rank has finished and released.
+        if(nativeOptimizerGroupBlock(snapshot,job))return false;
+        const members=snapshot.jobs.filter(member=>
+            member.resource_bundle?.id===job.resource_bundle.id);
+        const lastRelease=Math.max(...members.map(member=>
+            Date.parse(member.capacity_released_at)));
+        if(!Number.isFinite(lastRelease)||observedAt<lastRelease)return false;
+        releasedAt=lastRelease;
+    }
     let deadline=releasedAt+FINAL_EVALUATION_GRACE_MS;
     for(const plan of snapshot.candidate_selections||[]) {
         if(plan.status!=='waiting'||!plan.candidate_job_ids?.includes(job.id))
