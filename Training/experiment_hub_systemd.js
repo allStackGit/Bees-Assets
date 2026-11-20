@@ -103,10 +103,10 @@ function positiveInt(input,min,max,label) {
 function evaluatorDefinition({
     project,machine,trainingDir=__dirname,pythonPath,port=null,suites,
     projectRoot,artifactRoot,snapshotRoot,scratch,receiptRoot,enginePath,
-    environmentFile=null,cpus,ramMb,interval='180',timeout='7200',
+    rolloutBinary,environmentFile=null,cpus,ramMb,interval='180',timeout='7200',
 }={}) {
     if(process.platform!=='linux')throw Error('Evaluator timers are Linux-only.');
-    if(!['courier','tinybrains'].includes(project)||!/^[a-z][a-z0-9_-]{0,47}$/.test(machine||''))
+    if(!['courier','tinybrains','bees_native'].includes(project)||!/^[a-z][a-z0-9_-]{0,47}$/.test(machine||''))
         throw Error('Select a supported evaluator project and registered machine ID.');
     if(!Array.isArray(suites)||suites.length<1||suites.length>8||
         new Set(suites).size!==suites.length)
@@ -126,8 +126,10 @@ function evaluatorDefinition({
     if(project==='courier') {
         args.push('--project-root',localPath(projectRoot,'Courier project'));
         args.push('--snapshot-root',localPath(snapshotRoot,'Courier snapshots'));
-    }else {
+    }else if(project==='tinybrains') {
         args.push('--engine-path',localPath(enginePath,'TinyBrains engine'));
+    }else {
+        args.push('--rollout-binary',localPath(rolloutBinary,'Native rollout binary'));
     }
     args.push('--artifact-root',localPath(artifactRoot,'Training artifacts'),
         '--scratch',localPath(scratch,'Evaluator scratch'),
@@ -190,6 +192,7 @@ function main(argv=process.argv.slice(2)) {
             'scratch':{type:'string'},
             'receipt-root':{type:'string'},
             'engine-path':{type:'string'},
+            'rollout-binary':{type:'string'},
             'cpus':{type:'string'},
             'ram-mb':{type:'string'},
             'interval':{type:'string'},
@@ -209,6 +212,7 @@ function main(argv=process.argv.slice(2)) {
             artifactRoot:values['artifact-root'],snapshotRoot:values['snapshot-root'],
             scratch:values.scratch,receiptRoot:values['receipt-root'],
             enginePath:values['engine-path'],
+            rolloutBinary:values['rollout-binary'],
             cpus:values.cpus,ramMb:values['ram-mb'],
             interval:values.interval||'180',timeout:values.timeout||'7200',
         });
