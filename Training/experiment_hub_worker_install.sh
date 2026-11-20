@@ -302,6 +302,7 @@ if (( START )); then
     if systemctl --user is-active --quiet "$SERVICE"; then
         echo "Existing agent still running; stop managed jobs and restart it through the Hub." >&2
     else
+        systemctl --user enable "$SERVICE"
         systemctl --user start "$SERVICE"
     fi
 fi
