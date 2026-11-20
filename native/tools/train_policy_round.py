@@ -13,7 +13,7 @@ import json
 import math
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import signal
 import subprocess
@@ -31,6 +31,7 @@ from native_training_artifacts import (
     verified_source_scene_cache, combined_source_scene_cache,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
+from transfer_policy_bundle import artifact_paths
 from native_gpu_allocation import (
     parse_rollout_gpus, validate_gpu_allocation, validate_leased_gpu_inference,
     rollout_worker_environment,
@@ -870,31 +871,42 @@ def deliver_bundle(output, inbox, receipt, delivery_name=None, *, preserve_deliv
     # A Hub job's artifact root is its immutable job UUID. A separately
     # pinned distributed work order may name the inbox delivery without
     # changing that Hub-owned root or any resource/owner identity.
+    inbox = Path(inbox)
+    if inbox.is_symlink() or not inbox.is_dir():
+        raise ValueError("native rollout inbox must be an owned directory")
     destination = inbox / (delivery_name or output.name)
-    if destination.exists():
+    if destination.exists() or destination.is_symlink():
         raise FileExistsError(f"rollout inbox already contains {destination.name}")
+    # Shared-directory delivery uses the SAME bounded, portable artifact
+    # names and SHA-256 contract as authenticated tar upload. Never copy
+    # a collector-authored ../ path or follow a captured source symlink.
+    artifacts = artifact_paths(receipt)
+    source_root = Path(output).resolve(strict=True)
     started = time.perf_counter()
     transferred = 0
     with TemporaryDirectory(prefix=".rollout-", dir=inbox) as temporary:
         stage = Path(temporary) / "bundle"
         stage.mkdir()
-        for capture in receipt["captures"]:
-            for record in capture.values():
-                relative = Path(record["path"])
-                target = stage / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                digest = hashlib.sha256()
-                with (output / relative).open("rb") as source, target.open("xb") as sink:
-                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                        digest.update(chunk)
-                        sink.write(chunk)
-                        transferred += len(chunk)
-                    sink.flush()
-                    os.fsync(sink.fileno())
-                if digest.hexdigest() != record["sha256"]:
-                    raise ValueError("rollout artifact changed before inbox publication")
-                if target.parent != stage:
-                    sync_directory(target.parent)
+        for name, expected_digest in sorted(artifacts.items()):
+            relative = Path(*PurePosixPath(name).parts)
+            source_path = source_root / relative
+            if (source_path.is_symlink() or not source_path.is_file() or
+                    not source_path.resolve(strict=True).is_relative_to(source_root)):
+                raise ValueError(f"rollout capture escaped its bundle: {name}")
+            target = stage / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            digest = hashlib.sha256()
+            with source_path.open("rb") as source, target.open("xb") as sink:
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    sink.write(chunk)
+                    transferred += len(chunk)
+                sink.flush()
+                os.fsync(sink.fileno())
+            if digest.hexdigest() != expected_digest:
+                raise ValueError(f"rollout artifact changed before inbox publication: {name}")
+            if target.parent != stage:
+                sync_directory(target.parent)
         if preserve_delivery:
             # A replacement Hub job must republish EXACTLY the bytes of
             # the original accepted rollout receipt. Changing copy timing
