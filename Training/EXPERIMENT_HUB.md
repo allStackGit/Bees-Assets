@@ -2892,6 +2892,31 @@ matching profile for a future job. Review the draft and save it explicitly.
 Re-measure when worker machines, assigned CPUs/GPUs, network or model change.
 Remote workers never publish or advance learner checkpoints.
 
+**Two Halifax learners sharing Exeter CPU capacity:** install Exeter's
+`Training/experiment_hub_tinybrains_exeter_rollout_adapter.example.js` as its
+locally trusted adapter map (after setting its machine-local project/Python,
+cache, Tailscale IP and private key paths). Its `slotPorts` bind two separate
+CPU-only listeners, ports 12134 and 12135, on **one** enrolled Exeter machine.
+Pin both Tailscale endpoints in Halifax's approved learner
+`remoteCollectors.endpoints`; the two machines must trust the same HMAC key.
+Do not enroll Exeter twice or give both learners the same listener.
+
+Create two saved Halifax TinyBrains configurations with
+`remote_rollouts:true`, independent best70 checkpoint imports, and identical
+frozen Nano/Micro monitoring suites, differing only in their approved learning
+rate. Queue the first distributed group with 16 Halifax CPU slots, one
+exclusive GPU, 16 GiB RAM, and a six-CPU/eight-GiB Exeter collector assigned
+to the first free endpoint. Queue the second group with the other exclusive
+Halifax GPU, another 16 CPU slots/16 GiB, and six Exeter CPUs/eight GiB on
+the *other* endpoint. The Train form offers only one free listener per
+machine to each group and excludes endpoints already reserved by another
+unresolved native job; explicit endpoint IDs are validated against Exeter's
+authenticated agent advertisement. Two independent groups can therefore
+reserve 32 Halifax plus 12 Exeter logical CPU slots with separate native
+owner processes, resource leases, policies and checkpoints. This allocation
+does not imply all slots are productive: use the recorded learner and
+collector throughput to assess CPU/GPU bottlenecks.
+
 Install the *same* randomly generated 32+-byte HMAC key on each trusted host
 in a private local file; on Linux use mode 0600. Never put the key in the Hub
 configuration JSON. Use Tailscale IPv4 addresses in 100.64.0.0/10 and allow
