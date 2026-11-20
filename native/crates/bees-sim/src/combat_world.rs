@@ -784,8 +784,8 @@ struct CombatWorldGameSpecialsCheckpoint {
     map_border_measurements: GameMapBorderMeasurements,
 }
 
-/// Fixed-boundary bundle of authoritative physics, ship vitals,
-/// obstacle vitals, MapObject health, reserved reinforcement IDs and the earlier five
+/// Fixed-boundary bundle of authoritative physics, ship/projectile
+/// and obstacle lifecycles, MapObject health, reserved reinforcement IDs and five
 /// simulation ledgers. Other game specials, weapon controllers and
 /// authored asset identities still require their own recovery support.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -795,6 +795,9 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     physics: KinematicPhysicsCheckpoint,
     next_entity_id: i64,
     ships: Vec<CombatShip>,
+    projectiles: Vec<CombatProjectile>,
+    free_projectile_slots: Vec<usize>,
+    projectile_slot_reuses: u64,
     obstacles: Vec<CombatObstacle>,
     free_obstacle_slots: Vec<usize>,
     obstacle_slot_reuses: u64,
@@ -1441,10 +1444,13 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 4,
+            schema_version: 5,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
+            projectiles: self.projectiles.clone(),
+            free_projectile_slots: self.free_projectile_slots.clone(),
+            projectile_slot_reuses: self.projectile_slot_reuses,
             obstacles: self.obstacles.clone(),
             free_obstacle_slots: self.free_obstacle_slots.clone(),
             obstacle_slot_reuses: self.obstacle_slot_reuses,
@@ -1488,7 +1494,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 4 {
+        if snapshot.schema_version != 5 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1497,7 +1503,7 @@ impl CombatWorld {
             physics.obstacles().len() != self.obstacles.len() ||
             physics.ships().iter().zip(&self.ships)
                 .any(|(body, ship)| body.id != ship.entity_id) ||
-            physics.projectiles().iter().zip(&self.projectiles)
+            physics.projectiles().iter().zip(&snapshot.projectiles)
                 .any(|(body, shot)| body.id != shot.entity_id) ||
             physics.obstacles().iter().zip(&self.obstacles)
                 .any(|(body, obstacle)| body.id != obstacle.entity_id)
@@ -1508,6 +1514,7 @@ impl CombatWorld {
         // and mutable object health are replaced. Preserve immutable
         // authored type/side and map asset contracts from this Level.
         if snapshot.next_entity_id <= 0 ||
+            snapshot.projectiles.len() != physics.projectiles().len() ||
             snapshot.ships.len() != self.ships.len() ||
             snapshot.ships.iter().zip(&self.ships).enumerate().any(
                 |(index, (saved, current))|
@@ -1546,6 +1553,50 @@ impl CombatWorld {
                 !snapshot.map_objects.contains_key(id)
             )
         {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        // Projectile slots are reused at their original dense position.
+        // Recover the *behavior*, not only a collider: piercing hit sets,
+        // split/fuse timers and authored explosion clips affect future
+        // damage. A dangling or invented clip never enters gameplay.
+        for shot in &snapshot.projectiles {
+            if shot.entity_id <= 0 || shot.power < 0 ||
+                shot.source_turret_slot.is_some_and(|slot| slot >= 5) ||
+                shot.ignored_ships.iter().any(|&id| id <= 0)
+            {
+                return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+            }
+            let behavior_matches = match (&shot.behavior, shot.projectile_type) {
+                (ImpactBehavior::Direct, 1 | 2 | 3 | 6 | 7 | 10 | 11) => true,
+                (ImpactBehavior::Splitter { .. }, 9) => true,
+                (ImpactBehavior::StrikerBomb(fuse), 12) =>
+                    fuse.valid_recovery(),
+                (ImpactBehavior::Rocket { acceleration_timer, max_speed }, 5) =>
+                    acceleration_timer.valid_recovery() &&
+                    max_speed.is_finite() && *max_speed >= 0.0,
+                (ImpactBehavior::Penetrating(piercing), 4) =>
+                    piercing.valid_recovery(PiercingType::PowerShot, shot.power),
+                (ImpactBehavior::Beam { piercing, length_scale, .. }, 8) =>
+                    piercing.valid_recovery(PiercingType::LaserBeam, shot.power) &&
+                    length_scale.is_finite() && *length_scale >= 0.0,
+                (ImpactBehavior::Explosion { contacts, timeline }, 13..=15) =>
+                    contacts.valid_recovery() &&
+                    self.projectile_assets.by_type(shot.projectile_type)
+                        .is_some_and(|asset|
+                            timeline.valid_recovery(&asset.explosion_events)
+                        ),
+                _ => false,
+            };
+            if !behavior_matches {
+                return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+            }
+        }
+        let mut free_projectiles = HashSet::new();
+        if snapshot.free_projectile_slots.iter().any(|&index|
+            index >= physics.projectiles().len() ||
+            physics.projectiles()[index].active ||
+            !free_projectiles.insert(index)
+        ) {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let mut free_obstacles = HashSet::new();
@@ -1691,6 +1742,12 @@ impl CombatWorld {
         // These lookup maps are part of the other authored CombatWorld
         // gameplay state. Never apply the physical owner bundle to a world
         // whose ship/shot slot identities have not first been recovered.
+        let mut projectile_by_id = HashMap::new();
+        for (index, body) in physics.projectiles().iter().enumerate() {
+            if body.active && projectile_by_id.insert(body.id, index).is_some() {
+                return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+            }
+        }
         let mut obstacle_by_id = HashMap::new();
         for (index, body) in physics.obstacles().iter().enumerate() {
             if body.active && obstacle_by_id.insert(body.id, index).is_some() {
@@ -1698,7 +1755,7 @@ impl CombatWorld {
             }
         }
         if self.ship_by_id.len() != physics.ships().len() ||
-            self.projectile_by_id.len() != physics.projectiles().len() ||
+            projectile_by_id.len() != physics.active_projectile_indices().len() ||
             obstacle_by_id.len() != physics.active_obstacle_indices().len() ||
             self.next_entity_id <= 0 ||
             physics.ships().iter().any(|body|
@@ -1710,7 +1767,7 @@ impl CombatWorld {
             physics.ships().iter().enumerate().any(|(index, body)|
                 self.ship_by_id.get(&body.id) != Some(&index)) ||
             physics.projectiles().iter().enumerate().any(|(index, body)|
-                self.projectile_by_id.get(&body.id) != Some(&index)) ||
+                (projectile_by_id.get(&body.id) == Some(&index)) != body.active) ||
             physics.obstacles().iter().enumerate().any(|(index, body)|
                 (obstacle_by_id.get(&body.id) == Some(&index)) != body.active)
         {
@@ -1730,6 +1787,10 @@ impl CombatWorld {
         self.physics = physics;
         self.next_entity_id = snapshot.next_entity_id;
         self.ships = snapshot.ships;
+        self.projectiles = snapshot.projectiles;
+        self.projectile_by_id = projectile_by_id;
+        self.free_projectile_slots = snapshot.free_projectile_slots;
+        self.projectile_slot_reuses = snapshot.projectile_slot_reuses;
         self.obstacles = snapshot.obstacles;
         self.free_obstacle_slots = snapshot.free_obstacle_slots;
         self.obstacle_slot_reuses = snapshot.obstacle_slot_reuses;
