@@ -1080,6 +1080,13 @@ impl RunNetwork {
         {
             return Err(invalid("HiveMind Game ID differs between original setup, source and recovered World"));
         }
+        if let Some(game_id) = accepted_game_id {
+            println!("{}", json!({
+                "kind": "native_hivemind_setup_identity_recovered",
+                "game_id": game_id,
+                "source": "original_connection_checkpoint",
+            }));
+        }
         let auth_ticket = config.auth_ticket_env.as_ref().map(|name|
             env::var(name).map_err(|_| invalid("configured HiveMind auth ticket environment variable is unavailable")))
             .transpose()?;
@@ -1172,12 +1179,16 @@ impl RunNetwork {
                     // Commit the authenticated server Game ID through the
                     // SAME durable request-hash allocator before sending
                     // another Level setup or advancing any physical World.
+                    let setup_commit_start = Instant::now();
                     host.connection_mut().accept_setup(
                         &self.run_identity, request_hash, server_game_id,
                     ).map_err(|error| contextual("durable HiveMind setup acceptance", error))?;
+                    let durable_ack_sync_wall_seconds =
+                        setup_commit_start.elapsed().as_secs_f64();
                     self.server_game_id = Some(server_game_id);
                     println!("{}", json!({"kind": "hivemind_setup", "request_hash": request_hash,
-                        "game_id": server_game_id, "level_id": self.levels[self.next_level]}));
+                        "game_id": server_game_id, "level_id": self.levels[self.next_level],
+                        "durable_ack_sync_wall_seconds": durable_ack_sync_wall_seconds}));
                     self.next_level += 1;
                     if self.next_level < self.levels.len() {
                         self.setup_next(host.connection_mut(), SetupKind::Initial, 0)?;
