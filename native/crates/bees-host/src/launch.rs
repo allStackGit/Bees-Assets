@@ -2501,6 +2501,23 @@ fn interrupted_campaign_world(
 /// Fleet edits must not advance the saved career while an earlier mission
 /// still owns an unfinished physical World. A file lease alone prevents
 /// simultaneous writers but cannot protect the interval after a crash.
+/// Menu selection is advisory, but it must never offer a new campaign
+/// mission while an original HiveMind/World checkpoint still owns the
+/// career. Reuse the SAME interrupted-World discovery as live recovery,
+/// under the SAME career writer lease. The actual launch independently
+/// rechecks everything after reacquiring exclusive ownership.
+#[cfg(feature = "client")]
+fn pending_saved_campaign_mission(
+    catalog: &battle_catalog::BattleCatalog, output_root: &Path,
+) -> Result<Option<String>, Box<dyn Error>> {
+    let Some(campaign_id) = catalog.campaign_id.as_deref() else {
+        return Ok(None);
+    };
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    Ok(interrupted_campaign_world(output_root, campaign_id)?
+        .map(|(_, prior)| prior.mission_id))
+}
+
 fn ensure_no_interrupted_campaign_edit(
     catalog: &battle_catalog::BattleCatalog, output_root: &Path,
 ) -> Result<(), Box<dyn Error>> {
