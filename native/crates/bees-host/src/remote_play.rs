@@ -283,6 +283,14 @@ pub struct RemotePlayMeasurements {
     /// Complete Level outcomes queued on the reliable channel after the
     /// battle finalization boundary, not inferred from presentation frames.
     pub battle_result_receipts: u64,
+    /// One-time read-only previous-session archive work, separate from
+    /// current-battle commands, snapshots, and physics throughput.
+    #[serde(default)]
+    pub archived_receipts_loaded: u64,
+    #[serde(default)]
+    pub archived_terminal_receipts_sent: u64,
+    #[serde(default)]
+    pub archived_campaign_receipts_sent: u64,
     pub interrupted_battle_notices: u64,
     pub disconnected_peers: u64,
     /// A previously checkpointed host incarnation was resumed on this
@@ -464,6 +472,7 @@ impl NativeRemotePlay {
                     "duplicate or active native terminal session identity"));
             }
             self.archived_receipts.insert(receipt.session_id.clone(), receipt);
+            self.measurements.archived_receipts_loaded += 1;
         }
         Ok(())
     }
@@ -732,10 +741,12 @@ impl NativeRemotePlay {
                                         "campaign_outcome": outcome,
                                         "banked_minerals": receipt.banked_minerals,
                                     }));
+                                    self.measurements.archived_campaign_receipts_sent += 1;
                                 }
                                 let mut result = receipt.battle_result.clone();
                                 result["viewer_side"] = json!(side);
                                 let _ = peer.enqueue(&result);
+                                self.measurements.archived_terminal_receipts_sent += 1;
                                 peer.archived_terminal = true;
                                 peer.close_after_flush = true;
                                 break;
