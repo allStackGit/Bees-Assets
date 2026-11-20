@@ -753,7 +753,7 @@ struct EnemyShipContact {
 }
 
 /// Fixed-boundary bundle of authoritative physics, ship vitals,
-/// MapObject health, reserved reinforcement IDs and the earlier five
+/// obstacle vitals, MapObject health, reserved reinforcement IDs and the earlier five
 /// simulation ledgers. Other game specials, weapon controllers and
 /// authored asset identities still require their own recovery support.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -763,6 +763,9 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     physics: KinematicPhysicsCheckpoint,
     next_entity_id: i64,
     ships: Vec<CombatShip>,
+    obstacles: Vec<CombatObstacle>,
+    free_obstacle_slots: Vec<usize>,
+    obstacle_slot_reuses: u64,
     map_objects: HashMap<i64, CombatMapObject>,
     range_visible_map_objects: HashSet<i64>,
     reserved_ship_ids: HashMap<i32, HashSet<i64>>,
@@ -1405,10 +1408,13 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 2,
+            schema_version: 3,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
+            obstacles: self.obstacles.clone(),
+            free_obstacle_slots: self.free_obstacle_slots.clone(),
+            obstacle_slot_reuses: self.obstacle_slot_reuses,
             map_objects: self.map_objects.clone(),
             range_visible_map_objects: self.range_visible_map_objects.clone(),
             reserved_ship_ids: self.reserved_ship_ids.clone(),
@@ -1426,7 +1432,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 2 {
+        if snapshot.schema_version != 3 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1456,6 +1462,20 @@ impl CombatWorld {
                     physics.ships()[index].id != saved.entity_id ||
                     (physics.ships()[index].active && saved.vitals.is_dead())
             ) ||
+            snapshot.obstacles.len() != self.obstacles.len() ||
+            snapshot.obstacles.iter().zip(&self.obstacles).enumerate().any(
+                |(index, (saved, current))|
+                    saved.entity_id != current.entity_id ||
+                    saved.kind != current.kind ||
+                    saved.size_class != current.size_class ||
+                    saved.entity_id <= 0 ||
+                    physics.obstacles()[index].id != saved.entity_id ||
+                    saved.vitals.is_some_and(|vitals|
+                        vitals.effective_max_health <= 0 ||
+                        vitals.original_health <= 0 ||
+                        (vitals.is_dead != (vitals.health <= 0))
+                    )
+            ) ||
             snapshot.map_objects.len() != self.map_objects.len() ||
             snapshot.map_objects.iter().any(|(&id, saved)|
                 id <= 0 || id != saved.entity_id ||
@@ -1471,6 +1491,15 @@ impl CombatWorld {
                 !snapshot.map_objects.contains_key(id)
             )
         {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        let mut free_obstacles = HashSet::new();
+        if snapshot.free_obstacle_slots.iter().any(|&index|
+            index >= physics.obstacles().len() ||
+            physics.obstacles()[index].active ||
+            !free_obstacles.insert(index)
+        ) || snapshot.free_obstacle_slots.len() !=
+            physics.obstacles().iter().filter(|body| !body.active).count() {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let mut reserved = HashSet::new();
@@ -1559,6 +1588,9 @@ impl CombatWorld {
         self.physics = physics;
         self.next_entity_id = snapshot.next_entity_id;
         self.ships = snapshot.ships;
+        self.obstacles = snapshot.obstacles;
+        self.free_obstacle_slots = snapshot.free_obstacle_slots;
+        self.obstacle_slot_reuses = snapshot.obstacle_slot_reuses;
         self.map_objects = snapshot.map_objects;
         self.range_visible_map_objects = snapshot.range_visible_map_objects;
         self.reserved_ship_ids = snapshot.reserved_ship_ids;

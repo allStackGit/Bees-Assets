@@ -6,7 +6,7 @@
 //! are exposed as lifecycle events until their gameplay consumers are ported.
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ObstacleKind {
     StaticObstacle = 0,
     MapBorder = 1,
@@ -19,7 +19,8 @@ pub enum ObstacleKind {
     MapObject = 5,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObstacleVitals {
     /// Unity's current Health, which can become negative before Kill(false).
     pub health: i32,
@@ -178,7 +179,8 @@ impl AsteroidBreakup {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CombatObstacle {
     pub entity_id: i64,
     pub kind: ObstacleKind,
