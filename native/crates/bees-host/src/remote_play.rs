@@ -1295,6 +1295,25 @@ fn collect_remote_audio(
     }
 }
 
+/// Read-only projection of the authoritative primary physics hull. The
+/// same bounded collider schema is used by ships and obstacles: LAN cursor
+/// selection must not substitute a fixed-size point for wide live hulls.
+fn wire_primary_hull(shape: &ShipShape) -> Value {
+    match shape {
+        ShipShape::Circle { offset, radius } =>
+            json!({"kind":"circle","offset":[offset.x,offset.y],"radius":radius}),
+        ShipShape::Box { offset, half_extents } =>
+            json!({"kind":"box","offset":[offset.x,offset.y],
+                   "half_extents":[half_extents.x,half_extents.y]}),
+        ShipShape::Polygon(vertices) if vertices.len()<=64 =>
+            json!({"kind":"polygon","vertices":vertices.iter()
+                .map(|point|[point.x,point.y]).collect::<Vec<_>>()}),
+        // The caller also emits the actual cached primary AABB for older
+        // imported polygons with more vertices. Never truncate a hull.
+        ShipShape::Polygon(_) => Value::Null,
+    }
+}
+
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
     music_location: Option<NativeMusicLocation>, audio_events: &[Value],
@@ -1331,6 +1350,10 @@ fn current_state(
             "side": ship.side, "ship_type": ship.ship_type,
             "x": body.motion.position.x, "y": body.motion.position.y,
             "rotation": body.motion.rotation_degrees,
+            "collider": wire_primary_hull(body.shape()),
+            "collider_bounds": body.primary_bounds().map(|bounds|[
+                [bounds.min.x,bounds.min.y],[bounds.max.x,bounds.max.y],
+            ]),
             "animation_variant": animation.map(|(variant, _)| variant),
             "animation_seconds": animation.map(|(_, seconds)| seconds),
             "destination": if owned {
@@ -1362,17 +1385,7 @@ fn current_state(
         // remote players can see genuine walls and mining asteroid hulls,
         // not fabricated point-sized obstacles. Unusually large polygon
         // paths use bounds-only fallback to limit per-frame bandwidth.
-        let hull = match body.shape() {
-            ShipShape::Circle { offset, radius } =>
-                json!({"kind":"circle","offset":[offset.x,offset.y],"radius":radius}),
-            ShipShape::Box { offset, half_extents } =>
-                json!({"kind":"box","offset":[offset.x,offset.y],
-                       "half_extents":[half_extents.x,half_extents.y]}),
-            ShipShape::Polygon(vertices) if vertices.len() <= 64 =>
-                json!({"kind":"polygon","vertices":vertices.iter()
-                    .map(|p| [p.x,p.y]).collect::<Vec<_>>()}),
-            _ => Value::Null,
-        };
+        let hull=wire_primary_hull(body.shape());
         let collider_bounds = body.primary_bounds().map(|bounds| [
             [bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y],
         ]);
