@@ -3389,6 +3389,17 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         fleet_builder::choose_multiplayer()?
     } else { None };
     if custom_fleet && fleet.is_none() { return Ok(()); }
+    // Keep one save writer for the entire child-host lifetime. The parent
+    // selects an original checkpoint before launching the only gameplay
+    // runtime; no second host may race its World or replay its inputs.
+    let quick_source = if campaign.is_none() && fleet.is_none() {
+        game_source.as_ref()
+    } else { None };
+    let _quick_writer = if quick_source.is_some() {
+        Some(battle_catalog::CampaignWriterLease::acquire(
+            &save_root.join("battles").join(&settings.game_id),
+        )?)
+    } else { None };
     let mut launch = std::process::Command::new(env::current_exe()?);
     if let Some((catalog, career_root, mission_id)) = campaign {
         // campaign --serve enforces its own single-Level/model requirements,
@@ -3397,7 +3408,11 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
             .arg("--output-dir").arg(career_root)
             .arg("--mission").arg(mission_id).arg("--serve");
     } else {
-        let output = new_library_battle_output(save_root, &settings.game_id)?;
+        let output = if let Some(source) = quick_source {
+            select_library_quick_battle_output(save_root, &settings.game_id, source)?
+        } else {
+            new_library_battle_output(save_root, &settings.game_id)?
+        };
         let source = if let Some(choice) = fleet {
             let parent = output.parent().ok_or_else(||
                 invalid("custom multiplayer fleet has no archive directory"))?;
