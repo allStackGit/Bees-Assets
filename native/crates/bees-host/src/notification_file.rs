@@ -454,7 +454,8 @@ impl DurableDiagnosticNotifications {
         let mut buffer = [0_u8; 64 * 1024];
         let mut remaining = checkpoint.journal_bytes;
         while remaining > 0 {
-            let count = reader.read(&mut buffer[..remaining.min(buffer.len() as u64) as usize])?;
+            let limit = remaining.min(64 * 1024) as usize;
+            let count = reader.read(&mut buffer[..limit])?;
             if count == 0 {
                 return Err(io::Error::new(io::ErrorKind::UnexpectedEof,
                     "native journal checkpoint prefix was truncated"));
