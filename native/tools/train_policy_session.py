@@ -141,19 +141,97 @@ class NativeHubCollectionBarrier:
                     params.get("collector_id") != collector or
                     params.get("collection_id") != collection_id):
                 raise ValueError(f"Hub native collector {collector} changed its frozen job identity")
-            # wait_for_collections has already checked the issued receipt
-            # before calling this barrier. A Hub terminal status with no
-            # verified bundle cannot produce a learner update. In particular,
-            # "finished" is Hub's success state, not "completed": a finished
-            # collector missing its transfer must not hang an unlimited wait.
-            status = job.get("status")
-            if status in ("failed", "cancelled", "stopped", "unverified", "finished"):
-                reason = str(job.get("status_reason") or "")[:240]
+            # A failed collector's native systemd/Job Object identity is
+            # terminal, not reusable. The Hub may queue a separately leased
+            # replacement on the SAME host and with identical physical
+            # source work. Keep the original bundle as the learner's fixed
+            # collection identity while following only one explicitly
+            # authorized replacement chain in the Hub's durable registry.
+            current = job
+            visited = {job_id}
+            for _ in range(16):
+                successors = [
+                    candidate for candidate in indexed.values()
+                    if candidate.get("collector_replacement_of_job_id") ==
+                        current.get("id") and candidate.get("status") != "cancelled"
+                ]
+                if len(successors) > 1:
+                    raise ValueError(
+                        f"multiple native replacement owners claim collector {collector}"
+                    )
+                if not successors:
+                    break
+                successor = successors[0]
+                candidate_id = successor.get("id")
+                frozen = successor.get("frozen_parameters")
+                predecessor_frozen = current.get("frozen_parameters")
+                if (candidate_id in visited or
+                        current.get("status") != "failed" or
+                        not current.get("capacity_released_at") or
+                        successor.get("project_id") != "bees_native_collect" or
+                        successor.get("configuration_id") !=
+                            current.get("configuration_id") or
+                        successor.get("configuration_revision") !=
+                            current.get("configuration_revision") or
+                        successor.get("configuration_sha256") !=
+                            current.get("configuration_sha256") or
+                        successor.get("artifact_lineage_root_id") !=
+                            (current.get("artifact_lineage_root_id") or current["id"]) or
+                        successor.get("continuation_machine_id") != machine or
+                        successor.get("assigned_machine_id") not in (None, machine) or
+                        frozen != predecessor_frozen or
+                        successor.get("model_source_job_id") !=
+                            current.get("model_source_job_id") or
+                        successor.get("expected_parent_model_sha256") !=
+                            current.get("expected_parent_model_sha256") or
+                        not isinstance(frozen, dict) or
+                        frozen.get("collector_id") != collector or
+                        frozen.get("collection_id") != collection_id):
+                    raise ValueError(
+                        f"Hub replacement for {collector} changed its original physical training contract"
+                    )
+                previous_lease = snapshot.get("reservations") or []
+                if not isinstance(previous_lease, list) or not any(
+                    isinstance(lease, dict) and
+                    lease.get("id") == current.get("lease_id") and
+                    lease.get("job_id") == current.get("id") and
+                    lease.get("status") == "released"
+                    for lease in previous_lease
+                ):
+                    raise ValueError(
+                        f"Hub replacement for {collector} lacks released predecessor capacity"
+                    )
+                visited.add(candidate_id)
+                current = successor
+            else:
+                raise ValueError(
+                    f"collector {collector} exceeds bounded native replacement lineage"
+                )
+            status = current.get("status")
+            if current.get("assigned_machine_id") is not None and (
+                    not isinstance(snapshot.get("reservations"), list) or
+                    not any(isinstance(lease, dict) and
+                        lease.get("id") == current.get("lease_id") and
+                        lease.get("job_id") == current.get("id") and
+                        lease.get("machine_id") == machine and
+                        lease.get("project_id") == "bees_native_collect" and
+                        lease.get("issued_by") == "experiment-hub" and
+                        lease.get("status") in ("offered", "acknowledged")
+                        for lease in snapshot["reservations"])):
+                raise ValueError(
+                    f"collector {collector} lost its original-machine Hub lease"
+                )
+            # A failed predecessor may await explicit operator approval.
+            # Never restart it or accept it as data; simply retain the
+            # existing bounded collection barrier until a newly leased
+            # replacement publishes a verified bundle.
+            if status in ("cancelled", "stopped", "unverified", "finished"):
+                reason = str(current.get("status_reason") or "")[:240]
                 detail = ("finished without a verified collection delivery"
                           if status == "finished" else f"is {status} in Hub")
                 raise RuntimeError(
-                    f"native collector {collector} on {machine} ({job_id}) "
-                    f"{detail}: {reason}"
+                    f"native collector {collector} on {machine} "
+                    f"({current['id']}) {detail}: {reason}"
                 )
         # Hub decisions are append-only. Use only the latest decision for
         # this exact issued resource bundle: a later explicit reauthorization
