@@ -939,7 +939,14 @@ impl NativePolicyOnlyMetadata {
             .is_some_and(|template| template.policy_weapon.is_some())
         { return None; }
         self.agents.get(&queen_id)
-            .filter(|agent| agent.side == side)
+            // A Queen that died this tick still owns the source frame
+            // until its last minion event has been captured. Once that
+            // Agent has been recycled onto another ship, its archived
+            // route is no longer an active policy controller; prefer a
+            // living same-side binding instead.
+            .filter(|agent| agent.side == side &&
+                (world.policy_frame(queen_id).is_some() ||
+                    agent.source_group_agent_id.is_some()))
             .or_else(|| self.policy_side_representative.get(&side)
                 .filter(|&&id| world.policy_frame(id).is_some())
                 .and_then(|id| self.agents.get(id))
