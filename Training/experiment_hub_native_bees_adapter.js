@@ -12,6 +12,8 @@ const {evaluationReader} = require('./experiment_hub_evaluation');
 const PROJECT = 'bees_native';
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
+// Keep Hub source stage selection aligned with native training sessions.
+const MAX_TRAINING_ROUNDS = 99999;
 const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const ROCM_UUID = /^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const CUDA_UUID = /^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -860,7 +862,7 @@ function createNativeBeesAdapter({
             'import json,sys',
             'from native_curriculum import load_curriculum',
             'base={"path":sys.argv[2],"sha256":sys.argv[3]}',
-            'plan=load_curriculum(sys.argv[1],base,8,sys.argv[4],'+
+            'plan=load_curriculum(sys.argv[1],base,'+MAX_TRAINING_ROUNDS+',sys.argv[4],'+
                 '(None if sys.argv[5]=="none" else int(sys.argv[5])),None)',
             'print(json.dumps(plan))',
         ].join(';');
@@ -876,7 +878,7 @@ function createNativeBeesAdapter({
         if(plan?.plan?.path!==curriculumFile||
             plan.plan.sha256!==sha256(fs.readFileSync(curriculumFile))||
             !Array.isArray(plan.stages)||!plan.stages.length||
-            plan.stages.length>7)
+            plan.stages.length>MAX_TRAINING_ROUNDS-1)
             throw Error('Native curriculum stage plan changed during adapter installation.');
         curriculumPins.set(curriculumFile,plan.plan.sha256);
         curriculumPins.set(curriculumModule,sha256(fs.readFileSync(curriculumModule)));
@@ -885,7 +887,7 @@ function createNativeBeesAdapter({
             const stageBytes=fs.readFileSync(stageRun);
             if(stage.run_config.sha256!==sha256(stageBytes)||
                 !Number.isSafeInteger(stage.start_round)||
-                stage.start_round<2||stage.start_round>8||
+                stage.start_round<2||stage.start_round>MAX_TRAINING_ROUNDS||
                 stage.start_round<=curriculumRuns.at(-1).start_round)
                 throw Error('Native curriculum has a changed or unordered stage.');
             const stageConfig=JSON.parse(stageBytes);
@@ -1314,7 +1316,7 @@ function createNativeBeesAdapter({
             if(native_round_number!==undefined&&
                 (!collectOnly||collection_id===undefined||
                  !Number.isSafeInteger(native_round_number)||
-                 native_round_number<1||native_round_number>8))
+                 native_round_number<1||native_round_number>MAX_TRAINING_ROUNDS))
                 throw Error('Only Hub-owned native collector rounds can select curriculum stages.');
             const sourceStage=native_round_number===undefined
                 ?curriculumRuns[0]
