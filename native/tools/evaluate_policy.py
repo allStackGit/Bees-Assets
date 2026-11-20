@@ -17,7 +17,8 @@ import uuid
 from native_mission_contract import level_has_goal, verified_policy_observations
 from native_training_artifacts import (file_sha256, sync_directory, atomic_json,
                                        native_input_dependencies,
-                                       check_native_input_dependencies)
+                                       check_native_input_dependencies,
+                                       native_headless_environment)
 
 
 def resolved(base, path):
@@ -276,18 +277,11 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     # Pin the stochastic MA-POCA action sampler across evaluated model
     # generations. The environment seed plans remain fixed in the source
     # Level config; a distinct inference RNG controls policy sampling.
-    env = dict(os.environ)
+    env = native_headless_environment()
     # Fixed-reference comparisons must not inherit a shell's unrelated
     # model-placement override. Only the recorded --inference-device
     # may relocate PyTorch weights at evaluation time.
     env.pop("BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE", None)
-    # The native runner enters authenticated LAN hosting from this process
-    # environment, not from the holdout's model-only run config. Never
-    # allow an inherited desktop/server launch to change evaluation pacing
-    # or accept multiplayer inputs while it measures a fixed scenario.
-    for key in ("BEES_NATIVE_REMOTE_LISTEN", "BEES_NATIVE_REMOTE_SIDE_TOKENS",
-                "BEES_NATIVE_REMOTE_TOKEN"):
-        env.pop(key, None)
     env["BEES_NATIVE_EVALUATION_SEED"] = str(policy_seed)
     # Device placement does not change the signed model manifest or its
     # checkpoint hash. It is explicit in the evaluation receipt because
