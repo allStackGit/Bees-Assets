@@ -95,6 +95,7 @@ class RemoteBattleWindow:
         self.last_held_aim_at = 0.0
         self.state = None
         self.drawn_scope = None
+        self.shown_terminal_receipt = None
         self.map_bounds = None
         self.camera = None
         self.zoom = 1.0
@@ -293,6 +294,10 @@ class RemoteBattleWindow:
                     self.draw()
                 if not self.last_feedback:
                     self.status.set(f"World {key[0]}, episode {key[1]}, tick {key[2]}")
+        terminal = self.console.battle_receipt_snapshot()
+        if terminal != self.shown_terminal_receipt:
+            self.shown_terminal_receipt = terminal
+            self.draw()
         if self.console.alive:
             self.root.after(50, self.poll)
         else:
