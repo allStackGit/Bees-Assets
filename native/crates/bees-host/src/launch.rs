@@ -1061,6 +1061,7 @@ struct RunNetwork {
     recorded_network_syncs: u64,
     recorded_network_sync_wall_seconds: f64,
     run_identity: String,
+    setup_requested: bool,
 }
 
 impl RunNetwork {
@@ -1105,7 +1106,7 @@ impl RunNetwork {
             return Err(invalid("HiveMind command clock has mismatched Level timesteps"));
         }
         let scheduler = NativeSourceCommandScheduler::new(&levels, fixed_dt_by_level)?;
-        let mut network = Self {
+        let network = Self {
             worker: NativeSocketWorker::start(config.endpoint.clone(), config.allow_insecure_loopback)
                 .map_err(|error| contextual("HiveMind network startup", error))?,
             levels, next_level: 0, server_game_id: game_id,
@@ -1116,11 +1117,22 @@ impl RunNetwork {
             recorded_network_syncs: 0,
             recorded_network_sync_wall_seconds: 0.0,
             run_identity: run_identity.to_owned(),
+            setup_requested: false,
         };
-        let (kind, server_game_id) = game_id
-            .map_or((SetupKind::Initial, 0), |game| (SetupKind::Reconnect, game));
-        network.setup_next(connection, kind, server_game_id)?;
+        // Constructing the transport does not authorize creating a server
+        // Game. The battle loop first commits the original round-zero World,
+        // model and launcher cursor; only then may setup be transmitted.
         Ok(network)
+    }
+
+    fn begin_setup(&mut self, connection: &mut DurableHiveMindConnection)
+        -> io::Result<()> {
+        if self.setup_requested { return Ok(()); }
+        let (kind, game_id) = self.server_game_id
+            .map_or((SetupKind::Initial, 0), |id| (SetupKind::Reconnect, id));
+        self.setup_next(connection, kind, game_id)?;
+        self.setup_requested = true;
+        Ok(())
     }
 
     fn setup_next(&mut self, connection: &mut DurableHiveMindConnection, kind: SetupKind, server_game_id: i64)
@@ -6325,8 +6337,13 @@ fn run_battle(
         if host_checkpoint_file.is_some() &&
             (recovery_due || !pending_remote_successes.is_empty() ||
                 pending_local_feedback.is_some()) &&
-            network.as_ref().is_none_or(|session| session.server_game_id.is_some() &&
-                session.next_level == session.levels.len()) &&
+            network.as_ref().is_none_or(|session|
+                // A first World checkpoint precedes any setup request.
+                // Later checkpoints require all authenticated Levels to
+                // have joined the same original server Game.
+                checkpointed_round.is_none() && !session.setup_requested ||
+                session.server_game_id.is_some() &&
+                    session.next_level == session.levels.len()) &&
             host.connection_mut().connection().pending_request_count() == 0
         {
             if let Some(file) = &host_checkpoint_file {
@@ -6497,6 +6514,18 @@ fn run_battle(
             }
         }
         if rounds == config.max_rounds { break; }
+        // The first Game setup must follow, never precede, the committed
+        // round-zero World/connection/launcher checkpoint. This eliminates
+        // the creation of an uncheckpointed externally visible Game.
+        // Subsequent reconnect setup uses the same original Game identity.
+        if let Some(network) = &mut network {
+            if !network.setup_requested {
+                if let Err(error) = network.begin_setup(host.connection_mut()) {
+                    failed_window = Some(format!("HiveMind Level setup: {error}"));
+                    break;
+                }
+            }
+        }
         // Poll before view pacing/input continues, so idle graphical frames
         // cannot starve acknowledgement or setup delivery.
         if let Some(network) = &mut network {
