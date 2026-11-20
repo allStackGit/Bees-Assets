@@ -20,7 +20,7 @@ use crate::policy::OBSERVATION_FLOATS;
 const OBSERVED_WEAPON_LEN: usize = 5;
 const OBSERVED_WEAPON_SLOTS: usize = 5;
 const ENTITY_CORE_LEN: usize = 16;
- #[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ObservedWeapon {
     pub weapon_type: u8,
     pub range: f32,

@@ -55,7 +55,7 @@ use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerPermiss
 use bees_gameplay::squad_geometry::SquadMemberOffset;
 use bees_sim::{geometry::Vec2, squad_movement::SquadFormationOptions};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeSourceFormation {
     pub offset: Vec2,
     pub clearance: i32,
@@ -94,6 +94,8 @@ pub enum PolicyOnlyMetadataError {
 /// One current source-owning policy controller. Its weapon slots are
 /// only non-turret values; registered CombatWorld native turrets replace
 /// those during observation assembly.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthoredPolicyAgent {
     pub ship_id: i64,
     pub side: i32,
@@ -140,7 +142,7 @@ pub struct AuthoredPolicySide {
 
 /// Captured separately from an agent's effective v26 self sight range:
 /// HiveMindVision's CircleCollider2D holds its original Create-time Range.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeSourceVision {
     /// Actual Ship.Sight, distinct from HiveMind's zero-sight range fallback.
     pub source_sight: Option<i32>,

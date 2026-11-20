@@ -53,7 +53,7 @@ impl From<PolicyBatchError> for NativeInferenceError {
 /// from the episode's team and checkpoint schedule. The numeric model
 /// slot is opaque to the simulator, but must reference a real loaded
 /// policy in the backend. Different rows can route to different models.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativePolicyRoute {
     pub team_id: u8,
     pub model_slot: u32,

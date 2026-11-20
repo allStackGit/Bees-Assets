@@ -9,7 +9,7 @@ use crate::{commands::GameCommandError, level_events::NativeLevelEventError,
 
 const FLAGSHIP_SHIP_TYPE: u8 = 11;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativePlayerPermissions {
     pub user_controlled: bool,
     pub can_accept_input: bool,

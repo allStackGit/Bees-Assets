@@ -98,7 +98,7 @@ pub struct SelfSource {
 /// Remaining real ship/coordinator values for Unity's AddCapabilityObservations.
 /// The two leading capability values are taken from SelfSource so they cannot
 /// disagree with the same features in the self-observation block.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CapabilitySource {
     pub special_resource_fraction: f32,
     pub special_cooldown_fraction: f32,

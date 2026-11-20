@@ -13,14 +13,14 @@ use crate::perception::{
 };
 use crate::policy::OBSERVATION_FLOATS;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TurretObservation {
     pub rotation_degrees: f32,
     pub ready_to_fire: bool,
     pub aligned_with_target: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SelfWeapon {
     pub weapon_type: u8,
     /// Actual mount position, not ship center.

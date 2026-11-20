@@ -59,7 +59,7 @@ impl From<ShipIdentityError> for CombatPerceptionError {
 /// do NOT currently exist in CombatWorld. In particular, mined value is
 /// FleetShip.MineralsMinedThisLevel and must not be guessed from ShipVitals'
 /// separately tracked current cargo.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct AuthoredShipPerception {
     pub longest_side: f32,
     pub max_weapon_range: f32,
@@ -90,7 +90,7 @@ impl AuthoredShipPerception {
 /// Additional authoritative data for the observing ship, which must come
 /// from the actual ship controller and episode configuration. The policy
 /// movement-enabled flag is independent of ship's base physical mobility.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ControlledShipPerception {
     pub effective_vision_range: f32,
     pub movement_disabled_for_team: bool,
