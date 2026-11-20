@@ -1966,7 +1966,11 @@ impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
             .ok_or(PolicyOnlyMetadataError::InvalidSource)?;
         if real_ship.side != agent.side ||
             real_ship.vitals.is_dead() ||
-            _world.policy_frame(ship_id).is_none()
+            // A new physical policy binding may keep the same ship ID
+            // but change the authoritative controller frame. Do not
+            // encode an observation using the previous Agent's authored
+            // movement/vision metadata and silently credit its group.
+            _world.policy_frame(ship_id) != Some(agent.frame)
         {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
