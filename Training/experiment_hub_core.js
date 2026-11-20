@@ -6228,7 +6228,8 @@ class ExperimentHub {
                     !approved.includes(item.endpoint)||
                     !snapshot.machines.some(host=>
                         host.id===item.machine_id&&
-                        host.tinybrains_rollout_slots?.some(slot=>slot.endpoint===item.endpoint)))||
+                        (host.tinybrains_rollout_endpoint===item.endpoint||
+                            host.tinybrains_rollout_slots?.some(slot=>slot.endpoint===item.endpoint))))||
                 new Set(value.collectors.map(item=>item.endpoint)).size!==value.collectors.length||
                 new Set(value.collectors.map(item=>item.machine_id)).size!==value.collectors.length)
                 throw Error('Select distinct approved TinyBrains collector listeners and machines.');
@@ -6301,7 +6302,7 @@ class ExperimentHub {
             if(desiredThreads===null)
                 throw Error('Remote worker threads must fit its leased CPUs and approved local thread ceiling.');
             const slot=host.tinybrains_rollout_slots?.find(item=>item.endpoint===endpoint);
-            if(selectedSlots&&!slot)
+            if(selectedSlots&&!slot&&host.tinybrains_rollout_endpoint!==endpoint)
                 throw Error('Selected TinyBrains listener changed before native ownership was reserved.');
             const workerConfiguration={
                 id:crypto.randomUUID(),project_id:'tinybrains_rollout',
