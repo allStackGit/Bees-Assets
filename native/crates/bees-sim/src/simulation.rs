@@ -91,6 +91,7 @@ impl<T> WorldCheckpoint<T> {
     pub fn world_id(&self) -> WorldId { self.id }
     pub fn state(&self) -> &T { &self.state }
     pub fn episode_revision(&self) -> u64 { self.episode_revision }
+    pub fn measurements(&self) -> Measurements { self.measurements }
 
     /// Split executable Level recovery data from the immutable World
     /// clock/RNG envelope without cloning battle state.
@@ -575,6 +576,16 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
 
     pub fn measurements(&self) -> Measurements {
         self.measurements
+    }
+
+    /// Called only after the outer host validated the cumulative step
+    /// counts against each staged World and committed the complete cohort.
+    /// Worker-local action buffers and physical thread scheduling are
+    /// transient; neither is replayed as authoritative game state.
+    pub fn commit_recovered_measurements(&mut self, cumulative: Measurements) {
+        self.measurements = cumulative;
+        self.physics_pool = None;
+        self.window_action_buffers.clear();
     }
 
     pub fn step_world(
