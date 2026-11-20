@@ -86,7 +86,8 @@ pub struct NativeLevelTick<'a> {
 
 /// Sparse, lossless notifications for a multi-step rollout. The event
 /// contains the EXACT completed fixed tick on which it occurred.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeLevelNotification {
     pub tick: u64,
     pub kind: NativeLevelNotificationKind,
@@ -103,7 +104,7 @@ pub struct NativeLocalBombingTargets<'a> {
 /// A delayed projectile keeps its launching command's OutcomeId. Damage to a
 /// defender is charged to the command active at impact, *before* death can
 /// retire the squad; neither mapping is reconstructed by the notification sink.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeCombatHit {
     pub hit: HitEvent,
     pub attacker_command_outcome_id: Option<i64>,
@@ -114,7 +115,7 @@ pub struct NativeCombatHit {
     pub fire_barge_killer_credit: Option<NativeFireBargeKillerCredit>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeFireBargeKillerCredit {
     pub killer_ship_id: i64,
     pub command_outcome_id: Option<i64>,
@@ -123,7 +124,7 @@ pub struct NativeFireBargeKillerCredit {
 
 /// Strategic command credit, separate from bounded PPO discovery shaping.
 /// HivemindVision.OnTriggerEnter2D / ConfigData.Gameplay constants.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeVisionCommandCredit {
     pub observer_id: i64,
     pub target_id: i64,
@@ -133,7 +134,7 @@ pub struct NativeVisionCommandCredit {
     pub tsv_delta: i32,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 struct FireBargeKiller {
     ship_id: i64,
     command_at_kill: Option<i64>,
@@ -146,7 +147,7 @@ struct DamageCommandOwners {
     fire_barge_killer: Option<NativeFireBargeKillerCredit>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum NativeLevelNotificationKind {
     CampaignDialogue(crate::campaign_dialogue::CampaignCue),
     ReinforcementsArrived { ships: usize, squads: usize },
@@ -248,7 +249,7 @@ pub struct NativeLevelEventMeasurements {
 /// Per-episode admissions observed at the same one-way Level event
 /// publication boundary as the durable ReinforcementsArrived notification.
 /// Unlike the sparse notification outbox, these counters survive ACKs.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeReinforcementArrivals {
     pub waves: u64,
     pub squads: u64,
@@ -266,6 +267,81 @@ impl NativeReinforcementArrivals {
     }
 }
 
+/// The Level's durable sparse delivery queue and exact ACK position.
+/// Includes HiveMind settlement obligations, not only UI events. The
+/// connection's StoreCommands checkpoint remains externally owned.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeLevelDeliveryCheckpoint {
+    pending_session_retirements: Vec<SquadLifetime>,
+    pending_notifications: Vec<NativeLevelNotification>,
+    acknowledged_notification_count: u64,
+    peak_pending_notifications: usize,
+    reinforcement_arrivals: NativeReinforcementArrivals,
+    last_reinforcement_tick: Option<u64>,
+    next_local_command_sequence: u64,
+    last_advanced_command_tick: Option<u64>,
+    last_published_timed_tick: Option<u64>,
+    failed: bool,
+    failed_commands_drained: bool,
+    last_finalized: Option<NativeEpisodeFinal>,
+    fire_barge_killers: std::collections::HashMap<i64, FireBargeKiller>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeLevelDeliveryRestoreError {
+    InvalidCursor,
+    InvalidNotification,
+    InvalidLifecycle,
+    InvalidAttribution,
+}
+
+impl NativeLevelDeliveryCheckpoint {
+    fn prepare(
+        self, world: &CombatWorld, completed_ticks: u64,
+    ) -> Result<Self, NativeLevelDeliveryRestoreError> {
+        use NativeLevelDeliveryRestoreError as Error;
+        if self.pending_notifications.len() > MAX_PENDING_NOTIFICATIONS ||
+            self.peak_pending_notifications < self.pending_notifications.len() ||
+            self.acknowledged_notification_count
+                .checked_add(self.pending_notifications.len() as u64).is_none() ||
+            self.pending_notifications.iter().any(|entry|
+                entry.tick > completed_ticks
+            ) {
+            return Err(Error::InvalidCursor);
+        }
+        if self.last_advanced_command_tick.is_some_and(|tick|
+            tick > completed_ticks
+        ) || self.last_published_timed_tick.is_some_and(|tick|
+            tick > completed_ticks
+        ) || self.last_reinforcement_tick.is_some_and(|tick|
+            tick > completed_ticks
+        ) || self.pending_session_retirements.iter().any(|owner|
+            !owner.valid()
+        ) {
+            return Err(Error::InvalidLifecycle);
+        }
+        if self.fire_barge_killers.iter().any(|(&id, owner)|
+            id <= 0 || owner.ship_id <= 0 ||
+            owner.command_at_kill.is_some_and(|value| value <= 0) ||
+            !world.ship(id).is_some_and(|ship| ship.ship_type == 10) ||
+            world.ship(owner.ship_id).is_none()
+        ) {
+            return Err(Error::InvalidAttribution);
+        }
+        if self.pending_notifications.iter().any(|entry| matches!(
+            &entry.kind,
+            NativeLevelNotificationKind::PolicyControllerAdmitted {
+                ship_id, binding_revision, side, group_agent,
+            } if *ship_id <= 0 || *binding_revision == 0 ||
+                *side <= 0 || *group_agent == 0
+        )) {
+            return Err(Error::InvalidNotification);
+        }
+        Ok(self)
+    }
+}
+
 /// Recovery bundle for the event processor's four independently staged
 /// ownership ledgers. The outer Level must also restore episode reward
 /// state, notification ACK cursors and other source-owned state before
@@ -279,6 +355,7 @@ pub struct NativeLevelEventRecoveryOwnersCheckpoint {
     commands: NativeCommandDirectorCheckpoint,
     group_delivery: Option<NativeGroupRewardCheckpoint>,
     credit: NativeCommandCreditCheckpoint,
+    delivery: NativeLevelDeliveryCheckpoint,
 }
 
 #[derive(Debug)]
@@ -290,6 +367,7 @@ pub enum NativeLevelEventRecoveryError {
     Command(GameCommandError),
     Group(NativeGroupRewardRestoreError),
     Credit(CommandCreditError),
+    Delivery(NativeLevelDeliveryRestoreError),
 }
 
 pub struct NativeLevelEventProcessor {
@@ -344,12 +422,27 @@ impl NativeLevelEventProcessor {
         -> NativeLevelEventRecoveryOwnersCheckpoint
     {
         NativeLevelEventRecoveryOwnersCheckpoint {
-            schema_version: 2,
+            schema_version: 3,
             next_tick: self.next_tick,
             roster: self.roster.checkpoint(),
             commands: self.commands.checkpoint(),
             group_delivery: self.group_delivery.as_ref().map(|group| group.checkpoint()),
             credit: self.credit.checkpoint(),
+            delivery: NativeLevelDeliveryCheckpoint {
+                pending_session_retirements: self.pending_session_retirements.clone(),
+                pending_notifications: self.pending_notifications.clone(),
+                acknowledged_notification_count: self.acknowledged_notification_count,
+                peak_pending_notifications: self.peak_pending_notifications,
+                reinforcement_arrivals: self.reinforcement_arrivals,
+                last_reinforcement_tick: self.last_reinforcement_tick,
+                next_local_command_sequence: self.next_local_command_sequence,
+                last_advanced_command_tick: self.last_advanced_command_tick,
+                last_published_timed_tick: self.last_published_timed_tick,
+                failed: self.failed,
+                failed_commands_drained: self.failed_commands_drained,
+                last_finalized: self.last_finalized,
+                fire_barge_killers: self.fire_barge_killers.clone(),
+            },
         }
     }
 
@@ -362,13 +455,15 @@ impl NativeLevelEventProcessor {
         world: &CombatWorld, completed_ticks: u64,
     ) -> Result<(), NativeLevelEventRecoveryError> {
         use NativeLevelEventRecoveryError as Error;
-        if checkpoint.schema_version != 2 {
+        if checkpoint.schema_version != 3 {
             return Err(Error::InvalidVersion);
         }
         if completed_ticks.checked_add(1) != Some(checkpoint.next_tick) ||
             self.next_tick != checkpoint.next_tick {
             return Err(Error::TickMismatch);
         }
+        let delivery = checkpoint.delivery.prepare(world, completed_ticks)
+            .map_err(Error::Delivery)?;
         let roster = NativeSquadRoster::prepare_restore(checkpoint.roster, world)
             .map_err(Error::Roster)?;
         let commands = NativeSquadCommandDirector::prepare_restore(
@@ -389,6 +484,24 @@ impl NativeLevelEventProcessor {
         self.commands = commands;
         self.credit = credit;
         self.group_delivery = group;
+        self.pending_session_retirements = delivery.pending_session_retirements;
+        self.pending_notifications = delivery.pending_notifications;
+        self.acknowledged_notification_count = delivery.acknowledged_notification_count;
+        self.peak_pending_notifications = delivery.peak_pending_notifications;
+        self.reinforcement_arrivals = delivery.reinforcement_arrivals;
+        self.last_reinforcement_tick = delivery.last_reinforcement_tick;
+        self.next_local_command_sequence = delivery.next_local_command_sequence;
+        self.last_advanced_command_tick = delivery.last_advanced_command_tick;
+        self.last_published_timed_tick = delivery.last_published_timed_tick;
+        self.failed = delivery.failed;
+        self.failed_commands_drained = delivery.failed_commands_drained;
+        self.last_finalized = delivery.last_finalized;
+        self.fire_barge_killers = delivery.fire_barge_killers;
+        // Scratch snapshots from before recovery have no delivery identity.
+        self.changes.clear();
+        self.finished.clear();
+        self.timed_finished.clear();
+        self.core_damage_owners.clear();
         Ok(())
     }
 
