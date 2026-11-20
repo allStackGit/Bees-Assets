@@ -577,6 +577,10 @@ pub struct NativeLevelWindowCounts {
     pub rounds: u32,
     pub world_steps: usize,
     pub policy_rows: usize,
+    /// Exact authoritative controller transitions across successful rounds.
+    pub controller_bindings: u64,
+    pub controller_rebindings: u64,
+    pub controller_retirements: u64,
     /// Exact neural observation work outside ordinary inference: newborn
     /// controller enrollment versus full death/terminal cohort snapshots.
     pub admission_snapshot_rows: usize,
@@ -1808,6 +1812,9 @@ impl NativeLevelBatchDriver {
             counts.rounds += 1;
             counts.world_steps += step.worlds_stepped;
             counts.policy_rows += step.policy_agents_inferred;
+            counts.controller_bindings += step.controller_bindings;
+            counts.controller_rebindings += step.controller_rebindings;
+            counts.controller_retirements += step.controller_retirements;
             counts.parallel_stage_id_serialized_rounds +=
                 u32::from(step.serialized_for_stage_ids);
             counts.parallel_stage_id_serialized_arenas += step.serialized_stage_arenas;
