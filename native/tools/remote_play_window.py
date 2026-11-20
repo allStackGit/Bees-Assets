@@ -239,7 +239,7 @@ class RemoteBattleWindow:
         # local game clock or campaign progression is reproduced here.
         try:
             if self.console.acknowledge_briefing():
-                self.notice("Campaign briefing acknowledged; awaiting other viewers")
+                self.notice("Campaign briefing acknowledgment sent; awaiting host and other viewers")
         except (OSError, ValueError) as error:
             self.notice(f"Campaign briefing acknowledgment failed: {error}")
 
