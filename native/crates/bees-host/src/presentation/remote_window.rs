@@ -1090,6 +1090,23 @@ fn remote_tactical_hit(x: f32,y: f32) -> Option<HudAction> {
         remote_tactical_rect(action).is_some_and(|rect|rect.contains(x,y)))
 }
 
+// Side-panel squad rows are the same authoritative source-order projection
+// used to draw names and selection highlights. Noncontrollable squads stay
+// visible in the roster but cannot enter a player command through a tab.
+fn remote_squad_tab_hit(state: &Value,x: f32,y: f32) -> Option<i64> {
+    if !x.is_finite()||!y.is_finite()||
+        x<(FIELD+14) as f32||x>=(WIDTH-14) as f32 {
+        return None;
+    }
+    state["squads"].as_array()?.iter().filter(|s|s["owned"]==true)
+        .take(12).enumerate().find_map(|(index,squad)| {
+            let top=150+index*22;
+            (y>=top as f32-3.0&&y<top as f32+18.0&&
+                squad["controllable"]==true)
+                .then(||squad["owner"]["squad_id"].as_i64()).flatten()
+        })
+}
+
 /// One dispatcher for LAN keyboard and on-screen tactical commands.
 fn remote_tactical_action(
     peer: &mut PeerClient, selected: &mut Vec<i64>,
@@ -2127,8 +2144,46 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             let middle=window.get_mouse_down(MouseButton::Middle);
             let minimap_point = mouse.and_then(|(x, y)|
                 minimap.and_then(|layout| layout.world_at(x, y)));
-            if left && !last_left {
-                minimap_dragging = minimap_point.is_some();
+            if left && !last_left && window.is_active() {
+                hud_press=mouse.and_then(|(x,y)|remote_tactical_hit(x,y));
+                squad_tab_press=if hud_press.is_none() {
+                    peer.state.as_ref().and_then(|state|
+                        mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y)))
+                }else{None};
+                minimap_dragging=hud_press.is_none()&&
+                    squad_tab_press.is_none()&&minimap_point.is_some();
+            }
+            if !left && last_left {
+                let clicked=hud_press.take().filter(|&action|
+                    mouse.and_then(|(x,y)|remote_tactical_hit(x,y))==Some(action));
+                let clicked_tab=squad_tab_press.take().filter(|&id|
+                    peer.state.as_ref().and_then(|state|
+                        mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y)))
+                        ==Some(id));
+                if let Some(id)=clicked_tab {
+                    if control {
+                        if let Some(index)=selected.iter().position(|&current|current==id) {
+                            selected.remove(index);
+                        }else{selected.push(id);}
+                    }else{
+                        selected.clear();selected.push(id);
+                        if let Some(state)=peer.state.as_ref() {
+                            if let Some(point)=focus_squad(state,id) {cam.center=point;}
+                        }
+                    }
+                    mode=None;patrol_start=None;
+                    last_selection_press=None;double_left_press=false;
+                }
+                if let Some(action)=clicked {
+                    if let Err(error)=remote_tactical_action(
+                        &mut peer,&mut selected,&mut mode,&mut patrol_start,
+                        &mut held_fire_active,&mut held_fire_target,
+                        &mut shooting_menu,&mut shooting_focus,action,
+                    ) {
+                        peer.notice=error.to_string();
+                    }
+                    last_selection_press=None;double_left_press=false;
+                }
             }
             if left && minimap_dragging {
                 if let Some(point) = minimap_point {
@@ -2154,6 +2209,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             if let Some((x,y))=mouse {
                 let (x,y)=(x as i32,y as i32);
                 if left&&!last_left&&!minimap_dragging&&
+                    hud_press.is_none()&&squad_tab_press.is_none()&&
                     x>=0&&x<FIELD as i32&&y>=0&&y<HEIGHT as i32 {
                     // Source double-click is a second completed selection
                     // press within 250 ms. The release still must be prompt;
