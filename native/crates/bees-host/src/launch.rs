@@ -1882,16 +1882,17 @@ fn launch_catalog_battle(
         .filter(|mission| !progress.grants_claimed(&mission.id) &&
             !mission.victory_grants.is_empty())
         .map(|mission| plan_native_victory_grants(
-            catalog, catalog_root, &progress, mission,
-            purchased.as_deref().unwrap_or(&[]),
-            authored.as_deref().unwrap_or(&[]), &grant_squads,
+            catalog, catalog_root, &progress, mission, &grant_squads,
         )).transpose()?.unwrap_or_default();
     if !grant_squads.is_empty() && grants.is_empty() {
         preflight_native_fleet_edit_with_squads(
             catalog, catalog_root, &progress, entry.mission.as_ref()
                 .expect("awarded squads require a campaign").player_side,
-            purchased.as_deref().unwrap_or(&[]),
-            authored.as_deref().unwrap_or(&[]), 0, &grant_squads,
+            &progress.purchases_for_side(entry.mission.as_ref()
+                .expect("awarded squads require a campaign").player_side),
+            &progress.authored_roster_for_side(entry.mission.as_ref()
+                .expect("awarded squads require a campaign").player_side),
+            0, &grant_squads,
         )?;
     }
     let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
@@ -1954,11 +1955,12 @@ fn launch_catalog_battle(
 fn plan_native_victory_grants(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>,
-    mission: &battle_catalog::Mission, purchases: &[NativePurchasedShip],
-    authored: &[(i64, i64, i64)],
+    mission: &battle_catalog::Mission,
     earned_squads: &[NativeCreatedSquad],
 ) -> Result<Vec<NativePurchasedShip>, Box<dyn Error>> {
-    let mut projected = purchases.to_vec();
+    // Project the entire career roster. The preflight chooses casualties
+    // per authored mission rather than inheriting this battle's loss mode.
+    let mut projected = progress.purchases_for_side(mission.player_side);
     let mut grants = Vec::new();
     let reward_count: usize = mission.victory_grants.iter()
         .map(|grant| grant.count as usize).sum();
@@ -1985,7 +1987,8 @@ fn plan_native_victory_grants(
     }
     let highest_authored = preflight_native_fleet_edit_with_squads(
         catalog, root, progress, mission.player_side,
-        &projected, authored, 0, earned_squads,
+        &projected, &progress.authored_roster_for_side(mission.player_side),
+        0, earned_squads,
     )?;
     let first_id = highest_authored.max(progress.highest_fleet_id())
         .checked_add(1).ok_or_else(|| invalid("victory FleetShip identities exhausted"))?;
@@ -2005,9 +2008,7 @@ fn preflight_native_ship_purchase(
     progress: &battle_catalog::CampaignProgress<'_>,
     side: i32, ship_type: u8, saved_squad_id: i64, price_tsv: u64,
 ) -> Result<i64, Box<dyn Error>> {
-    let dead = progress.lost_player_fleet_ids(side)?;
     let mut projected = progress.purchases_for_side(side);
-    projected.retain(|ship| !dead.contains(&ship.fleet_ship_id));
     projected.push(NativePurchasedShip {
         // Probe with a fleet identity outside any authored/native account
         // range. This preview is discarded before an atomic purchase commit.
@@ -2098,11 +2099,12 @@ fn preflight_native_fleet_edit_with_squads(
     let max_size = catalog.max_squad_ships.ok_or_else(||
         invalid("native shop needs the source's maximum squad size"))? as usize;
     let dead = progress.lost_player_fleet_ids(side)?;
-    if projected.iter().any(|ship| dead.contains(&ship.fleet_ship_id)) {
-        return Err(invalid("dead purchased hull cannot be assigned to a saved squad").into());
-    }
+    let no_casualties = HashSet::new();
     let active = projected.iter().copied()
         .filter(|ship| ship.saved_squad_id > 0).collect::<Vec<_>>();
+    let surviving_purchases = active.iter().copied()
+        .filter(|ship| !dead.contains(&ship.fleet_ship_id))
+        .collect::<Vec<_>>();
     let surviving_authored = authored_roster.iter().copied()
         .filter(|(fleet_id, _, _)| !dead.contains(fleet_id))
         .collect::<Vec<_>>();
@@ -2113,8 +2115,20 @@ fn preflight_native_fleet_edit_with_squads(
     // otherwise a purchase or victory reward could make an older Stage
     // unloadable despite having passed its original account transaction.
     for entry in &catalog.battles {
-        let Some(_mission) = entry.mission.as_ref().filter(|mission|
+        let Some(mission) = entry.mission.as_ref().filter(|mission|
             mission.player_side == side) else { continue };
+        // Mirror launch_catalog_battle: a mission without persistent
+        // fleet losses deploys the entire career roster, including hulls
+        // lost in other missions. All scene variants share this contract.
+        let deployed = if mission.persist_fleet_losses {
+            surviving_purchases.as_slice()
+        } else { active.as_slice() };
+        let roster = if mission.persist_fleet_losses {
+            surviving_authored.as_slice()
+        } else { authored_roster };
+        let casualties = if mission.persist_fleet_losses {
+            &dead
+        } else { &no_casualties };
         for config in entry.configurations() {
             let run_path = resolve(root, config).canonicalize()?;
             let mut source = load_native_fleet_edit_scene(&run_path)?;
@@ -2136,11 +2150,11 @@ fn preflight_native_fleet_edit_with_squads(
             ).map_err(|error| contextual("shop created SavedSquads", error))?;
             source.apply_saved_squad_tactics(side, &progress.tactics_for_side(side))
                 .map_err(|error| contextual("shop saved squad tactics", error))?;
-            source.apply_authored_fleet_roster(side, &surviving_authored)
+            source.apply_authored_fleet_roster(side, roster)
                 .map_err(|error| contextual("shop original FleetShip reassignment", error))?;
-            source.install_purchased_ships(side, &active, &dead)
+            source.install_purchased_ships(side, deployed, casualties)
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
-            source.omit_killed_fleet_ships(side, &dead)
+            source.omit_killed_fleet_ships(side, casualties)
                 .map_err(|error| contextual("shop saved-fleet casualties", error))?;
             source.apply_saved_squad_matching_speeds(
                 side, &progress.tactics_for_side(side),
@@ -2246,7 +2260,6 @@ fn run_transfer_ship(
         return Err(invalid("a lost FleetShip cannot be moved to another squad").into());
     }
     let mut projected = progress.purchases_for_side(side);
-    projected.retain(|ship| !dead.contains(&ship.fleet_ship_id));
     let owned = projected.iter_mut().find(|ship| ship.fleet_ship_id == fleet_ship_id)
         .ok_or_else(|| invalid("the purchased FleetShip is not available"))?;
     owned.saved_squad_id = destination_squad_id;
@@ -2340,9 +2353,7 @@ fn run_reassign_authored_ship(
         }
         projected.push((fleet_ship_id, from_squad, to_squad));
     }
-    let mut purchased = progress.purchases_for_side(side);
-    let dead = progress.lost_player_fleet_ids(side)?;
-    purchased.retain(|ship| !dead.contains(&ship.fleet_ship_id));
+    let purchased = progress.purchases_for_side(side);
     preflight_native_fleet_edit(
         &catalog, root, &progress, side, &purchased,
         &projected, to_squad,
