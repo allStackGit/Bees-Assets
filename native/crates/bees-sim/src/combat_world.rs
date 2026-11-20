@@ -949,6 +949,20 @@ pub struct CombatWorldRecoveryPrepared {
     obstacle_by_id: HashMap<i64, usize>,
 }
 
+impl CombatWorldRecoveryPrepared {
+    /// Bindings from the exact saved policy controllers, not the current
+    /// scene's pre-recovery roster. The Level's decision-cadence owner
+    /// validates against these same generation tokens before commit.
+    pub fn policy_roster_revision(&self) -> u64 {
+        self.snapshot.policy.roster_revision
+    }
+
+    pub fn policy_bindings(&self) -> impl Iterator<Item = (i64, u64)> + '_ {
+        self.snapshot.policy.controllers.iter()
+            .map(|(&id, controller)| (id, controller.bind_revision))
+    }
+}
+
 pub struct CombatWorld {
     physics: KinematicPhysics,
     projectile_assets: Arc<ProjectileAssetCatalog>,

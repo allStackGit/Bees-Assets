@@ -703,18 +703,34 @@ impl NativeDecisionCadence {
         combat: &CombatWorld,
         completed_ticks: u64,
     ) -> Result<(), &'static str> {
+        self.restore_checkpoint_for_roster(
+            checkpoint, combat.policy_roster_revision(),
+            combat.bound_policy_agent_bindings(), completed_ticks,
+        )
+    }
+
+    /// Preflight against the staged combat policy roster. The source
+    /// controller generation is an authoritative identity, not a new
+    /// restart-time binding or a reconstructed training-only clock.
+    pub fn restore_checkpoint_for_roster(
+        &mut self,
+        checkpoint: NativeDecisionCadenceCheckpoint,
+        policy_roster_revision: u64,
+        live_bindings: impl IntoIterator<Item = (i64, u64)>,
+        completed_ticks: u64,
+    ) -> Result<(), &'static str> {
         if checkpoint.schema_version != 1 || checkpoint.period != self.period ||
             checkpoint.bound_at_tick.iter().any(|(&id, clock)|
                 id <= 0 || clock.tick > completed_ticks) ||
             checkpoint.observed_roster_revision.is_some_and(|revision|
-                revision > combat.policy_roster_revision()) {
+                revision > policy_roster_revision) {
             return Err("native policy decision cadence checkpoint disagrees with the Level clock");
         }
-        if checkpoint.observed_roster_revision == Some(combat.policy_roster_revision()) {
+        if checkpoint.observed_roster_revision == Some(policy_roster_revision) {
             // When synchronization was already complete, the checkpoint
             // must identify precisely the bound controllers and revisions
             // of the recovered CombatWorld, not a different policy roster.
-            let live = combat.bound_policy_agent_bindings()
+            let live = live_bindings.into_iter()
                 .collect::<BTreeMap<_, _>>();
             if live.len() != checkpoint.bound_at_tick.len() ||
                 live.iter().any(|(&id, &revision)|
@@ -969,8 +985,11 @@ impl<M, A> NativeLevelState<M, A> {
             checkpoint.events, &self.combat, completed_ticks,
         ).map_err(NativeLevelRecoveryError::Events)?;
         let mut decisions = NativeDecisionCadence::new(self.decisions.period);
-        decisions.restore_checkpoint(
-            checkpoint.decisions, &self.combat, completed_ticks,
+        decisions.restore_checkpoint_for_roster(
+            checkpoint.decisions,
+            staged_combat.policy_roster_revision(),
+            staged_combat.policy_bindings(),
+            completed_ticks,
         ).map_err(NativeLevelRecoveryError::DecisionClock)?;
         // All stages succeeded; install without another fallible phase.
         self.combat.commit_recovery_owners(staged_combat);
