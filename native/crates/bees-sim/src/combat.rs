@@ -28,7 +28,8 @@ pub struct DamageDelta {
     pub killed: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ShipVitals {
     health: i32,
     max_health: i32,
@@ -55,6 +56,13 @@ impl ShipVitals {
         };
         value.tsv = value.calculate_tsv();
         Ok(value)
+    }
+
+    /// Rehydrate only physically possible vitality and its exact TSV.
+    pub fn valid_recovery(&self) -> bool {
+        self.max_health > 0 && self.health >= 0 &&
+        self.health <= self.max_health && self.max_tsv >= 0 &&
+        self.mined_cargo >= 0 && self.tsv == self.calculate_tsv()
     }
 
     pub fn health(&self) -> i32 { self.health }

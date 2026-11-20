@@ -10,7 +10,7 @@
 /// discriminators. The neural encoder imports this type from gameplay;
 /// perception must not define gameplay entity kinds.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum MapObjectKind {
     Generic = 2,
     FireTank = 3,
@@ -27,7 +27,7 @@ pub enum MapObjectError {
 
 /// Source CanisterBomb.Power and optional TargetObstacle. The latter is an
 /// authored Level entity reference, not an object chosen by proximity.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FireTankConfig {
     pub explosion_power: i32,
     pub target_obstacle_id: Option<i64>,
@@ -41,7 +41,8 @@ pub struct MapObjectDamage {
 }
 
 /// One live Level MapObject, paired with its collider in KinematicPhysics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CombatMapObject {
     pub entity_id: i64,
     pub kind: MapObjectKind,

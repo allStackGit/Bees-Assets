@@ -212,7 +212,8 @@ impl From<crate::navigation::NavigationError> for CombatWorldError {
     fn from(value: crate::navigation::NavigationError) -> Self { Self::NavigationMap(value) }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CombatShip {
     pub entity_id: i64,
     pub side: i32,
@@ -751,15 +752,20 @@ struct EnemyShipContact {
     exact_tests: u64,
 }
 
-/// One fixed-boundary bundle of the five already-restorable authoritative
-/// owners inside CombatWorld. This is deliberately NOT a complete Level or
-/// game checkpoint: ship vitals, squad commands, specials and pending rewards
-/// have their own owners and must be committed in the same host transaction.
+/// Fixed-boundary bundle of authoritative physics, ship vitals,
+/// MapObject health, reserved reinforcement IDs and the earlier five
+/// simulation ledgers. Other game specials, weapon controllers and
+/// authored asset identities still require their own recovery support.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatWorldRecoveryOwnersCheckpoint {
     schema_version: u32,
     physics: KinematicPhysicsCheckpoint,
+    next_entity_id: i64,
+    ships: Vec<CombatShip>,
+    map_objects: HashMap<i64, CombatMapObject>,
+    range_visible_map_objects: HashSet<i64>,
+    reserved_ship_ids: HashMap<i32, HashSet<i64>>,
     discovery: LevelDiscovery,
     navigation: NavigationRequestsCheckpoint,
     damage: DamageReservationsCheckpoint,
@@ -1399,8 +1405,13 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 1,
+            schema_version: 2,
             physics: self.physics.checkpoint(),
+            next_entity_id: self.next_entity_id,
+            ships: self.ships.clone(),
+            map_objects: self.map_objects.clone(),
+            range_visible_map_objects: self.range_visible_map_objects.clone(),
+            reserved_ship_ids: self.reserved_ship_ids.clone(),
             discovery: self.discovery.clone(),
             navigation: self.navigation_requests.checkpoint(),
             damage: self.reservations.checkpoint(),
@@ -1408,15 +1419,14 @@ impl CombatWorld {
         }
     }
 
-    /// Install all five previously independent restorable owners as one
-    /// transaction. The outer host must restore complete gameplay wrappers,
-    /// command state and model state first; mismatched physical slot/entity
-    /// identities fail closed instead of fabricating missing ships or shots.
+    /// Stage actual physics and source-owned ship/MapObject/reinforcement
+    /// state together. No fresh spawns, damage or gameplay events occur;
+    /// mismatched immutable scene slots reject the entire recovery.
     /// No live field changes until every component has been prepared.
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 1 {
+        if snapshot.schema_version != 2 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1431,6 +1441,76 @@ impl CombatWorld {
                 .any(|(body, obstacle)| body.id != obstacle.entity_id)
         {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        // Dense slot identity never changes; only source-owned vitals
+        // and mutable object health are replaced. Preserve immutable
+        // authored type/side and map asset contracts from this Level.
+        if snapshot.next_entity_id <= 0 ||
+            snapshot.ships.len() != self.ships.len() ||
+            snapshot.ships.iter().zip(&self.ships).enumerate().any(
+                |(index, (saved, current))|
+                    saved.entity_id != current.entity_id ||
+                    saved.side != current.side ||
+                    saved.ship_type != current.ship_type ||
+                    saved.side <= 0 || !saved.vitals.valid_recovery() ||
+                    physics.ships()[index].id != saved.entity_id ||
+                    (physics.ships()[index].active && saved.vitals.is_dead())
+            ) ||
+            snapshot.map_objects.len() != self.map_objects.len() ||
+            snapshot.map_objects.iter().any(|(&id, saved)|
+                id <= 0 || id != saved.entity_id ||
+                saved.health < 0 || saved.max_health <= 0 ||
+                saved.health > saved.max_health ||
+                self.map_objects.get(&id).is_none_or(|current|
+                    current.kind != saved.kind ||
+                    current.max_health != saved.max_health ||
+                    current.fire_tank != saved.fire_tank
+                )
+            ) ||
+            snapshot.range_visible_map_objects.iter().any(|id|
+                !snapshot.map_objects.contains_key(id)
+            )
+        {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        let mut reserved = HashSet::new();
+        if snapshot.reserved_ship_ids.iter().any(|(&side, ids)|
+            side <= 0 || ids.iter().any(|&id|
+                id <= 0 || id >= snapshot.next_entity_id ||
+                self.ship_by_id.contains_key(&id) ||
+                self.projectile_by_id.contains_key(&id) ||
+                self.obstacle_by_id.contains_key(&id) ||
+                !reserved.insert(id)
+            )
+        ) ||
+            snapshot.ships.iter().any(|ship|
+                ship.entity_id >= snapshot.next_entity_id
+            ) ||
+            physics.projectiles().iter().any(|shot|
+                shot.id >= snapshot.next_entity_id
+            ) ||
+            physics.obstacles().iter().any(|obstacle|
+                obstacle.id >= snapshot.next_entity_id
+            ) ||
+            snapshot.map_objects.keys().any(|&id|
+                id >= snapshot.next_entity_id
+            )
+        {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        // Fast side gauges are derived from restored physics plus vitals;
+        // do not persist competing counts that could disagree on death.
+        let mut live_ships_by_side = HashMap::new();
+        let mut live_mobile_ships_by_side = HashMap::new();
+        let mut live_ship_total = 0usize;
+        for (ship, body) in snapshot.ships.iter().zip(physics.ships()) {
+            if body.active && !ship.vitals.is_dead() {
+                *live_ships_by_side.entry(ship.side).or_insert(0) += 1;
+                live_ship_total += 1;
+                if body.motion.mobile {
+                    *live_mobile_ships_by_side.entry(ship.side).or_insert(0) += 1;
+                }
+            }
         }
         let mut discovery = LevelDiscovery::new();
         discovery.restore_checkpoint(snapshot.discovery)
@@ -1477,6 +1557,14 @@ impl CombatWorld {
         // validation succeeded. Invalid snapshots leave the active game
         // and all five owners unchanged.
         self.physics = physics;
+        self.next_entity_id = snapshot.next_entity_id;
+        self.ships = snapshot.ships;
+        self.map_objects = snapshot.map_objects;
+        self.range_visible_map_objects = snapshot.range_visible_map_objects;
+        self.reserved_ship_ids = snapshot.reserved_ship_ids;
+        self.live_ships_by_side = live_ships_by_side;
+        self.live_mobile_ships_by_side = live_mobile_ships_by_side;
+        self.live_ship_total = live_ship_total;
         self.discovery = discovery;
         self.navigation_requests = navigation;
         self.reservations = reservations;
