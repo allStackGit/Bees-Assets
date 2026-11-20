@@ -51,6 +51,8 @@ use sha2::{Digest, Sha256};
 
 #[path = "battle_catalog.rs"]
 mod battle_catalog;
+#[path = "terminal_recording.rs"]
+mod terminal_recording;
 #[cfg(feature = "client")]
 #[path = "trained_library.rs"]
 mod trained_library;
@@ -2234,8 +2236,7 @@ fn recover_native_quick_battle(
         if number.parse::<u64>().is_err() { continue; }
         let root = entry.path();
         let run = root.join("run");
-        if run.join("rollout-summary.json").exists() ||
-            !run.join("native-host-checkpoint.json").is_file() { continue; }
+        if !run.join("native-host-checkpoint.json").is_file() { continue; }
         let saved_path = root.join("native-quick-battle-start.json");
         if !saved_path.exists() { continue; }
         if run.is_symlink() ||
@@ -2252,6 +2253,11 @@ fn recover_native_quick_battle(
                 "interrupted native battle cannot resume after its source configuration changed",
             ).into());
         }
+        // The immutable summary may have been committed just before the
+        // process died without publishing the terminal replay footer.
+        // Repair that projection under the existing save/host locks rather
+        // than replaying and awarding another completed battle.
+        if terminal_recording::complete_committed_recording(&run)? { continue; }
         if original.replace(run).is_some() {
             return Err(invalid("multiple interrupted Worlds claim one quick battle").into());
         }
@@ -2412,8 +2418,7 @@ fn launch_catalog_battle(
             let run = root.join("run");
             let saved = root.join("campaign-replay-setup.json");
             let checkpoint = run.join("native-host-checkpoint.json");
-            if !checkpoint.is_file() ||
-                run.join("rollout-summary.json").exists() { continue; }
+            if !checkpoint.is_file() { continue; }
             if run.is_symlink() || checkpoint.is_symlink() ||
                 saved.is_symlink() || !saved.is_file()
             {
@@ -2424,6 +2429,10 @@ fn launch_catalog_battle(
             let prior = CampaignReplaySetup::load(&saved)?;
             if prior.campaign_id != expected.campaign_id ||
                 prior.mission_id != expected.mission_id { continue; }
+            // A completed mission is already claimed by its immutable
+            // receipt. Its frozen start need not match the CURRENT career
+            // after rewards were applied: only complete its missing trace.
+            if terminal_recording::complete_committed_recording(&run)? { continue; }
             if !expected.matches_recovery_start(&prior)? {
                 return Err(invalid(
                     "interrupted campaign cannot resume after its source, saved career, or victory rewards changed",
@@ -3426,9 +3435,7 @@ fn recover_generated_library_battle(
         let root = entry.path();
         let run = root.join("run");
         let checkpoint = run.join("native-host-checkpoint.json");
-        if run.join("rollout-summary.json").exists() || !checkpoint.is_file() {
-            continue;
-        }
+        if !checkpoint.is_file() { continue; }
         let source = root.join("replay-source-run.json");
         if !source.is_file() { continue; }
         let saved_path = root.join("native-quick-battle-start.json");
@@ -3453,6 +3460,7 @@ fn recover_generated_library_battle(
                 "interrupted generated battle cannot resume after its archived source changed",
             ).into());
         }
+        if terminal_recording::complete_committed_recording(&run)? { continue; }
         if pending.replace((source, run)).is_some() {
             return Err(invalid(
                 "multiple interrupted generated games require explicit completion before a new match",
