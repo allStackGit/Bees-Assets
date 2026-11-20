@@ -58,6 +58,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--machine", required=True)
     parser.add_argument("--port", type=int, default=7148)
+    parser.add_argument("--hub-host", default="127.0.0.1")
     parser.add_argument("--suite", required=True, type=Path, action="append",
                         help="Repeat 2–8 times to evaluate one checkpoint against all required suites.")
     for option in ("project-root", "artifact-root", "snapshot-root", "scratch", "receipt-root"):
@@ -65,7 +66,7 @@ def main():
     args = parser.parse_args()
     try:
         if not SUITE_ID.fullmatch(args.machine) or not 1 <= args.port <= 65535:
-            raise ValueError("Invalid machine ID or loopback port.")
+            raise ValueError("Invalid machine ID or Hub port.")
         directories = []
         for key in ("project_root", "artifact_root", "snapshot_root", "scratch", "receipt_root"):
             directory = getattr(args, key).resolve(strict=True)
