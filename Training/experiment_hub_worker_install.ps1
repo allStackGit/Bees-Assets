@@ -240,7 +240,7 @@ if($Command -eq 'install'){
     $connected=$false
     try{
         $ipLines=@(& $tailscaleCli ip -4)
-        if($ipLines.Count){Assert-TailnetIP ([string]$ipLines[0]).Trim();$connected=$true}
+        if($ipLines.Count){Assert-TailnetIP (([string]$ipLines[0]).Trim());$connected=$true}
     }catch{$connected=$false}
     if(-not $connected){
         Write-Host 'Tailscale is installed. Complete its one-time sign-in to the Halifax tailnet.'
@@ -250,7 +250,7 @@ if($Command -eq 'install'){
         if(-not $ipLines.Count){
             throw 'Open Tailscale, sign in to the Halifax tailnet, then rerun this installer.'
         }
-        Assert-TailnetIP ([string]$ipLines[0]).Trim()
+        Assert-TailnetIP (([string]$ipLines[0]).Trim())
     }
 }
 foreach($tool in @('git.exe','node.exe','dotnet.exe')){
