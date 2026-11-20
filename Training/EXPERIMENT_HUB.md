@@ -2859,6 +2859,16 @@ whole bundle. For a bundle that has already begun execution, use
 has terminated. Unresolved bundles are prioritized in the Train panel over
 older completed history.
 
+## Automated remote Experiment Hub worker installation
+
+For a new Windows or Linux worker supporting TinyBrains collectors and
+Courier lineages together, see
+[`EXPERIMENT_HUB_WORKER_INSTALL.md`](EXPERIMENT_HUB_WORKER_INSTALL.md).
+The installer provisions private tailnet/SSH access, pinned native owners,
+official TinyBrains simulation binaries, separate project Python runtimes and
+one authenticated Hub agent. It never takes over the original Bees worker
+launcher or starts an experiment without an explicit Hub reservation.
+
 ## Trusted distributed TinyBrains rollout group (opt-in)
 
 The `feat/hub-resource-experiments-20261110` Hub branch and matching
