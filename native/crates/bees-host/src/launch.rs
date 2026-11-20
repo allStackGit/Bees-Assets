@@ -4090,6 +4090,16 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             }
             let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(config)?)?;
             let career_root = save_root.join("campaigns").join(&item.id);
+            // Surface the original interrupted World at the game-library level.
+            // The campaign menu will offer only its recovery until it finishes.
+            if let Some(mission_id) = pending_saved_campaign_mission(&catalog, &career_root)? {
+                let mission = catalog.battles.iter().find(|entry|
+                    entry.mission.as_ref().is_some_and(|mission| mission.id == mission_id))
+                    .ok_or_else(|| invalid(
+                        "interrupted native campaign mission is missing from its authored catalog",
+                    ))?;
+                return Ok(format!("  [Resume: {}]", mission.title.trim()));
+            }
             let progress = catalog.load_progress(&career_root)?;
             let total = catalog.battles.iter().filter_map(|b| b.mission.as_ref()).count();
             let complete = catalog.battles.iter().filter_map(|b| b.mission.as_ref())
