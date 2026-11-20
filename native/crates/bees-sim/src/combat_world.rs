@@ -1448,6 +1448,14 @@ impl CombatWorld {
         // whose ship/shot slot identities have not first been recovered.
         if self.ship_by_id.len() != physics.ships().len() ||
             self.projectile_by_id.len() != physics.projectiles().len() ||
+            self.obstacle_by_id.len() != physics.active_obstacle_indices().len() ||
+            self.next_entity_id <= 0 ||
+            physics.ships().iter().any(|body|
+                body.id <= 0 || body.id >= self.next_entity_id) ||
+            physics.projectiles().iter().any(|body|
+                body.id <= 0 || body.id >= self.next_entity_id) ||
+            physics.obstacles().iter().any(|body|
+                body.id <= 0 || body.id >= self.next_entity_id) ||
             physics.ships().iter().enumerate().any(|(index, body)|
                 self.ship_by_id.get(&body.id) != Some(&index)) ||
             physics.projectiles().iter().enumerate().any(|(index, body)|
