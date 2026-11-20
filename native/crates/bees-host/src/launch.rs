@@ -3345,8 +3345,10 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
         }
         let mut transfer_rows = Vec::new();
-        for ship_type in &catalog.buildable_ships {
-            let side = ship_type.player_side;
+        // The shop can contain classes from both player sides. Build the
+        // transfer picker once per side rather than taking only the first
+        // class's side or repeating its purchased FleetShips.
+        for side in [1, 2] {
             let squads = squad_destinations.get(&side)
                 .expect("populated authorized squad destinations");
             // A legacy receipt with unknown loss evidence does not qualify
@@ -3385,7 +3387,6 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                     });
                 }
             }
-            break;
         }
         for &(side, fleet_id, original_squad) in &original_choices {
             let current_squad = progress.authored_current_squad(fleet_id)

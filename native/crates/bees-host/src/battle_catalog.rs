@@ -1067,9 +1067,20 @@ impl BattleCatalog {
                 member.1.saved_squad_id != transfer.from_saved_squad_id ||
                 progress.fleet.get(&transfer.fleet_ship_id)
                     .is_some_and(|ship| ship.side != transfer.player_side) ||
+                // Empty source-authored SavedSquads have no career history
+                // until their first battle. The command's physical scene
+                // preflight validates the destination before publishing this
+                // receipt; replay must not reject it merely for lacking a
+                // prior squad outcome. Still reject known foreign ownership.
                 (transfer.to_saved_squad_id != 0 &&
-                    !progress.saved_squad_ids_for_side(transfer.player_side)
-                        .contains(&transfer.to_saved_squad_id))
+                    (progress.squads.get(&transfer.to_saved_squad_id)
+                        .is_some_and(|squad| squad.side != transfer.player_side) ||
+                     progress.created_squads.iter().any(|squad|
+                        squad.saved_squad_id == transfer.to_saved_squad_id &&
+                        squad.side != transfer.player_side) ||
+                     progress.tactics.iter().any(|tactics|
+                        tactics.saved_squad_id == transfer.to_saved_squad_id &&
+                        tactics.side != transfer.player_side)))
             {
                 return Err(invalid("invalid or stale saved-squad FleetShip transfer receipt"));
             }
