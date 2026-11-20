@@ -140,6 +140,7 @@ async function readJson(req) {
 function createAdminServer(hub,{html,ui,dataRoot,releases=null}={}) {
     const exporter=new JobExporter(dataRoot,hub);
     const servicesUi=fs.readFileSync(path.join(__dirname,'experiment_hub_local_services_ui.js'),'utf8');
+    const beakerIcon=fs.readFileSync(path.join(__dirname,'experiment_hub_beaker.svg'),'utf8');
     return http.createServer(async(req,res)=>{
         const host=req.headers.host,origin=req.headers.origin;
         const expected=['127.0.0.1:'+PORT,'localhost:'+PORT];
@@ -153,6 +154,8 @@ function createAdminServer(hub,{html,ui,dataRoot,releases=null}={}) {
             const route=url.pathname;
             if(req.method==='GET'&&route==='/')
                 return sendFile(res,html,'text/html; charset=utf-8');
+            if(req.method==='GET'&&route==='/experiment-hub-beaker.svg')
+                return sendFile(res,beakerIcon,'image/svg+xml');
             if(req.method==='GET'&&route==='/experiment-hub-ui.js')
                 return sendFile(res,ui,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-services.js')
