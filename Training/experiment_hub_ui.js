@@ -1090,17 +1090,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     ),
                 ].join('\n');
             row.append(details);
-            if(plan.status==='disarmed'&&
-                plan.reason?.startsWith('Coordinator restarted;'))
-                row.append(button('Reauthorize remaining rounds',async()=>{
-                    if(!confirm('Reauthorize the remaining native Bees rounds after coordinator restart? Original model, machines, resource leases and issued jobs are preserved. Fresh GPU Starts are allowed only for entirely unstarted reserved groups; uncertain running jobs require separate manual review.'))return;
+            const restartDisarmed=plan.status==='disarmed'&&
+                plan.reason?.startsWith('Coordinator restarted;');
+            const optimizerReplaced=plan.status==='needs_review'&&
+                plan.restart_phase==='awaiting_optimizer'&&
+                plan.reason==='Failed synchronized PPO group replaced with new machine-owned GPU claims; reauthorize the native round before any Start.';
+            if(restartDisarmed||optimizerReplaced)
+                row.append(button(optimizerReplaced
+                    ?'Authorize replacement optimizer'
+                    :'Reauthorize remaining rounds',async()=>{
+                    const confirmation=optimizerReplaced
+                        ?'Authorize the NEW complete synchronized PPO optimizer bundle for this native round? The failed ranks remain terminated, their old leases released, and the replacement keeps the original physical rollout receipts, model, machines, and GPU budgets. This permits only the newly reserved group to start after fresh Hub GPU qualification; no gradient updates are replayed from a partial checkpoint.'
+                        :'Reauthorize the remaining native Bees rounds after coordinator restart? Original model, machines, resource leases and issued jobs are preserved. Fresh GPU Starts are allowed only for entirely unstarted reserved groups; uncertain running jobs require separate manual review.';
+                    if(!confirm(confirmation))return;
                     try {
                         const resumed=await action('hub/native-bees/rounds/resume',{
                             plan_id:plan.id,confirm_resume:true,confirm_gpu_start:true,
                         });
                         feedback('hub-resource-bundle-message',
-                            'Native rounds '+resumed.status+' · original plan '+
-                            plan.id.slice(-8)+' reauthorized.');
+                            (optimizerReplaced
+                                ?'Replacement optimizer reauthorized'
+                                :'Native rounds reauthorized')+
+                            ' · '+resumed.status+' · plan '+plan.id.slice(-8)+'.');
                         await reload();
                     }catch(error){
                         feedback('hub-resource-bundle-message',String(error.message||error));
