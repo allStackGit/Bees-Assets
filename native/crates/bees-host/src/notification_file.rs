@@ -445,20 +445,35 @@ impl DurableDiagnosticNotifications {
         // Stream the entire original file with a fixed buffer. This avoids
         // the memory cost of materializing a large multi-episode event log.
         let mut reader = File::open(path)?;
-        if reader.metadata()?.len() != checkpoint.journal_bytes {
+        let length = reader.metadata()?.len();
+        if length < checkpoint.journal_bytes {
             return Err(io::Error::new(io::ErrorKind::InvalidData,
-                "native journal length diverged from host checkpoint"));
+                "native journal is shorter than its committed host checkpoint"));
         }
         let mut digest = Sha256::new();
         let mut buffer = [0_u8; 64 * 1024];
-        loop {
-            let count = reader.read(&mut buffer)?;
-            if count == 0 { break; }
+        let mut remaining = checkpoint.journal_bytes;
+        while remaining > 0 {
+            let count = reader.read(&mut buffer[..remaining.min(buffer.len() as u64) as usize])?;
+            if count == 0 {
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof,
+                    "native journal checkpoint prefix was truncated"));
+            }
             digest.update(&buffer[..count]);
+            remaining -= count as u64;
         }
         if <[u8; 32]>::from(digest.clone().finalize()) != checkpoint.journal_sha256 {
             return Err(io::Error::new(io::ErrorKind::InvalidData,
                 "native journal digest diverged from host checkpoint"));
+        }
+        // The launcher has already validated the network ledger digest.
+        // Any later uncommitted event bytes are outside the restored Level
+        // outbox and must not be replayed as a second accepted notification.
+        // Do not rewrite them before verifying the original committed prefix.
+        if length > checkpoint.journal_bytes {
+            let file = OpenOptions::new().write(true).open(path)?;
+            file.set_len(checkpoint.journal_bytes)?;
+            file.sync_all()?;
         }
         let policy_capture = match (capture_path, checkpoint.policy_capture.as_ref()) {
             (Some(path), Some(saved)) => Some(
