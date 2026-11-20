@@ -1054,6 +1054,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         ...(remote?{
             courier_remote_lineage_endpoints:remote.endpoints.map(item=>item.endpoint),
             courier_lineage_subset:true,
+            courier_remote_ppo_settings:remotePpoSettings,
             courier_shared_policy_maps:sharedPolicy?sharedMaps:0,
             courier_remote_key_fingerprint:remote.fingerprint,
             courier_remote_max_shards:remote.endpoints.map(item=>item.maxShards),
