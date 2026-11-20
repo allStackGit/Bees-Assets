@@ -2293,6 +2293,30 @@ fn run_reassign_authored_ship(
     {
         return Err(invalid("original FleetShip ownership has changed since the requested move").into());
     }
+    let root = catalog_path.parent().ok_or_else(||
+        invalid("missing campaign catalog directory"))?;
+    if progress.authored_current_squad(fleet_ship_id).is_none() {
+        // The first edit establishes a durable provenance in the campaign
+        // ledger. Verify it against the currently selected authored scene;
+        // after that, FleetShip ID and the saved destination govern every
+        // route variant, even when its initial source squad differs.
+        let first = catalog.battles.iter().find(|battle| battle.mission.as_ref()
+            .is_some_and(|mission| mission.player_side == side))
+            .ok_or_else(|| invalid("no authored player campaign mission"))?;
+        let scene = load_native_fleet_edit_scene(&resolve(root, first.config_for(&progress)))?;
+        let parent = scene.entities.iter().find_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if ship.side == side &&
+                ship.fleet_ship_id == Some(fleet_ship_id) => Some(ship.entity_id),
+            _ => None,
+        }).ok_or_else(|| invalid("original FleetShip is absent from the active campaign source"))?;
+        if !scene.source_squads.iter().any(|squad|
+            squad.side == side && squad.saved_squad_id == Some(from_squad) &&
+            squad.player_permissions.user_controlled &&
+            squad.members.contains(&parent))
+        {
+            return Err(invalid("original FleetShip source squad differs from the first saved assignment").into());
+        }
+    }
     let mut projected = progress.authored_roster_for_side(side);
     if let Some(row) = projected.iter_mut().find(|row| row.0 == fleet_ship_id) {
         row.2 = to_squad;
@@ -2305,8 +2329,6 @@ fn run_reassign_authored_ship(
     let mut purchased = progress.purchases_for_side(side);
     let dead = progress.lost_player_fleet_ids(side)?;
     purchased.retain(|ship| !dead.contains(&ship.fleet_ship_id));
-    let root = catalog_path.parent().ok_or_else(||
-        invalid("missing campaign catalog directory"))?;
     preflight_native_fleet_edit(
         &catalog, root, &progress, side, &purchased,
         &projected, to_squad,

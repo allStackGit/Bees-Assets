@@ -1529,14 +1529,25 @@ impl NativePhysicalScene {
                     ship.fleet_ship_id == Some(fleet_id) => Some(ship.entity_id),
                 _ => None,
             }).ok_or(invalid("source FleetShip not found on this campaign route"))?;
-            let old_index = self.source_squads.iter().position(|squad|
-                squad.saved_squad_id == Some(original_id) &&
-                squad.side == side && squad.members.contains(&parent_id)
-            ).ok_or(invalid("original FleetShip does not belong to its authored SavedSquad"))?;
-            if !self.source_squads[old_index].player_permissions.user_controlled {
-                return Err(invalid("original FleetShip does not belong to the player"));
+            // The saved initial squad is the provenance of the player's
+            // first edit, not an immutable squad binding in every authored
+            // mission variant. A later victory route can give the SAME
+            // persistent FleetShip a different starting source squad.
+            // Always resolve its physical owner from this route's scene.
+            let mut owners = self.source_squads.iter().enumerate()
+                .filter(|(_, squad)| squad.side == side &&
+                    squad.members.contains(&parent_id));
+            let (old_index, initial_owner) = owners.next().ok_or(
+                invalid("original FleetShip has no squad on this campaign route"))?;
+            if owners.next().is_some() ||
+                initial_owner.saved_squad_id.is_none() ||
+                !initial_owner.player_permissions.user_controlled
+            {
+                return Err(invalid("original FleetShip has ambiguous or unauthorized player ownership"));
             }
-            if original_id == current_id { continue; }
+            let source_squad_id = initial_owner.saved_squad_id
+                .expect("validated original player SavedSquad");
+            if source_squad_id == current_id { continue; }
             let family = self.movable_authored_family(side, parent_id)
                 .ok_or(invalid("FleetShip family has active policy, movement, or cross-squad carrier dependencies"))?;
             if family.iter().any(|id| !touched_entities.insert(*id)) {
