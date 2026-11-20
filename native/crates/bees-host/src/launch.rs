@@ -3713,6 +3713,23 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
     Ok(())
 }
 
+/// Inform authenticated peers that finalization failed. No terminal
+/// victory, campaign receipt or replay eligibility is implied.
+fn publish_failed_multiplayer_delivery(
+    remote: &mut Option<bees_host::remote_play::NativeRemotePlay>,
+    run_id: &str,
+) {
+    if let Some(server) = remote {
+        server.publish_interrupted_battle();
+        server.drain_terminal_output(Duration::from_millis(350));
+        println!("{}", json!({
+            "kind": "native_remote_terminal_delivery",
+            "run_id": run_id,
+            "measurements": server.measurements(),
+        }));
+    }
+}
+
 fn run_battle(
     config_path: &Path, play: bool, view: bool, output: Option<&Path>,
     capture: Option<&Path>, replay_number: u64, replay_inputs: Option<&Path>,
@@ -5977,31 +5994,33 @@ fn run_battle(
         // A failed session has no committed success summary or completed
         // replay footer. Its authenticated peers must not infer victory
         // from a last, possibly stale world snapshot.
-        if let Some(server) = &mut remote {
-            server.publish_interrupted_battle();
-            server.drain_terminal_output(Duration::from_millis(350));
-            println!("{}", json!({
-                "kind": "native_remote_terminal_delivery",
-                "run_id": config.run_id,
-                "measurements": server.measurements(),
-            }));
-        }
+        publish_failed_multiplayer_delivery(&mut remote, &config.run_id);
         return Err(invalid(
             "headless rollout failed; run_final identifies the original failure and unresolved obligations",
         ).into());
     }
     if let Some(summary_path) = summary {
-        let file_path = if campaign_outcome.is_some() { summary_path.with_extension("tmp") }
-            else { summary_path.clone() };
-        let file = fs::OpenOptions::new().write(true).create_new(true)
-            .open(&file_path)?;
-        serde_json::to_writer(&file, &final_summary)?;
-        file.sync_all()?;
-        drop(file);
-        if file_path != summary_path {
-            fs::rename(file_path, &summary_path)?;
-            #[cfg(unix)]
-            fs::File::open(summary_path.parent().ok_or_else(|| invalid("missing summary directory"))?)?.sync_all()?;
+        let commit = (|| -> Result<(), Box<dyn Error>> {
+            let file_path = if campaign_outcome.is_some() { summary_path.with_extension("tmp") }
+                else { summary_path.clone() };
+            let file = fs::OpenOptions::new().write(true).create_new(true)
+                .open(&file_path)?;
+            serde_json::to_writer(&file, &final_summary)?;
+            file.sync_all()?;
+            drop(file);
+            if file_path != summary_path {
+                fs::rename(file_path, &summary_path)?;
+                #[cfg(unix)]
+                fs::File::open(summary_path.parent().ok_or_else(|| invalid("missing summary directory"))?)?.sync_all()?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = commit {
+            // The original session cannot claim completed progress if its
+            // final summary was not durably committed. The same terminal
+            // channel informs remote players without awarding anything.
+            publish_failed_multiplayer_delivery(&mut remote, &config.run_id);
+            return Err(error);
         }
         // The campaign ledger consumes ONLY this finalized immutable
         // summary. Tell authenticated multiplayer campaign owners about
