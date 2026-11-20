@@ -997,6 +997,14 @@ impl RunNetwork {
                 self.recorded_network_events += 1;
             }
         }
+        // A single sync amortizes disk barriers across up to sixteen
+        // authenticated HiveMind ingress events at this fixed boundary.
+        // The actual Level and durable request ledger already own their
+        // effects; the replay record must be committed before the next
+        // physical tick can depend on these server decisions.
+        if let Some((trace, _)) = recording {
+            trace.sync_data()?;
+        }
         Ok(())
     }
 }
