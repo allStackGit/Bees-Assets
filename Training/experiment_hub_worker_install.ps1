@@ -266,6 +266,12 @@ if($Command -eq 'install' -and $hasEnrollment -and $existing) {
         }
         & ([string]$configuration.NodePath) --check $approved
         Assert-Exit 'Validate authenticated worker update bootstrap'
+        $approvedUpdater=Join-Path $release 'Training\experiment_hub_worker_updater.js'
+        if(-not (Test-Path -LiteralPath $approvedUpdater -PathType Leaf)){
+            throw 'Authenticated worker release lacks the infrastructure updater.'
+        }
+        & ([string]$configuration.NodePath) --check $approvedUpdater
+        Assert-Exit 'Validate authenticated worker infrastructure updater'
         if(Test-Path -LiteralPath $bootstrap){
             if((Get-FileHash -LiteralPath $bootstrap -Algorithm SHA256).Hash -ne
                 (Get-FileHash -LiteralPath $approved -Algorithm SHA256).Hash){
@@ -273,6 +279,22 @@ if($Command -eq 'install' -and $hasEnrollment -and $existing) {
             }
         }else{
             Copy-Item -LiteralPath $approved -Destination $bootstrap -ErrorAction Stop
+        }
+        # Supply a verified current updater for the first bootstrap run,
+        # before it has a versioned last-good engine to fall back to.
+        $fallback=Join-Path (Split-Path -Parent $updater) (
+            'experiment_hub_worker_updater.'+[guid]::NewGuid().ToString('N')+'.js')
+        $backup=Join-Path (Split-Path -Parent $updater) (
+            'experiment_hub_worker_updater.'+[guid]::NewGuid().ToString('N')+'.bak')
+        try {
+            Copy-Item -LiteralPath $approvedUpdater -Destination $fallback -ErrorAction Stop
+            [IO.File]::Replace($fallback,$updater,$backup,$true)
+        }finally {
+            foreach($tempFile in @($fallback,$backup)) {
+                if(Test-Path -LiteralPath $tempFile) {
+                    Remove-Item -LiteralPath $tempFile -Force
+                }
+            }
         }
     }finally {
         if(Test-Path -LiteralPath $releaseFolder){
