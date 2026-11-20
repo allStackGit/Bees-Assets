@@ -789,7 +789,11 @@ suite** creates a new immutable Nano/Micro suite ID pinned to the installed
 runtime while preserving prior suites/receipts; it replaces only the approved
 idle local schedule. Restart the local agent from this panel when safe to
 advertise the newly approved suite ID. The new frozen suite must be selected
-on future training configurations.
+on future training configurations. The runtime now fingerprints **both** Nano
+and Micro opponent model/manifest files. After updating an earlier Hub checkout,
+refresh each installed Nano/Micro suite from this panel before relying on its
+evaluation schedule: the previous suite remains immutable and its older runtime
+pin is intentionally not silently reused.
 
 The same Machines service panel provides **Set up / refresh Courier evaluation**.
 When a local trusted Courier adapter is installed, this action creates a private
