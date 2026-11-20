@@ -1165,6 +1165,33 @@ impl BattleCatalog {
         Ok(progress)
     }
 
+    /// Deterministic career identity for resuming an existing physical
+    /// World. Unlike the public status view, this excludes authored mission
+    /// menus, prices and reward definitions, which can change independently
+    /// of the durable player record. The original source is checked by its
+    /// separate frozen configuration digest.
+    pub fn career_identity(&self, progress: &CampaignProgress<'_>) -> Value {
+        let mut identity = self.status(progress);
+        let fields = identity.as_object_mut()
+            .expect("native campaign status must be a JSON object");
+        fields.remove("shop");
+        fields.remove("fleet_classes");
+        fields.remove("max_squad_ships");
+        let mut mission_ids = progress.missions.keys().copied().collect::<Vec<_>>();
+        mission_ids.sort_unstable();
+        let mission_results = mission_ids.into_iter().map(|id| {
+            let result = &progress.missions[id];
+            json!({
+                "id": id,
+                "completed": result.completed,
+                "latest_victory": result.latest_victory,
+                "grants_claimed": result.grants_claimed,
+            })
+        }).collect::<Vec<_>>();
+        fields.insert("missions".to_owned(), json!(mission_results));
+        identity
+    }
+
     /// Read-only, complete campaign view for the game menu and external
     /// tooling. No sidecar save file is ever more authoritative than the
     /// original successful battle summaries.
