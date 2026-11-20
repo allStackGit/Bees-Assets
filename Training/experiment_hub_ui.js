@@ -4296,6 +4296,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     discovered.join(', '):''));
             const capability=m.execution_capabilities;
             const recoveryOnly=m.local_executor_enabled&&!m.installed_projects?.length;
+            const evaluator=(state.evaluator_services||[]).find(item=>
+                item.machine_id===m.id);
             const control=cell(tr,m.status==='connected'
                 ?recoveryOnly?'Native recovery only · no installed adapters'
                 :m.local_executor_enabled
@@ -4313,6 +4315,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'Authenticated local native preflight passed; verify limits for each launched job. GPU not isolated.'
                 :m.native_preflight_reason||
                     capability?.reason||'No authenticated native capability report.';
+            if(m.evaluation_suites?.bees_native?.length)
+                control.textContent+=' · Bees evaluator: '+
+                    (evaluator?.status==='pending'?'command pending':
+                        evaluator?.state||'not inspected')+
+                    (evaluator?.diagnostic?' ('+evaluator.diagnostic+')':'');
             cell(tr,m.last_seen_at?.replace('T',' ').slice(0,19)||'—');
             const actions=cell(tr,'');
             actions.append(button(m.agent_enrolled?'Rotate':'Enroll',async()=>{
@@ -4338,6 +4345,39 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }catch(e){feedback('hub-enrollment-message',e.message);}
             }));
+            if(m.status==='connected'&&m.local_executor_enabled&&
+                m.evaluation_suites?.bees_native?.length) {
+                const issueEvaluator=async operation=>{
+                    const description=operation==='start'
+                        ?'Start the previously installed and budgeted native Bees independent evaluator service'
+                        :operation==='stop'
+                            ?'Stop the previously installed native Bees independent evaluator service'
+                            :'Inspect the previously installed native Bees evaluator service state';
+                    if(!confirm(description+' on '+m.id+
+                        '? The agent will control only its fixed, machine-local OS service. '+
+                        'This does not start or stop training jobs.'))return;
+                    try{
+                        const order=await action('hub/machines/native-evaluator',{
+                            machine_id:m.id,action:operation,confirm_control:true,
+                        });
+                        feedback('hub-enrollment-message',
+                            'Evaluator '+operation+' requested for '+m.id+
+                            ' · machine confirmation pending ('+
+                            order.command_id.slice(0,8)+').');
+                        await reload();
+                    }catch(error) {
+                        feedback('hub-enrollment-message',String(error.message||error));
+                    }
+                };
+                for(const [label,operation] of [
+                    ['Start evaluator','start'],['Stop evaluator','stop'],
+                    ['Inspect evaluator','inspect'],
+                ]) {
+                    const btn=button(label,()=>issueEvaluator(operation));
+                    btn.disabled=evaluator?.status==='pending';
+                    actions.append(btn);
+                }
+            }
             $('hub-machine-rows').append(tr);
         }
         if(!state.machines.length) {
