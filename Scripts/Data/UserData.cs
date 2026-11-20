@@ -13,8 +13,7 @@ namespace Assets.Scripts.Data
         protected string defaultJsonData = "";
         private Action<object> _onceDataIsLoaded;
         private bool _hasCalledAction;
-        private bool _hasAttemptedMalformedRecovery;
-        private bool _hasLoggedMalformedRecoveryFailure;
+        private bool _hasFailedToLoad;
         protected string filename;
 
         public UserData()
@@ -84,7 +83,7 @@ namespace Assets.Scripts.Data
 
         public void WaitForData()
         {
-            if (!IsDataLoaded() || _hasCalledAction)
+            if (!IsDataLoaded() || _hasCalledAction || _hasFailedToLoad)
             {
                 return;
             }
@@ -95,8 +94,11 @@ namespace Assets.Scripts.Data
             }
             catch (Exception error)
             {
+                _hasFailedToLoad = true;
                 MarkFailedLoadAsUnready();
-                RecoverMalformedData(error);
+                // A malformed/incompatible document is not a missing document. Replacing it
+                // with defaults permanently destroys the original player data on disk/server.
+                Debug.LogError($"Failed to load saved user data '{filename}'. Its contents have been preserved and startup will remain blocked rather than overwrite the profile. {error.GetType().Name}: {error.Message}");
             }
         }
 
@@ -117,65 +119,35 @@ namespace Assets.Scripts.Data
 
         private void MarkFailedLoadAsUnready()
         {
-            // UserProgressData's legacy callback marks itself loaded before reading all fields.
-            // If a malformed profile throws later in that callback, clear the flag immediately so
-            // Scene cannot finalize against partially applied progress while recovery is underway.
+            // A callback may set its loaded flag before finishing deserialization. Never let
+            // another scene finalize or a seven-file checkpoint write a partially loaded profile.
             if (filename == ConfigData.UserProgressFilename)
             {
                 ConfigData.IsUserProgressDataLoaded = false;
+                return;
             }
-        }
-
-        private void RecoverMalformedData(Exception originalError)
-        {
-            if (_hasAttemptedMalformedRecovery)
+            if (filename == ConfigData.UserSettingsFilename)
             {
-                MarkFailedLoadAsUnready();
-                if (!_hasLoggedMalformedRecoveryFailure)
+                ConfigData.IsUserSettingsDataLoaded = false;
+                return;
+            }
+
+            for (int i = 0; i < ConfigData.FleetDataFilenames.Length; i++)
+            {
+                if (filename == ConfigData.FleetDataFilenames[i])
                 {
-                    _hasLoggedMalformedRecoveryFailure = true;
-                    Debug.LogError($"Could not load repaired user data '{filename}'. Startup will keep the data unavailable instead of applying a partial profile. {originalError.GetType().Name}: {originalError.Message}");
+                    ConfigData.IsFleetDataLoaded[i] = false;
+                    return;
                 }
-                return;
-            }
-
-            _hasAttemptedMalformedRecovery = true;
-            string defaults;
-            try
-            {
-                defaults = GetDefaultJson();
-            }
-            catch (Exception defaultError)
-            {
-                MarkFailedLoadAsUnready();
-                Debug.LogError($"Could not create recovery defaults for user data '{filename}'. {defaultError.GetType().Name}: {defaultError.Message}");
-                return;
-            }
-
-            // Fleet defaults can temporarily depend on user_progress arriving first. In that case
-            // leave recovery eligible for the next readiness pass rather than freezing the file in
-            // a failed state.
-            if (string.IsNullOrWhiteSpace(defaults) || defaults == ConfigData.WaitingMessage)
-            {
-                _hasAttemptedMalformedRecovery = false;
-                MarkFailedLoadAsUnready();
-                return;
-            }
-
-            Debug.LogError($"User data '{filename}' is malformed or incompatible and will be rebuilt from safe defaults. {originalError.GetType().Name}: {originalError.Message}");
-            file.WriteData(defaults);
-
-            try
-            {
-                ApplyLoadedData();
-            }
-            catch (Exception recoveryError)
-            {
-                MarkFailedLoadAsUnready();
-                if (!_hasLoggedMalformedRecoveryFailure)
+                if (filename == ConfigData.SavedSquadsDataFilenames[i])
                 {
-                    _hasLoggedMalformedRecoveryFailure = true;
-                    Debug.LogError($"Default recovery also failed for user data '{filename}'. {recoveryError.GetType().Name}: {recoveryError.Message}");
+                    ConfigData.IsSavedSquadsDataLoaded[i] = false;
+                    return;
+                }
+                if (filename == ConfigData.LevelsDataFilenames[i])
+                {
+                    ConfigData.IsLevelsDataLoaded[i] = false;
+                    return;
                 }
             }
         }
