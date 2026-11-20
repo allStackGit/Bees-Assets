@@ -4951,8 +4951,10 @@ fn run_battle(
     // polling UI/network with no authoritative simulation progress.
     let mut checkpointed_round = resume_cursor.as_ref().map(|cursor| cursor.rounds);
     'battle: loop {
-        if checkpointed_round != Some(rounds) {
-        if let Some(file) = &host_checkpoint_file {
+        if checkpointed_round != Some(rounds) &&
+            host.connection_mut().connection().pending_request_count() == 0
+        {
+            if let Some(file) = &host_checkpoint_file {
             // One stable boundary after the previous round's episode
             // accounting, model transition, journal ACK and reinforcements.
             // This includes the first unstarted round of a new incarnation.
@@ -4992,8 +4994,8 @@ fn run_battle(
                 ));
                 break 'battle;
             }
-            checkpointed_round = Some(rounds);
-        }
+                checkpointed_round = Some(rounds);
+            }
         }
         if let Some(trace) = &mut input_trace {
             if (rounds == 0 || rounds % 64 == 0) &&
