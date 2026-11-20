@@ -4,7 +4,7 @@
 //! parent ends; exactly one completion is emitted for the final child.
 //! The separate physical-nearness detector marks verified near passes.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Source RlOneVsOneReward.NearMissDistance.
 pub(super) const NEAR_MISS_DISTANCE: f32 = 2.0;
@@ -18,7 +18,7 @@ pub struct ProjectileRootOutcome {
     pub near_enemy: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectileOutcomeMeasurements {
     pub launched: u64,
     pub continuations: u64,
@@ -32,13 +32,26 @@ pub struct ProjectileOutcomeMeasurements {
     pub near_hull_checks: u64,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ActiveRoot {
     shooter_id: i64,
     shooter_side: i32,
     live: usize,
     contact: bool,
     near: bool,
+}
+
+/// Persist the one authoritative policy root-shot ledger, including
+/// continuation ownership. This does not generate any new physics shot or
+/// training reward; the corresponding projectile bodies are restored by
+/// the shared CombatWorld at the same fixed-step boundary.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ProjectileOutcomeCheckpoint {
+    schema_version: u32,
+    roots: BTreeMap<i64, ActiveRoot>,
+    totals: ProjectileOutcomeMeasurements,
 }
 
 #[derive(Default)]
@@ -48,6 +61,45 @@ pub(super) struct ProjectileOutcomeTracker {
 }
 
 impl ProjectileOutcomeTracker {
+    pub(super) fn checkpoint(&self) -> ProjectileOutcomeCheckpoint {
+        ProjectileOutcomeCheckpoint {
+            schema_version: 1,
+            roots: self.active.iter().map(|(&id, &root)| (id, root)).collect(),
+            totals: ProjectileOutcomeMeasurements {
+                in_flight_roots: self.active.len(),
+                ..self.totals
+            },
+        }
+    }
+
+    pub(super) fn restore_checkpoint(
+        &mut self, checkpoint: ProjectileOutcomeCheckpoint,
+    ) -> Result<(), &'static str> {
+        if checkpoint.schema_version != 1 ||
+            checkpoint.roots.len() != checkpoint.totals.in_flight_roots ||
+            checkpoint.totals.contacted > checkpoint.totals.completed ||
+            checkpoint.totals.completed !=
+                checkpoint.totals.contacted.saturating_add(checkpoint.totals.missed) ||
+            checkpoint.totals.near_missed > checkpoint.totals.missed ||
+            checkpoint.totals.completed
+                .checked_add(checkpoint.roots.len() as u64)
+                .is_none_or(|count| count > checkpoint.totals.launched) ||
+            checkpoint.roots.iter().any(|(&root_id, state)|
+                root_id <= 0 || state.shooter_id <= 0 ||
+                state.shooter_side <= 0 || state.live == 0 ||
+                state.contact && state.near)
+        {
+            return Err("invalid native projectile root outcome checkpoint");
+        }
+        // No root may be counted completed while its split/explosion
+        // continuations still exist. Restore only the original owners;
+        // the paired physical projectile identities are checked by the
+        // enclosing CombatWorld before resuming game or training ticks.
+        self.active = checkpoint.roots.into_iter().collect();
+        self.totals = checkpoint.totals;
+        Ok(())
+    }
+
     pub(super) fn launched(&mut self, root: i64, shooter_id: i64, side: i32) {
         debug_assert!(root > 0 && shooter_id > 0 && side > 0);
         let replaced = self.active.insert(root, ActiveRoot {
