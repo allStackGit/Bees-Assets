@@ -1194,7 +1194,8 @@ def main() -> None:
     if args.resume_rollout and (not args.collect_only or args.collection_id is None):
         parser.error("--resume-rollout requires one pinned distributed collection")
     if args.resume_optimizer and (
-            args.collect_only or args.resume_rollout or args.learner_nodes < 2):
+            args.collect_only or args.resume_rollout or
+            args.learner_nodes * args.learner_gpus < 2):
         parser.error("--resume-optimizer requires a distributed optimizer with completed rank outputs")
     if args.collection_id is not None and (
         len(args.collection_id) != 64 or any(
