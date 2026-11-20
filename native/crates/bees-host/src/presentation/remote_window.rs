@@ -1072,12 +1072,18 @@ fn numbered_squad(state: &Value, key: u64) -> Option<i64> {
         .find(|&(number,_)|number==target).map(|(_,id)|id)
 }
 
-fn next_numbered_squad(state: &Value, selected: &[i64]) -> Option<i64> {
+fn cycle_numbered_squad(state: &Value, selected: &[i64], forward: bool) -> Option<i64> {
     let numbered=source_numbered_squads(state);
     if numbered.is_empty(){return None;}
     let current=selected.first().and_then(|id|
         numbered.iter().position(|&(_,candidate)|candidate==*id));
-    Some(numbered[current.map_or(0,|index|(index+1)%numbered.len())].1)
+    let next=match (current,forward) {
+        (Some(index),true)=>(index+1)%numbered.len(),
+        (Some(index),false)=>(index+numbered.len()-1)%numbered.len(),
+        (None,true)=>0,
+        (None,false)=>numbered.len()-1,
+    };
+    Some(numbered[next].1)
 }
 
 fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
@@ -1115,7 +1121,7 @@ fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) 
         rest=rest[piece.len()..].trim_start();
     }
     text::draw_at(pixels,WIDTH,15,HEIGHT-72,
-        "Enter next   Backspace previous",1,MUTED);
+        "L next   K skip   Backspace previous",1,MUTED);
 }
 
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
@@ -1423,19 +1429,19 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             "MANUAL FIRE - release J to stop",1,[255,221,151]);
     }
     let instructions=[
-        "Left: select   Shift: add",
+        "Left: select  Ctrl+A: select all",
         "Drag: select multiple",
         "Right: move/attack/mine",
-        "1-0 select Tab cycle A all",
-        "F point fire J held fire",
-        "T attack I circle O left U right",
-        "N in/out G guard H hold",
-        "C chase L lock V speed",
-        "PgUp/Dn shooting (1-40)",
-        "B beacon D detonate Q charge",
-        "E heal W retreat P patrol",
-        "M mine Z cease  F6 art F7 mute",
-        "Map drag pan R fit +/- zoom Esc",
+        "1-0 select Tab / PgUp-Dn cycle",
+        "T fire X stop J held fire",
+        "Shift+T attack Shift+I circle",
+        "Shift+O left Shift+U right",
+        "Shift+N in/out G guard C hold",
+        "E chase O lock Y/U speed",
+        "Shift+PgUp-Dn shooting (1-40)",
+        "K beacon D detonate Q charge",
+        "H heal R retreat P patrol M mine",
+        "V cease A attack F fit +/- zoom",
     ];
     for (index,label) in instructions.iter().enumerate(){
         text::draw_at(pixels,WIDTH,FIELD+14,455+index*18,label,1,MUTED);
@@ -1688,10 +1694,16 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             let count=state["campaign_dialogue"]["line_count"]
                 .as_u64().unwrap_or(0).min(100) as usize;
             if count>0 {
-                if window.is_key_pressed(Key::Enter,KeyRepeat::No){
-                    dialogue_line=(dialogue_line+1).min(count-1);
+                // Source campaign dialogue uses K to skip and L to advance.
+                // The same K must not activate a Beacon while a briefing is
+                // visible; narrative selection is presentation-only.
+                if window.is_key_pressed(Key::K,KeyRepeat::No) {
+                    dialogue_line=count;
+                } else if window.is_key_pressed(Key::L,KeyRepeat::No) ||
+                    window.is_key_pressed(Key::Enter,KeyRepeat::No) {
+                    dialogue_line=(dialogue_line+1).min(count);
                 }
-                if window.is_key_pressed(Key::Backspace,KeyRepeat::No){
+                if window.is_key_pressed(Key::Backspace,KeyRepeat::No) {
                     dialogue_line=dialogue_line.saturating_sub(1);
                 }
             }
@@ -1734,6 +1746,10 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         }
         if let Some(mut cam)=camera {
             let keys=window.get_keys_pressed(KeyRepeat::No);
+            let shift=window.is_key_down(Key::LeftShift)||
+                window.is_key_down(Key::RightShift);
+            let control=window.is_key_down(Key::LeftCtrl)||
+                window.is_key_down(Key::RightCtrl);
             for key in keys {
                 let numbered=match key {
                     Key::Key1=>Some(1),Key::Key2=>Some(2),Key::Key3=>Some(3),
@@ -1741,11 +1757,13 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     Key::Key7=>Some(7),Key::Key8=>Some(8),Key::Key9=>Some(9),
                     Key::Key0=>Some(0),_=>None,
                 };
-                if numbered.is_some()||key==Key::Tab {
+                if numbered.is_some()||key==Key::Tab||
+                    (!shift&&matches!(key,Key::PageUp|Key::PageDown)) {
                     if let Some(state)=peer.state.as_ref() {
                         let next=numbered.and_then(|number|numbered_squad(state,number))
-                            .or_else(||(key==Key::Tab)
-                                .then(||next_numbered_squad(state,&selected)).flatten());
+                            .or_else(||(key==Key::Tab||key==Key::PageDown||key==Key::PageUp)
+                                .then(||cycle_numbered_squad(state,&selected,
+                                    key!=Key::PageUp)).flatten());
                         if let Some(id)=next {
                             selected.clear();selected.push(id);
                             if let Some(point)=focus_squad(state,id){cam.center=point;}
@@ -1757,53 +1775,67 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     }
                     continue;
                 }
+                // Match the local native command keys. Additional LAN
+                // tactical maneuvers use Shift combinations rather than
+                // silently sending a different action on the same key.
                 let send=match key {
-                    Key::A => {
+                    Key::A if control => {
                         if let Some(state)=peer.state.as_ref() {
                             selected=state["squads"].as_array().into_iter().flatten()
-                                .filter(|s|s["controllable"]==true)
+                                .filter(|s|s["controllable"]==true&&s["source_root"]==true)
                                 .filter_map(|s|s["owner"]["squad_id"].as_i64()).collect();
                         }
                         None
                     }
-                    Key::F=>{mode=Some(TargetMode::Fire);patrol_start=None;None}
-                    Key::T=>{mode=Some(TargetMode::Attack);patrol_start=None;None}
-                    Key::I=>{mode=Some(TargetMode::Circle);patrol_start=None;None}
-                    Key::U=>{mode=Some(TargetMode::RightSwipe);patrol_start=None;None}
-                    Key::O=>{mode=Some(TargetMode::LeftSwipe);patrol_start=None;None}
-                    Key::N=>{mode=Some(TargetMode::InAndOut);patrol_start=None;None}
+                    Key::A=>Some(("cease_fire",json!({"cease_fire":false}))),
+                    Key::V=>Some(("cease_fire",json!({"cease_fire":true}))),
+                    Key::T if shift=>{mode=Some(TargetMode::Attack);patrol_start=None;None}
+                    Key::T=>{mode=Some(TargetMode::Fire);patrol_start=None;None}
+                    Key::I if shift=>{mode=Some(TargetMode::Circle);patrol_start=None;None}
+                    Key::O if shift=>{mode=Some(TargetMode::LeftSwipe);patrol_start=None;None}
+                    Key::U if shift=>{mode=Some(TargetMode::RightSwipe);patrol_start=None;None}
+                    Key::N if shift=>{mode=Some(TargetMode::InAndOut);patrol_start=None;None}
                     Key::G=>{mode=Some(TargetMode::Guard);patrol_start=None;None}
                     Key::M=>{mode=Some(TargetMode::Mine);patrol_start=None;None}
-                    Key::E=>{mode=Some(TargetMode::Heal);patrol_start=None;None}
-                    Key::W=>{mode=Some(TargetMode::Retreat);patrol_start=None;None}
+                    Key::H=>{mode=Some(TargetMode::Heal);patrol_start=None;None}
+                    Key::R=>{mode=Some(TargetMode::Retreat);patrol_start=None;None}
                     Key::P=>{mode=Some(TargetMode::Patrol);patrol_start=None;None}
-                    Key::R=>{
+                    Key::F=>{
                         if let Some(map)=peer.state.as_ref().and_then(bounds) {
                             cam=NativeCamera::fit(map,FIELD,HEIGHT);
                         }
                         None
                     }
-                    Key::H=>Some(("support",json!({"action":"Hold"}))),
-                    Key::Z=>Some(("cease_fire",json!({
-                        "cease_fire":!first_selected(peer.state.as_ref(),&selected)
-                            .and_then(|s|s["cease_fire"].as_bool()).unwrap_or(false)
+                    Key::C=>Some(("support",json!({"action":"Hold"}))),
+                    Key::E=>Some(("chase",json!({"chasing":true}))),
+                    Key::O=>Some(("lock_on",json!({
+                        "locked":!selected.iter().all(|id|
+                            peer.state.as_ref().is_some_and(|state|
+                                state["squads"].as_array().into_iter().flatten().any(|s|
+                                    s["controllable"]==true&&s["locked_on"]==true&&
+                                    s["owner"]["squad_id"].as_i64()==Some(*id))))
                     }))),
-                    Key::C=>Some(("chase",json!({
-                        "chasing":!first_selected(peer.state.as_ref(),&selected)
-                            .and_then(|s|s["chasing"].as_bool()).unwrap_or(false)
-                    }))),
-                    Key::L=>Some(("lock_on",json!({
-                        "locked":!first_selected(peer.state.as_ref(),&selected)
-                            .and_then(|s|s["locked_on"].as_bool()).unwrap_or(false)
-                    }))),
-                    Key::V=>Some(("match_speed",json!({
-                        "match_speed":!first_selected(peer.state.as_ref(),&selected)
-                            .and_then(|s|s["match_speed"].as_bool()).unwrap_or(false)
-                    }))),
-                    Key::B=>Some(("special",json!({"kind":"DropBeacon"}))),
+                    Key::Y=>Some(("match_speed",json!({"match_speed":true}))),
+                    Key::U=>Some(("match_speed",json!({"match_speed":false}))),
+                    Key::K if peer.state.as_ref().is_some_and(|state|
+                        state["campaign_dialogue"]["cue"].is_object())=>None,
+                    Key::K=>Some(("special",json!({"kind":"DropBeacon"}))),
                     Key::D=>Some(("special",json!({"kind":"Detonate"}))),
                     Key::Q=>Some(("special",json!({"kind":"Charge"}))),
-                    Key::PageUp|Key::PageDown=>{
+                    Key::X=>{
+                        if held_fire_active {
+                            if let Err(error)=peer.held_fire(&selected,"End",None) {
+                                let _=peer.socket.shutdown(std::net::Shutdown::Both);
+                                peer.connected=false;
+                                peer.notice=error.to_string();
+                            }
+                            held_fire_active=false;held_fire_target=None;
+                            None
+                        } else {
+                            Some(("fire",json!({"target":null})))
+                        }
+                    }
+                    Key::PageUp|Key::PageDown if shift=>{
                         let previous=first_selected(peer.state.as_ref(),&selected)
                             .and_then(|s|s["shooting"].as_u64()).unwrap_or(1).clamp(1,40);
                         let next=if key==Key::PageUp{
