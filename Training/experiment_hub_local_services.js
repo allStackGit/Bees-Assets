@@ -60,7 +60,8 @@ async function restartActivity(hub,kind) {
     if(kind!=='agent')return {count:jobs.length,scope:'all'};
     const machine=await enrolledLocalAgentMachine(hub);
     return machine
-        ?{count:jobs.filter(job=>job.assigned_machine_id===machine).length,
+        ?{count:jobs.filter(job=>!job.assigned_machine_id||
+            job.assigned_machine_id===machine).length,
             scope:'local'}
         :{count:jobs.length,scope:'all'};
 }
