@@ -171,7 +171,18 @@ function initialVersion(root,name,env) {
         courier:path.join(root,process.platform==='win32'?'Sources':'sources','Basic-Training'),
     };
     const folder=locations[name];
-    if(!folder||!fs.existsSync(path.join(folder,'.git')))return null;
+    if(!folder)return null;
+    // Initial one-file bootstrap installs verified immutable release archives
+    // without a private Git clone. Recognize their signed-off version marker
+    // instead of downloading and duplicating the same software on the first
+    // update timer tick.
+    const marker=path.join(folder,'.hub-release-version');
+    if(fs.existsSync(marker)) {
+        const version=fs.readFileSync(marker,'utf8').trim();
+        if(!SHA.test(version))throw Error('Invalid initial software version marker: '+name);
+        return version;
+    }
+    if(!fs.existsSync(path.join(folder,'.git')))return null;
     try {
         const sha=exec('git',['-C',folder,'rev-parse','HEAD']);
         return SHA.test(sha)?sha:null;
