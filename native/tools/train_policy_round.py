@@ -17,7 +17,7 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, NamedTemporaryFile
 import time
 import traceback
 import uuid
@@ -828,14 +828,25 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
 
 
 def publish_receipt(output, filename, receipt, *, announce=True):
-    pending = output / (filename + ".pending")
-    with pending.open("x", encoding="utf-8") as stream:
-        json.dump(receipt, stream, indent=2)
-        stream.write("\n")
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(pending, output / filename)
-    sync_directory(output)
+    # A prior collector may have died after fsyncing the staging receipt
+    # but before its atomic rename. Each publication uses a new private
+    # temporary name: an orphaned staging file must never block recovery or
+    # be mistaken for a verified completed training artifact.
+    pending = None
+    try:
+        with NamedTemporaryFile(mode="w", encoding="utf-8",
+                prefix="."+filename+".", suffix=".pending",
+                dir=output, delete=False) as stream:
+            pending = Path(stream.name)
+            json.dump(receipt, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(pending, output / filename)
+        sync_directory(output)
+    finally:
+        if pending is not None:
+            pending.unlink(missing_ok=True)
     if announce:
         print(json.dumps(receipt), flush=True)
 
