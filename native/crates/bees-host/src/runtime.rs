@@ -187,6 +187,9 @@ pub struct NativeHostRecoveryCheckpoint {
     driver: NativeLevelDriverRecoveryCheckpoint,
     model_generation: u64,
     model_sha256: [u8; 32],
+    /// Exact resident policy RNG state, not just a weight/manifest hash.
+    /// Empty only for an explicitly model-free inference backend.
+    sampling_state: Vec<u8>,
     connection_sha256: [u8; 32],
 }
 
@@ -194,6 +197,7 @@ pub struct NativeHostRecoveryCheckpoint {
 pub enum HostRecoveryError {
     Unavailable,
     ModelIdentityUnavailable,
+    ModelSamplingUnavailable,
     ModelChanged,
     ConnectionChanged,
     ConnectionEncoding(serde_json::Error),
@@ -247,7 +251,7 @@ where
     /// Store all registered worlds at one completed host boundary. The
     /// HiveMind socket ledger remains independently write-ahead persisted.
     pub fn persist_recovery_checkpoint(
-        &self, checkpoint_file: &NativeHostCheckpointFile,
+        &mut self, checkpoint_file: &NativeHostCheckpointFile,
     ) -> Result<(), HostRecoveryError>
     where
         M: NativeHostRecoverableMetadata,
@@ -282,7 +286,7 @@ where
     /// Capture every live World and its one native inference driver at a
     /// synchronous host boundary. Do not snapshot in-flight, uncorrelated
     /// strategy/targeting requests: the connection cannot revive them.
-    pub fn recovery_checkpoint(&self) -> Result<NativeHostRecoveryCheckpoint, HostRecoveryError>
+    pub fn recovery_checkpoint(&mut self) -> Result<NativeHostRecoveryCheckpoint, HostRecoveryError>
     where
         M: NativeHostRecoverableMetadata,
     {
@@ -294,6 +298,9 @@ where
         }
         let model_sha256 = self.model.checkpoint_model_digest()
             .ok_or(HostRecoveryError::ModelIdentityUnavailable)?;
+        let sampling_state = self.model.checkpoint_sampling_state()
+            .map_err(|_| HostRecoveryError::ModelSamplingUnavailable)?
+            .ok_or(HostRecoveryError::ModelSamplingUnavailable)?;
         if self.driver.registered_world_count() != self.simulation.world_count() {
             return Err(HostRecoveryError::WorldCountMismatch);
         }
@@ -309,10 +316,10 @@ where
                 .map_err(|error| HostRecoveryError::Metadata { index, error })?);
         }
         Ok(NativeHostRecoveryCheckpoint {
-            schema_version: 2, worlds, metadata,
+            schema_version: 3, worlds, metadata,
             driver: self.driver.recovery_checkpoint(),
             model_generation: self.model.model_generation(),
-            model_sha256,
+            model_sha256, sampling_state,
             connection_sha256: self.connection_recovery_digest()?,
         })
     }
@@ -326,7 +333,7 @@ where
     where
         M: NativeHostRecoverableMetadata,
     {
-        if checkpoint.schema_version != 2 ||
+        if checkpoint.schema_version != 3 ||
             checkpoint.metadata.len() != checkpoint.worlds.len() ||
             checkpoint.worlds.len() != self.simulation.world_count() ||
             self.driver.registered_world_count() != self.simulation.world_count() {
@@ -369,6 +376,16 @@ where
         let driver = NativeLevelBatchDriver::prepare_recovery_for_layout(
             checkpoint.driver, layout,
         ).map_err(HostRecoveryError::Driver)?;
+
+        // The resident worker owns stochastic action sampling. Restore it
+        // only after every World/Level/metadata/driver preflight succeeds,
+        // but before mutating any gameplay owner. A failed worker exchange
+        // invalidates recovery without partially installing a Level.
+        if !self.model.restore_sampling_state(&checkpoint.sampling_state)
+            .map_err(|_| HostRecoveryError::ModelSamplingUnavailable)?
+        {
+            return Err(HostRecoveryError::ModelSamplingUnavailable);
+        }
 
         // No fallible operation below. Reuse the original World instances,
         // native game engine and model process; do not restart either the
