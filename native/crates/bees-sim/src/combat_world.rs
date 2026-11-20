@@ -931,6 +931,24 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     shot_outcomes: ProjectileOutcomeCheckpoint,
 }
 
+/// Fully staged CombatWorld recovery; all source gameplay owners have
+/// passed identity checks, but no world has been modified. The outer Level
+/// may validate and commit its remaining owners before the next fixed step.
+pub struct CombatWorldRecoveryPrepared {
+    snapshot: CombatWorldRecoveryOwnersCheckpoint,
+    physics: KinematicPhysics,
+    discovery: LevelDiscovery,
+    navigation: NavigationRequests,
+    reservations: DamageReservations,
+    outcomes: ProjectileOutcomeTracker,
+    game_queens: BTreeMap<i64, QueenRuntime>,
+    live_ships_by_side: HashMap<i32, usize>,
+    live_mobile_ships_by_side: HashMap<i32, usize>,
+    live_ship_total: usize,
+    projectile_by_id: HashMap<i64, usize>,
+    obstacle_by_id: HashMap<i64, usize>,
+}
+
 pub struct CombatWorld {
     physics: KinematicPhysics,
     projectile_assets: Arc<ProjectileAssetCatalog>,
@@ -1701,9 +1719,9 @@ impl CombatWorld {
     /// state together. No fresh spawns, damage or gameplay events occur;
     /// mismatched immutable scene slots reject the entire recovery.
     /// No live field changes until every component has been prepared.
-    pub fn restore_recovery_owners(
-        &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
-    ) -> Result<(), CombatWorldError> {
+    pub fn prepare_recovery_owners(
+        &self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
+    ) -> Result<CombatWorldRecoveryPrepared, CombatWorldError> {
         if snapshot.schema_version != 16 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
@@ -2204,9 +2222,23 @@ impl CombatWorld {
         navigation.restore_checkpoint(snapshot.navigation,
             |ship_id| positions.get(&ship_id).copied())?;
 
-        // Commit only after every source ownership and physical identity
-        // validation succeeded. Invalid snapshots leave the active game
-        // and all five owners unchanged.
+        Ok(CombatWorldRecoveryPrepared {
+            snapshot, physics, discovery, navigation, reservations, outcomes,
+            game_queens, live_ships_by_side, live_mobile_ships_by_side,
+            live_ship_total, projectile_by_id, obstacle_by_id,
+        })
+    }
+
+    /// Infallible owner installation after all enclosing Level checkpoints
+    /// have successfully completed their independent preflight.
+    pub fn commit_recovery_owners(
+        &mut self, prepared: CombatWorldRecoveryPrepared,
+    ) {
+        let CombatWorldRecoveryPrepared {
+            snapshot, physics, discovery, navigation, reservations, outcomes,
+            game_queens, live_ships_by_side, live_mobile_ships_by_side,
+            live_ship_total, projectile_by_id, obstacle_by_id,
+        } = prepared;
         self.physics = physics;
         self.next_entity_id = snapshot.next_entity_id;
         self.ships = snapshot.ships;
@@ -2317,6 +2349,15 @@ impl CombatWorld {
         self.navigation_requests = navigation;
         self.reservations = reservations;
         self.shot_outcomes = outcomes;
+    }
+
+    /// Standalone combat resume uses the same staged transaction as
+    /// game, evaluation and training Level recovery.
+    pub fn restore_recovery_owners(
+        &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
+    ) -> Result<(), CombatWorldError> {
+        let prepared = self.prepare_recovery_owners(snapshot)?;
+        self.commit_recovery_owners(prepared);
         Ok(())
     }
 
