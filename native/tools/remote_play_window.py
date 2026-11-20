@@ -35,10 +35,11 @@ MODES = {
 
 
 class RemoteBattleWindow:
-    def __init__(self, root, console, connection):
+    def __init__(self, root, console, connection, reconnect=None):
         self.root = root
         self.console = console
         self.connection = connection
+        self.connect_recovered_host = reconnect
         self.root.title("Bees — native cooperative battle")
         self.root.geometry("1140x760")
         self.root.minsize(720, 450)
@@ -86,6 +87,11 @@ class RemoteBattleWindow:
         self.footer.pack(fill="x")
         self.status = tk.StringVar(value="Connecting to native host...")
         ttk.Label(self.footer, textvariable=self.status).pack(side="left")
+        self.rejoin_button = ttk.Button(
+            self.footer, text="Rejoin recovered battle", command=self.rejoin,
+            state="disabled",
+        )
+        self.rejoin_button.pack(side="left", padx=10)
         self.info = tk.StringVar(value="Left-click select, Shift+click add, right-click context order")
         ttk.Label(self.footer, textvariable=self.info).pack(side="right")
 
@@ -165,6 +171,42 @@ class RemoteBattleWindow:
     def notice(self, message):
         self.last_feedback = message
         self.status.set(message)
+
+    def rejoin(self):
+        # Explicit reconnection only: an old TCP peer and its held weapons
+        # never survive host recovery. The server must present the SAME
+        # durable host_session_id or the new console refuses its World.
+        if (self.console.alive or self.connect_recovered_host is None or
+                self.console.host_session_id is None):
+            return
+        try:
+            connection, console = self.connect_recovered_host(
+                self.console.host_session_id
+            )
+        except OSError as error:
+            self.notice(f"Recovered host is not reachable: {error}")
+            return
+        old_connection = self.connection
+        self.console = console
+        self.connection = connection
+        self.state = None
+        self.drawn_scope = None
+        self.shown_terminal_receipt = None
+        self.map_bounds = None
+        self.dialogue_identity = None
+        self.dialogue_line = 0
+        self.selected = []
+        self.patrol_start = None
+        self.held_drag = False
+        self.mode = None
+        self.last_feedback = ""
+        self.canvas.delete("all")
+        self.squad_list.delete(0, "end")
+        self.squad_detail.set("Waiting for authoritative roster")
+        self.rejoin_button.state(["disabled"])
+        self.status.set("Authenticating against the original host session...")
+        old_connection.close()
+        self.root.after(50, self.poll)
 
     def set_mode(self, mode):
         if self.held_drag:
@@ -301,6 +343,8 @@ class RemoteBattleWindow:
         if self.console.alive:
             self.root.after(50, self.poll)
         else:
+            if self.connect_recovered_host and self.console.host_session_id:
+                self.rejoin_button.state(["!disabled"])
             campaign = self.console.campaign_receipt_snapshot()
             final = self.console.battle_receipt_snapshot()
             outcome = self.state.get("terminal_outcome") if self.state else None
