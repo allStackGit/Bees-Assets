@@ -88,13 +88,29 @@ function createNativeBeesPortableCollectorAdapter({
         'native_distributed_collection.py',
         'native_gpu_allocation.py',
         'native_training_artifacts.py',
+        // These imported sources define the learner's actual policy and
+        // mission contracts even in collection-only runs. Pin them with
+        // the portable launcher so an installed worker cannot silently
+        // change the simulation/observation ABI after Hub authorization.
+        'native_mission_contract.py',
+        'native_training_outcomes.py',
+        'read_policy_capture.py',
         'policy_worker.py',
+    ];
+    const trainingNames=[
+        'bees_mlagents_ppo_compat.py',
+        'bees_mlagents_structured_policy.py',
+        'bees_mlagents_factorized_poca.py',
     ];
     const pinned=new Map([
         [executable,sha256(fs.readFileSync(executable))],
         [binary,sha256(fs.readFileSync(binary))],
         ...names.map(name=>{
             const file=trustedFile(path.join(tools,name));
+            return [file,sha256(fs.readFileSync(file))];
+        }),
+        ...trainingNames.map(name=>{
+            const file=trustedFile(path.join(__dirname,name));
             return [file,sha256(fs.readFileSync(file))];
         }),
     ]);
