@@ -1763,16 +1763,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 "serve requires --output-dir, BEES_NATIVE_REMOTE_LISTEN, and no --view or --replay-inputs",
             ).into());
         }
-        // Source command, model reload, or asynchronous navigation
-        // would make an apparently recorded multiplayer trace unreplayable.
-        // Reject before constructing a Level or touching durable outputs.
+        // Remote co-op can use the same durable HiveMind command source
+        // and network-event trace as live campaign hosting. Mid-session
+        // model reloads and asynchronous navigation still lack replayable
+        // scheduling, so reject those before creating durable outputs.
         let config: RunConfig = serde_json::from_slice(&fs::read(&config_path)?)?;
         if config.levels.len() != 1 || config.episodes_per_world != 1 ||
-            config.hivemind.is_some() || !config.model_updates.is_empty() ||
-            config.navigation_workers.is_some()
+            !config.model_updates.is_empty() || config.navigation_workers.is_some()
         {
             return Err(invalid(
-                "serve requires one offline Level/episode without HiveMind, model updates, or background navigation",
+                "serve requires one Level/episode with a fixed model manifest and no background navigation",
             ).into());
         }
     }
