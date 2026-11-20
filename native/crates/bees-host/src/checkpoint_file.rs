@@ -298,6 +298,39 @@ impl NativeHostCheckpointFile {
     }
 }
 
+/// Publish an immutable completed-run receipt. Build the entire JSON in a
+/// private temporary inode and link it into place only after sync, so a
+/// process crash cannot strand a half-written run_final at its permanent
+/// path. Hard-link creation is exclusive: an already completed receipt is
+/// never silently replaced by a different recovery incarnation.
+pub fn persist_new_json(
+    path: &Path, document: &impl serde::Serialize,
+) -> Result<(), CheckpointFileError> {
+    let target = canonical_writer_checkpoint_path(path.to_path_buf())?;
+    let parent = target.parent().ok_or(CheckpointFileError::InvalidPath)?;
+    let name = target.file_name().ok_or(CheckpointFileError::InvalidPath)?;
+    let (temporary, file) = create_unique_temporary_file(parent, name)?;
+    let result = (|| -> Result<(), CheckpointFileError> {
+        let mut writer = BufWriter::new(file);
+        serde_json::to_writer(&mut writer, document)?;
+        writer.flush()?;
+        writer.into_inner().map_err(|error| error.into_error())?
+            .sync_all()?;
+        // Both paths are in the same directory/filesystem. This refuses an
+        // existing target on Linux and Windows rather than overwriting
+        // another committed gameplay or training result.
+        fs::hard_link(&temporary, &target)?;
+        #[cfg(unix)]
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    let cleanup = fs::remove_file(&temporary);
+    if result.is_ok() {
+        cleanup?;
+    }
+    result
+}
+
 /// One durable checkpoint write path for both network connection identity
 /// and native World+Level state. No extra file rewriting strategy or
 /// duplicate temporary-file allocator exists for gameplay persistence.
