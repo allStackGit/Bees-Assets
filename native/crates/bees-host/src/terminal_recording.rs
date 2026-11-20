@@ -16,7 +16,7 @@ use bees_host::checkpoint_file::NativeHostCheckpointFile;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{invalid, NativeBattleRecoveryCursor, NativeRecordedPrefixHasher};
+use super::{contextual, invalid, NativeBattleRecoveryCursor, NativeRecordedPrefixHasher};
 
 fn verified_policy_digest(path: &Path) -> io::Result<String> {
     let metadata = fs::symlink_metadata(path)?;
@@ -116,8 +116,10 @@ pub(super) fn complete_committed_recording(run: &Path)
     // touching recording bytes; a still-live host may never be finalized.
     let checkpoint = NativeHostCheckpointFile::open(
         run.join("native-host-checkpoint.json"),
-    )?;
-    let snapshot = checkpoint.load()?.ok_or_else(||
+    ).map_err(|error| contextual("terminal replay host writer lease", error))?;
+    let snapshot = checkpoint.load()
+        .map_err(|error| contextual("terminal replay original World", error))?
+        .ok_or_else(||
         invalid("completed replay lacks the original durable World checkpoint"))?;
     let cursor: NativeBattleRecoveryCursor =
         serde_json::from_value(snapshot.launcher().clone())?;
