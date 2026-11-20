@@ -5,6 +5,7 @@
 // Printing is the default. --install writes only an absent unit file and
 // deliberately neither enables nor starts it.
 const fs=require('node:fs');
+const {isTailnetIPv4}=require('./experiment_hub_agent_listener');
 const os=require('node:os');
 const path=require('node:path');
 const {parseArgs}=require('node:util');
@@ -122,7 +123,8 @@ function positiveInt(input,min,max,label) {
     return value;
 }
 function evaluatorDefinition({
-    project,machine,trainingDir=__dirname,pythonPath,port=null,suites,
+    project,machine,trainingDir=__dirname,pythonPath,port=null,
+    hubHost='127.0.0.1',suites,
     projectRoot,artifactRoot,snapshotRoot,scratch,receiptRoot,enginePath,
     environmentFile=null,cpus,ramMb,interval='180',timeout='7200',
     unitId=null,
@@ -143,9 +145,13 @@ function evaluatorDefinition({
     const targetPort=positiveInt(port??(environmentFile?'7149':'7148'),1,65535,'Port');
     if((targetPort===7148)===Boolean(environmentFile))
         throw Error('Restricted evaluator ports need a private machine --env-file; dashboard port 7148 is local-only.');
+    if((hubHost!=='127.0.0.1'&&!isTailnetIPv4(hubHost))||
+        (hubHost!=='127.0.0.1'&&targetPort!==7149)||
+        ![7148,7149].includes(targetPort))
+        throw Error('Evaluator host must be loopback or a tailnet IPv4 at port 7149.');
     const localEnv=environmentFile?privateEnvironmentFile(environmentFile):null;
     const args=['-B',script,'--machine',machine,'--port',
-        String(targetPort)];
+        String(targetPort),'--hub-host',hubHost];
     for(const suite of suites)
         args.push('--suite',localPath(suite,'Benchmark suite'));
     if(project==='courier') {
@@ -230,6 +236,7 @@ function main(argv=process.argv.slice(2)) {
             'machine':{type:'string'},
             'python':{type:'string'},
             'port':{type:'string'},
+            'hub-host':{type:'string'},
             'suite':{type:'string',multiple:true},
             'project-root':{type:'string'},
             'artifact-root':{type:'string'},
@@ -252,6 +259,7 @@ function main(argv=process.argv.slice(2)) {
             project:values.project,machine:values.machine,
             trainingDir:values['training-dir']||__dirname,
             pythonPath:values.python,port:values.port||null,
+            hubHost:values['hub-host']||'127.0.0.1',
             environmentFile:values['env-file']||null,
             suites:values.suite,projectRoot:values['project-root'],
             artifactRoot:values['artifact-root'],snapshotRoot:values['snapshot-root'],
