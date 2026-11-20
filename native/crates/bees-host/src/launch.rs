@@ -2293,12 +2293,29 @@ fn archived_native_remote_receipts(
     if !is_battle_dir(battle_dir) { return Ok(Vec::new()); }
     let root = battle_dir.parent().ok_or_else(||
         invalid("archived native battle has no save owner"))?;
+    archived_native_remote_receipts_from_root(root, Some(battle_dir))
+}
+
+/// Reads the per-game archive without allocating a new physical battle.
+/// The active host excludes its own run while a receipt-only host can
+/// serve every completed session under that same save owner.
+fn archived_native_remote_receipts_from_root(
+    root: &Path, active_battle: Option<&Path>,
+) -> Result<Vec<bees_host::remote_play::NativeArchivedBattleReceipt>, Box<dyn Error>> {
     let mut receipts = Vec::new();
     let mut seen = HashSet::new();
-    for entry in fs::read_dir(root)? {
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(receipts),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
         let entry = entry?;
-        if !entry.file_type()?.is_dir() || !is_battle_dir(&entry.path()) ||
-            entry.path().as_path() == battle_dir { continue; }
+        if !entry.file_type()?.is_dir() ||
+            !entry.file_name().to_str().and_then(|name|
+                name.strip_prefix("battle-")).is_some_and(|number|
+                    !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())) ||
+            active_battle.is_some_and(|active| active == entry.path()) { continue; }
         let run = entry.path().join("run");
         let file = run.join("rollout-summary.json");
         let metadata = match fs::symlink_metadata(&file) {
