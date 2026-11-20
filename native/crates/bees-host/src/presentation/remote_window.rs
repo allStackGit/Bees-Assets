@@ -20,6 +20,8 @@ use serde_json::{json, Value};
 
 use super::{NativeCamera, NativeSoftwareRenderer, text};
 use super::minimap::MiniMapLayout;
+use super::tactical_hud::{HudAction, HudRect, ACTIONS, shooting_hit, shooting_rect};
+use bees_hivemind::protocol::SHOOTING_STRATEGIES;
 use crate::game_audio::NativeGameAudio;
 use crate::unity_scene_snapshot::NativeMusicLocation;
 
@@ -1071,6 +1073,105 @@ fn hit<'a>(state: &'a Value, camera: NativeCamera, x: i32, y: i32,
         }
     }
     selected
+}
+
+// A compact three-column layout uses the existing canonical 24-action
+// registry. Drawing and hit-testing share these exact rectangles; none of
+// these buttons owns gameplay state.
+fn remote_tactical_rect(action: HudAction) -> Option<HudRect> {
+    let index=ACTIONS.iter().position(|&entry|entry==action)?;
+    let left=FIELD+14+(index%3)*83;
+    let top=455+(index/3)*27;
+    Some(HudRect {left,top,right:left+77,bottom:top+23})
+}
+
+fn remote_tactical_hit(x: f32,y: f32) -> Option<HudAction> {
+    ACTIONS.iter().copied().find(|&action|
+        remote_tactical_rect(action).is_some_and(|rect|rect.contains(x,y)))
+}
+
+/// One dispatcher for LAN keyboard and on-screen tactical commands.
+fn remote_tactical_action(
+    peer: &mut PeerClient, selected: &mut Vec<i64>,
+    mode: &mut Option<TargetMode>, patrol_start: &mut Option<Vec2>,
+    held_fire_active: &mut bool, held_fire_target: &mut Option<Vec2>,
+    shooting_menu: &mut bool, shooting_focus: &mut u8,
+    action: HudAction,
+) -> Result<(),Box<dyn Error>> {
+    if peer.input_suppressed && action!=HudAction::StopFire {
+        return Err(invalid("orders unavailable during briefing or after battle").into());
+    }
+    if action==HudAction::SelectAll {
+        if let Some(state)=peer.state.as_ref() {
+            *selected=state["squads"].as_array().into_iter().flatten()
+                .filter(|s|s["controllable"]==true&&s["source_root"]==true)
+                .filter_map(|s|s["owner"]["squad_id"].as_i64()).collect();
+        }
+        *mode=None;*patrol_start=None;
+        return Ok(());
+    }
+    if selected.is_empty() {
+        return Err(invalid("select a live controllable friendly squad").into());
+    }
+    let target=match action {
+        HudAction::Attack=>Some(TargetMode::Attack),
+        HudAction::Circle=>Some(TargetMode::Circle),
+        HudAction::RightSwipe=>Some(TargetMode::RightSwipe),
+        HudAction::LeftSwipe=>Some(TargetMode::LeftSwipe),
+        HudAction::InAndOut=>Some(TargetMode::InAndOut),
+        HudAction::Guard=>Some(TargetMode::Guard),
+        HudAction::Patrol=>Some(TargetMode::Patrol),
+        HudAction::Mine=>Some(TargetMode::Mine),
+        HudAction::Heal=>Some(TargetMode::Heal),
+        HudAction::Retreat=>Some(TargetMode::Retreat),
+        HudAction::PointFire=>Some(TargetMode::Fire),
+        _=>None,
+    };
+    if let Some(target)=target {
+        *mode=Some(target);
+        *patrol_start=None;
+        peer.notice=action.hint().to_owned();
+        return Ok(());
+    }
+    *mode=None;
+    *patrol_start=None;
+    match action {
+        HudAction::Shooting=>{
+            *shooting_focus=first_selected(peer.state.as_ref(),selected)
+                .and_then(|s|s["shooting"].as_u64())
+                .unwrap_or(1).clamp(1,40) as u8;
+            *shooting_menu=!*shooting_menu;
+            return Ok(());
+        }
+        HudAction::StopFire if *held_fire_active=>{
+            if let Err(error)=peer.held_fire(selected,"End",None) {
+                let _=peer.socket.shutdown(std::net::Shutdown::Both);
+                peer.connected=false;
+                return Err(error);
+            }
+            *held_fire_active=false;*held_fire_target=None;
+            return Ok(());
+        }
+        HudAction::StopFire=>peer.order(selected,"fire",json!({"target":null})),
+        HudAction::Hold=>peer.order(selected,"support",json!({"action":"Hold"})),
+        HudAction::CeaseFire=>peer.order(selected,"cease_fire",json!({"cease_fire":true})),
+        HudAction::AttackOnSight=>peer.order(selected,"cease_fire",json!({"cease_fire":false})),
+        HudAction::Beacon=>peer.order(selected,"special",json!({"kind":"DropBeacon"})),
+        HudAction::Detonate=>peer.order(selected,"special",json!({"kind":"Detonate"})),
+        HudAction::Charge=>peer.order(selected,"special",json!({"kind":"Charge"})),
+        HudAction::MatchSpeed=>peer.order(selected,"match_speed",json!({"match_speed":true})),
+        HudAction::FreeSpeed=>peer.order(selected,"match_speed",json!({"match_speed":false})),
+        HudAction::Chase=>peer.order(selected,"chase",json!({"chasing":true})),
+        HudAction::LockOn=>{
+            let all_locked=selected.iter().all(|id|
+                peer.state.as_ref().is_some_and(|state|
+                    state["squads"].as_array().into_iter().flatten().any(|s|
+                        s["controllable"]==true&&s["locked_on"]==true&&
+                        s["owner"]["squad_id"].as_i64()==Some(*id))));
+            peer.order(selected,"lock_on",json!({"locked":!all_locked}))
+        }
+        _=>return Err(invalid("unrecognized native tactical action").into()),
+    }
 }
 
 fn source_numbered_squads(state: &Value) -> Vec<(u64, i64)> {
