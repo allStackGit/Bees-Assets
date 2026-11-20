@@ -914,6 +914,25 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
     ]
     optimizer_steps = sum(record["learner_metrics"]["optimizer_input_steps"]
                           for _, record in completed)
+    # Preserve measurement coverage: older round receipts did not
+    # distinguish grouped reinforcement admissions from ordinary policy
+    # ship deployments or reused physical Agent trajectories.
+    grouped_admissions = [
+        row["rollout_metrics"]["reinforcement_arrivals"]["group_agents"]
+        for _, row in completed
+        if isinstance(row["rollout_metrics"].get("reinforcement_arrivals"), dict)
+        and type(row["rollout_metrics"]["reinforcement_arrivals"].get("group_agents")) is int
+    ]
+    recycled_bindings = [
+        row["learner_metrics"]["recycled_policy_bindings"]
+        for _, row in completed
+        if type(row["learner_metrics"].get("recycled_policy_bindings")) is int
+    ]
+    ungrouped_decisions = [
+        row["learner_metrics"]["capture_ungrouped_policy_decisions"]
+        for _, row in completed
+        if type(row["learner_metrics"].get("capture_ungrouped_policy_decisions")) is int
+    ]
     synchronized_gpu_rounds = [
         (number, record["learner_metrics"])
         for number, (_, record) in enumerate(completed, 1)
@@ -1043,6 +1062,17 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         **({"curriculum": stage_report} if stage_report is not None else {}),
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
+        **({"native_policy_lifecycle": {
+            "scope": "verified_source_controller_and_group_trajectory_events",
+            "completed_rounds": len(completed),
+            "rounds_with_group_admissions": len(grouped_admissions),
+            "grouped_reinforcement_admissions_measured": sum(grouped_admissions),
+            "rounds_with_recycled_bindings": len(recycled_bindings),
+            "recycled_agent_binding_trajectories_measured": sum(recycled_bindings),
+            "rounds_with_ungrouped_decisions": len(ungrouped_decisions),
+            "ungrouped_policy_decisions_excluded_from_ppo_measured":
+                sum(ungrouped_decisions),
+        }} if grouped_admissions or recycled_bindings or ungrouped_decisions else {}),
         **({"native_mission_policy_features": {
             "rounds_with_collector_observations": len(measured_observations),
             "total_rounds": len(completed),
