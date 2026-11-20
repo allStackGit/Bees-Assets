@@ -220,22 +220,35 @@ async function stage(base,env,root,name,entry) {
             !fs.existsSync(path.join(temporary,'Ants-MAPOCA','pyproject.toml')))
             throw Error('TinyBrains release has no simulation package.');
         if(name==='tinybrains') {
-            // Git archive deliberately omits the separately pinned official
-            // engine, CLI, and upstream baselines installed during enrollment.
-            // Reuse that approved local dependency without copying private
-            // experiments, logs, training history, or Git metadata.
-            const source=env.EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT;
-            if(!source||!fs.existsSync(path.join(source,'upstream','ants','baselines')))
-                throw Error('Approved original TinyBrains upstream baseline is absent.');
+            // The coordinator packages both exact upstream source commits and
+            // the SHA-256-checked official 0.5.0 CLI for both platforms. No
+            // worker-side Git clone, GitHub account or simulator install step.
             const project=path.join(temporary,'Ants-MAPOCA');
-            for(const relative of ['tools','upstream']) {
-                const from=path.join(source,relative),to=path.join(project,relative);
-                if(!fs.existsSync(from))throw Error('Pinned TinyBrains '+relative+' is missing.');
-                fs.cpSync(from,to,{recursive:true,force:false,
-                    filter:file=>!file.split(path.sep).some(part=>
-                        ['.git','results','.results','Demonstrations','Logs',
-                            'TrainingHistory~'].includes(part))});
-            }
+            if(!fs.existsSync(path.join(project,'upstream','ants','baselines'))||
+                !fs.existsSync(path.join(project,'upstream','ants-starter'))||
+                !fs.existsSync(path.join(project,'downloads','SHA256SUMS')))
+                throw Error('Published TinyBrains bundle has no pinned upstream engines.');
+            const archiveName=process.platform==='win32'
+                ?'tinybrains-x86_64-pc-windows-msvc.zip'
+                :'tinybrains-x86_64-unknown-linux-gnu.tar.gz';
+            const archiveFile=path.join(project,'downloads',archiveName);
+            const sums=fs.readFileSync(path.join(project,'downloads','SHA256SUMS'),'utf8');
+            const lines=sums.split(/\r?\n/).filter(line=>line.trim().endsWith(' '+archiveName));
+            if(lines.length!==1||!HASH.test(lines[0].trim().split(/\s+/)[0]))
+                throw Error('Pinned official TinyBrains CLI checksum missing.');
+            const wanted=lines[0].trim().split(/\s+/)[0];
+            const actual=crypto.createHash('sha256')
+                .update(fs.readFileSync(archiveFile)).digest('hex');
+            if(actual!==wanted)throw Error('Pinned TinyBrains engine checksum mismatch.');
+            const engineDir=path.join(project,'tools','tinybrains-0.5.0');
+            fs.mkdirSync(engineDir,{recursive:true,mode:0o700});
+            const tar=process.platform==='win32'?'tar.exe':'tar';
+            exec(tar,[process.platform==='win32'?'-xf':'-xzf',
+                archiveFile,'-C',engineDir]);
+            const engine=path.join(engineDir,process.platform==='win32'
+                ?'tinybrains.exe':'tinybrains');
+            if(!fs.existsSync(engine))
+                throw Error('Pinned TinyBrains CLI does not contain the approved executable.');
         }
         fs.writeFileSync(path.join(temporary,'.verified-'+entry.sha256),'\n',{mode:0o600});
         fs.renameSync(temporary,directory);
@@ -503,11 +516,11 @@ async function main(argv=process.argv.slice(2)) {
             !Array.isArray(manifest.pending_native_jobs)||
             !['defer','override'].includes(manifest.mode))
             throw Error('Invalid authenticated Hub software manifest.');
-        const installed=new Set((env.EXPERIMENT_HUB_WORKER_PROJECTS||'').split(','));
+        // The authenticated coordinator manifest is an allowlist of
+        // machine-requested components, not a frozen enrollment selection.
         const plan={};let dirty=false,baselineSaved=false;
         for(const [name,entry] of Object.entries(manifest.components)) {
-            if(!['worker','tinybrains','courier','bees'].includes(name)||
-                (name!=='worker'&&!installed.has(name)))continue;
+            if(!['worker','tinybrains','courier','bees'].includes(name))continue;
             validRelease(entry,name);
             const baseline=active[name]?.version||initialVersion(root,name,env);
             if(baseline===entry.version) {
