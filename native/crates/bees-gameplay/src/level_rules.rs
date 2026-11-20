@@ -13,6 +13,7 @@ use std::num::NonZeroU32;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{
     CombatEvent, CombatWorld, CombatWorldError, CombatWorldRecoveryOwnersCheckpoint,
+    CombatRecoveryView,
     NativeAutomaticWeaponContext, NativeAutomaticWeaponInputs,
 };
 use bees_sim::combat_perception_bridge::CombatPerceptionError;
@@ -961,11 +962,6 @@ impl<M, A> NativeLevelState<M, A> {
         if checkpoint.schema_version != 4 {
             return Err(NativeLevelRecoveryError::InvalidVersion);
         }
-        if checkpoint.held_fire_ships.values().flatten().any(|&id|
-            id <= 0 || self.combat.ship(id).is_none()
-        ) {
-            return Err(NativeLevelRecoveryError::HeldFire);
-        }
         let dialogue = match (
             self.campaign_dialogue.as_ref(), checkpoint.campaign_dialogue,
         ) {
@@ -981,6 +977,11 @@ impl<M, A> NativeLevelState<M, A> {
         // commits any of its independent event or decision owners.
         let staged_combat = self.combat.prepare_recovery_owners(checkpoint.combat)
             .map_err(NativeLevelRecoveryError::Combat)?;
+        if checkpoint.held_fire_ships.values().flatten().any(|&id|
+            id <= 0 || staged_combat.ship(id).is_none()
+        ) {
+            return Err(NativeLevelRecoveryError::HeldFire);
+        }
         let staged_events = self.events.prepare_recovery_owners(
             checkpoint.events, &staged_combat, completed_ticks,
         ).map_err(NativeLevelRecoveryError::Events)?;
