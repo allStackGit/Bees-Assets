@@ -582,6 +582,13 @@ async function main(argv=process.argv.slice(2)) {
                 if(fs.existsSync(replacement))
                     save(path.join(root,'Update','experiment_hub_worker_updater.js'),
                         fs.readFileSync(replacement));
+                if(process.platform==='win32') {
+                    const installer=path.join(changes.worker,'Training',
+                        'experiment_hub_worker_install.cmd');
+                    if(fs.existsSync(installer))
+                        save(path.join(root,'Update','experiment_hub_worker_install.cmd'),
+                            fs.readFileSync(installer));
+                }
             }
         }catch(error) {
             for(const item of Object.values(plan))
