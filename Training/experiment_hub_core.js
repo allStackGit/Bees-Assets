@@ -1971,6 +1971,26 @@ class ExperimentHub {
     machineUpdatePolicy(machineId) {
         return this.state.machine_update_policies?.[machineId]||'defer';
     }
+    requestMachineSoftware(value) {
+        if(!object(value)||value.confirm_install!==true||
+            !ID.test(String(value.machine_id||''))||
+            !Array.isArray(value.projects)||value.projects.length<1||
+            value.projects.length>2||
+            value.projects.some(p=>!['tinybrains','courier'].includes(p))||
+            new Set(value.projects).size!==value.projects.length)
+            throw Error('Choose one or two approved simulation releases and confirm installation.');
+        const machine=this.snapshot().machines.find(m=>m.id===value.machine_id);
+        if(!machine||machine.status!=='connected'||machine.agent_enrolled!==true||
+            machine.local_executor_enabled!==true)
+            throw Error('Simulation installation needs a connected enrolled native worker.');
+        const next=copy(this.state);
+        next.machine_software_requests=next.machine_software_requests||{};
+        const projects=new Set(next.machine_software_requests[value.machine_id]||[]);
+        for(const project of value.projects)projects.add(project);
+        next.machine_software_requests[value.machine_id]=[...projects];
+        this.commit(next);
+        return {machine_id:value.machine_id,projects:[...projects],requested:true};
+    }
     configureMachineUpdate(value) {
         if(!object(value)||!ID.test(String(value.machine_id||''))||
             !this.state.machines.some(machine=>machine.id===value.machine_id)||
@@ -3175,6 +3195,17 @@ class ExperimentHub {
         job.assigned_machine_id=lease.machine_id;
         job.assigned_at=now();
         job.status_reason='Hub coordination capacity claimed; execution still blocked.';
+        // The approved coordinator claim is also a request to prepare this
+        // simulation on the selected machine, without launching any job.
+        const component=['tinybrains','tinybrains_rollout'].includes(job.project_id)
+            ?'tinybrains':['courier','courier_lineage'].includes(job.project_id)
+                ?'courier':null;
+        if(component) {
+            next.machine_software_requests=next.machine_software_requests||{};
+            next.machine_software_requests[machineId]=[...new Set([
+                ...(next.machine_software_requests[machineId]||[]),component,
+            ])];
+        }
         return lease;
     }
     moveJobClaim(value) {

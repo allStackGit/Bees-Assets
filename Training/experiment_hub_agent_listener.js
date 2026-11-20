@@ -6,7 +6,7 @@ const http=require('node:http');
 const net=require('node:net');
 const os=require('node:os');
 const {ArtifactMirror,MAX_CHUNK}=require('./experiment_hub_artifact_sync');
-const {bootstrap}=require('./experiment_hub_worker_bootstrap');
+const {bootstrap,keyFile}=require('./experiment_hub_worker_bootstrap');
 const AGENT_HOST='127.0.0.1';
 const AGENT_PORT=7149;
 // A heartbeat includes machine/lease reports beyond the separately
@@ -62,10 +62,22 @@ function approvedReleaseProjects(hub,id) {
     // names refer to the shared simulation source shipped to those roles.
     const live=hub.agentReports.get(id)?.installed_projects;
     const selected=hub.state.machines.find(m=>m.id===id)?.bootstrap_projects;
-    const projects=new Set(live||selected||[]);
+    const projects=new Set([...(live||[]),...(selected||[]),
+        ...(hub.state.machine_software_requests?.[id]||[])]);
+    // A machine-pinned, Hub-issued claim can prepare software before
+    // its native Start. The installed-adapter gate remains mandatory.
+    for(const job of hub.state.jobs)
+        if(job.assigned_machine_id===id&&job.lease_id&&
+            !job.capacity_released_at&&job.status!=='cancelled') {
+            if(['tinybrains','tinybrains_rollout'].includes(job.project_id))
+                projects.add('tinybrains');
+            if(['courier','courier_lineage'].includes(job.project_id))
+                projects.add('courier');
+        }
     if(projects.has('tinybrains_rollout'))projects.add('tinybrains');
     if(projects.has('courier_lineage'))projects.add('courier');
-    return [...projects];
+    return [...projects].filter(project=>
+        ['tinybrains','courier','bees'].includes(project));
 }
 function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null,bootstrapRoot=null) {
     if(bindHost!==AGENT_HOST&&!isTailnetIPv4(bindHost))
@@ -147,6 +159,18 @@ function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null,bootstrapRoo
                     stream.on('error',()=>res.destroy());
                     stream.pipe(res);
                     return;
+                }
+                if(req.method==='GET'&&
+                    pathname==='/api/hub/agent/releases/rollout-key'&&
+                    keys.length===2&&keys.includes('machine_id')&&
+                    keys.includes('component')&&bootstrapRoot) {
+                    const component=url.searchParams.get('component');
+                    if(!['tinybrains','courier'].includes(component)||
+                        !approvedReleaseProjects(hub,identity).includes(component))
+                        return respond(res,403,{error:'Simulation is not approved for this machine.'});
+                    // The private simulation key is obtained only over the
+                    // machine-token-authenticated agent port, never via UI.
+                    return respond(res,200,{component,key:keyFile(bootstrapRoot,component)});
                 }
                 if(req.method==='POST'&&pathname==='/api/hub/agent/releases/status'&&
                     keys.length===1) {

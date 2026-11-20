@@ -106,4 +106,4 @@ function bootstrap(hub,root,ip,request) {
     return {machine_id:peer.machineId,agent_token:enrolled.agent_token,
         rollout_keys:secrets};
 }
-module.exports={bootstrap,authenticatedPeer};
+module.exports={bootstrap,authenticatedPeer,keyFile};
