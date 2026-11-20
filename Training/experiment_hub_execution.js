@@ -235,7 +235,7 @@ class LocalExecution {
             }
             if(!observed)observed={state:'unverified'};
         }
-        const state=['launch_requested','running','stop_requested','finished','failed','stopped']
+        let state=['launch_requested','running','stop_requested','finished','failed','stopped']
             .includes(observed.state)?observed.state:'unverified';
         if(!diagnostic && typeof observed.diagnostic==='string')
             diagnostic=observed.diagnostic.slice(0,220);
@@ -278,6 +278,32 @@ class LocalExecution {
         const ownsArtifacts=owned&&owned.lease_id===lease.id&&owned.project_id===job.project_id&&
             (owned.artifact_lineage_root_id||owned.job_id)===
                 (job.artifact_lineage_root_id||job.id);
+        // A native collector can exit zero after writing the physical World
+        // but before a verified training bundle is durably published. Do
+        // not let an OS exit status release Hub resources or advance the
+        // optimizer barrier as if the collector had delivered experience.
+        // The observer can reconcile again after a delayed artifact appears.
+        if(state==='finished'&&job.project_id==='bees_native_collect') {
+            try {
+                const context=Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    frozen_parameters:structuredClone(job.frozen_parameters),
+                    ...(lease.gpu_bindings?.length===1
+                        ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
+                        :lease.gpu_bindings?.length===2
+                            ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
+                            :{}),
+                });
+                if(!ownsArtifacts||typeof localAdapter?.completion_ready!=='function'||
+                    await localAdapter.completion_ready(context)!==true)
+                    throw Error('No verified work-order-bound native collector bundle was published.');
+            }catch(error) {
+                state='unverified';
+                report.state=state;
+                report.diagnostic=('Native collector exit is not a verified delivered training bundle: '+
+                    String(error.message||error)).slice(0,220);
+            }
+        }
         if(ownsArtifacts&&(state==='running'&&lease.status==='acknowledged'||
             lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256)&&job.evaluation_stop&&
             supportsEvaluation(this.evaluationSuites,job)) {
