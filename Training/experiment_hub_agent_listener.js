@@ -89,6 +89,11 @@ function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null) {
                     return respond(res,200,{
                         components:releases.manifest(live?.installed_projects||[]),
                         mode:hub.machineUpdatePolicy(identity),
+                        pending_native_jobs:hub.state.jobs.filter(job=>
+                            job.assigned_machine_id===identity&&job.dispatch_id&&
+                            !job.capacity_released_at&&
+                            !['finished','failed','stopped','cancelled'].includes(job.status))
+                            .map(job=>job.id),
                     });
                 }
                 if(req.method==='GET'&&pathname==='/api/hub/agent/releases/bundle'&&
