@@ -5150,6 +5150,7 @@ fn run_battle(
     let trace_output = output.filter(|_|
         recording_allowed && resume_cursor.as_ref().is_none_or(|cursor|
             cursor.recording.is_some()));
+    let mut policy_prefix_hasher: Option<NativeRecordedPrefixHasher> = None;
     let mut model = RolloutModel::default();
     if let (Some(path), Some(trace), Some((_, _, _, manifest_digest))) =
         (replay_inputs, playback.as_ref(), model_source.as_ref())
@@ -5272,7 +5273,19 @@ fn run_battle(
         }
         model.resident = Some(resident);
         if let Some(directory) = trace_output {
-            model.recorder = Some(PolicyActionRecorder::create(&directory.join("policy-actions.bin"))?);
+            let path = directory.join("policy-actions.bin");
+            if let Some(saved) = resume_cursor.as_ref()
+                .and_then(|cursor| cursor.recording.as_ref())
+            {
+                let prefix = saved.policy_actions.as_ref().ok_or_else(||
+                    invalid("recovered policy game lacks its committed action stream"))?;
+                let (file, hasher) = NativeRecordedPrefixHasher::recover(&path, prefix)?;
+                policy_prefix_hasher = Some(hasher);
+                model.recorder = Some(PolicyActionRecorder::resume(file));
+            } else {
+                model.recorder = Some(PolicyActionRecorder::create(&path)?);
+                policy_prefix_hasher = Some(NativeRecordedPrefixHasher::new());
+            }
         }
     }
     let mut sink = if let Some(snapshot) = &saved_host_checkpoint {
@@ -5313,7 +5326,7 @@ fn run_battle(
     host.set_timing_sample_period(timing);
     let recorded_inputs = trace_output.map(|directory| directory.join("player-inputs.jsonl"));
     let hivemind_start_checkpoint_sha256 = if recorded_inputs.is_some() &&
-        config.hivemind.is_some()
+        config.hivemind.is_some() && resume_cursor.is_none()
     {
         let bytes = fs::read(&checkpoint)?;
         let digest = format!("{:x}", Sha256::digest(&bytes));
@@ -5325,20 +5338,31 @@ fn run_battle(
         file.sync_all()?;
         Some(digest)
     } else { None };
+    let mut trace_prefix_hasher: Option<NativeRecordedPrefixHasher> = None;
     let mut input_trace = if let Some(path) = &recorded_inputs {
-        let mut trace = fs::OpenOptions::new().write(true).create_new(true)
-            .open(path)?;
-        writeln!(trace, "{}", json!({
-            "kind": "player_input_trace",
-            "schema_version": 5,
-            "hivemind_start_checkpoint_sha256": hivemind_start_checkpoint_sha256,
-            "run_id": config.run_id,
-            "run_config_sha256": config_digest,
-            "gameplay_config_sha256": gameplay_digest,
-            "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
-            "levels": trace_levels,
-        }))?;
-        Some(trace)
+        if let Some(saved) = resume_cursor.as_ref()
+            .and_then(|cursor| cursor.recording.as_ref())
+        {
+            let (file, hasher) =
+                NativeRecordedPrefixHasher::recover(path, &saved.input_trace)?;
+            trace_prefix_hasher = Some(hasher);
+            Some(file)
+        } else {
+            let mut trace = fs::OpenOptions::new().write(true).create_new(true)
+                .open(path)?;
+            writeln!(trace, "{}", json!({
+                "kind": "player_input_trace",
+                "schema_version": 5,
+                "hivemind_start_checkpoint_sha256": hivemind_start_checkpoint_sha256,
+                "run_id": config.run_id,
+                "run_config_sha256": config_digest,
+                "gameplay_config_sha256": gameplay_digest,
+                "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
+                "levels": trace_levels,
+            }))?;
+            trace_prefix_hasher = Some(NativeRecordedPrefixHasher::new());
+            Some(trace)
+        }
     } else { None };
     let mut replay_network = config.hivemind.as_ref()
         .filter(|_| playback.is_some())
@@ -5357,6 +5381,12 @@ fn run_battle(
                 .restore_recovery_checkpoint(saved.clone())?,
             (None, None) => {},
             _ => return Err(invalid("source HiveMind timer ownership differs from recovered native run").into()),
+        }
+        if let (Some(network), Some(saved)) = (network.as_mut(), cursor.recording.as_ref()) {
+            network.recorded_network_events = saved.network_events;
+            network.recorded_network_syncs = saved.network_syncs;
+            network.recorded_network_sync_wall_seconds =
+                saved.network_sync_wall_seconds;
         }
     }
     if remote_step_interval.is_some() && (config.levels.len() != 1 || playback.is_some()) {
