@@ -4,7 +4,8 @@ echo [Experiment Hub] Preparing the Windows worker installer...
 where powershell.exe >nul 2>&1
 if errorlevel 1 (
     echo [Experiment Hub] Windows PowerShell is required.
-    exit /b 1
+    set "HUB_WORKER_EXIT=1"
+    goto HUB_WORKER_DONE
 )
 set "HUB_WORKER_SELF=%~f0"
 set "HUB_WORKER_SCRIPT=%TEMP%\experiment-hub-worker-%RANDOM%-%RANDOM%.ps1"
@@ -12,12 +13,18 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command ^
  "$raw=[IO.File]::ReadAllText($env:HUB_WORKER_SELF); $tag=[regex]::Match($raw,'(?m)^:__EXPERIMENT_HUB_POWERSHELL_PAYLOAD__\r?\n'); if(-not $tag.Success){throw 'Embedded worker payload is missing.'}; $payload=$raw.Substring($tag.Index+$tag.Length); $tokens=$null; $errors=$null; $null=[System.Management.Automation.Language.Parser]::ParseInput($payload,[ref]$tokens,[ref]$errors); if($errors.Count){foreach($item in $errors){[Console]::Error.WriteLine($item)};exit 2}; $bytes=([System.Text.UTF8Encoding]::new($false)).GetBytes($payload); $stream=[IO.File]::Open($env:HUB_WORKER_SCRIPT,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None); try{$stream.Write($bytes,0,$bytes.Length)}finally{$stream.Dispose()}"
 if errorlevel 1 (
     echo [Experiment Hub] Installer extraction or PowerShell syntax validation failed.
-    exit /b 1
+    set "HUB_WORKER_EXIT=1"
+    goto HUB_WORKER_DONE
 )
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%HUB_WORKER_SCRIPT%" %*
 set "HUB_WORKER_EXIT=%ERRORLEVEL%"
 del /f /q "%HUB_WORKER_SCRIPT%" >nul 2>&1
-if not "%HUB_WORKER_EXIT%"=="0" echo [Experiment Hub] Installer ended with error %HUB_WORKER_EXIT%.
+:HUB_WORKER_DONE
+if "%HUB_WORKER_EXIT%"=="223" exit /b 0
+if not "%HUB_WORKER_EXIT%"=="0" echo [Experiment Hub] Installer failed, exit code %HUB_WORKER_EXIT%.
+if "%HUB_WORKER_EXIT%"=="0" echo [Experiment Hub] Installer finished successfully.
+echo [Experiment Hub] Review the result above. Press any key to close this window.
+pause >nul
 exit /b %HUB_WORKER_EXIT%
 :__EXPERIMENT_HUB_POWERSHELL_PAYLOAD__
 # One machine-local Hub agent for independent TinyBrains/Courier CPU collectors.
@@ -172,8 +179,27 @@ if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrat
         throw 'Run the self-contained CMD worker installer.'
     }
     Write-Host 'Requesting administrator permission to install the native worker...'
-    $elevated=Start-Process -FilePath $env:HUB_WORKER_SELF -Verb RunAs -PassThru -Wait
-    exit $elevated.ExitCode
+    # Forward explicit installer options, including a custom installation root.
+    # ShellExecute receives arguments as one quoted string; never evaluate
+    # user-provided option values as PowerShell or CMD instructions.
+    $forward=[System.Collections.Generic.List[string]]::new()
+    foreach($key in $PSBoundParameters.Keys) {
+        $value=$PSBoundParameters[$key]
+        if($value -is [System.Management.Automation.SwitchParameter]) {
+            if($value.IsPresent){$forward.Add("-$key")}
+        }else{
+            $text=[string]$value
+            if($text -match '["\r\n]'){throw "Unsupported character in installer option -$key."}
+            $forward.Add("-$key")
+            $forward.Add('"'+$text+'"')
+        }
+    }
+    $launch=@{FilePath=$env:HUB_WORKER_SELF;Verb='RunAs'}
+    if($forward.Count){$launch.ArgumentList=$forward.ToArray()}
+    Start-Process @launch | Out-Null
+    # This is only the unelevated handoff. Let the elevated CMD keep its
+    # own result visible; do not display a second completion prompt here.
+    exit 223
 }
 if(-not [IO.Path]::IsPathRooted($InstallRoot) -or $InstallRoot.StartsWith('\\')){
     throw 'InstallRoot must be an absolute local disk directory.'

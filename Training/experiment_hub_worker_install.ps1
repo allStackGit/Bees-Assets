@@ -150,8 +150,27 @@ if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrat
         throw 'Run the self-contained CMD worker installer.'
     }
     Write-Host 'Requesting administrator permission to install the native worker...'
-    $elevated=Start-Process -FilePath $env:HUB_WORKER_SELF -Verb RunAs -PassThru -Wait
-    exit $elevated.ExitCode
+    # Forward explicit installer options, including a custom installation root.
+    # ShellExecute receives arguments as one quoted string; never evaluate
+    # user-provided option values as PowerShell or CMD instructions.
+    $forward=[System.Collections.Generic.List[string]]::new()
+    foreach($key in $PSBoundParameters.Keys) {
+        $value=$PSBoundParameters[$key]
+        if($value -is [System.Management.Automation.SwitchParameter]) {
+            if($value.IsPresent){$forward.Add("-$key")}
+        }else{
+            $text=[string]$value
+            if($text -match '["\r\n]'){throw "Unsupported character in installer option -$key."}
+            $forward.Add("-$key")
+            $forward.Add('"'+$text+'"')
+        }
+    }
+    $launch=@{FilePath=$env:HUB_WORKER_SELF;Verb='RunAs'}
+    if($forward.Count){$launch.ArgumentList=$forward.ToArray()}
+    Start-Process @launch | Out-Null
+    # This is only the unelevated handoff. Let the elevated CMD keep its
+    # own result visible; do not display a second completion prompt here.
+    exit 223
 }
 if(-not [IO.Path]::IsPathRooted($InstallRoot) -or $InstallRoot.StartsWith('\\')){
     throw 'InstallRoot must be an absolute local disk directory.'
