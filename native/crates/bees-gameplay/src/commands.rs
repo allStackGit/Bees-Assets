@@ -1101,7 +1101,16 @@ impl NativeSquadCommandDirector {
             StrategyReceipt::Accepted { owner, enemy_owner, selection } =>
                 (owner, enemy_owner, selection),
         };
-        if owner != squad.owner || !squad.valid() {
+        if owner != squad.owner || !squad.valid() ||
+            // Source Socket.CanApplySquadResponse rejects an already-dead
+            // squad even when its saved identity still matches. Physical
+            // retirement may precede network response delivery in the
+            // same tick; it must not fail the Level or award an unexecuted
+            // learned command. Partial losses remain valid squads.
+            squad.members.iter().all(|member|
+                world.ship(member.ship_id)
+                    .is_none_or(|ship| ship.vitals.is_dead()))
+        {
             return Ok(StrategyReceiptAction::DiscardReservations(vec![
                 selection.command_outcome_id,
                 selection.shooting_outcome_id,
