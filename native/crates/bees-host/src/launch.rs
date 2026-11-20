@@ -2240,14 +2240,17 @@ fn recover_native_quick_battle(
         if number.parse::<u64>().is_err() { continue; }
         let root = entry.path();
         let run = root.join("run");
-        if !run.join("native-host-checkpoint.json").is_file() { continue; }
+        let checkpoint = run.join("native-host-checkpoint.json");
         let saved_path = root.join("native-quick-battle-start.json");
-        if !saved_path.exists() { continue; }
-        if run.is_symlink() ||
+        if !checkpoint.exists() && !saved_path.exists() { continue; }
+        if run.is_symlink() || checkpoint.is_symlink() ||
             saved_path.is_symlink() ||
-            run.join("native-host-checkpoint.json").is_symlink()
+            (checkpoint.exists() && !checkpoint.is_file())
         {
-            return Err(invalid("native quick battle recovery path is a symlink").into());
+            return Err(invalid("native quick battle recovery path is unsafe").into());
+        }
+        if !saved_path.is_file() {
+            return Err(invalid("interrupted quick battle lacks its immutable start").into());
         }
         let saved = QuickBattleStart::load(&saved_path)?;
         if saved.source_config != start.source_config ||
@@ -2258,6 +2261,11 @@ fn recover_native_quick_battle(
         // any interrupted terminal replay footer without resimulating,
         // then skip that old run BEFORE comparing it to today's source.
         if terminal_recording::complete_committed_recording(&run)? { continue; }
+        if !checkpoint.is_file() {
+            return Err(invalid(
+                "interrupted quick battle lacks its first durable World checkpoint; refusing a replacement battle",
+            ).into());
+        }
         if saved.source_sha256 != start.source_sha256 {
             return Err(invalid(
                 "interrupted native battle cannot resume after its source configuration changed",
@@ -3711,15 +3719,16 @@ fn recover_generated_library_battle(
         let root = entry.path();
         let run = root.join("run");
         let checkpoint = run.join("native-host-checkpoint.json");
-        if !checkpoint.is_file() { continue; }
         let source = root.join("replay-source-run.json");
         let saved_path = root.join("native-quick-battle-start.json");
+        // A staged source alone is not a launched World, but a persisted
+        // start remains authoritative even when startup died pre-checkpoint.
+        if !checkpoint.exists() && !saved_path.exists() { continue; }
         if run.is_symlink() || checkpoint.is_symlink() ||
-            source.is_symlink() || saved_path.is_symlink()
+            source.is_symlink() || saved_path.is_symlink() ||
+            (checkpoint.exists() && !checkpoint.is_file())
         {
-            return Err(invalid(
-                "generated battle recovery path is a symlink",
-            ).into());
+            return Err(invalid("generated battle recovery path is unsafe").into());
         }
         // The saved launch mode is independent of its old scene file.
         // Do not reconcile the opposite (local/LAN) mode's recordings
@@ -3733,12 +3742,16 @@ fn recover_generated_library_battle(
         // its original file is missing or its archived contents changed,
         // the terminal receipt still owns the completed game's outcome.
         if terminal_recording::complete_committed_recording(&run)? { continue; }
-        // An unfinished checkpoint must NEVER be silently skipped because
-        // the archived source disappeared: that would start a new game
-        // instead of recovering the original physical World.
+        // Neither a missing source nor a missing first checkpoint can
+        // authorize the replacement of an already-started physical World.
         let saved = saved.ok_or_else(|| invalid(
             "interrupted generated battle has no owned immutable start archive",
         ))?;
+        if !checkpoint.is_file() {
+            return Err(invalid(
+                "interrupted generated battle lacks its first durable World checkpoint; refusing a replacement battle",
+            ).into());
+        }
         if !source.is_file() {
             return Err(invalid(
                 "interrupted generated battle lost its original source archive",
