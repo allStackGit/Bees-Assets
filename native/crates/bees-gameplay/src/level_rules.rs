@@ -635,6 +635,15 @@ pub struct NativeDecisionCadenceMeasurements {
     pub sync_calls: u64,
     /// Requests that needed to reconcile controller membership.
     pub roster_reconciliations: u64,
+    /// Actual physical controller admissions, not one per observation.
+    #[serde(default)]
+    pub controller_bindings: u64,
+    /// A new controller instance replacing one on the same living ship.
+    #[serde(default)]
+    pub controller_rebindings: u64,
+    /// Controllers removed from the due-action roster on death/unbind.
+    #[serde(default)]
+    pub controller_retirements: u64,
 }
 
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -774,22 +783,27 @@ impl NativeDecisionCadence {
         }
         // A stable controller roster changes no decision clock. Reconcile
         // only after authoritative bind/death transitions.
+        let before = self.bound_at_tick.len();
         self.bound_at_tick.retain(|&id, _|
             combat.policy_frame(id).is_some(),
         );
+        self.measurements.controller_retirements +=
+            (before - self.bound_at_tick.len()) as u64;
         for (ship_id, bind_revision) in combat.bound_policy_agent_bindings() {
-            let clock = self.bound_at_tick.entry(ship_id).or_insert(
-                PolicyBindingClock {
+            if let Some(clock) = self.bound_at_tick.get_mut(&ship_id) {
+                // A policy controller replaced on a living hull starts its
+                // own source DecisionRequester period at the bind tick.
+                if clock.revision != bind_revision {
+                    clock.tick = completed_ticks;
+                    clock.revision = bind_revision;
+                    self.measurements.controller_rebindings += 1;
+                }
+            } else {
+                self.bound_at_tick.insert(ship_id, PolicyBindingClock {
                     tick: completed_ticks,
                     revision: bind_revision,
-                }
-            );
-            // The ship might still be alive while its policy controller
-            // was replaced. A new controller begins its own decision
-            // period at this completed simulation tick.
-            if clock.revision != bind_revision {
-                clock.tick = completed_ticks;
-                clock.revision = bind_revision;
+                });
+                self.measurements.controller_bindings += 1;
             }
         }
         // For any future tick beyond the newest binding, the strict
