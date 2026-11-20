@@ -596,12 +596,17 @@ impl NativePolicyOnlyMetadata {
             let policy_agents = wave.policy_agents;
             if !wave.group_agents.is_empty() {
                 for (ship_id, side, group_id) in wave.group_agents {
-                    events.group_delivery_mut().ok_or_else(||
-                        invalid("Missing MA-POCA group for policy reinforcements".into()))?
+                    let team = events.group_delivery().and_then(|group| group.team_id(side))
+                        .ok_or_else(|| invalid("Missing MA-POCA team for policy reinforcements".into()))?;
+                    let binding_revision = self.live_deferred_policy_binding(
+                        world, ship_id, side, group_id, team,
+                    ).map_err(|error| invalid(error.into()))?;
+                    // Only the authentic live binding may register its
+                    // source group Agent. The journal's admission clock
+                    // and policy capture then share this revision.
+                    events.group_delivery_mut().expect("validated source group")
                         .register_agent(side, group_id)
                         .map_err(|error| invalid(format!("Policy reinforcement group: {error:?}")))?;
-                    let binding_revision = world.policy_binding_revision(ship_id)
-                        .ok_or_else(|| invalid("Missing live deferred policy binding".into()))?;
                     events.record_policy_controller_admitted(
                         tick, ship_id, binding_revision, side, group_id,
                     ).map_err(|error| invalid(format!("Policy reinforcement admission: {error:?}")))?;
