@@ -271,9 +271,9 @@ if($Command -eq 'install' -and $hasEnrollment -and $existing) {
         -not (Test-Path -LiteralPath ([string]$configuration.NodePath) -PathType Leaf)) {
         throw 'Existing worker configuration does not match this root. No changes were made.'
     }
-    # A failed updater cannot self-replace while provisioning dependencies.
-    # Repair ONLY the updater code from an authenticated and SHA-256 verified
-    # worker release, preserving the agent enrollment and native service.
+    # Migrate the scheduled task to an independently verified, stable
+    # launcher. The broken previous updater cannot be trusted to self-repair.
+    # This never rotates enrollment or stops the running native agent.
     $storedUrl=[string]$saved['EXPERIMENT_HUB_URL']
     $urlIdentity=[regex]::Match($storedUrl,'^http://(100\.[0-9.]+):7149$')
     if($saved['EXPERIMENT_HUB_MACHINE_ID'] -cnotmatch '^[a-z][a-z0-9_-]{0,47}$' -or
@@ -284,40 +284,35 @@ if($Command -eq 'install' -and $hasEnrollment -and $existing) {
     $HubTailnetIp=$urlIdentity.Groups[1].Value
     Assert-TailnetIP $HubTailnetIp
     $Enrollment=[pscustomobject]@{agent_token=[string]$saved['EXPERIMENT_HUB_AGENT_TOKEN']}
-    $releaseName='Hub-Worker-Updater-Repair'
+    $releaseName='Hub-Bootstrap-Migration-'+[guid]::NewGuid().ToString('N')
     $releaseFolder=Join-Path $SourceRoot $releaseName
-    if(Test-Path -LiteralPath $releaseFolder){
-        throw 'Previous repair source present; refusing to overwrite unexpected files.'
-    }
-    $replacement=Join-Path (Split-Path -Parent $updater) (
-        'experiment_hub_worker_updater.'+[guid]::NewGuid().ToString('N')+'.new.js')
-    $backup=Join-Path (Split-Path -Parent $updater) (
-        'experiment_hub_worker_updater.'+[guid]::NewGuid().ToString('N')+'.backup')
+    $bootstrap=Join-Path $InstallRoot 'Update\experiment_hub_worker_update_bootstrap.js'
     try {
         $release=Install-HubRelease 'worker' $releaseName
-        $approved=Join-Path $release 'Training\experiment_hub_worker_updater.js'
+        $approved=Join-Path $release 'Training\experiment_hub_worker_update_bootstrap.js'
         if(-not(Test-Path -LiteralPath $approved -PathType Leaf)){
-            throw 'Authenticated Hub worker release lacks its updater script.'
+            throw 'Authenticated worker release lacks the independent updater bootstrap.'
         }
-        Copy-Item -LiteralPath $approved -Destination $replacement -ErrorAction Stop
-        & ([string]$configuration.NodePath) --check $replacement
-        Assert-Exit 'Validate authenticated worker updater script'
-        # File.Replace is an atomic NTFS operation. A task already running
-        # keeps its loaded code; the next invocation loads the repaired code.
-        [IO.File]::Replace($replacement,$updater,$backup,$true)
+        & ([string]$configuration.NodePath) --check $approved
+        Assert-Exit 'Validate authenticated worker update bootstrap'
+        if(Test-Path -LiteralPath $bootstrap){
+            if((Get-FileHash -LiteralPath $bootstrap -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $approved -Algorithm SHA256).Hash){
+                throw 'The installed stable update bootstrap differs; refusing to overwrite it.'
+            }
+        }else{
+            Copy-Item -LiteralPath $approved -Destination $bootstrap -ErrorAction Stop
+        }
     }finally {
-        foreach($item in @($replacement,$backup)){
-            if(Test-Path -LiteralPath $item){Remove-Item -LiteralPath $item -Force}
-        }
         if(Test-Path -LiteralPath $releaseFolder){
             Remove-Item -LiteralPath $releaseFolder -Recurse -Force
         }
     }
-    Install-UpdateTask ([string]$configuration.NodePath) $updater $InstallRoot
+    Install-UpdateTask ([string]$configuration.NodePath) $bootstrap $InstallRoot
     Start-ScheduledTask -TaskName 'Bees Experiment Hub Worker Updates'
     $existing.Refresh()
-    Write-Host "Worker setup completed; enrollment preserved. Agent service: $($existing.Status)."
-    Write-Host 'The verified updater was repaired and started. Simulation installation is pending.'
+    Write-Host "Worker infrastructure setup completed; enrollment preserved. Agent service: $($existing.Status)."
+    Write-Host 'The stable updater bootstrap is running; worker and simulations update independently.'
     return
 }
 if($Command -eq 'install' -and ($hasEnrollment -or $existing)){
@@ -497,9 +492,13 @@ $updateDir=Join-Path $InstallRoot 'Update'
 New-Item -ItemType Directory -Path $updateDir -Force | Out-Null
 $updater=Join-Path $updateDir 'experiment_hub_worker_updater.js'
 Copy-Item -LiteralPath (Join-Path $Training 'experiment_hub_worker_updater.js') -Destination $updater -Force
+$bootstrap=Join-Path $updateDir 'experiment_hub_worker_update_bootstrap.js'
+Copy-Item -LiteralPath (Join-Path $Training 'experiment_hub_worker_update_bootstrap.js') -Destination $bootstrap -Force
+& $node --check $bootstrap
+Assert-Exit 'Validate independent worker update bootstrap'
 & "$env:SystemRoot\System32\icacls.exe" $updateDir /grant 'NT AUTHORITY\SYSTEM:(OI)(CI)F' | Out-Null
 Assert-Exit 'Set updater service permissions'
-Install-UpdateTask $node $updater $InstallRoot
+Install-UpdateTask $node $bootstrap $InstallRoot
 Write-Host "Hub worker installed. Service: $ServiceName (automatic startup when -Start was selected)."
 Write-Host 'Simulation software is installed separately by Experiment Hub when required.'
 Write-Host 'Automatically enrolled via Tailscale; Hub Machines will display native capabilities.'
