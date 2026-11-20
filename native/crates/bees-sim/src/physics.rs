@@ -560,6 +560,15 @@ impl ShipBody {
         &self.collider.shape
     }
 
+    pub(crate) fn matches_source_geometry(&self, source: &Self) -> bool {
+        self.layer == source.layer &&
+        self.collider.shape == source.collider.shape &&
+        self.healing_zone.as_ref().map(|zone| &zone.shape) ==
+            source.healing_zone.as_ref().map(|zone| &zone.shape) &&
+        self.warp_zone.as_ref().map(|zone| &zone.shape) ==
+            source.warp_zone.as_ref().map(|zone| &zone.shape)
+    }
+
     /// Cached authored primary collider bounds of a live ship.
     /// Source Squad.GetCenterPoint uses the union of member bounds,
     /// not the average of ship positions. No new geometry or allocation.
@@ -816,6 +825,17 @@ impl ObstacleBody {
 
     pub fn shape(&self) -> &ShipShape {
         &self.collider.shape
+    }
+
+    pub(crate) fn matches_source_geometry(&self, source: &Self) -> bool {
+        self.layer == source.layer &&
+        self.collider.shape == source.collider.shape &&
+        self.proximity_layer == source.proximity_layer &&
+        self.proximity_collider.as_ref().map(|zone| &zone.shape) ==
+            source.proximity_collider.as_ref().map(|zone| &zone.shape) &&
+        self.clearance_layer == source.clearance_layer &&
+        self.clearance_collider.as_ref().map(|zone| &zone.shape) ==
+            source.clearance_collider.as_ref().map(|zone| &zone.shape)
     }
 
     /// Authored proximity is a distinct child trigger, not an enlarged

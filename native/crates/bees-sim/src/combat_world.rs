@@ -1815,10 +1815,24 @@ impl CombatWorld {
             snapshot.obstacles.len() < self.obstacles.len() ||
             physics.ships().iter().zip(&snapshot.ships)
                 .any(|(body, ship)| body.id != ship.entity_id) ||
+            // Only the originally constructed source hulls have a
+            // reference geometry here. Runtime offspring are validated
+            // from the same saved physical slots and spawn metadata.
+            physics.ships().iter().zip(self.physics.ships())
+                .any(|(restored, source)|
+                    !restored.matches_source_geometry(source)
+                ) ||
             physics.projectiles().iter().zip(&snapshot.projectiles)
                 .any(|(body, shot)| body.id != shot.entity_id) ||
             physics.obstacles().iter().zip(&snapshot.obstacles)
-                .any(|(body, obstacle)| body.id != obstacle.entity_id)
+                .any(|(body, obstacle)| body.id != obstacle.entity_id) ||
+            physics.obstacles().iter().zip(self.physics.obstacles())
+                .zip(&self.obstacles).any(|((restored, source), obstacle)|
+                    // Pool slots legitimately assume newly sampled
+                    // asteroid prefab shapes as their lifecycle advances.
+                    obstacle.kind != ObstacleKind::CollisionAsteroid &&
+                    !restored.matches_source_geometry(source)
+                )
         {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
