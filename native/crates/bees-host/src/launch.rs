@@ -4884,6 +4884,55 @@ fn run_battle(
     // model boundary. Count each physical episode revision exactly once.
     let mut counted_revisions = vec![None::<u64>; config.levels.len()];
     let mut next_model_update = 0usize;
+    if let Some(cursor) = &resume_cursor {
+        // This allocator is shared by every physical World and all Queen /
+        // Beacon minion admission callbacks; install it after host recovery,
+        // before any further simulation or player command can allocate.
+        next_id.store(cursor.next_squad_item_id, Ordering::Relaxed);
+        rounds = cursor.rounds;
+        completed_episodes = cursor.completed_episodes.clone();
+        counted_revisions = cursor.counted_revisions.clone();
+        next_model_update = cursor.next_model_update;
+        segment_start_round = cursor.segment_start_round;
+        segment_baseline = cursor.segment_baseline.clone();
+        segment_generation = cursor.segment_generation;
+        segment_manifest_sha256 = cursor.segment_manifest_sha256.clone();
+        next_status_round = cursor.next_status_round;
+        successful_world_steps = cursor.successful_world_steps;
+        successful_policy_rows = cursor.successful_policy_rows;
+        admission_snapshot_rows = cursor.admission_snapshot_rows;
+        admission_snapshot_frames = cursor.admission_snapshot_frames;
+        retirement_snapshot_rows = cursor.retirement_snapshot_rows;
+        retirement_snapshot_frames = cursor.retirement_snapshot_frames;
+        policy_boundary_capture_nanos = cursor.policy_boundary_capture_nanos;
+        parallel_physics_rounds = cursor.parallel_physics_rounds;
+        parallel_physics_direct_rounds = cursor.parallel_physics_direct_rounds;
+        stage_id_serialized_rounds = cursor.stage_id_serialized_rounds;
+        stage_id_serialized_arenas = cursor.stage_id_serialized_arenas;
+        peak_parallel_physics_workers = cursor.peak_parallel_physics_workers;
+        parallel_physics_worker_nanos = cursor.parallel_physics_worker_nanos;
+        map_border_entries = cursor.map_border_entries;
+        map_border_movement_stops = cursor.map_border_movement_stops;
+        map_border_override_skips = cursor.map_border_override_skips;
+        map_border_lethal_hits = cursor.map_border_lethal_hits;
+        map_border_lethal_kills = cursor.map_border_lethal_kills;
+        map_border_confinement_corrections = cursor.map_border_confinement_corrections;
+        map_border_velocity_clamps = cursor.map_border_velocity_clamps;
+        map_border_unfittable = cursor.map_border_unfittable;
+        map_border_missing_profiles = cursor.map_border_missing_profiles;
+        past_reinforcement_arrivals = cursor.past_reinforcement_arrivals;
+        past_reinforcement_idle_ticks_skipped = cursor.past_reinforcement_idle_ticks_skipped;
+        past_reinforcement_wakeup_scans = cursor.past_reinforcement_wakeup_scans;
+        past_queen_controllers = cursor.past_queen_controllers;
+        println!("{}", json!({
+            "kind": "native_host_recovered",
+            "run_id": config.run_id,
+            "rounds": rounds,
+            "next_squad_item_id": cursor.next_squad_item_id,
+            "completed_episodes": completed_episodes,
+            "policy_generation": segment_generation,
+        }));
+    }
     // Physical signatures are trace-only. Sample at 64-step intervals,
     // at the start of the next input boundary *after* any model reset,
     // never per physics step or on every idle graphical frame.
@@ -4899,6 +4948,47 @@ fn run_battle(
     let mut verified_physical_checkpoints = 0_u64;
     let mut verified_gameplay_checkpoints = 0_u64;
     'battle: loop {
+        if let Some(file) = &host_checkpoint_file {
+            // One stable boundary after the previous round's episode
+            // accounting, model transition, journal ACK and reinforcements.
+            // This includes the first unstarted round of a new incarnation.
+            let cursor = NativeBattleRecoveryCursor {
+                schema_version: 1,
+                run_id: config.run_id.clone(),
+                config_sha256: config_digest.clone(),
+                gameplay_sha256: gameplay_digest.clone(),
+                source_sha256: source_digests.clone(),
+                rounds, next_squad_item_id: next_id.load(Ordering::Relaxed),
+                completed_episodes: completed_episodes.clone(),
+                counted_revisions: counted_revisions.clone(),
+                next_model_update, segment_start_round,
+                segment_baseline: segment_baseline.clone(),
+                segment_generation,
+                segment_manifest_sha256: segment_manifest_sha256.clone(),
+                next_status_round,
+                successful_world_steps, successful_policy_rows,
+                admission_snapshot_rows, admission_snapshot_frames,
+                retirement_snapshot_rows, retirement_snapshot_frames,
+                policy_boundary_capture_nanos, parallel_physics_rounds,
+                parallel_physics_direct_rounds, stage_id_serialized_rounds,
+                stage_id_serialized_arenas, peak_parallel_physics_workers,
+                parallel_physics_worker_nanos, map_border_entries,
+                map_border_movement_stops, map_border_override_skips,
+                map_border_lethal_hits, map_border_lethal_kills,
+                map_border_confinement_corrections, map_border_velocity_clamps,
+                map_border_unfittable, map_border_missing_profiles,
+                past_reinforcement_arrivals, past_reinforcement_idle_ticks_skipped,
+                past_reinforcement_wakeup_scans, past_queen_controllers,
+            };
+            let saved = serde_json::to_value(cursor)
+                .map_err(|error| contextual("native run cursor encoding", error))?;
+            if let Err(error) = host.persist_recovery_checkpoint_with_launcher(file, saved) {
+                failed_window = Some(format!(
+                    "native host checkpoint could not be committed: {error:?}"
+                ));
+                break 'battle;
+            }
+        }
         if let Some(trace) = &mut input_trace {
             if (rounds == 0 || rounds % 64 == 0) &&
                 last_physical_checkpoint_round != Some(rounds)
