@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import http.client
+import ipaddress
 import json
 import math
 import os
@@ -36,31 +37,28 @@ def exclusive(path: Path):
         yield
 
 
-def targets(port: int, machine: str, suite: str, project: str) -> dict:
+def targets(port: int, machine: str, suite: str, project: str,
+            host: str = "127.0.0.1") -> dict:
     query = urlencode({"project_id": project, "machine_id": machine, "suite_id": suite})
-    # A remote worker needs only the restricted agent-only SSH tunnel.
-    # Never transmit its machine token on the privileged dashboard port,
-    # in a URL, or to a network interface other than local loopback.
+    if host != "127.0.0.1":
+        try:
+            address = ipaddress.IPv4Address(host)
+        except ipaddress.AddressValueError as exc:
+            raise ValueError("Remote evaluation requires a literal Tailscale IPv4 address.") from exc
+        if address not in ipaddress.IPv4Network("100.64.0.0/10") or port != 7149:
+            raise ValueError("Remote evaluation is restricted to a tailnet address on port 7149.")
+    elif port not in (7148, 7149):
+        raise ValueError("Local evaluation supports only Hub ports 7148 and 7149.")
     if port == 7148:
-        # Local co-located evaluators retain the historical dashboard path.
         endpoint = "/api/hub/evaluation/targets"
         headers = {}
-    elif 1 <= port <= 65535:
-        # The worker's local agent tunnel can use any available port
-        # (e.g. 17149), while the coordinator stays bound to 7149.
+    else:
         token = os.environ.get("EXPERIMENT_HUB_AGENT_TOKEN", "")
         if not re.fullmatch(r"[a-f0-9]{64}", token):
             raise ValueError("Restricted evaluator endpoint requires the enrolled machine token.")
         endpoint = "/api/hub/agent/evaluation/targets"
-        headers = {
-            "X-Hub-Agent-Token": token,
-            # The coordinator checks its own listener Host, not the local
-            # SSH-forwarded port (which may be 17149 on this worker).
-            "Host": "127.0.0.1:7149",
-        }
-    else:
-        raise ValueError("Invalid local evaluator port.")
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        headers = {"X-Hub-Agent-Token": token}
+    connection = http.client.HTTPConnection(host, port, timeout=10)
     try:
         connection.request("GET", f"{endpoint}?{query}", headers=headers)
         with connection.getresponse() as response:
@@ -71,7 +69,6 @@ def targets(port: int, machine: str, suite: str, project: str) -> dict:
         return {job["dispatch_id"]: job for job in jobs}
     finally:
         connection.close()
-
 
 def retain_dispatch_cursors(previous: dict, live: dict) -> dict:
     # Dispatch IDs are immutable across native restarts. Keep watermarks
@@ -421,7 +418,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
             flush_receipt(args, receipt_suite, pending, digest)
             save_cursor(state, {"suite_sha256": digest, "dispatches": prior["dispatches"]})
             return
-        live = targets(args.port, args.machine, suite_id, project)
+        live = targets(args.port, args.machine, suite_id, project, getattr(args, 'hub_host', '127.0.0.1'))
         cursor = retain_dispatch_cursors(prior["dispatches"], live)
         saved = {"suite_sha256": digest, "dispatches": cursor}
         # Persist a rotation order across calls; a newer checkpoint on one
@@ -621,7 +618,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
                                 "dispatches": prior["dispatches"]})
             return
 
-        target_sets = {sid: targets(args.port, args.machine, sid, project)
+        target_sets = {sid: targets(args.port, args.machine, sid, project, getattr(args, 'hub_host', '127.0.0.1'))
                        for sid, _ in ordered}
         expected_ids = set(by_id)
         common = set.intersection(*(set(items) for items in target_sets.values()))
