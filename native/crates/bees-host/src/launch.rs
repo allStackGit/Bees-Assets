@@ -2440,17 +2440,36 @@ fn run_set_saved_squad_tactics(
     effective.retain(|tactic| tactic.saved_squad_id != entry.saved_squad_id);
     effective.push(entry);
     let mut checked = 0usize;
+    let created = progress.created_squads_for_side(entry.side);
+    let purchases = progress.purchases_for_side(entry.side);
+    let authored = progress.authored_roster_for_side(entry.side);
     for battle in &catalog.battles {
-        if !battle.mission.as_ref().is_some_and(|mission| mission.player_side == entry.side) {
-            continue;
-        }
+        let Some(mission) = battle.mission.as_ref().filter(|mission|
+            mission.player_side == entry.side) else { continue };
+        let lost = if mission.persist_fleet_losses {
+            progress.lost_player_fleet_ids(entry.side)?
+        } else { HashSet::new() };
+        let deployed = purchases.iter().copied()
+            .filter(|ship| !lost.contains(&ship.fleet_ship_id) &&
+                ship.saved_squad_id > 0).collect::<Vec<_>>();
+        let surviving_authored = authored.iter().copied()
+            .filter(|(id, _, _)| !lost.contains(id)).collect::<Vec<_>>();
         for config in battle.configurations() {
             let scene_path = resolve(root, config).canonicalize()?;
             let mut scene = load_native_fleet_edit_scene(&scene_path)?;
-            scene.install_created_squads(entry.side, &progress.created_squads_for_side(entry.side))
+            // Use the exact order of run_battle: a changed SavedSquad
+            // preference must be valid for the final route-specific fleet,
+            // including transferred hulls, purchases and prior casualties.
+            scene.install_created_squads(entry.side, &created)
                 .map_err(|error| contextual("tactics created squad preflight", error))?;
             scene.apply_saved_squad_tactics(entry.side, &effective)
                 .map_err(|error| contextual("tactics native scene preflight", error))?;
+            scene.apply_authored_fleet_roster(entry.side, &surviving_authored)
+                .map_err(|error| contextual("tactics authored fleet preflight", error))?;
+            scene.install_purchased_ships(entry.side, &deployed, &lost)
+                .map_err(|error| contextual("tactics purchased fleet preflight", error))?;
+            scene.omit_killed_fleet_ships(entry.side, &lost)
+                .map_err(|error| contextual("tactics saved casualties preflight", error))?;
             scene.apply_saved_squad_matching_speeds(entry.side, &effective)
                 .map_err(|error| contextual("tactics matching-speed preflight", error))?;
             checked += 1;
