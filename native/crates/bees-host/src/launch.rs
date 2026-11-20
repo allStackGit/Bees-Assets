@@ -6438,6 +6438,16 @@ fn run_battle(
                 break;
             }
         }
+        // The first physical tick must not precede the first durable
+        // World/connection/launcher checkpoint. HiveMind setup may need
+        // several network polls before its Game ID and pending requests
+        // can be captured atomically. Continue that existing setup here
+        // without admitting player commands or stepping the simulation.
+        // The next iteration will commit round zero before gameplay.
+        if host_checkpoint_file.is_some() && checkpointed_round.is_none() {
+            std::thread::sleep(Duration::from_millis(1));
+            continue 'battle;
+        }
         // Both graphical and dedicated LAN hosts must withhold orders
         // until the original campaign briefing has finished. Only a
         // dedicated host needs remote acknowledgments to advance time.
