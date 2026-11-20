@@ -6449,7 +6449,9 @@ class ExperimentHub {
             status:waitingPredecessor?'waiting_predecessor':'waiting_adapter',
             status_reason:waitingPredecessor
                 ?'Prequeued stage; awaiting successful predecessor completion and capacity release.'
-                :'Queued; a separate machine claim and explicit native start authorization are required.',
+                :failedCollector
+                    ?'Failed collector replacement queued. Original-machine capacity and an explicit native Start are required; no process has been relaunched.'
+                    :'Queued; a separate machine claim and explicit native start authorization are required.',
             created_at:now(), cancelled_at:null,
         };
         const modelSourceBlock=nativeModelSourceBlock(next,job);
