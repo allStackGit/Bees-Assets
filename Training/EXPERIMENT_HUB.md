@@ -3088,13 +3088,24 @@ absence/timeout behavior on actual hosts.
 
 ## Not yet implemented
 
-The Machines service panel manages only the coordinator-local Linux
-systemd evaluators. Starting, stopping or refreshing evaluator services
-on a separately enrolled remote machine (including Windows SCM services)
-from the central Hub still needs an authenticated machine-local control
-protocol; read-only remote service health is implemented. Initial trusted
-host enrollment, worker keys and service installation also require local
-operator authorization rather than executing remote shell commands.
+The Machines service panel now also controls independently enrolled remote
+evaluator services through authenticated agent heartbeats. The operator can
+Start/Stop installed Linux timers, Restart a Linux timer, Run now on a Linux
+service, and Start/Stop an already installed Windows evaluator SCM service.
+Approved Linux hosts with a trusted TinyBrains or Courier adapter can use
+Set up to create missing frozen local suites and evaluator units using the
+same fixed local paths as the coordinator; TinyBrains Nano/Micro suites can
+be refreshed without changing historical evidence. No arbitrary command,
+file path or interpreter is transmitted by the dashboard. Remote approvals
+are durable one-use operations, dispatched at most once. Lost dispatch
+results require explicit service inspection and reconciliation, not replay.
+
+**Still required after a remote suite installation or reapproval:** the
+remote machine agent must safely restart before its trusted training adapter
+advertises the new suite identity. The central Hub does not yet restart
+remote agents. Trusted host enrollment, required worker keys, installed
+training backends, and Windows evaluator service installation likewise
+remain separately authorized host setup, not arbitrary remote shell commands.
 
 Production installation and qualification of project-specific adapters,
 real-machine Windows CUDA and Linux systemd/ROCm qualification,
