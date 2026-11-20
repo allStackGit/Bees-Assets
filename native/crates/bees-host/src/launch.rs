@@ -1060,19 +1060,26 @@ struct RunNetwork {
     recorded_network_events: u64,
     recorded_network_syncs: u64,
     recorded_network_sync_wall_seconds: f64,
+    run_identity: String,
 }
 
 impl RunNetwork {
     fn start(config: &HiveMindConfig, levels: &[LevelConfig], fixed_dt_by_level: &[f32],
         connection: &mut DurableHiveMindConnection, recovered_game_id: Option<i64>,
+        run_identity: &str,
     ) -> io::Result<Self>
     {
-        if config.reconnect_game_id.is_some() && recovered_game_id.is_some() &&
-            config.reconnect_game_id != recovered_game_id
+        // The connection ledger can accept the original Game ID before
+        // its first World checkpoint. Never launch another Game if a saved
+        // connection or launcher identifies a different original Game.
+        let accepted_game_id = connection.connection().setup_game_id(run_identity);
+        let game_id = recovered_game_id.or(config.reconnect_game_id)
+            .or(accepted_game_id);
+        if [recovered_game_id, config.reconnect_game_id, accepted_game_id]
+            .iter().flatten().any(|&candidate| Some(candidate) != game_id)
         {
-            return Err(invalid("recovered HiveMind Game ID conflicts with configured reconnection"));
+            return Err(invalid("HiveMind Game ID differs between original setup, source and recovered World"));
         }
-        let game_id = recovered_game_id.or(config.reconnect_game_id);
         let auth_ticket = config.auth_ticket_env.as_ref().map(|name|
             env::var(name).map_err(|_| invalid("configured HiveMind auth ticket environment variable is unavailable")))
             .transpose()?;
@@ -1092,6 +1099,7 @@ impl RunNetwork {
             scheduler, recorded_network_events: 0,
             recorded_network_syncs: 0,
             recorded_network_sync_wall_seconds: 0.0,
+            run_identity: run_identity.to_owned(),
         };
         let (kind, server_game_id) = game_id
             .map_or((SetupKind::Initial, 0), |game| (SetupKind::Reconnect, game));
@@ -1105,7 +1113,7 @@ impl RunNetwork {
         self.worker.send_setup(connection, SetupLevelIdentity {
             kind, level_id: self.levels[self.next_level], server_game_id,
             user_id: self.user_id, auth_ticket: self.auth_ticket.as_deref(), version: self.version,
-        }).map_err(|error| contextual("HiveMind Level setup", error))
+        }, &self.run_identity).map_err(|error| contextual("HiveMind Level setup", error))
     }
 
     // The shared scheduler is also available to other native host adapters.
@@ -1161,6 +1169,12 @@ impl RunNetwork {
                     if self.server_game_id.is_some_and(|old| old != server_game_id) {
                         return Err(invalid("HiveMind reconnect acknowledged a different server Game"));
                     }
+                    // Commit the authenticated server Game ID through the
+                    // SAME durable request-hash allocator before sending
+                    // another Level setup or advancing any physical World.
+                    host.connection_mut().accept_setup(
+                        &self.run_identity, request_hash, server_game_id,
+                    ).map_err(|error| contextual("durable HiveMind setup acceptance", error))?;
                     self.server_game_id = Some(server_game_id);
                     println!("{}", json!({"kind": "hivemind_setup", "request_hash": request_hash,
                         "game_id": server_game_id, "level_id": self.levels[self.next_level]}));
@@ -5893,6 +5907,7 @@ fn run_battle(
         .map(|settings| RunNetwork::start(
             settings, &config.levels, &source_fixed_dt_by_level, host.connection_mut(),
             resume_cursor.as_ref().and_then(|cursor| cursor.network_game_id),
+            &format!("{}:{}", config.run_id, config_digest),
         )).transpose()?;
     if let Some(cursor) = &resume_cursor {
         match (network.as_mut(), cursor.network_schedule.as_ref()) {
