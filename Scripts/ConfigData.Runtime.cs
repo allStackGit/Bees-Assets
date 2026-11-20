@@ -272,6 +272,7 @@ namespace Assets.Scripts
                     {
                         _userId = steamID.m_SteamID;
                         FirstTimePlaying = !HasPlayedBefore();
+                        Debug.Log($"Bees player identity: UserId={_userId.ToString(System.Globalization.CultureInfo.InvariantCulture)} Source=Steam");
                         return _userId;
                     }
                 }
@@ -301,6 +302,7 @@ namespace Assets.Scripts
 
             _userId = unchecked((ulong)(uint)storedUserId);
             FirstTimePlaying = !hadStoredIdentity;
+            Debug.Log($"Bees player identity: UserId={_userId.ToString(System.Globalization.CultureInfo.InvariantCulture)} Source=LocalFallback");
             return _userId;
         }
 
