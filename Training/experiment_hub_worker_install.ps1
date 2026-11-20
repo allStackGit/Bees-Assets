@@ -164,6 +164,25 @@ if($Command -eq 'install' -and $existing){
 if($Command -eq 'update' -and $existing -and $existing.Status -eq 'Running'){
     throw 'A running Hub agent may own live jobs. Stop the jobs through the Hub before updating and restarting.'
 }
+if($Command -eq 'update'){
+    # Reuse the installed project contract rather than guessing from
+    # installer defaults or moving an active machine's approved source.
+    $saved=@{}
+    foreach($entry in (Get-Content -LiteralPath $EnvFile)){
+        $pair=$entry.Split('=',2)
+        if($pair.Count -eq 2){$saved[$pair[0]]=$pair[1]}
+    }
+    if(-not $saved.ContainsKey('EXPERIMENT_HUB_WORKER_PROJECTS')){
+        throw 'Installed agent has no frozen project selection.'
+    }
+    $Projects=$saved['EXPERIMENT_HUB_WORKER_PROJECTS']
+    if(-not $TinyBrainsRoot){
+        $TinyBrainsRoot=$saved['EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT']
+    }
+    if(-not $CourierRoot){
+        $CourierRoot=$saved['EXPERIMENT_HUB_COURIER_PROJECT_ROOT']
+    }
+}
 
 if($Command -eq 'install'){
     Ensure-Winget 'git.exe' 'Git.Git'
