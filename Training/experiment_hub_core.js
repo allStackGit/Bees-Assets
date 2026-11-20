@@ -5989,6 +5989,12 @@ class ExperimentHub {
                 l.status==='released'&&l.released_at);
             if(!lease||!job.capacity_released_at)
                 throw Error('Every candidate must have released its verified native capacity.');
+            // The checkpoint publisher is not an independent candidate until
+            // every original distributed rank has matched its consensus
+            // proof and released its own machine-owned lease. Use the same
+            // gate as native model continuation and next-round collection.
+            const groupBlock=nativeOptimizerGroupBlock(this.state,job);
+            if(groupBlock)throw Error(groupBlock);
             return comparableCandidate(job);
         });
         const first=compared[0];
