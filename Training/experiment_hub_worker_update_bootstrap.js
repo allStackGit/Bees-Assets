@@ -82,6 +82,26 @@ function getJson(peer,route) {
         req.on('error',reject);
     });
 }
+function reportWorkerFailure(peer,entry,reason) {
+    if(!entry||!SHA.test(entry.version||'')||!HASH.test(entry.sha256||''))
+        return Promise.resolve();
+    const url=new URL('/api/hub/agent/releases/status',peer.base);
+    url.searchParams.set('machine_id',peer.id);
+    const payload=Buffer.from(JSON.stringify({
+        machine_id:peer.id,component:'worker',version:entry.version,
+        sha256:entry.sha256,status:'failed',message:String(reason).slice(0,240),
+    }));
+    return new Promise(resolve=>{
+        const req=http.request(url,{method:'POST',timeout:10000,
+            headers:{'x-hub-agent-token':peer.token,'content-type':'application/json',
+                'content-length':payload.length}},res=>{
+            res.resume();res.on('end',resolve);
+        });
+        req.on('timeout',()=>req.destroy());
+        req.on('error',()=>resolve());
+        req.end(payload);
+    });
+}
 function download(peer,entry,destination) {
     return new Promise((resolve,reject)=>{
         const url=new URL('/api/hub/agent/releases/bundle',peer.base);
@@ -217,6 +237,7 @@ async function main(argv=process.argv.slice(2)) {
         try{newCandidate=await releaseEngine(root,peer,worker);}
         catch(error){
             console.error('[update-bootstrap] Worker download or verification failed: '+error.message);
+            await reportWorkerFailure(peer,worker,error.message);
         }
     }
     if(newCandidate) {
@@ -227,6 +248,9 @@ async function main(argv=process.argv.slice(2)) {
                 JSON.stringify({version:worker.version,sha256:worker.sha256})+'\n');
             good={script:newCandidate,entry:worker};
             selected=newCandidate;
+        }else{
+            await reportWorkerFailure(peer,worker,
+                'Candidate infrastructure updater did not complete; retaining last-good engine.');
         }
     }
     if(!selected) {
