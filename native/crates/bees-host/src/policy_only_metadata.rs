@@ -234,7 +234,133 @@ pub struct NativePolicyOnlyMetadata {
     pub chase_measurements: NativePlayerChaseMeasurements,
 }
 
+/// Mutable mission and career ledgers resident in the authored source
+/// metadata. Geometry, model observations, FleetShip assets and pathfinding
+/// stay in the same native Level and are not copied into this checkpoint.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativePolicySourceLedgerCheckpoint {
+    schema_version: u32,
+    fleet: crate::fleet_inventory::NativeFleetInventoryCheckpoint,
+    exploration: BTreeMap<i32, TeamExplorationGrid>,
+    scripted_queues: Vec<scripted::NativeScriptedQueueState>,
+    scripted_counts: NativeScriptedQueueMeasurements,
+    scripted_retry_ticks: u64,
+    chase_elapsed_seconds: f32,
+    chase_measurements: NativePlayerChaseMeasurements,
+    navigation_worker_counts: NativeNavigationWorkerMeasurements,
+    reinforcement_idle_ticks_skipped: u64,
+    reinforcement_wakeup_scans: u64,
+}
+
+#[derive(Debug)]
+pub enum NativePolicySourceLedgerRestoreError {
+    InvalidVersion,
+    InvalidSide,
+    InvalidScriptedState,
+    InvalidTimer,
+    Fleet(crate::fleet_inventory::NativeFleetRestoreError),
+}
+
+pub struct NativePolicySourceLedgerPrepared {
+    fleet: NativeFleetInventory,
+    exploration: BTreeMap<i32, TeamExplorationGrid>,
+    scripted_queues: Vec<scripted::NativeScriptedQueueState>,
+    scripted_counts: NativeScriptedQueueMeasurements,
+    scripted_retry_ticks: u64,
+    chase_elapsed_seconds: f32,
+    chase_measurements: NativePlayerChaseMeasurements,
+    navigation_worker_counts: NativeNavigationWorkerMeasurements,
+    reinforcement_idle_ticks_skipped: u64,
+    reinforcement_wakeup_scans: u64,
+}
+
 impl NativePolicyOnlyMetadata {
+    /// One real Level's long-lived FleetShip and mission progress, with no
+    /// duplicate physical health or inferred command result.
+    pub fn source_ledger_checkpoint(&self) -> NativePolicySourceLedgerCheckpoint {
+        NativePolicySourceLedgerCheckpoint {
+            schema_version: 1,
+            fleet: self.fleet.checkpoint(),
+            exploration: self.sides.iter().map(|(&side, value)|
+                (side, value.exploration.clone())
+            ).collect(),
+            scripted_queues: self.scripted_queues.clone(),
+            scripted_counts: self.scripted_counts,
+            scripted_retry_ticks: self.scripted_retry_ticks,
+            chase_elapsed_seconds: self.chase_elapsed_seconds,
+            chase_measurements: self.chase_measurements,
+            navigation_worker_counts: self.navigation_worker_counts,
+            reinforcement_idle_ticks_skipped: self.reinforcement_idle_ticks_skipped,
+            reinforcement_wakeup_scans: self.reinforcement_wakeup_scans,
+        }
+    }
+
+    /// Stage before any World, FleetShip or Level owner is changed.
+    pub fn prepare_source_ledger_recovery(
+        &self, saved: NativePolicySourceLedgerCheckpoint,
+    ) -> Result<NativePolicySourceLedgerPrepared, NativePolicySourceLedgerRestoreError> {
+        use NativePolicySourceLedgerRestoreError as Error;
+        if saved.schema_version != 1 {
+            return Err(Error::InvalidVersion);
+        }
+        if saved.exploration.len() != self.sides.len() ||
+            saved.exploration.iter().any(|(&side, grid)|
+                !self.sides.contains_key(&side) || !grid.valid_recovery()
+            ) {
+            return Err(Error::InvalidSide);
+        }
+        let known_queues = self.scripted_queues.iter().map(|queue|
+            queue.owner
+        ).collect::<HashSet<_>>();
+        if saved.scripted_queues.iter().any(|queue|
+            !queue.valid_recovery() || !known_queues.contains(&queue.owner)
+        ) || {
+            let mut unique = HashSet::new();
+            saved.scripted_queues.iter().any(|queue|
+                !unique.insert(queue.owner)
+            )
+        } {
+            return Err(Error::InvalidScriptedState);
+        }
+        if !saved.chase_elapsed_seconds.is_finite() ||
+            saved.chase_elapsed_seconds < 0.0 ||
+            saved.scripted_retry_ticks == 0 {
+            return Err(Error::InvalidTimer);
+        }
+        let fleet = self.fleet.prepare_restore(saved.fleet).map_err(Error::Fleet)?;
+        Ok(NativePolicySourceLedgerPrepared {
+            fleet,
+            exploration: saved.exploration,
+            scripted_queues: saved.scripted_queues,
+            scripted_counts: saved.scripted_counts,
+            scripted_retry_ticks: saved.scripted_retry_ticks,
+            chase_elapsed_seconds: saved.chase_elapsed_seconds,
+            chase_measurements: saved.chase_measurements,
+            navigation_worker_counts: saved.navigation_worker_counts,
+            reinforcement_idle_ticks_skipped: saved.reinforcement_idle_ticks_skipped,
+            reinforcement_wakeup_scans: saved.reinforcement_wakeup_scans,
+        })
+    }
+
+    pub fn commit_source_ledger_recovery(
+        &mut self, staged: NativePolicySourceLedgerPrepared,
+    ) {
+        self.fleet = staged.fleet;
+        for (side, saved) in staged.exploration {
+            self.sides.get_mut(&side)
+                .expect("validated authored side").exploration = saved;
+        }
+        self.scripted_queues = staged.scripted_queues;
+        self.scripted_counts = staged.scripted_counts;
+        self.scripted_retry_ticks = staged.scripted_retry_ticks;
+        self.chase_elapsed_seconds = staged.chase_elapsed_seconds;
+        self.chase_measurements = staged.chase_measurements;
+        self.navigation_worker_counts = staged.navigation_worker_counts;
+        self.reinforcement_idle_ticks_skipped = staged.reinforcement_idle_ticks_skipped;
+        self.reinforcement_wakeup_scans = staged.reinforcement_wakeup_scans;
+    }
+
     /// Temporarily select an authenticated peer's authored player side.
     /// The host always clears this after the synchronous command completes.
     /// Source squad permission and live movement ownership still gate input.

@@ -204,7 +204,7 @@ impl NativeReinforcementGauges {
 /// Current episode's actual source Squad.CheckChase work. These counters
 /// are incremented only at the one-second source timer boundary, not on
 /// every fixed physics or inference step.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativePlayerChaseMeasurements {
     pub timer_callbacks: u64,
     pub eligible_squads: u64,
@@ -225,7 +225,7 @@ impl NativePlayerChaseMeasurements {
 
 /// Current episode's authored mission-queue work, never host-lifetime
 /// cumulative rates. Gauges and counters share one Level-owned lifetime.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeScriptedQueueMeasurements {
     pub active_queues: usize,
     pub pending_orders: usize,
@@ -311,7 +311,7 @@ impl NativeScriptedQueueMeasurements {
 /// Episode-local interactive navigation worker measurements. An unused
 /// synchronous navigation path reports zero workers; the separate canonical
 /// path completion count remains NativeLevelState.navigation_jobs_completed.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeNavigationWorkerMeasurements {
     pub launched: u64,
     pub completed: u64,
