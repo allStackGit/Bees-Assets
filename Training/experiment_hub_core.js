@@ -1960,6 +1960,11 @@ class ExperimentHub {
                 (typeof value.message!=='string'||value.message.length>250)))
             throw Error('Invalid worker software status.');
         this.authenticateAgent(value.machine_id,token);
+        const prior=this.state.machine_software?.[value.machine_id]?.[value.component];
+        if(prior?.status===value.status&&prior.version===value.version&&
+            prior.sha256===value.sha256&&
+            (prior.message||'')===(value.message||''))
+            return {accepted:true};
         const next=copy(this.state);
         next.machine_software=next.machine_software||{};
         next.machine_software[value.machine_id]=next.machine_software[value.machine_id]||{};
