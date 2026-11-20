@@ -5058,10 +5058,11 @@ fn run_battle(
     // Background path completion timing depends on operating-system
     // scheduling. Never claim a deterministic replayable player-input
     // trace for a run where asynchronous navigation can change route
-    // installation ticks.
-    let trace_output = output.filter(|_| (play || remote_step_interval.is_some()) &&
+    // installation ticks. Recorded gameplay can now checkpoint its synced
+    // transcript together with its World rather than losing recording.
+    let recording_allowed = (play || remote_step_interval.is_some()) &&
         replay_inputs.is_none() && navigation_workers.is_none() &&
-        config.model_updates.is_empty() && config.host_recovery_checkpoint.is_none());
+        config.model_updates.is_empty();
     // Offline replay reads the exact original run bytes for its identity,
     // but cannot checkpoint an action playback file as if it were a live
     // resident policy. Playback always creates a distinct output World.
@@ -5127,6 +5128,15 @@ fn run_battle(
             cursor.network_schedule.is_some() != config.hivemind.is_some() ||
             cursor.network_game_id.is_some() != config.hivemind.is_some() ||
             cursor.remote_play.is_some() != remote_step_interval.is_some() ||
+            cursor.recording.as_ref().is_some_and(|recording|
+                !recording_allowed ||
+                recording.policy_actions.is_some() != model_source.is_some() ||
+                recording.last_physical_checkpoint_round
+                    .is_some_and(|round| round > cursor.rounds) ||
+                [recording.trace_checkpoint_sync_wall_seconds,
+                 recording.trace_input_sync_wall_seconds,
+                 recording.network_sync_wall_seconds].iter().any(|seconds|
+                    !seconds.is_finite() || *seconds < 0.0)) ||
             config.hivemind.as_ref().is_some_and(|net|
                 net.reconnect_game_id.is_some() &&
                 net.reconnect_game_id != cursor.network_game_id)
@@ -5135,6 +5145,11 @@ fn run_battle(
         }
     }
 
+    // Historical host checkpoints predating a durable transcript recover
+    // the original World without fabricating the lost beginning of a replay.
+    let trace_output = output.filter(|_|
+        recording_allowed && resume_cursor.as_ref().is_none_or(|cursor|
+            cursor.recording.is_some()));
     let mut model = RolloutModel::default();
     if let (Some(path), Some(trace), Some((_, _, _, manifest_digest))) =
         (replay_inputs, playback.as_ref(), model_source.as_ref())
