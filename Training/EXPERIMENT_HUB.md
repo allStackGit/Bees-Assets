@@ -2479,6 +2479,58 @@ checkpoint identity checks, and review never re-arms automation.
 Editing the selected next-stage configuration during the competition
 invalidates its frozen revision and requires cancelling/replacing the plan.
 
+### Native Bees independent fixed-reference evaluation
+
+The existing Linux evaluator timer and Windows evaluator service also accept
+`bees_native`. Configure the local adapter's `evaluationRoot` and
+`evaluationSuites` to read its private receipts as for other Hub projects.
+The evaluator uses the **same** native `policy_rollout` binary and
+`native/tools/evaluate_policy.py` simulation/evaluation path; no training
+process or Unity runtime is started. On Linux use
+`experiment_hub_systemd.js evaluator --project bees_native` with the usual
+`--machine`, `--python`, `--suite`, `--artifact-root`, `--scratch`,
+`--receipt-root`, `--cpus`, `--ram-mb` and `--rollout-binary`. The Windows
+evaluator JSON uses `"project":"bees_native"` and `"rollout_binary"`, with
+the usual private installation and budget fields. CPU-only model inference
+is required; GPU-only opponents must not be advertised for this evaluator.
+
+Each installed `--suite` JSON has these required fields (the SHA-256 values
+are **real digests of the specified local files**, not placeholders to pass
+to the evaluator):
+
+```json
+{
+  "suite_id": "native_holdout",
+  "source_run_config": "/absolute/eval-run.json",
+  "source_run_config_sha256": "<actual SHA-256>",
+  "source_contract_sha256": "<native source contract SHA-256>",
+  "reference_manifest": "/absolute/initial-manifest.json",
+  "reference_manifest_sha256": "<actual SHA-256>",
+  "learner_slot": 0,
+  "learner_side": 1,
+  "policy_seed": 12345,
+  "physics_workers": 1,
+  "success_metric": "side_victories",
+  "trials": 100
+}
+```
+
+`trials` must equal the authored Level count times
+`episodes_per_world`; the source run must specify fixed Level seeds.
+For mission objective suites, `success_metric` may instead be
+`learner_mission_successes`, provided every episode has source-verified
+objective-side attribution. The reference manifest freezes **every
+non-learner policy slot** from the original opponent set. The installed
+learner manifest and final checkpoint are taken from the original
+Hub-owned publisher's `learner/` artifacts; the independent evaluator
+copies the verified checkpoint into its own workspace. The suite's
+comparison hash excludes local source/reference paths, but includes their
+pinned content SHA-256s, the native source-scene contract, seeds, policy
+side, and trial count. Multiple suites use the existing coordinated
+same-checkpoint batch worker. Reuse the native training source-contract
+command `python -B native/tools/native_training_artifacts.py
+/absolute/eval-run.json` to obtain `source_contract_sha256`.
+
 ### Independent evaluation stops for non-Bees jobs
 
 A draft can set an optional `evaluation_stop` alongside its adapter parameters.
