@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,6 +22,7 @@ import time
 from transfer_policy_inputs import import_inputs
 from native_bundle_receiver import download_input_archive, bundle_token
 from transfer_policy_bundle import checked_order
+from run_distributed_collector import acquire_collector_lease
 
 
 
@@ -50,8 +52,9 @@ def prior_pinned_input_archive(scratch, attempt, args):
     """
     if args.input_url is None or args.hub_job_id is None:
         return None
-    for previous in sorted(scratch.glob("native-portable-collector-*"), reverse=True):
-        if previous == attempt or previous.is_symlink() or not previous.is_dir():
+    candidates = [attempt, *sorted(scratch.glob("native-portable-collector-*"), reverse=True)]
+    for previous in candidates:
+        if previous.is_symlink() or not previous.is_dir():
             continue
         archive = previous / "issued-inputs.tar"
         order = previous / "inputs" / "orders.json"
@@ -113,6 +116,9 @@ def main():
         parser.error("--collector-id is required with --input-url")
     if args.hub_job_id is not None:
         if (args.collector_id is None or
+                re.fullmatch(r"[0-9a-f]{64}", str(args.expected_collection_id or "")) is None or
+                re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                             str(args.hub_job_id)) is None or
                 args.bundle_inbox is None or
                 args.cpu_quota is None or args.cpu_quota < 1 or
                 not all(value is not None for value in (
@@ -146,7 +152,19 @@ def main():
 
     transport_token = bundle_token(args.token_file) if args.token_file else None
     started = time.perf_counter()
-    attempt = Path(tempfile.mkdtemp(prefix="native-portable-collector-", dir=scratch))
+    if args.hub_job_id is not None:
+        # A Hub restart must reuse the original imported source directory:
+        # run.json and model-store paths are part of each shard's immutable
+        # recovery contract. Fresh mkdtemp breaks that contract even when
+        # the uploaded source archive is byte-for-byte identical.
+        attempt = scratch / f"native-portable-collector-{args.expected_collection_id}"
+        if attempt.is_symlink():
+            raise ValueError("portable collector recovery directory cannot be a symlink")
+        attempt.mkdir(exist_ok=True)
+        lease = acquire_collector_lease(attempt)
+    else:
+        attempt = Path(tempfile.mkdtemp(prefix="native-portable-collector-", dir=scratch))
+        lease = None
     inputs = attempt / "inputs"
     try:
         input_archive = args.input_archive
@@ -169,7 +187,8 @@ def main():
                 print(json.dumps(received, sort_keys=True), flush=True)
         try:
             imported = import_inputs(input_archive, inputs,
-                                     args.policy_worker, args.python, args.collector_id)
+                                     args.policy_worker, args.python, args.collector_id,
+                                     reuse_existing=args.hub_job_id is not None)
         except (ValueError, OSError, EOFError, tarfile.TarError):
             if previous_archive is None:
                 raise
@@ -183,7 +202,8 @@ def main():
             )
             print(json.dumps(received, sort_keys=True), flush=True)
             imported = import_inputs(input_archive, inputs,
-                                     args.policy_worker, args.python, args.collector_id)
+                                     args.policy_worker, args.python, args.collector_id,
+                                     reuse_existing=args.hub_job_id is not None)
         print(json.dumps(imported, sort_keys=True), flush=True)
         if args.hub_job_id is not None:
             orders, job = checked_order(inputs / "orders.json", args.collector_id)
@@ -249,9 +269,10 @@ def main():
         if transport_token is not None:
             env["BEES_NATIVE_BUNDLE_TOKEN"] = transport_token
         subprocess.run(command, check=True, env=env)
-        # Native collection receipt and uploaded archive are now durable.
-        # The input checkpoint copy is a disposable staging artifact only.
-        shutil.rmtree(attempt)
+        # Standalone staging is disposable; Hub staging retains its original
+        # paths for a rearmed job or a lost completion acknowledgement.
+        if args.hub_job_id is None:
+            shutil.rmtree(attempt)
         print(json.dumps({
             "kind": "native_portable_collector_completed",
             "collector_id": imported["collector_id"],
@@ -267,6 +288,9 @@ def main():
             "attempt_directory": str(attempt),
         }, sort_keys=True), flush=True)
         raise
+    finally:
+        if lease is not None:
+            lease.close()
 
 
 if __name__ == "__main__":
