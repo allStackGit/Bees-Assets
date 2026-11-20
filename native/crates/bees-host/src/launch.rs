@@ -7090,8 +7090,17 @@ fn run_battle(
             queen_controllers.merge(world.state.metadata.queen_controller_measurements);
         }
     }
+    // Preserve the same physical terminal result as the authenticated
+    // multiplayer wire. A process can die after this immutable commit but
+    // before the peer receives its transient terminal notification.
+    let remote_terminal_receipt = remote.as_ref().and_then(|_| host.render_world(0))
+        .and_then(|view|
+            bees_host::remote_play::NativeRemotePlay::authoritative_battle_receipt(&view));
+    let remote_session_id = remote.as_ref().map(|server| server.session_id().to_owned());
     let mut final_summary = json!({
         "kind": "run_final",
+        "remote_session_id": remote_session_id,
+        "remote_terminal_receipt": remote_terminal_receipt,
         "source_scene_template_cache": {
             "distinct_source_documents": unique_source_documents,
             "distinct_parsed_layouts": unique_source_templates,
@@ -7418,6 +7427,7 @@ fn run_battle(
                         "final_physical_worlds", "final_gameplay_worlds",
                         "campaign_outcome", "campaign_fleet", "campaign_squads",
                         "campaign_banked_minerals",
+                        "remote_session_id", "remote_terminal_receipt",
                     ];
                     if FIELDS.iter().any(|&field|
                         committed.get(field) != final_summary.get(field)) ||
