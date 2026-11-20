@@ -391,10 +391,9 @@ const MAX_SYNC_BYTES: usize = 256 * 1024;
 const MAX_RECORD_BYTES: u64 = 64 * 1024 * 1024;
 
 impl DurableDiagnosticNotifications {
-    /// Never append to an existing run or overwrite another incarnation.
-    /// A restarted rollout cannot reconstruct its previous in-memory world
-    /// from this log, so accidental reuse must fail rather than duplicate
-    /// event identities.
+    /// Fresh runs must not append to an old incarnation. Recovery uses
+    /// open_existing only after the complete host checkpoint was loaded
+    /// and the original journal was fingerprinted.
     pub fn create_new(path: &Path, run_id: String) -> io::Result<Self> {
         if run_id.trim().is_empty() {
             return Err(io::Error::new(
@@ -506,6 +505,14 @@ impl DurableDiagnosticNotifications {
             checkpoint.journal_bytes != self.file.metadata()?.len() ||
             checkpoint.journal_sha256 !=
                 <[u8; 32]>::from(self.journal_digest.clone().finalize()) ||
+            serde_json::to_value(&checkpoint.evaluation_contexts)
+                .map_err(io::Error::other)? !=
+                serde_json::to_value(&self.evaluation_contexts)
+                    .map_err(io::Error::other)? ||
+            serde_json::to_value(&checkpoint.measurements)
+                .map_err(io::Error::other)? !=
+                serde_json::to_value(&self.measurements)
+                    .map_err(io::Error::other)? ||
             !self.pending.is_empty() || !self.prepared.is_empty() ||
             !self.pending_prepared.is_empty() || self.policy_capture.is_some() ||
             self.unavailable
