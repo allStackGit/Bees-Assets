@@ -234,8 +234,8 @@ impl Peer {
 /// longer exist in this process, and the immutable run_final is the owner.
 pub struct NativeArchivedBattleReceipt {
     pub session_id: String,
-    /// Player sides authenticated in the ORIGINAL committed battle, not
-    /// merely sides for which the new LAN host has a credential.
+    /// Player sides authorized by the ORIGINAL committed host, not merely
+    /// sides for which the replacement host has a credential.
     pub authorized_sides: Vec<i32>,
     /// Old receipts predate the side list. Their original checkpoint
     /// already binds the COMPLETE token map; only exact matching
@@ -468,9 +468,9 @@ impl NativeRemotePlay {
         &self.host_session_id
     }
 
-    /// Persist original player-side membership next to the authoritative
-    /// final receipt; later hosts must not invent earlier participants.
-    pub fn authenticated_sides(&self) -> Vec<i32> {
+    /// Persist player sides authorized by the original host configuration.
+    /// This grants receipt access, not proof that a side connected or won.
+    pub fn authorized_sides(&self) -> Vec<i32> {
         let mut sides = self.side_tokens.keys().copied().collect::<Vec<_>>();
         sides.sort_unstable();
         sides
