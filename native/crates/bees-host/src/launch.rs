@@ -1465,6 +1465,11 @@ struct CampaignReplaySetup {
     kind: String,
     source_config: PathBuf,
     source_config_sha256: String,
+    // A recovered World must bind to the exact career projection that
+    // purchased, lost and awarded its original physical FleetShips.
+    // Historical replay-only setups intentionally have no such digest.
+    #[serde(default)]
+    career_sha256: Option<String>,
     campaign_id: String,
     mission_id: String,
     player_side: i32,
@@ -1487,6 +1492,7 @@ impl CampaignReplaySetup {
             kind: "native_campaign_replay_setup".to_owned(),
             source_config_sha256: format!("{:x}", Sha256::digest(fs::read(&source)?)),
             source_config: source,
+            career_sha256: None,
             campaign_id: mission.campaign_id.to_owned(),
             mission_id: mission.mission_id.to_owned(),
             player_side: mission.player_side,
@@ -1515,6 +1521,28 @@ impl CampaignReplaySetup {
             return Err(invalid("recorded campaign source configuration changed").into());
         }
         Ok(setup)
+    }
+
+    fn matches_recovery_start(&self, original: &Self) -> Result<bool, Box<dyn Error>> {
+        if self.career_sha256.as_ref().is_none_or(|digest|
+            digest.len() != 64 || !digest.bytes().all(|byte|
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+        {
+            return Ok(false);
+        }
+        let mut current = serde_json::to_value(self)?;
+        let mut earlier = serde_json::to_value(original)?;
+        // HashSet serialization does not preserve loss-ID iteration
+        // order. These are unordered original FleetShip identities, so
+        // compare sorted numeric IDs without relaxing any other field.
+        for document in [&mut current, &mut earlier] {
+            if let Some(ids) = document.get_mut("lost_fleet_ids")
+                .and_then(Value::as_array_mut)
+            {
+                ids.sort_unstable_by_key(|value| value.as_i64().unwrap_or(i64::MIN));
+            }
+        }
+        Ok(current == earlier)
     }
 
     fn mission(&self) -> CampaignMission<'_> {
