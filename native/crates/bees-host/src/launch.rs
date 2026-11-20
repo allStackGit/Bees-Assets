@@ -5428,6 +5428,30 @@ fn run_battle(
     }
     let status = host.runtime_status()
         .map_err(|error| contextual("final native host status", error))?;
+    // A StoreCommands 409 commits its valid rows but retains the exact
+    // stale reservations in the checkpoint for explicit reconciliation.
+    // Surface that existing ledger in the durable run receipt so an
+    // operator can identify the original Hash/OutcomeIds without replaying
+    // the already-committed batch or guessing from a backlog count.
+    let pending_store_reconciliation = {
+        let connection = host.connection_mut();
+        let hashes = connection.reconciliation_hashes()
+            .map_err(|error| contextual("final StoreCommands reconciliation", error))?;
+        let mut records = Vec::with_capacity(hashes.len());
+        for hash in hashes {
+            let stale_ids = connection.stale_reconciliation_ids(hash)
+                .map_err(|error| contextual("final stale reservations", error))?
+                .ok_or_else(|| invalid("StoreCommands reconciliation lost its reservation IDs"))?;
+            records.push(json!({
+                "request_hash": hash,
+                "stale_outcome_ids": stale_ids,
+            }));
+        }
+        records
+    };
+    if pending_store_reconciliation.len() != status.pending_store_reconciliations {
+        return Err(invalid("final StoreCommands reconciliation gauge disagrees with the durable ledger").into());
+    }
     let evaluation = host.sink_mut().measurements().clone();
     let mean_episode_seconds = evaluation.mean_episode_seconds();
     let final_segment = evaluation.delta_since(&segment_baseline);
@@ -5750,6 +5774,10 @@ fn run_battle(
         "pending_notifications": status.queued_notifications,
         "pending_store_commands": status.pending_store_commands,
         "pending_store_reconciliations": status.pending_store_reconciliations,
+        // These IDs remain owned by the checkpoint until an explicit
+        // settlement or review decision; a 409 is never a successful
+        // complete-batch acknowledgement.
+        "store_reconciliation": pending_store_reconciliation,
         "socket_flush_timed_out": socket_flush_timed_out,
         "pending_hivemind_requests": status.pending_hivemind_requests,
         "socket_close_confirmed": socket_close_confirmed,
